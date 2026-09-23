@@ -230,7 +230,7 @@ struct ChatView: View {
             isWaitingForStream: prompt == nil && viewModel.activeStreamID != nil,
             isCancellingStream: prompt == nil && viewModel.isCancellingStream,
             isOfflineReadOnly: viewModel.isViewingCachedData,
-            isSessionReadOnly: session.isSessionReadOnly,
+            isSessionReadOnly: viewModel.isSessionReadOnly,
             isChromeCompact: isComposerChromeCompact,
             hidesSecondaryChrome: false,
             joinsSecondaryChrome: prompt == nil && !usesCompactComposer && composerSecondaryControlsState.hasControls,
@@ -1051,6 +1051,7 @@ struct ChatView: View {
             localAttachmentPreviews: viewModel.localAttachmentPreviews,
             listeningMessageID: viewModel.listeningMessageID,
             isViewingCachedData: viewModel.isViewingCachedData,
+            isSessionReadOnly: viewModel.isSessionReadOnly,
             hasOlderMessages: viewModel.hasOlderMessages,
             isLoadingOlderMessages: viewModel.isLoadingOlderMessages,
             isRegeneratingMessage: viewModel.isRegeneratingMessage,
@@ -1484,7 +1485,7 @@ struct ChatView: View {
 
     private func submitClarification(_ response: String? = nil, promptID: String) async {
         guard viewModel.clarificationPrompt?.id == promptID,
-              !viewModel.isViewingCachedData, !session.isSessionReadOnly else { return }
+              !viewModel.isViewingCachedData, !viewModel.isSessionReadOnly else { return }
         let didRespond: Bool
         if let response {
             didRespond = await viewModel.respondToClarification(response)

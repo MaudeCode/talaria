@@ -17,6 +17,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     let localAttachmentPreviews: [String: Data]?
     let listeningMessageID: String?
     let isViewingCachedData: Bool
+    let isSessionReadOnly: Bool
     let hasActiveStream: Bool
     let isRegeneratingMessage: Bool
     let isEditingMessage: Bool
@@ -56,6 +57,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             lhs.localAttachmentPreviews == rhs.localAttachmentPreviews &&
             lhs.listeningMessageID == rhs.listeningMessageID &&
             lhs.isViewingCachedData == rhs.isViewingCachedData &&
+            lhs.isSessionReadOnly == rhs.isSessionReadOnly &&
             lhs.hasActiveStream == rhs.hasActiveStream &&
             lhs.isRegeneratingMessage == rhs.isRegeneratingMessage &&
             lhs.isEditingMessage == rhs.isEditingMessage &&
@@ -414,6 +416,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                 localAttachmentPreviews: localAttachmentPreviews,
                 listeningMessageID: listeningMessageID,
                 isViewingCachedData: isViewingCachedData,
+                isSessionReadOnly: isSessionReadOnly,
                 hasActiveStream: hasActiveStream,
                 isStreaming: isStreaming ?? ChatTranscriptDisplaySettings.shouldUseStreamingBubbleRendering(
                     hasActiveStream: hasActiveStream,

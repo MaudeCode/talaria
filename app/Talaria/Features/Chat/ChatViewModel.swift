@@ -130,6 +130,15 @@ final class ChatViewModel {
         compressionAnchorMetadata = CompressionAnchorMetadata(from: session)
         recomputeCompressionReferenceCard()
     }
+    /// Mirrors the list-row merge rule: an explicit server value (or subagent
+    /// classification) replaces the seeded flag; a detail that omits both keeps it.
+    private func applyReadOnlyState(from session: SessionDetail?) {
+        guard let session else { return }
+        let detail = SessionSummary(from: session)
+        if detail.readOnly != nil || detail.isReadOnly != nil || detail.isDelegatedSubagentSession {
+            isSessionReadOnly = detail.isSessionReadOnly
+        }
+    }
     private func clearCompressionAnchorMetadata() {
         compressionAnchorMetadata = nil
         compressionReferenceCard = nil
@@ -234,6 +243,9 @@ final class ChatViewModel {
     private var currentModelProvider: String?
     private var currentProfile: String?
     private let isCLISession: Bool
+    /// Server-owned view-only state (TAL-152). Seeded from the list row and
+    /// refreshed from every applied `SessionDetail`, which is authoritative.
+    private(set) var isSessionReadOnly: Bool
     private let server: URL
     let client: APIClient
     private let streamCoordinator: ChatStreamCoordinator
@@ -353,6 +365,7 @@ final class ChatViewModel {
         currentModelProvider = session.modelProvider
         currentProfile = session.profile
         isCLISession = session.isCliSession == true
+        isSessionReadOnly = session.isSessionReadOnly
         self.server = server
         let resolvedClient = client ?? APIClient(baseURL: server)
         let resolvedStreamClient = streamClient ?? SSEClient()
@@ -1284,6 +1297,7 @@ final class ChatViewModel {
                     else { continue }
                     Self.insertLocalOptimisticMessage(message, into: &mergedMessages)
                 }
+                applyReadOnlyState(from: session)
                 applyReloadedMessages(
                     mergedMessages,
                     from: session,
@@ -1302,6 +1316,9 @@ final class ChatViewModel {
                 return
             }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
+            // After load arbitration only: a superseded response must not leave its
+            // read-only flag behind once its transcript has been rejected.
+            applyReadOnlyState(from: session)
             applyCompressionAnchorMetadata(from: session)
             applyReloadedMessages(
                 reloadedMessages,
@@ -1546,6 +1563,8 @@ final class ChatViewModel {
                 return false
             }
 
+            // Pagination is outside session-load arbitration, so it must not
+            // refresh read-only state; the cold load and live paths own that.
             let olderMessages = session.messages ?? []
             let mergedMessages = Self.prependingOlderMessages(olderMessages, to: messages)
             let didAddMessages = mergedMessages.count > messages.count
@@ -3472,6 +3491,7 @@ final class ChatViewModel {
                 return .unsupported(friendlyMessage: String(localized: "The server did not return the compressed session."))
             }
 
+            applyReadOnlyState(from: session)
             applyCompressionAnchorMetadata(from: session)
             messages = session.messages ?? []
             updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
@@ -3970,6 +3990,11 @@ final class ChatViewModel {
             return false
         }
 
+        guard !isSessionReadOnly else {
+            messageActionErrorMessage = String(localized: "This session is view-only and can't be edited.")
+            return false
+        }
+
         guard activeStreamID == nil else {
             messageActionErrorMessage = String(localized: "Wait for the current response to finish before editing.")
             return false
@@ -4076,6 +4101,11 @@ final class ChatViewModel {
 
         guard !isViewingCachedData else {
             messageActionErrorMessage = String(localized: "Reconnect to the server to regenerate a response.")
+            return false
+        }
+
+        guard !isSessionReadOnly else {
+            messageActionErrorMessage = String(localized: "This session is view-only and can't be regenerated.")
             return false
         }
 
@@ -4648,6 +4678,7 @@ final class ChatViewModel {
             return
         }
 
+        applyReadOnlyState(from: completedSession)
         applyCompressionAnchorMetadata(from: completedSession)
 
         var didApplyCompletedTranscript = false

@@ -16,6 +16,9 @@ struct ChatMessageAction: Identifiable {
 struct ChatMessageActionState: Equatable {
     let listeningMessageID: String?
     let isViewingCachedData: Bool
+    /// The server owns this session as view-only (TAL-152). Kept apart from
+    /// cached-data state: forking a read-only transcript is still allowed.
+    let isSessionReadOnly: Bool
     let hasActiveStream: Bool
     let isRegeneratingMessage: Bool
     let isEditingMessage: Bool
@@ -26,6 +29,12 @@ struct ChatMessageActionState: Equatable {
     /// transcript that is not already mid-mutation.
     func allowsHistoryAction(whileBusy isBusy: Bool) -> Bool {
         !disablesHistoryActions && !isViewingCachedData && !hasActiveStream && !isBusy
+    }
+
+    /// True for actions that write to this session (edit, regenerate): they
+    /// also need the server to treat the session as writable.
+    func allowsSessionMutation(whileBusy isBusy: Bool) -> Bool {
+        allowsHistoryAction(whileBusy: isBusy) && !isSessionReadOnly
     }
 }
 
@@ -75,7 +84,7 @@ enum ChatMessageActionCatalog {
                     id: "regenerate",
                     title: String(localized: "Regenerate Response"),
                     systemImage: "arrow.clockwise",
-                    isEnabled: state.allowsHistoryAction(whileBusy: state.isRegeneratingMessage),
+                    isEnabled: state.allowsSessionMutation(whileBusy: state.isRegeneratingMessage),
                     handler: { handlers.onRegenerate(context) }
                 )
             )
@@ -87,7 +96,7 @@ enum ChatMessageActionCatalog {
                     id: "edit",
                     title: String(localized: "Edit Message"),
                     systemImage: "pencil",
-                    isEnabled: state.allowsHistoryAction(whileBusy: state.isEditingMessage),
+                    isEnabled: state.allowsSessionMutation(whileBusy: state.isEditingMessage),
                     handler: { handlers.onEdit(context) }
                 )
             )

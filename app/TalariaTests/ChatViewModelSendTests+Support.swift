@@ -131,20 +131,22 @@ extension ChatViewModelSendTests {
         title: String = "Planning",
         model: String? = "gpt-5.4",
         modelProvider: String? = nil,
-        profile: String? = nil
+        profile: String? = nil,
+        readOnly: Bool = false
     ) throws -> SessionSummary {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let modelJSON = model.map { ",\n              \"model\": \"\($0)\"" } ?? ""
         let modelProviderJSON = modelProvider.map { ",\n              \"model_provider\": \"\($0)\"" } ?? ""
         let profileJSON = profile.map { ",\n              \"profile\": \"\($0)\"" } ?? ""
+        let readOnlyJSON = readOnly ? ",\n              \"read_only\": true" : ""
         return try decoder.decode(
             SessionSummary.self,
             from: Data("""
             {
               "session_id": "session-abc",
               "title": "\(title)",
-              "workspace": "/tmp/workspace"\(modelJSON)\(modelProviderJSON)\(profileJSON)
+              "workspace": "/tmp/workspace"\(modelJSON)\(modelProviderJSON)\(profileJSON)\(readOnlyJSON)
             }
             """.utf8)
         )

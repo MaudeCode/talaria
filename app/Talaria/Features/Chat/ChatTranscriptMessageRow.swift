@@ -7,6 +7,7 @@ struct ChatTranscriptMessageRow: View {
     let localAttachmentPreviews: [String: Data]?
     let listeningMessageID: String?
     let isViewingCachedData: Bool
+    let isSessionReadOnly: Bool
     let hasActiveStream: Bool
     let isStreaming: Bool
     let liveTokensPerSecond: Double?
@@ -93,6 +94,7 @@ struct ChatTranscriptMessageRow: View {
             state: ChatMessageActionState(
                 listeningMessageID: listeningMessageID,
                 isViewingCachedData: isViewingCachedData,
+                isSessionReadOnly: isSessionReadOnly,
                 hasActiveStream: hasActiveStream,
                 isRegeneratingMessage: isRegeneratingMessage,
                 isEditingMessage: isEditingMessage,

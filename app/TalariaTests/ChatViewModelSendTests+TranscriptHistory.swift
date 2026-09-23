@@ -455,6 +455,7 @@ extension ChatViewModelSendTests {
                       {"role": "user", "content": "Recent question", "timestamp": 3, "message_id": "u-2"},
                       {"role": "assistant", "content": "Recent answer", "timestamp": 4, "message_id": "a-3"}
                     ],
+                    "read_only": true,
                     "_messages_truncated": true,
                     "_messages_offset": 2
                   }
@@ -470,6 +471,7 @@ extension ChatViewModelSendTests {
                       {"role": "assistant", "content": "Older answer", "timestamp": 2, "message_id": "a-1"},
                       {"role": "user", "content": "Recent question", "timestamp": 3, "message_id": "u-2"}
                     ],
+                    "read_only": false,
                     "_messages_truncated": false,
                     "_messages_offset": 0
                   }
@@ -497,6 +499,9 @@ extension ChatViewModelSendTests {
         ])
         XCTAssertEqual(viewModel.messagesOffset, 0)
         XCTAssertFalse(viewModel.hasOlderMessages)
+        // Pagination runs outside session-load arbitration (TAL-152), so its
+        // payload must not relax the read-only state the cold load applied.
+        XCTAssertTrue(viewModel.isSessionReadOnly)
     }
 
     @MainActor

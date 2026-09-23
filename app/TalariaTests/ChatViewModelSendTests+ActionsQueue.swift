@@ -224,6 +224,94 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(streamClient.startedURLs.count, 1)
     }
 
+    /// The list row said nothing about read-only; the loaded detail is authoritative.
+    @MainActor
+    func testReadOnlySessionRejectsEditAndRegenerateWithoutTruncating() async throws {
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/session":
+                return apiTestJSONResponse("""
+                {
+                  "session": {
+                    "session_id": "session-abc",
+                    "read_only": true,
+                    "messages": [
+                      {"role": "user", "content": "Question", "timestamp": 1, "message_id": "u-1"},
+                      {"role": "assistant", "content": "Answer", "timestamp": 2, "message_id": "a-2"}
+                    ]
+                  }
+                }
+                """, for: request)
+            default:
+                XCTFail("Read-only session must not mutate the transcript: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        XCTAssertFalse(viewModel.isSessionReadOnly)
+        await viewModel.loadMessages()
+        XCTAssertTrue(viewModel.isSessionReadOnly)
+        let userContext = try XCTUnwrap(viewModel.actionContext(for: viewModel.messages[0], visibleIndex: 0))
+        let assistantContext = try XCTUnwrap(viewModel.actionContext(for: viewModel.messages[1], visibleIndex: 1))
+
+        let didEdit = await viewModel.editMessage(userContext, newText: "Edited")
+        XCTAssertFalse(didEdit)
+        XCTAssertEqual(viewModel.messageActionErrorMessage, "This session is view-only and can't be edited.")
+
+        let didRegenerate = await viewModel.regenerateAssistantResponse(assistantContext)
+        XCTAssertFalse(didRegenerate)
+        XCTAssertEqual(viewModel.messageActionErrorMessage, "This session is view-only and can't be regenerated.")
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Question", "Answer"])
+        XCTAssertNil(viewModel.activeStreamID)
+    }
+
+    @MainActor
+    func testLoadedDetailRefreshesStaleReadOnlySeedFromTheListRow() async throws {
+        let viewModel = try makeViewModel(sessionSummary: makeSession(readOnly: true)) { request in
+            XCTAssertEqual(request.url?.path, "/api/session")
+            return apiTestJSONResponse(#"{"session": {"session_id": "session-abc", "read_only": false, "messages": []}}"#, for: request)
+        }
+
+        XCTAssertTrue(viewModel.isSessionReadOnly)
+        await viewModel.loadMessages()
+        XCTAssertFalse(viewModel.isSessionReadOnly)
+    }
+
+    /// A superseded load's response arriving last must not overwrite the
+    /// read-only flag the accepted load applied.
+    @MainActor
+    func testSupersededLoadResponseDoesNotOverwriteReadOnlyState() async throws {
+        let requests = DeferredRequests()
+        let host = "tal152-readonly-overlap.test"
+        let firstRequestStarted = expectation(description: "first session request started")
+        let secondRequestStarted = expectation(description: "second session request started")
+        DeferredMockURLProtocol.setOnRequest({ request in
+            XCTAssertEqual(request.request.url?.path, "/api/session")
+            (requests.append(request) == 1 ? firstRequestStarted : secondRequestStarted).fulfill()
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let viewModel = try makeViewModel(
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+        let olderLoad = Task { @MainActor in await viewModel.loadMessages() }
+        await fulfillment(of: [firstRequestStarted], timeout: 2)
+        let newerLoad = Task { @MainActor in await viewModel.loadMessages() }
+        await fulfillment(of: [secondRequestStarted], timeout: 2)
+
+        requests.request(at: 1).complete(withJSON: #"{"session": {"session_id": "session-abc", "read_only": true, "messages": []}}"#)
+        await newerLoad.value
+        XCTAssertTrue(viewModel.isSessionReadOnly)
+
+        requests.request(at: 0).complete(withJSON: #"{"session": {"session_id": "session-abc", "read_only": false, "messages": []}}"#)
+        await olderLoad.value
+        XCTAssertTrue(viewModel.isSessionReadOnly)
+    }
+
     @MainActor
     func testForkFromMessageUsesKeepCountThroughMessageAndHandlesMissingForkID() async throws {
         var branchBodies: [[String: Any]] = []
