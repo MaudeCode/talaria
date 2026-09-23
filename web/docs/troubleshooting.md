@@ -246,6 +246,12 @@ For a foreground `talaria-web --foreground`, stop it with Ctrl-C and start it ag
 
 **When to file a bug.** File a WebUI bug if the restart-required message appears even though the Agent revision did not change or become unreadable, or if a clean WebUI restart still produces the same import error. Include the launch method, WebUI and Agent revisions, the marker diagnostic, and sanitized error text.
 
+An installed Agent revision different from the Web release's tested pin now produces an unsupported-version
+warning, not a blanket refusal. If Agent imports fail, the sidecar can still read and write operator config;
+SSO can use a readable config. A sidecar or RPC transport failure, unreadable or invalid YAML, or a genuinely
+missing Agent capability still fails closed. Check the sidecar status and the specific failing operation before
+changing the Agent checkout.
+
 ---
 
 ## 404 after login when password auth is enabled

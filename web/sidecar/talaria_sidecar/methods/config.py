@@ -50,7 +50,9 @@ def read_config(path: Path) -> dict:
         raise
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"config.yaml is not valid YAML: {exc}", condition="config_invalid") from exc
-    return {"path": str(path), "exists": True, "config": data if isinstance(data, dict) else {}}
+    if data is not None and not isinstance(data, dict):
+        raise RpcError("config.yaml must contain a mapping", condition="config_invalid")
+    return {"path": str(path), "exists": True, "config": data if data is not None else {}}
 
 
 def _write_target(path: Path) -> Path:
@@ -117,11 +119,11 @@ def reasoning_efforts(model: str, provider: str) -> dict:
 
 
 def register(registry) -> None:
-    @registry.method("config.get", requires_agent=True)
+    @registry.method("config.get", requires_agent=False)
     def get(ctx: CallContext, params: dict) -> dict:
         return read_config(config_path_param(params))
 
-    @registry.method("config.set", requires_agent=True)
+    @registry.method("config.set", requires_agent=False)
     def set_(ctx: CallContext, params: dict) -> dict:
         return write_config(config_path_param(params), params.get("config"))
 

@@ -16,12 +16,15 @@ installs an Agent; existing installations are discovered and retained, never
 downgraded. Both multi-container Compose variants inherit their Agent image from
 the same file through Compose `extends`.
 
-At handshake the sidecar compares the loaded Agent revision with the pin and
-reports `{agent_revision, agent_version, pinned_revision, pinned_version,
-compatible, stale, update_state}`. The server trusts that report and answers
-Agent-backed routes with `503 agent_incompatible` (a different revision) or
-`503 agent_runtime_stale` (the checkout changed while running) until the sidecar
-restarts on a healthy checkout. `/health` exposes the same `compatibleAgent`
+At handshake the sidecar reports `{agent_revision, agent_version, pinned_revision,
+pinned_version, compatible, stale, update_state}`. `compatible` means the Agent
+imported; a different revision than the pin gets a warning and can attempt Agent
+operations. Individual methods refuse missing capabilities and named-profile
+credential isolation failures. A checkout changed after import returns
+`503 agent_runtime_stale` for Agent operations until restart. `config.get` and
+`config.set` remain available after an Agent import failure if the RPC handshake
+and YAML parser work, so operator auth and repair do not depend on Agent imports.
+`/health` exposes the same `compatibleAgent`
 identity in its `release` block (`tag, version, sourceRevision, releaseSet,
 contracts, compatibleAgent`); it names the tested dependency, not whichever Agent
 an operator installed.
@@ -43,7 +46,8 @@ be equal. Unreleased Agent `main` canaries never change this pin.
 | Class | Sidecar namespace | Agent modules |
 |---|---|---|
 | Chat execution | `chat.*`, `approval.*`, `goals.*` | `run_agent.AIAgent`, `tools.approval`, `hermes_cli.goals` |
-| Profiles and configuration | `profiles.*`, `config.*` | `hermes_cli.profiles`, `hermes_cli.config` |
+| Profiles | `profiles.*` | `hermes_cli.profiles` |
+| Operator configuration | `config.*` | YAML parser on the Agent interpreter; no Agent import required |
 | Commands and plugins | `commands.*`, `plugins.*`, `skills.*` | `hermes_cli.commands`, `hermes_cli.plugins`, `agent.skill_utils` |
 | Providers and models | `providers.*`, `models.*`, `aux.*` | `hermes_cli.models`, `hermes_cli.auth`, `agent.credential_pool`, `agent.auxiliary_client`, `agent.model_metadata` |
 | Scheduling | `cron.*`, `kanban.*`, `process.*` | `cron.jobs`, `cron.scheduler`, `hermes_cli.kanban_db`, the process registry |

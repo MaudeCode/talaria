@@ -91,8 +91,9 @@ selected revision, and requires **Update anyway** to proceed. The API returns
 matches the freshly resolved candidate. Apply, force, and lock-retry share this
 check; a newly published target requires fresh confirmation. The acknowledged
 immutable commit is the one installed, even if the upstream branch then moves.
-This acknowledgement does not weaken sidecar compatibility checks or change
-Talaria's official Agent pin. Automatic updates still apply only to Web.
+The tested pin remains Talaria's official support reference. A different Agent
+revision warns but can attempt operations; missing capabilities and unsafe
+credential isolation still fail at use. Automatic updates still apply only to Web.
 
 API callers can provide `agent_channel` independently of Web's `channel` on
 check/apply/force requests. Omitting it uses the persisted Agent setting. Cached

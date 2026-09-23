@@ -305,14 +305,8 @@ class AgentRuntime:
 
     # ── handshake ─────────────────────────────────────────────────────────
     def describe(self) -> dict:
-        # A checkout answers by revision; an untracked install (pip, image, no .git) must match the pinned version
-        # instead of passing unchecked, and an unknown version fails closed.
-        if not self.loaded:
-            compatible = False
-        elif self.revision is not None:
-            compatible = self.revision == self.pin["source_revision"]
-        else:
-            compatible = self.agent_version is not None and self.agent_version == self.pin["version"]
+        # The pin records official test coverage, not runtime capability. Each operation still checks its imports,
+        # profile isolation and loaded-revision guard at the point of use.
         return {
             "rpc_version": SIDECAR_RPC_VERSION,
             "python": sys.executable,
@@ -323,7 +317,7 @@ class AgentRuntime:
             "pinned_revision": self.pin["source_revision"],
             "pinned_version": self.pin["version"],
             "pinned_image": self.pin["image"],
-            "compatible": compatible,
+            "compatible": self.loaded,
             "stale": self.is_stale(),
             "update_state": self.update_transaction_state(),
             "import_error": self.import_error,

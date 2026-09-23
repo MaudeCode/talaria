@@ -53,6 +53,16 @@ describe('SidecarClient version mismatch', () => {
     expect(logs.filter((l) => l.includes('exited')).length).toBeLessThanOrEqual(1)
   })
 
+  it('refuses a successful handshake that advertises the wrong RPC version', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-wrong-version-'))
+    const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')
+    const script = `const fs=require('fs');const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'))['runtime.handshake'][0].result;require('readline').createInterface({input:process.stdin}).on('line',line=>{const req=JSON.parse(line);if(req.method==='runtime.handshake')process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:req.id,result:{...value,rpc_version:value.rpc_version+1}})+'\\n')})`
+    client = new SidecarClient({ python: process.execPath, command: [process.execPath, '-e', script, fixture], agentDir: '', sidecarDir: dir, hermesHome: dir, log: () => undefined })
+    await expect(client.start()).rejects.toMatchObject({ condition: 'sidecar_rpc_version_mismatch' })
+    expect(client.status).toBe('incompatible')
+    await expect(client.call('config.get', { profile_home: dir, config_path: resolve(dir, 'config.yaml') })).rejects.toMatchObject({ condition: 'agent_incompatible' })
+  })
+
   it('an already-aborted signal is refused before anything is written to the sidecar', async () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'talaria-sidecar-abort-'))
     const fixture = resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')

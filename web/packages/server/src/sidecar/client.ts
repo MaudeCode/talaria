@@ -116,6 +116,7 @@ export class SidecarClient implements SidecarLike {
   async start(): Promise<RuntimeDescribe> {
     if (this.closed) throw new SidecarError('sidecar client closed', { condition: 'sidecar_unavailable' })
     this.status = 'starting'
+    this.describe = null
     const [command, ...args] = this.opts.command ?? [this.opts.python, '-m', 'talaria_sidecar']
     const child = spawn(command ?? this.opts.python, args, {
       cwd: this.opts.sidecarDir,
@@ -137,14 +138,18 @@ export class SidecarClient implements SidecarLike {
 
     try {
       const describe = await this.rawCall('runtime.handshake', { rpc_version: SIDECAR_RPC_VERSION }, { timeoutMs: this.opts.handshakeTimeoutMs ?? 60_000 })
+      if (describe.rpc_version !== SIDECAR_RPC_VERSION) throw new SidecarError('sidecar RPC version mismatch', { condition: 'sidecar_rpc_version_mismatch' })
       this.describe = describe
       this.status = describe.compatible && !describe.stale ? 'ready' : 'incompatible'
+      const tested = describe.agent_revision !== null ? describe.agent_revision === describe.pinned_revision : describe.agent_version === describe.pinned_version
+      if (describe.compatible && !tested) this.log('[sidecar] This Agent version is not officially supported by Talaria and may cause issues.')
       this.restartAttempt = 0
       return describe
     } catch (error) {
       // A decoded version mismatch is final: the sidecar exits 3 on its own and restarting cannot help.
       if (error instanceof SidecarError && error.condition === 'sidecar_rpc_version_mismatch') {
         this.status = 'incompatible'
+        if (this.child === child) child.kill('SIGKILL')
         throw error
       }
       // `incompatible` is reserved for a decoded handshake that says so (or the version-mismatch exit). A handshake
@@ -191,6 +196,7 @@ export class SidecarClient implements SidecarLike {
   private onExit(child: ChildProcess, code: number | null, signal: NodeJS.Signals | null): void {
     if (this.child !== child) return
     this.child = null
+    this.describe = null
     this.log(`[sidecar] exited code=${code} signal=${signal ?? ''}`)
     const error = new SidecarError('sidecar exited', { condition: 'sidecar_unavailable', data: { code, signal } })
     for (const [id, pending] of this.pending) {
@@ -219,9 +225,10 @@ export class SidecarClient implements SidecarLike {
     this.restartTimer.unref()
   }
 
-  /** Typed call; fails closed with `sidecar_unavailable` unless the sidecar is ready. */
+  /** Agent operations require readiness; config access needs only a valid, live RPC handshake. */
   call<M extends SidecarMethodName>(method: M, params: SidecarParams<M>, opts: CallOptions = {}): Promise<SidecarResult<M>> {
-    if (this.status !== 'ready' && !method.startsWith('runtime.') && method !== 'rpc.methods') {
+    const configAccess = (method === 'config.get' || method === 'config.set') && this.status === 'incompatible' && this.describe?.rpc_version === SIDECAR_RPC_VERSION
+    if (this.status !== 'ready' && !configAccess && !method.startsWith('runtime.') && method !== 'rpc.methods') {
       const condition = this.status === 'incompatible' ? (this.describe?.stale ? 'agent_runtime_stale' : 'agent_incompatible') : 'sidecar_unavailable'
       return Promise.reject(new SidecarError(`sidecar not ready (${this.status})`, { condition }))
     }

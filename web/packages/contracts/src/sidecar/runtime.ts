@@ -15,6 +15,7 @@ export const RuntimeDescribeSchema = z.object({
   pinned_revision: z.string().regex(/^[a-f0-9]{40}$/),
   pinned_version: z.string(),
   pinned_image: z.string(),
+  // Agent imports succeeded; this is not an exact match with the officially tested pin.
   compatible: z.boolean(),
   stale: z.boolean(),
   update_state: z.enum(['absent', 'active', 'stale', 'unknown', 'incomplete', 'unverified']),
