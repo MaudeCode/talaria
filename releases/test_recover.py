@@ -42,7 +42,9 @@ class RecoveryTests(unittest.TestCase):
         needs = {name: {"result": "failure" if name == "app-publish" else "success", "outputs": {}}
                  for name in ("prepare", "build-gate", "relay-publish", "web-publish", "app-publish")}
         needs["prepare"]["outputs"] = {"source": "c" * 40, "app_changed": "true", "web_changed": "true", "relay_changed": "true"}
-        needs["build-gate"]["outputs"]["artifacts"] = json.dumps(refs)
+        # build-gate also forwards the Web OCI image; recovery authenticates it but never restores it.
+        forwarded = {**refs, "web-image": {**refs["web-build"], "name": "web-image"}}
+        needs["build-gate"]["outputs"]["artifacts"] = json.dumps(forwarded)
         return metadata, jobs, needs, refs
 
     def verify(self, metadata, jobs, needs):
@@ -67,14 +69,15 @@ class RecoveryTests(unittest.TestCase):
                 broken[index][key] = value
                 with self.subTest(index=index, key=key), self.assertRaises(ValueError):
                     self.verify(metadata, broken, needs)
-        for key, value in (("run", "456"), ("attempt", "5"), ("attempt", "../4"), ("source", "d" * 40),
-                           ("name", "../escape"), ("sha256", "bad")):
-            broken = deepcopy(needs)
-            changed = deepcopy(refs)
-            changed["ios-ipa"][key] = value
-            broken["build-gate"]["outputs"]["artifacts"] = json.dumps(changed)
-            with self.subTest(key=key), self.assertRaises(ValueError):
-                self.verify(metadata, jobs, broken)
+        for name in ("ios-ipa", "web-image"):
+            for key, value in (("run", "456"), ("attempt", "5"), ("attempt", "../4"), ("source", "d" * 40),
+                               ("name", "../escape"), ("sha256", "bad")):
+                broken = deepcopy(needs)
+                changed = json.loads(broken["build-gate"]["outputs"]["artifacts"])
+                changed[name][key] = value
+                broken["build-gate"]["outputs"]["artifacts"] = json.dumps(changed)
+                with self.subTest(name=name, key=key), self.assertRaises(ValueError):
+                    self.verify(metadata, jobs, broken)
         for text in ("", "RELEASE_NEEDS: {} RELEASE_NEEDS: {}"):
             with self.assertRaises(ValueError):
                 recover.authenticate("123", "4", metadata, jobs, text)

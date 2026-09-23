@@ -94,7 +94,7 @@ Fork pull requests have no secrets and fail at their first transfer.
 Object keys are `<class>/<workflow>/<run>/<attempt>/<file>`; the class prefix
 selects the expiration the helper applies idempotently before each upload
 (Garage expires by prefix and whole days only): `talaria-release`
-`handoffs/` 1 day; `talaria-ci` `fixtures/` 1 day, `test-results/` 3 days,
+`handoffs/` 30 days (the recovery window); `talaria-ci` `fixtures/` 1 day, `test-results/` 3 days,
 `fuzz/` and `performance-metrics/` 90 days. Jobs print their object keys in
 the step summary so retained results can be fetched from the NAS.
 
@@ -225,8 +225,8 @@ publication** workflow on main. Supply the original production-cutover run and
 attempt, and explicitly confirm publication. It authenticates the original
 GitHub job results, fetches that run's handoff objects from the NAS and checks
 each against its recorded hash, checks that the release is still current, and
-resumes the same IPA/upload using reviewed publishing tools. Handoffs expire
-after one day, so recovery must start within that window.
+resumes the same IPA/upload using reviewed publishing tools. Release handoffs expire
+after 30 days, so recovery must start within that window.
 Original receipts keep their original run URLs; resumed upload evidence names
 the actual recovery run. It neither rebuilds the App nor republishes Relay/Web.
 Missing, changed, or incompatible original evidence fails closed. After a

@@ -57,6 +57,8 @@ def authenticate(run, attempt, metadata, jobs, log):
                     or not re.fullmatch(r"[a-f0-9]{64}", reference.get("sha256", ""))):
                 raise ValueError("original artifact identity differs from its run")
             references[key] = reference
+    # Recovery republishes only the App; the Web OCI image is authenticated above but never restored.
+    references.pop("web-image", None)
     required = {"release-plan", "contract-receipts", "agent-receipts", "relay-build", "web-build",
                 "app-build", "ios-ipa", "ios-dsyms", "relay-publish", "web-publish"}
     outputs = needs["prepare"]["outputs"]
