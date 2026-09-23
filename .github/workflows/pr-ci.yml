@@ -81,6 +81,7 @@ jobs:
         run: |
           scripts/test-test-ios 20
           scripts/test-ios-simulator-pool
+          python3 scripts/test-validate-upstream-contract
 
   test:
     name: Build and Test
