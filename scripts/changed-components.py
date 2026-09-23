@@ -24,6 +24,7 @@ WORKFLOWS = {
     "repository-tooling.yml": {"tooling"},
     "web-docs.yml": {"tooling"},
     "fuzz-soak.yml": {"app", "tooling"},
+    "ui-performance.yml": {"app", "tooling"},
     "release.yml": {"tooling"},
     "release-set.yml": {"tooling"},
     "production-cutover.yml": {"tooling"},
