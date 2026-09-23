@@ -374,7 +374,7 @@ jobs:
         ref: ${{ needs.prepare.outputs.source }}
     - uses: ./.github/actions/release-python
     - name: Download the verified Web publication artifact
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         name: ${{ needs.web-build.outputs.publication }}
         path: ${{ runner.temp }}/web-publication
@@ -422,7 +422,7 @@ jobs:
         ref: ${{ needs.prepare.outputs.source }}
     - uses: ./.github/actions/release-python
     - name: Download the Web publication receipt
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         name: ${{ needs.web-publication.outputs.receipt }}
         path: ${{ runner.temp }}/web-publish
