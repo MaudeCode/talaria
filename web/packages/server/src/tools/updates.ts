@@ -629,10 +629,11 @@ const headContainsRef = async (path: string, ref: string, git: GitRun): Promise<
 const canFastForwardTo = async (path: string, ref: string, git: GitRun): Promise<boolean> => (await git(['merge-base', '--is-ancestor', 'HEAD', ref], path)).ok
 
 async function detectDefaultBranch(path: string, git: GitRun): Promise<string> {
+  const refreshed = await git(['remote', 'set-head', 'origin', '--auto'], path, 15_000)
+  if (!refreshed.ok) throw new Error('Agent default branch could not be refreshed from origin')
   const out = await git(['symbolic-ref', 'refs/remotes/origin/HEAD'], path)
   const prefix = 'refs/remotes/origin/'
   if (out.ok && out.out.startsWith(prefix) && (await git(['rev-parse', '--verify', `${out.out}^{commit}`], path)).ok) return out.out.slice(prefix.length)
-  for (const branch of ['main', 'master']) if ((await git(['rev-parse', '--verify', `origin/${branch}^{commit}`], path)).ok) return branch
   throw new Error('Agent default branch is unavailable')
 }
 

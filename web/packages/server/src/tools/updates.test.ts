@@ -939,6 +939,34 @@ describe('Agent checkout updates', () => {
     expect(await checkAgentUpdate(a.agent, runGit, 'experimental')).toMatchObject({ branch: 'origin/trunk', behind: 1, latest_sha: a.v2 })
   })
 
+  it.each(['main', 'trunk'])('follows the authoritative default %s when the former default is retained', async (branch) => {
+    const a = agentInstall()
+    git(a.origin, 'checkout', '-b', branch)
+    git(a.origin, 'commit', '--allow-empty', '-m', 'new default')
+    const target = git(a.origin, 'rev-parse', 'HEAD')
+    git(a.agent, 'fetch', 'origin', '--tags', '--force')
+    expect(git(a.agent, 'symbolic-ref', 'refs/remotes/origin/HEAD')).toBe('refs/remotes/origin/master')
+    expect(git(a.agent, 'rev-parse', 'origin/master')).toBe(a.v2)
+    expect(await checkAgentUpdate(a.agent, runGit, 'experimental')).toMatchObject({ branch: `origin/${branch}`, behind: 2, latest_sha: target })
+    expect(await applyAgentUpdate(a.agent, runGit, 'experimental', { supportedRevision: target, supportedVersion: '3.0.0' })).toMatchObject({ ok: true })
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(target)
+  })
+
+  it('fails closed when the authoritative default cannot be refreshed', async () => {
+    const a = agentInstall()
+    writeFileSync(join(a.agent, 'README'), 'preserve local edit\n')
+    const unavailable: GitRun = (args, cwd, timeout) => args[0] === 'remote' && args[1] === 'set-head'
+      ? Promise.resolve({ ok: false, out: 'remote unavailable' }) : runGit(args, cwd, timeout)
+    const stable = await checkAgentUpdate(a.agent, unavailable, 'stable')
+    expect(stable.behind).toBe(1)
+    expect(stable.error).toBeUndefined()
+    expect(await checkAgentUpdate(a.agent, unavailable, 'experimental')).toMatchObject({ behind: null, error: 'Agent default branch could not be refreshed from origin' })
+    expect(await applyAgentUpdate(a.agent, unavailable, 'experimental')).toMatchObject({ ok: false })
+    expect(await forceAgentUpdate(a.agent, unavailable, () => undefined, 'experimental')).toMatchObject({ ok: false })
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('preserve local edit\n')
+  })
+
   function agentInstall(): { agent: string; origin: string; v1: string; v2: string } {
     const root = tmp()
     const origin = join(root, 'origin')

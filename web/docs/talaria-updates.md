@@ -75,6 +75,11 @@ The existing `update_channel` remains Web-only; `agent_update_channel` defaults
 to Stable and is never inherited from Web. Agent Stable selects the latest stable
 upstream release tag; Experimental selects the upstream default branch. Stable
 never falls back to a development branch or rewinds an ahead checkout. Agent
+Experimental refreshes `origin/HEAD` from the remote using Git's native
+`remote set-head --auto` after fetching. It never trusts a cached former default
+or guesses a branch when that refresh fails; the check remains unavailable until
+the authoritative default and its tracking ref can be resolved. Stable release
+selection does not depend on this refresh. Agent
 update counts are actual Git commits from the installed HEAD to the selected
 target, not the number of releases. A failed count is unavailable, not zero.
 
