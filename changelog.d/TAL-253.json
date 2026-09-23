@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Changing a System setting no longer makes the Agent version or the Access Password section briefly flash.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

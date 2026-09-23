@@ -761,3 +761,22 @@ describe('isolated profile mode', () => {
     expect(body.all_profiles).toBe(false)
   })
 })
+
+describe('settings save response keeps the derived fields a load returns', () => {
+  const DERIVED = ['password_env_var', 'webui_version', 'agent_version', 'update_channel', 'update_channel_version'] as const
+  it.each([{ password: '' }, { password: 'correct horse battery' }])('a single toggle save matches the next GET (env password: %j)', async ({ password }) => {
+    const s = await bootTestServer({ env: password ? { HERMES_WEBUI_PASSWORD: password } : {} })
+    try {
+      let headers: Record<string, string> = {}
+      if (password) {
+        const login = await post(s, '/api/auth/login', { password })
+        const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+        headers = { cookie, 'x-hermes-csrf-token': await csrfFor(s, cookie) }
+      }
+      const saved = await json(await post(s, '/api/settings', { ignore_agent_updates: true }, headers))
+      const loaded = await json(await s.get('/api/settings', { headers }))
+      expect(saved.password_env_var).toBe(Boolean(password))
+      for (const key of DERIVED) expect(saved[key], key).toEqual(loaded[key])
+    } finally { await s.close() }
+  })
+})
