@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Agent updates show actual commit counts, use a separate update channel, and warn before installing an unsupported version.",
+      "highlight": true,
+      "components": ["web"]
+    }
+  ]
+}

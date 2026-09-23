@@ -2179,5 +2179,13 @@
 	"project_new_prompt": "Project name",
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
-	"system_apply_agent_update": "Update Agent"
+	"system_apply_agent_update": "Update Agent",
+	"settings_label_web_update_channel": "Web update channel",
+	"settings_label_agent_update_channel": "Agent update channel",
+	"system_agent_unsupported_title": "Unsupported Agent version",
+	"system_agent_unsupported_warning": "This Agent version is not officially supported by Talaria and may cause issues.",
+	"system_agent_unsupported_identity": "Officially supported: {version} ({supported}). Selected revision: {candidate}.",
+	"system_agent_update_anyway": "Update anyway",
+	"system_agent_update_unknown": "Agent update status unavailable",
+	"system_release_available": "{name}: release available"
 }

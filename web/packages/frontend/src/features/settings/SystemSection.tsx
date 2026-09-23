@@ -35,19 +35,38 @@ export function SystemSection() {
   // and a later save (e.g. ignore-agent) must not make the Select snap back meanwhile.
   const [channelDraft, setChannelDraft] = useState<string>()
   const channel = channelDraft ?? str('update_channel', 'stable')
-  const setChannel = (v: string) => { setChannelDraft(v); save.mutate({ update_channel: v }, { onError: fail, onSettled: () => setChannelDraft(undefined) }) }
+  const setChannel = (v: string) => { setChannelDraft(v); save.mutate({ update_channel: v }, { onError: fail, onSettled: () => { setChannelDraft(undefined); void qc.invalidateQueries({ queryKey: keys.updates.check }) } }) }
+  const [agentChannelDraft, setAgentChannelDraft] = useState<string>()
+  const agentChannel = agentChannelDraft ?? str('agent_update_channel', 'stable')
+  const setAgentChannel = (v: string) => { setAgentChannelDraft(v); save.mutate({ agent_update_channel: v }, { onError: fail, onSettled: () => { setAgentChannelDraft(undefined); void qc.invalidateQueries({ queryKey: keys.updates.check }) } }) }
+  const [agentConfirmation, setAgentConfirmation] = useState<{ revision: string; supported: string; version: string; channel: 'stable' | 'experimental' } | null>(null)
   // The server reads persisted settings (channel, ignore-agent) for the forced check, so let every
   // in-flight settings save settle first; the cache then holds whatever actually persisted.
   const settledChannel = () => { const v = qc.getQueryData<Record<string, unknown>>(keys.settings)?.update_channel; return typeof v === 'string' ? v : undefined }
+  const settledAgentChannel = (): 'stable' | 'experimental' => qc.getQueryData<Record<string, unknown>>(keys.settings)?.agent_update_channel === 'experimental' ? 'experimental' : 'stable'
+  const waitForSettings = async () => { while (qc.isMutating({ mutationKey: keys.settings })) await new Promise((r) => setTimeout(r, 50)) }
   const checkNow = useMutation({
     mutationFn: async () => {
-      while (qc.isMutating({ mutationKey: keys.settings })) await new Promise((r) => setTimeout(r, 50))
-      return api.checkUpdatesNow(settledChannel())
+      await waitForSettings()
+      return api.checkUpdatesNow(settledChannel(), settledAgentChannel())
     },
     onSuccess: (d) => qc.setQueryData(keys.updates.check, d),
     onError: fail,
   })
-  const apply = useMutation({ mutationFn: (target: 'webui' | 'agent') => api.applyUpdates('apply', target === 'webui' ? channel : undefined, target), onSuccess: (r) => { showToast(r.message ?? r.status ?? m.saved()); void qc.invalidateQueries({ queryKey: keys.updates.check }) }, onError: fail })
+  const apply = useMutation({
+    mutationFn: async (request: { target: 'webui' | 'agent'; confirmedRevision?: string; agentChannel?: 'stable' | 'experimental' }) => {
+      await waitForSettings()
+      return request.target === 'webui' ? api.applyUpdates('apply', settledChannel() ?? channel, 'webui')
+        : api.applyUpdates('apply', undefined, 'agent', { agent_channel: request.agentChannel ?? settledAgentChannel(), ...(request.confirmedRevision ? { confirmed_agent_revision: request.confirmedRevision } : {}) })
+    },
+    onSuccess: (r) => {
+      if (r.confirmation_required && r.candidate_revision && r.agent_channel) {
+        setAgentConfirmation({ revision: r.candidate_revision, supported: r.supported_revision ?? '—', version: r.supported_version ?? '—', channel: r.agent_channel })
+      } else if (r.ok === false) fail(new Error(r.message ?? r.error ?? m.settings_update_check_failed()))
+      else showToast(r.message ?? r.status ?? m.saved())
+      void qc.invalidateQueries({ queryKey: keys.updates.check })
+    }, onError: fail,
+  })
   const registerPasskey = useMutation({
     mutationFn: async () => {
       const opt = await api.passkeyRegisterOptions()
@@ -80,8 +99,14 @@ export function SystemSection() {
         <h2 className="mb-1 text-sm font-semibold text-text">{m.system_updates()}</h2>
         <FieldRow label={m.settings_label_check_updates()} htmlFor="settingsCheckUpdates" inline><Switch id="settingsCheckUpdates" disabled={!canManage} checked={bool('check_for_updates', true)} onCheckedChange={(checked) => set({ check_for_updates: checked })} /></FieldRow>
         <FieldRow label={m.settings_label_auto_apply_updates()} hint={m.settings_desc_auto_apply_updates()} htmlFor="settingsAutoApplyUpdates" inline><Switch id="settingsAutoApplyUpdates" disabled={!canManage || !bool('check_for_updates', true)} checked={bool('auto_apply_updates')} onCheckedChange={(checked) => set({ auto_apply_updates: checked })} /></FieldRow>
-        <FieldRow label={m.settings_label_update_channel()} htmlFor="settingsUpdateChannel" inline>
+        <FieldRow label={m.settings_label_web_update_channel()} htmlFor="settingsUpdateChannel" inline>
           <Select id="settingsUpdateChannel" disabled={!canManage} value={channel} onValueChange={setChannel}>
+            <option value="stable">{m.settings_update_channel_stable()}</option>
+            <option value="experimental">{m.settings_update_channel_experimental()}</option>
+          </Select>
+        </FieldRow>
+        <FieldRow label={m.settings_label_agent_update_channel()} htmlFor="settingsAgentUpdateChannel" inline>
+          <Select id="settingsAgentUpdateChannel" disabled={!canManage} value={agentChannel} onValueChange={setAgentChannel}>
             <option value="stable">{m.settings_update_channel_stable()}</option>
             <option value="experimental">{m.settings_update_channel_experimental()}</option>
           </Select>
@@ -89,13 +114,15 @@ export function SystemSection() {
         <FieldRow label={m.settings_label_ignore_agent_updates()} htmlFor="settingsIgnoreAgentUpdates" inline><Switch id="settingsIgnoreAgentUpdates" checked={bool('ignore_agent_updates')} onCheckedChange={(checked) => set({ ignore_agent_updates: checked })} /></FieldRow>
         <FieldRow label={m.settings_label_whats_new_summary()} htmlFor="settingsWhatsNew" inline><Switch id="settingsWhatsNew" checked={bool('whats_new_summary_enabled')} onCheckedChange={(checked) => set({ whats_new_summary_enabled: checked })} /></FieldRow>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-          {updates.data?.disabled ? <span>—</span> : webUpdate?.error || updates.isError ? <span role="status">{m.settings_update_check_failed()}</span> : webUpdate?.dirty ? <span role="status">{m.system_update_local_changes()}</span> : webUpdate?.metadata_repair ? <span role="status">{m.system_update_incomplete()}</span> : webUpdate?.behind ? <span className="text-accent-text">{m.system_update_available({ name: 'webui', n: webUpdate.behind })}</span> : webUpdate?.behind === 0 ? <span>{m.system_up_to_date()}</span> : updates.data ? <span>{m.system_update_status_unknown()}</span> : null}
+          {updates.data?.disabled ? <span>—</span> : webUpdate?.error || updates.isError ? <span role="status">{m.settings_update_check_failed()}</span> : webUpdate?.dirty ? <span role="status">{m.system_update_local_changes()}</span> : webUpdate?.metadata_repair ? <span role="status">{m.system_update_incomplete()}</span> : webUpdate?.behind ? <span className="text-accent-text">{webUpdate.release_based === true ? m.system_release_available({ name: 'webui' }) : m.system_update_available({ name: 'webui', n: webUpdate.behind })}</span> : webUpdate?.behind === 0 ? <span>{m.system_up_to_date()}</span> : updates.data ? <span>{m.system_update_status_unknown()}</span> : null}
           {webUpdate?.manual_update && (webUpdate.error || webUpdate.dirty || webUpdate.behind !== 0) ? <a className="inline-flex min-h-11 items-center text-accent-text underline" href="https://github.com/MaudeCode/talaria/releases" target="_blank" rel="noreferrer">{m.system_manual_updates()}</a> : null}
           {updates.data?.agent?.behind ? <span className="text-accent-text">{m.system_update_available({ name: 'agent', n: updates.data.agent.behind })}</span> : null}
           <Button onClick={() => checkNow.mutate()} disabled={checkNow.isPending}>{checkNow.isPending ? m.settings_checking() : m.system_check_updates()}</Button>
-          {canManage && canApplyWeb ? <Button variant="primary" onClick={() => apply.mutate('webui')} disabled={apply.isPending}>{webUpdate?.metadata_repair ? m.system_finish_update() : m.system_apply_update()}</Button> : null}
-          {canManage && canApplyAgent ? <Button onClick={() => apply.mutate('agent')} disabled={apply.isPending}>{m.system_apply_agent_update()}</Button> : null}
+          {agentUpdate?.error ? <span role="status">{m.system_agent_update_unknown()}</span> : null}
+          {canManage && canApplyWeb ? <Button variant="primary" onClick={() => apply.mutate({ target: 'webui' })} disabled={apply.isPending}>{webUpdate?.metadata_repair ? m.system_finish_update() : m.system_apply_update()}</Button> : null}
+          {canManage && canApplyAgent ? <Button onClick={() => apply.mutate({ target: 'agent' })} disabled={apply.isPending}>{m.system_apply_agent_update()}</Button> : null}
         </div>
+        {canApplyAgent && agentUpdate?.unsupported === true ? <p role="status" className="mt-2 text-xs text-muted">{m.system_agent_unsupported_warning()}</p> : null}
       </section>
       <section>
         <h2 className="mb-1 text-sm font-semibold text-text">{m.system_health()}</h2>
@@ -146,6 +173,7 @@ export function SystemSection() {
         {canManage && <Button variant="ghost" className="text-error" onClick={() => setConfirmShutdown(true)}>{m.system_shutdown()}</Button>}
       </section>
       <ConfirmDialog open={confirmShutdown} onOpenChange={setConfirmShutdown} title={m.system_shutdown()} description={m.system_shutdown_confirm()} confirmLabel={m.system_shutdown()} cancelLabel={m.cancel()} danger onConfirm={() => shutdown.mutate()} />
+      <ConfirmDialog open={agentConfirmation !== null} onOpenChange={(open) => { if (!open) setAgentConfirmation(null) }} title={m.system_agent_unsupported_title()} description={agentConfirmation ? `${m.system_agent_unsupported_warning()} ${m.system_agent_unsupported_identity({ version: agentConfirmation.version, supported: agentConfirmation.supported.slice(0, 12), candidate: agentConfirmation.revision.slice(0, 12) })}` : ''} confirmLabel={m.system_agent_update_anyway()} cancelLabel={m.cancel()} danger onConfirm={() => { if (agentConfirmation) apply.mutate({ target: 'agent', confirmedRevision: agentConfirmation.revision, agentChannel: agentConfirmation.channel }) }} />
     </div>
   )
 }

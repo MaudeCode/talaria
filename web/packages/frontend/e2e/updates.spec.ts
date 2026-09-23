@@ -26,7 +26,8 @@ test('automatic updates retain the selected channel and can apply a Stable npm u
   await expect.poll(() => settings.auto_apply_updates).toBe(true)
   await page.reload()
   await expect(toggle).toBeChecked()
-  await expect(page.getByRole('combobox', { name: 'Update channel' })).toContainText('Stable')
+  await expect(page.getByRole('combobox', { name: 'Web update channel', exact: true })).toContainText('Stable')
+  await expect(page.getByRole('combobox', { name: 'Agent update channel', exact: true })).toContainText('Stable')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('automatic-updates.png'), fullPage: true })
   await page.getByRole('button', { name: 'Update now', exact: true }).click()
@@ -44,7 +45,7 @@ for (const initialWebBehind of [0, 1]) {
     } }))
     await page.route('**/api/updates/apply', (route) => {
       const body = route.request().postDataJSON() as { target: string; channel?: string }
-      expect(body).toEqual(body.target === 'webui' ? { target: 'webui', channel: 'stable' } : { target: 'agent' })
+      expect(body).toEqual(body.target === 'webui' ? { target: 'webui', channel: 'stable' } : { target: 'agent', agent_channel: 'stable' })
       targets.push(body.target)
       if (body.target === 'webui') webBehind = 0
       else agentBehind = 0
@@ -113,7 +114,7 @@ test('Experimental uses the existing check and update buttons', async ({ page },
   })
   await page.goto('/settings/system')
   await settle(page)
-  await page.getByRole('combobox', { name: 'Update channel', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Web update channel', exact: true }).click()
   await page.getByRole('option', { name: 'Experimental', exact: true }).click()
   await expect.poll(() => channel).toBe('experimental')
   await page.getByRole('button', { name: 'Check now', exact: true }).click()

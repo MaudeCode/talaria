@@ -830,6 +830,143 @@ describe('published release sets (test_tal203_published_releases.py)', () => {
 })
 
 describe('Agent checkout updates', () => {
+  it('counts actual commits, not release gaps, and keeps Experimental distinct from Stable', async () => {
+    const a = agentInstall()
+    for (let i = 0; i < 4; i++) git(a.origin, 'commit', '--allow-empty', '-m', `unreleased ${i}`)
+    git(a.origin, 'tag', '-f', 'v2.0.0') // One release gap contains five real commits.
+    const stable = git(a.origin, 'rev-parse', 'HEAD')
+    git(a.origin, 'commit', '--allow-empty', '-m', 'experimental only')
+    const main = git(a.origin, 'rev-parse', 'HEAD')
+    expect(await checkAgentUpdate(a.agent, runGit)).toMatchObject({ behind: 5, latest_sha: stable, channel: 'stable' })
+    expect(await checkAgentUpdate(a.agent, runGit, 'experimental')).toMatchObject({ behind: 6, latest_sha: main, channel: 'experimental' })
+  })
+
+  it('requires acknowledgement of the exact unsupported Agent target before changing files', async () => {
+    const a = agentInstall()
+    const policy = { supportedRevision: a.v1, supportedVersion: '1.0.0' }
+    const result = await applyAgentUpdate(a.agent, runGit, 'stable', policy)
+    expect(result).toMatchObject({ ok: false, confirmation_required: true, candidate_revision: a.v2 })
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+    expect(await applyAgentUpdate(a.agent, runGit, 'stable', { ...policy, confirmedRevision: a.v1 })).toMatchObject({ ok: false, confirmation_required: true })
+    expect(await applyAgentUpdate(a.agent, runGit, 'stable', { ...policy, confirmedRevision: a.v2 })).toMatchObject({ ok: true })
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
+  })
+
+  it('rejects a moved confirmation and protects local files on the force path', async () => {
+    const a = agentInstall()
+    const policy = { supportedRevision: a.v1, supportedVersion: '1.0.0' }
+    writeFileSync(join(a.agent, 'README'), 'local work\n')
+    expect(await forceAgentUpdate(a.agent, runGit, () => undefined, 'stable', policy)).toMatchObject({ ok: false, confirmation_required: true })
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('local work\n')
+    git(a.origin, 'commit', '--allow-empty', '-m', 'new candidate')
+    git(a.origin, 'tag', 'v3.0.0')
+    const next = git(a.origin, 'rev-parse', 'HEAD')
+    expect(await applyAgentUpdate(a.agent, runGit, 'stable', { ...policy, confirmedRevision: a.v2 })).toMatchObject({ ok: false, candidate_revision: next })
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('local work\n')
+    expect(await applyAgentUpdate(a.agent, runGit, 'stable', { supportedRevision: next, supportedVersion: '3.0.0', confirmedRevision: a.v2 })).toMatchObject({ ok: false })
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+    expect(await applyAgentUpdate(a.agent, runGit, 'stable', { supportedRevision: next, supportedVersion: '3.0.0' })).toMatchObject({ ok: true })
+  })
+
+  it('requires exact confirmation before force-cleaning an already-installed unsupported revision', async () => {
+    const a = agentInstall()
+    await checkAgentUpdate(a.agent, runGit)
+    git(a.agent, 'merge', '--ff-only', a.v2)
+    writeFileSync(join(a.agent, 'README'), 'preserve local edit\n')
+    writeFileSync(join(a.agent, 'untracked.txt'), 'preserve untracked file\n')
+    const policy = { supportedRevision: a.v1, supportedVersion: '1.0.0' }
+    expect(await applyAgentUpdate(a.agent, runGit, 'stable', policy)).toMatchObject({ ok: true, up_to_date: true })
+    expect(await forceAgentUpdate(a.agent, runGit, () => undefined, 'stable', policy)).toMatchObject({ ok: false, confirmation_required: true, candidate_revision: a.v2 })
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('preserve local edit\n')
+    expect(readFileSync(join(a.agent, 'untracked.txt'), 'utf8')).toBe('preserve untracked file\n')
+    expect(await forceAgentUpdate(a.agent, runGit, () => undefined, 'stable', { ...policy, confirmedRevision: a.v2 })).toMatchObject({ ok: true })
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('agent\n')
+    expect(existsSync(join(a.agent, 'untracked.txt'))).toBe(false)
+  })
+
+  it('an unavailable commit count stays unknown and Stable never falls back to a branch', async () => {
+    const a = agentInstall()
+    const unreadable: GitRun = (args, cwd, timeout) => args[0] === 'rev-list' ? Promise.resolve({ ok: false, out: 'unreadable' }) : runGit(args, cwd, timeout)
+    expect(await checkAgentUpdate(a.agent, unreadable)).toMatchObject({ behind: null, error: 'Agent commit count is unavailable' })
+    for (const repo of [a.origin, a.agent]) for (const tag of ['v1.0.0', 'v2.0.0']) git(repo, 'tag', '-d', tag)
+    expect(await checkAgentUpdate(a.agent, runGit)).toMatchObject({ behind: null, error: 'No stable Agent release is available' })
+    expect(await checkAgentUpdate(a.agent, runGit, 'experimental')).toMatchObject({ behind: 1, channel: 'experimental' })
+  })
+
+  it('keys the update cache by the independent Agent channel', async () => {
+    const a = agentInstall()
+    const s = sourceInstall()
+    git(a.origin, 'commit', '--allow-empty', '-m', 'experimental only')
+    const latest = git(a.origin, 'rev-parse', 'HEAD')
+    let channel: 'stable' | 'experimental' = 'stable'
+    const svc = new UpdateService({
+      webRoot: web(s.client), git: (args, cwd, timeout) => cwd === a.agent ? runGit(args, cwd, timeout) : s.run(args, cwd, timeout), getJson: noReleases, identity: s.identity, webuiVersion: 'test',
+      agentDir: () => a.agent, channel: () => 'experimental', agentChannel: () => channel, includeAgent: () => true,
+      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), log: () => undefined,
+    })
+    const stable = await svc.check()
+    expect(stable).toMatchObject({ channel: 'experimental', agent_channel: 'stable', agent: { latest_sha: a.v2, behind: 1 } })
+    channel = 'experimental'
+    expect(svc.cachedStatus()).toMatchObject({ agent: null, stale_agent_channel: true })
+    expect(await svc.check()).toMatchObject({ channel: 'experimental', agent_channel: 'experimental', agent: { latest_sha: latest, behind: 2 } })
+  })
+
+  it.each(['main', 'master'])('recovers a dangling default-branch reference using %s', async (branch) => {
+    const a = agentInstall()
+    if (branch === 'main') git(a.origin, 'branch', '-m', 'master', 'main')
+    else {
+      git(a.origin, 'branch', '-m', 'master', 'old-default')
+      git(a.agent, 'fetch', '--prune', 'origin')
+      git(a.agent, 'remote', 'set-head', 'origin', '--auto')
+      git(a.origin, 'branch', '-m', 'old-default', 'master')
+    }
+    git(a.agent, 'fetch', '--prune', 'origin')
+    const staleHead = git(a.agent, 'symbolic-ref', 'refs/remotes/origin/HEAD')
+    expect(staleHead).not.toBe(`refs/remotes/origin/${branch}`)
+    expect(await checkAgentUpdate(a.agent, runGit, 'experimental')).toMatchObject({ channel: 'experimental', branch: `origin/${branch}`, behind: 1, latest_sha: a.v2 })
+    expect(await applyAgentUpdate(a.agent, runGit, 'experimental', { supportedRevision: a.v2, supportedVersion: '2.0.0' })).toMatchObject({ ok: true })
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
+  })
+
+  it('preserves a resolvable custom default branch instead of preferring main', async () => {
+    const a = agentInstall()
+    git(a.origin, 'branch', 'main', a.v1)
+    git(a.origin, 'branch', '-m', 'master', 'trunk')
+    git(a.agent, 'fetch', '--prune', 'origin')
+    git(a.agent, 'remote', 'set-head', 'origin', '--auto')
+    expect(await checkAgentUpdate(a.agent, runGit, 'experimental')).toMatchObject({ branch: 'origin/trunk', behind: 1, latest_sha: a.v2 })
+  })
+
+  it.each(['main', 'trunk'])('follows the authoritative default %s when the former default is retained', async (branch) => {
+    const a = agentInstall()
+    git(a.origin, 'checkout', '-b', branch)
+    git(a.origin, 'commit', '--allow-empty', '-m', 'new default')
+    const target = git(a.origin, 'rev-parse', 'HEAD')
+    git(a.agent, 'fetch', 'origin', '--tags', '--force')
+    expect(git(a.agent, 'symbolic-ref', 'refs/remotes/origin/HEAD')).toBe('refs/remotes/origin/master')
+    expect(git(a.agent, 'rev-parse', 'origin/master')).toBe(a.v2)
+    expect(await checkAgentUpdate(a.agent, runGit, 'experimental')).toMatchObject({ branch: `origin/${branch}`, behind: 2, latest_sha: target })
+    expect(await applyAgentUpdate(a.agent, runGit, 'experimental', { supportedRevision: target, supportedVersion: '3.0.0' })).toMatchObject({ ok: true })
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(target)
+  })
+
+  it('fails closed when the authoritative default cannot be refreshed', async () => {
+    const a = agentInstall()
+    writeFileSync(join(a.agent, 'README'), 'preserve local edit\n')
+    const unavailable: GitRun = (args, cwd, timeout) => args[0] === 'remote' && args[1] === 'set-head'
+      ? Promise.resolve({ ok: false, out: 'remote unavailable' }) : runGit(args, cwd, timeout)
+    const stable = await checkAgentUpdate(a.agent, unavailable, 'stable')
+    expect(stable.behind).toBe(1)
+    expect(stable.error).toBeUndefined()
+    expect(await checkAgentUpdate(a.agent, unavailable, 'experimental')).toMatchObject({ behind: null, error: 'Agent default branch could not be refreshed from origin' })
+    expect(await applyAgentUpdate(a.agent, unavailable, 'experimental')).toMatchObject({ ok: false })
+    expect(await forceAgentUpdate(a.agent, unavailable, () => undefined, 'experimental')).toMatchObject({ ok: false })
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('preserve local edit\n')
+  })
+
   function agentInstall(): { agent: string; origin: string; v1: string; v2: string } {
     const root = tmp()
     const origin = join(root, 'origin')
@@ -853,7 +990,7 @@ describe('Agent checkout updates', () => {
     const a = agentInstall()
     expect(await checkAgentUpdate(null, runGit)).toEqual({ name: 'agent', behind: null, no_git: true })
     const status = await checkAgentUpdate(a.agent, runGit)
-    expect(status).toMatchObject({ name: 'agent', behind: 1, current_sha: 'v1.0.0', latest_sha: 'v2.0.0', release_based: true, dirty: false, channel: 'stable' })
+    expect(status).toMatchObject({ name: 'agent', behind: 1, current_sha: a.v1, latest_sha: a.v2, release_based: true, dirty: false, channel: 'stable' })
     writeFileSync(join(a.agent, 'notes.txt'), 'untracked survives\n')
     writeFileSync(join(a.agent, 'README'), 'local note\n')
     const gateway: string[] = []
@@ -862,7 +999,8 @@ describe('Agent checkout updates', () => {
       agentDir: () => a.agent, channel: () => 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => gateway.push('restart'), gatewayRestart: () => { gateway.push('gateway'); return Promise.resolve(gateway.length === 1 ? { status: 'failed', message: 'launchd rotating' } : { status: 'completed' }) }, sleep: () => Promise.resolve(), log: () => undefined,
     })
-    const result = await svc.apply('agent')
+    expect(await svc.apply('agent')).toMatchObject({ ok: false, confirmation_required: true })
+    const result = await svc.apply('agent', null, () => true, { confirmedRevision: a.v2 })
     expect(result).toMatchObject({ ok: true, target: 'agent', ref: 'v2.0.0', restart_scheduled: true, gateway_restart: 'completed' })
     expect(gateway).toEqual(['gateway', 'gateway', 'restart'])
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
@@ -884,7 +1022,7 @@ describe('Agent checkout updates', () => {
     const head = git(a.agent, 'rev-parse', 'HEAD')
     expect((await forceAgentUpdate(a.agent, runGit, () => undefined)).refused_rewind).toBe(true)
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(head)
-    expect((await applyAgentUpdate(a.agent, runGit)).ok).toBe(true) // branch fallthrough: nothing to pull, HEAD keeps its local commit
+    expect(await applyAgentUpdate(a.agent, runGit)).toMatchObject({ ok: false, manual_update: true }) // Stable never falls through to a branch.
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(head)
   })
 
@@ -904,7 +1042,8 @@ describe('Agent checkout updates', () => {
     rmSync(join(a.agent, '.git/index.lock'))
     rmSync(join(a.agent, '.git/refs/heads/master.lock'))
     expect(inventoryLocks(a.agent)).toEqual({ well_known_lock_present: false, well_known_lock_path: join(a.agent, '.git/index.lock'), other_locks: [] })
-    const retried = await svc.clearLock('agent')
+    expect(await svc.clearLock('agent')).toMatchObject({ ok: false, confirmation_required: true })
+    const retried = await svc.clearLock('agent', { confirmedRevision: a.v2 })
     expect(retried).toMatchObject({ ok: true, lock_recovery: { action: 'no-lock-found', other_locks: [] } })
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
   })

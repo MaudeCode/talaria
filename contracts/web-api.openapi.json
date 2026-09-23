@@ -17519,6 +17519,13 @@
                     "update_channel": {
                       "type": "string"
                     },
+                    "agent_update_channel": {
+                      "enum": [
+                        "stable",
+                        "experimental"
+                      ],
+                      "type": "string"
+                    },
                     "update_channel_version": {
                       "anyOf": [
                         {
@@ -17704,6 +17711,13 @@
                       "type": "string"
                     },
                     "update_channel": {
+                      "type": "string"
+                    },
+                    "agent_update_channel": {
+                      "enum": [
+                        "stable",
+                        "experimental"
+                      ],
                       "type": "string"
                     },
                     "update_channel_version": {
@@ -22579,6 +22593,13 @@
                     "channel": {
                       "type": "string"
                     },
+                    "agent_channel": {
+                      "enum": [
+                        "stable",
+                        "experimental"
+                      ],
+                      "type": "string"
+                    },
                     "checked_at": {
                       "type": "number"
                     },
@@ -22591,6 +22612,25 @@
                           "type": "object",
                           "properties": {
                             "name": {
+                              "type": "string"
+                            },
+                            "channel": {
+                              "enum": [
+                                "stable",
+                                "experimental"
+                              ],
+                              "type": "string"
+                            },
+                            "unsupported": {
+                              "type": "boolean"
+                            },
+                            "supported_revision": {
+                              "type": "string"
+                            },
+                            "supported_version": {
+                              "type": "string"
+                            },
+                            "candidate_revision": {
                               "type": "string"
                             },
                             "behind": {
@@ -22676,6 +22716,25 @@
                           "type": "object",
                           "properties": {
                             "name": {
+                              "type": "string"
+                            },
+                            "channel": {
+                              "enum": [
+                                "stable",
+                                "experimental"
+                              ],
+                              "type": "string"
+                            },
+                            "unsupported": {
+                              "type": "boolean"
+                            },
+                            "supported_revision": {
+                              "type": "string"
+                            },
+                            "supported_version": {
+                              "type": "string"
+                            },
+                            "candidate_revision": {
                               "type": "string"
                             },
                             "behind": {
@@ -22785,6 +22844,13 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "agent_channel": {
+                    "enum": [
+                      "stable",
+                      "experimental"
+                    ],
+                    "type": "string"
                   }
                 }
               }
@@ -22808,6 +22874,13 @@
                     "channel": {
                       "type": "string"
                     },
+                    "agent_channel": {
+                      "enum": [
+                        "stable",
+                        "experimental"
+                      ],
+                      "type": "string"
+                    },
                     "checked_at": {
                       "type": "number"
                     },
@@ -22820,6 +22893,25 @@
                           "type": "object",
                           "properties": {
                             "name": {
+                              "type": "string"
+                            },
+                            "channel": {
+                              "enum": [
+                                "stable",
+                                "experimental"
+                              ],
+                              "type": "string"
+                            },
+                            "unsupported": {
+                              "type": "boolean"
+                            },
+                            "supported_revision": {
+                              "type": "string"
+                            },
+                            "supported_version": {
+                              "type": "string"
+                            },
+                            "candidate_revision": {
                               "type": "string"
                             },
                             "behind": {
@@ -22905,6 +22997,25 @@
                           "type": "object",
                           "properties": {
                             "name": {
+                              "type": "string"
+                            },
+                            "channel": {
+                              "enum": [
+                                "stable",
+                                "experimental"
+                              ],
+                              "type": "string"
+                            },
+                            "unsupported": {
+                              "type": "boolean"
+                            },
+                            "supported_revision": {
+                              "type": "string"
+                            },
+                            "supported_version": {
+                              "type": "string"
+                            },
+                            "candidate_revision": {
                               "type": "string"
                             },
                             "behind": {
@@ -23018,6 +23129,17 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "agent_channel": {
+                    "enum": [
+                      "stable",
+                      "experimental"
+                    ],
+                    "type": "string"
+                  },
+                  "confirmed_agent_revision": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{40}$"
                   }
                 }
               }
@@ -23044,7 +23166,26 @@
                     "message": {
                       "type": "string"
                     },
-                    "lock": {}
+                    "lock": {},
+                    "confirmation_required": {
+                      "type": "boolean"
+                    },
+                    "candidate_revision": {
+                      "type": "string"
+                    },
+                    "supported_revision": {
+                      "type": "string"
+                    },
+                    "supported_version": {
+                      "type": "string"
+                    },
+                    "agent_channel": {
+                      "enum": [
+                        "stable",
+                        "experimental"
+                      ],
+                      "type": "string"
+                    }
                   },
                   "additionalProperties": {}
                 }
@@ -23079,6 +23220,17 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "agent_channel": {
+                    "enum": [
+                      "stable",
+                      "experimental"
+                    ],
+                    "type": "string"
+                  },
+                  "confirmed_agent_revision": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{40}$"
                   }
                 }
               }
@@ -23105,7 +23257,26 @@
                     "message": {
                       "type": "string"
                     },
-                    "lock": {}
+                    "lock": {},
+                    "confirmation_required": {
+                      "type": "boolean"
+                    },
+                    "candidate_revision": {
+                      "type": "string"
+                    },
+                    "supported_revision": {
+                      "type": "string"
+                    },
+                    "supported_version": {
+                      "type": "string"
+                    },
+                    "agent_channel": {
+                      "enum": [
+                        "stable",
+                        "experimental"
+                      ],
+                      "type": "string"
+                    }
                   },
                   "additionalProperties": {}
                 }
@@ -23140,6 +23311,17 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "agent_channel": {
+                    "enum": [
+                      "stable",
+                      "experimental"
+                    ],
+                    "type": "string"
+                  },
+                  "confirmed_agent_revision": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{40}$"
                   }
                 }
               }
@@ -23166,7 +23348,26 @@
                     "message": {
                       "type": "string"
                     },
-                    "lock": {}
+                    "lock": {},
+                    "confirmation_required": {
+                      "type": "boolean"
+                    },
+                    "candidate_revision": {
+                      "type": "string"
+                    },
+                    "supported_revision": {
+                      "type": "string"
+                    },
+                    "supported_version": {
+                      "type": "string"
+                    },
+                    "agent_channel": {
+                      "enum": [
+                        "stable",
+                        "experimental"
+                      ],
+                      "type": "string"
+                    }
                   },
                   "additionalProperties": {}
                 }
