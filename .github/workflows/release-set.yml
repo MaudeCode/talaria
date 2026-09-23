@@ -386,7 +386,7 @@ jobs:
         TALARIA_S3_BUCKET: talaria-release
         TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
         TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
-      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/release-results"'
+      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/release-results" --receipts'
     - name: Assemble candidate from successful job outputs
       run: |
         set -euo pipefail
@@ -654,7 +654,7 @@ jobs:
         TALARIA_S3_BUCKET: talaria-release
         TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
         TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
-      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/release-results"'
+      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/release-results" --receipts'
     - name: Assemble and publish only the completed set
       env:
         GH_TOKEN: ${{ github.token }}

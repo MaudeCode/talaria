@@ -154,6 +154,18 @@ class ArtifactTests(unittest.TestCase):
         self.assertTrue((self.root / "named/release-plan/receipt.json").is_file())
         self.assertFalse((self.root / "missing").exists())
 
+    def test_receipt_restore_skips_payload_handoffs(self):
+        # Assembly reads receipts, the plan and npm tarballs; the Web image and iOS payloads stay on the NAS.
+        with patch("sys.argv", ["artifacts.py", "put", "release-plan", str(self.source), "web-image", str(self.source)]):
+            artifacts.main()
+        mapping = json.loads((self.root / "outputs").read_text().split("=", 1)[1])
+        needs = {"build-gate": {"outputs": {"artifacts": json.dumps(mapping)}}}
+        with patch.dict(os.environ, {"RELEASE_NEEDS": json.dumps(needs)}), \
+                patch("sys.argv", ["artifacts.py", "get", str(self.root / "receipts"), "--receipts"]):
+            artifacts.main()
+        self.assertTrue((self.root / "receipts/release-plan/receipt.json").is_file())
+        self.assertFalse((self.root / "receipts/web-image").exists())
+
     def test_transfer_runs_the_shared_helper_and_reports_failures_without_secrets(self):
         helper = Path(artifacts.__file__).resolve().parents[1] / "scripts/s3-artifact"
         self.assertTrue(self.real_transfer, "artifacts.transfer must delegate to the shared NAS helper")

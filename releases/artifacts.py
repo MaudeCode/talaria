@@ -156,6 +156,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("put", "get", "forward"))
     parser.add_argument("paths", nargs="*")
+    parser.add_argument("--receipts", action="store_true",
+                        help="get only the forwarded handoffs release assembly reads, never the image or iOS payloads")
     args = parser.parse_args()
     if args.operation == "put":
         if not args.paths or len(args.paths) % 2:
@@ -165,7 +167,11 @@ def main():
         if not args.paths:
             parser.error("get requires DESTINATION and optional artifact names")
         available = references()
-        names = args.paths[1:] or list(available)
+        if args.receipts:
+            from collect import HANDOFFS
+            names = [name for name in HANDOFFS if name in available]
+        else:
+            names = args.paths[1:] or list(available)
         if not names:
             raise ValueError("no producer outputs supplied")
         for name in names:

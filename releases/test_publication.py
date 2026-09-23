@@ -371,6 +371,20 @@ class PublicationTests(unittest.TestCase):
         self.assertIn("::notice title=contract-fixture::key=$key sha256=$sha256",
                       "\n".join(step.get("run", "") for step in probe["steps"]))
 
+    def test_assembly_restores_only_receipt_handoffs(self):
+        # Candidate and publication assembly must not pull the Web image or iOS payloads off the NAS.
+        root = Path(__file__).resolve().parents[1]
+        document = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+            str(root / ".github/workflows/release-set.yml"),
+        ], text=True))
+        for name in ("candidate", "publish-set"):
+            runs = [step.get("run", "") for step in document["jobs"][name]["steps"]]
+            restores = [run for run in runs if "artifacts.py get" in run]
+            with self.subTest(job=name):
+                self.assertTrue(restores)
+                self.assertTrue(all("--receipts" in run for run in restores), restores)
+
     def test_buildx_builders_are_never_fixed_names(self):
         # A Docker daemon that outlives a job would reject a second builder with the same fixed name.
         root = Path(__file__).resolve().parents[1]
