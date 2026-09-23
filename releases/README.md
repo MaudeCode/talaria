@@ -52,24 +52,46 @@ manifest. Component notes and signed tags keep their own App/Web/Relay namespace
 See [Web update behavior](../web/docs/talaria-updates.md) for authentication and
 source-install safety boundaries.
 
-Release builds run on the existing `maude-mac` self-hosted runner. Private and
-large handoffs stay under its
-`~/.local/share/talaria-release-runs/<run>/<attempt>/` directory. The public Web
-OCI archive and npm tarballs cross once through a one-day Actions artifact to a
-GitHub-hosted publication job, which npm trusted publishing requires. Its small
-publication receipt crosses back and joins the locally retained release set.
-Producer jobs record content digests in GitHub job outputs; local consumers
-verify those digests, the workflow source, run and runner identity before
-restoring files. Keep the `maude-mac` label assigned to this single runner; a
-different self-hosted runner cannot consume its handoffs.
+## Runners and handoffs
 
-Successful final jobs retain the manifest and sanitized contract diagnostics,
-then remove large build handoffs from all attempts of that run. The manifest is
-also printed in the final job log and summary. Failed runs retain their local
-files for inspection and same-run retries. After preserving required failure
-evidence, the runner owner may remove that specific run directory. Each
-component still has a separate environment and job token. No spending-budget
-change is required.
+The single `maude-mac` runner is reserved for work that needs Xcode, an iOS
+simulator or Apple signing. Every other job runs on the `ghar-set-maudecode`
+Linux pool, except npm trusted publishing, which requires a GitHub-hosted
+`ubuntu-latest` job. `releases/test_publication.py` fails when any other job
+uses the Mac label. Current Mac jobs and their native dependency:
+
+| Workflow | Job | Native dependency |
+|---|---|---|
+| `pr-ci.yml` | `test` | `xcodebuild` build/test in the iOS simulator, including the fixture-backed contract classes |
+| `pr-ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
+| `fuzz-soak.yml` | `soak` | `xcodebuild test` in the simulator |
+| `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
+| `release-set.yml` | `contracts` | compiles and tests the selected and previously released App in the simulator |
+| `release-set.yml` | `app-dry-build` | unsigned `xcodebuild archive` |
+
+TAL-268 moved the Web contract probe, Docker smoke, release-plan preparation,
+Web/Relay fixture suites, Agent verification, Relay/Web builds, publication
+receipt jobs, manifest assembly, TestFlight inspection and cutover recovery
+off the Mac. PR Web/contract changes run the disposable Web probe on Linux;
+its exact live responses reach the Mac `test` job as a same-run artifact whose
+SHA-256 travels in the probe job's outputs, and the App's real request,
+decoding and SSE contract classes run against them from one build-for-testing.
+
+Release handoffs cross runners as same-run Actions artifacts. `artifacts.py put`
+stages a directory as `$RUNNER_TEMP/release-handoffs/<run>/<attempt>/<name>.tar`
+and records its SHA-256 with the run, attempt and workflow source in the job
+outputs; the job uploads that directory as `release-handoffs-<job>-<run>-<attempt>`.
+Consumers download every `release-handoffs-*` artifact of the run and `get`
+restores only archives named by forwarded producer outputs whose run, source
+and digest match and whose attempt is not in the future; archives are
+extracted with the stdlib `data` filter, so no member can escape. Downloaded
+archives without an authenticated reference are never read. The large Web OCI
+archive is uploaded separately for one day for the publication job; the
+signed IPA and dSYMs travel as handoffs to the Linux publication job and the
+dry-run App archive stays in the Mac job's temporary directory. Successful
+runs leave nothing on any runner; artifacts expire with the repository's
+retention. Each component still has a separate environment and job token. No
+spending-budget change is required.
 
 ## Workflow commands
 
@@ -181,8 +203,9 @@ If a reviewed publishing-tool fix is needed after all three component builds
 and Relay/Web publication succeeded, use the **Recover failed cutover App
 publication** workflow on main. Supply the original production-cutover run and
 attempt, and explicitly confirm publication. It authenticates the original
-GitHub job results and retained artifact hashes, checks that the release is
-still current, and resumes the same IPA/upload using reviewed publishing tools.
+GitHub job results, downloads that run's handoff artifacts and checks each
+against its recorded hash, checks that the release is still current, and
+resumes the same IPA/upload using reviewed publishing tools.
 Original receipts keep their original run URLs; resumed upload evidence names
 the actual recovery run. It neither rebuilds the App nor republishes Relay/Web.
 Missing, changed, or incompatible original evidence fails closed. After a

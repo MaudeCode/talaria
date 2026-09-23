@@ -79,8 +79,12 @@ jobs:
 
   test:
     name: Build and Test
-    needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') }}
+    # Runs for App changes and for Web/contract changes. The latter reuse one
+    # build-for-testing and run only the native contract classes against the
+    # Linux probe's fixture; a failed or missing probe skips the job and the
+    # CI Gate then fails it as a required skipped check.
+    needs: [changes, contracts]
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || needs.changes.outputs.contracts != 'false') && (needs.contracts.result == 'success' || needs.contracts.result == 'skipped') }}
     runs-on: maude-mac
     timeout-minutes: 90
 
@@ -90,7 +94,18 @@ jobs:
       DERIVED_DATA_PATH: DerivedData
       RESULT_BUNDLE_PATH: TestResults.xcresult
       TEST_WORKER_COUNT: 2
+      APP_TESTS_REQUIRED: ${{ needs.changes.result != 'success' || needs.changes.outputs.app != 'false' }}
       APP_UI_REQUIRED: ${{ github.event_name != 'pull_request' || needs.changes.outputs.app_ui != 'false' }}
+      CONTRACT_FIXTURE: ${{ needs.contracts.outputs.fixture }}
+      CONTRACT_FIXTURE_SHA256: ${{ needs.contracts.outputs.fixture_sha256 }}
+      CONTRACT_TEST_CLASSES: >-
+        TalariaTests/ContractReadinessTests
+        TalariaTests/SharedContractTests
+        TalariaTests/APIClientAuthAndErrorTests
+        TalariaTests/APIClientSessionListTests
+        TalariaTests/APIClientSessionMutationTests
+        TalariaTests/SSEClientTests
+        TalariaTests/StreamReconnectContractTests
       # Measurement-only UI classes (TAL-75). They assert no behaviour, and
       # together they add several minutes of scrolling and relaunching, so pull
       # requests skip them; affected App pushes to main run and record them. The
@@ -111,6 +126,26 @@ jobs:
 
       - name: Show Xcode version
         run: xcodebuild -version
+
+      - name: Download the live Web contract fixture
+        if: needs.contracts.result == 'success'
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.contracts.outputs.fixture }}
+          path: ${{ runner.temp }}/contract-fixture
+
+      - name: Verify the fixture and stage it for the App test bundle
+        if: needs.contracts.result == 'success'
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/contract-fixture/live-responses.json"
+          echo "${CONTRACT_FIXTURE_SHA256}  ${fixture}" | shasum -a 256 --check
+          # scripts/test-ios transports the same manifest through the test-only
+          # display name and the TALARIA_LIVE_CONTRACT compilation condition.
+          {
+            echo "TALARIA_UPSTREAM_CONTRACT_RESPONSES=base64:$(base64 < "$fixture" | tr -d '\n')"
+            echo "CONTRACT_TESTS_REQUIRED=true"
+          } >> "$GITHUB_ENV"
 
       - name: Select simulator
         id: sim
@@ -144,6 +179,11 @@ jobs:
         run: |
           set -euo pipefail
           start_seconds=${SECONDS}
+          contract_settings=()
+          if [[ -n "${TALARIA_UPSTREAM_CONTRACT_RESPONSES:-}" ]]; then
+            # shellcheck disable=SC2016 # xcodebuild expands $(inherited) itself.
+            contract_settings=("INFOPLIST_KEY_CFBundleDisplayName=${TALARIA_UPSTREAM_CONTRACT_RESPONSES}" 'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) TALARIA_LIVE_CONTRACT')
+          fi
           xcodebuild build-for-testing \
             -project "${PROJECT_PATH}" \
             -scheme "${SCHEME}" \
@@ -151,6 +191,7 @@ jobs:
             -derivedDataPath "${DERIVED_DATA_PATH}" \
             -disableAutomaticPackageResolution \
             -showBuildTimingSummary \
+            "${contract_settings[@]}" \
             APP_IDENTIFIER_SUFFIX=.xctest \
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGNING_REQUIRED=NO \
@@ -171,7 +212,12 @@ jobs:
           # The fuzz soak class reruns the PR fuzz properties at a far larger
           # seed budget; the scheduled Fuzz Soak workflow owns it (TAL-85).
           test_options=("-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests")
-          if [[ "${APP_UI_REQUIRED}" == "false" ]]; then
+          if [[ "${APP_TESTS_REQUIRED}" == "false" ]]; then
+            # Web/contract-only change: the fixture-backed native contract classes are the whole selection.
+            for contract_class in ${CONTRACT_TEST_CLASSES}; do
+              test_options+=("-only-testing:${contract_class}")
+            done
+          elif [[ "${APP_UI_REQUIRED}" == "false" ]]; then
             test_options+=("-only-testing:TalariaTests" "-only-testing:TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList")
           fi
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
@@ -199,6 +245,18 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             PROVISIONING_PROFILE_SPECIFIER=
           duration_seconds=$((SECONDS - start_seconds))
+          if [[ "${CONTRACT_TESTS_REQUIRED:-false}" == "true" ]]; then
+            # The fixture must have reached the executed bundle and every contract class must have passed.
+            plist=$(find "${DERIVED_DATA_PATH}/Build/Products" -path '*/TalariaTests.xctest/Info.plist' -print -quit)
+            [[ "$(/usr/bin/plutil -extract CFBundleDisplayName raw "${plist}")" == "${TALARIA_UPSTREAM_CONTRACT_RESPONSES}" ]]
+            xcrun xcresulttool get test-results tests --path "${RESULT_BUNDLE_PATH}" --compact > contract-results.json
+            for contract_class in ${CONTRACT_TEST_CLASSES}; do
+              /usr/bin/jq -e --arg prefix "test://com.apple.xcode/Talaria/${contract_class}/" '
+                any(.. | objects; .nodeType? == "Test Case" and .result? == "Passed" and ((.nodeIdentifierURL? // "") | startswith($prefix)))
+              ' contract-results.json >/dev/null || { echo "Native contract class ${contract_class} did not pass" >&2; exit 1; }
+            done
+            echo "- Native contract tests: fixture ${CONTRACT_FIXTURE} (${CONTRACT_FIXTURE_SHA256})" >> "${GITHUB_STEP_SUMMARY}"
+          fi
           echo "Test-without-building duration: ${duration_seconds}s"
           echo "- Test without building (${TEST_WORKER_COUNT} workers): ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
@@ -256,7 +314,7 @@ jobs:
       - name: Reject skipped UI tests
         run: |
           options=()
-          if [[ "${APP_UI_REQUIRED}" == "false" ]]; then options+=(--require-launch-smoke); fi
+          if [[ "${APP_TESTS_REQUIRED}" == "true" && "${APP_UI_REQUIRED}" == "false" ]]; then options+=(--require-launch-smoke); fi
           scripts/assert-no-skipped-ui-tests "${RESULT_BUNDLE_PATH}" "${options[@]}"
 
       # Performance budgets are only useful against previous runs, so every run
@@ -356,21 +414,42 @@ jobs:
     uses: ./.github/workflows/relay-verify.yml
 
   contracts:
+    name: Web contract probe
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false') }}
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
+    timeout-minutes: 20
+    outputs:
+      fixture: ${{ steps.fixture.outputs.name }}
+      fixture_sha256: ${{ steps.fixture.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v7
+      - name: Prepare the probe runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsh
       - name: Set up Node for the disposable Web server
         uses: actions/setup-node@v4
         with:
           node-version-file: web/.nvmrc
-      - name: Prepare the contract simulator pool
-        env:
-          IOS_SIMULATOR_POOL_SIZE: "1"
-        run: scripts/setup-ios-test-pool
-      - name: Check local App to Web HTTP and SSE contracts
-        run: scripts/validate-upstream-contract
+      - name: Probe local Web HTTP and SSE contracts and record the live responses
+        run: scripts/validate-upstream-contract --server-only --responses-output "$RUNNER_TEMP/contract-fixture/live-responses.json"
+      # The Build and Test job on the Mac runner embeds this exact fixture in
+      # the App test bundle and runs the native request/decoding/SSE contract
+      # tests against it, so Web changes need no separate Mac job.
+      - name: Record the fixture digest
+        id: fixture
+        run: |
+          set -euo pipefail
+          echo "name=contract-fixture-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(sha256sum "$RUNNER_TEMP/contract-fixture/live-responses.json" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Upload the live response fixture
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.fixture.outputs.name }}
+          path: ${{ runner.temp }}/contract-fixture
+          retention-days: 1
+          if-no-files-found: error
 
   gate:
     name: CI Gate

@@ -32,6 +32,31 @@ class ContractRunnerTests(unittest.TestCase):
                 runner.verify_app_web(plan, Path("out"))
 
 
+    def test_only_selector_splits_native_app_runs_from_portable_fixture_suites(self):
+        plan = {"components": {"app": {"sourceRevision": "a" * 40}, "web": {"sourceRevision": "b" * 40},
+                               "relay": {"sourceRevision": "c" * 40}}, "supportedWebSources": ["b" * 40, "d" * 40]}
+        for only, native, portable in (("app", True, False), ("fixtures", False, True), (None, True, True)):
+            with self.subTest(only=only), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / "plan.json").write_text(json.dumps(plan))
+                argv = ["check", "--plan", str(root / "plan.json"), "--output", str(root / "out")] + (["--only", only] if only else [])
+                commands = []
+
+                def run(command, **kwargs):
+                    commands.append(command)
+                    if command[:2] == ["git", "clone"]:
+                        (Path(command[-1]) / "contracts/fixtures").mkdir(parents=True)
+
+                with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "run", side_effect=run), \
+                        patch.object(runner.subprocess, "check_output", return_value=b"{}"):
+                    runner.main()
+                self.assertEqual(any("check-previous-app.py" in str(command[1]) for command in commands), native)
+                self.assertEqual(any(command[:2] == ["pnpm", "install"] for command in commands), portable)
+                record = json.loads((root / "out/verification.json").read_text())
+                self.assertEqual(record["supportedWebSources"], ["b" * 40, "d" * 40])
+                self.assertEqual(record["result"], "success")
+
+
 class AgentRunnerTests(unittest.TestCase):
     def test_selected_checkout_stays_in_shared_scratch_and_is_removed(self):
         spec = importlib.util.spec_from_file_location("agent_runner", Path(__file__).resolve().parents[1] / "scripts/check-release-agent.py")

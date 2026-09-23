@@ -6,10 +6,9 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 
-from artifacts import digest, location
+import artifacts
 from cli import REPOSITORY, ROOT, load
 from plan import git
 from publish import require_current_predecessor
@@ -21,7 +20,7 @@ def api(path):
     return subprocess.check_output(["gh", "api", f"repos/{REPOSITORY}/{path}", *flags], text=True)
 
 
-def authenticate(run, attempt, metadata, jobs, log, runner):
+def authenticate(run, attempt, metadata, jobs, log):
     expected = {"id": int(run), "run_attempt": int(attempt), "event": "workflow_dispatch",
                 "head_branch": "main", "path": ".github/workflows/production-cutover.yml",
                 "status": "completed", "conclusion": "failure"}
@@ -33,8 +32,7 @@ def authenticate(run, attempt, metadata, jobs, log, runner):
                              ("web-publish", "success"), ("Publish iOS app", "failure"), ("publish-set", "failure")):
         matching = [job for job in jobs if job["name"] == "release / " + name]
         if (len(matching) != 1 or matching[0].get("conclusion") != conclusion
-                or matching[0].get("runner_name") != runner or matching[0].get("run_attempt") != int(attempt)
-                or matching[0].get("run_id") != int(run)):
+                or matching[0].get("run_attempt") != int(attempt) or matching[0].get("run_id") != int(run)):
             raise ValueError("original cutover jobs do not authorize App-only recovery")
     # This is the runner's env dump from the failed publication gate, fetched
     # from GitHub's job-log endpoint, never caller-supplied artifact references.
@@ -53,7 +51,7 @@ def authenticate(run, attempt, metadata, jobs, log, runner):
             if key in references and references[key] != reference:
                 raise ValueError("conflicting original artifact producers")
             if (reference.get("name") != key or reference.get("run") != run
-                    or reference.get("runner") != runner or reference.get("source") != metadata["head_sha"]
+                    or reference.get("source") != metadata["head_sha"]
                     or not re.fullmatch(r"[1-9][0-9]*", reference.get("attempt", ""))
                     or int(reference["attempt"]) > int(attempt)
                     or not re.fullmatch(r"[a-f0-9]{64}", reference.get("sha256", ""))):
@@ -69,15 +67,14 @@ def authenticate(run, attempt, metadata, jobs, log, runner):
 
 
 def restore(references, destination):
-    # Check every producer digest before copying anything into this run.
+    # The original run's downloaded archives are checked against every producer digest before any is extracted.
+    for reference in references.values():
+        try:
+            artifacts.stored(reference)
+        except ValueError as error:
+            raise ValueError("retained handoff differs from its original producer") from error
     for name, reference in references.items():
-        if digest(location(reference, name)) != reference["sha256"]:
-            raise ValueError("retained handoff differs from its original producer")
-    for name, reference in references.items():
-        target = destination / name
-        shutil.copytree(location(reference, name), target, symlinks=True)
-        if digest(target) != reference["sha256"]:
-            raise ValueError("retained handoff changed during recovery")
+        artifacts.restore(reference, destination / name)
 
 
 def main():
@@ -101,7 +98,7 @@ def main():
     if len(final) != 1:
         raise ValueError("missing original publication gate")
     log = api(f"actions/jobs/{int(final[0]['id'])}/logs")
-    source, references = authenticate(args.run, args.attempt, metadata, jobs["jobs"], log, os.environ["RUNNER_NAME"])
+    source, references = authenticate(args.run, args.attempt, metadata, jobs["jobs"], log)
     for revision in (metadata["head_sha"], source):
         git(ROOT, "merge-base", "--is-ancestor", revision, os.environ["GITHUB_SHA"])
     restore(references, args.destination)

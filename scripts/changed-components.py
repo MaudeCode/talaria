@@ -14,7 +14,7 @@ import sys
 SUITES = {"app", "app_tooling", "web_server", "web_frontend", "docker", "relay", "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "relay", "contracts"}
 WEB_BUILD = {"web_server", "web_frontend", "docker", "contracts"}
-JOBS = {"test": {"app"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend"},
+JOBS = {"test": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
 WORKFLOWS = {
     "pr-ci.yml": {"tooling"},

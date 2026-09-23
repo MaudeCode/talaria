@@ -38,7 +38,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prepare:
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 15
     outputs:
       source: ${{ steps.plan.outputs.source }}
@@ -81,12 +81,18 @@ jobs:
         fi
         if [[ "$DRY_RUN" == true ]]; then options+=(--dry-run); fi
         "$RELEASE_PYTHON" releases/cli.py prepare --request "$RUNNER_TEMP/request.json" --output "$RUNNER_TEMP/release-plan" "${options[@]}"
-    - name: Store release-plan on the release runner
+    - name: Stage release-plan for other runners
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put release-plan "$RUNNER_TEMP/release-plan"'
+    - name: Upload release handoffs
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   contracts:
+    # Mac: compiles and tests the selected and previously released App in the iOS simulator.
     needs: prepare
     runs-on: maude-mac
     timeout-minutes: 120
@@ -97,16 +103,22 @@ jobs:
         fetch-depth: 0
     - uses: ./.github/actions/release-python
     - uses: ./.github/actions/release-node
+    - name: Download release handoffs
+      uses: actions/download-artifact@v7
+      with:
+        pattern: release-handoffs-*
+        path: ${{ runner.temp }}/release-handoffs-in
+        merge-multiple: true
     - name: Restore release-plan
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - name: Prepare simulator pool
       env:
         IOS_SIMULATOR_POOL_SIZE: '1'
       run: app/scripts/setup-ios-test-pool
-    - name: Verify selected component contracts
+    - name: Verify the selected App against every retained Web source
       run: |
         "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name currentContracts --output "$RUNNER_TEMP/contract-receipts/currentContracts.json" -- \
-          "$RELEASE_PYTHON" scripts/check-release-contracts.py --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/current-contracts"
+          "$RELEASE_PYTHON" scripts/check-release-contracts.py --only app --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/current-contracts"
     - name: Verify previously released App against selected Web
       run: |
         set -euo pipefail
@@ -114,26 +126,63 @@ jobs:
         web=$(/usr/bin/plutil -extract components.web.sourceRevision raw "$RUNNER_TEMP/release-plan/plan.json")
         "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name previousAppContracts --output "$RUNNER_TEMP/contract-receipts/previousAppContracts.json" -- \
           "$RELEASE_PYTHON" scripts/check-previous-app.py --app-ref "$previous" --web-ref "$web" --output "$RUNNER_TEMP/previous-app"
-    - name: Store contract-receipts on the release runner
+    - name: Stage contract-receipts for other runners
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put contract-receipts "$RUNNER_TEMP/contract-receipts"'
-    - name: Retain sanitized contract diagnostics locally
+    - name: Upload release handoffs
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/release-handoffs
+    - name: Retain sanitized App contract diagnostics
       if: always()
       continue-on-error: true
-      run: |
-        set -euo pipefail
-        mkdir -p "$RUNNER_TEMP/release-contract-diagnostics"
-        for part in current-contracts previous-app; do
-          if [[ -d "$RUNNER_TEMP/$part" ]]; then mv "$RUNNER_TEMP/$part" "$RUNNER_TEMP/release-contract-diagnostics/"; fi
-        done
-        "$RELEASE_PYTHON" releases/artifacts.py put release-contract-diagnostics "$RUNNER_TEMP/release-contract-diagnostics"
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-contract-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+        path: |
+          ${{ runner.temp }}/current-contracts
+          ${{ runner.temp }}/previous-app
+        if-no-files-found: ignore
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
+  component-contracts:
+    # Linux pool: the Web contracts package suite and Relay publisher fixtures at their selected refs.
+    needs: prepare
+    runs-on: ["ghar-set-maudecode"]
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
+    - uses: ./.github/actions/release-python
+    - uses: ./.github/actions/release-node
+    - name: Download release handoffs
+      uses: actions/download-artifact@v7
+      with:
+        pattern: release-handoffs-*
+        path: ${{ runner.temp }}/release-handoffs-in
+        merge-multiple: true
+    - name: Restore release-plan
+      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
+    - name: Verify selected Web and Relay fixture contracts
+      run: '"$RELEASE_PYTHON" scripts/check-release-contracts.py --only fixtures --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/component-contracts"'
+    - name: Retain component contract diagnostics
+      if: always()
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: component-contract-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/component-contracts
+        if-no-files-found: ignore
+    env:
+      RELEASE_NEEDS: ${{ toJSON(needs) }}
   agent:
     needs: prepare
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 120
     steps:
     - uses: actions/checkout@v7
@@ -141,15 +190,26 @@ jobs:
         ref: ${{ needs.prepare.outputs.source }}
         fetch-depth: 0
     - uses: ./.github/actions/release-python
+    - name: Download release handoffs
+      uses: actions/download-artifact@v7
+      with:
+        pattern: release-handoffs-*
+        path: ${{ runner.temp }}/release-handoffs-in
+        merge-multiple: true
     - name: Restore release-plan
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - name: Verify recorded Web and Agent identity
       run: |
         "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name agentCompatibility --output "$RUNNER_TEMP/agent-receipts/agentCompatibility.json" -- \
           "$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json"
-    - name: Store agent-receipts on the release runner
+    - name: Stage agent-receipts for other runners
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put agent-receipts "$RUNNER_TEMP/agent-receipts"'
+    - name: Upload release handoffs
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -158,9 +218,10 @@ jobs:
     needs:
     - prepare
     - contracts
+    - component-contracts
     - agent
     if: needs.prepare.outputs.relay_changed == 'true'
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 30
     steps:
     - uses: actions/checkout@v7
@@ -169,12 +230,23 @@ jobs:
         fetch-depth: 0
     - uses: ./.github/actions/release-python
     - uses: ./.github/actions/release-node
+    - name: Download release handoffs
+      uses: actions/download-artifact@v7
+      with:
+        pattern: release-handoffs-*
+        path: ${{ runner.temp }}/release-handoffs-in
+        merge-multiple: true
     - name: Restore release-plan
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - run: '"$RELEASE_PYTHON" releases/build.py relay --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/relay-build"'
-    - name: Store relay-build on the release runner
+    - name: Stage relay-build for other runners
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put relay-build "$RUNNER_TEMP/relay-build"'
+    - name: Upload release handoffs
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -183,11 +255,12 @@ jobs:
     needs:
     - prepare
     - contracts
+    - component-contracts
     - agent
     - relay-build
-    if: ${{ !cancelled() && needs.prepare.outputs.web_changed == 'true' && needs.contracts.result == 'success' && needs.agent.result == 'success'
+    if: ${{ !cancelled() && needs.prepare.outputs.web_changed == 'true' && needs.contracts.result == 'success' && needs.component-contracts.result == 'success' && needs.agent.result == 'success'
       && (needs.relay-build.result == 'success' || needs.relay-build.result == 'skipped') }}
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 90
     steps:
     - uses: actions/checkout@v7
@@ -199,27 +272,36 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version-file: web/.nvmrc
+    - name: Download release handoffs
+      uses: actions/download-artifact@v7
+      with:
+        pattern: release-handoffs-*
+        path: ${{ runner.temp }}/release-handoffs-in
+        merge-multiple: true
     - name: Restore release-plan
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - run: '"$RELEASE_PYTHON" releases/build.py web --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/web-build"'
-    - name: Store web-build on the release runner
-      id: store
-      run: '"$RELEASE_PYTHON" releases/artifacts.py put web-build "$RUNNER_TEMP/web-build"'
-    - name: Stage the public Web publication artifact
-      if: ${{ !inputs.dry_run }}
+    - name: Separate the large OCI archive from the receipt and npm handoff
       id: publication
       run: |
         set -euo pipefail
-        mkdir "$RUNNER_TEMP/web-publication"
-        cp "$RUNNER_TEMP/release-plan/plan.json" "$RUNNER_TEMP/web-publication/plan.json"
-        cp -R "$RUNNER_TEMP/web-build" "$RUNNER_TEMP/web-publication/web-build"
-        echo "artifact=web-publication-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
-    - name: Upload the public Web publication artifact
+        mkdir "$RUNNER_TEMP/web-image"
+        mv "$RUNNER_TEMP/web-build/web.oci.tar" "$RUNNER_TEMP/web-image/"
+        echo "artifact=web-image-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+    - name: Stage web-build for other runners
+      id: store
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put web-build "$RUNNER_TEMP/web-build"'
+    - name: Upload release handoffs
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/release-handoffs
+    - name: Upload the public Web image archive for the publication job
       if: ${{ !inputs.dry_run }}
       uses: actions/upload-artifact@v7
       with:
         name: ${{ steps.publication.outputs.artifact }}
-        path: ${{ runner.temp }}/web-publication
+        path: ${{ runner.temp }}/web-image
         retention-days: 1
         compression-level: 0
     env:
@@ -231,12 +313,13 @@ jobs:
     needs:
     - prepare
     - contracts
+    - component-contracts
     - agent
     - relay-build
     - web-build
-    if: ${{ !cancelled() && inputs.dry_run && needs.prepare.outputs.app_changed == 'true' && needs.contracts.result == 'success' && needs.agent.result
-      == 'success' && (needs.relay-build.result == 'success' || needs.relay-build.result == 'skipped') && (needs.web-build.result == 'success'
-      || needs.web-build.result == 'skipped') }}
+    if: ${{ !cancelled() && inputs.dry_run && needs.prepare.outputs.app_changed == 'true' && needs.contracts.result == 'success' && needs.component-contracts.result
+      == 'success' && needs.agent.result == 'success' && (needs.relay-build.result == 'success' || needs.relay-build.result == 'skipped')
+      && (needs.web-build.result == 'success' || needs.web-build.result == 'skipped') }}
     runs-on: maude-mac
     timeout-minutes: 90
     steps:
@@ -245,12 +328,27 @@ jobs:
         ref: ${{ needs.prepare.outputs.source }}
         fetch-depth: 0
     - uses: ./.github/actions/release-python
+    - name: Download release handoffs
+      uses: actions/download-artifact@v7
+      with:
+        pattern: release-handoffs-*
+        path: ${{ runner.temp }}/release-handoffs-in
+        merge-multiple: true
     - name: Restore release-plan
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - run: '"$RELEASE_PYTHON" releases/build.py app --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/app-build"'
-    - name: Store app-build on the release runner
+    - name: Stage app-build receipt for other runners
       id: store
-      run: '"$RELEASE_PYTHON" releases/artifacts.py put app-build "$RUNNER_TEMP/app-build"'
+      run: |
+        set -euo pipefail
+        mkdir "$RUNNER_TEMP/app-build-receipt"
+        cp "$RUNNER_TEMP"/app-build/*.json "$RUNNER_TEMP/app-build-receipt/"
+        "$RELEASE_PYTHON" releases/artifacts.py put app-build "$RUNNER_TEMP/app-build-receipt"
+    - name: Upload release handoffs
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -260,13 +358,19 @@ jobs:
     - prepare
     - build-gate
     if: ${{ !cancelled() && inputs.dry_run && needs.build-gate.result == 'success' }}
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v7
       with:
         ref: ${{ needs.prepare.outputs.source }}
     - uses: ./.github/actions/release-python
+    - name: Download release handoffs
+      uses: actions/download-artifact@v7
+      with:
+        pattern: release-handoffs-*
+        path: ${{ runner.temp }}/release-handoffs-in
+        merge-multiple: true
     - name: Restore verified release handoffs
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/release-results"'
     - name: Assemble candidate from successful job outputs
@@ -279,10 +383,7 @@ jobs:
         "$RELEASE_PYTHON" releases/cli.py assemble --plan "$RUNNER_TEMP/release-results/release-plan/plan.json" \
           --receipts "$RUNNER_TEMP/receipts" --notes "$RUNNER_TEMP/release-results/release-plan/notes" \
           --output "$RUNNER_TEMP/candidate/release-set.json" "${options[@]}"
-    - name: Store release-set-candidate on the release runner
-      id: store
-      run: '"$RELEASE_PYTHON" releases/artifacts.py put release-set-candidate "$RUNNER_TEMP/candidate"'
-    - name: Record manifest and remove successful-run build handoffs
+    - name: Record the candidate manifest
       run: |
         set -euo pipefail
         {
@@ -291,7 +392,14 @@ jobs:
           printf '\n```\n'
         } >> "$GITHUB_STEP_SUMMARY"
         cat "$RUNNER_TEMP/candidate/release-set.json"
-        "$RELEASE_PYTHON" releases/artifacts.py clean release-set-candidate release-contract-diagnostics
+    - name: Retain release-set-candidate
+      id: store
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put release-set-candidate "$RUNNER_TEMP/candidate"'
+    - name: Upload release handoffs
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -300,12 +408,13 @@ jobs:
     needs:
     - prepare
     - contracts
+    - component-contracts
     - agent
     - relay-build
     - web-build
-    if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.app_changed == 'true' && needs.contracts.result == 'success' && needs.agent.result
-      == 'success' && (needs.relay-build.result == 'success' || needs.relay-build.result == 'skipped') && (needs.web-build.result == 'success'
-      || needs.web-build.result == 'skipped') }}
+    if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.app_changed == 'true' && needs.contracts.result == 'success' && needs.component-contracts.result
+      == 'success' && needs.agent.result == 'success' && (needs.relay-build.result == 'success' || needs.relay-build.result == 'skipped')
+      && (needs.web-build.result == 'success' || needs.web-build.result == 'skipped') }}
     uses: ./.github/workflows/ios-release-build.yml
     secrets: inherit
     with:
@@ -317,7 +426,7 @@ jobs:
     - prepare
     - build-gate
     if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.relay_changed == 'true' && needs.build-gate.result == 'success' }}
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
     environment: relay-production
     concurrency:
       group: talaria-relay-production
@@ -330,6 +439,12 @@ jobs:
         fetch-depth: 0
     - uses: ./.github/actions/release-python
     - uses: ./.github/actions/release-node
+    - name: Download release handoffs
+      uses: actions/download-artifact@v7
+      with:
+        pattern: release-handoffs-*
+        path: ${{ runner.temp }}/release-handoffs-in
+        merge-multiple: true
     - name: Restore release-plan
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - name: Deploy the existing Relay and verify readiness/provenance
@@ -342,9 +457,14 @@ jobs:
         git show "${GITHUB_WORKFLOW_SHA}:releases/publish.py" > "$RUNNER_TEMP/publish.py"
         PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" relay \
           --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/relay-publish/receipt.json"
-    - name: Store relay-publish on the release runner
+    - name: Stage relay-publish for other runners
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put relay-publish "$RUNNER_TEMP/relay-publish"'
+    - name: Upload release handoffs
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -373,11 +493,19 @@ jobs:
       with:
         ref: ${{ needs.prepare.outputs.source }}
     - uses: ./.github/actions/release-python
-    - name: Download the verified Web publication artifact
+    - name: Download release handoffs
+      uses: actions/download-artifact@v7
+      with:
+        pattern: release-handoffs-*
+        path: ${{ runner.temp }}/release-handoffs-in
+        merge-multiple: true
+    - name: Restore release-plan and web-build
+      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan web-build'
+    - name: Download the built Web image archive
       uses: actions/download-artifact@v7
       with:
         name: ${{ needs.web-build.outputs.publication }}
-        path: ${{ runner.temp }}/web-publication
+        path: ${{ runner.temp }}/web-build
     - name: Install OCI transfer tool
       run: |
         sudo apt-get update
@@ -393,8 +521,8 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        "$RELEASE_PYTHON" releases/publish.py web --plan "$RUNNER_TEMP/web-publication/plan.json" \
-          --build "$RUNNER_TEMP/web-publication/web-build/receipt.json" --directory "$RUNNER_TEMP/web-publication/web-build" \
+        "$RELEASE_PYTHON" releases/publish.py web --plan "$RUNNER_TEMP/release-plan/plan.json" \
+          --build "$RUNNER_TEMP/web-build/receipt.json" --directory "$RUNNER_TEMP/web-build" \
           --output "$RUNNER_TEMP/web-publish/receipt.json"
     - name: Name the Web publication receipt
       id: receipt
@@ -405,6 +533,8 @@ jobs:
         name: ${{ steps.receipt.outputs.artifact }}
         path: ${{ runner.temp }}/web-publish
         retention-days: 1
+    env:
+      RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
       receipt: ${{ steps.receipt.outputs.artifact }}
   web-publish:
@@ -414,7 +544,7 @@ jobs:
     - web-publication
     if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.web_changed == 'true' && needs.build-gate.result == 'success' && needs.web-publication.result
       == 'success' }}
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v7
@@ -426,9 +556,14 @@ jobs:
       with:
         name: ${{ needs.web-publication.outputs.receipt }}
         path: ${{ runner.temp }}/web-publish
-    - name: Store web-publish on the release runner
+    - name: Stage web-publish for other runners
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put web-publish "$RUNNER_TEMP/web-publish"'
+    - name: Upload release handoffs
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -443,7 +578,7 @@ jobs:
     if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.app_changed == 'true' && needs.build-gate.result == 'success' && (needs.relay-publish.result
       == 'success' || (needs.prepare.outputs.relay_changed == 'false' && needs.relay-publish.result == 'skipped')) && (needs.web-publish.result
       == 'success' || (needs.prepare.outputs.web_changed == 'false' && needs.web-publish.result == 'skipped')) }}
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
     environment: testflight
     concurrency:
       group: talaria-testflight-publication
@@ -454,12 +589,15 @@ jobs:
       with:
         ref: ${{ needs.prepare.outputs.source }}
     - uses: ./.github/actions/release-python
-    - name: Restore release-plan
-      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
-    - name: Restore app-build
-      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" app-build'
-    - name: Restore ios-ipa
-      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" ios-ipa'
+    - uses: ./.github/actions/release-ruby
+    - name: Download release handoffs
+      uses: actions/download-artifact@v7
+      with:
+        pattern: release-handoffs-*
+        path: ${{ runner.temp }}/release-handoffs-in
+        merge-multiple: true
+    - name: Restore release-plan, app-build and ios-ipa
+      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan app-build ios-ipa'
     - name: Upload or recover the verified TestFlight build
       env:
         APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -469,9 +607,14 @@ jobs:
         "$RELEASE_PYTHON" releases/publish.py app --plan "$RUNNER_TEMP/release-plan/plan.json" \
           --build "$RUNNER_TEMP/app-build/receipt.json" --directory "$RUNNER_TEMP/ios-ipa" \
           --output "$RUNNER_TEMP/app-publish/receipt.json"
-    - name: Store app-publish on the release runner
+    - name: Stage app-publish for other runners
       id: store
       run: '"$RELEASE_PYTHON" releases/artifacts.py put app-publish "$RUNNER_TEMP/app-publish"'
+    - name: Upload release handoffs
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -484,7 +627,7 @@ jobs:
     - web-publish
     - app-publish
     if: ${{ !cancelled() && !inputs.dry_run && needs.build-gate.result == 'success' }}
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
     environment: release-set-publication
     permissions:
       contents: write
@@ -499,6 +642,12 @@ jobs:
       env:
         RELEASE_NEEDS: ${{ toJSON(needs) }}
       run: python3 releases/check_results.py publication
+    - name: Download release handoffs
+      uses: actions/download-artifact@v7
+      with:
+        pattern: release-handoffs-*
+        path: ${{ runner.temp }}/release-handoffs-in
+        merge-multiple: true
     - name: Restore verified release handoffs
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/release-results"'
     - name: Assemble and publish only the completed set
@@ -516,9 +665,7 @@ jobs:
         "$RELEASE_PYTHON" releases/publish.py finalize --plan "$RUNNER_TEMP/release-results/release-plan/plan.json" \
           --manifest "$RUNNER_TEMP/completed/release-set.json" \
           --directory "$RUNNER_TEMP/release-results" "${options[@]}"
-    - name: Retain completed manifest locally
-      run: '"$RELEASE_PYTHON" releases/artifacts.py put release-set-complete "$RUNNER_TEMP/completed"'
-    - name: Record manifest and remove successful-run build handoffs
+    - name: Record the completed manifest
       run: |
         set -euo pipefail
         {
@@ -527,20 +674,27 @@ jobs:
           printf '\n```\n'
         } >> "$GITHUB_STEP_SUMMARY"
         cat "$RUNNER_TEMP/completed/release-set.json"
-        "$RELEASE_PYTHON" releases/artifacts.py clean release-set-complete release-contract-diagnostics app-publish
+    - name: Retain release-set-complete
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put release-set-complete "$RUNNER_TEMP/completed"'
+    - name: Upload release handoffs
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/release-handoffs
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   build-gate:
     needs:
     - prepare
     - contracts
+    - component-contracts
     - agent
     - relay-build
     - web-build
     - app-dry-build
     - app-signed-build
     if: always()
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
     steps:
     - uses: actions/checkout@v7
       with:

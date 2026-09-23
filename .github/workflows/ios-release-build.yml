@@ -47,6 +47,13 @@ jobs:
 
       - uses: ./.github/actions/release-python
 
+      - name: Download release handoffs
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-handoffs-*
+          path: ${{ runner.temp }}/release-handoffs-in
+          merge-multiple: true
+
       - name: Restore verified release plan
         working-directory: .
         run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
@@ -283,11 +290,17 @@ jobs:
           "$RELEASE_PYTHON" releases/publish.py build-app-receipt --plan "$RUNNER_TEMP/release-plan/plan.json" \
             --directory "$EXPORT_PATH" --build-number "$BUILD_NUMBER" --output "$RUNNER_TEMP/app-build/receipt.json"
 
-      - name: Store verified signed artifacts locally
+      - name: Stage the verified signed artifacts for the publication runner
         id: store
         working-directory: .
         run: |
           "$RELEASE_PYTHON" releases/artifacts.py put app-build "$RUNNER_TEMP/app-build" ios-ipa "$EXPORT_PATH" ios-dsyms "$ARCHIVE_PATH/dSYMs"
+
+      - name: Upload release handoffs
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-handoffs
 
       - name: Remove App Store Connect key
         if: always()

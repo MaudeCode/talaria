@@ -221,16 +221,19 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(ios["jobs"]["build"]["environment"], "testflight")
         for release_workflow in (document, ios):
             for name, job in release_workflow["jobs"].items():
-                if "steps" in job:
-                    self.assertEqual(job["runs-on"], "ubuntu-latest" if name == "web-publication" else "maude-mac")
-                    for step in job["steps"]:
-                        transfer = "artifact" in step.get("uses", "")
-                        self.assertEqual(transfer, (name, step.get("name")) in {
-                            ("web-build", "Upload the public Web publication artifact"),
-                            ("web-publication", "Download the verified Web publication artifact"),
-                            ("web-publication", "Upload the Web publication receipt"),
-                            ("web-publish", "Download the Web publication receipt"),
-                        })
+                if "steps" not in job:
+                    continue
+                # Handoffs cross runners as same-run Actions artifacts whose producer digests travel in job outputs.
+                text = json.dumps(job["steps"])
+                uploads = [step["with"] for step in job["steps"] if "upload-artifact" in step.get("uses", "")]
+                downloads = [step["with"] for step in job["steps"] if "download-artifact" in step.get("uses", "")]
+                if "artifacts.py put" in text:
+                    self.assertTrue(any(upload["path"].endswith("/release-handoffs") for upload in uploads), name)
+                if "artifacts.py get" in text:
+                    self.assertTrue(any(download.get("pattern") == "release-handoffs-*" and download.get("merge-multiple") is True
+                                        and download["path"].endswith("/release-handoffs-in") for download in downloads), name)
+                for download in downloads:
+                    self.assertNotIn("run-id", download, name)
         self.assertEqual(document["permissions"], {"contents": "read", "actions": "read"})
         environments = {"relay-publish": "relay-production", "web-publication": "web-release",
                         "app-publish": "testflight", "publish-set": "release-set-publication"}
@@ -278,15 +281,50 @@ class PublicationTests(unittest.TestCase):
         self.assertNotIn("secrets.", json.dumps(recovery["jobs"]["publish-set"]))
         self.assertEqual(recovery["permissions"], {"contents": "read", "actions": "read"})
         app_steps = recovery["jobs"]["app"]["steps"]
+        # Recovery is the only cross-run consumer: it downloads the authenticated original run's handoffs.
+        original = [step["with"] for step in app_steps if "download-artifact" in step.get("uses", "")]
+        self.assertEqual([download.get("run-id") for download in original], ["${{ inputs.original_run }}"])
+        self.assertEqual(original[0]["pattern"], "release-handoffs-*")
         upload_index = next(index for index, step in enumerate(app_steps) if "require Apple VALID" in step.get("name", ""))
         self.assertTrue(any("releases/recover.py" in step.get("run", "") for step in app_steps[:upload_index]))
         self.assertFalse(any("cli.py assemble" in step.get("run", "") for step in app_steps[:upload_index]),
                          "Partial publication receipts must not be assembled as a dry-run candidate")
 
+    def test_only_native_jobs_use_the_mac_runner(self):
+        # The single Mac runner is reserved for Xcode, simulator and Apple signing work; every other job runs on
+        # the Linux pool, or on GitHub-hosted Linux where npm trusted publishing requires it. Each allowed Mac job
+        # names the native dependency its steps must still show; moving a portable job back fails here.
+        native = {
+            ("pr-ci.yml", "app-tooling"): "test-ios-simulator-pool",
+            ("pr-ci.yml", "test"): "xcodebuild",
+            ("fuzz-soak.yml", "soak"): "xcodebuild",
+            ("ios-release-build.yml", "build"): "xcodebuild archive",
+            ("release-set.yml", "contracts"): "check-previous-app.py",
+            ("release-set.yml", "app-dry-build"): "build.py app",
+        }
+        root = Path(__file__).resolve().parents[1]
+        found = {}
+        for path in sorted((root / ".github/workflows").glob("*.yml")):
+            document = json.loads(subprocess.check_output([
+                "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(path),
+            ], text=True))
+            for name, job in document["jobs"].items():
+                if "steps" not in job:
+                    continue
+                runner = job["runs-on"]
+                if runner == "maude-mac":
+                    found[(path.name, name)] = json.dumps(job["steps"])
+                else:
+                    self.assertIn(runner, (["ghar-set-maudecode"], "ubuntu-latest"), (path.name, name))
+                    self.assertEqual(runner == "ubuntu-latest", (path.name, name) == ("release-set.yml", "web-publication"))
+        self.assertEqual(set(found), set(native))
+        for job, dependency in native.items():
+            self.assertIn(dependency, found[job], job)
+
     def test_selected_jobs_must_succeed(self):
         for dry, app, web, relay_changed in product((False, True), repeat=4):
             for stage in ("build", "publication"):
-                needs = {name: {"result": "success"} for name in ("prepare", "contracts", "agent", "build-gate")}
+                needs = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts", "agent", "build-gate")}
                 needs["prepare"]["outputs"] = {
                     name + "_changed": str(changed).lower()
                     for name, changed in zip(("app", "web", "relay"), (app, web, relay_changed))
@@ -304,7 +342,7 @@ class PublicationTests(unittest.TestCase):
                         check(needs, stage, dry)
                     continue
                 check(needs, stage, dry)
-                for job in jobs + (["prepare", "contracts", "agent"] if stage == "build" else ["prepare", "build-gate"]):
+                for job in jobs + (["prepare", "contracts", "component-contracts", "agent"] if stage == "build" else ["prepare", "build-gate"]):
                     for result in ("failure", "cancelled", "skipped", "success"):
                         if result == needs[job]["result"]:
                             continue

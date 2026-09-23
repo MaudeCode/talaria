@@ -28,7 +28,7 @@ concurrency:
 jobs:
   app:
     if: github.ref == 'refs/heads/main' && inputs.confirm_publication
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
     environment: testflight
     concurrency:
       group: talaria-testflight-publication
@@ -42,6 +42,17 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/release-python
+      - uses: ./.github/actions/release-ruby
+      # Only the authenticated original run's job outputs name which of these
+      # downloaded archives may be restored, and each must match its digest.
+      - name: Download the original run's release handoffs
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-handoffs-*
+          path: ${{ runner.temp }}/release-handoffs-in
+          merge-multiple: true
+          run-id: ${{ inputs.original_run }}
+          github-token: ${{ github.token }}
       - name: Authenticate original run and restore immutable handoffs
         id: restore
         env:
@@ -71,7 +82,7 @@ jobs:
             --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" \
             --build "$RUNNER_TEMP/recovered/app-build/receipt.json" --directory "$RUNNER_TEMP/recovered/ios-ipa" \
             --output "$RUNNER_TEMP/recovered/app-publish/receipt.json"
-      - name: Store verified handoffs with actual recovery-run identity
+      - name: Stage verified handoffs with actual recovery-run identity
         id: store
         run: |
           set -euo pipefail
@@ -80,9 +91,14 @@ jobs:
             paths+=("$name" "$RUNNER_TEMP/recovered/$name")
           done
           "$RELEASE_PYTHON" releases/artifacts.py put "${paths[@]}"
+      - name: Upload release handoffs
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-handoffs
   publish-set:
     needs: app
-    runs-on: maude-mac
+    runs-on: ["ghar-set-maudecode"]
     environment: release-set-publication
     permissions:
       contents: write
@@ -96,6 +112,12 @@ jobs:
           fetch-depth: 0
           ref: ${{ needs.app.outputs.source }}
       - uses: ./.github/actions/release-python
+      - name: Download release handoffs
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-handoffs-*
+          path: ${{ runner.temp }}/release-handoffs-in
+          merge-multiple: true
       - name: Restore verified recovery handoffs
         run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/recovered"'
       - name: Assemble and publish the completed original release set
@@ -114,9 +136,13 @@ jobs:
           PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" finalize \
             --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" --manifest "$RUNNER_TEMP/completed/release-set.json" \
             --directory "$RUNNER_TEMP/recovered" "${options[@]}"
-      - name: Retain completed manifest and remove this recovery run's build handoffs
+      - name: Retain the completed manifest
         run: |
           set -euo pipefail
-          "$RELEASE_PYTHON" releases/artifacts.py put release-set-complete "$RUNNER_TEMP/completed"
           cat "$RUNNER_TEMP/completed/release-set.json"
-          "$RELEASE_PYTHON" releases/artifacts.py clean release-set-complete app-publish
+          "$RELEASE_PYTHON" releases/artifacts.py put release-set-complete "$RUNNER_TEMP/completed"
+      - name: Upload release handoffs
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-handoffs-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-handoffs
