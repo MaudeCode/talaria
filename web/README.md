@@ -14,8 +14,9 @@ the [Talaria monorepo](../README.md) next to the iOS app and the Relay.
 - **Sidecar** — `sidecar/talaria_sidecar`, stdlib-only Python that wraps the Agent modules (chat turns,
   approvals, profiles, cron, kanban, skills, providers, auxiliary models, STT, `state.db` writes).
 
-Hermes Agent itself is never forked or modified. The sidecar pins the Agent revision it was tested against
-in `sidecar/agent_dependency.json` and reports drift at startup.
+Hermes Agent itself is never forked or modified. The sidecar records the Agent revision it was tested against
+in `sidecar/agent_dependency.json` and warns when the installed Agent differs. An importable Agent can still run;
+individual operations report missing capabilities. Operator config and SSO remain available if Agent imports fail.
 
 ## Contents
 

@@ -112,9 +112,12 @@ talaria-web            .env → discover Agent → sidecar preflight → detache
                         (relay publisher, completion drain, hygiene ticker, gateway watchers, MCP probes)
 ```
 
-Readiness: `/health` reports `starting` until session recovery finishes; Agent-backed routes answer `503`
-with `condition: sidecar_unavailable | agent_runtime_stale | agent_incompatible` while the sidecar is
-down or incompatible, and chat fails closed. Shutdown drains streams and stops workers on SIGTERM/SIGINT.
+Readiness: `/health` reports `starting` until session recovery finishes. The Agent pin records the tested
+identity; a different importable revision may run with a warning. Agent-backed routes answer `503` with
+`condition: sidecar_unavailable | agent_runtime_stale | agent_incompatible` when the sidecar is down, the
+loaded checkout changes, or a required capability is missing. Operator config reads and writes can still
+work after an Agent import failure so SSO and authorized recovery remain available. Shutdown drains streams
+and stops workers on SIGTERM/SIGINT.
 
 ## 7. Adding an endpoint
 

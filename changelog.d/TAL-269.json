@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "SSO remains available when the installed Agent differs from Talaria's tested version.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

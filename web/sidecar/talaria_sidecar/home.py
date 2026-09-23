@@ -38,10 +38,16 @@ def _is_named_profile(home: Path) -> bool:
 def _secret_scope(home: Path):
     """Install ``home``'s credential scope for the call; named profiles run under multiplex semantics."""
     named = _is_named_profile(home)
+    legacy = False
     try:
         from agent.secret_scope import build_profile_secret_scope, reset_secret_scope, set_secret_scope
-        from hermes_cli.env_loader import hydrate_profile_secret_sources
-        from tui_gateway.launch_profile_policy import activate_multi_profile_hosting, launch_secret_scope
+        try:
+            from hermes_cli.env_loader import hydrate_profile_secret_sources
+            from tui_gateway.launch_profile_policy import activate_multi_profile_hosting, launch_secret_scope
+        except ImportError:
+            # Older Agents provide the same isolation through per-call context tokens.
+            from agent.secret_scope import reset_multiplex_context, set_multiplex_context
+            legacy = True
     except Exception:  # noqa: BLE001 - older Agent without a secret scope
         if named:
             raise RpcError(
@@ -50,7 +56,9 @@ def _secret_scope(home: Path):
             )
         yield
         return
-    if named:
+    if legacy:
+        secrets = build_profile_secret_scope(home)
+    elif named:
         activate_multi_profile_hosting()
         hydrate_profile_secret_sources(home)
         secrets = build_profile_secret_scope(home)
@@ -58,7 +66,12 @@ def _secret_scope(home: Path):
         secrets = launch_secret_scope(home)
     scope_token = set_secret_scope(secrets)
     try:
-        yield
+        mux_token = set_multiplex_context(True) if legacy and named else None
+        try:
+            yield
+        finally:
+            if legacy and named:
+                reset_multiplex_context(mux_token)
     finally:
         reset_secret_scope(scope_token)
 

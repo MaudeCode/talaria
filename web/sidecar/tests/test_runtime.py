@@ -82,7 +82,7 @@ def test_runtime_env_edits_the_sidecar_process_environment(sidecar: SidecarProce
     assert message["error"]["code"] == -32602
 
 
-def test_an_untracked_agent_install_is_compatible_only_when_its_version_matches_the_pin(tmp_path, monkeypatch) -> None:
+def test_importable_agent_is_not_rejected_for_an_unpinned_or_unknown_version(tmp_path, monkeypatch) -> None:
     from talaria_sidecar.runtime import AgentRuntime
 
     runtime = AgentRuntime(tmp_path / "home", None)
@@ -91,8 +91,37 @@ def test_an_untracked_agent_install_is_compatible_only_when_its_version_matches_
     monkeypatch.setattr(type(runtime), "agent_version", property(lambda self: runtime.pin["version"]))
     assert runtime.describe()["compatible"] is True
     monkeypatch.setattr(type(runtime), "agent_version", property(lambda self: "0.0.0-other"))
-    assert runtime.describe()["compatible"] is False
+    assert runtime.describe()["compatible"] is True
     monkeypatch.setattr(type(runtime), "agent_version", property(lambda self: None))
-    assert runtime.describe()["compatible"] is False
+    assert runtime.describe()["compatible"] is True
     runtime.revision = runtime.pin["source_revision"]
     assert runtime.describe()["compatible"] is True
+    runtime.revision = "a" * 40
+    assert runtime.describe()["compatible"] is True
+    runtime.loaded = False
+    assert runtime.describe()["compatible"] is False
+
+
+@requires_agent
+def test_config_reads_survive_agent_import_failure(tmp_path, hermes_home) -> None:
+    broken_agent = tmp_path / "broken-agent"
+    broken_agent.mkdir()
+    (broken_agent / "run_agent.py").write_text("raise ImportError('synthetic broken Agent')\n")
+    config = hermes_home / "config.yaml"
+    config.write_text("webui_oidc:\n  issuer: https://idp.example\n")
+    proc = SidecarProcess(hermes_home, agent_dir=broken_agent)
+    try:
+        assert proc.result("runtime.handshake", {"rpc_version": SIDECAR_RPC_VERSION})["compatible"] is False
+        assert proc.result("config.get", {"profile_home": str(hermes_home)})["config"] == {"webui_oidc": {"issuer": "https://idp.example"}}
+        assert proc.result("config.set", {"profile_home": str(hermes_home), "config": {"webui_oidc": {"issuer": "https://repaired.example"}}})["ok"] is True
+        assert proc.result("config.get", {"profile_home": str(hermes_home)})["config"] == {"webui_oidc": {"issuer": "https://repaired.example"}}
+        message, _ = proc.call("runtime.ensure_current")
+        assert message["error"]["data"]["condition"] == "agent_incompatible"
+        config.write_text("webui_oidc: [\n")
+        message, _ = proc.call("config.get", {"profile_home": str(hermes_home)})
+        assert message["error"]["data"]["condition"] == "config_invalid"
+        config.write_text("- not-a-mapping\n")
+        message, _ = proc.call("config.get", {"profile_home": str(hermes_home)})
+        assert message["error"]["data"]["condition"] == "config_invalid"
+    finally:
+        proc.close()

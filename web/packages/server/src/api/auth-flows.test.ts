@@ -12,12 +12,13 @@
  */
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { cborDecode } from '../auth/passkeys.js'
 import { canonicalJson, safeNextPath } from '../auth/oidc.js'
 import { validatedRequestHost } from './auth-raw.js'
+import { SidecarClient } from '../sidecar/client.js'
 
 type Json = Record<string, unknown>
 const b64u = (b: Buffer): string => b.toString('base64url')
@@ -517,6 +518,45 @@ describe('auth gate fails closed on unknown or unreadable auth state', () => {
 })
 
 describe('OIDC operator config availability', () => {
+  it('SSO reads operator config through the real transport while Agent imports are unavailable', async () => {
+    const sidecar = new SidecarClient({
+      python: process.execPath, agentDir: '', sidecarDir: process.cwd(), hermesHome: '', log: () => undefined,
+      command: [process.execPath, '-e', `
+        const fs = require('fs');
+        const fixture = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'))['runtime.handshake'][0].result;
+        require('readline').createInterface({input: process.stdin}).on('line', line => {
+          const req = JSON.parse(line);
+          let result;
+          if (req.method === 'runtime.handshake') result = {...fixture, compatible: false, import_error: 'synthetic missing dependency'};
+          else if (req.method === 'config.get') result = {path: req.params.config_path, exists: true, config: JSON.parse(fs.readFileSync(req.params.config_path, 'utf8'))};
+          else if (req.method === 'config.set') { fs.writeFileSync(req.params.config_path, JSON.stringify(req.params.config)); result = {ok: true, path: req.params.config_path}; }
+          else return;
+          process.stdout.write(JSON.stringify({jsonrpc: '2.0', id: req.id, result}) + '\\n');
+        });`, resolve(import.meta.dirname, '../../../contracts/fixtures/sidecar/runtime.json')],
+    })
+    await sidecar.start()
+    const s = await bootTestServer({ sidecar, deps: (deps) => {
+      writeFileSync(join(deps.config.hermesHome, 'config.yaml'), JSON.stringify({ webui_oidc: {
+        issuer: ISSUER, client_id: 'web-client', allow_claim: 'groups', allow_values: ['admins'], trusted_private_hosts: ['idp.example'],
+        owner_claim: 'groups', owner_values: ['owners'],
+      } }))
+    } })
+    try {
+      s.deps.fetch = fakeIdp(() => Date.now() / 1000).fetch
+      expect(sidecar.status).toBe('incompatible')
+      expect((await s.get('/api/sessions')).status).toBe(401)
+      const start = await s.get('/api/auth/oidc/start')
+      expect(start.status).toBe(302)
+      const { state, code } = providerCode(start.headers.get('location') ?? '')
+      const callback = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+      expect(callback.status).toBe(302)
+      const cookie = cookieOf(callback, s.deps.auth.cookieName())
+      expect(cookie).toBeTruthy()
+      expect(await json(await s.get('/api/auth/status', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } }))).toMatchObject({ logged_in: true, can_manage_server: false })
+      expect((await sidecar.call('config.set', { profile_home: s.state, config_path: join(s.state, 'recovery.yaml'), config: {} })).ok).toBe(true)
+    } finally { await s.close(); await sidecar.close() }
+  })
+
   it('an unreadable operator config with no last-known policy keeps the API gated until it can be read', async () => {
     let clock = 1_700_000_000
     // config.yaml exists at boot but no sidecar can read it: the auth policy inside is unknown from the first request.

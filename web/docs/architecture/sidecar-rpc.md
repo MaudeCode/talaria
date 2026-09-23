@@ -10,7 +10,7 @@ dependencies of its own and installs nothing.
 
 | Concern | Owner |
 |---|---|
-| Agent pin (`sidecar/agent_dependency.json`), drift guard, loaded-revision check | sidecar |
+| Tested Agent identity (`sidecar/agent_dependency.json`), drift guard, loaded-revision check | sidecar |
 | RPC method schemas, versioning, fixtures | `@maudecode/talaria-web-contracts` (`sidecar/` schema group) |
 | Spawn, restart on crash, fail-closed 503 while unavailable | server |
 | WebUI-owned files (sessions, settings, journals, auth, shares, drafts) | server only |
@@ -56,14 +56,15 @@ backend's error conditions (`agent_runtime_stale`, `agent_incompatible`,
    `<agent>/venv` or `<agent>/.venv`).
 2. Server spawns the sidecar and sends `runtime.handshake` with
    `{rpc_version, hermes_home, state_dir}`.
-3. Sidecar imports `run_agent`, reads its own `agent_dependency.json`, compares
-   the loaded checkout revision, and replies
+3. Sidecar imports `run_agent`, reads its own `agent_dependency.json`, and replies
    `{rpc_version, agent_revision, pinned_revision, compatible, stale, python, agent_dir, capabilities}`.
    A `rpc_version` mismatch is a fatal handshake error; the sidecar exits 3.
-4. Server sets `AGENT_DEPS_READY` only after a compatible handshake. While the
-   sidecar is absent, restarting, stale, or incompatible, chat and every
-   sidecar-backed route answer 503 with `condition` set to
-   `sidecar_unavailable`, `agent_runtime_stale`, or `agent_incompatible`.
+4. `compatible` means Agent imports succeeded; it does not mean the installed revision equals the tested pin.
+   The server warns when the loaded revision differs. Agent calls remain available while the imported runtime
+   is current, with individual methods checking their required capabilities and profile credential isolation.
+   A failed Agent import blocks Agent methods but allows `config.get` and `config.set` after a valid RPC handshake,
+   so SSO and authorized config repair remain available. A protocol mismatch still blocks all methods.
+   A stale loaded runtime blocks Agent methods with `agent_runtime_stale`.
 5. On sidecar exit the server restarts it with exponential backoff (1 s, 2 s,
    4 s, capped at 30 s). Every in-flight request fails with
    `sidecar_unavailable`. Session-scoped agent caches are lost, as they are on

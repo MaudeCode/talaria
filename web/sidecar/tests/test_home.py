@@ -95,3 +95,29 @@ def test_named_profile_fails_closed_without_a_secret_scope(tmp_path, monkeypatch
     # The root profile still runs (its credentials are the process's own).
     with home_module.scoped_home(root):
         assert os.environ["HERMES_HOME"] == str(root)
+
+
+def test_legacy_profile_isolation_is_used_and_restored_on_failure(tmp_path, monkeypatch, scope_calls) -> None:
+    root = tmp_path / "root"
+    named = root / "profiles" / "work"
+    named.mkdir(parents=True)
+    (named / ".env").write_text("OPENAI_API_KEY=sk-work\n")
+    monkeypatch.setattr(home_module, "_PROCESS_HOME", root)
+    monkeypatch.setitem(sys.modules, "tui_gateway.launch_profile_policy", None)
+    scope = sys.modules["agent.secret_scope"]
+    monkeypatch.setattr(scope, "set_multiplex_context", lambda value: scope_calls.append(("multiplex", value)) or "mux-token", raising=False)
+    monkeypatch.setattr(scope, "reset_multiplex_context", lambda token: scope_calls.append(("reset-multiplex", token)), raising=False)
+    with pytest.raises(ValueError, match="test body"):
+        with home_module.scoped_home(named):
+            assert ("scope", {"OPENAI_API_KEY": "sk-work"}) in scope_calls
+            assert ("multiplex", True) in scope_calls
+            raise ValueError("test body")
+    assert ("reset-scope", "scope-token") in scope_calls
+    assert ("reset-multiplex", "mux-token") in scope_calls
+
+    # A partial implementation is not permission to leak the launch profile's credentials.
+    monkeypatch.delattr(scope, "reset_multiplex_context")
+    with pytest.raises(RpcError) as excinfo:
+        with home_module.scoped_home(named):
+            pytest.fail("missing isolation must not reach the body")
+    assert excinfo.value.data["condition"] == "agent_incompatible"

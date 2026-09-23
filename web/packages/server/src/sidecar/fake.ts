@@ -6,7 +6,7 @@
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { SIDECAR_METHODS, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { SIDECAR_METHODS, SIDECAR_RPC_VERSION, type RuntimeDescribe, type SidecarMethodName, type SidecarParams, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SidecarError, type CallOptions, type SidecarLike, type SidecarStatus, type StreamFrame } from './client.js'
 
 type Responder<M extends SidecarMethodName> = (params: SidecarParams<M>, emit: (frame: Omit<StreamFrame, 'seq'>) => void, opts: CallOptions) => SidecarResult<M> | Promise<SidecarResult<M>>
@@ -57,7 +57,8 @@ export class FakeSidecar implements SidecarLike {
     const schema = SIDECAR_METHODS[method]
     const parsedParams = schema.params.parse(params) as SidecarParams<M>
     this.calls.push({ method, params: parsedParams })
-    if (this.status !== 'ready' && !method.startsWith('runtime.')) {
+    const configAccess = (method === 'config.get' || method === 'config.set') && this.status === 'incompatible' && this.describe?.rpc_version === SIDECAR_RPC_VERSION
+    if (this.status !== 'ready' && !configAccess && !method.startsWith('runtime.')) {
       throw new SidecarError(`sidecar not ready (${this.status})`, { condition: 'sidecar_unavailable' })
     }
     let seq = 0
