@@ -359,7 +359,10 @@ class PublicationTests(unittest.TestCase):
         runs = {step.get("name"): step.get("run", "") for step in test["steps"]}
         self.assertIn('"-skip-testing:${LIVE_CONTRACT_TEST}"', runs["Test without building"])
         live = runs["Run the live Web contract test against the probe fixture"]
-        # A "Re-run failed jobs" attempt reruns only the Mac job, so the probe is found across attempts.
+        # A "Re-run failed jobs" attempt reruns only the Mac job, so the probe is found across attempts; GitHub
+        # also copies the unrerun probe into the new attempt without its annotations, so the annotation is
+        # searched newest-first across every successful probe record.
+        self.assertIn("while read -r _ id status conclusion", live)
         for required in ("filter=all", ".run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber)",
                          'select(.title == "contract-fixture")', "shasum -a 256 --check",
                          'TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"', '-only-testing:"${LIVE_CONTRACT_TEST}"',
