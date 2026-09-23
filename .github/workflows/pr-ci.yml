@@ -279,6 +279,8 @@ jobs:
           ../scripts/s3-artifact get "${fixture_key}" "${fixture}"
           echo "${fixture_sha256}  ${fixture}" | shasum -a 256 --check
           # xcodebuild strips TEST_RUNNER_ and hands the path to the simulator test process.
+          # The scheme is parallelizable, so without -parallel-testing-enabled NO this single
+          # test would clone the simulator while the main run's clones are still torn down.
           TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}" xcodebuild test-without-building \
             -project "${PROJECT_PATH}" \
             -scheme "${SCHEME}" \
@@ -287,6 +289,7 @@ jobs:
             -resultBundlePath "${LIVE_CONTRACT_RESULT_BUNDLE_PATH}" \
             -disableAutomaticPackageResolution \
             -collect-test-diagnostics never \
+            -parallel-testing-enabled NO \
             -only-testing:"${LIVE_CONTRACT_TEST}" \
             APP_IDENTIFIER_SUFFIX=.xctest \
             CODE_SIGNING_ALLOWED=YES \

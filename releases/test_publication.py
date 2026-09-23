@@ -363,6 +363,9 @@ class PublicationTests(unittest.TestCase):
         for required in ("filter=all", ".run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber)",
                          'select(.title == "contract-fixture")', "shasum -a 256 --check",
                          'TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"', '-only-testing:"${LIVE_CONTRACT_TEST}"',
+                         # The scheme is parallelizable; one test must not clone the simulator while the
+                         # main run's clones are still being torn down.
+                         "-parallel-testing-enabled NO",
                          '.[0].result == "Passed"'):
             self.assertIn(required, live)
         self.assertIn("::notice title=contract-fixture::key=$key sha256=$sha256",
