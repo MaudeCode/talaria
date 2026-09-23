@@ -71,9 +71,10 @@ describe('SidecarClient version mismatch', () => {
     await client.start()
     const config_path = resolve(dir, 'config.yaml')
     expect((await client.call('config.get', { profile_home: dir, config_path })).config).toEqual({})
-    const deadline = Date.now() + 3000
-    while ((!existsSync(starts) || readFileSync(starts, 'utf8').length < 2) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25))
+    const deadline = Date.now() + 5000
+    while ((client.status !== 'incompatible' || !existsSync(starts) || readFileSync(starts, 'utf8').length < 2) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25))
     expect(readFileSync(starts, 'utf8')).toBe('xx')
+    expect(client.status).toBe('incompatible')
     expect((await client.call('config.get', { profile_home: dir, config_path })).config).toEqual({})
   })
 
