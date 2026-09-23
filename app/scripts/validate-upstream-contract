@@ -64,6 +64,11 @@ finish() {
     kill "$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
   fi
+  # CI keeps no run directory, so a failure must carry the disposable server's own account.
+  if (( exit_code != 0 )) && [[ -s "$run_dir/server.log" ]]; then
+    echo "Disposable server log (last 80 lines):" >&2
+    tail -n 80 "$run_dir/server.log" >&2
+  fi
   echo "Contract artifacts: $run_dir"
   exit "$exit_code"
 }
