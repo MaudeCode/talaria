@@ -41,9 +41,9 @@ talaria-web
 `talaria-web` loads `.env` (checkout `.env`, then `$HERMES_HOME/.env`), discovers the Agent
 (`HERMES_WEBUI_AGENT_DIR`, `$HERMES_HOME/hermes-agent`, a sibling `hermes-agent` checkout, `~/hermes-agent`,
 `/opt/hermes`, `/usr/local/lib/hermes-agent`, or the `hermes` launcher on `PATH`), verifies the sidecar can
-import the Agent on that venv, offers to install the pinned Agent when none is found (POSIX; skip with
-`--skip-agent-install`), starts the server detached, waits for `/health`, prints the URL, and opens the
-browser. Under launchd, systemd, supervisord, or with `--foreground`, it stays attached instead.
+import the Agent on that venv, offers to install the pinned stable Agent release when none is found
+(POSIX; skip with `--skip-agent-install`), starts the server detached, waits for `/health`, prints the
+URL, and opens the browser. Under launchd, systemd, supervisord, or with `--foreground`, it stays attached instead.
 
 ```text
 talaria-web [port] [--host HOST] [--no-browser] [--skip-agent-install] [--foreground]

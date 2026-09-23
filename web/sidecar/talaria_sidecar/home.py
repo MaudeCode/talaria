@@ -7,14 +7,11 @@ context-local override when the installed Agent exposes it
 (``hermes_constants.set_hermes_home_override``), falling back to a locked
 process-wide swap of ``HERMES_HOME`` for older Agents.
 
-Credentials are scoped the same way the Agent's multiplexing gateway does it
-(``agent.secret_scope``): the profile's own ``.env`` (plus its external secret
-sources) is installed as the context-local secret scope for the call. For a
-named profile the call also runs under multiplex semantics, so a miss never
-falls through to ``os.environ`` — the default profile's keys, which the server
-copied into the process environment at startup, cannot be resolved by another
-profile. If the installed Agent has no secret scope, named-profile calls fail
-closed instead of running with the inherited environment.
+Credentials use the Agent's own multi-profile hosting policy: a named profile
+activates fail-closed multiplexing and installs its file-backed secret scope;
+the launch profile installs the Agent's frozen launch scope. A miss can never
+fall through to another profile's process environment. If the installed Agent
+has no secret scope, named-profile calls fail closed instead.
 """
 
 from __future__ import annotations
@@ -42,13 +39,9 @@ def _secret_scope(home: Path):
     """Install ``home``'s credential scope for the call; named profiles run under multiplex semantics."""
     named = _is_named_profile(home)
     try:
-        from agent.secret_scope import (
-            build_profile_secret_scope,
-            reset_multiplex_context,
-            reset_secret_scope,
-            set_multiplex_context,
-            set_secret_scope,
-        )
+        from agent.secret_scope import build_profile_secret_scope, reset_secret_scope, set_secret_scope
+        from hermes_cli.env_loader import hydrate_profile_secret_sources
+        from tui_gateway.launch_profile_policy import activate_multi_profile_hosting, launch_secret_scope
     except Exception:  # noqa: BLE001 - older Agent without a secret scope
         if named:
             raise RpcError(
@@ -57,13 +50,16 @@ def _secret_scope(home: Path):
             )
         yield
         return
-    scope_token = set_secret_scope(build_profile_secret_scope(home))
-    mux_token = set_multiplex_context(True) if named else None
+    if named:
+        activate_multi_profile_hosting()
+        hydrate_profile_secret_sources(home)
+        secrets = build_profile_secret_scope(home)
+    else:
+        secrets = launch_secret_scope(home)
+    scope_token = set_secret_scope(secrets)
     try:
         yield
     finally:
-        if mux_token is not None:
-            reset_multiplex_context(mux_token)
         reset_secret_scope(scope_token)
 
 

@@ -28,7 +28,7 @@ def candidate(sha="a" * 40):
     gates = COMMON_GATES | {f"build{name.title()}" for name in COMPONENTS}
     return {
         "schemaVersion": 1, "releaseSet": sha, "status": "candidate", "previousReleaseSet": None,
-        "components": components, "agent": {"version": "0.21.3", "sourceRevision": "d" * 40},
+        "components": components, "agent": {"releaseTag": "v2026.9.21", "version": "0.21.4", "sourceRevision": "d" * 40},
         "contracts": {
             "appWeb": {"app": [1], "web": [1, 2]}, "webRelay": {"web": [2], "relay": [2]},
             "appRelay": {"app": [1], "relay": [1]},
@@ -75,14 +75,18 @@ class ReleaseSetTests(unittest.TestCase):
     def test_independent_versions_and_expanded_contracts(self):
         self.assertEqual(validate(candidate()), list(COMPONENTS))
         self.assertEqual(validate(complete(candidate())), list(COMPONENTS))
+        legacy = candidate()
+        legacy["agent"].pop("releaseTag")
+        validate(legacy)  # The first published schema-v1 manifest predates release-only Agent pins.
         document = candidate()
-        document["agent"] = {"version": "0.21.3", "image": "docker.io/nousresearch/hermes-agent@sha256:" + "d" * 64}
+        document["agent"] = {"releaseTag": "v2026.9.21", "version": "0.21.4", "image": "docker.io/nousresearch/hermes-agent@sha256:" + "d" * 64}
         document["components"]["web"]["tag"] = "web-exp-v2.0.0"
         validate(document)
 
     def test_rejects_incomplete_mutable_or_incompatible_references(self):
         changes = [
             lambda d: d.pop("agent"),
+            lambda d: d["agent"].update(releaseTag="main"),
             lambda d: d["agent"].pop("sourceRevision"),
             lambda d: d["components"]["web"].update(image="ghcr.io/maudecode/talaria-web:latest"),
             lambda d: d["components"]["relay"].update(sourceRevision="main"),

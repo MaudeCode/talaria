@@ -32,18 +32,9 @@ def _fake_secret_scope(calls: list) -> types.ModuleType:
     def reset_secret_scope(token):
         calls.append(("reset-scope", token))
 
-    def set_multiplex_context(active):
-        calls.append(("multiplex", active))
-        return "mux-token"
-
-    def reset_multiplex_context(token):
-        calls.append(("reset-multiplex", token))
-
     module.build_profile_secret_scope = build_profile_secret_scope
     module.set_secret_scope = set_secret_scope
     module.reset_secret_scope = reset_secret_scope
-    module.set_multiplex_context = set_multiplex_context
-    module.reset_multiplex_context = reset_multiplex_context
     return module
 
 
@@ -52,8 +43,15 @@ def scope_calls(monkeypatch):
     calls: list = []
     agent = types.ModuleType("agent")
     agent.secret_scope = _fake_secret_scope(calls)
+    env_loader = types.ModuleType("hermes_cli.env_loader")
+    env_loader.hydrate_profile_secret_sources = lambda home: calls.append(("hydrate", Path(home)))
+    launch_policy = types.ModuleType("tui_gateway.launch_profile_policy")
+    launch_policy.activate_multi_profile_hosting = lambda: calls.append(("activate", True))
+    launch_policy.launch_secret_scope = lambda home: calls.append(("launch-scope", Path(home))) or agent.secret_scope.build_profile_secret_scope(home)
     monkeypatch.setitem(sys.modules, "agent", agent)
     monkeypatch.setitem(sys.modules, "agent.secret_scope", agent.secret_scope)
+    monkeypatch.setitem(sys.modules, "hermes_cli.env_loader", env_loader)
+    monkeypatch.setitem(sys.modules, "tui_gateway.launch_profile_policy", launch_policy)
     return calls
 
 
@@ -67,8 +65,9 @@ def test_named_profile_runs_under_its_own_secrets_with_multiplex_semantics(tmp_p
     with home_module.scoped_home(named):
         assert os.environ["HERMES_HOME"] == str(named)
         assert ("scope", {"OPENAI_API_KEY": "sk-work"}) in scope_calls
-        assert ("multiplex", True) in scope_calls
-    assert scope_calls[-2:] == [("reset-multiplex", "mux-token"), ("reset-scope", "scope-token")]
+        assert ("activate", True) in scope_calls
+        assert ("hydrate", named) in scope_calls
+    assert scope_calls[-1] == ("reset-scope", "scope-token")
 
 
 def test_root_profile_keeps_single_profile_semantics(tmp_path, monkeypatch, scope_calls) -> None:
@@ -77,8 +76,9 @@ def test_root_profile_keeps_single_profile_semantics(tmp_path, monkeypatch, scop
     (root / ".env").write_text("OPENAI_API_KEY=sk-root\n")
     monkeypatch.setattr(home_module, "_PROCESS_HOME", root)
     with home_module.scoped_home(root):
+        assert ("launch-scope", root) in scope_calls
         assert ("scope", {"OPENAI_API_KEY": "sk-root"}) in scope_calls
-        assert not any(name == "multiplex" for name, _ in scope_calls)
+        assert not any(name == "activate" for name, _ in scope_calls)
 
 
 def test_named_profile_fails_closed_without_a_secret_scope(tmp_path, monkeypatch) -> None:

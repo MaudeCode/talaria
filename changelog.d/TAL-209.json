@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web now pins its tested Hermes Agent dependency to a stable upstream release instead of an arbitrary commit.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

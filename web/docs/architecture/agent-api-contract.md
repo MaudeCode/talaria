@@ -9,11 +9,12 @@ package, on the Agent's own venv interpreter.
 
 ## Tested identity
 
-`sidecar/agent_dependency.json` records the tested external Agent: an exact
-package version, source commit, and image digest. The launcher fetches the
-installer from that commit when it installs an Agent; existing installations are
-discovered and retained, never downgraded. Both multi-container Compose variants
-inherit their Agent image from the same file through Compose `extends`.
+`sidecar/agent_dependency.json` records the tested external Agent: a stable
+release tag, its exact package version and peeled source commit, and the release
+image digest. The launcher fetches the installer from that commit when it
+installs an Agent; existing installations are discovered and retained, never
+downgraded. Both multi-container Compose variants inherit their Agent image from
+the same file through Compose `extends`.
 
 At handshake the sidecar compares the loaded Agent revision with the pin and
 reports `{agent_revision, agent_version, pinned_revision, pinned_version,
@@ -27,13 +28,15 @@ an operator installed.
 
 Run `python3 scripts/check-agent-compatibility.py` from the monorepo root when
 changing the pin or preparing a release. The gate fetches only the pinned
-source, installs its locked dependencies, exercises real Agent imports and the
-sidecar's `SessionDB` write path, runs the sidecar pytest suite on that
-interpreter, and (unless `--skip-docker`) repeats the probe against the
-digest-pinned container with networking disabled. It uses disposable homes and
-databases and never production credentials or provider requests. A passing
-identity is a tested combination, not a requirement that independently installed
-Agent or peer component versions be equal.
+release tag, requires it to peel to the recorded commit, installs its locked
+dependencies, exercises real Agent imports and the sidecar's `SessionDB` write
+path, and runs the sidecar pytest suite on that interpreter. Unless
+`--skip-docker` is set, it also requires the release-tagged image to match the
+recorded digest and repeats the probe against that digest with networking
+disabled. It uses disposable homes and databases and never production
+credentials or provider requests. A passing identity is a tested combination,
+not a requirement that independently installed Agent or peer component versions
+be equal. Unreleased Agent `main` canaries never change this pin.
 
 ## Dependency classes
 
