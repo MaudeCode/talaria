@@ -622,7 +622,7 @@ async function releaseTags(path: string, git: GitRun): Promise<string[]> {
   return out.ok ? out.out.split('\n').map((l) => l.trim()).filter((tag) => /^v\d+\.\d+\.\d+$/.test(tag)) : []
 }
 async function currentReleaseTag(path: string, git: GitRun): Promise<string | null> {
-  const out = await git(['describe', '--tags', '--abbrev=0', '--match', AGENT_TAG_GLOB], path)
+  const out = await git(['describe', '--tags', '--exact-match', '--match', AGENT_TAG_GLOB, 'HEAD'], path)
   return out.ok && out.out ? out.out : null
 }
 const headContainsRef = async (path: string, ref: string, git: GitRun): Promise<boolean> => (await git(['merge-base', '--is-ancestor', ref, 'HEAD'], path)).ok
