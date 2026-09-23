@@ -90,7 +90,8 @@ jobs:
         run: |
           set -euo pipefail
           paths=()
-          for name in release-plan contract-receipts agent-receipts relay-build web-build app-build ios-ipa ios-dsyms relay-publish web-publish app-publish; do
+          # The IPA and dSYMs were consumed above; finalization reads only these receipt handoffs.
+          for name in release-plan contract-receipts agent-receipts relay-build web-build app-build relay-publish web-publish app-publish; do
             paths+=("$name" "$RUNNER_TEMP/recovered/$name")
           done
           "$RELEASE_PYTHON" releases/artifacts.py put "${paths[@]}"
@@ -117,7 +118,7 @@ jobs:
           TALARIA_S3_BUCKET: talaria-release
           TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
           TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
-        run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/recovered"'
+        run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/recovered" --receipts'
       - name: Assemble and publish the completed original release set
         env:
           GH_TOKEN: ${{ github.token }}

@@ -118,6 +118,8 @@ def path_suites(path):
         return CONSUMERS
     if path.startswith(".github/workflows/"):
         return WORKFLOWS.get(local.removeprefix("workflows/"), SUITES)
+    if path == ".github/actions/docker-plugins/action.yml":
+        return {"docker", "tooling"}  # Compose/Buildx setup for the Docker smoke.
     if path.startswith((".github/actions/", ".github/release-templates/", "releases/")) or path in (
             ".github/actionlint.yaml", ".github/dependabot.yml", ".github/CODEOWNERS", "docs/monorepo-sources.json"):
         return {"tooling"}

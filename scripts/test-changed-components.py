@@ -43,6 +43,8 @@ class RoutingTests(unittest.TestCase):
             (["changelog.d/TAL-123.json"], set()),
             # The live-fixture test runs only in the contracts step, so editing it must select contracts.
             (["app/TalariaTests/APIClientSessionListTests.swift"], {"app", "contracts"}),
+            # The Docker plugin action sets up Compose/Buildx for the smoke, so it runs the smoke too.
+            ([".github/actions/docker-plugins/action.yml"], {"docker", "tooling"}),
             # Every script is mapped; an unmapped one would select the full suite.
             (["scripts/check-release-contracts.py"], {"contracts", "tooling"}),
             (["scripts/check", "scripts/check-regression-port.py", "scripts/test-check-regression-port.py"], {"tooling"}),

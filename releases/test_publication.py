@@ -378,12 +378,20 @@ class PublicationTests(unittest.TestCase):
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/release-set.yml"),
         ], text=True))
-        for name in ("candidate", "publish-set"):
-            runs = [step.get("run", "") for step in document["jobs"][name]["steps"]]
+        recovery = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+            str(root / ".github/workflows/recover-cutover.yml"),
+        ], text=True))
+        for workflow, name in ((document, "candidate"), (document, "publish-set"), (recovery, "publish-set")):
+            runs = [step.get("run", "") for step in workflow["jobs"][name]["steps"]]
             restores = [run for run in runs if "artifacts.py get" in run]
             with self.subTest(job=name):
                 self.assertTrue(restores)
                 self.assertTrue(all("--receipts" in run for run in restores), restores)
+        # Recovery consumes the IPA itself; finalization cannot use it, so it is never restaged.
+        restage = "\n".join(step.get("run", "") for step in recovery["jobs"]["app"]["steps"] if "artifacts.py put" in step.get("run", ""))
+        self.assertNotIn("ios-ipa", restage)
+        self.assertNotIn("ios-dsyms", restage)
 
     def test_buildx_builders_are_never_fixed_names(self):
         # A Docker daemon that outlives a job would reject a second builder with the same fixed name.
