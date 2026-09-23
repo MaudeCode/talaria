@@ -50,6 +50,19 @@ def complete(document):
 
 
 class ReleaseSetTests(unittest.TestCase):
+    def test_published_manifests_from_before_tal_245_still_validate(self):
+        # Published manifests are immutable; sets released before TAL-245 still record the Web upstreamBase.
+        from cli import VALIDATOR
+        legacy = complete(candidate())
+        legacy["components"]["web"]["upstreamBase"] = "f" * 40
+        VALIDATOR.validate(legacy)
+        VALIDATOR.validate(complete(candidate()))
+        for key, value in (("upstreamBase", "not-a-sha"), ("unexpected", "x")):
+            broken = complete(candidate())
+            broken["components"]["web"][key] = value
+            with self.subTest(key=key), self.assertRaises(ValidationError):
+                VALIDATOR.validate(broken)
+
     def test_component_tag_workflow_cannot_publish(self):
         workflow = Path(__file__).resolve().parents[1] / ".github/workflows/release.yml"
         document = json.loads(subprocess.check_output([
