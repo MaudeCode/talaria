@@ -15,16 +15,21 @@ enough to assert on; a path whose cost is the rendered app is measured in
 | Streaming replay catch-up scaling | `TalariaTests/ReplayCatchUpPerformanceTests` | every run |
 | Dense Kanban load and filter | `TalariaTests/KanbanBoardPerformanceTests` | every run |
 | Large image preview preparation | `TalariaTests/ImagePreviewPerformanceTests` | every run |
-| Cold and warm launch | `TalariaUITests/LaunchPerformanceUITests` | main pushes, full local suite |
-| Large transcript open and scroll | `TalariaUITests/TranscriptPerformanceUITests` | main pushes, full local suite |
-| Repeated navigation and dismissal | `TalariaUITests/NavigationPerformanceUITests` | main pushes, full local suite |
-| Sidebar close hitch | `TalariaUITests/SidebarPerformanceUITests` | main pushes, full local suite |
+| Cold and warm launch | `TalariaUITests/LaunchPerformanceUITests` | daily UI Performance workflow, full local suite |
+| Large transcript open and scroll | `TalariaUITests/TranscriptPerformanceUITests` | daily UI Performance workflow, full local suite |
+| Repeated navigation and dismissal | `TalariaUITests/NavigationPerformanceUITests` | daily UI Performance workflow, full local suite |
+| Sidebar close hitch | `TalariaUITests/SidebarPerformanceUITests` | daily UI Performance workflow, full local suite |
 
-The UI classes assert nothing about behaviour, and together they add several
+The UI classes repeat each path under `measure` and together add several
 minutes of relaunching and scrolling, so `.github/workflows/pr-ci.yml` skips
-them on pull requests through `PERFORMANCE_UI_TEST_CLASSES` and runs them on
-every push to `main`. The unit-level budgets are fast and deterministic, so they
-stay in the pull-request suite where a regression is introduced.
+them on every run through `PERFORMANCE_UI_TEST_CLASSES`.
+`.github/workflows/ui-performance.yml` runs them daily at 09:00 UTC (or on
+dispatch) serially on the Mac and stores the metrics under
+`talaria-ci/performance-metrics/ui-performance/` on the NAS. Their functional
+halves (warm resume, dense session open and dismiss) run once without measuring
+in `TalariaUITests/PerformancePathUITests`, which stays in every CI suite. The
+unit-level budgets are fast and deterministic, so they stay in the pull-request
+suite where a regression is introduced.
 
 ## Fixture data
 

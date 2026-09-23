@@ -419,6 +419,10 @@ class PublicationTests(unittest.TestCase):
         self.assertIn('test_options+=("-skip-testing:${performance_class}")', suite)
         # Not gated on pull requests: main pushes skip them too.
         self.assertNotRegex(suite, r'GITHUB_EVENT_NAME\}" == "pull_request" \]\]; then\s+for performance_class')
+        # The behavioural halves of those classes stay in every CI suite (resume, dense open/dismiss).
+        functional = (root / "app/TalariaUITests/PerformanceUITests.swift").read_text()
+        self.assertIn("final class PerformancePathUITests: PerformanceUITestCase", functional)
+        self.assertNotIn("TalariaUITests/PerformancePathUITests", classes)
         scheduled = workflow("ui-performance.yml")
         self.assertIn("schedule", scheduled["on"])
         self.assertIn("workflow_dispatch", scheduled["on"])
