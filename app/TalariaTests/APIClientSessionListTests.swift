@@ -19,22 +19,28 @@ final class APIClientSessionListTests: APIClientTestCase {
     }
 
     func testLiveUpstreamContractResponsesDecodeWhenSupplied() throws {
-        let encoded = Bundle(for: APIClientSessionListTests.self)
-            .object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+        let manifestData: Data
+        if let path = ProcessInfo.processInfo.environment["TALARIA_LIVE_CONTRACT_RESPONSES"] {
+            // PR CI supplies the Linux probe's digest-checked fixture at test time
+            // (TEST_RUNNER_ prefix), so the build never waits for the probe.
+            manifestData = try Data(contentsOf: URL(fileURLWithPath: path))
+        } else {
+            let encoded = Bundle(for: APIClientSessionListTests.self)
+                .object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
 #if TALARIA_LIVE_CONTRACT
-        guard let encoded, encoded.hasPrefix("base64:")
-        else {
-            XCTFail("The contract runner did not provide live upstream responses")
-            return
-        }
+            guard let encoded, encoded.hasPrefix("base64:")
+            else {
+                XCTFail("The contract runner did not provide live upstream responses")
+                return
+            }
 #else
-        guard let encoded, encoded.hasPrefix("base64:")
-        else {
-            return
-        }
+            guard let encoded, encoded.hasPrefix("base64:")
+            else {
+                throw XCTSkip("No live upstream responses were supplied")
+            }
 #endif
-
-        let manifestData = try XCTUnwrap(Data(base64Encoded: String(encoded.dropFirst(7))))
+            manifestData = try XCTUnwrap(Data(base64Encoded: String(encoded.dropFirst(7))))
+        }
         let manifest = try XCTUnwrap(
             JSONSerialization.jsonObject(with: manifestData) as? [String: Any]
         )

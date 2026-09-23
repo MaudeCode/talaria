@@ -21,6 +21,9 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  # The Mac test job reads the probe job's status and fixture annotation.
+  actions: read
+  checks: read
 
 concurrency:
   group: pr-ci-${{ github.event.pull_request.number || github.sha }}
@@ -81,12 +84,12 @@ jobs:
 
   test:
     name: Build and Test
-    # Runs for App changes and for Web/contract changes. The latter reuse one
-    # build-for-testing and run only the native contract classes against the
-    # Linux probe's fixture; a failed or missing probe skips the job and the
-    # CI Gate then fails it as a required skipped check.
-    needs: [changes, contracts]
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || needs.changes.outputs.contracts != 'false') && (needs.contracts.result == 'success' || needs.contracts.result == 'skipped') }}
+    # Runs for App changes and for Web/contract changes; Web/contract-only
+    # changes run just the native contract classes. It starts without waiting
+    # for the Linux probe: the one live-fixture test runs last, against the
+    # probe's digest-checked fixture, and a failed probe fails that step.
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || needs.changes.outputs.contracts != 'false') }}
     runs-on: maude-mac
     timeout-minutes: 90
 
@@ -98,8 +101,9 @@ jobs:
       TEST_WORKER_COUNT: 2
       APP_TESTS_REQUIRED: ${{ needs.changes.result != 'success' || needs.changes.outputs.app != 'false' }}
       APP_UI_REQUIRED: ${{ github.event_name != 'pull_request' || needs.changes.outputs.app_ui != 'false' }}
-      CONTRACT_FIXTURE: ${{ needs.contracts.outputs.fixture }}
-      CONTRACT_FIXTURE_SHA256: ${{ needs.contracts.outputs.fixture_sha256 }}
+      CONTRACTS_SELECTED: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
+      LIVE_CONTRACT_TEST: TalariaTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied
+      LIVE_CONTRACT_RESULT_BUNDLE_PATH: LiveContractResults.xcresult
       CONTRACT_TEST_CLASSES: >-
         TalariaTests/ContractReadinessTests
         TalariaTests/SharedContractTests
@@ -128,28 +132,6 @@ jobs:
 
       - name: Show Xcode version
         run: xcodebuild -version
-
-      - name: Fetch and verify the live Web contract fixture from the NAS
-        if: needs.contracts.result == 'success'
-        env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-ci
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
-        run: |
-          set -euo pipefail
-          # Only this run's probe object is acceptable; the digest comes from that job's outputs.
-          [[ "${CONTRACT_FIXTURE}" == "fixtures/pr-ci/${GITHUB_RUN_ID}/"* ]]
-          fixture="$RUNNER_TEMP/contract-fixture/live-responses.json"
-          ../scripts/s3-artifact get "${CONTRACT_FIXTURE}" "${fixture}"
-          echo "${CONTRACT_FIXTURE_SHA256}  ${fixture}" | shasum -a 256 --check
-          # scripts/test-ios transports the same manifest through the test-only
-          # display name and the TALARIA_LIVE_CONTRACT compilation condition.
-          {
-            echo "TALARIA_UPSTREAM_CONTRACT_RESPONSES=base64:$(base64 < "$fixture" | tr -d '\n')"
-            echo "CONTRACT_TESTS_REQUIRED=true"
-          } >> "$GITHUB_ENV"
 
       - name: Select simulator
         id: sim
@@ -183,11 +165,6 @@ jobs:
         run: |
           set -euo pipefail
           start_seconds=${SECONDS}
-          contract_settings=()
-          if [[ -n "${TALARIA_UPSTREAM_CONTRACT_RESPONSES:-}" ]]; then
-            # shellcheck disable=SC2016 # xcodebuild expands $(inherited) itself.
-            contract_settings=("INFOPLIST_KEY_CFBundleDisplayName=${TALARIA_UPSTREAM_CONTRACT_RESPONSES}" 'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) TALARIA_LIVE_CONTRACT')
-          fi
           xcodebuild build-for-testing \
             -project "${PROJECT_PATH}" \
             -scheme "${SCHEME}" \
@@ -195,7 +172,6 @@ jobs:
             -derivedDataPath "${DERIVED_DATA_PATH}" \
             -disableAutomaticPackageResolution \
             -showBuildTimingSummary \
-            "${contract_settings[@]}" \
             APP_IDENTIFIER_SUFFIX=.xctest \
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGNING_REQUIRED=NO \
@@ -215,7 +191,7 @@ jobs:
           start_seconds=${SECONDS}
           # The fuzz soak class reruns the PR fuzz properties at a far larger
           # seed budget; the scheduled Fuzz Soak workflow owns it (TAL-85).
-          test_options=("-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests")
+          test_options=("-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests" "-skip-testing:${LIVE_CONTRACT_TEST}")
           if [[ "${APP_TESTS_REQUIRED}" == "false" ]]; then
             # Web/contract-only change: the fixture-backed native contract classes are the whole selection.
             for contract_class in ${CONTRACT_TEST_CLASSES}; do
@@ -249,23 +225,78 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             PROVISIONING_PROFILE_SPECIFIER=
           duration_seconds=$((SECONDS - start_seconds))
-          if [[ "${CONTRACT_TESTS_REQUIRED:-false}" == "true" ]]; then
-            # The fixture must have reached the executed bundle and every contract class must have passed.
-            plist=$(find "${DERIVED_DATA_PATH}/Build/Products" -path '*/TalariaTests.xctest/Info.plist' -print -quit)
-            [[ "$(/usr/bin/plutil -extract CFBundleDisplayName raw "${plist}")" == "${TALARIA_UPSTREAM_CONTRACT_RESPONSES}" ]]
+          if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
+            # Every native contract class must have passed.
             xcrun xcresulttool get test-results tests --path "${RESULT_BUNDLE_PATH}" --compact > contract-results.json
             for contract_class in ${CONTRACT_TEST_CLASSES}; do
               /usr/bin/jq -e --arg prefix "test://com.apple.xcode/Talaria/${contract_class}/" '
                 any(.. | objects; .nodeType? == "Test Case" and .result? == "Passed" and ((.nodeIdentifierURL? // "") | startswith($prefix)))
               ' contract-results.json >/dev/null || { echo "Native contract class ${contract_class} did not pass" >&2; exit 1; }
             done
-            echo "- Native contract tests: fixture ${CONTRACT_FIXTURE} (${CONTRACT_FIXTURE_SHA256})" >> "${GITHUB_STEP_SUMMARY}"
           fi
           echo "Test-without-building duration: ${duration_seconds}s"
           echo "- Test without building (${TEST_WORKER_COUNT} workers): ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             echo "- Performance UI budgets: main-push CI" >> "${GITHUB_STEP_SUMMARY}"
           fi
+
+      - name: Run the live Web contract test against the probe fixture
+        if: env.CONTRACTS_SELECTED == 'true'
+        env:
+          SIMULATOR_ID: ${{ steps.sim.outputs.id }}
+          GH_TOKEN: ${{ github.token }}
+          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+          TALARIA_S3_BUCKET: talaria-ci
+          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
+          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          start_seconds=${SECONDS}
+          # Wait for this run's latest probe attempt; its annotation (written only by
+          # that job) carries the fixture key and digest.
+          deadline=$((SECONDS + 1500))
+          while :; do
+            probe=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=latest&per_page=100" \
+              --jq '[.jobs[] | select(.name == "Web contract probe")] | if length == 1 then .[0] | "\(.id) \(.status) \(.conclusion)" else "missing" end')
+            read -r probe_id probe_status probe_conclusion <<< "${probe} - -"
+            [[ "${probe_status}" == "completed" ]] && break
+            (( SECONDS < deadline )) || { echo "Timed out waiting for the Web contract probe (${probe})" >&2; exit 1; }
+            sleep 15
+          done
+          [[ "${probe_conclusion}" == "success" ]] || { echo "Web contract probe finished ${probe_conclusion}" >&2; exit 1; }
+          notice=$(gh api "repos/${GITHUB_REPOSITORY}/check-runs/${probe_id}/annotations" \
+            --jq '[.[] | select(.title == "contract-fixture") | .message] | if length == 1 then .[0] else "" end')
+          [[ "${notice}" =~ ^key=(fixtures/pr-ci/${GITHUB_RUN_ID}/[0-9]+/live-responses\.json)\ sha256=([a-f0-9]{64})$ ]] \
+            || { echo "The probe did not publish exactly one valid fixture annotation" >&2; exit 1; }
+          fixture_key=${BASH_REMATCH[1]}
+          fixture_sha256=${BASH_REMATCH[2]}
+          fixture="$RUNNER_TEMP/contract-fixture/live-responses.json"
+          ../scripts/s3-artifact get "${fixture_key}" "${fixture}"
+          echo "${fixture_sha256}  ${fixture}" | shasum -a 256 --check
+          # xcodebuild strips TEST_RUNNER_ and hands the path to the simulator test process.
+          TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}" xcodebuild test-without-building \
+            -project "${PROJECT_PATH}" \
+            -scheme "${SCHEME}" \
+            -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
+            -derivedDataPath "${DERIVED_DATA_PATH}" \
+            -resultBundlePath "${LIVE_CONTRACT_RESULT_BUNDLE_PATH}" \
+            -disableAutomaticPackageResolution \
+            -collect-test-diagnostics never \
+            -only-testing:"${LIVE_CONTRACT_TEST}" \
+            APP_IDENTIFIER_SUFFIX=.xctest \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER=
+          # A missing fixture makes the test skip, so require an explicit pass.
+          xcrun xcresulttool get test-results tests --path "${LIVE_CONTRACT_RESULT_BUNDLE_PATH}" --compact \
+            | /usr/bin/jq -e --arg id "test://com.apple.xcode/Talaria/${LIVE_CONTRACT_TEST}" '
+                [.. | objects | select(.nodeType? == "Test Case" and ((.nodeIdentifierURL? // "") | startswith($id)))]
+                | length == 1 and .[0].result == "Passed"
+              ' >/dev/null || { echo "The live Web contract test did not pass against the fixture" >&2; exit 1; }
+          echo "- Live Web contract test: ${fixture_key} (${fixture_sha256}), $((SECONDS - start_seconds))s including the probe wait" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Report slowest tests
         if: always()
@@ -425,6 +456,9 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.docker != 'false') }}
     uses: ./.github/workflows/web-docker-smoke.yml
+    secrets:
+      TALARIA_CI_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
+      TALARIA_CI_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
 
   relay:
     needs: changes
@@ -450,11 +484,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - name: Probe local Web HTTP and SSE contracts and record the live responses
         run: scripts/validate-upstream-contract --server-only --responses-output "$RUNNER_TEMP/contract-fixture/live-responses.json"
-      # The Build and Test job on the Mac runner embeds this exact fixture in
-      # the App test bundle and runs the native request/decoding/SSE contract
-      # tests against it, so Web changes need no separate Mac job.
+      # The Build and Test job on the Mac runner starts without waiting for this
+      # job. After its own suite it reads the key and digest from this job's
+      # annotation, which only this job can write, and runs the native live
+      # decoding test against the fixture, so Web changes need no separate Mac job.
       - name: Store the live response fixture on the NAS
         id: fixture
         env:
@@ -468,8 +505,10 @@ jobs:
           fixture="$RUNNER_TEMP/contract-fixture/live-responses.json"
           key="fixtures/pr-ci/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/live-responses.json"
           ../scripts/s3-artifact put "$key" "$fixture"
+          sha256=$(sha256sum "$fixture" | cut -d' ' -f1)
           echo "name=$key" >> "$GITHUB_OUTPUT"
-          echo "sha256=$(sha256sum "$fixture" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          echo "::notice title=contract-fixture::key=$key sha256=$sha256"
 
   gate:
     name: CI Gate

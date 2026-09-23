@@ -287,7 +287,8 @@ class PublicationTests(unittest.TestCase):
         # GitHub artifact storage is not used. CI workflows may only reference the talaria-ci key, release
         # workflows only the talaria-release key, and no other workflow references either.
         allowed = {
-            "pr-ci.yml": {"contracts": "CI", "test": "CI"},
+            "pr-ci.yml": {"contracts": "CI", "test": "CI", "web-docker": "CI"},
+            "web-docker-smoke.yml": {"smoke": "CI"},
             "fuzz-soak.yml": {"soak": "CI"},
             "ios-release-build.yml": {"build": "RELEASE"},
             "release-set.yml": {name: "RELEASE" for name in (
@@ -307,7 +308,10 @@ class PublicationTests(unittest.TestCase):
                 buckets = set(re.findall(r"secrets\.TALARIA_(CI|RELEASE)_S3_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY)", json.dumps(job)))
                 expected = allowed.get(path.name, {}).get(name)
                 self.assertEqual(buckets, {expected} if expected else set(), (path.name, name))
-                if expected:
+                if expected and "uses" in job:
+                    # A caller may only forward the CI key into the Docker smoke's NAS layer cache.
+                    self.assertEqual(job["uses"], "./.github/workflows/web-docker-smoke.yml", (path.name, name))
+                elif expected:
                     self.assertRegex(json.dumps(job), r"scripts/s3-artifact|artifacts\.py (put|get)|releases/recover\.py", (path.name, name))
         for path in (root / ".github/actions").glob("*/action.yml"):
             self.assertNotIn("artifact@", path.read_text(), path.name)
@@ -342,6 +346,25 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(set(found), set(native))
         for job, dependency in native.items():
             self.assertIn(dependency, found[job], job)
+
+    def test_mac_suite_does_not_wait_for_the_linux_probe(self):
+        # Only the live-fixture test needs the probe; it runs last against the digest from the probe's annotation.
+        root = Path(__file__).resolve().parents[1]
+        document = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+            str(root / ".github/workflows/pr-ci.yml"),
+        ], text=True))
+        test, probe = document["jobs"]["test"], document["jobs"]["contracts"]
+        self.assertEqual(test["needs"], "changes")
+        runs = {step.get("name"): step.get("run", "") for step in test["steps"]}
+        self.assertIn('"-skip-testing:${LIVE_CONTRACT_TEST}"', runs["Test without building"])
+        live = runs["Run the live Web contract test against the probe fixture"]
+        for required in ('select(.title == "contract-fixture")', "shasum -a 256 --check",
+                         'TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"', '-only-testing:"${LIVE_CONTRACT_TEST}"',
+                         '.[0].result == "Passed"'):
+            self.assertIn(required, live)
+        self.assertIn("::notice title=contract-fixture::key=$key sha256=$sha256",
+                      "\n".join(step.get("run", "") for step in probe["steps"]))
 
     def test_linux_jobs_running_ruby_tooling_set_up_ruby(self):
         # The pool image has no Ruby; the Mac did. Tag validation (cli.py prepare) and TestFlight upload
