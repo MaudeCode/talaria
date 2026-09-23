@@ -15,7 +15,7 @@ jobs:
     runs-on: ["ghar-set-maudecode"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: relay/.node-version
       - name: Install the pinned native package manager
