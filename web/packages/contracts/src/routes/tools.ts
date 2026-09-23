@@ -10,7 +10,8 @@ const tags = ['tools']
 const Ok = z.object({ ok: z.literal(true) })
 
 
-const Target = z.object({ target: z.string().optional(), channel: z.string().nullable().optional() })
+const AgentOptions = { agent_channel: z.enum(['stable', 'experimental']).optional(), confirmed_agent_revision: z.string().regex(/^[a-f0-9]{40}$/).optional() }
+const Target = z.object({ target: z.string().optional(), channel: z.string().nullable().optional(), ...AgentOptions })
 
 export const toolsContract = {
   skills: {
@@ -58,7 +59,7 @@ export const toolsContract = {
   plugins: oc.route({ method: 'GET', path: '/api/plugins', tags }).output(PluginsSchema),
   updates: {
     check: oc.route({ method: 'GET', path: '/api/updates/check', tags, summary: 'Cached status; `POST` runs the check. Git source installs can update from completed releases (stable) or origin/main (experimental); direct global npm installs can update to completed stable npm releases.' }).output(UpdatesCheckSchema),
-    checkNow: oc.route({ method: 'POST', path: '/api/updates/check', tags }).input(z.object({ force: Json.optional(), channel: z.string().nullable().optional() })).output(UpdatesCheckSchema),
+    checkNow: oc.route({ method: 'POST', path: '/api/updates/check', tags }).input(z.object({ force: Json.optional(), channel: z.string().nullable().optional(), agent_channel: AgentOptions.agent_channel })).output(UpdatesCheckSchema),
     apply: oc.route({ method: 'POST', path: '/api/updates/apply', tags }).input(Target).output(UpdateApplySchema),
     force: oc.route({ method: 'POST', path: '/api/updates/force', tags }).input(Target).output(UpdateApplySchema),
     clearLock: oc.route({ method: 'POST', path: '/api/updates/clear_lock', tags }).input(Target).output(UpdateApplySchema),

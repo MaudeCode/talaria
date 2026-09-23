@@ -31,6 +31,47 @@ function renderSystem() {
 }
 
 describe('SystemSection "Check now"', () => {
+  it('keeps the Agent picker on Stable when Web is Experimental', async () => {
+    renderSystem()
+    expect(await screen.findByRole('combobox', { name: /^web update channel$/i })).toHaveTextContent(/experimental/i)
+    expect(screen.getByRole('combobox', { name: /^agent update channel$/i })).toHaveTextContent(/stable/i)
+  })
+
+  it('does not label a Web release count as commits', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: 1, release_based: true }, agent: { behind: 0 } }))
+    renderSystem()
+    expect(await screen.findByText('webui: release available')).toBeInTheDocument()
+    expect(screen.queryByText(/1 commits behind/)).not.toBeInTheDocument()
+  })
+
+  it('requires confirmation for an unsupported Agent and cancellation never applies it', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 0 }, agent: { behind: 4914 } })
+    vi.mocked(api.applyUpdates).mockResolvedValue({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_version: '0.21.3', supported_revision: 'a'.repeat(40), agent_channel: 'stable' })
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: /update agent/i }))
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('may cause issues')
+    expect(screen.getByRole('alertdialog')).not.toHaveTextContent(/SSO|chat/i)
+    await userEvent.click(screen.getByRole('button', { name: /cancel/i }))
+    expect(api.applyUpdates).toHaveBeenCalledTimes(1)
+  })
+
+  it('persists the Agent channel independently and acknowledges only the selected revision', async () => {
+    settingsState.update_channel = 'stable'
+    vi.mocked(api.saveSettings).mockImplementation((patch) => { settingsState = { ...settingsState, ...patch }; return Promise.resolve(settingsState) })
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 0 }, agent: { behind: 4914 } })
+    vi.mocked(api.applyUpdates).mockResolvedValueOnce({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_version: '0.21.3', supported_revision: 'a'.repeat(40), agent_channel: 'experimental' }).mockResolvedValueOnce({ ok: true })
+    renderSystem()
+    await userEvent.click(await screen.findByRole('combobox', { name: /^agent update channel$/i }))
+    await userEvent.click(await screen.findByRole('option', { name: /^experimental$/i }))
+    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ agent_update_channel: 'experimental' }))
+    expect(screen.getByRole('combobox', { name: /^web update channel$/i })).toHaveTextContent(/stable/i)
+    expect(screen.getByText('agent: 4914 commits behind')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /update agent/i }))
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('This Agent version is not officially supported by Talaria and may cause issues.')
+    await userEvent.click(screen.getByRole('button', { name: /update anyway/i }))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenLastCalledWith('apply', undefined, 'agent', { agent_channel: 'experimental', confirmed_agent_revision: 'b'.repeat(40) }))
+  })
+
   beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: false, auto_apply_updates: false, update_channel: 'experimental' }; vi.mocked(api.checkUpdatesNow).mockReset(); vi.mocked(api.applyUpdates).mockReset(); vi.mocked(api.saveSettings).mockReset(); vi.mocked(showToast).mockReset(); vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: { behind: 0 }, agent: { behind: 0 } }) })
 
   it('does not call unavailable private release metadata up to date', async () => {
@@ -47,7 +88,7 @@ describe('SystemSection "Check now"', () => {
     vi.mocked(api.applyUpdates).mockResolvedValue({ ok: true })
     renderSystem()
     await userEvent.click(await screen.findByRole('button', { name: /update agent/i }))
-    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', undefined, 'agent'))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', undefined, 'agent', { agent_channel: 'stable' }))
     expect(screen.queryByRole('button', { name: /update now/i })).not.toBeInTheDocument()
   })
 
@@ -62,7 +103,7 @@ describe('SystemSection "Check now"', () => {
     await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
     await screen.findByText(/up to date/i)
     await userEvent.click(screen.getByRole('button', { name: /update agent/i }))
-    await waitFor(() => expect(api.applyUpdates).toHaveBeenLastCalledWith('apply', undefined, 'agent'))
+    await waitFor(() => expect(api.applyUpdates).toHaveBeenLastCalledWith('apply', undefined, 'agent', { agent_channel: 'stable' }))
   })
 
   it('keeps the repair action available when source is current but provenance is pending', async () => {
@@ -98,7 +139,7 @@ describe('SystemSection "Check now"', () => {
     expect(await screen.findByRole('button', { name: /checking/i })).toBeDisabled()
     await userEvent.click(screen.getByRole('button', { name: /checking/i }))
     expect(api.checkUpdatesNow).toHaveBeenCalledTimes(1)
-    expect(api.checkUpdatesNow).toHaveBeenCalledWith('experimental')
+    expect(api.checkUpdatesNow).toHaveBeenCalledWith('experimental', 'stable')
     expect(api.fetchUpdatesCheck).toHaveBeenCalledTimes(1)
     const fresh = { cached: false, webui: { behind: 3 }, agent: { behind: 1 } }
     resolve(fresh)
@@ -116,7 +157,7 @@ describe('SystemSection "Check now"', () => {
     vi.mocked(api.checkUpdatesNow).mockResolvedValue({ cached: false })
     renderSystem()
     await screen.findByText(/up to date/i)
-    const trigger = screen.getByRole('combobox', { name: /update channel/i })
+    const trigger = screen.getByRole('combobox', { name: /^web update channel$/i })
     expect(trigger).toHaveTextContent(/experimental/i)
     await userEvent.click(trigger)
     await userEvent.click(await screen.findByRole('option', { name: /stable/i }))
@@ -130,7 +171,7 @@ describe('SystemSection "Check now"', () => {
     expect(saves).toHaveLength(2)
     saves[0]!()
     saves[1]!()
-    await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('stable'))
+    await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('stable', 'stable'))
     expect(api.checkUpdatesNow).toHaveBeenCalledTimes(1)
     expect(await screen.findByRole('button', { name: /check now/i })).toBeEnabled()
     expect(trigger).toHaveTextContent(/stable/i)
@@ -146,13 +187,13 @@ describe('SystemSection "Check now"', () => {
     vi.mocked(api.applyUpdates).mockResolvedValue({ ok: true, restart_scheduled: true })
     renderSystem()
     await screen.findByText(/up to date/i)
-    await userEvent.click(screen.getByRole('combobox', { name: /update channel/i }))
+    await userEvent.click(screen.getByRole('combobox', { name: /^web update channel$/i }))
     const experimental = await screen.findByRole('option', { name: /experimental/i })
     expect(screen.getAllByRole('option')).toHaveLength(2)
     expect(screen.getByRole('option', { name: /^stable$/i })).toBeInTheDocument()
     await userEvent.click(experimental)
     await userEvent.click(screen.getByRole('button', { name: /check now/i }))
-    await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('experimental'))
+    await waitFor(() => expect(api.checkUpdatesNow).toHaveBeenCalledWith('experimental', 'stable'))
     await userEvent.click(await screen.findByRole('button', { name: /update now/i }))
     await waitFor(() => expect(api.applyUpdates).toHaveBeenCalledWith('apply', 'experimental', 'webui'))
   })

@@ -252,11 +252,11 @@ export const toolsRouter = os.router({
       // An explicit body channel wins over a debounced, not-yet-saved setting.
       const channel = input.channel === 'stable' || input.channel === 'experimental' ? input.channel : normalizeChannel(settings.update_channel)
       ctx.deps.log(`[updates] checking for updates (force=${String(force)}, channel=${channel})`)
-      return (await ctx.deps.updates.check(force, !pyBool(settings.ignore_agent_updates), channel)) as never
+      return (await ctx.deps.updates.check(force, !pyBool(settings.ignore_agent_updates), channel, input.agent_channel)) as never
     })),
-    apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.apply(updateTarget(input.target), bodyChannel(input.channel)) as never)),
-    force: os.updates.force.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.force(updateTarget(input.target), bodyChannel(input.channel)) as never)),
-    clearLock: os.updates.clearLock.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.clearLock(updateTarget(input.target)) as never)),
+    apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.apply(updateTarget(input.target), bodyChannel(input.channel), () => true, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }) as never)),
+    force: os.updates.force.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.force(updateTarget(input.target), bodyChannel(input.channel), { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }) as never)),
+    clearLock: os.updates.clearLock.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.clearLock(updateTarget(input.target), { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }) as never)),
     summary: os.updates.summary.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.summarize(input.updates ?? {}, input.target) as never)),
   },
   transcribeCapability: os.transcribeCapability.handler(({ context: { ctx } }) => run(async () => {

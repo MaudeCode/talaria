@@ -70,6 +70,29 @@ them. External Agent update and gateway-restart behavior stays separate. Setting
 provides an independent **Update Agent** action, including when Web is current
 or requires manual handling. Applying Web does not also update Agent.
 
+**Web update channel** and **Agent update channel** are independent settings.
+The existing `update_channel` remains Web-only; `agent_update_channel` defaults
+to Stable and is never inherited from Web. Agent Stable selects the latest stable
+upstream release tag; Experimental selects the upstream default branch. Stable
+never falls back to a development branch or rewinds an ahead checkout. Agent
+update counts are actual Git commits from the installed HEAD to the selected
+target, not the number of releases. A failed count is unavailable, not zero.
+
+Before applying an Agent revision other than the one tested with the running
+Talaria release, Settings warns: "This Agent version is not officially supported
+by Talaria and may cause issues." It shows the supported version/revision and
+selected revision, and requires **Update anyway** to proceed. The API returns
+`confirmation_required` without changing files until `confirmed_agent_revision`
+matches the freshly resolved candidate. Apply, force, and lock-retry share this
+check; a newly published target requires fresh confirmation. The acknowledged
+immutable commit is the one installed, even if the upstream branch then moves.
+This acknowledgement does not weaken sidecar compatibility checks or change
+Talaria's official Agent pin. Automatic updates still apply only to Web.
+
+API callers can provide `agent_channel` independently of Web's `channel` on
+check/apply/force requests. Omitting it uses the persisted Agent setting. Cached
+checks are keyed by both channels, and old clients' `channel` remains Web-only.
+
 Matching source alone does not complete an update. If the release stamp or
 running identity is still pending, update status reports `metadata_repair: true`
 while keeping the real commit distance at zero. Settings offers **Finish applying this release**

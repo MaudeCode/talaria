@@ -183,10 +183,10 @@ export const fetchSystemHealth = () => orpc().ops.system()
 /** Passive reader: the server answers from cache and never fetches. */
 export const fetchUpdatesCheck = () => orpc().updates.check(undefined, { signal: timeout(45_000) })
 /** Manual "Check now": only POST `{force:true}` runs a real update check; an explicit `channel` wins over the persisted setting. */
-export const checkUpdatesNow = (channel?: string) => orpc().updates.checkNow({ force: true, ...(channel ? { channel } : {}) }, { signal: timeout(120_000) })
-export const applyUpdates = (action: 'apply' | 'force' | 'clear_lock', channel?: string, target: 'webui' | 'agent' = 'webui') => {
+export const checkUpdatesNow = (channel?: string, agentChannel?: 'stable' | 'experimental') => orpc().updates.checkNow({ force: true, ...(channel ? { channel } : {}), ...(agentChannel ? { agent_channel: agentChannel } : {}) }, { signal: timeout(120_000) })
+export const applyUpdates = (action: 'apply' | 'force' | 'clear_lock', channel?: string, target: 'webui' | 'agent' = 'webui', agentOptions: { agent_channel?: 'stable' | 'experimental'; confirmed_agent_revision?: string } = {}) => {
   const u = orpc().updates
-  const body = { target, ...(channel ? { channel } : {}) }
+  const body = { target, ...(channel ? { channel } : {}), ...agentOptions }
   const opts = { signal: timeout(300_000) }
   return action === 'apply' ? u.apply(body, opts) : action === 'force' ? u.force(body, opts) : u.clearLock(body, opts)
 }

@@ -187,6 +187,8 @@ describe('state continuity from the Python backend', () => {
     const settingsAfter = JSON.parse(readFileSync(join(root, 'state', 'settings.json'), 'utf8')) as Json
     expect(settingsAfter.auto_apply_updates).toBe(false)
     delete settingsAfter.auto_apply_updates
+    expect(settingsAfter.agent_update_channel).toBe('stable')
+    delete settingsAfter.agent_update_channel
     expect(Object.keys(settingsAfter)).toEqual(Object.keys(settingsBefore))
     expect(settingsAfter).toEqual(settingsBefore)
   })

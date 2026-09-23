@@ -615,77 +615,58 @@ export async function applyWebUpdate(webRoot: string | null, channel: Channel, g
   return { ok: true, target: 'webui', channel, sourceRevision: source, message: `Updated Talaria Web to ${tag}.` }
 }
 
-// ── Agent checkout (external project, `v*` tags, stable only) ────────────────
+// ── Agent checkout: independent Stable releases or Experimental default branch ──
 
 async function releaseTags(path: string, git: GitRun): Promise<string[]> {
   const out = await git(['tag', '--list', AGENT_TAG_GLOB, '--sort=-v:refname'], path)
-  return out.ok ? out.out.split('\n').map((l) => l.trim()).filter(Boolean) : []
+  return out.ok ? out.out.split('\n').map((l) => l.trim()).filter((tag) => /^v\d+\.\d+\.\d+$/.test(tag)) : []
 }
 async function currentReleaseTag(path: string, git: GitRun): Promise<string | null> {
   const out = await git(['describe', '--tags', '--abbrev=0', '--match', AGENT_TAG_GLOB], path)
   return out.ok && out.out ? out.out : null
-}
-const releaseGap = (tags: string[], current: string | null, latest: string): number => (current === latest ? 0 : current !== null && tags.includes(current) ? tags.indexOf(current) : 1)
-async function headIsPastLatestTag(path: string, current: string | null, git: GitRun): Promise<boolean> {
-  if (!current) return false
-  const full = await git(['describe', '--tags', '--always', '--match', AGENT_TAG_GLOB], path)
-  return full.ok && Boolean(full.out) && full.out !== current
 }
 const headContainsRef = async (path: string, ref: string, git: GitRun): Promise<boolean> => (await git(['merge-base', '--is-ancestor', ref, 'HEAD'], path)).ok
 const canFastForwardTo = async (path: string, ref: string, git: GitRun): Promise<boolean> => (await git(['merge-base', '--is-ancestor', 'HEAD', ref], path)).ok
 
 async function detectDefaultBranch(path: string, git: GitRun): Promise<string> {
   const out = await git(['symbolic-ref', 'refs/remotes/origin/HEAD'], path)
-  if (out.ok && out.out) return out.out.split('/').pop() ?? 'master'
-  for (const branch of ['master', 'main']) if ((await git(['rev-parse', '--verify', `origin/${branch}`], path)).ok) return branch
-  return 'master'
-}
-async function upstreamRef(path: string, git: GitRun): Promise<string> {
-  const upstream = await git(['rev-parse', '--abbrev-ref', '@{upstream}'], path)
-  return upstream.ok && upstream.out ? upstream.out : `origin/${await detectDefaultBranch(path, git)}`
+  if (out.ok && out.out) return out.out.replace(/^refs\/remotes\/origin\//, '')
+  for (const branch of ['main', 'master']) if ((await git(['rev-parse', '--verify', `origin/${branch}`], path)).ok) return branch
+  throw new Error('Agent default branch is unavailable')
 }
 
-/** Python `_select_apply_compare_ref` for the Agent: the latest reachable `v*` tag, else the tracking branch. */
-async function selectAgentCompareRef(path: string, git: GitRun): Promise<string> {
-  const tags = await releaseTags(path, git)
-  const latest = tags[0]
-  if (latest) {
-    const current = await currentReleaseTag(path, git)
-    const behind = releaseGap(tags, current, latest)
-    const fallthrough = (behind === 0 && (await headIsPastLatestTag(path, current, git))) || (behind > 0 && (await headContainsRef(path, latest, git))) || (behind > 0 && !(await canFastForwardTo(path, latest, git)))
-    if (!fallthrough) return latest
-  }
-  return upstreamRef(path, git)
-}
-
-async function checkAgentRelease(path: string, git: GitRun): Promise<Dict | null> {
-  const tags = await releaseTags(path, git)
-  const latest = tags[0]
-  if (!latest) return null
-  const current = await currentReleaseTag(path, git)
-  let behind = releaseGap(tags, current, latest)
-  if (current === null) {
-    const ahead = await git(['tag', '--list', AGENT_TAG_GLOB, '--contains', 'HEAD'], path)
-    const count = ahead.ok ? ahead.out.split('\n').filter((l) => l.trim()).length : 0
-    if (count > 0) behind = count
-  }
-  if (behind === 0 && (await headIsPastLatestTag(path, current, git))) return null
-  if (behind > 0 && (await headContainsRef(path, latest, git))) return null
-  if (behind > 0 && !(await canFastForwardTo(path, latest, git))) return null
+async function agentTarget(path: string, git: GitRun, channel: Channel): Promise<Dict> {
+  const ref = channel === 'experimental' ? `origin/${await detectDefaultBranch(path, git)}` : (await releaseTags(path, git))[0]
+  if (!ref) throw new Error('No stable Agent release is available')
+  const current = await git(['rev-parse', 'HEAD'], path)
+  const latest = await git(['rev-parse', `${ref}^{commit}`], path)
+  if (!current.ok || !latest.ok || !SHA.test(current.out) || !SHA.test(latest.out)) throw new Error('Agent Git identity is unavailable')
+  const count = await git(['rev-list', '--count', `${current.out}..${latest.out}`], path)
+  const behind = count.ok && /^\d+$/.test(count.out) ? Number.parseInt(count.out, 10) : null
+  const manual = current.out !== latest.out && !(await canFastForwardTo(path, latest.out, git))
   const remote = normalizeRemoteUrl((await git(['remote', 'get-url', 'origin'], path)).out)
-  return { name: 'agent', behind, current_sha: current, latest_sha: latest, branch: latest, repo_url: remote, release_based: true, current_version: current, latest_version: latest, channel: DEFAULT_CHANNEL }
+  return {
+    name: 'agent', channel, branch: ref, current_sha: current.out, latest_sha: latest.out,
+    current_version: await currentReleaseTag(path, git) ?? current.out.slice(0, 12), latest_version: ref,
+    behind, release_based: channel === 'stable', repo_url: remote, compare_url: compareUrl(remote, current.out, latest.out),
+    ...(behind === null ? { error: 'Agent commit count is unavailable' } : {}),
+    ...(manual ? { manual_update: true, message: 'Agent checkout is ahead of or divergent from this channel; refusing to rewind it.' } : {}),
+  }
 }
 
-async function checkAgentBranch(path: string, git: GitRun): Promise<Dict> {
-  const ref = await upstreamRef(path, git)
-  const count = await git(['rev-list', '--count', `HEAD..${ref}`], path)
-  const behind = count.ok && /^\d+$/.test(count.out) ? Number.parseInt(count.out, 10) : 0
-  const mb = await git(['merge-base', 'HEAD', ref], path)
-  let current: string | null = null
-  if (mb.ok && mb.out) { const short = await git(['rev-parse', '--short', mb.out], path); current = short.ok && short.out ? short.out : null }
-  const latest = (await git(['rev-parse', '--short', ref], path)).out
-  const remote = normalizeRemoteUrl((await git(['remote', 'get-url', 'origin'], path)).out)
-  return { name: 'agent', behind, current_sha: current, latest_sha: latest, branch: ref, repo_url: remote, compare_url: compareUrl(remote, current, latest) }
+export interface AgentUpdatePolicy { supportedRevision: string; supportedVersion: string; confirmedRevision?: string }
+export interface AgentUpdateOptions { agentChannel?: Channel | undefined; confirmedRevision?: string | undefined }
+function agentWarning(info: Dict, policy: AgentUpdatePolicy): Dict {
+  return { candidate_revision: info.latest_sha, supported_revision: policy.supportedRevision, supported_version: policy.supportedVersion,
+    unsupported: info.latest_sha !== policy.supportedRevision }
+}
+function confirmAgent(info: Dict, policy?: AgentUpdatePolicy): Dict | null {
+  if (!policy || info.current_sha === info.latest_sha) return null
+  if (info.latest_sha === policy.supportedRevision) return policy.confirmedRevision && policy.confirmedRevision !== info.latest_sha
+    ? { ok: false, message: 'The Agent update target changed. Check for updates and try again.' } : null
+  if (policy.confirmedRevision === info.latest_sha) return null
+  return { ok: false, target: 'agent', agent_channel: info.channel, confirmation_required: true, ...agentWarning(info, policy),
+    message: 'This Agent version is not officially supported by Talaria and may cause issues.' }
 }
 
 async function isDirty(path: string, git: GitRun): Promise<boolean> {
@@ -693,28 +674,34 @@ async function isDirty(path: string, git: GitRun): Promise<boolean> {
   return !out.ok && (out.out === 'git exited with status 1' || !out.out || out.out.startsWith('git exited with status '))
 }
 
-/** Python `_check_repo` for the Agent checkout: fetch tags, prefer the release view, else the branch view. */
-export async function checkAgentUpdate(path: string | null, git: GitRun): Promise<Dict> {
+/** Fetch and compare the independently selected Agent channel. */
+export async function checkAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { name: 'agent', behind: null, no_git: true }
   const fetched = await git(['fetch', 'origin', '--tags', '--force'], path, 15_000)
   if (!fetched.ok) {
     const message = fetched.out ? `fetch failed: ${sanitizeGitDiagnostic(fetched.out)}` : 'fetch failed'
-    const info = (await checkAgentRelease(path, git)) ?? { name: 'agent', behind: null }
-    return { ...info, error: message, stale_check: true, dirty: await isDirty(path, git) }
+    return { name: 'agent', channel, behind: null, error: message, stale_check: true, dirty: await isDirty(path, git) }
   }
-  const info = (await checkAgentRelease(path, git)) ?? { ...(await checkAgentBranch(path, git)), channel: DEFAULT_CHANNEL }
-  return { ...info, dirty: await isDirty(path, git) }
+  try { return { ...await agentTarget(path, git, channel), dirty: await isDirty(path, git) } }
+  catch (error) { return { name: 'agent', channel, behind: null, error: (error as Error).message } }
 }
 
-/** Python `_apply_update_inner` (agent branch): fetch, stash, `pull --ff-only`, pop. */
-export async function applyAgentUpdate(path: string | null, git: GitRun): Promise<Dict> {
+/** Fetch, confirm the immutable Agent target, stash, fast-forward, and pop. */
+export async function applyAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
   const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
   if (!fetched.ok) {
     if (isGitLockError(fetched.out)) return { ok: false, message: `Fetch failed due to a repository lock: ${fetched.out.trim()}`, lock_conflict: true }
     return { ok: false, message: fetchFailureMessage(fetched.out, 'Could not reach the remote repository. Check your internet connection and try again.') }
   }
-  const ref = await selectAgentCompareRef(path, git)
+  let info: Dict
+  try { info = await agentTarget(path, git, channel) } catch (error) { return { ok: false, message: (error as Error).message } }
+  if (info.current_sha === info.latest_sha) return { ok: true, up_to_date: true, target: 'agent', message: 'Agent is up to date.' }
+  if (info.manual_update || info.error) return { ...info, ok: false, message: info.message ?? info.error }
+  const warning = confirmAgent(info, policy)
+  if (warning) return warning
+  const ref = str(info.branch)
+  const revision = str(info.latest_sha)
   const status = await git(['status', '--porcelain', '--untracked-files=no'], path)
   if (!status.ok) {
     if (isGitLockError(status.out)) return { ok: false, message: `Failed to inspect repo status due to a repository lock: ${status.out.trim()}`, lock_conflict: true }
@@ -728,9 +715,8 @@ export async function applyAgentUpdate(path: string | null, git: GitRun): Promis
     if (!(await git(['stash', 'push', '-m', 'hermes-update-autostash'], path)).ok) return { ok: false, message: 'Failed to stash local changes' }
     stashed = true
   }
-  const slash = ref.indexOf('/')
-  const pullArgs = slash > 0 ? ['pull', '--ff-only', ref.slice(0, slash), ref.slice(slash + 1)] : ['pull', '--ff-only', 'origin', ref]
-  const pulled = await git(pullArgs, path, 30_000)
+  // Merge the immutable commit that was checked/acknowledged, never re-fetch a moving ref here.
+  const pulled = await git(['merge', '--ff-only', revision], path, 30_000)
   if (!pulled.ok) {
     let note = ''
     if (stashed) note = ` ${await restoreStash(path, git, pulled.out)}`
@@ -752,18 +738,23 @@ async function restoreStash(path: string, git: GitRun, pullOut: string): Promise
 }
 
 /** Python `apply_force_update` (agent branch): fetch, refuse a pure-ancestor rewind, `checkout . && clean -fd && reset --hard`. */
-export async function forceAgentUpdate(path: string | null, git: GitRun, log: (line: string) => void): Promise<Dict> {
+export async function forceAgentUpdate(path: string | null, git: GitRun, log: (line: string) => void, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
   const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
   if (!fetched.ok) return { ok: false, message: fetchFailureMessage(fetched.out, 'Could not reach the remote repository. Check your connection.') }
-  const ref = await selectAgentCompareRef(path, git)
-  if ((await headContainsRef(path, ref, git)) && !(await canFastForwardTo(path, ref, git))) {
-    return { ok: false, message: `agent is already ahead of the stable channel (${ref}); refusing to rewind the checkout. Switching to a slower channel keeps your current version until that channel catches up.`, target: 'agent', channel: DEFAULT_CHANNEL, refused_rewind: true }
+  let info: Dict
+  try { info = await agentTarget(path, git, channel) } catch (error) { return { ok: false, message: (error as Error).message } }
+  const ref = str(info.branch)
+  const revision = str(info.latest_sha)
+  if ((await headContainsRef(path, revision, git)) && !(await canFastForwardTo(path, revision, git))) {
+    return { ok: false, message: `agent is already ahead of the ${channel} channel (${ref}); refusing to rewind the checkout. Switching to a slower channel keeps your current version until that channel catches up.`, target: 'agent', channel, refused_rewind: true }
   }
+  const warning = confirmAgent(info, policy)
+  if (warning) return warning
   await git(['checkout', '.'], path)
   const cleaned = await git(['clean', '-fd'], path)
   if (!cleaned.ok) log(`[updates] force update: git clean -fd failed (continuing to reset --hard): ${cleaned.out}`)
-  if (!(await git(['reset', '--hard', ref], path)).ok) return { ok: false, message: `Force reset to ${ref} failed` }
+  if (!(await git(['reset', '--hard', revision], path)).ok) return { ok: false, message: `Force reset to ${ref} failed` }
   return { ok: true, message: `agent force-updated to ${ref}`, target: 'agent', ref }
 }
 
@@ -896,6 +887,7 @@ export interface UpdateServiceDeps {
   webuiVersion: string
   agentDir: () => string | null
   channel: () => Channel
+  agentChannel?: () => Channel
   includeAgent: () => boolean
   autoApply?: () => boolean
   checkEnabled?: () => boolean
@@ -912,7 +904,7 @@ export interface UpdateServiceDeps {
 }
 
 export class UpdateService {
-  private readonly cache: Dict = { webui: null, agent: null, checked_at: 0, include_agent: true, channel: DEFAULT_CHANNEL }
+  private readonly cache: Dict = { webui: null, agent: null, checked_at: 0, include_agent: true, channel: DEFAULT_CHANNEL, agent_channel: DEFAULT_CHANNEL }
   private checking: Promise<Dict> | null = null
   private checkingKey: string | null = null
   private applying = false
@@ -932,10 +924,17 @@ export class UpdateService {
     this.sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
   }
 
+  private agentChannel(): Channel { return this.deps.agentChannel?.() ?? DEFAULT_CHANNEL }
+  private agentPolicy(confirmedRevision?: string): AgentUpdatePolicy {
+    const supported = dict(this.deps.identity.release().compatibleAgent)
+    return { supportedRevision: str(supported.sourceRevision), supportedVersion: str(supported.version), ...(confirmedRevision ? { confirmedRevision } : {}) }
+  }
+
   /** Python `cached_update_status`: no network, no git mutations. */
-  cachedStatus(includeAgent = this.deps.includeAgent(), channel = this.deps.channel()): Dict {
+  cachedStatus(includeAgent = this.deps.includeAgent(), channel = this.deps.channel(), agentChannel = this.agentChannel()): Dict {
     const cached: Dict = { ...this.cache }
-    if (cached.channel !== channel) { cached.channel = channel; cached.stale_channel = true }
+    if (cached.channel !== channel) { cached.channel = channel; cached.webui = null; cached.stale_channel = true }
+    if (cached.agent_channel !== agentChannel) { cached.agent_channel = agentChannel; cached.agent = null; cached.stale_agent_channel = true }
     if (cached.include_agent !== includeAgent) {
       cached.include_agent = includeAgent
       if (!includeAgent) cached.agent = ignoredAgent()
@@ -944,24 +943,24 @@ export class UpdateService {
     return cached
   }
 
-  /** Python `check_for_updates`: 30 min cache keyed on channel + include_agent; one in-flight check per key. */
-  async check(force = false, includeAgent = this.deps.includeAgent(), channel = this.deps.channel()): Promise<Dict> {
-    const key = `${channel}:${String(includeAgent)}`
+  /** 30 min cache keyed on both channels + include_agent; one in-flight check per key. */
+  async check(force = false, includeAgent = this.deps.includeAgent(), channel = this.deps.channel(), agentChannel = this.agentChannel()): Promise<Dict> {
+    const key = `${channel}:${agentChannel}:${String(includeAgent)}`
     if (this.checking) {
       if (this.checkingKey === key) return this.checking
       await this.checking
-      return this.check(force, includeAgent, channel)
+      return this.check(force, includeAgent, channel, agentChannel)
     }
-    if (this.applying) return this.cachedStatus(includeAgent, channel)
-    const matches = this.cache.include_agent === includeAgent && this.cache.channel === channel
+    if (this.applying) return this.cachedStatus(includeAgent, channel, agentChannel)
+    const matches = this.cache.include_agent === includeAgent && this.cache.channel === channel && this.cache.agent_channel === agentChannel
     if (!force && matches && this.now() - Number(this.cache.checked_at) < CACHE_TTL_S) return { ...this.cache }
     this.checkingKey = key
     this.checking = (async () => {
       try {
         const webui = await checkWebUpdate(this.deps.webRoot, this.deps.webuiVersion, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm)
-        // The channel is a Web concept; the Agent always follows its own stable tags.
-        const agent = includeAgent ? await checkAgentUpdate(this.deps.agentDir(), this.git) : ignoredAgent()
-        Object.assign(this.cache, { webui, agent, checked_at: this.now(), include_agent: includeAgent, channel })
+        const agent = includeAgent ? await checkAgentUpdate(this.deps.agentDir(), this.git, agentChannel) : ignoredAgent()
+        if (agent.latest_sha) Object.assign(agent, agentWarning(agent, this.agentPolicy()))
+        Object.assign(this.cache, { webui, agent, checked_at: this.now(), include_agent: includeAgent, channel, agent_channel: agentChannel })
         return { ...this.cache }
       } finally {
         this.checking = null
@@ -1035,17 +1034,17 @@ export class UpdateService {
   }
 
   /** Python `apply_update`. */
-  async apply(target: string, channel?: Channel | null, canApply: () => boolean = () => true): Promise<Dict> {
+  async apply(target: string, channel?: Channel | null, canApply: () => boolean = () => true, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
     if (this.checking) await this.checking
     if (this.autoRestartScheduled) return { ok: true, restart_scheduled: true, message: 'A Web restart is already scheduled.' }
     if (!canApply()) return { ok: false, message: 'Web update settings changed; update deferred.' }
     const blocked = this.blockedResponse(target)
     if (blocked) return blocked
     const lifecycle = this.lifecycle
-    return this.locked(() => this.applyInner(target, channel ?? this.deps.channel(), () => lifecycle === this.lifecycle && canApply()))
+    return this.locked(() => this.applyInner(target, channel ?? this.deps.channel(), () => lifecycle === this.lifecycle && canApply(), agentOptions))
   }
 
-  private async applyInner(target: string, channel: Channel, canApply: () => boolean = () => true): Promise<Dict> {
+  private async applyInner(target: string, channel: Channel, canApply: () => boolean = () => true, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
     if (target === 'webui') {
       const lifecycle = this.lifecycle
       const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.build ?? runNpm, this.deps.npm ?? runPackageNpm, canApply)
@@ -1054,8 +1053,8 @@ export class UpdateService {
       return result
     }
     if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
-    const result = await applyAgentUpdate(this.deps.agentDir(), this.git)
-    if (!result.ok) return result
+    const result = await applyAgentUpdate(this.deps.agentDir(), this.git, agentOptions.agentChannel ?? this.agentChannel(), this.agentPolicy(agentOptions.confirmedRevision))
+    if (!result.ok || result.up_to_date) return result
     return this.finishAgent(result)
   }
 
@@ -1084,19 +1083,20 @@ export class UpdateService {
   }
 
   /** Python `apply_force_update`: Web keeps its clean-only policy; the Agent resets hard. */
-  force(target: string, channel?: Channel | null): Promise<Dict> {
+  async force(target: string, channel?: Channel | null, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
+    if (this.checking) await this.checking
     if (target === 'webui') return this.apply(target, channel)
     const blocked = this.blockedResponse(target)
     if (blocked) return Promise.resolve(blocked)
     return this.locked(async () => {
       if (target !== 'agent') return { ok: false, message: `Unknown target: ${target}` }
-      const result = await forceAgentUpdate(this.deps.agentDir(), this.git, this.deps.log)
+      const result = await forceAgentUpdate(this.deps.agentDir(), this.git, this.deps.log, agentOptions.agentChannel ?? this.agentChannel(), this.agentPolicy(agentOptions.confirmedRevision))
       return result.ok ? this.finishAgent(result) : result
     })
   }
 
   /** Python `apply_clear_lock`: never removes a lock; Web retries the clean path, the Agent gets the manual command. */
-  clearLock(target: string): Promise<Dict> {
+  clearLock(target: string, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
     if (target === 'webui') return this.apply(target).then((r) => ({ ...r, lock_recovery: { action: 'retry-only' } }))
     const blocked = this.blockedResponse(target)
     if (blocked) return Promise.resolve(blocked)
@@ -1108,7 +1108,7 @@ export class UpdateService {
       const manual = `rm -f ${str(inv.well_known_lock_path)}`
       if (!inv.well_known_lock_present) {
         this.cache.checked_at = 0
-        const retry = await this.applyInner(target, this.deps.channel())
+        const retry = await this.applyInner(target, this.deps.channel(), () => true, agentOptions)
         return { ...retry, lock_recovery: { action: 'no-lock-found', manual_command: manual, other_locks: inv.other_locks } }
       }
       return { ok: false, message: `A git lock file (.git/index.lock) is present. The server does not delete locks automatically -- git uses O_CREAT|O_EXCL locking, which cannot be detected with advisory probes. To recover: confirm no other git process is running against this checkout, then run: ${manual}  Click "Retry update" once you have removed it.`, lock_held: true, target, manual_command: manual, well_known_lock_path: inv.well_known_lock_path, other_locks: inv.other_locks }
