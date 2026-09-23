@@ -110,8 +110,16 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(set(store), {"handoffs/production-cutover/123/1/app-build.tar", "handoffs/production-cutover/123/1/ios-ipa.tar"})
             recovery = {**env, "GITHUB_RUN_ID": "456", "RUNNER_TEMP": str(root / "recovery"),
                         "GITHUB_WORKFLOW_REF": "MaudeCode/talaria/.github/workflows/recover-cutover.yml@refs/heads/main"}
-            with patch.dict(os.environ, recovery, clear=True), patch.object(artifacts, "transfer", transfer):
+            downloads = []
+
+            def counted(operation, key, path):
+                downloads.append(key)
+                transfer(operation, key, path)
+
+            with patch.dict(os.environ, recovery, clear=True), patch.object(artifacts, "transfer", counted):
                 recover.restore(refs, root / "recovered")
+                # Each verified archive is extracted as downloaded; the IPA and dSYMs never cross the NAS twice.
+                self.assertEqual(sorted(downloads), sorted(set(downloads)))
                 self.assertEqual((root / "recovered/app-build/receipt.json").read_bytes(), receipt)
                 self.assertEqual((root / "recovered/ios-ipa/receipt.json").read_bytes(), receipt)
                 store["handoffs/production-cutover/123/1/ios-ipa.tar"] = b"tampered"

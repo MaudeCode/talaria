@@ -73,13 +73,15 @@ ORIGINAL_WORKFLOW = "production-cutover"
 
 def restore(references, destination):
     # The authenticated original run's objects are checked against every producer digest before any is extracted.
-    for reference in references.values():
+    verified = {}
+    for name, reference in references.items():
         try:
-            artifacts.stored(reference, ORIGINAL_WORKFLOW)
+            verified[name] = artifacts.stored(reference, ORIGINAL_WORKFLOW)
         except ValueError as error:
             raise ValueError("retained handoff differs from its original producer") from error
-    for name, reference in references.items():
-        artifacts.restore(reference, destination / name, ORIGINAL_WORKFLOW)
+    # Extract the archives just verified rather than downloading the IPA and dSYMs a second time.
+    for name, path in verified.items():
+        artifacts.extract(path, destination / name)
 
 
 def main():

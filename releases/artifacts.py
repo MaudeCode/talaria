@@ -122,7 +122,11 @@ def stored(reference, workflow=None):
 
 
 def restore(reference, destination, workflow=None):
-    path = stored(reference, workflow)
+    extract(stored(reference, workflow), destination)
+
+
+def extract(path, destination):
+    """Unpack an archive that stored() has just downloaded and verified."""
     destination = Path(destination)
     if destination.exists():
         raise FileExistsError(destination)
