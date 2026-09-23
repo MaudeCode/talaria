@@ -869,6 +869,22 @@ describe('Agent checkout updates', () => {
     expect(await applyAgentUpdate(a.agent, runGit, 'stable', { supportedRevision: next, supportedVersion: '3.0.0' })).toMatchObject({ ok: true })
   })
 
+  it('requires exact confirmation before force-cleaning an already-installed unsupported revision', async () => {
+    const a = agentInstall()
+    await checkAgentUpdate(a.agent, runGit)
+    git(a.agent, 'merge', '--ff-only', a.v2)
+    writeFileSync(join(a.agent, 'README'), 'preserve local edit\n')
+    writeFileSync(join(a.agent, 'untracked.txt'), 'preserve untracked file\n')
+    const policy = { supportedRevision: a.v1, supportedVersion: '1.0.0' }
+    expect(await applyAgentUpdate(a.agent, runGit, 'stable', policy)).toMatchObject({ ok: true, up_to_date: true })
+    expect(await forceAgentUpdate(a.agent, runGit, () => undefined, 'stable', policy)).toMatchObject({ ok: false, confirmation_required: true, candidate_revision: a.v2 })
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('preserve local edit\n')
+    expect(readFileSync(join(a.agent, 'untracked.txt'), 'utf8')).toBe('preserve untracked file\n')
+    expect(await forceAgentUpdate(a.agent, runGit, () => undefined, 'stable', { ...policy, confirmedRevision: a.v2 })).toMatchObject({ ok: true })
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('agent\n')
+    expect(existsSync(join(a.agent, 'untracked.txt'))).toBe(false)
+  })
+
   it('an unavailable commit count stays unknown and Stable never falls back to a branch', async () => {
     const a = agentInstall()
     const unreadable: GitRun = (args, cwd, timeout) => args[0] === 'rev-list' ? Promise.resolve({ ok: false, out: 'unreadable' }) : runGit(args, cwd, timeout)

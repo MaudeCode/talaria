@@ -661,7 +661,8 @@ function agentWarning(info: Dict, policy: AgentUpdatePolicy): Dict {
     unsupported: info.latest_sha !== policy.supportedRevision }
 }
 function confirmAgent(info: Dict, policy?: AgentUpdatePolicy): Dict | null {
-  if (!policy || info.current_sha === info.latest_sha) return null
+  // Ordinary apply handles its non-mutating no-op; force still cleans files at the same revision.
+  if (!policy) return null
   if (info.latest_sha === policy.supportedRevision) return policy.confirmedRevision && policy.confirmedRevision !== info.latest_sha
     ? { ok: false, message: 'The Agent update target changed. Check for updates and try again.' } : null
   if (policy.confirmedRevision === info.latest_sha) return null
