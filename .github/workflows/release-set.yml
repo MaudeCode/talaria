@@ -291,7 +291,7 @@ jobs:
         fetch-depth: 0
     - uses: ./.github/actions/release-python
     - name: Set up Node for the npm package build
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version-file: web/.nvmrc
     - uses: ./.github/actions/docker-plugins
@@ -532,7 +532,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install --yes skopeo
     - name: Set up Node for npm trusted publishing
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version-file: web/.nvmrc
         registry-url: https://registry.npmjs.org
