@@ -77,11 +77,12 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   try {
   await page.goto(`/session/${sid}`)
   const outer = page.locator('.live-turn > .assistant-turn-blocks > .activity')
-  // Live work is inline: no turn-level "Responding…" disclosure, and the spinner sits below the streamed text.
+  // Live work is inline with no turn-level "Responding…" disclosure; the status is a pill docked above the composer.
   await expect(page.locator('[data-tool-id="c"] > button')).toBeVisible()
   await expect(outer.locator(':scope > button')).toHaveCount(0)
   await expect(page.locator('.live-turn').getByRole('button', { name: /Responding/ })).toHaveCount(0)
-  const spinner = page.locator('.live-turn .live-run-status')
+  await expect(page.locator('.live-turn .live-run-status')).toHaveCount(0)
+  const spinner = page.locator('.live-run-status')
   await expect(spinner).toHaveCount(1)
   await expect(spinner.locator('svg.live-laurel')).toBeVisible()
   await expect(spinner.locator('svg.live-laurel')).toHaveCSS('width', '24px')
@@ -91,9 +92,11 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   await expect(spinner.locator('.laurel-leaf').first()).toHaveCSS('animation-name', 'laurel-leaf')
   await expect(spinner.locator('.live-run-label')).toHaveCSS('animation-name', 'reasoning-title-glow')
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  const activityBox = await outer.boundingBox()
-  const spinnerBox = await spinner.boundingBox()
-  expect(spinnerBox!.y).toBeGreaterThanOrEqual(activityBox!.y + activityBox!.height)
+  const scrollerBox = (await page.locator('#messages').boundingBox())!
+  const spinnerBox = (await spinner.boundingBox())!
+  expect(Math.abs(spinnerBox.x + spinnerBox.width / 2 - (scrollerBox.x + scrollerBox.width / 2))).toBeLessThanOrEqual(2)
+  expect(spinnerBox.y + spinnerBox.height).toBeLessThanOrEqual(scrollerBox.y + scrollerBox.height)
+  expect(spinnerBox.y + spinnerBox.height).toBeGreaterThan(scrollerBox.y + scrollerBox.height - 60)
   // Live work stays flat: every tool row is visible without opening a group.
   await expect(page.locator('[data-activity-sequence-group]')).toHaveCount(0)
   for (const id of ['a', 'b', 'c']) await expect(page.locator(`[data-tool-id="${id}"] > button`)).toBeVisible()
@@ -289,11 +292,24 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
     await expect(page.locator('.live-run-status')).toBeVisible()
     // Sample every frame: how far content extends below the viewport, and where an older message sits.
     await page.evaluate(() => {
-      const w = window as unknown as { samples: { below: number; old: number; phase: string }[]; phase: string }
+      const w = window as unknown as { samples: { below: number; old: number; body: number; cover: number; phase: string }[]; phase: string }
       w.samples = []; w.phase = 'stream'
       const scroller = document.getElementById('messages')!
       const old = [...document.querySelectorAll('.msg-row')].find((el) => el.textContent?.includes('Earlier question 10'))!
-      const tick = () => { w.samples.push({ below: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight, old: old.getBoundingClientRect().top, phase: w.phase }); requestAnimationFrame(tick) }
+      const tick = () => {
+        const body = document.querySelector('.assistant-turn:not(.live-turn):last-of-type .assistant-turn-blocks > .activity > .activity-body')
+        const pill = document.querySelector('.live-run-status')
+        const bodies = document.querySelectorAll('.live-turn .msg-body')
+        const last = bodies[bodies.length - 1]
+        w.samples.push({
+          below: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
+          old: old.getBoundingClientRect().top,
+          body: body ? body.getBoundingClientRect().height : -1,
+          cover: pill && last ? last.getBoundingClientRect().bottom - pill.getBoundingClientRect().top : 0,
+          phase: w.phase,
+        })
+        requestAnimationFrame(tick)
+      }
       requestAnimationFrame(tick)
     })
     send('reasoning', { text: 'Compare the ports.' })
@@ -308,11 +324,17 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
     send('done', { session: { session_id: sid, title: 'Steady', messages } })
     await expect(page.locator('.live-turn')).toHaveCount(0)
     await page.waitForTimeout(700)
-    const samples = await page.evaluate(() => (window as unknown as { samples: { below: number; old: number; phase: string }[] }).samples)
+    const samples = await page.evaluate(() => (window as unknown as { samples: { below: number; old: number; body: number; cover: number; phase: string }[] }).samples)
     // Streamed lines never stay hidden below a pinned viewport for more than a couple of frames.
     let run = 0, longest = 0
     for (const s of samples.filter((f) => f.phase === 'stream')) { run = s.below > 2 ? run + 1 : 0; longest = Math.max(longest, run) }
     expect(longest).toBeLessThanOrEqual(2)
+    // The docked pill never covers the newest streamed line.
+    expect(Math.max(...samples.filter((f) => f.phase === 'stream' && f.below <= 2).map((f) => f.cover))).toBeLessThanOrEqual(0)
+    // The finished work visibly folds into "Worked": its body shrinks through several heights instead of vanishing.
+    const folding = [...new Set(samples.filter((f) => f.phase === 'settle' && f.body > 0).map((f) => Math.round(f.body)))]
+    expect(folding.length).toBeGreaterThanOrEqual(3)
+    expect(samples.at(-1)!.body).toBe(0)
     // Folding into "Worked" moves older history gradually, never in one snap.
     const settle = samples.slice(Math.max(0, samples.findIndex((f) => f.phase === 'settle') - 1))
     const down = settle.slice(1).map((f, i) => f.old - settle[i]!.old).filter((d) => d > 0.5)

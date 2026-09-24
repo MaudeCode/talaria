@@ -196,6 +196,11 @@ textarea#msg::-webkit-scrollbar{display:var(--composer-scrollbar-display)}
 .skeleton-bar{height:10px;margin:8px 0;border-radius:var(--radius-pill,999px);background:linear-gradient(90deg,var(--skeleton-base,color-mix(in srgb,var(--text) 8%,transparent)) 0%,var(--skeleton-base,color-mix(in srgb,var(--text) 8%,transparent)) 28%,var(--skeleton-sheen,color-mix(in srgb,var(--text) 18%,transparent)) 50%,var(--skeleton-base,color-mix(in srgb,var(--text) 8%,transparent)) 72%,var(--skeleton-base,color-mix(in srgb,var(--text) 8%,transparent)) 100%);background-size:200% 100%;animation:skeletonSheen 1.6s linear infinite}
 .skeleton-role{width:72px;height:9px;margin:0 0 10px;background:color-mix(in srgb,var(--accent) 22%,transparent);animation:none}
 .skeleton-user{align-self:flex-end;width:46%;max-width:min(76%,360px);height:40px;border-radius:var(--user-msg-radius,12px);border-bottom-right-radius:min(6px,var(--user-msg-radius,12px));border-left:var(--user-msg-rail-width,0) solid var(--user-msg-rail,var(--accent));background:var(--user-msg-bg,var(--surface-subtle));opacity:.7}
+/* Live-turn status pill: docked bottom-center over the transcript's bottom padding, above the scroll button when both show. */
+.live-run-status{position:absolute;left:50%;transform:translateX(-50%);bottom:6px;z-index:9;max-width:calc(100% - 40px);padding:3px 14px 3px 8px;border-radius:999px;border:1px solid var(--border2);background:var(--scroll-btn-bg);box-shadow:var(--scroll-btn-shadow);pointer-events:none;white-space:nowrap;animation:live-pill-in .2s ease-out}
+.scroll-to-bottom-btn + .live-run-status{bottom:56px}
+@keyframes live-pill-in{from{opacity:0;transform:translate(-50%,4px)}to{opacity:1;transform:translate(-50%,0)}}
+@media (prefers-reduced-motion:reduce){.live-run-status{animation:none}}
 /* Live-turn indicator: laurel wreath plus a gold shimmer on the label, both from theme tokens. */
 .live-laurel{flex-shrink:0;color:var(--accent)}
 .live-laurel .laurel-leaf{animation:laurel-leaf 1s linear infinite}

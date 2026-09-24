@@ -14,7 +14,13 @@ import type { ActivityItem, TurnActivity } from './turnActivity'
 let lastLiveTurn: { key: string; height: number } | null = null
 export function rememberLiveTurnHeight(key: string, height: number) { lastLiveTurn = { key, height } }
 
-/** Takes up the height the just-settled live turn lost, then shrinks away, so history glides instead of snapping. */
+const FOLD = { duration: 320, easing: 'ease-out', fill: 'forwards' } as const
+
+/**
+ * Folds a just-settled turn from its live height: the collapsed "Worked" body is shown open and animated
+ * shut, and a spacer holds any remaining height the live turn lost and shrinks with it, so the work
+ * visibly folds into its summary and history glides instead of snapping.
+ */
 function SettleSpacer({ turnKey }: { turnKey: string }) {
   const ref = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
@@ -24,13 +30,27 @@ function SettleSpacer({ turnKey }: { turnKey: string }) {
     if (live?.key !== turnKey || !el || !row) return
     lastLiveTurn = null
     if (typeof el.animate !== 'function' || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)) return
-    // Measure with the spacer already at the full live height: a layout forced while the row is shorter
-    // than the live turn would clamp the scroll position before the spacer could hold it.
+    // Grow before measuring: a layout forced while the row is shorter than the live turn would clamp the scroll first.
     el.style.height = `${live.height}px`
-    const gap = live.height - (row.getBoundingClientRect().height - live.height)
-    if (gap <= 1) { el.style.height = ''; return }
+    const body = row.querySelector<HTMLElement>(':scope > .assistant-turn-blocks > .activity:not(.open) > .activity-body')
+    if (body) body.hidden = false
+    const bodyHeight = body?.scrollHeight ?? 0
+    if (body && bodyHeight > 0) Object.assign(body.style, { maxHeight: `${bodyHeight}px`, opacity: '1', marginTop: '10px' })
+    else if (body) body.hidden = true
+    const gap = Math.max(0, live.height - (row.getBoundingClientRect().height - live.height))
     el.style.height = `${gap}px`
-    void el.animate([{ height: `${gap}px` }, { height: '0px' }], { duration: 320, easing: 'ease-out', fill: 'forwards' }).finished.then(() => { el.style.height = '' }, () => undefined)
+    const done = () => { el.style.height = '' }
+    if (gap > 1) void el.animate([{ height: `${gap}px` }, { height: '0px' }], FOLD).finished.then(done, () => undefined)
+    else done()
+    if (body && bodyHeight > 0) {
+      const fold = body.animate([{ maxHeight: `${bodyHeight}px`, opacity: 1, marginTop: '10px' }, { maxHeight: '0px', opacity: 0, marginTop: '0px' }], FOLD)
+      void fold.finished.then(() => {
+        // Hand the body back to the disclosure; a click during the fold may already have reopened it.
+        if (!body.parentElement?.classList.contains('open')) body.hidden = true
+        Object.assign(body.style, { maxHeight: '', opacity: '', marginTop: '' })
+        fold.cancel()
+      }, () => undefined)
+    }
   }, [turnKey])
   return <div ref={ref} aria-hidden="true" />
 }

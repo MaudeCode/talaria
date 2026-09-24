@@ -5,7 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import { AssistantMessageRow, UserMessageRow, type RowActions } from './MessageRow'
-import { LiveTurnView } from './LiveTurnView'
+import { LiveStatusPill, LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
 import { groupAssistantTurns, messageOwner, settledTerminalState } from './turnActivity'
@@ -116,7 +116,7 @@ export function Transcript(props: TranscriptProps) {
     <div className="messages-shell relative flex flex-1 min-h-0 flex-col">
       <div ref={scrollRef} onScroll={onScroll} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:auto] [@media(hover:hover)_and_(pointer:fine)]:[overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
         {empty ? emptyState : (
-          <div ref={innerRef} className="messages-inner mx-auto w-full flex flex-col max-w-(--msg-max) pt-5 pb-7 max-[641px]:pt-3 max-[641px]:pb-5 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
+          <div ref={innerRef} className="messages-inner mx-auto w-full flex flex-col max-w-(--msg-max) pt-5 pb-12 max-[641px]:pt-3 max-[641px]:pb-11 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
             {truncated && (
               <div className="flex justify-center py-2">
                 <Button variant="ghost" onClick={onLoadOlder} disabled={loadingOlder}>{loadingOlder ? m.loading() : m.load_older()}</Button>
@@ -154,6 +154,7 @@ export function Transcript(props: TranscriptProps) {
           <ArrowDown size={12} aria-hidden="true" /> <span className="max-[640px]:hidden">{m.scroll_to_bottom()}</span>
         </button>
       )}
+      {showLive && live && !isTerminal(live.status) && <LiveStatusPill turn={live} />}
     </div>
     </WorklogDisclosureProvider>
   )

@@ -217,11 +217,12 @@ The accepted lifecycle now has three presentation strategies over the same
 assistant-turn activity data:
 
 - **Compact Worklog** remains the default. While live, its work renders inline
-  and flat, with no top-level disclosure control and no nested groups, and one
-  status row (indicator plus label) follows the newest streamed content. Rows
-  never regroup while streaming. When the turn settles, the top-level Worklog
-  disclosure appears and consecutive tool/reasoning rows form nested groups,
-  and the settled row folds from the live turn's height instead of snapping.
+  and flat, with no top-level disclosure control and no nested groups. Its
+  status (indicator, label and tokens per second) is a pill docked above the
+  composer, outside the transcript flow. Rows never regroup while streaming.
+  When the turn settles, the top-level Worklog disclosure appears and
+  consecutive tool/reasoning rows form nested groups, and the work visibly
+  folds into the "Worked" summary from the live turn's height.
 - **Transparent Stream** is opt-in and renders the same ordered activity as
   chronological rows. It does not create a second live or settled owner.
 - **Final answer only** is opt-in (`hide_all_activity` in persisted settings).

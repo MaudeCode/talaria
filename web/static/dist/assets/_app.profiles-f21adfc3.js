@@ -1,1 +1,0 @@
-import{t as e}from"./jsx-runtime-eu92a5pu.js";import{t}from"./HubRoute-j4rv12s8.js";var n=e(),r=()=>(0,n.jsx)(t,{panel:`profiles`});export{r as component};
