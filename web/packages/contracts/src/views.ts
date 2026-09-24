@@ -54,6 +54,8 @@ export const ActivitySceneSchema = z.looseObject({
   expanded_by_default: z.boolean().optional(),
   /** Seconds from the turn's last consumed steer to its end, when it has steers. */
   final_phase_duration: z.number().optional(),
+  /** Whether any row of the whole scene (not only this preview) is a consumed steer. */
+  has_consumed_steering: z.boolean().optional(),
   activity_rows_total: z.number().int().optional(), activity_rows_offset: z.number().int().optional(), activity_rows_complete: z.boolean().optional(), activity_rows_omitted: z.number().int().optional(), activity_scene_ref: z.string().optional(),
 })
 export type ActivityScene = z.infer<typeof ActivitySceneSchema>

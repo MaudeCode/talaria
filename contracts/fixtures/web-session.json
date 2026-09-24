@@ -40,6 +40,7 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
+          "has_consumed_steering": false,
           "terminal_state": "completed",
           "expanded_by_default": false
         },
@@ -123,6 +124,7 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
+          "has_consumed_steering": false,
           "terminal_state": "completed",
           "expanded_by_default": false
         },
@@ -165,6 +167,7 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
+          "has_consumed_steering": false,
           "activity_scene_ref": "f9928a710235ec20fd940085c6f26e7b37d1f1b0d3d52aba0664371eefd9fb8f"
         }
       },
@@ -185,6 +188,7 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
+          "has_consumed_steering": false,
           "activity_scene_ref": "12bef384f788f810bccc2f1750a8a6cfd29aea0184d0bfb135420e7ed6e0aabc"
         }
       },
@@ -286,6 +290,7 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
+          "has_consumed_steering": false,
           "activity_scene_ref": "e47b99c9f7978ea6c1dbce5894c55d1724a6b10e70874ac245908af12a982075"
         }
       },
@@ -360,6 +365,7 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
+          "has_consumed_steering": false,
           "activity_scene_ref": "9d328184a056a90fee315a9711c8f475bee7b3b9cf2e075576e67c283b7b8aeb"
         }
       },
@@ -419,6 +425,7 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
+          "has_consumed_steering": false,
           "activity_scene_ref": "a9c678a881acc3f427bdd7fcf546980c993682b3412aee746d19dcf1d298c43a"
         }
       },
@@ -601,6 +608,7 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
+          "has_consumed_steering": true,
           "activity_scene_ref": "d17054d885c35cd26205697b2c00128d79ea43ef67f732a08a06e55043265ad7"
         }
       },

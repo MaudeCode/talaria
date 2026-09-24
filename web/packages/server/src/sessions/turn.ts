@@ -1266,7 +1266,11 @@ function roundDuration(seconds: number): number {
 }
 
 function steerInsertIndex(messages: Message[], turnId: string, afterToolCallId: string | null): number {
-  const callIds = (m: Message) => (Array.isArray(m.tool_calls) ? m.tool_calls : []).map((tc) => str((tc as Record<string, unknown>).id) || str((tc as Record<string, unknown>).call_id) || str((tc as Record<string, unknown>).tool_call_id))
+  // OpenAI-style `tool_calls` and Anthropic-style `tool_use` content blocks both name the call a steer followed.
+  const callIds = (m: Message) => [
+    ...(Array.isArray(m.tool_calls) ? m.tool_calls : []).map((tc) => str((tc as Record<string, unknown>).id) || str((tc as Record<string, unknown>).call_id) || str((tc as Record<string, unknown>).tool_call_id)),
+    ...(Array.isArray(m.content) ? m.content : []).flatMap((part) => (isDict(part) && part.type === 'tool_use' ? [str(part.id)] : [])),
+  ]
   let at = afterToolCallId ? messages.findIndex((m) => m._turn_id === turnId && m.role === 'assistant' && callIds(m).includes(afterToolCallId)) : -1
   if (at === -1) at = messages.findIndex((m) => m._turn_id === turnId && m.role === 'user' && !m._steer)
   if (at === -1) return messages.length

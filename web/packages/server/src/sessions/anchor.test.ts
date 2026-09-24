@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { buildTurnScene, normalizeSceneRows, withTurnIds } from './anchor.js'
+import { anchorActivitySceneTransportPreview, buildTurnScene, normalizeSceneRows, withTurnIds } from './anchor.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -57,6 +57,17 @@ describe('normalizeSceneRows', () => {
   it('returns no rows for a malformed list', () => {
     expect(normalizeSceneRows(null)).toEqual([])
     expect(normalizeSceneRows({ rows: [] })).toEqual([])
+  })
+})
+
+describe('anchorActivitySceneTransportPreview', () => {
+  it('reports a consumed steer the tail preview leaves out', () => {
+    const steer = { row_id: 'steering:s', order_index: 0, role: 'steering', text: 'Stop', steering: { steer_id: 's', consumed: true, submitted_at: 1, consumed_at: 2 } }
+    const work = Array.from({ length: 90 }, (_, i) => ({ row_id: `r${String(i)}`, order_index: i + 1, role: 'reasoning', text: `step ${String(i)}` }))
+    const preview = anchorActivitySceneTransportPreview({ version: 'activity_scene_v1', final_answer: 'Done.', activity_rows: [steer, ...work] })
+    expect((preview.activity_rows as Json[]).some((r) => r.role === 'steering')).toBe(false)
+    expect(preview.has_consumed_steering).toBe(true)
+    expect(anchorActivitySceneTransportPreview({ version: 'activity_scene_v1', activity_rows: work }).has_consumed_steering).toBe(false)
   })
 })
 

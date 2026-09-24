@@ -521,6 +521,34 @@ describe('chat turns through the sidecar', () => {
     expect((scene.activity_rows as Json[]).some((r) => r.role === 'steering' && (r.steering as Json).steer_id === 'steer-c')).toBe(true)
   })
 
+  it('places a steer after the Anthropic-style tool_use call it followed (TAL-300)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let release: () => void = () => undefined
+    let emitLive: ((frame: { event: string; data: Json }) => void) | null = null
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emitLive = emit
+      release = () => { resolve(completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: [{ type: 'text', text: 'Reading a.' }, { type: 'tool_use', id: 'ua', name: 'read_file', input: {} }] }, { role: 'tool', tool_use_id: 'ua', content: 'A' },
+        { role: 'assistant', content: [{ type: 'tool_use', id: 'ub', name: 'read_file', input: {} }] }, { role: 'tool', tool_use_id: 'ub', content: 'B' },
+        { role: 'assistant', content: 'Done.' },
+      ])) }
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', args: {}, tid: 'ua' } })
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'read' }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'tool')
+    emitLive!({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', tid: 'ua', preview: 'A' } })
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'check b', steer_id: 'steer-u' })
+    emitLive!({ event: 'steer_pending', data: { text: '' } })
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'steer_consumed')
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(messages.map((m) => (m._steer ? 'steer' : String(m.role)))).toEqual(['user', 'assistant', 'tool', 'steer', 'assistant', 'tool', 'assistant'])
+  })
+
   it('makes the Agent\'s own record of a delivered steer the persisted steer, not a second copy (TAL-300)', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))

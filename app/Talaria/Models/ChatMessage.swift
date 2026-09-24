@@ -302,6 +302,8 @@ struct AssistantActivityScene: Codable, Equatable {
     /// How many earlier rows the tail preview omits; page them from `/api/session/anchor-scene`.
     let activityRowsOffset: Int
     let activitySceneRef: String?
+    /// Server-decided: whether the whole scene, including rows outside this preview, has a consumed steer.
+    let serverHasConsumedSteering: Bool?
 
     enum CodingKeys: String, CodingKey {
         case version
@@ -313,6 +315,7 @@ struct AssistantActivityScene: Codable, Equatable {
         case activityRowsOffset
         case activitySceneRef
         case finalPhaseDuration
+        case serverHasConsumedSteering = "hasConsumedSteering"
     }
 
     init(from decoder: Decoder) throws {
@@ -325,6 +328,7 @@ struct AssistantActivityScene: Codable, Equatable {
         activityRowsOffset = max(0, container.decodeLossyIntIfPresent(forKey: .activityRowsOffset) ?? 0)
         activitySceneRef = container.decodeLossyStringIfPresent(forKey: .activitySceneRef)
         finalPhaseDuration = container.decodeLossyDoubleIfPresent(forKey: .finalPhaseDuration)
+        serverHasConsumedSteering = try? container.decodeIfPresent(Bool.self, forKey: .serverHasConsumedSteering)
 
         activityRows = (try? container.decodeIfPresent([JSONValue].self, forKey: .activityRows))
             .map(AssistantActivitySceneRow.decodeLossily)
@@ -350,7 +354,8 @@ struct AnchorScenePageResponse: Decodable, Equatable {
 
 extension AssistantActivityScene {
     var hasConsumedSteering: Bool {
-        activityRows?.contains(where: \.isConsumedSteering) == true
+        // ponytail: preview scan is the pre-field server fallback; delete once those servers are unsupported.
+        serverHasConsumedSteering ?? (activityRows?.contains(where: \.isConsumedSteering) == true)
     }
 }
 

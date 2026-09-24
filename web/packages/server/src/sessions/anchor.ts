@@ -259,6 +259,8 @@ export function anchorActivitySceneTransportPreview(scene: Record<string, unknow
   preview.activity_rows_offset = offset
   preview.activity_rows_complete = offset === 0
   preview.activity_rows_omitted = offset
+  // Over every row, not just the preview: a client settling its local steer hints must see a steer paged out of it.
+  preview.has_consumed_steering = rows.some((row) => row.role === 'steering' && row.steering?.consumed === true)
   if (sceneRef) preview.activity_scene_ref = sceneRef
   return preview
 }

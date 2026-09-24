@@ -2661,6 +2661,9 @@
                                   "final_phase_duration": {
                                     "type": "number"
                                   },
+                                  "has_consumed_steering": {
+                                    "type": "boolean"
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -3971,6 +3974,9 @@
                                   "final_phase_duration": {
                                     "type": "number"
                                   },
+                                  "has_consumed_steering": {
+                                    "type": "boolean"
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -5054,6 +5060,9 @@
                                   },
                                   "final_phase_duration": {
                                     "type": "number"
+                                  },
+                                  "has_consumed_steering": {
+                                    "type": "boolean"
                                   },
                                   "activity_rows_total": {
                                     "type": "integer",
@@ -6941,6 +6950,9 @@
                                   "final_phase_duration": {
                                     "type": "number"
                                   },
+                                  "has_consumed_steering": {
+                                    "type": "boolean"
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -8758,6 +8770,9 @@
                                   },
                                   "final_phase_duration": {
                                     "type": "number"
+                                  },
+                                  "has_consumed_steering": {
+                                    "type": "boolean"
                                   },
                                   "activity_rows_total": {
                                     "type": "integer",
@@ -17470,6 +17485,9 @@
                                   },
                                   "final_phase_duration": {
                                     "type": "number"
+                                  },
+                                  "has_consumed_steering": {
+                                    "type": "boolean"
                                   },
                                   "activity_rows_total": {
                                     "type": "integer",
