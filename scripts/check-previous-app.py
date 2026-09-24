@@ -3,6 +3,7 @@
 
 import argparse
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -41,6 +42,8 @@ def main():
     parser.add_argument("--web-ref", required=True)
     parser.add_argument("--shared-contracts", action="store_true", help="Also exercise monorepo App/Relay fixtures.")
     parser.add_argument("--output", type=Path, required=True, help="New directory for retained verification evidence.")
+    parser.add_argument("--app-checkout", type=Path,
+                        help="Reusable App checkout (and warm DerivedData) shared by consecutive runs of one App revision.")
     args = parser.parse_args()
     tests = [*TESTS, *(["SharedContractTests"] if args.shared_contracts else [])]
     app_sha, web_sha = commit(args.app_ref), commit(args.web_ref)
@@ -49,10 +52,16 @@ def main():
     responses = output / "responses.json"
     with (output / "web-probe.log").open("w") as log:
         probe_web(web_sha, responses, log)
-    with tempfile.TemporaryDirectory(prefix="talaria-previous-app-") as temporary:
-        checkout = Path(temporary) / "source"
-        subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(checkout)], check=True)
-        subprocess.run(["git", "-C", str(checkout), "checkout", "--quiet", "--detach", app_sha], check=True)
+    with contextlib.ExitStack() as stack:
+        if args.app_checkout:
+            checkout = args.app_checkout.resolve()
+        else:
+            checkout = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="talaria-previous-app-"))) / "source"
+        reused = (checkout / ".git").exists() and subprocess.check_output(
+            ["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True).strip() == app_sha
+        if not reused:
+            subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(checkout)], check=True)
+            subprocess.run(["git", "-C", str(checkout), "checkout", "--quiet", "--detach", app_sha], check=True)
         app = checkout / "app" if (checkout / "app/Talaria.xcodeproj").is_dir() else checkout
         if not (app / "Talaria.xcodeproj").is_dir():
             raise ValueError("selected revision does not contain the App project")
