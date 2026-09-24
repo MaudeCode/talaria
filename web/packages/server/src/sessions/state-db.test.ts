@@ -211,6 +211,10 @@ describe('state.db projection', () => {
     let body = (await res.json()) as { session: Record<string, unknown> }
     expect(body.session).toMatchObject({ session_id: 'tui-tip', is_cli_session: true, read_only: false, message_count: 4, tool_calls: [] })
     expect((body.session.messages as { content: string }[]).map((m) => m.content)).toEqual(['user says', 'assistant says', 'user says', 'assistant says'])
+    // State.db-only transcripts get the same server turn projection as WebUI sessions: turn ids and each turn's scene.
+    const stateMessages = body.session.messages as Record<string, unknown>[]
+    expect(stateMessages.map((m) => m._turn_id)).toEqual(['legacy:0', 'legacy:0', 'legacy:2', 'legacy:2'])
+    expect(stateMessages[3]?._anchor_activity_scene).toMatchObject({ version: 'activity_scene_v1', final_answer: 'assistant says', terminal_state: 'completed', activity_rows: [] })
     // Archiving materializes a WebUI sidecar for the claimable CLI session (Python `_get_or_materialize_session`).
     res = await post('/api/session/archive', { session_id: 'tui-tip', archived: true })
     expect(res.status).toBe(200)

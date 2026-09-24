@@ -364,7 +364,8 @@ export class SessionService {
     }
     const { session: synth, reason } = this.claimOrSynthesizeCliSession(sid, meta)
     if (!synth || reason === 'was_webui') throw new HttpFailure(404, 'Session not found')
-    const msgs = withTurnIds(synth.messages)
+    // The same turn projection as a WebUI session: turn ids, then each completed turn's scene.
+    const msgs = hydrateAnchorActivityScenes(withTurnIds(synth.messages), {}) as Message[]
     const lastTs = Number(msgs[msgs.length - 1]?.timestamp ?? 0) || 0
     const sess: Record<string, unknown> = {
       session_id: synth.session_id, title: synth.title, workspace: synth.workspace, model: synth.model, message_count: msgs.length,
