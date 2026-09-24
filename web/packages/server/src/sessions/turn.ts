@@ -26,7 +26,7 @@ import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessage
 import { attachTodoState } from './todo.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
+import { assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stripXmlToolCalls, surfaceCodexCommentary, workspaceContextPrefix } from './merge.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
@@ -541,6 +541,7 @@ export class TurnRunner {
         const turnIdx = asstIdx
         asstIdx += 1
         if (turnIdx < prevAssistants) continue
+        surfaceCodexCommentary(m)
         const existing = str(m.reasoning)
         if (typeof m.content === 'string' && m.content) {
           const [content, merged] = splitThinkingFromContent(m.content, existing)

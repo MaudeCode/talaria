@@ -7,7 +7,7 @@ import { sceneWorkItems } from './turnActivity'
 import { Markdown } from './render/Markdown'
 import { ReasoningBlock } from './blocks/ReasoningBlock'
 import { ToolCard } from './blocks/ToolCard'
-import { DisclosureTurnContext, terminalOutcomeLabel, Worklog, WorklogDetail, type ActivityMode } from './blocks/Worklog'
+import { DisclosureTurnContext, terminalOutcomeLabel, Worklog, type ActivityMode } from './blocks/Worklog'
 import type { ActivityItem, TurnActivity } from './turnActivity'
 
 // The live turn's last rendered height, so the settled row that replaces it can fold from that height.
@@ -17,9 +17,9 @@ export function rememberLiveTurnHeight(key: string, height: number) { lastLiveTu
 const FOLD = { duration: 320, easing: 'ease-out', fill: 'forwards' } as const
 
 /**
- * Folds a just-settled turn from its live height: the collapsed "Worked" rows are shown open and animated
- * shut around the prose that stays, and a spacer holds any remaining height the live turn lost and shrinks
- * with it, so the work visibly folds into its summary and history glides instead of snapping.
+ * Folds a just-settled turn from its live height: the collapsed "Worked" body is shown open and animated
+ * shut, and a spacer holds any remaining height the live turn lost and shrinks with it, so the work
+ * visibly folds into its summary and history glides instead of snapping.
  */
 function SettleSpacer({ turnKey }: { turnKey: string }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -32,26 +32,25 @@ function SettleSpacer({ turnKey }: { turnKey: string }) {
     if (typeof el.animate !== 'function' || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)) return
     // Grow before measuring: a layout forced while the row is shorter than the live turn would clamp the scroll first.
     el.style.height = `${live.height}px`
-    const details = [...row.querySelectorAll<HTMLElement>(':scope > .assistant-turn-blocks > .activity:not(.open) .activity-detail[hidden]')]
-    for (const detail of details) detail.hidden = false
-    const heights = details.map((detail) => detail.scrollHeight)
+    const body = row.querySelector<HTMLElement>(':scope > .assistant-turn-blocks > .activity:not(.open) > .activity-body')
+    if (body) body.hidden = false
+    const bodyHeight = body?.scrollHeight ?? 0
+    if (body && bodyHeight > 0) Object.assign(body.style, { maxHeight: `${bodyHeight}px`, opacity: '1', marginTop: '10px' })
+    else if (body) body.hidden = true
     const gap = Math.max(0, live.height - (row.getBoundingClientRect().height - live.height))
     el.style.height = `${gap}px`
     const done = () => { el.style.height = '' }
     if (gap > 1) void el.animate([{ height: `${gap}px` }, { height: '0px' }], FOLD).finished.then(done, () => undefined)
     else done()
-    details.forEach((detail, i) => {
-      const height = heights[i] ?? 0
-      if (height === 0) { detail.hidden = true; return }
-      detail.style.overflow = 'hidden'
-      const fold = detail.animate([{ maxHeight: `${height}px`, opacity: 1 }, { maxHeight: '0px', opacity: 0 }], FOLD)
+    if (body && bodyHeight > 0) {
+      const fold = body.animate([{ maxHeight: `${bodyHeight}px`, opacity: 1, marginTop: '10px' }, { maxHeight: '0px', opacity: 0, marginTop: '0px' }], FOLD)
       void fold.finished.then(() => {
-        // Hand the rows back to the disclosure; a click during the fold may already have reopened it.
-        if (!detail.closest('.activity')?.classList.contains('open')) detail.hidden = true
-        detail.style.overflow = ''
+        // Hand the body back to the disclosure; a click during the fold may already have reopened it.
+        if (!body.parentElement?.classList.contains('open')) body.hidden = true
+        Object.assign(body.style, { maxHeight: '', opacity: '', marginTop: '' })
         fold.cancel()
       }, () => undefined)
-    })
+    }
   }, [turnKey])
   return <div ref={ref} aria-hidden="true" />
 }
@@ -99,15 +98,14 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
     while (i < items.length && items[i]?.kind !== 'text' && items[i]?.kind !== 'steering') i++
     const run = items.slice(start, i)
     const contents = run.map((entry, j) => render(entry, start + j === items.length - 1))
-    // Only supporting rows fold into the turn's disclosure; the prose between them stays in the transcript.
-    blocks.push(<WorklogDetail key={item.key}>{run.length === 1 ? contents[0] : <Worklog sequenceKey={`sequence:${item.key}`} calls={run.flatMap((entry) => entry.kind === 'tool' ? [entry.call] : [])} status={status}>{contents}</Worklog>}</WorklogDetail>)
+    blocks.push(run.length === 1 ? contents[0] : <Worklog key={item.key} sequenceKey={`sequence:${item.key}`} calls={run.flatMap((entry) => entry.kind === 'tool' ? [entry.call] : [])} status={status}>{contents}</Worklog>)
   }
   const calls = items.flatMap((item) => item.kind === 'tool' ? [item.call] : [])
-  const hasWork = !!earlier || items.some((item) => item.kind === 'tool' || item.kind === 'reasoning')
+  const hasWork = !!earlier || items.some((item) => item.kind !== 'text') || (finalAnswer.trim() !== '' && items.length > 0)
   return (
     <DisclosureTurnContext value={activity.key}>
       {mode !== 'hide_all_activity' && (mode === 'compact_worklog' && hasWork
-        ? <Worklog calls={calls} status={status}>{earlier && <WorklogDetail>{earlier}</WorklogDetail>}{blocks}</Worklog>
+        ? <Worklog calls={calls} status={status}>{earlier}{blocks}</Worklog>
         : <>{earlier}{blocks}</>)}
       {mode === 'hide_all_activity' && items.filter((item) => item.kind === 'steering').map((item) => render(item, false))}
       {!running && <SettleSpacer turnKey={activity.key} />}

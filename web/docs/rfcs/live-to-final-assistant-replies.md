@@ -221,10 +221,8 @@ assistant-turn activity data:
   status (indicator, label and tokens per second) is a pill docked above the
   composer, outside the transcript flow. Rows never regroup while streaming.
   When the turn settles, the top-level Worklog disclosure appears and
-  consecutive tool/reasoning rows form nested groups, and the tool/reasoning
-  rows visibly fold into the "Worked" summary from the live turn's height.
-  Assistant prose between them stays visible in order; a settled turn without
-  tool or reasoning rows shows no "Worked" summary.
+  consecutive tool/reasoning rows form nested groups, and the work visibly
+  folds into the "Worked" summary from the live turn's height.
 - **Transparent Stream** is opt-in and renders the same ordered activity as
   chronological rows. It does not create a second live or settled owner.
 - **Final answer only** is opt-in (`hide_all_activity` in persisted settings).

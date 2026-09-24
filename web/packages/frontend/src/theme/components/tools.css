@@ -29,9 +29,6 @@
 .tool-worklog-body{padding-left:0}
 .activity-body{overflow:hidden;max-height:0;opacity:0;transition:max-height .34s ease,opacity .22s ease}
 .activity.open > .activity-body{max-height:none;overflow:visible;opacity:1;margin-top:10px}
-/* A turn-level body keeps its prose visible; only the .activity-detail rows collapse with the disclosure. */
-.activity-flow:has(> .worklog > .tool-worklog-list > :not([hidden])){margin-top:10px}
-.tool-worklog-list.activity-detail{margin:0}
 .tool-worklog-list{--worklog-rail:24px;margin:3px 0 0 0;padding-left:0;border-left:0;background:transparent;display:flex;flex-direction:column;gap:1px}
 .tool-worklog-list .tool-card-row{margin:0}
 .tool-worklog-list .tool-card-row + .tool-card-row{border-top:0}

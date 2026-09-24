@@ -2,7 +2,7 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "Progress messages between tool steps stay visible after a reply finishes.",
+      "summary": "Progress messages written between tool steps no longer disappear when a reply finishes; they stay under Worked.",
       "highlight": false,
       "components": ["web"]
     }

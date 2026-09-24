@@ -168,6 +168,32 @@ describe('chat turns through the sidecar', () => {
     expect((list.sessions as Json[]).find((r) => r.session_id === sid)).toMatchObject({ title: 'Greeting exchange', message_count: 4 })
   })
 
+  it('keeps Codex commentary between tool calls as the settled row\'s prose instead of dropping it', async () => {
+    const sid = await newSession(s)
+    const commentary = (text: string) => ({ type: 'message', role: 'assistant', status: 'completed', phase: 'commentary', content: [{ type: 'output_text', text }] })
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'interim_assistant', data: { text: 'Reading both config files.', already_streamed: false } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', preview: null, args: { path: 'a' }, tid: 'call_1' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', preview: 'port = 8080', args: { path: 'a' }, tid: 'call_1', is_error: false } })
+      // The Agent routes phase=commentary text into `reasoning` and leaves `content` empty on the tool-call row.
+      return completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: '', reasoning: 'Plan the lookup.\n\nReading both config files.', codex_message_items: [commentary('Reading both config files.')], tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a"}' } }] },
+        { role: 'tool', tool_call_id: 'call_1', content: 'port = 8080' },
+        { role: 'assistant', content: 'The service uses port 8080.', codex_message_items: [{ ...commentary('The service uses port 8080.'), phase: 'final_answer' }] },
+      ])
+    })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Port check"', usage: null }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'which port?' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const settled = ((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[]
+    const detail = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    for (const messages of [settled, detail]) {
+      expect(messages[1]).toMatchObject({ role: 'assistant', content: 'Reading both config files.', reasoning: 'Plan the lookup.' })
+      expect(messages[3]).toMatchObject({ role: 'assistant', content: 'The service uses port 8080.' })
+    }
+  })
+
   it('relays approval and clarify prompts and resolves them through the sidecar [py:test_issue4771_local_approval_regression.py::test_local_mirrored_approval_resolves_not_409] [py:test_issue4948_local_stale_approval.py::test_stale_card_click_clears_not_dead_ends] [py:test_issue4948_local_stale_approval.py::test_fresh_local_approval_still_resolves] [py:test_issue5345_clarify_toast_and_interrupt_provenance.py::test_clarify_pending_never_404s]', async () => {
     const sid = await newSession(s)
     let releaseApproval: (choice: string) => void = () => undefined
