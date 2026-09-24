@@ -1,6 +1,8 @@
 """Selected App checks include each retained Web source and stop on failure."""
 
+import contextlib
 import importlib.util
+import io
 import json
 import sys
 import tempfile
@@ -61,6 +63,30 @@ class ContractRunnerTests(unittest.TestCase):
         for name, script in runners.items():
             with self.subTest(runner=name), patch.object(previous.subprocess, "check_output", return_value=script):
                 self.assertEqual(previous.runner_avoids_clones("a" * 40), name == "new")
+
+    def test_failing_fixture_gate_prints_its_own_output(self):
+        # The component log reaches only the NAS diagnostics; a failure must show the test's own output in the job log.
+        plan = {"components": {"app": {"sourceRevision": "a" * 40}, "web": {"sourceRevision": "b" * 40},
+                               "relay": {"sourceRevision": "c" * 40}}, "supportedWebSources": ["b" * 40]}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "plan.json").write_text(json.dumps(plan))
+            argv = ["check", "--plan", str(root / "plan.json"), "--output", str(root / "out"), "--only", "fixtures"]
+
+            def run(command, **kwargs):
+                if command[:2] == ["git", "clone"]:
+                    (Path(command[-1]) / "contracts/fixtures").mkdir(parents=True)
+                elif command[:3] == ["pnpm", "exec", "vitest"]:
+                    kwargs["stdout"].write("AssertionError: expected 400 to be 200\n")
+                    kwargs["stdout"].flush()
+                    raise subprocess.CalledProcessError(1, command)
+
+            stderr = io.StringIO()
+            with patch.object(sys, "argv", argv), patch.object(runner.subprocess, "run", side_effect=run), \
+                    patch.object(runner.subprocess, "check_output", return_value=b"{}"), \
+                    contextlib.redirect_stderr(stderr), self.assertRaises(subprocess.CalledProcessError):
+                runner.main()
+            self.assertIn("AssertionError: expected 400 to be 200", stderr.getvalue())
 
     def test_only_selector_splits_native_app_runs_from_portable_fixture_suites(self):
         plan = {"components": {"app": {"sourceRevision": "a" * 40}, "web": {"sourceRevision": "b" * 40},

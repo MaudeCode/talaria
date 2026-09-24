@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -53,23 +54,30 @@ def main():
             env = {"PATH": os.environ["PATH"], "HOME": str(home), "TMPDIR": str(scratch)}
             if "LD_LIBRARY_PATH" in os.environ:
                 env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
-            with (output / f"{name}-contracts.log").open("w") as log:
-                if name == "web":
-                    # The contracts package owns the monorepo fixture tests (publisher snapshot, activity scenes).
-                    subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-                    subprocess.run(["npm", "run", "build", "-w", "packages/contracts"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-                    subprocess.run(["npm", "test", "-w", "packages/contracts"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-                else:
-                    # Producer and consumer fixtures come from their actual refs,
-                    # not whichever unreleased code happens to be on main.
-                    for fixture in ("app-registration", "relay-snapshot"):
-                        data = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{refs['app']}:contracts/fixtures/{fixture}.json"])
-                        (checkout / f"contracts/fixtures/{fixture}.json").write_bytes(data)
-                    subprocess.run(["pnpm", "install", "--frozen-lockfile"], cwd=checkout / "relay", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-                    for web_ref in web_refs:
-                        data = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{web_ref}:contracts/fixtures/publisher-snapshot.json"])
-                        (checkout / "contracts/fixtures/publisher-snapshot.json").write_bytes(data)
-                        subprocess.run(["pnpm", "exec", "vitest", "run", "tests/sharedContracts.test.ts"], cwd=checkout / "relay", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+            log_path = output / f"{name}-contracts.log"
+            try:
+                with log_path.open("w") as log:
+                    if name == "web":
+                        # The contracts package owns the monorepo fixture tests (publisher snapshot, activity scenes).
+                        subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+                        subprocess.run(["npm", "run", "build", "-w", "packages/contracts"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+                        subprocess.run(["npm", "test", "-w", "packages/contracts"], cwd=checkout / "web", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+                    else:
+                        # Producer and consumer fixtures come from their actual refs,
+                        # not whichever unreleased code happens to be on main.
+                        for fixture in ("app-registration", "relay-snapshot"):
+                            data = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{refs['app']}:contracts/fixtures/{fixture}.json"])
+                            (checkout / f"contracts/fixtures/{fixture}.json").write_bytes(data)
+                        subprocess.run(["pnpm", "install", "--frozen-lockfile"], cwd=checkout / "relay", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+                        for web_ref in web_refs:
+                            data = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{web_ref}:contracts/fixtures/publisher-snapshot.json"])
+                            (checkout / "contracts/fixtures/publisher-snapshot.json").write_bytes(data)
+                            subprocess.run(["pnpm", "exec", "vitest", "run", "tests/sharedContracts.test.ts"], cwd=checkout / "relay", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+            except subprocess.CalledProcessError:
+                # The log otherwise reaches only the NAS diagnostics; show the failing tool's own account (TAL-325).
+                print(f"{name} contract log (last 80 lines):", file=sys.stderr)
+                print("".join(log_path.read_text(errors="replace").splitlines(keepends=True)[-80:]), end="", file=sys.stderr)
+                raise
     (output / "verification.json").write_text(json.dumps({"sourceRefs": refs, "supportedWebSources": web_refs, "result": "success"}, indent=2) + "\n")
 
 
