@@ -2,7 +2,7 @@ name: Docker plugins
 description: Make the Compose and Buildx CLI plugins available on the Linux pool's Docker daemon.
 inputs:
   multi-platform:
-    description: Also register QEMU binfmt handlers and a docker-container builder for linux/amd64,linux/arm64 images.
+    description: Also create a docker-container builder and prove it can run linux/arm64 build steps.
     required: false
     default: "false"
 runs:
@@ -31,10 +31,11 @@ runs:
         docker compose version
         docker buildx version
         if [[ "$MULTI_PLATFORM" == "true" ]]; then
-          # The runner container is unprivileged, so arm64 emulation is registered in the kernel through the
-          # pod's privileged Docker daemon (as docker/setup-qemu-action does), with a digest-pinned installer.
-          docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 --install arm64
-          # OCI output for two platforms needs a docker-container builder and registered arm64 emulation.
+          # OCI output for two platforms needs a docker-container builder. The pool's Talos kernel has no
+          # binfmt_misc, so BuildKit runs arm64 steps with the buildkit-qemu-aarch64 emulator its image ships;
+          # `buildx inspect` does not list that platform, so prove it with a real arm64 build step instead.
           docker buildx create --driver docker-container --use --bootstrap
-          docker buildx inspect --bootstrap | tee /dev/stderr | grep -E '^Platforms:.*linux/arm64' >/dev/null
+          arch=$(printf 'FROM busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e\nRUN uname -m > /arch\nFROM scratch\nCOPY --from=0 /arch /arch\n' \
+            | docker buildx build --platform linux/arm64 --output type=tar,dest=- - | tar -xO arch 2>/dev/null || true)
+          [[ "$arch" == "aarch64" ]] || { echo "The builder cannot run linux/arm64 steps (uname -m: '${arch}')" >&2; exit 1; }
         fi

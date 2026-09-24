@@ -398,12 +398,17 @@ class PublicationTests(unittest.TestCase):
         self.assertNotIn("ios-ipa", restage)
         self.assertNotIn("ios-dsyms", restage)
 
-    def test_multi_platform_emulation_registers_through_privileged_dind(self):
-        # The runner container is unprivileged: apt's qemu-user-static cannot register kernel binfmt handlers, so
-        # arm64 emulation goes through the pod's privileged Docker daemon with a digest-pinned installer.
+    def test_multi_platform_emulation_is_proven_by_an_arm64_build_step(self):
+        # The pool's Talos kernel has no binfmt_misc, so neither apt QEMU nor a privileged binfmt installer can
+        # register handlers. BuildKit's own buildkit-qemu-aarch64 runs arm64 steps; the action proves it by
+        # building an arm64 RUN step instead of trusting the kernel-registered platform list.
         action = (Path(__file__).resolve().parents[1] / ".github/actions/docker-plugins/action.yml").read_text()
-        self.assertRegex(action, r"docker run --privileged --rm tonistiigi/binfmt:[\w.-]+@sha256:[0-9a-f]{64} --install arm64")
+        self.assertNotIn("tonistiigi/binfmt", action)
+        self.assertNotIn("--privileged", action)
         self.assertNotIn("qemu-user-static", action)
+        self.assertRegex(action, r"FROM busybox:[\w.]+@sha256:[0-9a-f]{64}")
+        self.assertIn("--platform linux/arm64", action)
+        self.assertIn("aarch64", action)
 
     def test_buildx_builders_are_never_fixed_names(self):
         # A Docker daemon that outlives a job would reject a second builder with the same fixed name.
