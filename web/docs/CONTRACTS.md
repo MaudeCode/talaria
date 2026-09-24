@@ -101,6 +101,9 @@ that slice.
 
 ## Frontend application contracts
 
+- Server-owned derivation: the frontend is display-only. The server computes
+  every value it renders and ships it through `packages/contracts`; see
+  server-owned state in the root [`AGENTS.md`](../../AGENTS.md).
 - [`docs/architecture/frontend-migration.md`](architecture/frontend-migration.md):
   the browser application architecture after HWEB-100: TanStack Start SPA
   shell, Router-owned URLs, Query-owned server state, the reducer-owned chat
@@ -253,6 +256,8 @@ Before opening a change for review, confirm:
   narrow, and mobile states.
 - Runtime, streaming, recovery, replay, compression, or sidebar changes state
   which layer they mutate and include a regression for the invariant.
+- Clients render server contract fields; a value a client computes that the
+  server could send moves to the server (root server-owned state).
 - New dependencies, build tools, frameworks, or long-lived processes are avoided
   unless the benefit and rollback story are explicit.
 - Onboarding/setup validation uses isolated `HERMES_HOME` and

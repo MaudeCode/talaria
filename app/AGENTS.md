@@ -54,6 +54,9 @@ explicitly adopted it.
 
 - For API requests, JSON decoding, SSE or streaming, and server-version
   compatibility, use `$talaria-upstream-contract`.
+- Follow root server-owned state (`../AGENTS.md`): views and view models render
+  decoded contract fields; derivation from server data goes on the server
+  through `$talaria-upstream-contract`.
 - Before adding code, inspect nearby callers and existing helpers. Reuse or
   consolidate behavior with multiple callers, delete obsolete code, keep files
   and types cohesive, avoid single-use abstractions, and create a Kaneo follow-up

@@ -59,6 +59,8 @@ Follow that checklist's safety rules:
   and its versioned RPC in `packages/contracts`. Do not fork, patch, or vendor the Agent.
 - Every route, SSE event, and sidecar method is defined once in `packages/contracts`;
   regenerate `../contracts/web-api.openapi.json` with `npm run openapi` and keep it committed.
+- Follow root server-owned state (`../AGENTS.md`): the frontend renders contract fields;
+  derivations go in `packages/server` and ship through `packages/contracts`.
 - Do not add third-party dependencies, build tools, frameworks, or long-lived processes
   without clear justification and a rollback story.
 - Update docs when changing setup, onboarding, runtime behavior, architecture,
