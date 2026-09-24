@@ -85,16 +85,28 @@ def relay(plan, output):
     raise ValueError("Relay readiness/provenance readback did not match the deployed release")
 
 
-def web(plan, build, directory, output):
+def _web_component(plan, build):
     component = plan["components"]["web"]
     if build.get("result") != "success" or build.get("gate") != "buildWeb" or build.get("sourceRevision") != plan["releaseSet"] or build.get("tag") != component["tag"]:
         raise ValueError("Web build receipt does not match the plan")
+    return component
+
+
+def web_npm(plan, build, directory):
+    """npm publication, on the GitHub-hosted runner that npm trusted publishing requires (it cannot reach the NAS).
+
+    npm is the most failure-prone external publication, so it goes first, as Cove does; an identical retry accepts
+    the immutable registry bytes without burning another version.
+    """
+    return publish_npm(_web_component(plan, build), build, directory)
+
+
+def web(plan, build, directory, output):
+    """GHCR publication on the self-hosted pool, after `web_npm`: confirm the npm readback, then push the image."""
+    component = _web_component(plan, build)
     image = build["image"]
     tag = f"ghcr.io/maudecode/talaria-web:{component['tag']}"
-    # npm is the most failure-prone external publication. Publish it first, as Cove does; an identical retry accepts
-    # the immutable registry bytes and continues with GHCR without burning another version.
-    preflight_npm(component, build, directory)
-    npm_identity = publish_npm(component, build, directory)
+    npm_identity = verify_npm(component, build, directory)
     with tempfile.TemporaryDirectory(prefix="talaria-registry-auth-") as temporary:
         auth = str(Path(temporary) / "auth.json")
         subprocess.run(["skopeo", "login", "--authfile", auth, "--username", os.environ["GITHUB_ACTOR"],
@@ -121,19 +133,26 @@ def _npm_view(spec, field):
     raise ValueError(f"npm registry lookup failed for {spec}: {view.stderr.strip()}")
 
 
-def preflight_npm(component, build, directory):
-    """Validate everything npm publication depends on without mutating the registry; returns the publication plan."""
+def _npm_packages(component, build, directory):
+    """The built tarballs, their package names and the channel's dist-tag, in publication order."""
     expected = f"@maudecode/talaria-web@{component['version']}"
     if build.get("npm") != expected:
         raise ValueError("Web build receipt does not name the npm package")
-    if not os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL") or not os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN"):
-        raise ValueError("npm trusted publishing requires GitHub OIDC id-token permission")
     tarballs = {path.name: path for path in (directory / "npm").glob("*.tgz")}
     ordered = [name for name in sorted(tarballs) if "contracts" in name] + [name for name in sorted(tarballs) if "contracts" not in name]
     if len(ordered) != 2:
         raise ValueError("Web publication requires the contracts and server tarballs")
     dist_tag = "experimental" if component["tag"].startswith("web-exp-") else "latest"
     packages = {name: "@maudecode/talaria-web-contracts" if "contracts" in name else "@maudecode/talaria-web" for name in ordered}
+    return {"expected": expected, "tarballs": tarballs, "ordered": ordered, "dist_tag": dist_tag, "packages": packages}
+
+
+def preflight_npm(component, build, directory):
+    """Validate everything npm publication depends on without mutating the registry; returns the publication plan."""
+    if not os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL") or not os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN"):
+        raise ValueError("npm trusted publishing requires GitHub OIDC id-token permission")
+    npm = _npm_packages(component, build, directory)
+    tarballs, ordered, packages = npm["tarballs"], npm["ordered"], npm["packages"]
     # Preflight every package before any mutation so a mismatch on one never leaves the other re-tagged.
     published = {}
     for name in ordered:
@@ -143,18 +162,24 @@ def preflight_npm(component, build, directory):
             # Versions are immutable: a different tarball under this version came from another channel or build.
             raise ValueError(f"{spec} is already published with different contents; the version must be unique across channels")
         published[name] = existing is not None
-    return {"expected": expected, "tarballs": tarballs, "ordered": ordered, "dist_tag": dist_tag, "packages": packages, "published": published}
+    return {**npm, "published": published}
 
 
 def publish_npm(component, build, directory):
     """Publish the packed tarballs (contracts first) and verify the registry readback."""
     plan = preflight_npm(component, build, directory)
-    expected, tarballs, ordered = plan["expected"], plan["tarballs"], plan["ordered"]
-    dist_tag, packages, published = plan["dist_tag"], plan["packages"], plan["published"]
-    for name in ordered:
-        spec = f"{packages[name]}@{component['version']}"
+    tarballs, dist_tag, published = plan["tarballs"], plan["dist_tag"], plan["published"]
+    for name in plan["ordered"]:
         if not published[name]:
             subprocess.run(["npm", "publish", str(tarballs[name]), "--access", "public", "--tag", dist_tag], check=True)
+    return verify_npm(component, build, directory)
+
+
+def verify_npm(component, build, directory):
+    """The registry serves exactly the built tarballs under the channel's dist-tag; needs no publishing identity."""
+    npm = _npm_packages(component, build, directory)
+    expected, tarballs, ordered = npm["expected"], npm["tarballs"], npm["ordered"]
+    dist_tag, packages = npm["dist_tag"], npm["packages"]
     for name in ordered:
         spec = f"{packages[name]}@{component['version']}"
         if _npm_view(spec, "dist.integrity") != _npm_integrity(tarballs[name]):
@@ -266,7 +291,7 @@ def finalize(plan, manifest, previous, artifacts):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("relay", "web", "build-app-receipt", "verify-app", "app", "finalize"))
+    parser.add_argument("operation", choices=("relay", "web-npm", "web", "build-app-receipt", "verify-app", "app", "finalize"))
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--build", type=Path)
     parser.add_argument("--directory", type=Path)
@@ -277,11 +302,13 @@ def main():
     args = parser.parse_args()
     plan = load(args.plan)
     authorize(plan)
-    component_name = args.operation if args.operation in ("relay", "web") else "app"
+    component_name = {"relay": "relay", "web-npm": "web", "web": "web"}.get(args.operation, "app")
     if args.operation != "finalize" and not plan["changed"][component_name]:
         raise ValueError("unchanged components must not be republished")
     if args.operation == "relay":
         relay(plan, args.output)
+    elif args.operation == "web-npm":
+        print(web_npm(plan, load(args.build), args.directory))
     elif args.operation == "web":
         web(plan, load(args.build), args.directory, args.output)
     elif args.operation == "build-app-receipt":

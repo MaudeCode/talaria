@@ -337,10 +337,26 @@ jobs:
         TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
         TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put web-build "$RUNNER_TEMP/web-build" web-image "$RUNNER_TEMP/web-image"'
+    - name: Stage the npm handoff for the GitHub-hosted publisher
+      id: npm
+      run: |
+        set -euo pipefail
+        # npm trusted publishing needs a GitHub-hosted runner, which cannot reach the NAS. It gets only the plan,
+        # the build receipt and the npm tarballs, through the Actions cache; this digest travels in job outputs.
+        mkdir web-npm-handoff
+        cp "$RUNNER_TEMP/release-plan/plan.json" "$RUNNER_TEMP/web-build/receipt.json" web-npm-handoff/
+        cp -R "$RUNNER_TEMP/web-build/npm" web-npm-handoff/
+        tar -cf web-npm-handoff.tar web-npm-handoff
+        echo "sha256=$(sha256sum web-npm-handoff.tar | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache/save@v6
+      with:
+        path: web-npm-handoff.tar
+        key: talaria-web-npm-${{ github.run_id }}-${{ steps.npm.outputs.sha256 }}
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
+      npm_handoff_sha256: ${{ steps.npm.outputs.sha256 }}
   app-dry-build:
     # Builds consume only the release plan, so they run alongside the gates and each other; build-gate
     # joins every gate and build before anything publishes (TAL-319).
@@ -493,6 +509,7 @@ jobs:
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
   web-publication:
+    # npm first, on the GitHub-hosted runner npm trusted publishing requires (it cannot reach the NAS).
     needs:
     - prepare
     - build-gate
@@ -505,7 +522,6 @@ jobs:
     permissions:
       contents: read
       actions: read
-      packages: write
       id-token: write
     concurrency:
       group: talaria-web-publication
@@ -515,8 +531,62 @@ jobs:
     - uses: actions/checkout@v7
       with:
         ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
     - uses: ./.github/actions/release-python
-    - name: Restore release-plan and web-build
+    - name: Restore the npm handoff
+      uses: actions/cache/restore@v6
+      with:
+        path: web-npm-handoff.tar
+        key: talaria-web-npm-${{ github.run_id }}-${{ needs.web-build.outputs.npm_handoff_sha256 }}
+        fail-on-cache-miss: true
+    - name: Verify the npm handoff against the build job's digest
+      env:
+        EXPECTED: ${{ needs.web-build.outputs.npm_handoff_sha256 }}
+      run: |
+        set -euo pipefail
+        [[ "$EXPECTED" =~ ^[a-f0-9]{64}$ ]]
+        echo "$EXPECTED  web-npm-handoff.tar" | sha256sum --check
+        tar -xf web-npm-handoff.tar -C "$RUNNER_TEMP"
+    - name: Set up Node for npm trusted publishing
+      uses: actions/setup-node@v7
+      with:
+        node-version-file: web/.nvmrc
+        registry-url: https://registry.npmjs.org
+    - name: Require an npm CLI with trusted-publishing support
+      run: npm install --global npm@latest
+    - name: Publish the built npm packages and verify the readback
+      run: |
+        set -euo pipefail
+        # The reviewed workflow owns publication code; component tags stay immutable.
+        git show "${GITHUB_WORKFLOW_SHA}:releases/publish.py" > "$RUNNER_TEMP/publish.py"
+        PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" web-npm --plan "$RUNNER_TEMP/web-npm-handoff/plan.json" \
+          --build "$RUNNER_TEMP/web-npm-handoff/receipt.json" --directory "$RUNNER_TEMP/web-npm-handoff"
+  web-publish:
+    # Then GHCR on the self-hosted pool, which reaches the NAS for the OCI archive; it confirms npm's readback first.
+    needs:
+    - prepare
+    - build-gate
+    - web-build
+    - web-publication
+    if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.web_changed == 'true' && needs.build-gate.result == 'success' && needs.web-publication.result
+      == 'success' }}
+    runs-on: ["ghar-set-maudecode"]
+    environment: web-release
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    concurrency:
+      group: talaria-web-publication-image
+      cancel-in-progress: false
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
+    - uses: ./.github/actions/release-python
+    - name: Restore release-plan, web-build and web-image
       env:
         TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
         TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
@@ -527,22 +597,22 @@ jobs:
         set -euo pipefail
         "$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan web-build web-image
         mv "$RUNNER_TEMP/web-image/web.oci.tar" "$RUNNER_TEMP/web-build/"
+    - name: Set up Node for the npm readback
+      uses: actions/setup-node@v7
+      with:
+        node-version-file: web/.nvmrc
     - name: Install OCI transfer tool
       run: |
         sudo apt-get update
         sudo apt-get install --yes skopeo
-    - name: Set up Node for npm trusted publishing
-      uses: actions/setup-node@v7
-      with:
-        node-version-file: web/.nvmrc
-        registry-url: https://registry.npmjs.org
-    - name: Require an npm CLI with trusted-publishing support
-      run: npm install --global npm@latest
-    - name: Publish the built npm packages and OCI bytes, then verify both readbacks
+    - name: Confirm the npm readback, publish the OCI bytes and verify their readback
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        "$RELEASE_PYTHON" releases/publish.py web --plan "$RUNNER_TEMP/release-plan/plan.json" \
+        set -euo pipefail
+        # The reviewed workflow owns publication code; component tags stay immutable.
+        git show "${GITHUB_WORKFLOW_SHA}:releases/publish.py" > "$RUNNER_TEMP/publish.py"
+        PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" web --plan "$RUNNER_TEMP/release-plan/plan.json" \
           --build "$RUNNER_TEMP/web-build/receipt.json" --directory "$RUNNER_TEMP/web-build" \
           --output "$RUNNER_TEMP/web-publish/receipt.json"
     - name: Stage web-publish for other runners
@@ -554,27 +624,6 @@ jobs:
         TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
         TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put web-publish "$RUNNER_TEMP/web-publish"'
-    env:
-      RELEASE_NEEDS: ${{ toJSON(needs) }}
-    outputs:
-      artifacts: ${{ steps.store.outputs.artifacts }}
-  web-publish:
-    needs:
-    - prepare
-    - build-gate
-    - web-publication
-    if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.web_changed == 'true' && needs.build-gate.result == 'success' && needs.web-publication.result
-      == 'success' }}
-    runs-on: ["ghar-set-maudecode"]
-    timeout-minutes: 15
-    steps:
-    - uses: actions/checkout@v7
-      with:
-        ref: ${{ needs.prepare.outputs.source }}
-    - uses: ./.github/actions/release-python
-    - name: Forward the verified Web publication receipt
-      id: store
-      run: '"$RELEASE_PYTHON" releases/artifacts.py forward'
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
