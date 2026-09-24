@@ -440,9 +440,15 @@ struct AssistantActivityTimeline: Equatable {
         }) {
             timeline.appendSceneRow(row, sourceIndex: sourceIndex)
         }
-        // The server's rows exclude the answer, which it sends as `final_answer`.
-        if let finalAnswer = Self.nonEmpty(scene.finalAnswer) {
-            timeline.rows.append(AssistantActivityRow(id: "scene:final", content: .prose(finalAnswer), isFinalAnswer: true))
+        if let finalAnswer = scene.finalAnswer {
+            // The server's rows exclude the answer, which it sends as `final_answer` (possibly empty).
+            if let finalAnswer = Self.nonEmpty(finalAnswer) {
+                timeline.rows.append(AssistantActivityRow(id: "scene:final", content: .prose(finalAnswer), isFinalAnswer: true))
+            }
+        } else {
+            // Only a pre-TAL-328 server omits the field; its message text is the answer.
+            // ponytail: old-server fallback; delete once those servers are unsupported.
+            timeline.appendFinalProseIfNeeded(message.content)
         }
         guard !timeline.rows.isEmpty else { return nil }
         return timeline
