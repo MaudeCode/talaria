@@ -27,7 +27,7 @@ import { attachTodoState } from './todo.js'
 import { hydrateAnchorActivityScenes, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
@@ -75,7 +75,7 @@ export interface TurnRunnerDeps {
 
 interface SteerRecord { steer_id: string; session_id: string; stream_id: string; text: string; display_text: string; created_at: number }
 /** A steer the Agent took, with where it landed: after the last tool that had completed when it was consumed. */
-interface ConsumedSteer { steer_id: string; text: string; submitted_at: number; consumed_at: number; after_tool_call_id: string | null }
+interface ConsumedSteer { steer_id: string; text: string; agent_text: string; submitted_at: number; consumed_at: number; after_tool_call_id: string | null }
 
 export interface StartTurnOptions {
   msg: string
@@ -1074,7 +1074,7 @@ export class TurnRunner {
     const afterToolCallId = this.lastCompletedTool.get(record.stream_id) ?? null
     const consumed = this.consumedSteers.get(record.stream_id) ?? []
     if (!consumed.some((c) => c.steer_id === record.steer_id)) {
-      consumed.push({ steer_id: record.steer_id, text: record.display_text || record.text, submitted_at: record.created_at, consumed_at: consumedAt, after_tool_call_id: afterToolCallId })
+      consumed.push({ steer_id: record.steer_id, text: record.display_text || record.text, agent_text: record.text, submitted_at: record.created_at, consumed_at: consumedAt, after_tool_call_id: afterToolCallId })
       this.consumedSteers.set(record.stream_id, consumed)
     }
     return { ...record, agent_text: record.text, text: record.display_text || record.text, consumed_at: consumedAt, after_tool_call_id: afterToolCallId }
@@ -1092,10 +1092,15 @@ export class TurnRunner {
     s.messages = s.messages.filter((m) => !(m._steer && m._turn_id === streamId))
     let boundary = typeof startedAt === 'number' && startedAt > 0 ? startedAt : steers[0]!.submitted_at
     for (const steer of steers) {
-      s.messages.splice(steerInsertIndex(s.messages, streamId, steer.after_tool_call_id), 0, {
+      const row: Message = {
         role: 'user', content: steer.text, timestamp: steer.consumed_at, _turn_id: streamId,
         _steer: { steer_id: steer.steer_id, submitted_at: steer.submitted_at, consumed_at: steer.consumed_at, phase_duration: roundDuration(steer.consumed_at - boundary) },
-      })
+      }
+      // An Agent that records the steer it delivered does so at its exact place: that row becomes the steer, not a copy.
+      const agentRows = s.messages.flatMap((m, i) => (m._turn_id === streamId && agentSteerText(m) !== null ? [i] : []))
+      const agentRow = agentRows.find((i) => agentSteerText(s.messages[i]!) === steer.agent_text.trim()) ?? agentRows[0]
+      if (agentRow === undefined) s.messages.splice(steerInsertIndex(s.messages, streamId, steer.after_tool_call_id), 0, row)
+      else s.messages[agentRow] = row
       boundary = steer.consumed_at
     }
     return boundary

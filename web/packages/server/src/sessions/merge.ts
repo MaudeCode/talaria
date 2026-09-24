@@ -381,6 +381,16 @@ function toolCallId(tc: unknown): string {
 
 const API_SAFE_MSG_KEYS = new Set(['role', 'content', 'tool_calls', 'tool_call_id', 'name', 'refusal', 'reasoning_content'])
 const OOB_USER_MESSAGE_BLOCK_RE = /\[OUT-OF-BAND\s+USER\s+MESSAGE(?:\s*(?:—|-)\s*[\s\S]*?)?\]\s*?[\s\S]*?\[\/OUT-OF-BAND\s+USER\s+MESSAGE\]/gi
+const OOB_DELIVERY_RE = /^\s*\[OUT-OF-BAND\s+USER\s+MESSAGE[^\]]*\]\s*([\s\S]*?)\s*\[\/OUT-OF-BAND\s+USER\s+MESSAGE\]\s*$/i
+
+/** The Agent's own record of a steer it delivered (`display_kind: 'steer'`, an out-of-band block): its text, else null. */
+export function agentSteerText(m: Message): string | null {
+  if (m.role !== 'user' || isDict(m._steer)) return null
+  const content = messageText(m.content)
+  const inner = OOB_DELIVERY_RE.exec(content)?.[1]
+  if (inner !== undefined) return inner.trim()
+  return m.display_kind === 'steer' ? content.trim() : null
+}
 
 /** Python `_is_reasoning_only_assistant_message`: a display-only Thinking card with no visible reply. */
 function isReasoningOnlyAssistant(msg: Message): boolean {

@@ -521,6 +521,39 @@ describe('chat turns through the sidecar', () => {
     expect((scene.activity_rows as Json[]).some((r) => r.role === 'steering' && (r.steering as Json).steer_id === 'steer-c')).toBe(true)
   })
 
+  it('makes the Agent\'s own record of a delivered steer the persisted steer, not a second copy (TAL-300)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let release: () => void = () => undefined
+    let emitLive: ((frame: { event: string; data: Json }) => void) | null = null
+    const oob = '[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once at this position; not tool output and not a new delivery when replayed from conversation history]\nmention the weekday\n[/OUT-OF-BAND USER MESSAGE]'
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emitLive = emit
+      const call = (id: string) => ({ id, type: 'function', function: { name: 'terminal', arguments: '{}' } })
+      release = () => { resolve(completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: '', tool_calls: [call('t1')] }, { role: 'tool', tool_call_id: 't1', content: 'Thu' },
+        { role: 'user', content: oob, display_kind: 'steer' },
+        { role: 'assistant', content: '', tool_calls: [call('t2')] }, { role: 'tool', tool_call_id: 't2', content: 'up' },
+        { role: 'assistant', content: 'On Thursday, all good.' },
+      ])) }
+      emit({ event: 'token', data: { text: '' } })
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'date then uptime' }))
+    const streamId = String(start.stream_id)
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'mention the weekday', display_text: 'Mention the weekday', steer_id: 'steer-w' })
+    emitLive!({ event: 'steer_pending', data: { text: '' } })
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'steer_consumed')
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(messages.map((m) => (m._steer ? `steer:${String((m._steer as Json).steer_id)}:${String(m.content)}` : String(m.role)))).toEqual([
+      'user', 'assistant', 'tool', 'steer:steer-w:Mention the weekday', 'assistant', 'tool', 'assistant',
+    ])
+    const scene = messages.at(-1)?._anchor_activity_scene as Json
+    expect((scene.activity_rows as Json[]).filter((r) => r.role === 'steering').map((r) => r.text)).toEqual(['Mention the weekday'])
+  })
+
   it('keeps a steer the Agent still held as a leftover when the run returns an error (TAL-300)', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))

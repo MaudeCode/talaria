@@ -6,7 +6,7 @@
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { isContextCompressionMarker, messageText, splitThinkingFromContent } from './merge.js'
+import { agentSteerText, isContextCompressionMarker, messageText, splitThinkingFromContent } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 
@@ -544,8 +544,11 @@ function opensTurn(m: Record<string, unknown>): boolean {
  */
 export function withTurnIds<T>(messages: T[]): T[] {
   let current = 'legacy:start'
-  return messages.map((m, index) => {
-    if (!isDict(m)) return m
+  return messages.map((raw, index) => {
+    if (!isDict(raw)) return raw
+    // The Agent's own record of a delivered steer shows as the steer it is, inside its turn, never as a prompt.
+    const agentSteer = agentSteerText(raw)
+    const m = agentSteer === null ? raw : { ...raw, content: agentSteer, _steer: { steer_id: `agent:${String(index)}` } }
     const own = str(m._turn_id)
     if (own) { current = own; return m }
     if (opensTurn(m)) current = `legacy:${String(index)}`

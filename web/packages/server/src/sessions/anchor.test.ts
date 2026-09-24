@@ -77,6 +77,24 @@ describe('withTurnIds', () => {
     ]).map((m) => m._turn_id)
     expect(rows).toEqual(['legacy:start', 'legacy:1', 'legacy:1', 'legacy:1', 'legacy:1', 'legacy:1', 'run-1', 'run-1', 'run-1', 'legacy:9', 'legacy:9'])
   })
+
+  it('shows a stored Agent steer delivery as a steer inside its turn', () => {
+    const rows = withTurnIds<Json>([
+      { role: 'user', content: 'Check the date' },
+      { role: 'assistant', content: '', tool_calls: [{ id: 't' }] },
+      { role: 'tool', tool_call_id: 't', content: 'Thu' },
+      { role: 'user', content: '[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once at this position]\nMention the weekday\n[/OUT-OF-BAND USER MESSAGE]' },
+      { role: 'user', content: 'Plain steer text', display_kind: 'steer' },
+      { role: 'assistant', content: 'Thursday.' },
+    ])
+    expect(rows.map((m) => [m._turn_id, m.content, (m._steer as Json | undefined)?.steer_id ?? null])).toEqual([
+      ['legacy:0', 'Check the date', null], ['legacy:0', '', null], ['legacy:0', 'Thu', null],
+      ['legacy:0', 'Mention the weekday', 'agent:3'], ['legacy:0', 'Plain steer text', 'agent:4'], ['legacy:0', 'Thursday.', null],
+    ])
+    const scene = buildTurnScene(turnOf(rows))!
+    expect((scene.activity_rows as Json[]).filter((r) => r.role === 'steering').map((r) => r.text)).toEqual(['Mention the weekday', 'Plain steer text'])
+    expect(scene.final_answer).toBe('Thursday.')
+  })
 })
 
 const turnOf = (rows: Json[]): [Json, number][] => rows.map((m, i) => [m, i])

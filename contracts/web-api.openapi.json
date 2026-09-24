@@ -2716,9 +2716,7 @@
                                   }
                                 },
                                 "required": [
-                                  "steer_id",
-                                  "consumed_at",
-                                  "phase_duration"
+                                  "steer_id"
                                 ],
                                 "additionalProperties": {}
                               },
@@ -4028,9 +4026,7 @@
                                   }
                                 },
                                 "required": [
-                                  "steer_id",
-                                  "consumed_at",
-                                  "phase_duration"
+                                  "steer_id"
                                 ],
                                 "additionalProperties": {}
                               },
@@ -5114,9 +5110,7 @@
                                   }
                                 },
                                 "required": [
-                                  "steer_id",
-                                  "consumed_at",
-                                  "phase_duration"
+                                  "steer_id"
                                 ],
                                 "additionalProperties": {}
                               },
@@ -7002,9 +6996,7 @@
                                   }
                                 },
                                 "required": [
-                                  "steer_id",
-                                  "consumed_at",
-                                  "phase_duration"
+                                  "steer_id"
                                 ],
                                 "additionalProperties": {}
                               },
@@ -8822,9 +8814,7 @@
                                   }
                                 },
                                 "required": [
-                                  "steer_id",
-                                  "consumed_at",
-                                  "phase_duration"
+                                  "steer_id"
                                 ],
                                 "additionalProperties": {}
                               },
@@ -17536,9 +17526,7 @@
                                   }
                                 },
                                 "required": [
-                                  "steer_id",
-                                  "consumed_at",
-                                  "phase_duration"
+                                  "steer_id"
                                 ],
                                 "additionalProperties": {}
                               },
