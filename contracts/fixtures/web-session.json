@@ -113,7 +113,8 @@
                 "steer_id": "legacy-steer",
                 "consumed": false,
                 "submitted_at": null,
-                "consumed_at": null
+                "consumed_at": null,
+                "phase_duration": null
               },
               "order_index": 3
             }
@@ -427,6 +428,181 @@
         "content": "a.txt",
         "message_id": "contract-run-e-tool",
         "_turn_id": "contract-run-e"
+      },
+      {
+        "role": "user",
+        "content": "Read both files",
+        "message_id": "contract-user-g",
+        "_turn_id": "contract-run-g"
+      },
+      {
+        "role": "assistant",
+        "content": "Reading a.",
+        "message_id": "contract-run-g-1",
+        "tool_calls": [
+          {
+            "id": "contract-ga",
+            "name": "read_file",
+            "args": {
+              "path": "a.txt"
+            }
+          }
+        ],
+        "_turn_id": "contract-run-g"
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "contract-ga",
+        "content": "A",
+        "message_id": "contract-run-g-tool-a",
+        "_turn_id": "contract-run-g"
+      },
+      {
+        "role": "user",
+        "content": "Check b too",
+        "message_id": "contract-steer-1",
+        "timestamp": 205,
+        "_turn_id": "contract-run-g",
+        "_steer": {
+          "steer_id": "contract-steer-1",
+          "submitted_at": 203,
+          "consumed_at": 205,
+          "phase_duration": 5
+        }
+      },
+      {
+        "role": "assistant",
+        "content": "Reading b.",
+        "message_id": "contract-run-g-2",
+        "tool_calls": [
+          {
+            "id": "contract-gb",
+            "name": "read_file",
+            "args": {
+              "path": "b.txt"
+            }
+          }
+        ],
+        "_turn_id": "contract-run-g"
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "contract-gb",
+        "content": "B",
+        "message_id": "contract-run-g-tool-b",
+        "_turn_id": "contract-run-g"
+      },
+      {
+        "role": "user",
+        "content": "Then stop",
+        "message_id": "contract-steer-2",
+        "timestamp": 209,
+        "_turn_id": "contract-run-g",
+        "_steer": {
+          "steer_id": "contract-steer-2",
+          "submitted_at": 208,
+          "consumed_at": 209,
+          "phase_duration": 4
+        }
+      },
+      {
+        "role": "assistant",
+        "content": "Both files read.",
+        "message_id": "contract-run-g-3",
+        "_turn_duration": 12,
+        "_final_phase_duration": 3,
+        "_turn_id": "contract-run-g",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "final_answer": "Both files read.",
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "turn_duration": 12,
+          "final_phase_duration": 3,
+          "activity_rows": [
+            {
+              "row_id": "contract-run-g-1:prose",
+              "role": "prose",
+              "text": "Reading a.",
+              "order_index": 0
+            },
+            {
+              "row_id": "tool:contract-ga",
+              "role": "tool",
+              "tool": {
+                "id": "contract-ga",
+                "name": "read_file",
+                "args": {
+                  "path": "a.txt"
+                },
+                "preview": null,
+                "result": "A",
+                "done": true,
+                "is_error": false,
+                "duration": null,
+                "cost_usd": null
+              },
+              "order_index": 1
+            },
+            {
+              "row_id": "steering:contract-steer-1",
+              "created_at": 205,
+              "role": "steering",
+              "text": "Check b too",
+              "steering": {
+                "steer_id": "contract-steer-1",
+                "consumed": true,
+                "submitted_at": 203,
+                "consumed_at": 205,
+                "phase_duration": 5
+              },
+              "order_index": 2
+            },
+            {
+              "row_id": "contract-run-g-2:prose",
+              "role": "prose",
+              "text": "Reading b.",
+              "order_index": 3
+            },
+            {
+              "row_id": "tool:contract-gb",
+              "role": "tool",
+              "tool": {
+                "id": "contract-gb",
+                "name": "read_file",
+                "args": {
+                  "path": "b.txt"
+                },
+                "preview": null,
+                "result": "B",
+                "done": true,
+                "is_error": false,
+                "duration": null,
+                "cost_usd": null
+              },
+              "order_index": 4
+            },
+            {
+              "row_id": "steering:contract-steer-2",
+              "created_at": 209,
+              "role": "steering",
+              "text": "Then stop",
+              "steering": {
+                "steer_id": "contract-steer-2",
+                "consumed": true,
+                "submitted_at": 208,
+                "consumed_at": 209,
+                "phase_duration": 4
+              },
+              "order_index": 5
+            }
+          ],
+          "activity_rows_total": 6,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "d17054d885c35cd26205697b2c00128d79ea43ef67f732a08a06e55043265ad7"
+        }
       },
       {
         "role": "user",

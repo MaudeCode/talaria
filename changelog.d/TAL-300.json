@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Messages you send to steer a running reply stay in place in the finished reply, on every device and after reopening the chat.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

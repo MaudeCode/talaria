@@ -35,6 +35,8 @@ export type Segment =
   | { kind: 'text'; text: string; interim?: boolean }
   | { kind: 'reasoning'; text: string; titles: string[] }
   | { kind: 'tool'; toolId: string }
+  /** A consumed steer, at the place the server will persist it: after the tool that had completed. */
+  | { kind: 'steering'; steerId: string; text: string }
 
 export interface LiveTurn {
   sessionId: string
@@ -59,7 +61,6 @@ export interface LiveTurn {
   cancelledMessage: string | null
   approval: ApprovalPending | null
   clarify: ClarifyPending | null
-  steerConsumed: { id: string; text: string }[]
   pendingSteerLeftover: string | null
   compression: { state: 'compressing' | 'compressed'; newSessionId: string | null } | null
   title: string | null
@@ -98,7 +99,7 @@ function newTurn(sessionId: string, streamId: string, now: number): LiveTurn {
     sessionId, streamId, turnId: null, userMessageId: null, userText: '', startedAt: now, status: 'starting',
     segments: [], tools: {}, toolOrder: [], reasoningText: '', reasoningTitles: [], lastEventId: '', lastSeq: 0,
     usage: null, tps: null, contextStatus: null, warning: null, error: null, cancelledMessage: null, approval: null, clarify: null,
-    steerConsumed: [], pendingSteerLeftover: null, compression: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false,
+    pendingSteerLeftover: null, compression: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false,
   }
 }
 
@@ -208,8 +209,11 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
     }
     case 'steer_consumed': {
       const id = event.data.steer_id ?? `${now}`
-      if (stamped.steerConsumed.some((s) => s.id === id)) return stamped
-      return { ...stamped, steerConsumed: [...stamped.steerConsumed, { id, text: event.data.text ?? '' }], pendingSteerLeftover: null }
+      if (stamped.segments.some((s) => s.kind === 'steering' && s.steerId === id)) return stamped
+      const after = event.data.after_tool_call_id
+      const at = after ? stamped.segments.findIndex((s) => s.kind === 'tool' && s.toolId === after) + 1 : 0
+      const segment: Segment = { kind: 'steering', steerId: id, text: event.data.text ?? '' }
+      return { ...stamped, segments: [...stamped.segments.slice(0, at), segment, ...stamped.segments.slice(at)], pendingSteerLeftover: null }
     }
     case 'pending_steer_leftover':
       return { ...stamped, pendingSteerLeftover: event.data.text ?? null }

@@ -25,7 +25,8 @@ export interface VisibleMessage {
 }
 
 function isRenderable(msg: Message): boolean {
-  if (!msg.role || msg.role === 'tool') return false
+  // A persisted steer renders inside its turn's scene, not as a message of its own.
+  if (!msg.role || msg.role === 'tool' || msg._steer) return false
   const source = (msg as { _source?: string })._source
   if (source === 'process_wakeup') return !!(messageText(msg.content) || msg.attachments?.length)
   if ((msg as { _statusCard?: unknown })._statusCard) return true

@@ -166,7 +166,7 @@ export function anchorSceneRecords(session: Session): Record<string, unknown> {
 }
 
 export interface SceneTool { id: string; name: string; args: unknown; preview: string | null; result: unknown; done: boolean; is_error: boolean; duration: number | null; cost_usd: number | null }
-export interface SceneSteering { steer_id: string; consumed: boolean; submitted_at: number | null; consumed_at: number | null }
+export interface SceneSteering { steer_id: string; consumed: boolean; submitted_at: number | null; consumed_at: number | null; phase_duration?: number | null }
 /** The one scene row shape both clients render: every decoding decision is made here. */
 export interface SceneRow {
   row_id: string
@@ -222,7 +222,7 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
     } else if (row.role === 'steering' && str(row.text).trim()) {
       // Already-normalized rows (built or re-read scenes) keep their fields: normalizing is idempotent.
       const consumed = row.status === 'consumed' || steering.consumed === true
-      put({ ...base, role: 'steering', text: str(row.text), steering: { steer_id: steerId || rowId, consumed, submitted_at: finite(payload.created_at) ?? finite(steering.submitted_at), consumed_at: consumed ? finite(payload.consumed_at) ?? finite(steering.consumed_at) ?? createdAt : null } })
+      put({ ...base, role: 'steering', text: str(row.text), steering: { steer_id: steerId || rowId, consumed, submitted_at: finite(payload.created_at) ?? finite(steering.submitted_at), consumed_at: consumed ? finite(payload.consumed_at) ?? finite(steering.consumed_at) ?? createdAt : null, phase_duration: finite(steering.phase_duration) } })
     } else if (row.role === 'tool') {
       const status = str(row.status).toLowerCase()
       put({ ...base, role: 'tool', tool: {
@@ -312,7 +312,17 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
   const rows: SceneRow[] = []
   const seenTools = new Set<string>()
   const push = (row: Omit<SceneRow, 'order_index'>) => rows.push({ ...row, order_index: rows.length })
-  for (const [m, index] of assistants) {
+  for (const [m, index] of turn) {
+    const steer = isDict(m._steer) ? m._steer : null
+    if (m.role === 'user' && steer) {
+      // A persisted steer sits at its causal place; it ends one work phase and starts the next.
+      const steerId = str(steer.steer_id) || `i${String(index)}`
+      const createdAt = finite(m.timestamp)
+      push({ row_id: `steering:${steerId}`, role: 'steering', text: messageText(m.content), ...(createdAt === null ? {} : { created_at: createdAt }),
+        steering: { steer_id: steerId, consumed: true, submitted_at: finite(steer.submitted_at), consumed_at: finite(steer.consumed_at), phase_duration: finite(steer.phase_duration) } })
+      continue
+    }
+    if (m.role !== 'assistant') continue
     const ref = str(m.message_id ?? m.id) || `i${String(index)}`
     const createdAt = finite(m.timestamp)
     const at = createdAt === null ? {} : { created_at: createdAt }
@@ -346,6 +356,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
   return {
     version: 'activity_scene_v1', activity_rows: rows, final_answer: finalAnswer, terminal_state: terminalState,
     expanded_by_default: EXPANDED_OUTCOMES.has(terminalState) && rows.length > 0, turn_duration: anchorSceneMessageTurnDuration(last),
+    ...(typeof last._final_phase_duration === 'number' ? { final_phase_duration: last._final_phase_duration } : {}),
   }
 }
 
@@ -501,7 +512,7 @@ export function readAnchorSceneRows(session: Session, query: { messageRef: strin
 
 /** A turn opens at a user message the reader sees (text or attachments); hidden prompts and compaction markers do not. */
 function opensTurn(m: Record<string, unknown>): boolean {
-  if (m.role !== 'user' || isContextCompressionMarker(m)) return false
+  if (m.role !== 'user' || isContextCompressionMarker(m) || isDict(m._steer)) return false
   return messageText(m.content).trim() !== '' || (Array.isArray(m.attachments) && m.attachments.length > 0)
 }
 

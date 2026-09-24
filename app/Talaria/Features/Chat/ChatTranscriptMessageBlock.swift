@@ -165,7 +165,10 @@ struct ChatTranscriptMessageBlock: View, Equatable {
 
     @ViewBuilder
     private func steeredTurn(_ turn: CompletedAssistantTurn) -> some View {
-        let durations = turn.phaseDurations(totalDuration: transcriptMessage.message.turnDuration)
+        let durations = turn.phaseDurations(
+            totalDuration: transcriptMessage.message.turnDuration,
+            finalPhaseDuration: transcriptMessage.message.activityScene?.finalPhaseDuration
+        )
 
         ForEach(Array(turn.phases.enumerated()), id: \.element.id) { index, phase in
             if !phase.workRows.isEmpty {
@@ -521,7 +524,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             attachments: includesAttachments ? message.attachments : nil,
             turnDuration: includesTurnMetrics ? message.turnDuration : nil,
             turnTps: includesTurnMetrics ? message.turnTps : nil,
-            turnId: message.turnId
+            turnId: message.turnId,
+            steer: message.steer
         )
     }
 }

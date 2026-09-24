@@ -2610,6 +2610,16 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "phase_duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -2648,6 +2658,9 @@
                                   "expanded_by_default": {
                                     "type": "boolean"
                                   },
+                                  "final_phase_duration": {
+                                    "type": "number"
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -2678,6 +2691,39 @@
                               },
                               "_turn_id": {
                                 "type": "string"
+                              },
+                              "_steer": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consumed_at": {
+                                    "type": "number"
+                                  },
+                                  "phase_duration": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "steer_id",
+                                  "consumed_at",
+                                  "phase_duration"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_final_phase_duration": {
+                                "type": "number"
                               }
                             },
                             "required": [
@@ -3876,6 +3922,16 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "phase_duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -3914,6 +3970,9 @@
                                   "expanded_by_default": {
                                     "type": "boolean"
                                   },
+                                  "final_phase_duration": {
+                                    "type": "number"
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -3944,6 +4003,39 @@
                               },
                               "_turn_id": {
                                 "type": "string"
+                              },
+                              "_steer": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consumed_at": {
+                                    "type": "number"
+                                  },
+                                  "phase_duration": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "steer_id",
+                                  "consumed_at",
+                                  "phase_duration"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_final_phase_duration": {
+                                "type": "number"
                               }
                             },
                             "required": [
@@ -4916,6 +5008,16 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "phase_duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -4954,6 +5056,9 @@
                                   "expanded_by_default": {
                                     "type": "boolean"
                                   },
+                                  "final_phase_duration": {
+                                    "type": "number"
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -4984,6 +5089,39 @@
                               },
                               "_turn_id": {
                                 "type": "string"
+                              },
+                              "_steer": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consumed_at": {
+                                    "type": "number"
+                                  },
+                                  "phase_duration": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "steer_id",
+                                  "consumed_at",
+                                  "phase_duration"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_final_phase_duration": {
+                                "type": "number"
                               }
                             },
                             "required": [
@@ -6758,6 +6896,16 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "phase_duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -6796,6 +6944,9 @@
                                   "expanded_by_default": {
                                     "type": "boolean"
                                   },
+                                  "final_phase_duration": {
+                                    "type": "number"
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -6826,6 +6977,39 @@
                               },
                               "_turn_id": {
                                 "type": "string"
+                              },
+                              "_steer": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consumed_at": {
+                                    "type": "number"
+                                  },
+                                  "phase_duration": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "steer_id",
+                                  "consumed_at",
+                                  "phase_duration"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_final_phase_duration": {
+                                "type": "number"
                               }
                             },
                             "required": [
@@ -8532,6 +8716,16 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "phase_duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -8570,6 +8764,9 @@
                                   "expanded_by_default": {
                                     "type": "boolean"
                                   },
+                                  "final_phase_duration": {
+                                    "type": "number"
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -8600,6 +8797,39 @@
                               },
                               "_turn_id": {
                                 "type": "string"
+                              },
+                              "_steer": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consumed_at": {
+                                    "type": "number"
+                                  },
+                                  "phase_duration": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "steer_id",
+                                  "consumed_at",
+                                  "phase_duration"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_final_phase_duration": {
+                                "type": "number"
                               }
                             },
                             "required": [
@@ -10685,6 +10915,16 @@
                                 ]
                               },
                               "consumed_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "phase_duration": {
                                 "anyOf": [
                                   {
                                     "type": "number"
@@ -17190,6 +17430,16 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "phase_duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -17228,6 +17478,9 @@
                                   "expanded_by_default": {
                                     "type": "boolean"
                                   },
+                                  "final_phase_duration": {
+                                    "type": "number"
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -17258,6 +17511,39 @@
                               },
                               "_turn_id": {
                                 "type": "string"
+                              },
+                              "_steer": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consumed_at": {
+                                    "type": "number"
+                                  },
+                                  "phase_duration": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "steer_id",
+                                  "consumed_at",
+                                  "phase_duration"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_final_phase_duration": {
+                                "type": "number"
                               }
                             },
                             "required": [

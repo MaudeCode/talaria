@@ -84,7 +84,8 @@ export function isContextCompressionMarker(msg: unknown): boolean {
 const normalizeUserText = (text: string): string => stripWorkspacePrefix(text, true).split(/\s+/).join(' ').trim()
 
 export function looksLikeCurrentUserTurn(msg: unknown, msgText: string): boolean {
-  if (!isDict(msg) || str(msg.role) !== 'user') return false
+  // A persisted steer is display-only: it is never the prompt that opened a turn.
+  if (!isDict(msg) || str(msg.role) !== 'user' || isDict(msg._steer)) return false
   const candidate = normalizeUserText(messageText(msg.content))
   const target = normalizeUserText(msgText)
   if (!candidate || !target) return false
@@ -136,7 +137,7 @@ export function sessionLacksFinalAssistantAnswer(messages: Message[]): boolean {
     const msg = messages[i]
     if (!msg) continue
     if (msg._error) return false
-    if (isContextCompressionMarker(msg)) continue
+    if (isContextCompressionMarker(msg) || isDict(msg._steer)) continue
     if (msg.role === 'tool') return true
     if (msg.role === 'assistant') {
       if (assistantHasFinalVisibleText(msg)) return false
@@ -410,7 +411,8 @@ export function sanitizeMessagesForApi(messages: Message[]): Message[] {
   for (const msg of messages) {
     if (!msg || typeof msg !== 'object') continue
     if (isReasoningOnlyAssistant(msg)) continue
-    if (msg._error) continue
+    // The Agent already received a steer mid-turn; its persisted row is display-only.
+    if (msg._error || isDict(msg._steer)) continue
     if (msg._partial && !messageText(msg.content).trim()) continue
     const recovered = Boolean(msg._recovered) && msg.role === 'user'
     if (msg.role === 'tool') { const tid = str(msg.tool_call_id); if (!tid || !validToolCallIds.has(tid)) continue }

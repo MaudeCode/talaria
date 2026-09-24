@@ -22,6 +22,7 @@ final class CachedMessage {
     var turnDuration: Double?
     var turnTps: Double?
     var turnId: String?
+    var steerData: Data?
     var cachedAt: Date
     var expiresAt: Date
 
@@ -80,6 +81,7 @@ final class CachedMessage {
         turnDuration = message.turnDuration
         turnTps = message.turnTps
         turnId = message.turnId
+        steerData = message.steer.flatMap { try? JSONEncoder().encode($0) }
         if let attachments = message.attachments, !attachments.isEmpty {
             attachmentsData = try? JSONEncoder().encode(attachments)
         } else {

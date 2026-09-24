@@ -74,6 +74,8 @@ export interface TurnRunnerDeps {
 }
 
 interface SteerRecord { steer_id: string; session_id: string; stream_id: string; text: string; display_text: string; created_at: number }
+/** A steer the Agent took, with where it landed: after the last tool that had completed when it was consumed. */
+interface ConsumedSteer { steer_id: string; text: string; submitted_at: number; consumed_at: number; after_tool_call_id: string | null }
 
 export interface StartTurnOptions {
   msg: string
@@ -211,6 +213,8 @@ export class TurnRunner {
   private readonly yoloChains = new Map<string, Promise<unknown>>()
   private readonly abortControllers = new Map<string, AbortController>()
   private readonly steers = new Map<string, SteerRecord[]>()
+  private readonly consumedSteers = new Map<string, ConsumedSteer[]>()
+  private readonly lastCompletedTool = new Map<string, string>()
   /** Streams whose run completed (`done` emitted) and only await title work; a late cancel is a no-op for these. */
   private readonly settledStreams = new Set<string>()
 
@@ -414,6 +418,7 @@ export class TurnRunner {
                 if (tc.done) continue
                 if ((str(data.tid) && tc.tid === str(data.tid)) || (!tc.tid && tc.name === data.name)) { tc.done = true; tc.snippet = data.preview; break }
               }
+              if (str(data.tid)) this.lastCompletedTool.set(streamId, str(data.tid))
               put('tool_complete', data)
               return
             // Python: the live chat frame carries the queue head plus depth, not the entry that just arrived.
@@ -485,15 +490,20 @@ export class TurnRunner {
         const classification = classifyProviderError(lastErr, { silentFailure: !lastErr })
         const errStr = lastErr || `${classification.label}.`
         const payload = providerErrorPayload(errStr, classification.type, classification.hint, deps.redactEnabled())
+        // Settle the steers first so the persisted turn carries every consumed one.
+        const steerEvents = this.takeSteerEventsBefore(streamId, 'apperror')
         this.persistError(s, streamId, classification.label, payload, activeTurnToken)
         payload.session = redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled())
         payload.session_id = s.session_id
         payload.old_session_id = sessionId
+        for (const [event, data] of steerEvents) put(event, data)
         put('apperror', payload)
         failed = true
         return
       }
       // ── settle the transcript ──
+      // The Agent's last pending-steer text settles the remaining steers before the turn is written back.
+      const steerEvents = this.finalizeSteerEvents(streamId, result.pending_steer)
       s.messages = mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId })
       s.context_messages = dedupeContext(resultMessages)
       for (const m of s.messages) {
@@ -565,6 +575,7 @@ export class TurnRunner {
           break
         }
       }
+      this.persistConsumedSteers(s, streamId, previousStartedAt(s, activeRun), now)
       deps.store.save(s)
       deps.pending.clearApprovals(sessionId)
       deps.pending.clearClarifies(sessionId)
@@ -601,7 +612,7 @@ export class TurnRunner {
         donePayload.terminal_reason = 'max_iterations'
       }
       put('done', donePayload)
-      for (const [event, payload] of this.finalizeSteerEvents(streamId, result.pending_steer)) put(event, payload)
+      for (const [event, payload] of steerEvents) put(event, payload)
       // The turn is over: release admission before the title work so a follow-up message is accepted while the
       // (up to two) title prompts run; the channel and journal stay open for the `title` events (Python retired the
       // worker before its daemon-thread title generation).
@@ -636,6 +647,7 @@ export class TurnRunner {
         let current: Session = s
         try { current = deps.store.get(sessionId) } catch { current = s }
         if (current.active_stream_id === streamId) {
+          for (const [event, data] of this.takeSteerEventsBefore(streamId, 'apperror')) put(event, data)
           this.persistError(current, streamId, classification.label, payload, activeTurnToken)
           payload.session = redactSessionData(this.terminalSessionPayload(current), deps.redactEnabled())
         }
@@ -748,6 +760,7 @@ export class TurnRunner {
     if (payload.type === 'cancelled') errorMessage.provider_details_label = 'Cancellation details'
     else if (payload.type === 'interrupted') errorMessage.provider_details_label = 'Interruption details'
     s.messages.push(errorMessage)
+    this.persistConsumedSteers(s, streamId, startedAt, this.deps.now())
     try { this.deps.store.save(s) } catch (error) { this.deps.log(`[webui] WARNING: failed to save error turn for ${s.session_id}: ${(error as Error).message}`) }
     this.deps.pending.clearApprovals(s.session_id)
     this.deps.pending.clearClarifies(s.session_id)
@@ -764,7 +777,7 @@ export class TurnRunner {
       for (let i = s.messages.length - 1; i >= 0; i -= 1) {
         const m = s.messages[i]!
         if (m.role === 'user' && m._active_turn_token === activeTurnToken) {
-          if (!s.messages.slice(i + 1).some((later) => later.role === 'user')) return false
+          if (!s.messages.slice(i + 1).some((later) => later.role === 'user' && !later._steer)) return false
           break
         }
       }
@@ -812,6 +825,7 @@ export class TurnRunner {
       return true
     }
     if (current.messages.some((m) => m._error && str(m.content).startsWith('**Task cancelled:**')) && current.active_stream_id === null && !current.pending_user_message) return true
+    const startedAt = current.pending_started_at
     this.materializePendingUserTurn(current, buildActiveTurnToken(streamId, current.pending_started_at), streamId)
     current.active_stream_id = null
     current.pending_user_message = null
@@ -821,6 +835,7 @@ export class TurnRunner {
     this.appendPartialSnapshot(current, streamId)
     const text = message.trim().endsWith('.') ? message.trim() : `${message.trim()}.`
     current.messages.push({ role: 'assistant', content: `**Task cancelled:** ${text}\n\n*${cancelledTurnHint(this.deps.agentName())}*`, _error: true, provider_details: text, provider_details_label: 'Cancellation details', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
+    this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
     try { this.deps.store.save(current) } catch { return false }
     this.deps.pending.clearApprovals(current.session_id)
     this.deps.pending.clearClarifies(current.session_id)
@@ -838,6 +853,8 @@ export class TurnRunner {
     if (writer) { try { writer.close() } catch { /* ignore */ } this.writers.delete(streamId) }
     this.abortControllers.delete(streamId)
     this.steers.delete(streamId)
+    this.consumedSteers.delete(streamId)
+    this.lastCompletedTool.delete(streamId)
     this.settledStreams.delete(streamId)
     this.registry.retire(streamId, this.deps.now())
     this.registry.forgetOwner(streamId)
@@ -971,6 +988,8 @@ export class TurnRunner {
     if (sidecar) {
       try { leftover = str((await sidecar.call('chat.interrupt', { stream_id: streamId }, { timeoutMs: 5_000 })).pending_steer) } catch { leftover = '' }
     }
+    // Settle the steers first so the persisted cancel carries every consumed one.
+    const steerEvents = (this.steers.get(streamId) ?? []).length ? this.finalizeSteerEvents(streamId, leftover) : []
     if (sessionId) {
       let current: Session | null = null
       try { current = this.deps.store.get(sessionId) } catch { current = null }
@@ -987,7 +1006,7 @@ export class TurnRunner {
         if (writer) { try { eventId = writer.appendSseEvent(event, data).event_id } catch { eventId = null } }
         channel.put([event, data, eventId])
       }
-      if ((this.steers.get(streamId) ?? []).length) for (const [event, data] of this.finalizeSteerEvents(streamId, leftover)) emit(event, data)
+      for (const [event, data] of steerEvents) emit(event, data)
       emit('cancel', sessionId ? this.cancelFrame(sessionId) : this.cancelPayload())
       this.registry.streams.delete(streamId)
       this.registry.liveIds.delete(streamId)
@@ -1050,7 +1069,36 @@ export class TurnRunner {
   }
 
   private consumedSteerPayload(record: SteerRecord): Record<string, unknown> {
-    return { ...record, agent_text: record.text, text: record.display_text || record.text, consumed_at: this.deps.now() }
+    const consumedAt = this.deps.now()
+    const afterToolCallId = this.lastCompletedTool.get(record.stream_id) ?? null
+    const consumed = this.consumedSteers.get(record.stream_id) ?? []
+    if (!consumed.some((c) => c.steer_id === record.steer_id)) {
+      consumed.push({ steer_id: record.steer_id, text: record.display_text || record.text, submitted_at: record.created_at, consumed_at: consumedAt, after_tool_call_id: afterToolCallId })
+      this.consumedSteers.set(record.stream_id, consumed)
+    }
+    return { ...record, agent_text: record.text, text: record.display_text || record.text, consumed_at: consumedAt, after_tool_call_id: afterToolCallId }
+  }
+
+  /**
+   * Consumed steers become display-only `_steer` user rows at their causal place in the turn: after the tool results of
+   * the call that had completed when the Agent took them (else right after the turn's prompt), in consumption order,
+   * each with the phase it ended. The turn's last reply carries the final phase. Leftover steers are not persisted.
+   */
+  private persistConsumedSteers(s: Session, streamId: string, startedAt: number | null, endedAt: number): void {
+    const steers = this.consumedSteers.get(streamId) ?? []
+    this.consumedSteers.delete(streamId)
+    if (!steers.length) return
+    const round = (n: number) => Math.round(Math.max(0, n) * 1000) / 1000
+    let boundary = typeof startedAt === 'number' && startedAt > 0 ? startedAt : steers[0]!.submitted_at
+    for (const steer of steers) {
+      s.messages.splice(steerInsertIndex(s.messages, streamId, steer.after_tool_call_id), 0, {
+        role: 'user', content: steer.text, timestamp: steer.consumed_at, _turn_id: streamId,
+        _steer: { steer_id: steer.steer_id, submitted_at: steer.submitted_at, consumed_at: steer.consumed_at, phase_duration: round(steer.consumed_at - boundary) },
+      })
+      boundary = steer.consumed_at
+    }
+    const last = s.messages.findLast((m) => m.role === 'assistant' && m._turn_id === streamId)
+    if (last) last._final_phase_duration = round(endedAt - boundary)
   }
 
   /**
@@ -1187,3 +1235,14 @@ function dedupeContext(messages: Message[]): Message[] {
 
 
 export { HttpFailure }
+
+/** Where a consumed steer goes: past the tool results of the call it followed, else past the turn's prompt. */
+function steerInsertIndex(messages: Message[], turnId: string, afterToolCallId: string | null): number {
+  const callIds = (m: Message) => (Array.isArray(m.tool_calls) ? m.tool_calls : []).map((tc) => str((tc as Record<string, unknown>).id) || str((tc as Record<string, unknown>).call_id) || str((tc as Record<string, unknown>).tool_call_id))
+  let at = afterToolCallId ? messages.findIndex((m) => m._turn_id === turnId && m.role === 'assistant' && callIds(m).includes(afterToolCallId)) : -1
+  if (at === -1) at = messages.findIndex((m) => m._turn_id === turnId && m.role === 'user' && !m._steer)
+  if (at === -1) return messages.length
+  let i = at + 1
+  while (i < messages.length && messages[i]!._turn_id === turnId && (messages[i]!.role === 'tool' || messages[i]!._steer)) i += 1
+  return i
+}

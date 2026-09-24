@@ -419,6 +419,12 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(outcome("contract-run-d-2"), "Tool limit reached")
         XCTAssertEqual(outcome("contract-run-e-1"), "No answer produced.")
         XCTAssertNil(outcome("contract-run-c-2"))
+        // Persisted steers split the turn into phases whose lengths the server measured.
+        let steered = try turn("contract-run-g-3")
+        XCTAssertTrue(steered.hasSteering)
+        XCTAssertEqual(steered.finalAnswer, "Both files read.")
+        XCTAssertEqual(steered.phaseDurations(totalDuration: 12, finalPhaseDuration: 3), [5, 4, 3])
+        XCTAssertNil(ChatViewModel.transcriptMessages(from: messages).first { $0.message.messageId == "contract-steer-1" })
         // The running turn has no scene: the live stream renders it.
         let running = try XCTUnwrap(messages.first { $0.messageId == "contract-run-f-1" })
         XCTAssertNil(AssistantActivityTimeline.authoritativeScene(message: running))

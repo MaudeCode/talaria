@@ -16,6 +16,8 @@ struct AssistantActivityRow: Identifiable, Equatable {
         let text: String
         let submittedAt: Double?
         let consumedAt: Double?
+        /// Server-measured length of the work phase this steer ended.
+        var phaseDuration: Double? = nil
     }
 
     enum Content: Equatable {
@@ -102,8 +104,12 @@ struct CompletedAssistantTurn: Equatable {
         }
     }
 
-    func phaseDurations(totalDuration: Double?) -> [Double?] {
+    func phaseDurations(totalDuration: Double?, finalPhaseDuration: Double? = nil) -> [Double?] {
         guard !phases.isEmpty else { return [] }
+        // Persisted steers carry server-measured phases; only local steers not yet persisted fall back to timestamps.
+        if phases.dropLast().allSatisfy({ $0.steeringAfter?.phaseDuration != nil }) {
+            return phases.dropLast().map { $0.steeringAfter?.phaseDuration } + [finalPhaseDuration ?? totalDuration]
+        }
         var durations = Array<Double?>(repeating: nil, count: phases.count)
         var phaseStart = phases.first?.workRows.compactMap(\.createdAt).min()
             ?? phases.first?.steeringAfter?.submittedAt
@@ -523,7 +529,8 @@ struct AssistantActivityTimeline: Equatable {
                     id: row.steerID ?? rowID,
                     text: text,
                     submittedAt: Self.number(row.steering?["submitted_at"]),
-                    consumedAt: Self.number(row.steering?["consumed_at"])
+                    consumedAt: Self.number(row.steering?["consumed_at"]),
+                    phaseDuration: Self.number(row.steering?["phase_duration"])
                 )),
                 createdAt: row.createdAt
             ))
@@ -909,6 +916,8 @@ extension ChatViewModel {
         for (loadedIndex, message) in messages.enumerated() {
             guard message.role != "tool" else { continue }
             guard !TranscriptTurnClassifier.isToolResultOnlyMessage(message) else { continue }
+            // Persisted steers render inside their turn's scene, not as rows of their own.
+            guard message.steer == nil else { continue }
             if let streamingAssistantID, message.messageId == streamingAssistantID {
                 continue
             }

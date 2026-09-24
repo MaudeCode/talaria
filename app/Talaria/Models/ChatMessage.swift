@@ -36,6 +36,8 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
     let turnTps: Double?
     /// The server turn this row belongs to; turns are grouped by equality of this id.
     let turnId: String?
+    /// A consumed steer the server persisted in its turn: shown inside the turn's scene, never as its own row.
+    let steer: [String: JSONValue]?
 
     init(
         role: String?,
@@ -53,7 +55,8 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         attachments: [MessageAttachment]? = nil,
         turnDuration: Double? = nil,
         turnTps: Double? = nil,
-        turnId: String? = nil
+        turnId: String? = nil,
+        steer: [String: JSONValue]? = nil
     ) {
         self.role = role
         self.content = content
@@ -71,6 +74,7 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         self.turnDuration = turnDuration
         self.turnTps = turnTps
         self.turnId = turnId
+        self.steer = steer
     }
 
     enum CodingKeys: String, CodingKey {
@@ -90,6 +94,7 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         case turnDuration = "_turnDuration"
         case turnTps = "_turnTps"
         case turnId = "_turnId"
+        case steer = "_steer"
         case underscoredTimestamp = "_ts"
     }
 
@@ -117,6 +122,7 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
             ?? activityScene?.turnDuration
         turnTps = container.decodeLossyDoubleIfPresent(forKey: .turnTps)
         turnId = container.decodeLossyStringIfPresent(forKey: .turnId)
+        steer = try? container.decodeIfPresent([String: JSONValue].self, forKey: .steer)
     }
 
     private static func attachments(
@@ -276,7 +282,8 @@ extension ChatMessage {
             attachments: attachments,
             turnDuration: duration ?? turnDuration,
             turnTps: tokensPerSecond ?? turnTps,
-            turnId: turnId
+            turnId: turnId,
+            steer: steer
         )
     }
 }
@@ -288,6 +295,8 @@ struct AssistantActivityScene: Codable, Equatable {
     let turnDuration: Double?
     /// Server-decided initial state of the turn's "Worked" disclosure.
     let expandedByDefault: Bool
+    /// Seconds from the turn's last consumed steer to its end (steered turns only).
+    let finalPhaseDuration: Double?
     /// Server-decided outcome of the turn (`completed`, `no_response`, `error`, `tool_limit_reached`, ...).
     let terminalState: String?
     /// How many earlier rows the tail preview omits; page them from `/api/session/anchor-scene`.
@@ -303,6 +312,7 @@ struct AssistantActivityScene: Codable, Equatable {
         case terminalState
         case activityRowsOffset
         case activitySceneRef
+        case finalPhaseDuration
     }
 
     init(from decoder: Decoder) throws {
@@ -314,6 +324,7 @@ struct AssistantActivityScene: Codable, Equatable {
         terminalState = container.decodeLossyStringIfPresent(forKey: .terminalState)
         activityRowsOffset = max(0, container.decodeLossyIntIfPresent(forKey: .activityRowsOffset) ?? 0)
         activitySceneRef = container.decodeLossyStringIfPresent(forKey: .activitySceneRef)
+        finalPhaseDuration = container.decodeLossyDoubleIfPresent(forKey: .finalPhaseDuration)
 
         activityRows = (try? container.decodeIfPresent([JSONValue].self, forKey: .activityRows))
             .map(AssistantActivitySceneRow.decodeLossily)
@@ -340,20 +351,6 @@ struct AnchorScenePageResponse: Decodable, Equatable {
 extension AssistantActivityScene {
     var hasConsumedSteering: Bool {
         activityRows?.contains(where: \.isConsumedSteering) == true
-    }
-
-    var steeringIDs: Set<String> {
-        Set((activityRows ?? []).compactMap { row in
-            guard row.role == "steering" else { return nil }
-            return row.steerID ?? row.rowID
-        })
-    }
-
-    var steeringTexts: Set<String> {
-        Set((activityRows ?? []).compactMap { row in
-            guard row.role == "steering" else { return nil }
-            return row.text?.trimmingCharacters(in: .whitespacesAndNewlines)
-        }.filter { !$0.isEmpty })
     }
 }
 
@@ -425,7 +422,8 @@ enum TranscriptTurnClassifier {
     }
 
     static func isUserTurnBoundary(_ message: ChatMessage) -> Bool {
-        guard message.role == "user" else { return false }
+        // A persisted steer belongs inside its turn; it never opens one.
+        guard message.role == "user", message.steer == nil else { return false }
         return hasVisibleUserContent(message)
     }
 

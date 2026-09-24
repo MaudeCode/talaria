@@ -470,7 +470,7 @@ export class Session {
 /** Python `title_from`: first user message, attachment marker stripped, 64 chars. */
 export function titleFrom(messages: unknown[], fallback = 'Untitled'): string {
   for (const m of messages) {
-    if (!isDict(m) || m.role !== 'user') continue
+    if (!isDict(m) || m.role !== 'user' || isDict(m._steer)) continue
     const c = m.content
     if (c === null || c === undefined) continue
     let text = Array.isArray(c) ? c.filter((p): p is Record<string, unknown> => isDict(p) && p.type === 'text').map((p) => str(p.text)).join(' ') : str(c)

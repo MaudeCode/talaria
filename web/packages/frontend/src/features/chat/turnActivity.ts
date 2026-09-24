@@ -101,6 +101,7 @@ export function liveActivity(turn: LiveTurn): TurnActivity {
   turn.segments.forEach((segment, i) => {
     if (segment.kind === 'text') appendProse(items, `text:${i}`, segment.text)
     else if (segment.kind === 'reasoning') items.push({ key: `reasoning:${i}`, ...segment })
+    else if (segment.kind === 'steering') items.push({ key: `steering:${segment.steerId}`, kind: 'steering', text: segment.text, consumed: true })
     else if (!seen.has(segment.toolId)) {
       seen.add(segment.toolId)
       const call = turn.tools[segment.toolId]

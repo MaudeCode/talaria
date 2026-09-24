@@ -31,7 +31,7 @@ describe('normalizeSceneRows', () => {
     expect(rows[1]?.tool).toEqual({ id: 'c1', name: 'terminal', args: { command: 'false' }, preview: 'exit 1', result: 'exit 1', done: true, is_error: true, duration: null, cost_usd: null })
     expect(rows[2]?.tool).toMatchObject({ id: 'c2', done: true, is_error: false, result: 'A' })
     expect(rows[3]?.tool).toMatchObject({ id: 'c3', done: false, is_error: false })
-    expect(rows[4]?.steering).toEqual({ steer_id: 's1', consumed: false, submitted_at: 3, consumed_at: null })
+    expect(rows[4]?.steering).toEqual({ steer_id: 's1', consumed: false, submitted_at: 3, consumed_at: null, phase_duration: null })
     expect(rows[5]).toMatchObject({ text: 'hidden plan' })
     expect(rows[6]).toMatchObject({ text: 'Reading files.' })
   })

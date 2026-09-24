@@ -41,7 +41,7 @@ export const ActivitySceneRowSchema = z.looseObject({
   row_id: z.string(), order_index: z.number().int(), role: z.enum(['prose', 'reasoning', 'tool', 'steering']), created_at: z.number().optional(),
   text: z.string().optional(), titles: z.array(z.string()).optional(),
   tool: z.looseObject({ id: z.string(), name: z.string(), args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable() }).optional(),
-  steering: z.looseObject({ steer_id: z.string(), consumed: z.boolean(), submitted_at: z.number().nullable(), consumed_at: z.number().nullable() }).optional(),
+  steering: z.looseObject({ steer_id: z.string(), consumed: z.boolean(), submitted_at: z.number().nullable(), consumed_at: z.number().nullable(), phase_duration: z.number().nullable().optional() }).optional(),
 })
 export type ActivitySceneRow = z.infer<typeof ActivitySceneRowSchema>
 
@@ -52,6 +52,8 @@ export const ActivitySceneSchema = z.looseObject({
   terminal_state: z.string().optional(),
   /** Whether the "Worked" disclosure opens by default: an unsuccessful outcome with work to read. */
   expanded_by_default: z.boolean().optional(),
+  /** Seconds from the turn's last consumed steer to its end, when it has steers. */
+  final_phase_duration: z.number().optional(),
   activity_rows_total: z.number().int().optional(), activity_rows_offset: z.number().int().optional(), activity_rows_complete: z.boolean().optional(), activity_rows_omitted: z.number().int().optional(), activity_scene_ref: z.string().optional(),
 })
 export type ActivityScene = z.infer<typeof ActivitySceneSchema>
@@ -63,6 +65,10 @@ export const MessageSchema = z.looseObject({
   provider_details: Json.optional(), provider_details_label: z.string().optional(), recovery_control: Json.optional(), _anchor_activity_scene: ActivitySceneSchema.optional(),
   /** The turn this row belongs to; the server stamps every row it sends, so clients group turns by equality alone. */
   _turn_id: z.string().optional(),
+  /** A consumed steer persisted at its causal place in the turn: display-only, never model history. */
+  _steer: z.looseObject({ steer_id: z.string(), submitted_at: z.number().nullable().optional(), consumed_at: z.number(), phase_duration: z.number() }).optional(),
+  /** On a steered turn's last reply: seconds from the last consumed steer to the turn's end. */
+  _final_phase_duration: z.number().optional(),
 })
 export type Message = z.infer<typeof MessageSchema>
 

@@ -447,6 +447,75 @@ describe('chat turns through the sidecar', () => {
     expect(frames.filter((f) => f.event === 'steer_consumed')).toHaveLength(1)
   })
 
+  it('persists consumed steers at their causal place, in the settled scene, and out of model history (TAL-300)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let step: (() => void)[] = []
+    let emitLive: ((frame: { event: string; data: Json }) => void) | null = null
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emitLive = emit
+      const call = (id: string) => ({ id, type: 'function', function: { name: 'read_file', arguments: '{}' } })
+      step = [() => { resolve(completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: 'Reading a.', tool_calls: [call('ta')] }, { role: 'tool', tool_call_id: 'ta', content: 'A' },
+        { role: 'assistant', content: 'Reading b.', tool_calls: [call('tb')] }, { role: 'tool', tool_call_id: 'tb', content: 'B' },
+        { role: 'assistant', content: 'All read.' },
+      ])); }]
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', args: {}, tid: 'ta' } })
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'read files' }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'tool')
+    emitLive!({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', tid: 'ta', preview: 'A' } })
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'check b too', display_text: 'Check b too', steer_id: 'steer-a' })
+    emitLive!({ event: 'steer_pending', data: { text: '' } })
+    emitLive!({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', tid: 'tb', preview: 'B' } })
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'then stop', steer_id: 'steer-b' })
+    emitLive!({ event: 'steer_pending', data: { text: '' } })
+    const live = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'steer_consumed' && (f.data as Json).steer_id === 'steer-b')
+    expect(live.filter((f) => f.event === 'steer_consumed').map((f) => [(f.data as Json).steer_id, (f.data as Json).after_tool_call_id])).toEqual([['steer-a', 'ta'], ['steer-b', 'tb']])
+    step[0]!()
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    const done = frames.find((f) => f.event === 'done')?.data as Json
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    for (const messages of [(done.session as Json).messages as Json[], detail.messages as Json[]]) {
+      expect(messages.map((m) => (m._steer ? `steer:${String((m._steer as Json).steer_id)}` : `${String(m.role)}:${String(m.content)}`))).toEqual([
+        'user:read files', 'assistant:Reading a.', 'tool:A', 'steer:steer-a', 'assistant:Reading b.', 'tool:B', 'steer:steer-b', 'assistant:All read.',
+      ])
+      const steer = messages.find((m) => m._steer)!
+      expect(steer).toMatchObject({ role: 'user', content: 'Check b too', _turn_id: streamId, _steer: { steer_id: 'steer-a', phase_duration: expect.any(Number) as unknown } })
+      const scene = messages.at(-1)?._anchor_activity_scene as Json
+      expect((scene.activity_rows as Json[]).map((r) => r.row_id)).toEqual(['i1:prose', 'tool:ta', 'steering:steer-a', 'i4:prose', 'tool:tb', 'steering:steer-b'].map((id) => (id.startsWith('i') ? expect.stringMatching(/:prose$/) as unknown : id)))
+      expect(((scene.activity_rows as Json[])[2]?.steering as Json)).toMatchObject({ steer_id: 'steer-a', consumed: true, phase_duration: expect.any(Number) as unknown })
+      expect(scene).toMatchObject({ final_answer: 'All read.', final_phase_duration: expect.any(Number) as unknown })
+    }
+    const stored = s.deps.sessionStore.get(sid)
+    expect(sanitizeMessagesForApi(stored.messages).some((m) => m.content === 'Check b too' || m.content === 'then stop')).toBe(false)
+    expect(stored.title).not.toContain('Check b too')
+  })
+
+  it('keeps a steer consumed before a Stop in the cancelled turn (TAL-300)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    sidecar.respond('chat.interrupt', () => ({ ok: true, pending_steer: '' }))
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'partial' } })
+      opts.signal?.addEventListener('abort', () => { resolve({ ...completed([{ role: 'user', content: str(params.user_message) }]), status: 'cancelled' }) })
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'long job' }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'wrap up', steer_id: 'steer-c' })
+    await s.get(`/api/chat/cancel?stream_id=${streamId}`)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'cancel')
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    const steerIndex = messages.findIndex((m) => m._steer)
+    expect(steerIndex).toBe(1)
+    expect(messages[steerIndex]).toMatchObject({ content: 'wrap up', _turn_id: streamId })
+    const scene = messages.at(-1)?._anchor_activity_scene as Json
+    expect((scene.activity_rows as Json[]).some((r) => r.role === 'steering' && (r.steering as Json).steer_id === 'steer-c')).toBe(true)
+  })
+
   it('a Stop with a queued steer settles the steer as a leftover before the single cancel row', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
