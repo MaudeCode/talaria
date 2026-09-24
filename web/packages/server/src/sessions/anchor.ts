@@ -277,9 +277,14 @@ function codexCommentary(message: Record<string, unknown>): string[] {
     : []).filter(Boolean)
 }
 
+/** Anthropic-style tool calls: `tool_use` blocks in the content array, interleaved with the text around them. */
+function hasToolUseBlocks(message: Record<string, unknown>): boolean {
+  return Array.isArray(message.content) && message.content.some((part) => isDict(part) && part.type === 'tool_use')
+}
+
 /** The final answer rule: the turn's last assistant row, with visible content, no tool calls, not interim or partial. */
 function finalAnswerOf(last: Record<string, unknown>): string {
-  if ((Array.isArray(last.tool_calls) && last.tool_calls.length > 0) || last._interim === true || last._partial === true) return ''
+  if ((Array.isArray(last.tool_calls) && last.tool_calls.length > 0) || hasToolUseBlocks(last) || last._interim === true || last._partial === true) return ''
   return splitThinkingFromContent(messageText(last.content))[0]
 }
 
@@ -334,10 +339,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
     if (reasoning || titles.length) push({ row_id: `${ref}:reasoning`, role: 'reasoning', text: reasoning, titles, ...at })
     const [prose, inlineThinking] = splitThinkingFromContent(messageText(m.content))
     if (inlineThinking) push({ row_id: `${ref}:thinking`, role: 'reasoning', text: inlineThinking, titles: [], ...at })
-    const text = prose.trim() ? prose : commentary.join('\n\n')
-    if (m !== last || !finalAnswer.trim()) { if (text.trim()) push({ row_id: `${ref}:prose`, role: 'prose', text, ...at }) }
-    const calls = Array.isArray(m.tool_calls) ? m.tool_calls : []
-    calls.forEach((raw, i) => {
+    const pushTool = (raw: unknown, i: number) => {
       const call = isDict(raw) ? raw : {}
       const id = str(call.id) || str(call.call_id) || str(call.tool_call_id) || `${ref}-${String(i)}`
       if (seenTools.has(id)) return
@@ -350,7 +352,26 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
         preview: str(call.preview) || null, result, done: typeof call.done === 'boolean' ? call.done : true,
         is_error: call.is_error === true || reply?.is_error === true, duration: finite(call.duration), cost_usd: finite(call.cost_usd),
       } })
-    })
+    }
+    if (hasToolUseBlocks(m)) {
+      // Text and tool_use blocks stay in the order the model wrote them; such a row is never the final answer.
+      let chunk: unknown[] = []
+      const flush = () => {
+        const text = splitThinkingFromContent(messageText(chunk))[0]
+        if (text.trim()) push({ row_id: rows.some((r) => r.row_id === `${ref}:prose`) ? `${ref}:prose:${String(rows.length)}` : `${ref}:prose`, role: 'prose', text, ...at })
+        chunk = []
+      }
+      for (const [i, part] of (m.content as unknown[]).entries()) {
+        if (!isDict(part) || part.type !== 'tool_use') { chunk.push(part); continue }
+        flush()
+        pushTool({ id: part.id, name: part.name, args: part.input ?? null }, i)
+      }
+      flush()
+      continue
+    }
+    const text = prose.trim() ? prose : commentary.join('\n\n')
+    if (m !== last || !finalAnswer.trim()) { if (text.trim()) push({ row_id: `${ref}:prose`, role: 'prose', text, ...at }) }
+    for (const [i, call] of (Array.isArray(m.tool_calls) ? m.tool_calls : []).entries()) pushTool(call, i)
   }
   const terminalState = terminalStateOf(last, finalAnswer)
   return {

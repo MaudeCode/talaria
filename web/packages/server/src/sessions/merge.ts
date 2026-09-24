@@ -37,6 +37,8 @@ export function messageText(content: unknown): string {
     return content.map((part) => {
       if (isDict(part)) {
         if (part.type === 'text' || 'text' in part) return str(part.text)
+        // Responses-style parts may carry their text under their own type name.
+        if (part.type === 'output_text' || part.type === 'input_text') return str(part[part.type])
         return ''
       }
       return str(part)

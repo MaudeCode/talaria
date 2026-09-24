@@ -110,6 +110,28 @@ describe('buildTurnScene', () => {
     expect((scene.activity_rows as Json[]).map((r) => [r.role, r.text ?? null])).toEqual([['reasoning', 'Plan.'], ['prose', 'Reading both files.'], ['tool', null]])
   })
 
+  it('keeps content-array tool_use blocks in order with their text', () => {
+    const scene = buildTurnScene(turnOf([
+      { role: 'user', content: 'Weather?' },
+      { role: 'assistant', id: 1, content: [{ type: 'text', text: 'Checking.' }, { type: 'tool_use', id: 'w', name: 'weather', input: { city: 'Berlin' } }, { type: 'text', text: 'Then more.' }] },
+      { role: 'tool', tool_use_id: 'w', content: '18C' },
+      { role: 'assistant', id: 2, content: [{ type: 'tool_use', id: 'x', name: 'weather', input: {} }] },
+    ]))!
+    expect((scene.activity_rows as Json[]).map((r) => [r.row_id, r.text ?? (r.tool as Json).result])).toEqual([
+      ['1:prose', 'Checking.'], ['tool:w', '18C'], ['1:prose:2', 'Then more.'], ['tool:x', null],
+    ])
+    expect(((scene.activity_rows as Json[])[1]?.tool as Json)).toMatchObject({ name: 'weather', args: { city: 'Berlin' } })
+    expect(scene).toMatchObject({ final_answer: '', terminal_state: 'no_response' })
+  })
+
+  it('reads a final answer stored as Responses-style output_text parts', () => {
+    const scene = buildTurnScene(turnOf([
+      { role: 'user', content: 'Done?' },
+      { role: 'assistant', content: [{ type: 'output_text', output_text: 'Finished.' }] },
+    ]))!
+    expect(scene).toMatchObject({ final_answer: 'Finished.', terminal_state: 'completed' })
+  })
+
   it.each([
     ['tool-only', [{ role: 'assistant', content: 'Working', tool_calls: [{ id: 't' }] }], 'no_response', true],
     ['interim', [{ role: 'assistant', content: 'Still going', _interim: true }], 'no_response', true],
