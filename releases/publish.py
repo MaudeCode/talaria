@@ -245,9 +245,10 @@ def _publish_release(tag, source, notes, files, identity, *, latest=False):
         with tempfile.TemporaryDirectory(prefix="talaria-release-notes-") as temporary:
             note_file = Path(temporary) / "notes.md"
             note_file.write_text(body)
-            subprocess.run(["gh", "release", "create", tag, "--repo", REPOSITORY, "--target", source,
+            # No --target: GitHub refuses GITHUB_TOKEN a target_commitish that changes workflows (TAL-340).
+            subprocess.run(["gh", "release", "create", tag, "--repo", REPOSITORY, "--verify-tag",
                             "--draft", "--title", tag, "--notes-file", str(note_file),
-                            *([] if latest else ["--verify-tag"]), *( ["--prerelease"] if prerelease else [])], check=True)
+                            *( ["--prerelease"] if prerelease else [])], check=True)
         info = _release_info(tag)
     matching(info)
     for path in files:

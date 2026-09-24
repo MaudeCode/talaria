@@ -135,6 +135,8 @@ class PublicationTests(unittest.TestCase):
                         raise subprocess.CalledProcessError(1, args)
                     if operation == "create":
                         self.assertNotIn(tag, releases)
+                        self.assertIn("--verify-tag", args)
+                        self.assertNotIn("--target", args)
                         releases[tag] = {"tag_name": tag, "name": tag, "draft": True, "prerelease": "--prerelease" in args,
                                          "body": Path(args[args.index("--notes-file") + 1]).read_text(), "assets": []}
                     elif operation == "upload":
@@ -273,6 +275,10 @@ class PublicationTests(unittest.TestCase):
             "prepare", "build-gate", "relay-publish", "web-publish", "app-publish"})
         self.assertTrue(any("check_results.py publication" in step.get("run", "")
                             for step in jobs["publish-set"]["steps"]))
+        for job in (jobs["publish-set"], workflow("recover-cutover.yml")["jobs"]["publish-set"]):
+            script = next(step["run"] for step in job["steps"] if "finalize" in step.get("run", ""))
+            self.assertLess(script.index('refs/tags/release-set-${source}"'), script.index("finalize"),
+                            "the root tag must exist before its release is created")
         cutover = workflow("production-cutover.yml")
         self.assertEqual(cutover["jobs"]["release"]["secrets"], "inherit")
         self.assertEqual(cutover["jobs"]["release"]["permissions"]["id-token"], "write")
