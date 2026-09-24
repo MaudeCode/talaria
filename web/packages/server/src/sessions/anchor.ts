@@ -6,7 +6,7 @@
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { agentSteerText, isContextCompressionMarker, messageText, splitThinkingFromContent } from './merge.js'
+import { agentSteerText, isContextCompressionMarker, isReasoningBlock, messageText, reasoningBlockText, splitThinkingFromContent } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 
@@ -315,7 +315,17 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
   if (!last) return null
   const finalAnswer = finalAnswerOf(last)
   const results = new Map<string, Record<string, unknown>>()
-  for (const [m] of turn) if (m.role === 'tool') results.set(str(m.tool_call_id) || str(m.tool_use_id), m)
+  for (const [m] of turn) {
+    if (m.role === 'tool') results.set(str(m.tool_call_id) || str(m.tool_use_id), m)
+    // Anthropic-style results: `tool_result` blocks in a user row's content, each naming its call.
+    else if (m.role === 'user' && Array.isArray(m.content)) {
+      for (const part of m.content) {
+        if (isDict(part) && part.type === 'tool_result' && str(part.tool_use_id)) {
+          results.set(str(part.tool_use_id), { role: 'tool', tool_use_id: part.tool_use_id, content: part.content ?? '', is_error: part.is_error === true })
+        }
+      }
+    }
+  }
   const rows: SceneRow[] = []
   const seenTools = new Set<string>()
   const push = (row: Omit<SceneRow, 'order_index'>) => rows.push({ ...row, order_index: rows.length })
@@ -334,7 +344,8 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
     const createdAt = finite(m.timestamp)
     const at = createdAt === null ? {} : { created_at: createdAt }
     const commentary = codexCommentary(m)
-    let reasoning = [str(m.reasoning_content), typeof m.reasoning === 'string' ? m.reasoning : '', str(m.thinking)].filter(Boolean).join('\n')
+    const blockReasoning = Array.isArray(m.content) ? m.content.flatMap((part) => (isDict(part) && isReasoningBlock(part) ? [reasoningBlockText(part)] : [])) : []
+    let reasoning = [str(m.reasoning_content), typeof m.reasoning === 'string' ? m.reasoning : '', str(m.thinking), ...blockReasoning].filter(Boolean).join('\n')
     for (const part of commentary) reasoning = reasoning.replace(part, '')
     reasoning = reasoning.replace(/\n{3,}/g, '\n\n').trim()
     const titles = Array.isArray(m.reasoning_titles) ? m.reasoning_titles.filter((t): t is string => typeof t === 'string' && Boolean(t.trim())) : []

@@ -153,6 +153,32 @@ describe('buildTurnScene', () => {
     expect(scene).toMatchObject({ final_answer: '', terminal_state: 'no_response' })
   })
 
+  it('reads structured reasoning blocks as reasoning, never as prose or the answer', () => {
+    const scene = buildTurnScene(turnOf([
+      { role: 'user', content: 'Where am I?' },
+      { role: 'assistant', id: 1, content: [{ type: 'reasoning', text: 'Inspect the workspace.' }, { type: 'tool_use', id: 't', name: 'terminal', input: { command: 'pwd' } }] },
+      { role: 'tool', tool_use_id: 't', content: '/work' },
+      { role: 'assistant', id: 2, content: [{ type: 'thinking', thinking: 'It printed /work.' }, { type: 'text', text: 'You are in /work.' }] },
+    ]))!
+    expect((scene.activity_rows as Json[]).map((r) => [r.role, r.text ?? (r.tool as Json).result])).toEqual([
+      ['reasoning', 'Inspect the workspace.'], ['tool', '/work'], ['reasoning', 'It printed /work.'],
+    ])
+    expect(scene.final_answer).toBe('You are in /work.')
+  })
+
+  it('reads tool_result blocks from a user row as their calls\' results', () => {
+    const scene = buildTurnScene(turnOf([
+      { role: 'user', content: 'Search' },
+      { role: 'assistant', id: 1, content: [{ type: 'tool_use', id: 'f', name: 'search_files', input: {} }, { type: 'tool_use', id: 'w', name: 'web_search', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'f', content: 'Timed out after 60s', is_error: true }, { type: 'tool_result', tool_use_id: 'w', content: [{ type: 'text', text: 'Live web result' }] }] },
+      { role: 'assistant', id: 2, content: 'Search finished.' },
+    ]))!
+    expect((scene.activity_rows as Json[]).map((r) => [(r.tool as Json).id, (r.tool as Json).result, (r.tool as Json).is_error])).toEqual([
+      ['f', 'Timed out after 60s', true], ['w', 'Live web result', false],
+    ])
+    expect(scene.final_answer).toBe('Search finished.')
+  })
+
   it('reads a final answer stored as Responses-style output_text parts', () => {
     const scene = buildTurnScene(turnOf([
       { role: 'user', content: 'Done?' },

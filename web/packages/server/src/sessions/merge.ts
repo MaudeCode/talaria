@@ -31,11 +31,22 @@ export function stripWorkspacePrefix(text: string, includeLegacy = false): strin
 }
 
 /** Python `_message_text`: flatten string or multimodal content to text. */
+export function isReasoningBlock(part: Record<string, unknown>): boolean {
+  return part.type === 'reasoning' || part.type === 'thinking'
+}
+
+/** The text of a structured reasoning or thinking content block. */
+export function reasoningBlockText(part: Record<string, unknown>): string {
+  return str(part.text || part.thinking || part.reasoning)
+}
+
 export function messageText(content: unknown): string {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
     return content.map((part) => {
       if (isDict(part)) {
+        // Structured reasoning is never reply text; the scene reads it as reasoning.
+        if (isReasoningBlock(part)) return ''
         if (part.type === 'text' || 'text' in part) return str(part.text)
         // Responses-style parts may carry their text under their own type name.
         if (part.type === 'output_text' || part.type === 'input_text') return str(part[part.type])
