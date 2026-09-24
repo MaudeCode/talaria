@@ -110,7 +110,7 @@ class HelperTests(unittest.TestCase):
     def test_lifecycle_rules_are_applied_per_bucket_with_content_md5(self):
         expected = {
             "talaria-ci": {"fixtures/": 7, "test-results/": 14, "fuzz/": 30, "performance-metrics/": 30, "buildcache/": 14},
-            "talaria-release": {"handoffs/": 30},
+            "talaria-release": {"handoffs/": 30, "buildcache/": 14},
         }
         for bucket, rules in expected.items():
             with self.subTest(bucket=bucket):

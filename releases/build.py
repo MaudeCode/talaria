@@ -56,6 +56,9 @@ def main():
             raise ValueError("npm pack must produce the contracts and server tarballs")
         values["npm"] = f"@maudecode/talaria-web@{component['version']}"
         metadata = output / "image-metadata.json"
+        # The release workflow points this at the NAS S3 layer cache; BuildKit reads its credentials from AWS_*.
+        cache = os.environ.get("TALARIA_DOCKER_CACHE")
+        cache_args = ["--cache-from", cache, "--cache-to", cache + ",mode=max,ignore-error=true"] if cache else []
         subprocess.run([
             "docker", "buildx", "build", "--platform", "linux/amd64,linux/arm64",
             "--tag", f"ghcr.io/maudecode/talaria-web:{component['tag']}",
@@ -63,6 +66,7 @@ def main():
             "--build-arg", "TALARIA_PROVENANCE=" + json.dumps(provenance, separators=(",", ":")),
             "--label", "org.opencontainers.image.revision=" + component["sourceRevision"],
             "--label", "org.opencontainers.image.version=" + component["version"],
+            *cache_args,
             "--output", f"type=oci,dest={output / 'web.oci.tar'}", "--metadata-file", str(metadata), str(ROOT / "web"),
         ], check=True)
         digest = load(metadata).get("containerimage.digest", "")
