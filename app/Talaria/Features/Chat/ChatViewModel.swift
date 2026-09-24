@@ -5911,7 +5911,11 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
         if let completedSession = payload.session {
             applyCompletedStreamSession(completedSession)
         }
-        if payload.session?.messages?.contains(where: { $0.activityScene?.hasConsumedSteering == true }) != true {
+        if payload.session?.messages?.contains(where: { $0.activityScene?.hasConsumedSteering == true }) == true {
+            // The finished scene renders its steers, even ones outside the loaded window; a steer the Agent never took
+            // returns as a leftover event and is queued from there, so no local hint stays behind.
+            removeUnresolvedSteeringHints()
+        } else {
             settleAcceptedSteeringHints()
         }
         if let usage = payload.usage {

@@ -907,6 +907,42 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testCompletionDropsTheLocalHintWhenTheSceneSaysTheTurnTookASteer() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+            case "/api/chat/steer":
+                return apiTestJSONResponse(#"{"accepted":true,"stream_id":"stream-123"}"#, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+        _ = await viewModel.sendMessage("Initial request")
+        streamClient.emit(.token("Working. "))
+        _ = await viewModel.submitStreamingMessage("Keep this once", behavior: .steer)
+        XCTAssertTrue(viewModel.messages.contains(where: \.isLocalSteeringHint))
+
+        // A long turn: the persisted steer row is outside the terminal window, and `done` precedes `steer_consumed`.
+        let completedSession = try makeSessionDetail(
+            """
+            {
+              "session_id": "session-abc",
+              "messages": [
+                {"role":"assistant","content":"Final.","message_id":"assistant-final","_turn_id":"stream-123",
+                 "_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"Final.","activity_rows_offset":90,"has_consumed_steering":true,"activity_rows":[]}}
+              ]
+            }
+            """
+        )
+        streamClient.emit(.done(DoneStreamEvent(session: completedSession)))
+
+        XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
+    }
+
+    @MainActor
     func testComposerSteerShowsSendingStateBeforeServerAccepts() async throws {
         let streamClient = SpySSEStreamingClient()
         let steerRequests = LockedCounter()
