@@ -410,6 +410,21 @@ class PublicationTests(unittest.TestCase):
         self.assertIn("--platform linux/arm64", action)
         self.assertIn("aarch64", action)
 
+    def test_pr_ci_full_history_checkouts_are_blobless(self):
+        # Classification and tooling need history and trees, not every historical blob; release jobs keep
+        # full clones because they make local --shared clones that cannot resolve a partial clone's objects.
+        root = Path(__file__).resolve().parents[1]
+        def checkout(name, job):
+            document = json.loads(subprocess.check_output([
+                "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+                str(root / ".github/workflows" / name)], text=True))
+            return next(step.get("with", {}) for step in document["jobs"][job]["steps"] if "actions/checkout" in step.get("uses", ""))
+        changes = checkout("pr-ci.yml", "changes")
+        self.assertEqual((changes.get("fetch-depth"), changes.get("filter"), changes.get("sparse-checkout")), (0, "blob:none", "scripts"))
+        self.assertEqual(checkout("repository-tooling.yml", "tooling").get("filter"), "blob:none")
+        for name in ("release-set.yml", "recover-cutover.yml", "ios-release-build.yml", "release.yml"):
+            self.assertNotIn("blob:none", (root / ".github/workflows" / name).read_text(), name)
+
     def test_buildx_builders_are_never_fixed_names(self):
         # A Docker daemon that outlives a job would reject a second builder with the same fixed name.
         root = Path(__file__).resolve().parents[1]
