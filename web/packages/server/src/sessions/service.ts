@@ -265,7 +265,8 @@ export class SessionService {
   /** `compact()` plus messages, redacted for the wire (Python `_public_session_projection`). */
   publicSession(s: Session, withMessages = true): Record<string, unknown> {
     const payload = s.compact()
-    if (withMessages) payload.messages = withTurnIds(s.messages)
+    // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
+    if (withMessages) payload.messages = hydrateAnchorActivityScenes(withTurnIds(s.messages), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id })
     return redactSessionData(payload, this.deps.redactEnabled())
   }
 
