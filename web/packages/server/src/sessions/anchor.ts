@@ -6,7 +6,7 @@
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { splitThinkingFromContent } from './merge.js'
+import { isContextCompressionMarker, messageText, splitThinkingFromContent } from './merge.js'
 import type { Session } from './session.js'
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
@@ -345,4 +345,26 @@ export function readAnchorSceneRows(session: Session, query: { messageRef: strin
   const limit = Math.max(1, Math.min(200, query.limit ?? 80))
   const start = Math.max(0, before - limit)
   return { scene_ref: str(record.message_ref || query.messageRef), rows: rows.slice(start, before), start, end: before, total, complete: start === 0 }
+}
+
+/** A turn opens at a user message the reader sees (text or attachments); hidden prompts and compaction markers do not. */
+function opensTurn(m: Record<string, unknown>): boolean {
+  if (m.role !== 'user' || isContextCompressionMarker(m)) return false
+  return messageText(m.content).trim() !== '' || (Array.isArray(m.attachments) && m.attachments.length > 0)
+}
+
+/**
+ * Every message leaves the server with a `_turn_id`. A turn stamps its rows with its stream id; rows written before
+ * that (older files, state.db/CLI rows) take `legacy:<index of their opening user row>`, or `legacy:start`, computed
+ * over the full transcript so a window boundary never changes a key. Returns copies; stored rows are untouched.
+ */
+export function withTurnIds<T>(messages: T[]): T[] {
+  let current = 'legacy:start'
+  return messages.map((m, index) => {
+    if (!isDict(m)) return m
+    const own = str(m._turn_id)
+    if (own) { current = own; return m }
+    if (opensTurn(m)) current = `legacy:${String(index)}`
+    return { ...m, _turn_id: current } as T
+  })
 }

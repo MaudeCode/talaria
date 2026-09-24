@@ -24,6 +24,7 @@ import { dict, type Config } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
 import { attachTodoState } from './todo.js'
+import { withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
 import { assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stripXmlToolCalls, surfaceCodexCommentary, workspaceContextPrefix } from './merge.js'
@@ -247,7 +248,7 @@ export class TurnRunner {
       const provisional = titleFrom([{ role: 'user', content: opts.msg }], s.title || 'Untitled')
       if (provisional && !['', 'Untitled', 'New Chat'].includes(provisional.trim())) s.title = provisional
     }
-    if (this.deps.saveMode() === 'eager') this.checkpointUserMessage(s, opts.msg, attachments, s.pending_started_at, source)
+    if (this.deps.saveMode() === 'eager') this.checkpointUserMessage(s, opts.msg, attachments, s.pending_started_at, source, streamId)
     this.deps.store.save(s)
     this.registry.writebackOwners.set(s.session_id, streamId)
     if (wasHiddenEmpty) this.deps.events.publish('session_new', { profile: s.profile, sessionId: s.session_id })
@@ -258,17 +259,17 @@ export class TurnRunner {
     void this.run(s.session_id, streamId, channel, opts).catch((error: unknown) => {
       this.deps.log(`[webui] ERROR turn ${streamId} crashed\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
     })
-    const response: StartTurnResponse = { stream_id: streamId, session_id: s.session_id, pending_started_at: s.pending_started_at, turn_id: null, title: s.title }
+    const response: StartTurnResponse = { stream_id: streamId, session_id: s.session_id, pending_started_at: s.pending_started_at, turn_id: streamId, title: s.title }
     if (opts.normalizedModel && opts.model) response.effective_model = opts.model
     if (opts.modelProvider) response.effective_model_provider = opts.modelProvider
     return response
   }
 
   /** Python `_checkpoint_user_message_for_eager_session_save`. */
-  private checkpointUserMessage(s: Session, msg: string, attachments: Record<string, unknown>[], startedAt: number | null, source: string): void {
+  private checkpointUserMessage(s: Session, msg: string, attachments: Record<string, unknown>[], startedAt: number | null, source: string, turnId: string): void {
     const latest = s.messages[s.messages.length - 1]
     if (latest?.role === 'user' && messageText(latest.content).split(/\s+/).join(' ') === msg.split(/\s+/).join(' ')) return
-    const user: Message = { role: 'user', content: msg }
+    const user: Message = { role: 'user', content: msg, _turn_id: turnId }
     const token = buildActiveTurnToken(s.active_stream_id, startedAt)
     if (token) user._active_turn_token = token
     if (source !== 'webui') user._source = source
@@ -472,7 +473,7 @@ export class TurnRunner {
       // sidecar reports `completed` whenever a failed run still carries messages).
       // Python's second chance: a turn that emitted no new row still counts when the merged transcript it produced
       // ends on a final answer (the current user row or trailing tool activity makes it "lacking").
-      const mergedForCheck = (): Message[] => mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now() })
+      const mergedForCheck = (): Message[] => mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId })
       const assistantAdded = assistantReplyAddedAfterCurrentTurn(resultMessages, previousContext, msgText) || !sessionLacksFinalAssistantAnswer(mergedForCheck())
       const lastErr = result.error ?? capturedTerminalError ?? ''
       // Python `_turn_transcript_lacks_final_assistant_answer`: a partial result with no final answer is a silent failure even if tokens streamed.
@@ -490,7 +491,7 @@ export class TurnRunner {
         return
       }
       // ── settle the transcript ──
-      s.messages = mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now() })
+      s.messages = mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId })
       s.context_messages = dedupeContext(resultMessages)
       for (const m of s.messages) {
         if (m.role !== 'assistant') continue
@@ -704,7 +705,7 @@ export class TurnRunner {
    */
   private terminalSessionPayload(s: Session): Record<string, unknown> {
     const payload = s.compact({ includeRuntime: true, activeStreamIds: this.registry.liveIds })
-    const [window, offset] = messageWindowForDisplay(s.messages, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
+    const [window, offset] = messageWindowForDisplay(withTurnIds(s.messages), TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
     const limited = messagesForLimitedPayload(window)
     payload.messages = limited
     payload.message_count = s.messages.length
@@ -718,7 +719,7 @@ export class TurnRunner {
   /** Python `_materialize_pending_user_turn_before_error` + error message append + save. */
   private persistError(s: Session, streamId: string, label: string, payload: Record<string, unknown>, activeTurnToken: string | null): void {
     const startedAt = s.pending_started_at
-    this.materializePendingUserTurn(s, activeTurnToken)
+    this.materializePendingUserTurn(s, activeTurnToken, streamId)
     const duration = typeof startedAt === 'number' && startedAt > 0 ? Math.max(0, this.deps.now() - startedAt) : null
     s.active_stream_id = null
     s.pending_user_message = null
@@ -727,7 +728,7 @@ export class TurnRunner {
     s.pending_user_source = null
     this.appendPartialSnapshot(s, streamId)
     const hint = str(payload.hint)
-    const errorMessage: Message = { role: 'assistant', content: `**${label}:** ${str(payload.message) || label}${hint ? `\n\n*${hint}*` : ''}`, timestamp: Math.trunc(this.deps.now()), _error: true }
+    const errorMessage: Message = { role: 'assistant', content: `**${label}:** ${str(payload.message) || label}${hint ? `\n\n*${hint}*` : ''}`, timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: streamId }
     if (duration !== null) errorMessage._turnDuration = Math.round(duration * 1000) / 1000
     if (payload.type === 'compression_exhausted') {
       // Python `stamp_compression_exhausted_recovery`: durable recovery metadata on the session, the marker, and the frame.
@@ -746,7 +747,7 @@ export class TurnRunner {
     this.deps.events.publish('session_error', { profile: s.profile, sessionId: s.session_id })
   }
 
-  private materializePendingUserTurn(s: Session, activeTurnToken: string | null): boolean {
+  private materializePendingUserTurn(s: Session, activeTurnToken: string | null, turnId: string): boolean {
     const pendingText = str(s.pending_user_message)
     if (!pendingText) return false
     const recoveredTs = typeof s.pending_started_at === 'number' && s.pending_started_at > 0 ? s.pending_started_at : this.deps.now()
@@ -764,7 +765,7 @@ export class TurnRunner {
     const last = s.messages[s.messages.length - 1]
     // Python `_synthesize_user_message_on_cancel`: a worker that already merged this prompt (same text, not older than the pending start) wins.
     if (last?.role === 'user' && messageText(last.content).trim() === pendingText.trim() && Math.trunc(Number(last.timestamp)) >= Math.trunc(recoveredTs)) return false
-    const recovered: Message = { role: 'user', content: pendingText, timestamp: recoveredTs, _recovered: true }
+    const recovered: Message = { role: 'user', content: pendingText, timestamp: recoveredTs, _recovered: true, _turn_id: turnId }
     if (source !== 'webui') recovered._source = source
     if (attachments.length) recovered.attachments = attachments
     s.messages.push(recovered)
@@ -775,6 +776,7 @@ export class TurnRunner {
   private appendPartialSnapshot(s: Session, streamId: string): void {
     const partial = buildPartialMessage((this.registry.partialText.get(streamId) ?? []).join(''), (this.registry.reasoningText.get(streamId) ?? []).join(''), this.registry.liveToolCalls.get(streamId) ?? [], this.deps.now())
     if (!partial) return
+    partial._turn_id = streamId
     const key = messageIdentity(partial)
     if (key !== null && s.messages.some((m) => m._partial && messageIdentity(m) === key)) return
     s.messages.push(partial)
@@ -803,7 +805,7 @@ export class TurnRunner {
       return true
     }
     if (current.messages.some((m) => m._error && str(m.content).startsWith('**Task cancelled:**')) && current.active_stream_id === null && !current.pending_user_message) return true
-    this.materializePendingUserTurn(current, buildActiveTurnToken(streamId, current.pending_started_at))
+    this.materializePendingUserTurn(current, buildActiveTurnToken(streamId, current.pending_started_at), streamId)
     current.active_stream_id = null
     current.pending_user_message = null
     current.pending_attachments = []
@@ -811,7 +813,7 @@ export class TurnRunner {
     current.pending_user_source = null
     this.appendPartialSnapshot(current, streamId)
     const text = message.trim().endsWith('.') ? message.trim() : `${message.trim()}.`
-    current.messages.push({ role: 'assistant', content: `**Task cancelled:** ${text}\n\n*${cancelledTurnHint(this.deps.agentName())}*`, _error: true, provider_details: text, provider_details_label: 'Cancellation details', timestamp: Math.trunc(this.deps.now()) })
+    current.messages.push({ role: 'assistant', content: `**Task cancelled:** ${text}\n\n*${cancelledTurnHint(this.deps.agentName())}*`, _error: true, provider_details: text, provider_details_label: 'Cancellation details', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
     try { this.deps.store.save(current) } catch { return false }
     this.deps.pending.clearApprovals(current.session_id)
     this.deps.pending.clearClarifies(current.session_id)

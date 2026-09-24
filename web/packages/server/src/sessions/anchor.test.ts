@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { normalizeSceneRows } from './anchor.js'
+import { normalizeSceneRows, withTurnIds } from './anchor.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -53,6 +53,25 @@ describe('normalizeSceneRows', () => {
   })
 })
 
+describe('withTurnIds', () => {
+  it('keeps stamped ids and opens legacy turns only at user rows the reader sees', () => {
+    const rows = withTurnIds([
+      { role: 'assistant', content: 'Greeting' },
+      { role: 'user', content: 'First' },
+      { role: 'assistant', content: 'One', finish_reason: 'stop' },
+      { role: 'user', content: '' },
+      { role: 'user', content: '[CONTEXT COMPACTION] summary' },
+      { role: 'assistant', content: 'Two', finish_reason: 'stop' },
+      { role: 'user', content: 'Stamped', _turn_id: 'run-1' },
+      { role: 'assistant', content: 'Three', _turn_id: 'run-1' },
+      { role: 'assistant', content: 'CLI row appended after the turn' },
+      { role: 'user', content: '', attachments: [{ name: 'a.png' }] },
+      { role: 'assistant', content: 'Four' },
+    ]).map((m) => m._turn_id)
+    expect(rows).toEqual(['legacy:start', 'legacy:1', 'legacy:1', 'legacy:1', 'legacy:1', 'legacy:1', 'run-1', 'run-1', 'run-1', 'legacy:9', 'legacy:9'])
+  })
+})
+
 describe('anchor scenes over HTTP', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
@@ -78,5 +97,18 @@ describe('anchor scenes over HTTP', () => {
     expect(page.rows).toEqual(all.slice(0, all.length - 80))
     expect((page.rows as Json[])[0]).toMatchObject({ role: 'reasoning', text: 'step 0', order_index: 0 })
     expect(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')).toBe(stored)
+  })
+
+  it('gives legacy rows the same turn ids in every window', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = Array.from({ length: 6 }, (_, i) => [{ role: 'user', content: `Q${String(i)}` }, { role: 'assistant', content: `A${String(i)}`, finish_reason: 'stop' }, { role: 'assistant', content: `A${String(i)} again`, finish_reason: 'stop' }]).flat()
+    s.deps.sessionStore.save(session)
+    const ids = async (query: string) => Object.fromEntries((((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages as Json[]).map((m) => [String(m.content), m._turn_id]))
+    const full = await ids('')
+    expect(full['A2']).toBe('legacy:6')
+    expect(full['A2 again']).toBe('legacy:6')
+    expect(await ids('&msg_limit=4')).toMatchObject({ 'A5': full['A5'], 'A5 again': full['A5 again'] })
+    expect(await ids('&msg_limit=4&msg_before=9')).toMatchObject({ 'A2': 'legacy:6', 'A2 again': 'legacy:6' })
   })
 })

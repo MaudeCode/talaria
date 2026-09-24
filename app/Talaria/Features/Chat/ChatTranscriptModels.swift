@@ -909,6 +909,10 @@ extension ChatViewModel {
             )
 
             if message.role == "assistant" {
+                // The server stamps each row with its turn; a new turn id starts a new assistant turn.
+                if let previous = assistantSegments.last, previous.segment.message.turnId != message.turnId {
+                    appendAssistantTurn()
+                }
                 assistantSegments.append((
                     loadedIndex,
                     TranscriptAssistantSegment(anchorID: anchorID, message: message)

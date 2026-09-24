@@ -12,7 +12,7 @@ import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
 import { allSessions, buildSessionListPayload, isMessagingSessionRecord, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
-import { anchorSceneIntOrNull, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene } from './anchor.js'
+import { anchorSceneIntOrNull, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { attachTodoState } from './todo.js'
@@ -265,7 +265,7 @@ export class SessionService {
   /** `compact()` plus messages, redacted for the wire (Python `_public_session_projection`). */
   publicSession(s: Session, withMessages = true): Record<string, unknown> {
     const payload = s.compact()
-    if (withMessages) payload.messages = s.messages
+    if (withMessages) payload.messages = withTurnIds(s.messages)
     return redactSessionData(payload, this.deps.redactEnabled())
   }
 
@@ -299,7 +299,7 @@ export class SessionService {
       throw new HttpFailure(404, 'Session not found')
     }
     this.clearStaleStreamState(s)
-    const all: unknown[] = loadMessages ? this.mergedTranscript(s) : []
+    const all: unknown[] = loadMessages ? withTurnIds(this.mergedTranscript(s)) : []
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null
@@ -364,7 +364,7 @@ export class SessionService {
     }
     const { session: synth, reason } = this.claimOrSynthesizeCliSession(sid, meta)
     if (!synth || reason === 'was_webui') throw new HttpFailure(404, 'Session not found')
-    const msgs = synth.messages
+    const msgs = withTurnIds(synth.messages)
     const lastTs = Number(msgs[msgs.length - 1]?.timestamp ?? 0) || 0
     const sess: Record<string, unknown> = {
       session_id: synth.session_id, title: synth.title, workspace: synth.workspace, model: synth.model, message_count: msgs.length,
@@ -404,10 +404,11 @@ export class SessionService {
     // turn and an interruption marker follows it, so a dead stream never silently drops what the user sent.
     const pendingText = str(target.pending_user_message)
     if (pendingText) {
+      const turnId = str(target.active_stream_id)
       const startedAt = typeof target.pending_started_at === 'number' && target.pending_started_at > 0 ? target.pending_started_at : this.deps.now()
       const attachments = [...target.pending_attachments]
-      target.messages.push({ role: 'user', content: pendingText, timestamp: Math.trunc(startedAt), ...(attachments.length ? { attachments } : {}), _recovered: true, _source: target.pending_user_source ?? 'webui' })
-      target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', timestamp: Math.trunc(this.deps.now()), _error: true })
+      target.messages.push({ role: 'user', content: pendingText, timestamp: Math.trunc(startedAt), ...(attachments.length ? { attachments } : {}), _recovered: true, _source: target.pending_user_source ?? 'webui', ...(turnId ? { _turn_id: turnId } : {}) })
+      target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', timestamp: Math.trunc(this.deps.now()), _error: true, ...(turnId ? { _turn_id: turnId } : {}) })
     }
     target.active_stream_id = null
     target.pending_user_message = null

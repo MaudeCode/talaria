@@ -50,14 +50,17 @@ describe('assistant turn projection', () => {
     expect(groupAssistantTurns(projectMessages(messages.slice(1), 121))[0]!.index).toBe(125)
   })
 
-  it('keeps explicit different owners and adjacent completed replies separate', async () => {
+  it('groups consecutive assistant rows by the server turn id alone', async () => {
     const { groupAssistantTurns } = await import('./turnActivity')
-    const rows = projectMessages([
-      { role: 'assistant', id: 'a', content: 'First', _anchor_stream_id: 'one', tool_calls: [{ id: 'x' }] },
-      { role: 'assistant', id: 'b', content: 'Second', _anchor_stream_id: 'two' },
-      { role: 'assistant', id: 'c', content: 'Third' },
-    ])
-    expect(groupAssistantTurns(rows)).toHaveLength(3)
+    const grouped = groupAssistantTurns(projectMessages([
+      { role: 'assistant', id: 'a', content: 'First', _turn_id: 'one', tool_calls: [{ id: 'x' }] },
+      // A completed reply no longer ends the turn; only the server's turn id does.
+      { role: 'assistant', id: 'b', content: 'Second', _turn_id: 'two', finish_reason: 'stop' },
+      { role: 'assistant', id: 'c', content: 'Third', _turn_id: 'two', finish_reason: 'stop' },
+      { role: 'assistant', id: 'd', content: 'Fourth', _turn_id: 'three', _error: true },
+    ]))
+    expect(grouped.map((row) => row.turnKey)).toEqual(['one', 'two', 'three'])
+    expect(grouped[1]!.assistantRows?.map((row) => row.message.id)).toEqual(['b', 'c'])
   })
 
   it('uses recovered scene order and stable tool ids without duplicating its final answer', async () => {

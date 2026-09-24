@@ -364,7 +364,8 @@ private extension ChatMessage {
             activityScene: activityScene,
             attachments: attachments,
             turnDuration: cachedMessage.turnDuration,
-            turnTps: cachedMessage.turnTps
+            turnTps: cachedMessage.turnTps,
+            turnId: cachedMessage.turnId
         )
     }
 }

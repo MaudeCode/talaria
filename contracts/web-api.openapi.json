@@ -2669,6 +2669,9 @@
                                   "activity_rows"
                                 ],
                                 "additionalProperties": {}
+                              },
+                              "_turn_id": {
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -3926,6 +3929,9 @@
                                   "activity_rows"
                                 ],
                                 "additionalProperties": {}
+                              },
+                              "_turn_id": {
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -4957,6 +4963,9 @@
                                   "activity_rows"
                                 ],
                                 "additionalProperties": {}
+                              },
+                              "_turn_id": {
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -6790,6 +6799,9 @@
                                   "activity_rows"
                                 ],
                                 "additionalProperties": {}
+                              },
+                              "_turn_id": {
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -8555,6 +8567,9 @@
                                   "activity_rows"
                                 ],
                                 "additionalProperties": {}
+                              },
+                              "_turn_id": {
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -16681,14 +16696,7 @@
                       "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
                     },
                     "turn_id": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
+                      "type": "string"
                     },
                     "user_message_id": {
                       "anyOf": [
@@ -17211,6 +17219,9 @@
                                   "activity_rows"
                                 ],
                                 "additionalProperties": {}
+                              },
+                              "_turn_id": {
+                                "type": "string"
                               }
                             },
                             "required": [

@@ -45,12 +45,14 @@
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
           "activity_scene_ref": "contract-scene"
-        }
+        },
+        "_turn_id": "legacy:start"
       },
       {
         "role": "user",
         "content": "Check the legacy scene",
-        "message_id": "contract-user-2"
+        "message_id": "contract-user-2",
+        "_turn_id": "legacy:1"
       },
       {
         "role": "assistant",
@@ -123,7 +125,35 @@
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
           "activity_scene_ref": "contract-legacy-scene"
-        }
+        },
+        "_turn_id": "legacy:1"
+      },
+      {
+        "role": "user",
+        "content": "Run the stamped check",
+        "message_id": "contract-user-3",
+        "_turn_id": "contract-run-a"
+      },
+      {
+        "role": "assistant",
+        "content": "First reply.",
+        "message_id": "contract-run-a-1",
+        "finish_reason": "stop",
+        "_turn_id": "contract-run-a"
+      },
+      {
+        "role": "assistant",
+        "content": "Second reply in the same turn.",
+        "message_id": "contract-run-a-2",
+        "finish_reason": "stop",
+        "_turn_id": "contract-run-a"
+      },
+      {
+        "role": "assistant",
+        "content": "Next turn after a hidden wakeup.",
+        "message_id": "contract-run-b-1",
+        "finish_reason": "stop",
+        "_turn_id": "contract-run-b"
       }
     ],
     "title": "Contract fixture"

@@ -110,7 +110,7 @@ export function findCurrentUserTurn(messages: unknown[], msgText: string): numbe
   return null
 }
 
-export interface MergeOptions { source?: string; activeTurnToken?: string | null; now?: number }
+export interface MergeOptions { source?: string; activeTurnToken?: string | null; now?: number; turnId?: string }
 
 /** Python `_merge_display_messages_after_agent_result` (append-only display merge). */
 /** Python `_assistant_message_has_final_visible_text`: a non-error assistant row carrying visible answer text. */
@@ -216,6 +216,7 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
   if (currentUserKey !== null && !currentUserIn && !alreadyCheckpointed && candidates.some((m) => isDict(m) && (m.role === 'assistant' || m.role === 'tool'))) {
     const user: Message = { role: 'user', content: msgText, timestamp: opts.now ?? Date.now() / 1000 }
     if (opts.activeTurnToken) user._active_turn_token = opts.activeTurnToken
+    if (opts.turnId) user._turn_id = opts.turnId
     if (opts.source && opts.source !== 'webui') user._source = opts.source
     let insertAt = 0
     while (insertAt < candidates.length && isContextCompressionMarker(candidates[insertAt])) insertAt += 1
@@ -236,7 +237,9 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
       display = { ...msg, content: msgText }
       if (opts.source && opts.source !== 'webui') display._source = opts.source
     }
-    merged.push(structuredClone(display))
+    const row = structuredClone(display)
+    if (opts.turnId) row._turn_id = opts.turnId
+    merged.push(row)
     if (key !== null) seen.add(key)
   }
   return merged

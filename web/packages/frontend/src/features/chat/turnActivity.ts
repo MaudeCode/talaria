@@ -23,12 +23,9 @@ export interface TurnActivity {
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
 const text = (v: unknown): string => typeof v === 'string' ? v : ''
 
-/** Explicit run identity wins; message text is never a turn identity. */
-export function messageOwner(message: Message): string | undefined {
-  for (const value of [message._anchor_stream_id, message.run_id, message.stream_id, message.turn_id]) {
-    if (typeof value === 'string' && value) return value
-  }
-  return undefined
+/** The server stamps every row with its turn; clients group by equality and never infer turn boundaries. */
+export function turnIdOf(message: Message): string | undefined {
+  return typeof message._turn_id === 'string' && message._turn_id ? message._turn_id : undefined
 }
 
 export function toolCardsFor(message: Message, toolResults: Record<string, Message>): ToolCardData[] {
@@ -39,33 +36,20 @@ export function toolCardsFor(message: Message, toolResults: Record<string, Messa
   })
 }
 
-/** Group only presentation rows; the final row retains its original mutation index. */
+/** Consecutive assistant rows with one `_turn_id` form a turn; the final row retains its original mutation index. */
 export function groupAssistantTurns(rows: VisibleMessage[]): VisibleMessage[] {
   const out: VisibleMessage[] = []
   let group: VisibleMessage[] = []
-  let userKey: string | undefined
-  let owner: string | undefined
   const flush = () => {
     const last = group.at(-1)
     const first = group[0]
-    if (last && first) out.push({ ...last, key: first.key, assistantRows: group, turnKey: userKey ?? owner ?? first.key })
+    if (last && first) out.push({ ...last, key: first.key, assistantRows: group, turnKey: turnIdOf(first.message) ?? first.key })
     group = []
-    owner = undefined
   }
   for (const row of rows) {
-    if (row.message.role !== 'assistant') {
-      flush()
-      out.push(row)
-      userKey = row.message.role === 'user' ? `user:${row.key}` : undefined
-      continue
-    }
-    const nextOwner = messageOwner(row.message)
-    const previous = group.at(-1)?.message
-    // Legacy transcripts use tool_calls/finish_reason as continuation boundaries.
-    // Without continuation or matching explicit ownership, keep distinct replies apart.
-    const continues = previous && ((previous.tool_calls?.length ?? 0) > 0 || previous.finish_reason === 'tool_calls' || previous._interim === true || previous._partial === true || (userKey && previous.finish_reason !== 'stop' && previous.finish_reason !== 'length' && previous._error !== true))
-    if (group.length && ((owner && nextOwner && owner !== nextOwner) || (!continues && !(owner && owner === nextOwner)))) { flush(); userKey = undefined }
-    owner ??= nextOwner
+    if (row.message.role !== 'assistant') { flush(); out.push(row); continue }
+    const previous = group.at(-1)
+    if (previous && turnIdOf(previous.message) !== turnIdOf(row.message)) flush()
     group.push(row)
   }
   flush()
@@ -148,7 +132,7 @@ export function persistedActivity(row: VisibleMessage, terminalState?: string): 
       }
     }
   }
-  return { key: row.turnKey ?? messageOwner(last.message) ?? row.key, items, finalAnswer, status: status || (finalAnswer.trim() ? 'completed' : 'no_response'),
+  return { key: row.turnKey ?? row.key, items, finalAnswer, status: status || (finalAnswer.trim() ? 'completed' : 'no_response'),
     ...(scene.version === 'activity_scene_v1' && Array.isArray(scene.activity_rows) ? { sceneRows: scene.activity_rows } : {}),
     ...(typeof scene.activity_rows_offset === 'number' && scene.activity_rows_offset > 0 ? { history: { ref: text(scene.activity_scene_ref), index: row.index, before: scene.activity_rows_offset } } : {}),
   }
@@ -170,5 +154,5 @@ export function liveActivity(turn: LiveTurn): TurnActivity {
   const tail = items.at(-1)
   const lastSegment = turn.segments.at(-1)
   if (lastSegment?.kind === 'text' && !lastSegment.interim && turn.status === 'done' && (!turn.terminalState || turn.terminalState === 'completed') && tail?.kind === 'text') { finalAnswer = tail.text; items.pop() }
-  return { key: turn.userMessageId ? `user:${turn.userMessageId}` : turn.streamId, items, finalAnswer, status: !isTerminal(turn.status) ? 'running' : turn.status === 'done' ? (turn.terminalState && turn.terminalState !== 'completed' ? turn.terminalState : finalAnswer ? 'completed' : 'no_response') : turn.terminalState === 'interrupted' ? 'interrupted' : turn.status }
+  return { key: turn.turnId ?? turn.streamId, items, finalAnswer, status: !isTerminal(turn.status) ? 'running' : turn.status === 'done' ? (turn.terminalState && turn.terminalState !== 'completed' ? turn.terminalState : finalAnswer ? 'completed' : 'no_response') : turn.terminalState === 'interrupted' ? 'interrupted' : turn.status }
 }

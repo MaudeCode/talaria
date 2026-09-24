@@ -34,6 +34,8 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
     let attachments: [MessageAttachment]?
     let turnDuration: Double?
     let turnTps: Double?
+    /// The server turn this row belongs to; turns are grouped by equality of this id.
+    let turnId: String?
 
     init(
         role: String?,
@@ -50,7 +52,8 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         activityScene: AssistantActivityScene? = nil,
         attachments: [MessageAttachment]? = nil,
         turnDuration: Double? = nil,
-        turnTps: Double? = nil
+        turnTps: Double? = nil,
+        turnId: String? = nil
     ) {
         self.role = role
         self.content = content
@@ -67,6 +70,7 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         self.attachments = attachments
         self.turnDuration = turnDuration
         self.turnTps = turnTps
+        self.turnId = turnId
     }
 
     enum CodingKeys: String, CodingKey {
@@ -85,6 +89,7 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         case attachments
         case turnDuration = "_turnDuration"
         case turnTps = "_turnTps"
+        case turnId = "_turnId"
         case underscoredTimestamp = "_ts"
     }
 
@@ -111,6 +116,7 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         turnDuration = container.decodeLossyDoubleIfPresent(forKey: .turnDuration)
             ?? activityScene?.turnDuration
         turnTps = container.decodeLossyDoubleIfPresent(forKey: .turnTps)
+        turnId = container.decodeLossyStringIfPresent(forKey: .turnId)
     }
 
     private static func attachments(
@@ -269,7 +275,8 @@ extension ChatMessage {
             activityScene: activityScene,
             attachments: attachments,
             turnDuration: duration ?? turnDuration,
-            turnTps: tokensPerSecond ?? turnTps
+            turnTps: tokensPerSecond ?? turnTps,
+            turnId: turnId
         )
     }
 }
@@ -393,20 +400,13 @@ enum TranscriptTurnClassifier {
         message.role == "user" && !hasVisibleUserContent(message)
     }
 
+    /// Turn keys come from the server's `_turn_id` stamp; a row without one has no shared turn key.
     static func assistantTurnKeysByAnchorID(_ messages: [ChatMessage], messageOffset: Int? = nil) -> [String: String] {
         var keysByMessageID: [String: String] = [:]
-        var currentTurnKey = "turn:start"
-
-        for (messageIndex, message) in messages.enumerated() {
-            if isUserTurnBoundary(message) {
-                currentTurnKey = "turn:user:\(max(0, messageOffset ?? 0) + messageIndex)"
-            }
-
-            if message.role == "assistant" {
-                keysByMessageID[anchorID(for: message, at: messageIndex, messageOffset: messageOffset)] = currentTurnKey
-            }
+        for (messageIndex, message) in messages.enumerated() where message.role == "assistant" {
+            guard let turnID = message.turnId else { continue }
+            keysByMessageID[anchorID(for: message, at: messageIndex, messageOffset: messageOffset)] = "turn:\(turnID)"
         }
-
         return keysByMessageID
     }
 

@@ -1671,7 +1671,8 @@ final class ChatViewModel {
                 activityScene: loadedMessage.activityScene ?? cachedMessage.activityScene,
                 attachments: loadedMessage.attachments,
                 turnDuration: loadedMessage.turnDuration ?? cachedMessage.turnDuration,
-                turnTps: loadedMessage.turnTps ?? cachedMessage.turnTps
+                turnTps: loadedMessage.turnTps ?? cachedMessage.turnTps,
+                turnId: loadedMessage.turnId ?? cachedMessage.turnId
             )
         }
         let mergedMessages = preservingLocalSteeringTurns(
@@ -1832,7 +1833,8 @@ final class ChatViewModel {
                 activityScene: serverAssistant.activityScene,
                 attachments: serverAssistant.attachments,
                 turnDuration: serverAssistant.turnDuration,
-                turnTps: serverAssistant.turnTps
+                turnTps: serverAssistant.turnTps,
+                turnId: serverAssistant.turnId
             ))
         } else if let lastAssistantIndex {
             result[lastAssistantIndex] = mergedSteeringAssistant(
@@ -1871,7 +1873,8 @@ final class ChatViewModel {
                 : localAssistant.activityScene ?? serverAssistant.activityScene,
             attachments: localAssistant.attachments ?? serverAssistant.attachments,
             turnDuration: serverAssistant.turnDuration ?? localAssistant.turnDuration,
-            turnTps: serverAssistant.turnTps ?? localAssistant.turnTps
+            turnTps: serverAssistant.turnTps ?? localAssistant.turnTps,
+            turnId: serverAssistant.turnId ?? localAssistant.turnId
         )
     }
 
@@ -2093,7 +2096,8 @@ final class ChatViewModel {
                 activityScene: loadedAssistant.activityScene ?? snapshotAssistant.activityScene,
                 attachments: loadedAssistant.attachments ?? snapshotAssistant.attachments,
                 turnDuration: loadedAssistant.turnDuration ?? snapshotAssistant.turnDuration,
-                turnTps: loadedAssistant.turnTps ?? snapshotAssistant.turnTps
+                turnTps: loadedAssistant.turnTps ?? snapshotAssistant.turnTps,
+                turnId: loadedAssistant.turnId ?? snapshotAssistant.turnId
             )
             return ActiveStreamMessageMerge(
                 messages: mergedMessages,
@@ -3871,7 +3875,8 @@ final class ChatViewModel {
             activityScene: message.activityScene,
             attachments: message.attachments,
             turnDuration: message.turnDuration,
-            turnTps: message.turnTps
+            turnTps: message.turnTps,
+            turnId: message.turnId
         )
     }
 
@@ -3910,7 +3915,8 @@ final class ChatViewModel {
             activityScene: existing.activityScene,
             attachments: existing.attachments,
             turnDuration: existing.turnDuration,
-            turnTps: existing.turnTps
+            turnTps: existing.turnTps,
+            turnId: existing.turnId
         )
         scheduleStreamingScrollTrigger()
     }
@@ -4661,7 +4667,8 @@ final class ChatViewModel {
                 activityScene: existing.activityScene,
                 attachments: existing.attachments,
                 turnDuration: existing.turnDuration,
-                turnTps: existing.turnTps
+                turnTps: existing.turnTps,
+                turnId: existing.turnId
             )
             liveAssistantActivity.appendProse(separator + textToAppend)
             scheduleStreamingScrollTrigger()
@@ -4812,7 +4819,8 @@ final class ChatViewModel {
                 reasoningTitles: message.reasoningTitles,
                 attachments: message.attachments,
                 turnDuration: message.turnDuration,
-                turnTps: message.turnTps
+                turnTps: message.turnTps,
+                turnId: message.turnId
             )
         }
     }
@@ -5163,7 +5171,8 @@ final class ChatViewModel {
                 activityScene: existing.activityScene,
                 attachments: existing.attachments,
                 turnDuration: existing.turnDuration,
-                turnTps: existing.turnTps
+                turnTps: existing.turnTps,
+                turnId: existing.turnId
             )
             updateStreamingAssistantMessage(at: index, with: updatedMessage)
             liveAssistantActivity.appendProse(appendedContent)

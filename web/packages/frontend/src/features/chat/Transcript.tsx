@@ -8,7 +8,7 @@ import { AssistantMessageRow, UserMessageRow, type RowActions } from './MessageR
 import { LiveStatusPill, LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
-import { groupAssistantTurns, messageOwner, settledTerminalState } from './turnActivity'
+import { groupAssistantTurns, settledTerminalState } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
 
@@ -49,10 +49,8 @@ export function Transcript(props: TranscriptProps) {
   const grouped = useMemo(() => groupAssistantTurns(rawRows), [rawRows])
   const rows = useMemo(() => {
     if (!showLive || !live) return grouped
-    return grouped.filter((row) => row.message.role !== 'assistant' || !(
-      (row.assistantRows ?? [row]).some((part) => messageOwner(part.message) === live.streamId || (!!live.turnId && messageOwner(part.message) === live.turnId))
-      || (live.userMessageId && row.turnKey === `user:${live.userMessageId}`)
-    ))
+    // The live turn owns rows the server already stamped with its turn id.
+    return grouped.filter((row) => row.message.role !== 'assistant' || (row.turnKey !== live.streamId && row.turnKey !== live.turnId))
   }, [grouped, live, showLive])
   const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user'
   const showLiveUser = !!live && !isTerminal(live.status) && live.userText.trim() !== '' && !lastRowIsUser && !rows.some((r) => r.message.role === 'user' && messageKey(r.message) === live.userMessageId)

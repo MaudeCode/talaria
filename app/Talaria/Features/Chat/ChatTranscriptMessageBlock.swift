@@ -491,7 +491,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             toolUseId: message.toolUseId,
             attachments: includesAttachments ? message.attachments : nil,
             turnDuration: includesTurnMetrics ? message.turnDuration : nil,
-            turnTps: includesTurnMetrics ? message.turnTps : nil
+            turnTps: includesTurnMetrics ? message.turnTps : nil,
+            turnId: message.turnId
         )
     }
 }

@@ -130,6 +130,9 @@ describe('chat turns through the sidecar', () => {
     const done = frames.find((f) => f.event === 'done')?.data as Json
     const doneSession = done.session as Json
     expect((doneSession.messages as Json[]).map((m) => [m.role, m.content])).toEqual([['user', 'hello there'], ['assistant', ''], ['tool', 'contents'], ['assistant', 'Hi back']])
+    // Every row the turn wrote carries its stream id as the turn identity, matching the start response.
+    expect(start.turn_id).toBe(streamId)
+    expect((doneSession.messages as Json[]).map((m) => m._turn_id)).toEqual([streamId, streamId, streamId, streamId])
     expect((done.usage as Json).input_tokens).toBe(120)
     // Python usage payload: per-turn timing/cache-hit fields the iOS TPS label and the web meter read.
     const usage = done.usage as Json
@@ -144,6 +147,7 @@ describe('chat turns through the sidecar', () => {
     expect(detail.active_stream_id).toBeNull()
     expect(detail.pending_user_message).toBeNull()
     expect((detail.messages as Json[])[0]?.content).toBe('hello there')
+    expect((detail.messages as Json[]).map((m) => m._turn_id)).toEqual([streamId, streamId, streamId, streamId])
     // Reasoning streamed before the first tool call belongs to that first assistant row (Python per-segment attribution).
     expect((detail.messages as Json[])[1]).toMatchObject({ role: 'assistant', reasoning: 'thinking' })
     expect((detail.messages as Json[])[3]).toMatchObject({ content: 'Hi back', _usedModel: 'test-model' })
@@ -277,6 +281,8 @@ describe('chat turns through the sidecar', () => {
     expect(messages[0]).toMatchObject({ role: 'user', content: 'long task', _recovered: true })
     expect(messages[1]).toMatchObject({ role: 'assistant', content: 'partial answer', _partial: true })
     expect(String(messages[2]?.content)).toMatch(/^\*\*Task cancelled:\*\* Task cancelled\./)
+    expect(messages.map((m) => m._turn_id)).toEqual([streamId, streamId, streamId])
+    expect(((frames.find((f) => f.event === 'cancel')?.data as Json).session as Json | undefined)?.messages).toSatisfy((rows: Json[] | undefined) => !rows || rows.every((m) => m._turn_id === streamId))
     expect(detail.active_stream_id).toBeNull()
     expect((await post(s, '/api/chat/start', { session_id: sid, message: 'after cancel' })).status).toBe(200)
     expect(await json(await s.get('/api/chat/cancel?stream_id=nope'))).toEqual({ ok: true, cancelled: false, stream_id: 'nope' })
@@ -367,6 +373,8 @@ describe('chat turns through the sidecar', () => {
     expect(messages[0]).toMatchObject({ role: 'user', content: 'broken', _recovered: true })
     expect(messages[1]).toMatchObject({ role: 'assistant', _error: true })
     expect(String(messages[1]?.content)).toContain('**Authentication failed:**')
+    expect(messages.map((m) => m._turn_id)).toEqual([streamId, streamId])
+    expect(((error.session as Json).messages as Json[]).map((m) => m._turn_id)).toEqual([streamId, streamId])
     expect(detail.active_stream_id).toBeNull()
     // A silent success (no assistant reply, no tokens) is classified as no_response.
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }], { token_sent: false, final_response: '' }))

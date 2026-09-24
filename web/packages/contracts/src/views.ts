@@ -57,6 +57,8 @@ export const MessageSchema = z.looseObject({
   attachments: z.array(AttachmentSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(), reasoning: z.union([z.string(), z.array(Json)]).nullable().optional(), reasoning_content: z.string().nullable().optional(),
   thinking: z.string().nullable().optional(), tool_call_id: z.string().optional(), tool_use_id: z.string().optional(), name: z.string().optional(), badge: z.string().optional(), label: z.string().optional(),
   provider_details: Json.optional(), provider_details_label: z.string().optional(), recovery_control: Json.optional(), _anchor_activity_scene: ActivitySceneSchema.optional(),
+  /** The turn this row belongs to; the server stamps every row it sends, so clients group turns by equality alone. */
+  _turn_id: z.string().optional(),
 })
 export type Message = z.infer<typeof MessageSchema>
 
@@ -117,7 +119,7 @@ export const ChatStartRequestSchema = z.looseObject({
 export type ChatStartRequest = z.infer<typeof ChatStartRequestSchema>
 /** Accepted turn. `stream_id` is the owner identity for the SSE connection. */
 export const ChatStartResponseSchema = z.looseObject({
-  stream_id: z.string().optional(), session_id: SessionIdSchema.optional(), turn_id: NullableString.optional(), user_message_id: z.union([z.string(), z.number()]).nullable().optional(), pending_started_at: z.number().nullable().optional(),
+  stream_id: z.string().optional(), session_id: SessionIdSchema.optional(), turn_id: z.string().optional(), user_message_id: z.union([z.string(), z.number()]).nullable().optional(), pending_started_at: z.number().nullable().optional(),
   title: z.string().optional(), effective_model: z.string().optional(), effective_model_provider: z.string().optional(), queued: z.boolean().optional(), ok: z.boolean().optional(), status: z.string().optional(), reason: z.string().optional(), session: SessionSchema.optional(),
 })
 export type ChatStartResponse = z.infer<typeof ChatStartResponseSchema>
