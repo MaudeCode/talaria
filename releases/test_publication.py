@@ -719,7 +719,8 @@ class PublicationTests(unittest.TestCase):
 
                 with patch.dict(os.environ, {"ACTIONS_ID_TOKEN_REQUEST_URL": "https://oidc.invalid",
                                               "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "synthetic"}), patch("publish.subprocess.run", side_effect=run), \
-                        patch("publish.subprocess.check_output", side_effect=check_output):
+                        patch("publish.subprocess.check_output", side_effect=check_output), \
+                        patch("publish.time.sleep"), patch("publish.NPM_READBACK_ATTEMPTS", 2):
                     self.assertEqual(publish.publish_npm(component, build, root), "@maudecode/talaria-web@1.0.0")
                     self.assertEqual([args[2] for args in commands if args[1] == "publish"], [str(contracts), str(server)])
                     self.assertEqual(tags["@maudecode/talaria-web"], {dist_tag: "1.0.0"})
@@ -744,6 +745,60 @@ class PublicationTests(unittest.TestCase):
                     tampered.append(True)
                     with self.assertRaisesRegex(ValueError, "readback differs"):
                         publish.publish_npm(component, build, root)
+
+    def test_npm_readback_waits_for_the_registry_to_serve_a_new_version(self):
+        """npm answers 404 for a few minutes after publishing; the readback waits instead of failing."""
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "npm").mkdir()
+            server = root / "npm/maudecode-talaria-web-1.0.0.tgz"
+            contracts = root / "npm/maudecode-talaria-web-contracts-1.0.0.tgz"
+            server.write_bytes(b"server tarball")
+            contracts.write_bytes(b"contracts tarball")
+            component, build = {"version": "1.0.0", "tag": "web-v1.0.0"}, {"npm": "@maudecode/talaria-web@1.0.0"}
+            lookups = {}
+
+            def run(args, **kwargs):
+                spec = args[2]
+                lookups[spec] = lookups.get(spec, 0) + 1
+                if lookups[spec] <= 2:
+                    return SimpleNamespace(returncode=1, stdout="", stderr="npm ERR! code E404")
+                path = contracts if "contracts" in spec else server
+                return SimpleNamespace(returncode=0, stdout=json.dumps(publish._npm_integrity(path)), stderr="")
+
+            with patch("publish.subprocess.run", side_effect=run), \
+                    patch("publish.subprocess.check_output", return_value=json.dumps({"latest": "1.0.0"})), \
+                    patch("publish.time.sleep") as sleep:
+                self.assertEqual(publish.verify_npm(component, build, root), "@maudecode/talaria-web@1.0.0")
+            self.assertEqual(sleep.call_count, 4)
+            # A version that never appears still fails, once the wait runs out.
+            with patch("publish.subprocess.run", return_value=SimpleNamespace(returncode=1, stdout="", stderr="npm ERR! code E404")), \
+                    patch("publish.subprocess.check_output", return_value=json.dumps({})), \
+                    patch("publish.time.sleep"), patch("publish.NPM_READBACK_ATTEMPTS", 3):
+                with self.assertRaisesRegex(ValueError, "never became available"):
+                    publish.verify_npm(component, build, root)
+
+    def test_npm_12_array_wrapped_views_are_read_as_their_value(self):
+        """npm 12 prints `npm view <spec> <field> --json` as a one-element array; identical bytes must still match."""
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "npm").mkdir()
+            server = root / "npm/maudecode-talaria-web-1.0.0.tgz"
+            contracts = root / "npm/maudecode-talaria-web-contracts-1.0.0.tgz"
+            server.write_bytes(b"server tarball")
+            contracts.write_bytes(b"contracts tarball")
+            component, build = {"version": "1.0.0", "tag": "web-v1.0.0"}, {"npm": "@maudecode/talaria-web@1.0.0"}
+
+            def run(args, **kwargs):
+                path = contracts if "contracts" in args[2] else server
+                return SimpleNamespace(returncode=0, stdout=json.dumps([publish._npm_integrity(path)]), stderr="")
+
+            with patch.dict(os.environ, {"ACTIONS_ID_TOKEN_REQUEST_URL": "https://oidc.invalid", "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "synthetic"}), \
+                    patch("publish.subprocess.run", side_effect=run), \
+                    patch("publish.subprocess.check_output", return_value=json.dumps([{"latest": "1.0.0"}])):
+                # Already published with these bytes: preflight accepts it and the readback confirms it.
+                self.assertTrue(all(publish.preflight_npm(component, build, root)["published"].values()))
+                self.assertEqual(publish.verify_npm(component, build, root), "@maudecode/talaria-web@1.0.0")
 
 
 if __name__ == "__main__":

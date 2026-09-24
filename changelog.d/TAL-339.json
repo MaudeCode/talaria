@@ -1,0 +1,1 @@
+{"skip": "Release tooling only: the Web npm readback reads npm 12 output and waits for new versions."}
