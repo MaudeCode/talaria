@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Older chats show the same thinking steps, failed tools, and steering messages on iPhone and on the web.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

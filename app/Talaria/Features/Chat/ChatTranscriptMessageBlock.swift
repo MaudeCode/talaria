@@ -8,9 +8,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     let transcriptMessage: TranscriptMessage
     let transcriptBlockSpacing: CGFloat
     let showsThinkingAndToolCards: Bool
-    let reasoningGroups: [ReasoningGroup]
-    let toolCallGroups: [ToolCallGroup]
     let archivedActivityRows: [AssistantActivityRow]
+    let earlierSceneRows: [AssistantActivitySceneRow]
     let liveActivityRows: [AssistantActivityRow]
     let streamingAssistantMessageID: String?
     let liveTokensPerSecond: Double?
@@ -38,6 +37,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     let onEdit: (MessageActionContext) -> Void
     let onFork: (MessageActionContext) -> Void
     let onCopy: (MessageActionContext) -> Void
+    let onLoadEarlierSceneRows: () -> Void
 
     // Equality over the value inputs only. The closures are pure functions of
     // these values (e.g. `actionContext` is fully determined by
@@ -48,9 +48,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         lhs.transcriptMessage == rhs.transcriptMessage &&
             lhs.transcriptBlockSpacing == rhs.transcriptBlockSpacing &&
             lhs.showsThinkingAndToolCards == rhs.showsThinkingAndToolCards &&
-            lhs.reasoningGroups == rhs.reasoningGroups &&
-            lhs.toolCallGroups == rhs.toolCallGroups &&
             lhs.archivedActivityRows == rhs.archivedActivityRows &&
+            lhs.earlierSceneRows == rhs.earlierSceneRows &&
             lhs.liveActivityRows == rhs.liveActivityRows &&
             lhs.streamingAssistantMessageID == rhs.streamingAssistantMessageID &&
             lhs.liveTokensPerSecond == rhs.liveTokensPerSecond &&
@@ -69,61 +68,85 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     var body: some View {
         VStack(alignment: .leading, spacing: transcriptBlockSpacing) {
             if transcriptMessage.message.role == "assistant", !activityRows.isEmpty {
+                // Only the server's scene folds work under "Worked"; without one the turn is live (or just ended) and
+                // its work stays open until the scene arrives.
                 if let turn = CompletedAssistantTurn(rows: activityRows) {
                     if turn.hasSteering {
-                        steeredTurn(turn)
-                    } else if liveActivityRows.isEmpty {
-                        if transcriptMessage.shouldShowTurnSummary(hasActiveStream: ownsActiveStream) {
-                            completedTurn(turn)
-                        } else {
-                            activityTimeline(turn.segments, activeSegmentID: nil)
-                        }
+                        steeredTurn(turn, folds: serverScene != nil)
+                        outcomeRow
+                    } else if serverScene != nil {
+                        // Renders the outcome between the work and the final answer.
+                        completedTurn(turn)
                     } else {
-                        activityTimeline(turn.segments, activeSegmentID: turn.segments.last?.id)
+                        activityTimeline(turn.segments, activeSegmentID: liveActivityRows.isEmpty ? nil : turn.segments.last?.id)
                     }
                 } else {
+                    outcomeRow
                     ForEach(Array(activityRows.enumerated()), id: \.element.id) { index, row in
                         activityItem(row, at: index)
                     }
                 }
             } else {
+                // A scene with no rows and no answer still carries the server's outcome.
+                outcomeRow
                 messageRow(transcriptMessage.message)
             }
         }
+    }
+
+    /// Long turns arrive as a tail preview; this pages the earlier rows in, like Web's "Show earlier steps".
+    @ViewBuilder
+    private var earlierStepsButton: some View {
+        let remaining = (transcriptMessage.message.activityScene?.activityRowsOffset ?? 0) - earlierSceneRows.count
+        if remaining > 0 {
+            Button(String(localized: "Earlier steps (\(remaining))"), action: onLoadEarlierSceneRows)
+                .font(AppFont.body())
+                .buttonStyle(.borderless)
+        }
+    }
+
+    /// The server's outcome for this turn, in its localized wording, when it is not an ordinary completion.
+    @ViewBuilder
+    private var outcomeRow: some View {
+        if let outcome = AssistantTurnOutcome.label(for: transcriptMessage.message.activityScene?.terminalState) {
+            Text(outcome)
+                .font(AppFont.body())
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// The server's scene for a settled turn; live rows win while the turn streams.
+    private var serverScene: AssistantActivityTimeline? {
+        guard liveActivityRows.isEmpty else { return nil }
+        return AssistantActivityTimeline.authoritativeScene(message: transcriptMessage.message, earlierRows: earlierSceneRows)
     }
 
     private var activityRows: [AssistantActivityRow] {
         if !liveActivityRows.isEmpty {
             return liveActivityRows
         }
-        if let authoritativeScene = AssistantActivityTimeline.authoritativeScene(
-            message: transcriptMessage.message
-        ) {
-            return authoritativeScene.rows
-        }
-        if !archivedActivityRows.isEmpty {
-            return archivedActivityRows
-        }
-        let persisted = AssistantActivityTimeline.persisted(
-            assistantSegments: transcriptMessage.assistantSegments,
-            reasoningGroups: reasoningGroups,
-            toolCallGroups: toolCallGroups
-        ).rows
-        return persisted
+        // A completed turn renders the server's scene; before it arrives, the just-finished live rows hold its place.
+        // Without either (an older server), the message renders as plain text.
+        return serverScene?.rows ?? archivedActivityRows
     }
 
     @ViewBuilder
     private func completedTurn(_ turn: CompletedAssistantTurn) -> some View {
         let disclosureID = "worked:\(transcriptMessage.anchorID)"
-        let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
+        // The server picks the initial state; a tap flips it relative to that default.
+        let expandedByDefault = transcriptMessage.message.activityScene?.expandedByDefault ?? false
+        let isExpanded = expandedCompletedActivityIDs.contains(disclosureID) != expandedByDefault
         let title = AssistantTurnSummary.title(duration: transcriptMessage.message.turnDuration)
 
         workedDisclosureHeader(disclosureID: disclosureID, title: title, isExpanded: isExpanded)
 
         if isExpanded {
+            earlierStepsButton
             activityTimeline(turn.workSegments, activeSegmentID: nil)
                 .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
         }
+
+        outcomeRow
 
         if !turn.finalAnswer.isEmpty {
             messageRow(
@@ -138,19 +161,24 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     }
 
     @ViewBuilder
-    private func steeredTurn(_ turn: CompletedAssistantTurn) -> some View {
-        let durations = turn.phaseDurations(totalDuration: transcriptMessage.message.turnDuration)
+    private func steeredTurn(_ turn: CompletedAssistantTurn, folds: Bool) -> some View {
+        let durations = turn.phaseDurations(
+            totalDuration: transcriptMessage.message.turnDuration,
+            finalPhaseDuration: transcriptMessage.message.activityScene?.finalPhaseDuration
+        )
 
+        // Paged rows are the earliest work, so they land ahead of the first phase.
+        earlierStepsButton
         ForEach(Array(turn.phases.enumerated()), id: \.element.id) { index, phase in
             if !phase.workRows.isEmpty {
-                if ownsActiveStream {
+                if !folds {
                     ForEach(Array(phase.workRows.enumerated()), id: \.element.id) { rowIndex, row in
                         activityItem(
                             row,
                             at: rowIndex,
                             includesAttachments: false,
                             includesTurnMetrics: false,
-                            isActive: index == turn.phases.count - 1
+                            isActive: ownsActiveStream && index == turn.phases.count - 1
                         )
                     }
                 } else {
@@ -187,7 +215,9 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     @ViewBuilder
     private func workedPhase(_ phase: CompletedAssistantTurn.Phase, duration: Double?) -> some View {
         let disclosureID = "worked:\(transcriptMessage.anchorID):\(phase.id)"
-        let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
+        // Steered phases start from the server's default too; a tap flips relative to it.
+        let expandedByDefault = transcriptMessage.message.activityScene?.expandedByDefault ?? false
+        let isExpanded = expandedCompletedActivityIDs.contains(disclosureID) != expandedByDefault
         let title = AssistantTurnSummary.title(duration: duration)
 
         workedDisclosureHeader(disclosureID: disclosureID, title: title, isExpanded: isExpanded)
@@ -214,7 +244,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         Button {
             chatDisclosureToggled()
             withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
-                if isExpanded {
+                // Membership records a flip from the default, so toggling always flips it.
+                if expandedCompletedActivityIDs.contains(disclosureID) {
                     expandedCompletedActivityIDs.remove(disclosureID)
                 } else {
                     expandedCompletedActivityIDs.insert(disclosureID)
@@ -491,7 +522,9 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             toolUseId: message.toolUseId,
             attachments: includesAttachments ? message.attachments : nil,
             turnDuration: includesTurnMetrics ? message.turnDuration : nil,
-            turnTps: includesTurnMetrics ? message.turnTps : nil
+            turnTps: includesTurnMetrics ? message.turnTps : nil,
+            turnId: message.turnId,
+            steer: message.steer
         )
     }
 }

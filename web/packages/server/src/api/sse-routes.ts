@@ -253,7 +253,7 @@ export async function handleSessionStream(ctx: RequestContext): Promise<void> {
     if (recover) {
       let pendingStartedAt: number | null = null
       try { pendingStartedAt = ctx.deps.sessionStore.get(sid, { metadataOnly: true }).pending_started_at } catch { pendingStartedAt = null }
-      sse.event('server_turn_started', { session_id: sid, stream_id: recover, pending_started_at: pendingStartedAt, source: 'subscribe_recovery', recovered: true })
+      sse.event('server_turn_started', { session_id: sid, stream_id: recover, turn_id: recover, pending_started_at: pendingStartedAt, source: 'subscribe_recovery', recovered: true })
     } else if (knownCount !== null) {
       let persisted: number | null = null
       try {

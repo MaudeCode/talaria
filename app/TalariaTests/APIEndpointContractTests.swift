@@ -384,6 +384,52 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(CompletedAssistantTurn(rows: timeline.rows)?.finalAnswer, "Contract answer.")
     }
 
+    func testSharedWebSessionRendersServerBuiltTurnScenes() async throws {
+        let data = try fixture("web-session")
+        let session = session { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        defer { session.invalidateAndCancel() }
+        let client = APIClient(baseURL: URL(string: "https://contract.example")!, session: session)
+        let response = try await client.session(id: "contract-session")
+        let messages = try XCTUnwrap(response.session?.messages)
+        func turn(_ messageID: String) throws -> CompletedAssistantTurn {
+            let message = try XCTUnwrap(messages.first { $0.messageId == messageID })
+            let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: message))
+            return try XCTUnwrap(CompletedAssistantTurn(rows: timeline.rows))
+        }
+
+        // Codex commentary is prose under Worked, before its tool; the answer renders below Worked.
+        let codex = try turn("contract-run-c-2")
+        XCTAssertEqual(codex.workRows.map(\.kind), ["reasoning", "prose", "tools"])
+        XCTAssertEqual(codex.finalAnswer, "The service uses port 8080.")
+        XCTAssertEqual(try turn("contract-run-d-2").finalAnswer, "Tool budget exhausted; here is the saved explanation.")
+        // Earlier prose alone still folds under Worked; only the server's final answer stays visible.
+        let twoReplies = try turn("contract-run-a-2")
+        XCTAssertEqual(twoReplies.workRows.map(\.kind), ["prose"])
+        XCTAssertEqual(twoReplies.finalAnswer, "Second reply in the same turn.")
+        // A turn the server says has no answer never promotes its last prose.
+        XCTAssertEqual(try turn("contract-run-e-1").finalAnswer, "")
+        XCTAssertEqual(messages.first { $0.messageId == "contract-run-d-2" }?.activityScene?.expandedByDefault, true)
+        XCTAssertEqual(messages.first { $0.messageId == "contract-run-c-2" }?.activityScene?.expandedByDefault, false)
+        // The server's outcome decodes and renders in its localized wording; a completed turn shows none.
+        func outcome(_ messageID: String) -> String? {
+            AssistantTurnOutcome.label(for: messages.first { $0.messageId == messageID }?.activityScene?.terminalState)
+        }
+        XCTAssertEqual(outcome("contract-run-d-2"), "Tool limit reached")
+        XCTAssertEqual(outcome("contract-run-e-1"), "No answer produced.")
+        XCTAssertNil(outcome("contract-run-c-2"))
+        // Persisted steers split the turn into phases whose lengths the server measured.
+        let steered = try turn("contract-run-g-3")
+        XCTAssertTrue(steered.hasSteering)
+        XCTAssertEqual(steered.finalAnswer, "Both files read.")
+        XCTAssertEqual(steered.phaseDurations(totalDuration: 12, finalPhaseDuration: 3), [5, 4, 3])
+        XCTAssertNil(ChatViewModel.transcriptMessages(from: messages).first { $0.message.messageId == "contract-steer-1" })
+        // The running turn has no scene: the live stream renders it.
+        let running = try XCTUnwrap(messages.first { $0.messageId == "contract-run-f-1" })
+        XCTAssertNil(AssistantActivityTimeline.authoritativeScene(message: running))
+    }
+
     func testSharedRelaySnapshotAndRegistration() async throws {
         let snapshot = try fixture("relay-snapshot")
         let registration = try JSONSerialization.jsonObject(with: fixture("app-registration")) as! NSDictionary

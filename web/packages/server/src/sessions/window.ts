@@ -94,7 +94,7 @@ export function toolCallsForMessageWindow(toolCalls: unknown, startIdx: number, 
 const LIMITED_TOOL_CONTENT_MAX_CHARS = 4096
 const LIMITED_TOOL_CONTENT_NOTICE = '\n\n[Tool output truncated in paginated session response; load the full transcript to inspect the complete result.]'
 
-function toolMessageForLimitedPayload(message: unknown): unknown {
+export function toolMessageForLimitedPayload(message: unknown): unknown {
   if (!isDict(message) || str(message.role).toLowerCase() !== 'tool') return message
   const content = message.content
   if (content === null || content === undefined || content === '') return message

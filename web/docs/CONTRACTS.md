@@ -40,7 +40,11 @@ contributor guidance; it does not change runtime behavior or CI gates.
   implemented presentation/reconciliation model that attaches live, settled,
   replayed, and recovered activity to one assistant-turn owner and projects one
   `activity_scene_v1` into Compact Worklog, Transparent Stream, or Final answer
-  only. Remaining hardening stays tracked under #3400.
+  only. The server owns that projection: it stamps every message with its turn's
+  `_turn_id` and attaches each completed turn's scene (ordered rows under
+  "Worked", `final_answer`, `terminal_state`, `expanded_by_default`) in session
+  detail and terminal payloads; Web and iOS render those fields and derive none
+  of them. Remaining hardening stays tracked under #3400.
 - [`docs/architecture/stable-assistant-turn-anchor-phase0.md`](architecture/stable-assistant-turn-anchor-phase0.md):
   cumulative implementation inventory for the Stable Assistant Turn Anchors
   work under #3926. Use it to distinguish shipped wiring from historical slice

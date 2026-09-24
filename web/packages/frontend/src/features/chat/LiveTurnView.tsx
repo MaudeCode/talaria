@@ -20,7 +20,6 @@ export function LiveTurnView({ turn, name, mode, userVisible }: { turn: LiveTurn
       <div className="assistant-turn-blocks">
         <TurnActivityView activity={activity} mode={mode} />
         {turn.warning && <div className="mt-1 text-[12px] text-warning" role="status">{turn.warning}</div>}
-        {turn.steerConsumed.map((s) => <div key={s.id} className="anchor-steering-message mt-1 text-[12px] text-muted">{m.live_steer_consumed({ text: s.text })}</div>)}
         {turn.compression && <div className="compression-card mt-2 rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-muted" role="status">{turn.compression.state === 'compressing' ? m.live_compressing() : m.live_compressed()}{turn.compression.newSessionId && turn.compression.state === 'compressed' && <> <Link to="/session/$sessionId" params={{ sessionId: turn.compression.newSessionId }} className="text-accent-text underline">{m.live_continuation()}</Link></>}</div>}
         {turn.status === 'cancelled' && turn.cancelledMessage && <div className="status-card mt-2 text-[13px] text-muted">{turn.cancelledMessage}</div>}
         {turn.status === 'error' && turn.error && (

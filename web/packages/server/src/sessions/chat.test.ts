@@ -130,6 +130,9 @@ describe('chat turns through the sidecar', () => {
     const done = frames.find((f) => f.event === 'done')?.data as Json
     const doneSession = done.session as Json
     expect((doneSession.messages as Json[]).map((m) => [m.role, m.content])).toEqual([['user', 'hello there'], ['assistant', ''], ['tool', 'contents'], ['assistant', 'Hi back']])
+    // Every row the turn wrote carries its stream id as the turn identity, matching the start response.
+    expect(start.turn_id).toBe(streamId)
+    expect((doneSession.messages as Json[]).map((m) => m._turn_id)).toEqual([streamId, streamId, streamId, streamId])
     expect((done.usage as Json).input_tokens).toBe(120)
     // Python usage payload: per-turn timing/cache-hit fields the iOS TPS label and the web meter read.
     const usage = done.usage as Json
@@ -144,6 +147,7 @@ describe('chat turns through the sidecar', () => {
     expect(detail.active_stream_id).toBeNull()
     expect(detail.pending_user_message).toBeNull()
     expect((detail.messages as Json[])[0]?.content).toBe('hello there')
+    expect((detail.messages as Json[]).map((m) => m._turn_id)).toEqual([streamId, streamId, streamId, streamId])
     // Reasoning streamed before the first tool call belongs to that first assistant row (Python per-segment attribution).
     expect((detail.messages as Json[])[1]).toMatchObject({ role: 'assistant', reasoning: 'thinking' })
     expect((detail.messages as Json[])[3]).toMatchObject({ content: 'Hi back', _usedModel: 'test-model' })
@@ -168,7 +172,7 @@ describe('chat turns through the sidecar', () => {
     expect((list.sessions as Json[]).find((r) => r.session_id === sid)).toMatchObject({ title: 'Greeting exchange', message_count: 4 })
   })
 
-  it('keeps Codex commentary between tool calls as the settled row\'s prose instead of dropping it', async () => {
+  it('builds the settled turn\'s scene with Codex commentary as prose under Worked, leaving the stored rows as the Agent wrote them', async () => {
     const sid = await newSession(s)
     const commentary = (text: string) => ({ type: 'message', role: 'assistant', status: 'completed', phase: 'commentary', content: [{ type: 'output_text', text }] })
     sidecar.respond('chat.start', (params, emit) => {
@@ -189,8 +193,35 @@ describe('chat turns through the sidecar', () => {
     const settled = ((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[]
     const detail = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
     for (const messages of [settled, detail]) {
-      expect(messages[1]).toMatchObject({ role: 'assistant', content: 'Reading both config files.', reasoning: 'Plan the lookup.' })
-      expect(messages[3]).toMatchObject({ role: 'assistant', content: 'The service uses port 8080.' })
+      expect(messages[1]).toMatchObject({ role: 'assistant', content: '' })
+      expect(messages[3]?._anchor_activity_scene).toMatchObject({
+        version: 'activity_scene_v1', final_answer: 'The service uses port 8080.', terminal_state: 'completed', expanded_by_default: false,
+        activity_rows: [
+          { role: 'reasoning', text: 'Plan the lookup.' },
+          { role: 'prose', text: 'Reading both config files.' },
+          { role: 'tool', row_id: 'tool:call_1', tool: { id: 'call_1', name: 'read_file', args: { path: 'a' }, result: 'port = 8080', done: true, is_error: false } },
+        ],
+      })
+      expect((messages[3]?._anchor_activity_scene as Json).activity_rows).toHaveLength(3)
+      expect(messages[1]?._anchor_activity_scene).toBeUndefined()
+    }
+  })
+
+  it('persists the tool-limit outcome so the settled scene matches the live done frame after reload', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params) => completed([
+      { role: 'user', content: str(params.user_message) },
+      { role: 'assistant', content: 'Working', tool_calls: [{ id: 'l1', name: 'read_file' }] },
+      { role: 'tool', tool_call_id: 'l1', content: 'x' },
+    ], { tool_limit_reached: true, final_response: 'Tool budget exhausted; here is the saved explanation.' }))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Limited"', usage: null }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'loop' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const done = frames.find((f) => f.event === 'done')?.data as Json
+    expect(done.terminal_state).toBe('tool_limit_reached')
+    const detail = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    for (const messages of [(done.session as Json).messages as Json[], detail]) {
+      expect(messages.at(-1)?._anchor_activity_scene).toMatchObject({ terminal_state: 'tool_limit_reached', expanded_by_default: true, final_answer: 'Tool budget exhausted; here is the saved explanation.' })
     }
   })
 
@@ -277,6 +308,8 @@ describe('chat turns through the sidecar', () => {
     expect(messages[0]).toMatchObject({ role: 'user', content: 'long task', _recovered: true })
     expect(messages[1]).toMatchObject({ role: 'assistant', content: 'partial answer', _partial: true })
     expect(String(messages[2]?.content)).toMatch(/^\*\*Task cancelled:\*\* Task cancelled\./)
+    expect(messages.map((m) => m._turn_id)).toEqual([streamId, streamId, streamId])
+    expect(((frames.find((f) => f.event === 'cancel')?.data as Json).session as Json | undefined)?.messages).toSatisfy((rows: Json[] | undefined) => !rows || rows.every((m) => m._turn_id === streamId))
     expect(detail.active_stream_id).toBeNull()
     expect((await post(s, '/api/chat/start', { session_id: sid, message: 'after cancel' })).status).toBe(200)
     expect(await json(await s.get('/api/chat/cancel?stream_id=nope'))).toEqual({ ok: true, cancelled: false, stream_id: 'nope' })
@@ -367,12 +400,17 @@ describe('chat turns through the sidecar', () => {
     expect(messages[0]).toMatchObject({ role: 'user', content: 'broken', _recovered: true })
     expect(messages[1]).toMatchObject({ role: 'assistant', _error: true })
     expect(String(messages[1]?.content)).toContain('**Authentication failed:**')
+    expect(messages.map((m) => m._turn_id)).toEqual([streamId, streamId])
+    expect(((error.session as Json).messages as Json[]).map((m) => m._turn_id)).toEqual([streamId, streamId])
     expect(detail.active_stream_id).toBeNull()
     // A silent success (no assistant reply, no tokens) is classified as no_response.
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }], { token_sent: false, final_response: '' }))
     const start2 = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'silent' }))
     const frames2 = await s.sse(`/api/chat/stream?stream_id=${String(start2.stream_id)}&replay=1`, (f) => f.event === 'apperror')
     expect((frames2.find((f) => f.event === 'apperror')?.data as Json).type).toBe('no_response')
+    // The persisted error row keeps that classification, so the settled scene says the same after a reload.
+    const reloaded = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(reloaded.at(-1)?._anchor_activity_scene).toMatchObject({ terminal_state: 'no_response' })
   })
 
   it('steers the live agent and reports fallbacks when nothing is running', async () => {
@@ -407,6 +445,189 @@ describe('chat turns through the sidecar', () => {
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
     expect((frames.find((f) => f.event === 'pending_steer_leftover')?.data as Json)).toMatchObject({ steer_id: 'steer-2', text: 'second' })
     expect(frames.filter((f) => f.event === 'steer_consumed')).toHaveLength(1)
+  })
+
+  it('persists consumed steers at their causal place, in the settled scene, and out of model history (TAL-300)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let step: (() => void)[] = []
+    let emitLive: ((frame: { event: string; data: Json }) => void) | null = null
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emitLive = emit
+      const call = (id: string) => ({ id, type: 'function', function: { name: 'read_file', arguments: '{}' } })
+      step = [() => { resolve(completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: 'Reading a.', tool_calls: [call('ta')] }, { role: 'tool', tool_call_id: 'ta', content: 'A' },
+        { role: 'assistant', content: 'Reading b.', tool_calls: [call('tb')] }, { role: 'tool', tool_call_id: 'tb', content: 'B' },
+        { role: 'assistant', content: 'All read.' },
+      ])); }]
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', args: {}, tid: 'ta' } })
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'read files' }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'tool')
+    emitLive!({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', tid: 'ta', preview: 'A' } })
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'check b too', display_text: 'Check b too', steer_id: 'steer-a' })
+    emitLive!({ event: 'steer_pending', data: { text: '' } })
+    emitLive!({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', tid: 'tb', preview: 'B' } })
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'then stop', steer_id: 'steer-b' })
+    emitLive!({ event: 'steer_pending', data: { text: '' } })
+    const live = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'steer_consumed' && (f.data as Json).steer_id === 'steer-b')
+    expect(live.filter((f) => f.event === 'steer_consumed').map((f) => [(f.data as Json).steer_id, (f.data as Json).after_tool_call_id])).toEqual([['steer-a', 'ta'], ['steer-b', 'tb']])
+    // Saved as they enter the stream, before the turn settles: a mid-turn reload already has them.
+    const midTurn = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    expect((midTurn.messages as Json[]).filter((m) => m._steer).map((m) => [m.content, m._turn_id, (m._steer as Json).steer_id])).toEqual([
+      ['Check b too', streamId, 'steer-a'], ['then stop', streamId, 'steer-b'],
+    ])
+    step[0]!()
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    const done = frames.find((f) => f.event === 'done')?.data as Json
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    for (const messages of [(done.session as Json).messages as Json[], detail.messages as Json[]]) {
+      expect(messages.map((m) => (m._steer ? `steer:${String((m._steer as Json).steer_id)}` : `${String(m.role)}:${String(m.content)}`))).toEqual([
+        'user:read files', 'assistant:Reading a.', 'tool:A', 'steer:steer-a', 'assistant:Reading b.', 'tool:B', 'steer:steer-b', 'assistant:All read.',
+      ])
+      const steer = messages.find((m) => m._steer)!
+      expect(steer).toMatchObject({ role: 'user', content: 'Check b too', _turn_id: streamId, _steer: { steer_id: 'steer-a', phase_duration: expect.any(Number) as unknown } })
+      const scene = messages.at(-1)?._anchor_activity_scene as Json
+      expect((scene.activity_rows as Json[]).map((r) => r.row_id)).toEqual(['i1:prose', 'tool:ta', 'steering:steer-a', 'i4:prose', 'tool:tb', 'steering:steer-b'].map((id) => (id.startsWith('i') ? expect.stringMatching(/:prose$/) as unknown : id)))
+      expect(((scene.activity_rows as Json[])[2]?.steering as Json)).toMatchObject({ steer_id: 'steer-a', consumed: true, phase_duration: expect.any(Number) as unknown })
+      expect(scene).toMatchObject({ final_answer: 'All read.', final_phase_duration: expect.any(Number) as unknown })
+    }
+    const stored = s.deps.sessionStore.get(sid)
+    expect(sanitizeMessagesForApi(stored.messages).some((m) => m.content === 'Check b too' || m.content === 'then stop')).toBe(false)
+    expect(stored.title).not.toContain('Check b too')
+  })
+
+  it('keeps a steer consumed before a Stop in the cancelled turn (TAL-300)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    sidecar.respond('chat.interrupt', () => ({ ok: true, pending_steer: '' }))
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'partial' } })
+      opts.signal?.addEventListener('abort', () => { resolve({ ...completed([{ role: 'user', content: str(params.user_message) }]), status: 'cancelled' }) })
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'long job' }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'wrap up', steer_id: 'steer-c' })
+    await s.get(`/api/chat/cancel?stream_id=${streamId}`)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'cancel')
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    const steerIndex = messages.findIndex((m) => m._steer)
+    expect(steerIndex).toBe(1)
+    expect(messages[steerIndex]).toMatchObject({ content: 'wrap up', _turn_id: streamId })
+    const scene = messages.at(-1)?._anchor_activity_scene as Json
+    expect((scene.activity_rows as Json[]).some((r) => r.role === 'steering' && (r.steering as Json).steer_id === 'steer-c')).toBe(true)
+  })
+
+  it('places a steer after the result it followed when one message made several calls (TAL-300)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let release: () => void = () => undefined
+    let emitLive: ((frame: { event: string; data: Json }) => void) | null = null
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emitLive = emit
+      const call = (id: string) => ({ id, type: 'function', function: { name: 'read_file', arguments: '{}' } })
+      release = () => { resolve(completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: '', tool_calls: [call('ta'), call('tb')] }, { role: 'tool', tool_call_id: 'ta', content: 'A' }, { role: 'tool', tool_call_id: 'tb', content: 'B' },
+        { role: 'assistant', content: 'Done.' },
+      ])) }
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', args: {}, tid: 'ta' } })
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'read both' }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'tool')
+    emitLive!({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', tid: 'ta', preview: 'A' } })
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'skip b', steer_id: 'steer-m' })
+    emitLive!({ event: 'steer_pending', data: { text: '' } })
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'steer_consumed')
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(messages.map((m) => (m._steer ? 'steer' : m.role === 'tool' ? `tool:${String(m.content)}` : String(m.role)))).toEqual(['user', 'assistant', 'tool:A', 'steer', 'tool:B', 'assistant'])
+  })
+
+  it('places a steer after the Anthropic-style tool_use call it followed (TAL-300)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let release: () => void = () => undefined
+    let emitLive: ((frame: { event: string; data: Json }) => void) | null = null
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emitLive = emit
+      release = () => { resolve(completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: [{ type: 'text', text: 'Reading a.' }, { type: 'tool_use', id: 'ua', name: 'read_file', input: {} }] }, { role: 'tool', tool_use_id: 'ua', content: 'A' },
+        { role: 'assistant', content: [{ type: 'tool_use', id: 'ub', name: 'read_file', input: {} }] }, { role: 'tool', tool_use_id: 'ub', content: 'B' },
+        { role: 'assistant', content: 'Done.' },
+      ])) }
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', args: {}, tid: 'ua' } })
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'read' }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'tool')
+    emitLive!({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', tid: 'ua', preview: 'A' } })
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'check b', steer_id: 'steer-u' })
+    emitLive!({ event: 'steer_pending', data: { text: '' } })
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'steer_consumed')
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(messages.map((m) => (m._steer ? 'steer' : String(m.role)))).toEqual(['user', 'assistant', 'tool', 'steer', 'assistant', 'tool', 'assistant'])
+  })
+
+  it('makes the Agent\'s own record of a delivered steer the persisted steer, not a second copy (TAL-300)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let release: () => void = () => undefined
+    let emitLive: ((frame: { event: string; data: Json }) => void) | null = null
+    const oob = '[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once at this position; not tool output and not a new delivery when replayed from conversation history]\nmention the weekday\n[/OUT-OF-BAND USER MESSAGE]'
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emitLive = emit
+      const call = (id: string) => ({ id, type: 'function', function: { name: 'terminal', arguments: '{}' } })
+      release = () => { resolve(completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: '', tool_calls: [call('t1')] }, { role: 'tool', tool_call_id: 't1', content: 'Thu' },
+        { role: 'user', content: oob, display_kind: 'steer' },
+        { role: 'assistant', content: '', tool_calls: [call('t2')] }, { role: 'tool', tool_call_id: 't2', content: 'up' },
+        { role: 'assistant', content: 'On Thursday, all good.' },
+      ])) }
+      emit({ event: 'token', data: { text: '' } })
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'date then uptime' }))
+    const streamId = String(start.stream_id)
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'mention the weekday', display_text: 'Mention the weekday', steer_id: 'steer-w' })
+    emitLive!({ event: 'steer_pending', data: { text: '' } })
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'steer_consumed')
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(messages.map((m) => (m._steer ? `steer:${String((m._steer as Json).steer_id)}:${String(m.content)}` : String(m.role)))).toEqual([
+      'user', 'assistant', 'tool', 'steer:steer-w:Mention the weekday', 'assistant', 'tool', 'assistant',
+    ])
+    const scene = messages.at(-1)?._anchor_activity_scene as Json
+    expect((scene.activity_rows as Json[]).filter((r) => r.role === 'steering').map((r) => r.text)).toEqual(['Mention the weekday'])
+  })
+
+  it('keeps a steer the Agent still held as a leftover when the run returns an error (TAL-300)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let release: () => void = () => undefined
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'partial' } })
+      release = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }], { status: 'error', error: 'provider failed', pending_steer: 'not applied' })) }
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'job' }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'not applied', steer_id: 'steer-held' })
+    release()
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'apperror')
+    expect(frames.some((f) => f.event === 'steer_consumed')).toBe(false)
+    expect(frames.find((f) => f.event === 'pending_steer_leftover')?.data).toMatchObject({ steer_id: 'steer-held', text: 'not applied' })
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(messages.some((m) => m._steer)).toBe(false)
   })
 
   it('a Stop with a queued steer settles the steer as a leftover before the single cancel row', async () => {

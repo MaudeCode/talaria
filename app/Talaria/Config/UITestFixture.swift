@@ -619,6 +619,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 "content": "Fixture opening. Fixture progress. Fixture finished.",
                 "message_id": "ui-fixture-assistant",
                 "_ts": 2_000_000_101,
+                // As the server sends it: the rows under "Worked" exclude the answer, which rides in `final_answer`.
                 "_anchor_activity_scene": [
                     "version": "activity_scene_v1",
                     "final_answer": "Fixture finished.",
@@ -627,23 +628,50 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                         [
                             "row_id": "thinking-1",
                             "order_index": 1,
-                            "role": "thinking",
-                            "thinking": ["text": "Inspect the fixture.", "titles": ["Inspecting fixture"]]
+                            "role": "reasoning",
+                            "text": "Inspect the fixture.",
+                            "titles": ["Inspecting fixture"]
                         ],
                         ["row_id": "prose-2", "order_index": 2, "role": "prose", "text": "Fixture progress."],
                         [
-                            "row_id": "tool-1",
+                            "row_id": "tool:ui-fixture-tool",
                             "order_index": 3,
                             "role": "tool",
-                            "status": "completed",
                             "tool": [
                                 "id": "ui-fixture-tool",
                                 "name": "fixture_tool",
+                                "preview": "fixture result",
+                                "result": "fixture result",
                                 "done": true,
-                                "snippet": "fixture result"
+                                "is_error": false
                             ]
-                        ],
-                        ["row_id": "prose-3", "order_index": 4, "role": "prose", "text": "Fixture finished."]
+                        ]
+                    ]
+                ]
+            ])
+        } else if state.cancelled, UITestChatScenario.current == .controls {
+            // As the server settles a stopped turn: the partial work, the steer it took, and the cancelled outcome.
+            messages.append([
+                "role": "assistant",
+                "content": "**Task cancelled:** Task cancelled.",
+                "message_id": "ui-fixture-cancelled",
+                "_error": true,
+                "_ts": 2_000_000_101,
+                "_anchor_activity_scene": [
+                    "version": "activity_scene_v1",
+                    "final_answer": "",
+                    "terminal_state": "cancelled",
+                    "expanded_by_default": false,
+                    "has_consumed_steering": true,
+                    "activity_rows": [
+                        ["row_id": "prose-1", "order_index": 0, "role": "prose", "text": "Waiting for control input."],
+                        [
+                            "row_id": "steering:ui-fixture-steer",
+                            "order_index": 1,
+                            "role": "steering",
+                            "text": "Keep the fixture concise",
+                            "steering": ["steer_id": "ui-fixture-steer", "consumed": true]
+                        ]
                     ]
                 ]
             ])

@@ -200,7 +200,15 @@ describe('session lifecycle over HTTP', () => {
     expect(await json(res)).toMatchObject({ ok: true, last_user_text: 'first', removed_count: 2 })
     expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toEqual([])
 
-    writeMessages(s, sid, [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }, { role: 'user', content: 'c' }])
+    writeMessages(s, sid, [
+      { role: 'user', content: 'a' }, { role: 'assistant', content: '', reasoning: 'think', tool_calls: [{ id: 't', name: 'read_file' }] },
+      { role: 'tool', tool_call_id: 't', content: 'x' }, { role: 'assistant', content: 'b' }, { role: 'user', content: 'c' },
+    ])
+    res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 4 })
+    expect(res.status).toBe(200)
+    // The kept turns come back with the server's scenes, like the detail, so a client replacing its transcript keeps them.
+    const kept = ((await json(res)).session as Json).messages as Json[]
+    expect((kept.at(-1)?._anchor_activity_scene as Json | undefined)?.final_answer).toBe('b')
     res = await post(s, '/api/session/truncate', { session_id: sid, keep_count: 1 })
     expect(res.status).toBe(200)
     expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toHaveLength(1)

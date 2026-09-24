@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Replies are grouped into the same conversation turns on iPhone and on the web.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

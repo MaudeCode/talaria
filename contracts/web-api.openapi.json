@@ -2482,7 +2482,250 @@
                               "provider_details_label": {
                                 "type": "string"
                               },
-                              "recovery_control": {}
+                              "recovery_control": {},
+                              "_anchor_activity_scene": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": "activity_scene_v1"
+                                  },
+                                  "activity_rows": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "row_id": {
+                                          "type": "string"
+                                        },
+                                        "order_index": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "role": {
+                                          "enum": [
+                                            "prose",
+                                            "reasoning",
+                                            "tool",
+                                            "steering"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "created_at": {
+                                          "type": "number"
+                                        },
+                                        "text": {
+                                          "type": "string"
+                                        },
+                                        "titles": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "tool": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "args": {},
+                                            "preview": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "result": {},
+                                            "done": {
+                                              "type": "boolean"
+                                            },
+                                            "is_error": {
+                                              "type": "boolean"
+                                            },
+                                            "duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "cost_usd": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "name",
+                                            "preview",
+                                            "done",
+                                            "is_error",
+                                            "duration",
+                                            "cost_usd"
+                                          ],
+                                          "additionalProperties": {}
+                                        },
+                                        "steering": {
+                                          "type": "object",
+                                          "properties": {
+                                            "steer_id": {
+                                              "type": "string"
+                                            },
+                                            "consumed": {
+                                              "type": "boolean"
+                                            },
+                                            "submitted_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "consumed_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "phase_duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "steer_id",
+                                            "consumed",
+                                            "submitted_at",
+                                            "consumed_at"
+                                          ],
+                                          "additionalProperties": {}
+                                        }
+                                      },
+                                      "required": [
+                                        "row_id",
+                                        "order_index",
+                                        "role"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
+                                  },
+                                  "final_answer": {
+                                    "type": "string"
+                                  },
+                                  "turn_duration": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "terminal_state": {
+                                    "type": "string"
+                                  },
+                                  "expanded_by_default": {
+                                    "type": "boolean"
+                                  },
+                                  "final_phase_duration": {
+                                    "type": "number"
+                                  },
+                                  "has_consumed_steering": {
+                                    "type": "boolean"
+                                  },
+                                  "activity_rows_total": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_offset": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_complete": {
+                                    "type": "boolean"
+                                  },
+                                  "activity_rows_omitted": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_scene_ref": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "activity_rows"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_turn_id": {
+                                "type": "string"
+                              },
+                              "_steer": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consumed_at": {
+                                    "type": "number"
+                                  },
+                                  "phase_duration": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "steer_id"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_final_phase_duration": {
+                                "type": "number"
+                              }
                             },
                             "required": [
                               "role"
@@ -3552,7 +3795,250 @@
                               "provider_details_label": {
                                 "type": "string"
                               },
-                              "recovery_control": {}
+                              "recovery_control": {},
+                              "_anchor_activity_scene": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": "activity_scene_v1"
+                                  },
+                                  "activity_rows": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "row_id": {
+                                          "type": "string"
+                                        },
+                                        "order_index": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "role": {
+                                          "enum": [
+                                            "prose",
+                                            "reasoning",
+                                            "tool",
+                                            "steering"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "created_at": {
+                                          "type": "number"
+                                        },
+                                        "text": {
+                                          "type": "string"
+                                        },
+                                        "titles": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "tool": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "args": {},
+                                            "preview": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "result": {},
+                                            "done": {
+                                              "type": "boolean"
+                                            },
+                                            "is_error": {
+                                              "type": "boolean"
+                                            },
+                                            "duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "cost_usd": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "name",
+                                            "preview",
+                                            "done",
+                                            "is_error",
+                                            "duration",
+                                            "cost_usd"
+                                          ],
+                                          "additionalProperties": {}
+                                        },
+                                        "steering": {
+                                          "type": "object",
+                                          "properties": {
+                                            "steer_id": {
+                                              "type": "string"
+                                            },
+                                            "consumed": {
+                                              "type": "boolean"
+                                            },
+                                            "submitted_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "consumed_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "phase_duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "steer_id",
+                                            "consumed",
+                                            "submitted_at",
+                                            "consumed_at"
+                                          ],
+                                          "additionalProperties": {}
+                                        }
+                                      },
+                                      "required": [
+                                        "row_id",
+                                        "order_index",
+                                        "role"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
+                                  },
+                                  "final_answer": {
+                                    "type": "string"
+                                  },
+                                  "turn_duration": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "terminal_state": {
+                                    "type": "string"
+                                  },
+                                  "expanded_by_default": {
+                                    "type": "boolean"
+                                  },
+                                  "final_phase_duration": {
+                                    "type": "number"
+                                  },
+                                  "has_consumed_steering": {
+                                    "type": "boolean"
+                                  },
+                                  "activity_rows_total": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_offset": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_complete": {
+                                    "type": "boolean"
+                                  },
+                                  "activity_rows_omitted": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_scene_ref": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "activity_rows"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_turn_id": {
+                                "type": "string"
+                              },
+                              "_steer": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consumed_at": {
+                                    "type": "number"
+                                  },
+                                  "phase_duration": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "steer_id"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_final_phase_duration": {
+                                "type": "number"
+                              }
                             },
                             "required": [
                               "role"
@@ -4396,7 +4882,250 @@
                               "provider_details_label": {
                                 "type": "string"
                               },
-                              "recovery_control": {}
+                              "recovery_control": {},
+                              "_anchor_activity_scene": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": "activity_scene_v1"
+                                  },
+                                  "activity_rows": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "row_id": {
+                                          "type": "string"
+                                        },
+                                        "order_index": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "role": {
+                                          "enum": [
+                                            "prose",
+                                            "reasoning",
+                                            "tool",
+                                            "steering"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "created_at": {
+                                          "type": "number"
+                                        },
+                                        "text": {
+                                          "type": "string"
+                                        },
+                                        "titles": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "tool": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "args": {},
+                                            "preview": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "result": {},
+                                            "done": {
+                                              "type": "boolean"
+                                            },
+                                            "is_error": {
+                                              "type": "boolean"
+                                            },
+                                            "duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "cost_usd": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "name",
+                                            "preview",
+                                            "done",
+                                            "is_error",
+                                            "duration",
+                                            "cost_usd"
+                                          ],
+                                          "additionalProperties": {}
+                                        },
+                                        "steering": {
+                                          "type": "object",
+                                          "properties": {
+                                            "steer_id": {
+                                              "type": "string"
+                                            },
+                                            "consumed": {
+                                              "type": "boolean"
+                                            },
+                                            "submitted_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "consumed_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "phase_duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "steer_id",
+                                            "consumed",
+                                            "submitted_at",
+                                            "consumed_at"
+                                          ],
+                                          "additionalProperties": {}
+                                        }
+                                      },
+                                      "required": [
+                                        "row_id",
+                                        "order_index",
+                                        "role"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
+                                  },
+                                  "final_answer": {
+                                    "type": "string"
+                                  },
+                                  "turn_duration": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "terminal_state": {
+                                    "type": "string"
+                                  },
+                                  "expanded_by_default": {
+                                    "type": "boolean"
+                                  },
+                                  "final_phase_duration": {
+                                    "type": "number"
+                                  },
+                                  "has_consumed_steering": {
+                                    "type": "boolean"
+                                  },
+                                  "activity_rows_total": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_offset": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_complete": {
+                                    "type": "boolean"
+                                  },
+                                  "activity_rows_omitted": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_scene_ref": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "activity_rows"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_turn_id": {
+                                "type": "string"
+                              },
+                              "_steer": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consumed_at": {
+                                    "type": "number"
+                                  },
+                                  "phase_duration": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "steer_id"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_final_phase_duration": {
+                                "type": "number"
+                              }
                             },
                             "required": [
                               "role"
@@ -6042,7 +6771,250 @@
                               "provider_details_label": {
                                 "type": "string"
                               },
-                              "recovery_control": {}
+                              "recovery_control": {},
+                              "_anchor_activity_scene": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": "activity_scene_v1"
+                                  },
+                                  "activity_rows": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "row_id": {
+                                          "type": "string"
+                                        },
+                                        "order_index": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "role": {
+                                          "enum": [
+                                            "prose",
+                                            "reasoning",
+                                            "tool",
+                                            "steering"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "created_at": {
+                                          "type": "number"
+                                        },
+                                        "text": {
+                                          "type": "string"
+                                        },
+                                        "titles": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "tool": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "args": {},
+                                            "preview": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "result": {},
+                                            "done": {
+                                              "type": "boolean"
+                                            },
+                                            "is_error": {
+                                              "type": "boolean"
+                                            },
+                                            "duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "cost_usd": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "name",
+                                            "preview",
+                                            "done",
+                                            "is_error",
+                                            "duration",
+                                            "cost_usd"
+                                          ],
+                                          "additionalProperties": {}
+                                        },
+                                        "steering": {
+                                          "type": "object",
+                                          "properties": {
+                                            "steer_id": {
+                                              "type": "string"
+                                            },
+                                            "consumed": {
+                                              "type": "boolean"
+                                            },
+                                            "submitted_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "consumed_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "phase_duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "steer_id",
+                                            "consumed",
+                                            "submitted_at",
+                                            "consumed_at"
+                                          ],
+                                          "additionalProperties": {}
+                                        }
+                                      },
+                                      "required": [
+                                        "row_id",
+                                        "order_index",
+                                        "role"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
+                                  },
+                                  "final_answer": {
+                                    "type": "string"
+                                  },
+                                  "turn_duration": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "terminal_state": {
+                                    "type": "string"
+                                  },
+                                  "expanded_by_default": {
+                                    "type": "boolean"
+                                  },
+                                  "final_phase_duration": {
+                                    "type": "number"
+                                  },
+                                  "has_consumed_steering": {
+                                    "type": "boolean"
+                                  },
+                                  "activity_rows_total": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_offset": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_complete": {
+                                    "type": "boolean"
+                                  },
+                                  "activity_rows_omitted": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_scene_ref": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "activity_rows"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_turn_id": {
+                                "type": "string"
+                              },
+                              "_steer": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consumed_at": {
+                                    "type": "number"
+                                  },
+                                  "phase_duration": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "steer_id"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_final_phase_duration": {
+                                "type": "number"
+                              }
                             },
                             "required": [
                               "role"
@@ -7620,7 +8592,250 @@
                               "provider_details_label": {
                                 "type": "string"
                               },
-                              "recovery_control": {}
+                              "recovery_control": {},
+                              "_anchor_activity_scene": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": "activity_scene_v1"
+                                  },
+                                  "activity_rows": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "row_id": {
+                                          "type": "string"
+                                        },
+                                        "order_index": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "role": {
+                                          "enum": [
+                                            "prose",
+                                            "reasoning",
+                                            "tool",
+                                            "steering"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "created_at": {
+                                          "type": "number"
+                                        },
+                                        "text": {
+                                          "type": "string"
+                                        },
+                                        "titles": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "tool": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "args": {},
+                                            "preview": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "result": {},
+                                            "done": {
+                                              "type": "boolean"
+                                            },
+                                            "is_error": {
+                                              "type": "boolean"
+                                            },
+                                            "duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "cost_usd": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "name",
+                                            "preview",
+                                            "done",
+                                            "is_error",
+                                            "duration",
+                                            "cost_usd"
+                                          ],
+                                          "additionalProperties": {}
+                                        },
+                                        "steering": {
+                                          "type": "object",
+                                          "properties": {
+                                            "steer_id": {
+                                              "type": "string"
+                                            },
+                                            "consumed": {
+                                              "type": "boolean"
+                                            },
+                                            "submitted_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "consumed_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "phase_duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "steer_id",
+                                            "consumed",
+                                            "submitted_at",
+                                            "consumed_at"
+                                          ],
+                                          "additionalProperties": {}
+                                        }
+                                      },
+                                      "required": [
+                                        "row_id",
+                                        "order_index",
+                                        "role"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
+                                  },
+                                  "final_answer": {
+                                    "type": "string"
+                                  },
+                                  "turn_duration": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "terminal_state": {
+                                    "type": "string"
+                                  },
+                                  "expanded_by_default": {
+                                    "type": "boolean"
+                                  },
+                                  "final_phase_duration": {
+                                    "type": "number"
+                                  },
+                                  "has_consumed_steering": {
+                                    "type": "boolean"
+                                  },
+                                  "activity_rows_total": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_offset": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_complete": {
+                                    "type": "boolean"
+                                  },
+                                  "activity_rows_omitted": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_scene_ref": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "activity_rows"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_turn_id": {
+                                "type": "string"
+                              },
+                              "_steer": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consumed_at": {
+                                    "type": "number"
+                                  },
+                                  "phase_duration": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "steer_id"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_final_phase_duration": {
+                                "type": "number"
+                              }
                             },
                             "required": [
                               "role"
@@ -9595,12 +10810,151 @@
                     "rows": {
                       "type": "array",
                       "items": {
-                        "anyOf": [
-                          {},
-                          {
-                            "type": "null"
+                        "type": "object",
+                        "properties": {
+                          "row_id": {
+                            "type": "string"
+                          },
+                          "order_index": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "role": {
+                            "enum": [
+                              "prose",
+                              "reasoning",
+                              "tool",
+                              "steering"
+                            ],
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "type": "number"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "titles": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "tool": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "args": {},
+                              "preview": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "result": {},
+                              "done": {
+                                "type": "boolean"
+                              },
+                              "is_error": {
+                                "type": "boolean"
+                              },
+                              "duration": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "cost_usd": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "preview",
+                              "done",
+                              "is_error",
+                              "duration",
+                              "cost_usd"
+                            ],
+                            "additionalProperties": {}
+                          },
+                          "steering": {
+                            "type": "object",
+                            "properties": {
+                              "steer_id": {
+                                "type": "string"
+                              },
+                              "consumed": {
+                                "type": "boolean"
+                              },
+                              "submitted_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "consumed_at": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "phase_duration": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "steer_id",
+                              "consumed",
+                              "submitted_at",
+                              "consumed_at"
+                            ],
+                            "additionalProperties": {}
                           }
-                        ]
+                        },
+                        "required": [
+                          "row_id",
+                          "order_index",
+                          "role"
+                        ],
+                        "additionalProperties": {}
                       }
                     },
                     "start": {
@@ -15617,14 +16971,7 @@
                       "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
                     },
                     "turn_id": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
+                      "type": "string"
                     },
                     "user_message_id": {
                       "anyOf": [
@@ -15960,7 +17307,250 @@
                               "provider_details_label": {
                                 "type": "string"
                               },
-                              "recovery_control": {}
+                              "recovery_control": {},
+                              "_anchor_activity_scene": {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "const": "activity_scene_v1"
+                                  },
+                                  "activity_rows": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "row_id": {
+                                          "type": "string"
+                                        },
+                                        "order_index": {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "role": {
+                                          "enum": [
+                                            "prose",
+                                            "reasoning",
+                                            "tool",
+                                            "steering"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "created_at": {
+                                          "type": "number"
+                                        },
+                                        "text": {
+                                          "type": "string"
+                                        },
+                                        "titles": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "tool": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "args": {},
+                                            "preview": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "result": {},
+                                            "done": {
+                                              "type": "boolean"
+                                            },
+                                            "is_error": {
+                                              "type": "boolean"
+                                            },
+                                            "duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "cost_usd": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "name",
+                                            "preview",
+                                            "done",
+                                            "is_error",
+                                            "duration",
+                                            "cost_usd"
+                                          ],
+                                          "additionalProperties": {}
+                                        },
+                                        "steering": {
+                                          "type": "object",
+                                          "properties": {
+                                            "steer_id": {
+                                              "type": "string"
+                                            },
+                                            "consumed": {
+                                              "type": "boolean"
+                                            },
+                                            "submitted_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "consumed_at": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "phase_duration": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "number"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "steer_id",
+                                            "consumed",
+                                            "submitted_at",
+                                            "consumed_at"
+                                          ],
+                                          "additionalProperties": {}
+                                        }
+                                      },
+                                      "required": [
+                                        "row_id",
+                                        "order_index",
+                                        "role"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
+                                  },
+                                  "final_answer": {
+                                    "type": "string"
+                                  },
+                                  "turn_duration": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "terminal_state": {
+                                    "type": "string"
+                                  },
+                                  "expanded_by_default": {
+                                    "type": "boolean"
+                                  },
+                                  "final_phase_duration": {
+                                    "type": "number"
+                                  },
+                                  "has_consumed_steering": {
+                                    "type": "boolean"
+                                  },
+                                  "activity_rows_total": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_offset": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_rows_complete": {
+                                    "type": "boolean"
+                                  },
+                                  "activity_rows_omitted": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "activity_scene_ref": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "activity_rows"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_turn_id": {
+                                "type": "string"
+                              },
+                              "_steer": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consumed_at": {
+                                    "type": "number"
+                                  },
+                                  "phase_duration": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "steer_id"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "_final_phase_duration": {
+                                "type": "number"
+                              }
                             },
                             "required": [
                               "role"

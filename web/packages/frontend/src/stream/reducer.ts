@@ -35,6 +35,8 @@ export type Segment =
   | { kind: 'text'; text: string; interim?: boolean }
   | { kind: 'reasoning'; text: string; titles: string[] }
   | { kind: 'tool'; toolId: string }
+  /** A consumed steer, at the place the server will persist it: after the tool that had completed. */
+  | { kind: 'steering'; steerId: string; text: string }
 
 export interface LiveTurn {
   sessionId: string
@@ -59,7 +61,6 @@ export interface LiveTurn {
   cancelledMessage: string | null
   approval: ApprovalPending | null
   clarify: ClarifyPending | null
-  steerConsumed: { id: string; text: string }[]
   pendingSteerLeftover: string | null
   compression: { state: 'compressing' | 'compressed'; newSessionId: string | null } | null
   title: string | null
@@ -89,6 +90,12 @@ export const initialStreamState: StreamState = { turns: {} }
 
 const TERMINAL: ReadonlySet<TurnStatus> = new Set(['done', 'error', 'cancelled'])
 
+/** The settled session a terminal frame carries, which replaces the live view with the server's scenes. */
+function sessionOf(data: unknown): Session | null {
+  const session = data && typeof data === 'object' ? (data as { session?: unknown }).session : null
+  return session && typeof session === 'object' ? (session as Session) : null
+}
+
 export function isTerminal(status: TurnStatus): boolean {
   return TERMINAL.has(status)
 }
@@ -98,7 +105,7 @@ function newTurn(sessionId: string, streamId: string, now: number): LiveTurn {
     sessionId, streamId, turnId: null, userMessageId: null, userText: '', startedAt: now, status: 'starting',
     segments: [], tools: {}, toolOrder: [], reasoningText: '', reasoningTitles: [], lastEventId: '', lastSeq: 0,
     usage: null, tps: null, contextStatus: null, warning: null, error: null, cancelledMessage: null, approval: null, clarify: null,
-    steerConsumed: [], pendingSteerLeftover: null, compression: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false,
+    pendingSteerLeftover: null, compression: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false,
   }
 }
 
@@ -127,8 +134,8 @@ function appendReasoning(segments: Segment[], text: string, titles: string[] | n
 }
 
 let toolSeq = 0
-function toolIdFor(data: { id?: string | undefined; call_id?: string | undefined; tool_call_id?: string | undefined; name?: string | undefined }, turn: LiveTurn, completing: boolean): string {
-  const explicit = data.id ?? data.call_id ?? data.tool_call_id
+function toolIdFor(data: { id?: string | undefined; call_id?: string | undefined; tool_call_id?: string | undefined; tid?: string | undefined; name?: string | undefined }, turn: LiveTurn, completing: boolean): string {
+  const explicit = data.id ?? data.call_id ?? data.tool_call_id ?? data.tid
   if (explicit) return explicit
   if (completing) {
     // Match the oldest still-running call with the same name (legacy upsertLiveToolCall semantics).
@@ -208,8 +215,13 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
     }
     case 'steer_consumed': {
       const id = event.data.steer_id ?? `${now}`
-      if (stamped.steerConsumed.some((s) => s.id === id)) return stamped
-      return { ...stamped, steerConsumed: [...stamped.steerConsumed, { id, text: event.data.text ?? '' }], pendingSteerLeftover: null }
+      if (stamped.segments.some((s) => s.kind === 'steering' && s.steerId === id)) return stamped
+      const after = event.data.after_tool_call_id
+      let at = after ? stamped.segments.findIndex((s) => s.kind === 'tool' && s.toolId === after) + 1 : 0
+      // Steers the Agent took at the same point keep the server's consumption order.
+      while (stamped.segments[at]?.kind === 'steering') at += 1
+      const segment: Segment = { kind: 'steering', steerId: id, text: event.data.text ?? '' }
+      return { ...stamped, segments: [...stamped.segments.slice(0, at), segment, ...stamped.segments.slice(at)], pendingSteerLeftover: null }
     }
     case 'pending_steer_leftover':
       return { ...stamped, pendingSteerLeftover: event.data.text ?? null }
@@ -248,6 +260,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
         doneAt: now,
         error: cancelled ? null : { type, message: event.data.message ?? '', hint: event.data.hint, continuationSessionId: event.data.continuation_session_id ?? event.data.new_session_id },
         cancelledMessage: cancelled ? (event.data.message ?? '') : null,
+        doneSession: sessionOf(event.data),
         approval: null,
         clarify: null,
         streamEnded: true,
@@ -255,7 +268,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
     }
     case 'cancel': {
       if (terminal) return { ...stamped, streamEnded: true }
-      return { ...stamped, status: 'cancelled', doneAt: now, cancelledMessage: '', approval: null, clarify: null, streamEnded: true }
+      return { ...stamped, status: 'cancelled', doneAt: now, cancelledMessage: '', doneSession: sessionOf(event.data), approval: null, clarify: null, streamEnded: true }
     }
     case 'stream_end':
       return { ...stamped, streamEnded: true }

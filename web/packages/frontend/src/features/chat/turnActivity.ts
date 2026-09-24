@@ -3,7 +3,7 @@ import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import type { ToolCardData } from './blocks/ToolCard'
 import { extractInlineThinking, messageText } from './render/text'
-import { messageKey, toolCallArgs, toolCallId, toolCallName, type VisibleMessage } from './useTranscript'
+import type { VisibleMessage } from './useTranscript'
 
 export type ActivityItem =
   | { key: string; kind: 'text'; text: string }
@@ -16,6 +16,10 @@ export interface TurnActivity {
   items: ActivityItem[]
   finalAnswer: string
   status: string
+  /** Server-decided initial state of the turn's "Worked" disclosure. */
+  expandedByDefault?: boolean
+  /** Projected from the live stream: no server scene yet, so nothing folds and no answer is split out. */
+  live?: boolean
   sceneRows?: unknown[]
   history?: { ref: string; index: number; before: number }
 }
@@ -23,49 +27,25 @@ export interface TurnActivity {
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
 const text = (v: unknown): string => typeof v === 'string' ? v : ''
 
-/** Explicit run identity wins; message text is never a turn identity. */
-export function messageOwner(message: Message): string | undefined {
-  for (const value of [message._anchor_stream_id, message.run_id, message.stream_id, message.turn_id]) {
-    if (typeof value === 'string' && value) return value
-  }
-  return undefined
+/** The server stamps every row with its turn; clients group by equality and never infer turn boundaries. */
+export function turnIdOf(message: Message): string | undefined {
+  return typeof message._turn_id === 'string' && message._turn_id ? message._turn_id : undefined
 }
 
-export function toolCardsFor(message: Message, toolResults: Record<string, Message>): ToolCardData[] {
-  return (message.tool_calls ?? []).map((tc, i) => {
-    const id = toolCallId(tc, `${messageKey(message) ?? 'm'}-${i}`)
-    const result = toolResults[id]
-    return { id, name: toolCallName(tc) ?? 'tool', args: toolCallArgs(tc), preview: tc.preview ?? null, done: tc.done ?? true, isError: !!tc.is_error || result?.is_error === true, duration: tc.duration ?? null, costUsd: tc.cost_usd ?? null, result: result ? messageText(result.content) : tc.result ?? tc.output ?? null }
-  })
-}
-
-/** Group only presentation rows; the final row retains its original mutation index. */
+/** Consecutive assistant rows with one `_turn_id` form a turn; the final row retains its original mutation index. */
 export function groupAssistantTurns(rows: VisibleMessage[]): VisibleMessage[] {
   const out: VisibleMessage[] = []
   let group: VisibleMessage[] = []
-  let userKey: string | undefined
-  let owner: string | undefined
   const flush = () => {
     const last = group.at(-1)
     const first = group[0]
-    if (last && first) out.push({ ...last, key: first.key, assistantRows: group, turnKey: userKey ?? owner ?? first.key })
+    if (last && first) out.push({ ...last, key: first.key, assistantRows: group, turnKey: turnIdOf(first.message) ?? first.key })
     group = []
-    owner = undefined
   }
   for (const row of rows) {
-    if (row.message.role !== 'assistant') {
-      flush()
-      out.push(row)
-      userKey = row.message.role === 'user' ? `user:${row.key}` : undefined
-      continue
-    }
-    const nextOwner = messageOwner(row.message)
-    const previous = group.at(-1)?.message
-    // Legacy transcripts use tool_calls/finish_reason as continuation boundaries.
-    // Without continuation or matching explicit ownership, keep distinct replies apart.
-    const continues = previous && ((previous.tool_calls?.length ?? 0) > 0 || previous.finish_reason === 'tool_calls' || previous._interim === true || previous._partial === true || (userKey && previous.finish_reason !== 'stop' && previous.finish_reason !== 'length' && previous._error !== true))
-    if (group.length && ((owner && nextOwner && owner !== nextOwner) || (!continues && !(owner && owner === nextOwner)))) { flush(); userKey = undefined }
-    owner ??= nextOwner
+    if (row.message.role !== 'assistant') { flush(); out.push(row); continue }
+    const previous = group.at(-1)
+    if (previous && turnIdOf(previous.message) !== turnIdOf(row.message)) flush()
     group.push(row)
   }
   flush()
@@ -78,104 +58,39 @@ function appendProse(items: ActivityItem[], key: string, raw: string) {
   if (split.content.trim()) items.push({ key, kind: 'text', text: split.content })
 }
 
-/** Decode the existing opaque scene at the rendering boundary, ignoring malformed rows. */
-export function sceneItems(value: unknown, sourceOffset = 0): ActivityItem[] {
+/** Server-normalized scene rows map one-to-one onto activity items; the server owns order, roles, and states. */
+export function sceneItems(value: unknown): ActivityItem[] {
   if (!Array.isArray(value)) return []
-  const items: ActivityItem[] = []
-  const positions = new Map<string, number>()
-  const put = (item: ActivityItem) => {
-    const index = positions.get(item.key)
-    if (index === undefined) { positions.set(item.key, items.length); items.push(item) }
-    else items[index] = item
-  }
-  const ordered = value.map((raw, index) => {
+  return value.flatMap((raw): ActivityItem[] => {
     const row = record(raw)
-    const numericOrder = typeof row.order_index === 'number' || (typeof row.order_index === 'string' && /^-?\d+$/.test(row.order_index.trim())) ? Number(row.order_index) : NaN
-    const order = Number.isFinite(numericOrder) ? numericOrder : sourceOffset + index
-    return { row, index: sourceOffset + index, order }
-  }).sort((a, b) => a.order - b.order || a.index - b.index)
-  for (const { row, index: i } of ordered) {
+    const key = text(row.row_id)
+    if (row.role === 'prose') return [{ key, kind: 'text', text: text(row.text) }]
+    if (row.role === 'reasoning') return [{ key, kind: 'reasoning', text: text(row.text), titles: Array.isArray(row.titles) ? row.titles.map(text) : [] }]
+    if (row.role === 'steering') return [{ key, kind: 'steering', text: text(row.text), consumed: record(row.steering).consumed === true }]
+    if (row.role !== 'tool') return []
     const tool = record(row.tool)
-    const id = text(row.tool_call_id) || text(tool.id)
-    const steerId = text(record(row.payload).steer_id)
-    const key = row.role === 'tool' && id ? `tool:${id}` : row.role === 'steering' && steerId ? `steering:${steerId}` : text(row.row_id) || `scene:${i}`
-    if (row.role === 'prose') {
-      const prose: ActivityItem[] = []
-      appendProse(prose, key, text(row.text))
-      prose.forEach(put)
-    }
-    else if (row.role === 'reasoning' || row.role === 'thinking') {
-      const thinking = record(row.thinking)
-      const titles = Array.isArray(thinking.titles) ? thinking.titles : row.titles
-      const reasoning = text(thinking.text) || text(row.text)
-      const labels = Array.isArray(titles) ? titles.filter((t): t is string => typeof t === 'string' && !!t.trim()) : []
-      if (reasoning.trim() || labels.length) put({ key, kind: 'reasoning', text: reasoning, titles: labels })
-    }
-    else if (row.role === 'steering' && text(row.text).trim()) put({ key, kind: 'steering', text: text(row.text), consumed: row.status === 'consumed' })
-    else if (row.role === 'tool') put({ key, kind: 'tool', call: {
-      id: id || key, name: text(tool.name) || 'tool', args: tool.args,
-      preview: text(tool.snippet) || null, result: tool.result ?? tool.output ?? tool.snippet ?? null,
-      done: typeof tool.done === 'boolean' ? tool.done : row.status !== 'running', isError: tool.is_error === true || row.status === 'error' || row.status === 'failed',
-      duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
-    } })
-  }
-  return items
+    return [{ key, kind: 'tool', call: {
+      id: text(tool.id), name: text(tool.name), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, result: tool.result ?? null,
+      done: tool.done === true, isError: tool.is_error === true, duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
+    } }]
+  })
 }
 
-/** A scene can include its final prose row; render that answer only outside the Worklog. */
-export function sceneWorkItems(rows: unknown, finalAnswer: string, sourceOffset = 0): ActivityItem[] {
-  const items = sceneItems(rows, sourceOffset)
-  const normalizedFinal = finalAnswer.trim().replace(/\s+/g, ' ')
-  const finalIndex = items.findLastIndex((item) => item.kind === 'text' && item.text.trim().replace(/\s+/g, ' ') === normalizedFinal)
-  if (finalIndex !== -1) items.splice(finalIndex, 1)
-  return items
-}
-
-/** Bind a terminal event to its completed snapshot, never to the currently last reply. */
-export function settledTerminalState(row: VisibleMessage, turn: LiveTurn | null): string | undefined {
-  if (turn?.status !== 'done' || !turn.doneSession || !turn.terminalState || turn.terminalState === 'completed') return undefined
-  const messages = turn.doneSession.messages ?? []
-  const index = messages.findLastIndex((message) => message.role === 'assistant')
-  const saved = messages[index]
-  if (!saved) return undefined
-  const id = messageKey(saved)
-  const matches = id !== undefined ? messageKey(row.message) === id
-    : row.index === (turn.doneSession._messages_offset ?? 0) + index && JSON.stringify(row.message) === JSON.stringify(saved)
-  return matches ? turn.terminalState : undefined
-}
-
-export function persistedActivity(row: VisibleMessage, terminalState?: string): TurnActivity {
+/**
+ * A completed turn renders its server scene exactly: the rows under "Worked", the final answer, the outcome, and the
+ * default disclosure. A row without a scene (an older server) shows its text with no worklog.
+ */
+export function persistedActivity(row: VisibleMessage): TurnActivity {
   const parts = row.assistantRows ?? [row]
-  const items: ActivityItem[] = []
   const last = parts.at(-1) ?? row
   const scene = record(last.message._anchor_activity_scene)
-  const errorStatus = last.message._error === true ? (last.message.provider_details_label === 'Cancellation details' ? 'cancelled' : last.message.provider_details_label === 'Interruption details' ? 'interrupted' : 'error') : ''
-  const status = terminalState || text(scene.terminal_state) || text(last.message.terminal_state) || text(last.message._terminal_state) || errorStatus
-  const consumedSteering = scene.version === 'activity_scene_v1' && Array.isArray(scene.activity_rows) && scene.activity_rows.some((value) => { const entry = record(value); return entry.role === 'steering' && entry.status === 'consumed' })
-  const finalAnswer = scene.version === 'activity_scene_v1' && text(scene.final_answer).trim() ? text(scene.final_answer) : !consumedSteering && !last.message.tool_calls?.length && last.message._interim !== true && last.message._partial !== true
-    ? extractInlineThinking(messageText(last.message.content)).content : ''
-  if (scene.version === 'activity_scene_v1' && Array.isArray(scene.activity_rows)) {
-    items.push(...sceneWorkItems(scene.activity_rows, finalAnswer, typeof scene.activity_rows_offset === 'number' ? scene.activity_rows_offset : 0))
-  } else {
-    const seenTools = new Set<string>()
-    for (const part of parts) {
-      const m = part.message
-      const reasoning = [m.reasoning_content, text(m.reasoning), m.thinking].filter(Boolean).join('\n')
-      if (reasoning) items.push({ key: `${part.key}:reasoning`, kind: 'reasoning', text: reasoning })
-      if (part !== last || !finalAnswer) appendProse(items, `${part.key}:prose`, messageText(m.content))
-      else {
-        const split = extractInlineThinking(messageText(m.content))
-        if (split.reasoning) items.push({ key: `${part.key}:thinking`, kind: 'reasoning', text: split.reasoning })
-      }
-      for (const call of toolCardsFor(m, part.toolResults)) {
-        if (seenTools.has(call.id)) continue
-        seenTools.add(call.id)
-        items.push({ key: `tool:${call.id}`, kind: 'tool', call })
-      }
-    }
+  const key = row.turnKey ?? row.key
+  if (scene.version !== 'activity_scene_v1' || !Array.isArray(scene.activity_rows)) {
+    return { key, items: [], finalAnswer: parts.map((part) => messageText(part.message.content)).filter((part) => part.trim()).join('\n\n'), status: 'completed' }
   }
-  return { key: row.turnKey ?? messageOwner(last.message) ?? row.key, items, finalAnswer, status: status || (finalAnswer.trim() ? 'completed' : 'no_response'),
-    ...(scene.version === 'activity_scene_v1' && Array.isArray(scene.activity_rows) ? { sceneRows: scene.activity_rows } : {}),
+  return {
+    key, items: sceneItems(scene.activity_rows), finalAnswer: text(scene.final_answer), status: text(scene.terminal_state) || 'completed', expandedByDefault: scene.expanded_by_default === true,
+    sceneRows: scene.activity_rows,
     ...(typeof scene.activity_rows_offset === 'number' && scene.activity_rows_offset > 0 ? { history: { ref: text(scene.activity_scene_ref), index: row.index, before: scene.activity_rows_offset } } : {}),
   }
 }
@@ -186,15 +101,15 @@ export function liveActivity(turn: LiveTurn): TurnActivity {
   turn.segments.forEach((segment, i) => {
     if (segment.kind === 'text') appendProse(items, `text:${i}`, segment.text)
     else if (segment.kind === 'reasoning') items.push({ key: `reasoning:${i}`, ...segment })
+    else if (segment.kind === 'steering') items.push({ key: `steering:${segment.steerId}`, kind: 'steering', text: segment.text, consumed: true })
     else if (!seen.has(segment.toolId)) {
       seen.add(segment.toolId)
       const call = turn.tools[segment.toolId]
       if (call) items.push({ key: `tool:${call.id}`, kind: 'tool', call })
     }
   })
-  let finalAnswer = ''
-  const tail = items.at(-1)
-  const lastSegment = turn.segments.at(-1)
-  if (lastSegment?.kind === 'text' && !lastSegment.interim && turn.status === 'done' && (!turn.terminalState || turn.terminalState === 'completed') && tail?.kind === 'text') { finalAnswer = tail.text; items.pop() }
-  return { key: turn.userMessageId ? `user:${turn.userMessageId}` : turn.streamId, items, finalAnswer, status: !isTerminal(turn.status) ? 'running' : turn.status === 'done' ? (turn.terminalState && turn.terminalState !== 'completed' ? turn.terminalState : finalAnswer ? 'completed' : 'no_response') : turn.terminalState === 'interrupted' ? 'interrupted' : turn.status }
+  // Live rendering only: the server's scene decides the settled answer, outcome and fold. Until it replaces this view,
+  // a finished turn stays as it streamed, labelled with the outcome the server's terminal event reported.
+  const status = isTerminal(turn.status) ? (turn.terminalState ?? turn.status) : 'running'
+  return { key: turn.turnId ?? turn.streamId, items, finalAnswer: '', status, live: true }
 }

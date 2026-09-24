@@ -49,13 +49,14 @@ export function terminalOutcomeLabel(status: string): string | null {
   }
 }
 
-export function Worklog({ calls, status, children, sequenceKey }: { calls: ToolCardData[]; status: string; children: ReactNode; sequenceKey?: string }) {
+export function Worklog({ calls, status, children, sequenceKey, expandedByDefault = false }: { calls: ToolCardData[]; status: string; children: ReactNode; sequenceKey?: string; expandedByDefault?: boolean }) {
   const locale = useLocale()
   const nested = sequenceKey !== undefined
   const running = status === 'running'
   // A live turn shows its work inline; the turn-level disclosure appears only once it settles.
   const live = !nested && running
-  const defaultOpen = !nested && ['error', 'no_response', 'degraded', 'connection_lost', 'tool_limit_reached', 'compression_exhausted'].includes(status)
+  // The server decides whether a settled turn's work opens by default; nested groups start closed.
+  const defaultOpen = !nested && expandedByDefault
   const [chosen, toggle] = useDisclosure(sequenceKey ?? 'turn', defaultOpen)
   const open = live || chosen
   const bodyId = useId()

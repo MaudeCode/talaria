@@ -8,7 +8,6 @@ import type { ActivityMode } from './blocks/Worklog'
 import { persistedActivity } from './turnActivity'
 import { TurnActivityView } from './TurnActivityView'
 import type { VisibleMessage } from './useTranscript'
-export { toolCardsFor } from './turnActivity'
 import { IconButton } from '../../ui/Button'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
@@ -57,8 +56,8 @@ export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown
   )
 })
 
-export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, isLast, sessionId, scope, terminalState }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; isLast: boolean; sessionId?: string | undefined; scope?: string | undefined; terminalState?: string | undefined }) {
-  const activity = persistedActivity(row, terminalState)
+export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, isLast, sessionId, scope }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; isLast: boolean; sessionId?: string | undefined; scope?: string | undefined }) {
+  const activity = persistedActivity(row)
   const content = activity.finalAnswer || activity.items.flatMap((item) => item.kind === 'text' ? [item.text] : []).join('\n\n')
   const run = row.message as { _turnDuration?: number | null; _usedModel?: string | null }
   const meta = [typeof run._turnDuration === 'number' && run._turnDuration >= 0.5 ? `${run._turnDuration < 10 ? run._turnDuration.toFixed(1) : Math.round(run._turnDuration)}s` : null, run._usedModel || null].filter(Boolean).join(' · ')

@@ -58,6 +58,14 @@ extension APIClient {
         try await send(endpoint: .sessionStatus(id: id), method: "GET")
     }
 
+    /// Earlier rows of a turn's scene, ending before row `before`.
+    func anchorSceneRows(sessionID: String, messageRef: String?, messageIndex: Int, before: Int, limit: Int = 200) async throws -> AnchorScenePageResponse {
+        try await send(
+            endpoint: .anchorScene(sessionID: sessionID, messageRef: messageRef, messageIndex: messageIndex, before: before, limit: limit),
+            method: "GET"
+        )
+    }
+
     func createSession(workspace: String?, model: String?, modelProvider: String?, profile: String?) async throws -> SessionResponse {
         try await send(
             endpoint: .newSession,

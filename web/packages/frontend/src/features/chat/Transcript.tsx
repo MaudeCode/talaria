@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown, ArrowUp } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
@@ -8,7 +9,7 @@ import { AssistantMessageRow, UserMessageRow, type RowActions } from './MessageR
 import { LiveStatusPill, LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
-import { groupAssistantTurns, messageOwner, settledTerminalState } from './turnActivity'
+import { groupAssistantTurns } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
 
@@ -45,14 +46,13 @@ export function Transcript(props: TranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [pinned, setPinned] = useState(true)
   const [atTop, setAtTop] = useState(true)
-  const showLive = !!live && (!isTerminal(live.status) || live.doneSession === null || live.status === 'error' || live.status === 'cancelled')
+  // The live turn gives way to the server's scene as soon as a terminal frame brings the settled session.
+  const showLive = !!live && (!isTerminal(live.status) || live.doneSession === null)
   const grouped = useMemo(() => groupAssistantTurns(rawRows), [rawRows])
   const rows = useMemo(() => {
     if (!showLive || !live) return grouped
-    return grouped.filter((row) => row.message.role !== 'assistant' || !(
-      (row.assistantRows ?? [row]).some((part) => messageOwner(part.message) === live.streamId || (!!live.turnId && messageOwner(part.message) === live.turnId))
-      || (live.userMessageId && row.turnKey === `user:${live.userMessageId}`)
-    ))
+    // The live turn owns rows the server already stamped with its turn id.
+    return grouped.filter((row) => row.message.role !== 'assistant' || (row.turnKey !== live.streamId && row.turnKey !== live.turnId))
   }, [grouped, live, showLive])
   const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user'
   const showLiveUser = !!live && !isTerminal(live.status) && live.userText.trim() !== '' && !lastRowIsUser && !rows.some((r) => r.message.role === 'user' && messageKey(r.message) === live.userMessageId)
@@ -108,7 +108,7 @@ export function Transcript(props: TranscriptProps) {
   const renderRow = (row: VisibleMessage, i: number) => (
     row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
-      : <AssistantMessageRow terminalState={settledTerminalState(row, live)} sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} />
+      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} />
   )
 
   return (
@@ -141,6 +141,8 @@ export function Transcript(props: TranscriptProps) {
               </div>
             )}
             {showLive && live && <LiveTurnView turn={live} name={assistantName} mode={mode} userVisible />}
+            {/* The settled error row carries the message; only the frame's continuation link lives outside the session. */}
+            {!showLive && live?.error?.continuationSessionId && <Link to="/session/$sessionId" params={{ sessionId: live.error.continuationSessionId }} className="mt-1 inline-block text-[13px] text-accent-text underline">{m.live_continuation()}</Link>}
           </div>
         )}
       </div>

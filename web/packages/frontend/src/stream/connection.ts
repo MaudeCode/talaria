@@ -47,8 +47,12 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
     case 'todo_state':
       setTodoState(sessionId, event.data)
       break
-    case 'done': {
-      const session = event.data.session
+    case 'done':
+    case 'apperror':
+    case 'error':
+    case 'cancel': {
+      // Every terminal frame carries the settled session; its scenes replace the live turn at once.
+      const session = 'session' in event.data ? event.data.session : undefined
       if (queryClient && session && typeof session === 'object' && 'session_id' in session) {
         queryClient.setQueryData(keys.sessions.detail(sessionId), { session: session as Session })
       }
@@ -68,11 +72,6 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
       invalidateSession(sessionId)
       break
     }
-    case 'apperror':
-    case 'error':
-    case 'cancel':
-      invalidateSession(sessionId)
-      break
     default:
       break
   }

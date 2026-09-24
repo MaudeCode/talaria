@@ -34,6 +34,10 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
     let attachments: [MessageAttachment]?
     let turnDuration: Double?
     let turnTps: Double?
+    /// The server turn this row belongs to; turns are grouped by equality of this id.
+    let turnId: String?
+    /// A consumed steer the server persisted in its turn: shown inside the turn's scene, never as its own row.
+    let steer: [String: JSONValue]?
 
     init(
         role: String?,
@@ -50,7 +54,9 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         activityScene: AssistantActivityScene? = nil,
         attachments: [MessageAttachment]? = nil,
         turnDuration: Double? = nil,
-        turnTps: Double? = nil
+        turnTps: Double? = nil,
+        turnId: String? = nil,
+        steer: [String: JSONValue]? = nil
     ) {
         self.role = role
         self.content = content
@@ -67,6 +73,8 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         self.attachments = attachments
         self.turnDuration = turnDuration
         self.turnTps = turnTps
+        self.turnId = turnId
+        self.steer = steer
     }
 
     enum CodingKeys: String, CodingKey {
@@ -85,6 +93,8 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         case attachments
         case turnDuration = "_turnDuration"
         case turnTps = "_turnTps"
+        case turnId = "_turnId"
+        case steer = "_steer"
         case underscoredTimestamp = "_ts"
     }
 
@@ -111,6 +121,8 @@ struct ChatMessage: Decodable, Equatable, Identifiable {
         turnDuration = container.decodeLossyDoubleIfPresent(forKey: .turnDuration)
             ?? activityScene?.turnDuration
         turnTps = container.decodeLossyDoubleIfPresent(forKey: .turnTps)
+        turnId = container.decodeLossyStringIfPresent(forKey: .turnId)
+        steer = try? container.decodeIfPresent([String: JSONValue].self, forKey: .steer)
     }
 
     private static func attachments(
@@ -269,7 +281,9 @@ extension ChatMessage {
             activityScene: activityScene,
             attachments: attachments,
             turnDuration: duration ?? turnDuration,
-            turnTps: tokensPerSecond ?? turnTps
+            turnTps: tokensPerSecond ?? turnTps,
+            turnId: turnId,
+            steer: steer
         )
     }
 }
@@ -279,12 +293,29 @@ struct AssistantActivityScene: Codable, Equatable {
     let finalAnswer: String?
     let activityRows: [AssistantActivitySceneRow]?
     let turnDuration: Double?
+    /// Server-decided initial state of the turn's "Worked" disclosure.
+    let expandedByDefault: Bool
+    /// Seconds from the turn's last consumed steer to its end (steered turns only).
+    let finalPhaseDuration: Double?
+    /// Server-decided outcome of the turn (`completed`, `no_response`, `error`, `tool_limit_reached`, ...).
+    let terminalState: String?
+    /// How many earlier rows the tail preview omits; page them from `/api/session/anchor-scene`.
+    let activityRowsOffset: Int
+    let activitySceneRef: String?
+    /// Server-decided: whether the whole scene, including rows outside this preview, has a consumed steer.
+    let serverHasConsumedSteering: Bool?
 
     enum CodingKeys: String, CodingKey {
         case version
         case finalAnswer
         case activityRows
         case turnDuration
+        case expandedByDefault
+        case terminalState
+        case activityRowsOffset
+        case activitySceneRef
+        case finalPhaseDuration
+        case serverHasConsumedSteering = "hasConsumedSteering"
     }
 
     init(from decoder: Decoder) throws {
@@ -292,69 +323,63 @@ struct AssistantActivityScene: Codable, Equatable {
         version = container.decodeLossyStringIfPresent(forKey: .version)
         finalAnswer = container.decodeLossyStringIfPresent(forKey: .finalAnswer)
         turnDuration = container.decodeLossyDoubleIfPresent(forKey: .turnDuration)
+        expandedByDefault = (try? container.decodeIfPresent(Bool.self, forKey: .expandedByDefault)) ?? false
+        terminalState = container.decodeLossyStringIfPresent(forKey: .terminalState)
+        activityRowsOffset = max(0, container.decodeLossyIntIfPresent(forKey: .activityRowsOffset) ?? 0)
+        activitySceneRef = container.decodeLossyStringIfPresent(forKey: .activitySceneRef)
+        finalPhaseDuration = container.decodeLossyDoubleIfPresent(forKey: .finalPhaseDuration)
+        serverHasConsumedSteering = try? container.decodeIfPresent(Bool.self, forKey: .serverHasConsumedSteering)
 
-        guard let values = try? container.decodeIfPresent([JSONValue].self, forKey: .activityRows) else {
-            activityRows = nil
-            return
-        }
+        activityRows = (try? container.decodeIfPresent([JSONValue].self, forKey: .activityRows))
+            .map(AssistantActivitySceneRow.decodeLossily)
+    }
+}
 
-        let rowDecoder = JSONDecoder()
-        rowDecoder.keyDecodingStrategy = .convertFromSnakeCase
-        activityRows = values.compactMap { value in
-            guard case .object = value,
-                  let data = try? JSONEncoder().encode(value)
-            else { return nil }
-            return try? rowDecoder.decode(AssistantActivitySceneRow.self, from: data)
-        }
+/// One page of a scene's earlier rows (`GET /api/session/anchor-scene`), in the same normalized row shape.
+struct AnchorScenePageResponse: Decodable, Equatable {
+    let rows: [AssistantActivitySceneRow]
+    let start: Int
+
+    enum CodingKeys: String, CodingKey {
+        case rows
+        case start
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rows = AssistantActivitySceneRow.decodeLossily((try? container.decodeIfPresent([JSONValue].self, forKey: .rows)) ?? [])
+        start = max(0, container.decodeLossyIntIfPresent(forKey: .start) ?? 0)
     }
 }
 
 extension AssistantActivityScene {
     var hasConsumedSteering: Bool {
-        activityRows?.contains { $0.role == "steering" && $0.status == "consumed" } == true
-    }
-
-    var steeringIDs: Set<String> {
-        Set((activityRows ?? []).compactMap { row in
-            guard row.role == "steering" else { return nil }
-            if case .string(let steerID)? = row.payload?["steer_id"], !steerID.isEmpty {
-                return steerID
-            }
-            return row.rowID
-        })
-    }
-
-    var steeringTexts: Set<String> {
-        Set((activityRows ?? []).compactMap { row in
-            guard row.role == "steering" else { return nil }
-            return row.text?.trimmingCharacters(in: .whitespacesAndNewlines)
-        }.filter { !$0.isEmpty })
+        // ponytail: preview scan is the pre-field server fallback; delete once those servers are unsupported.
+        serverHasConsumedSteering ?? (activityRows?.contains(where: \.isConsumedSteering) == true)
     }
 }
 
+/// One server-normalized scene row. The server decides order, role, tool completion and error, and
+/// steering consumption; the app reads those fields as sent.
 struct AssistantActivitySceneRow: Codable, Equatable {
     let rowID: String?
     let orderIndex: Int?
     let role: String?
     let text: String?
-    let status: String?
+    let titles: [String]?
     let createdAt: Double?
-    let toolCallID: String?
-    let thinking: [String: JSONValue]?
     let tool: [String: JSONValue]?
-    let payload: [String: JSONValue]?
+    let steering: [String: JSONValue]?
 
     enum CodingKeys: String, CodingKey {
         case rowID = "rowId"
         case orderIndex
         case role
         case text
-        case status
+        case titles
         case createdAt
-        case toolCallID = "toolCallId"
-        case thinking
         case tool
-        case payload
+        case steering
     }
 
     init(from decoder: Decoder) throws {
@@ -363,12 +388,32 @@ struct AssistantActivitySceneRow: Codable, Equatable {
         orderIndex = container.decodeLossyIntIfPresent(forKey: .orderIndex)
         role = container.decodeLossyStringIfPresent(forKey: .role)
         text = container.decodeLossyStringIfPresent(forKey: .text)
-        status = container.decodeLossyStringIfPresent(forKey: .status)
+        titles = try? container.decodeIfPresent([String].self, forKey: .titles)
         createdAt = container.decodeLossyDoubleIfPresent(forKey: .createdAt)
-        toolCallID = container.decodeLossyStringIfPresent(forKey: .toolCallID)
-        thinking = try? container.decodeIfPresent([String: JSONValue].self, forKey: .thinking)
         tool = try? container.decodeIfPresent([String: JSONValue].self, forKey: .tool)
-        payload = try? container.decodeIfPresent([String: JSONValue].self, forKey: .payload)
+        steering = try? container.decodeIfPresent([String: JSONValue].self, forKey: .steering)
+    }
+
+    /// Rows decode one by one, so a malformed row never drops its neighbours.
+    static func decodeLossily(_ values: [JSONValue]) -> [AssistantActivitySceneRow] {
+        let rowDecoder = JSONDecoder()
+        rowDecoder.keyDecodingStrategy = .convertFromSnakeCase
+        return values.compactMap { value in
+            guard case .object = value,
+                  let data = try? JSONEncoder().encode(value)
+            else { return nil }
+            return try? rowDecoder.decode(AssistantActivitySceneRow.self, from: data)
+        }
+    }
+
+    var isConsumedSteering: Bool {
+        guard role == "steering", case .bool(true)? = steering?["consumed"] else { return false }
+        return true
+    }
+
+    var steerID: String? {
+        guard case .string(let steerID)? = steering?["steer_id"], !steerID.isEmpty else { return nil }
+        return steerID
     }
 }
 
@@ -382,7 +427,8 @@ enum TranscriptTurnClassifier {
     }
 
     static func isUserTurnBoundary(_ message: ChatMessage) -> Bool {
-        guard message.role == "user" else { return false }
+        // A persisted steer belongs inside its turn; it never opens one.
+        guard message.role == "user", message.steer == nil else { return false }
         return hasVisibleUserContent(message)
     }
 
@@ -390,20 +436,13 @@ enum TranscriptTurnClassifier {
         message.role == "user" && !hasVisibleUserContent(message)
     }
 
+    /// Turn keys come from the server's `_turn_id` stamp; a row without one has no shared turn key.
     static func assistantTurnKeysByAnchorID(_ messages: [ChatMessage], messageOffset: Int? = nil) -> [String: String] {
         var keysByMessageID: [String: String] = [:]
-        var currentTurnKey = "turn:start"
-
-        for (messageIndex, message) in messages.enumerated() {
-            if isUserTurnBoundary(message) {
-                currentTurnKey = "turn:user:\(max(0, messageOffset ?? 0) + messageIndex)"
-            }
-
-            if message.role == "assistant" {
-                keysByMessageID[anchorID(for: message, at: messageIndex, messageOffset: messageOffset)] = currentTurnKey
-            }
+        for (messageIndex, message) in messages.enumerated() where message.role == "assistant" {
+            guard let turnID = message.turnId else { continue }
+            keysByMessageID[anchorID(for: message, at: messageIndex, messageOffset: messageOffset)] = "turn:\(turnID)"
         }
-
         return keysByMessageID
     }
 

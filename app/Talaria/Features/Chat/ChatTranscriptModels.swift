@@ -16,6 +16,8 @@ struct AssistantActivityRow: Identifiable, Equatable {
         let text: String
         let submittedAt: Double?
         let consumedAt: Double?
+        /// Server-measured length of the work phase this steer ended.
+        var phaseDuration: Double? = nil
     }
 
     enum Content: Equatable {
@@ -54,6 +56,21 @@ struct AssistantActivityRow: Identifiable, Equatable {
     }
 }
 
+/// Localized wording for the server's turn outcome; an ordinary completed turn shows none.
+enum AssistantTurnOutcome {
+    static func label(for terminalState: String?) -> String? {
+        switch terminalState {
+        case nil, "", "completed", "running": nil
+        case "cancelled": String(localized: "Response cancelled")
+        case "no_response": String(localized: "No answer produced.")
+        case "interrupted", "connection_lost": String(localized: "Response interrupted")
+        case "tool_limit_reached": String(localized: "Tool limit reached")
+        case "compression_exhausted": String(localized: "Context limit reached")
+        default: String(localized: "Response failed")
+        }
+    }
+}
+
 struct CompletedAssistantTurn: Equatable {
     struct Phase: Identifiable, Equatable {
         let id: String
@@ -87,8 +104,12 @@ struct CompletedAssistantTurn: Equatable {
         }
     }
 
-    func phaseDurations(totalDuration: Double?) -> [Double?] {
+    func phaseDurations(totalDuration: Double?, finalPhaseDuration: Double? = nil) -> [Double?] {
         guard !phases.isEmpty else { return [] }
+        // Persisted steers carry server-measured phases; only local steers not yet persisted fall back to timestamps.
+        if phases.dropLast().allSatisfy({ $0.steeringAfter?.phaseDuration != nil }) {
+            return phases.dropLast().map { $0.steeringAfter?.phaseDuration } + [finalPhaseDuration ?? totalDuration]
+        }
         var durations = Array<Double?>(repeating: nil, count: phases.count)
         var phaseStart = phases.first?.workRows.compactMap(\.createdAt).min()
             ?? phases.first?.steeringAfter?.submittedAt
@@ -124,16 +145,8 @@ struct CompletedAssistantTurn: Equatable {
             pendingActivity = []
         }
 
-        let explicitFinalIndex = rows.lastIndex(where: \.isFinalAnswer)
-        var fallbackFinalIndex: Int?
-        if !rows.contains(where: { row in
-            if case .steering = row.content { return true }
-            return false
-        }), let lastIndex = rows.indices.last,
-           case .prose = rows[lastIndex].content {
-            fallbackFinalIndex = lastIndex
-        }
-        let finalIndex = explicitFinalIndex ?? fallbackFinalIndex
+        // The final answer is the row the server marked; the app never infers it from row position.
+        let finalIndex = rows.lastIndex(where: \.isFinalAnswer)
 
         for (rowIndex, row) in rows.enumerated() {
             switch row.content {
@@ -156,7 +169,12 @@ struct CompletedAssistantTurn: Equatable {
         }
         appendActivity()
 
-        guard segments.contains(where: {
+        // "Worked" exists whenever there is work besides the final answer, including earlier prose alone.
+        let foldsEarlierProse = finalIndex != nil && rows.indices.contains { index in
+            guard index != finalIndex, case .prose = rows[index].content else { return false }
+            return true
+        }
+        guard foldsEarlierProse || segments.contains(where: {
             switch $0.content {
             case .activity, .steering: true
             case .prose: false
@@ -365,7 +383,6 @@ struct AssistantActivityTimeline: Equatable {
             }
             if !timeline.rows.isEmpty {
                 timeline.enrichTools(from: toolCallGroups)
-                timeline.markLastProseAsFinal()
                 return timeline
             }
         }
@@ -417,22 +434,29 @@ struct AssistantActivityTimeline: Equatable {
         return timeline
     }
 
-    static func authoritativeScene(message: ChatMessage) -> AssistantActivityTimeline? {
+    static func authoritativeScene(message: ChatMessage, earlierRows: [AssistantActivitySceneRow] = []) -> AssistantActivityTimeline? {
         guard let scene = message.activityScene,
               scene.version == "activity_scene_v1"
         else { return nil }
 
         var timeline = AssistantActivityTimeline()
-        for (sourceIndex, row) in (scene.activityRows ?? []).enumerated().sorted(by: { lhs, rhs in
+        // Paged earlier rows come first, then the tail preview; both are already in server order.
+        for (sourceIndex, row) in (earlierRows + (scene.activityRows ?? [])).enumerated().sorted(by: { lhs, rhs in
             (lhs.element.orderIndex ?? lhs.offset) < (rhs.element.orderIndex ?? rhs.offset)
         }) {
             timeline.appendSceneRow(row, sourceIndex: sourceIndex)
         }
+        if let finalAnswer = scene.finalAnswer {
+            // The server's rows exclude the answer, which it sends as `final_answer` (possibly empty).
+            if let finalAnswer = Self.nonEmpty(finalAnswer) {
+                timeline.rows.append(AssistantActivityRow(id: "scene:final", content: .prose(finalAnswer), isFinalAnswer: true))
+            }
+        } else {
+            // Only a pre-TAL-328 server omits the field; its message text is the answer.
+            // ponytail: old-server fallback; delete once those servers are unsupported.
+            timeline.appendFinalProseIfNeeded(message.content)
+        }
         guard !timeline.rows.isEmpty else { return nil }
-        let finalAnswer = scene.hasConsumedSteering
-            ? Self.nonEmpty(scene.finalAnswer)
-            : Self.nonEmpty(scene.finalAnswer) ?? message.content
-        timeline.appendFinalProseIfNeeded(finalAnswer)
         return timeline
     }
 
@@ -486,20 +510,12 @@ struct AssistantActivityTimeline: Equatable {
             if appendProseIfPresent(row.text, id: rowID) {
                 rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
             }
-        case "thinking":
-            if appendReasoningIfPresent(
-                Self.string(row.thinking?["text"]) ?? row.text,
-                titles: Self.strings(row.thinking?["titles"]),
-                id: rowID
-            ) {
+        case "reasoning":
+            if appendReasoningIfPresent(row.text, titles: row.titles ?? [], id: rowID) {
                 rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
             }
         case "tool":
-            if let toolCall = Self.toolCall(
-                object: row.tool ?? row.payload,
-                fallbackID: row.toolCallID ?? rowID,
-                status: row.status
-            ) {
+            if let toolCall = Self.sceneToolCall(row.tool, fallbackID: rowID) {
                 appendTool(toolCall, id: rowID)
                 if rows[rows.index(before: rows.endIndex)].createdAt == nil {
                     rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
@@ -507,14 +523,14 @@ struct AssistantActivityTimeline: Equatable {
             }
         case "steering":
             guard let text = Self.nonEmpty(row.text) else { break }
-            let steerID = Self.string(row.payload?["steer_id"]) ?? rowID
             rows.append(AssistantActivityRow(
                 id: rowID,
                 content: .steering(.init(
-                    id: steerID,
+                    id: row.steerID ?? rowID,
                     text: text,
-                    submittedAt: Self.number(row.payload?["created_at"]),
-                    consumedAt: Self.number(row.payload?["consumed_at"]) ?? row.createdAt
+                    submittedAt: Self.number(row.steering?["submitted_at"]),
+                    consumedAt: Self.number(row.steering?["consumed_at"]),
+                    phaseDuration: Self.number(row.steering?["phase_duration"])
                 )),
                 createdAt: row.createdAt
             ))
@@ -581,13 +597,6 @@ struct AssistantActivityTimeline: Equatable {
         }
     }
 
-    private mutating func markLastProseAsFinal() {
-        guard let index = rows.indices.last,
-              case .prose = rows[index].content
-        else { return }
-        rows[index].isFinalAnswer = true
-    }
-
     @discardableResult
     private mutating func appendProseIfPresent(_ text: String?, id: String) -> Bool {
         guard let text = Self.nonEmpty(text) else { return false }
@@ -604,6 +613,20 @@ struct AssistantActivityTimeline: Equatable {
         guard let text = Self.nonEmpty(text) else { return false }
         appendReasoning(text, titles: titles, id: id)
         return true
+    }
+
+    /// A server-normalized scene tool: every field is explicit, so nothing is inferred here.
+    private static func sceneToolCall(_ object: [String: JSONValue]?, fallbackID: String) -> ToolCall? {
+        guard let object else { return nil }
+        return ToolCall(
+            id: Self.nonEmpty(Self.string(object["id"])) ?? fallbackID,
+            name: Self.nonEmpty(Self.string(object["name"])) ?? "tool",
+            preview: Self.nonEmpty(Self.string(object["preview"])) ?? Self.nonEmpty(Self.string(object["result"])),
+            args: Self.object(object["args"]),
+            duration: Self.number(object["duration"]),
+            isError: Self.bool(object["is_error"]),
+            isCompleted: Self.bool(object["done"]) == true
+        )
     }
 
     private static func toolCall(
@@ -723,13 +746,8 @@ struct TranscriptMessage: Identifiable, Equatable {
     let anchorID: String
     let message: ChatMessage
     let assistantSegments: [TranscriptAssistantSegment]
-    let endsBeforeSteeringHint: Bool
 
     var id: String { renderID }
-
-    func shouldShowTurnSummary(hasActiveStream: Bool) -> Bool {
-        !hasActiveStream || !endsBeforeSteeringHint
-    }
 
     func ownsActiveStream(
         hasLiveActivity: Bool,
@@ -874,7 +892,7 @@ extension ChatViewModel {
         transcriptMessages.reserveCapacity(messages.count)
         var assistantSegments: [(loadedIndex: Int, segment: TranscriptAssistantSegment)] = []
 
-        func appendAssistantTurn(endsBeforeSteeringHint: Bool = false) {
+        func appendAssistantTurn() {
             guard let first = assistantSegments.first,
                   let last = assistantSegments.last
             else { return }
@@ -884,8 +902,7 @@ extension ChatViewModel {
                 renderID: "transcript:\(offset + first.loadedIndex)",
                 anchorID: last.segment.anchorID,
                 message: last.segment.message,
-                assistantSegments: assistantSegments.map(\.segment),
-                endsBeforeSteeringHint: endsBeforeSteeringHint
+                assistantSegments: assistantSegments.map(\.segment)
             ))
             assistantSegments.removeAll(keepingCapacity: true)
         }
@@ -893,6 +910,8 @@ extension ChatViewModel {
         for (loadedIndex, message) in messages.enumerated() {
             guard message.role != "tool" else { continue }
             guard !TranscriptTurnClassifier.isToolResultOnlyMessage(message) else { continue }
+            // Persisted steers render inside their turn's scene, not as rows of their own.
+            guard message.steer == nil else { continue }
             if let streamingAssistantID, message.messageId == streamingAssistantID {
                 continue
             }
@@ -904,6 +923,10 @@ extension ChatViewModel {
             )
 
             if message.role == "assistant" {
+                // The server stamps each row with its turn; a new turn id starts a new assistant turn.
+                if let previous = assistantSegments.last, previous.segment.message.turnId != message.turnId {
+                    appendAssistantTurn()
+                }
                 assistantSegments.append((
                     loadedIndex,
                     TranscriptAssistantSegment(anchorID: anchorID, message: message)
@@ -911,7 +934,7 @@ extension ChatViewModel {
                 continue
             }
 
-            appendAssistantTurn(endsBeforeSteeringHint: message.isLocalSteeringHint)
+            appendAssistantTurn()
             let absoluteIndex = offset + loadedIndex
             let renderID = "transcript:\(absoluteIndex)"
 
@@ -920,8 +943,7 @@ extension ChatViewModel {
                 renderID: renderID,
                 anchorID: anchorID,
                 message: message,
-                assistantSegments: [],
-                endsBeforeSteeringHint: false
+                assistantSegments: []
             ))
         }
 

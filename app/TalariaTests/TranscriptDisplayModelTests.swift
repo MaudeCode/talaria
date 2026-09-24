@@ -25,6 +25,25 @@ final class TranscriptMessageTests: XCTestCase {
         XCTAssertTrue(oldTurn.ownsActiveStream(hasLiveActivity: true, streamingAssistantMessageID: nil))
     }
 
+    func testTranscriptMessagesGroupAssistantTurnsByServerTurnID() {
+        // A hidden wakeup prompt separates two server turns with no visible user row between them.
+        let messages = [
+            ChatMessage(role: "user", content: "Check", timestamp: 1, messageId: "u1", turnId: "run-1"),
+            ChatMessage(role: "assistant", content: "Part one", timestamp: 2, messageId: "a1", turnId: "run-1"),
+            ChatMessage(role: "assistant", content: "Part two", timestamp: 3, messageId: "a2", turnId: "run-1"),
+            ChatMessage(role: "assistant", content: "Woke up", timestamp: 4, messageId: "a3", turnId: "run-2")
+        ]
+
+        let transcript = ChatViewModel.transcriptMessages(from: messages)
+
+        XCTAssertEqual(transcript.map(\.assistantSegments.count), [0, 2, 1])
+        XCTAssertEqual(transcript[1].assistantSegments.map(\.message.messageId), ["a1", "a2"])
+        XCTAssertEqual(
+            TranscriptTurnClassifier.assistantTurnKeysByAnchorID(messages),
+            ["a1": "turn:run-1", "a2": "turn:run-1", "a3": "turn:run-2"]
+        )
+    }
+
     func testTranscriptMessagesHideToolRowsAndPreserveLoadedIndices() {
         let messages = [
             ChatMessage(role: "user", content: "Plan it", timestamp: 1, messageId: "u1"),
@@ -192,7 +211,8 @@ final class TranscriptMessageTests: XCTestCase {
         XCTAssertEqual(transcriptMessages.map(\.message.role), ["user", "assistant"])
     }
 
-    func testPreSteerActivityStaysExpandedUntilStreamCompletes() {
+    /// Only the server's scene folds work under "Worked"; the pre-steer part of a live turn has none, so it stays open.
+    func testPreSteerActivityHasNoServerSceneUntilTheTurnSettles() {
         let messages = [
             ChatMessage(role: "user", content: "Initial request", timestamp: 1, messageId: "u1"),
             ChatMessage(role: "assistant", content: "Working", timestamp: 2, messageId: "a1"),
@@ -207,9 +227,8 @@ final class TranscriptMessageTests: XCTestCase {
 
         let preSteerActivity = ChatViewModel.transcriptMessages(from: messages)[1]
 
-        XCTAssertTrue(preSteerActivity.endsBeforeSteeringHint)
-        XCTAssertFalse(preSteerActivity.shouldShowTurnSummary(hasActiveStream: true))
-        XCTAssertTrue(preSteerActivity.shouldShowTurnSummary(hasActiveStream: false))
+        XCTAssertEqual(preSteerActivity.message.messageId, "a1")
+        XCTAssertNil(AssistantActivityTimeline.authoritativeScene(message: preSteerActivity.message))
     }
 
     func testAuthoritativeConsumedSteerKeepsLaterUnresolvedHintDuringReconnect() throws {
@@ -223,7 +242,7 @@ final class TranscriptMessageTests: XCTestCase {
           "_anchor_activity_scene":{
             "version":"activity_scene_v1",
             "activity_rows":[
-              {"row_id":"local-steer-consumed","order_index":0,"role":"steering","status":"consumed","text":"First hint","payload":{"steer_id":"local-steer-consumed"}}
+              {"row_id":"steering:local-steer-consumed","order_index":0,"role":"steering","text":"First hint","steering":{"steer_id":"local-steer-consumed","consumed":true,"submitted_at":null,"consumed_at":null}}
             ]
           }
         }

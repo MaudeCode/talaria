@@ -777,13 +777,29 @@ extension ChatViewModelSendTests {
             ["Initial request", "Before hint. ", "Use the focused test", "After hint."]
         )
 
+        let steerID = try XCTUnwrap(viewModel.messages[2].messageId)
+        streamClient.emit(.steerConsumed(SteeringStreamEvent(steerId: steerID, text: "Use the focused test")))
         let completedSession = try makeSessionDetail(
             """
             {
               "session_id": "session-abc",
               "messages": [
-                {"role":"user","content":"Initial request","message_id":"user-1"},
-                {"role":"assistant","content":"Before hint. After hint.","message_id":"assistant-final"}
+                {"role":"user","content":"Initial request","message_id":"user-1","_turn_id":"stream-123"},
+                {"role":"user","content":"Use the focused test","_turn_id":"stream-123","_steer":{"steer_id":"\(steerID)","submitted_at":3,"consumed_at":4,"phase_duration":4}},
+                {
+                  "role":"assistant","content":"Before hint. After hint.","message_id":"assistant-final","_turn_id":"stream-123",
+                  "_turn_duration":10,
+                  "_anchor_activity_scene": {
+                    "version":"activity_scene_v1",
+                    "final_answer":"After hint.",
+                    "turn_duration":10,
+                    "final_phase_duration":6,
+                    "activity_rows":[
+                      {"row_id":"prose-1","order_index":0,"role":"prose","created_at":1,"text":"Before hint. "},
+                      {"row_id":"steering:\(steerID)","order_index":1,"role":"steering","created_at":4,"text":"Use the focused test","steering":{"steer_id":"\(steerID)","consumed":true,"submitted_at":3,"consumed_at":4,"phase_duration":4}}
+                    ]
+                  }
+                }
               ]
             }
             """
@@ -801,18 +817,20 @@ extension ChatViewModelSendTests {
             session: completedSession
         )))
 
-        XCTAssertEqual(viewModel.messages.map(\.role), ["user", "assistant", "user", "assistant"])
+        // The server's persisted steer replaces the local hint; the turn renders from its scene.
+        XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
+        XCTAssertEqual(viewModel.messages.map(\.role), ["user", "user", "assistant"])
+        XCTAssertNotNil(viewModel.messages[1].steer)
+        XCTAssertNil(viewModel.actionContext(for: viewModel.messages[1], visibleIndex: 1))
+        let assistant = try XCTUnwrap(viewModel.messages.last)
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: assistant))
+        let turn = try XCTUnwrap(CompletedAssistantTurn(rows: timeline.rows))
+        XCTAssertEqual(turn.phases.compactMap { $0.steeringAfter?.text }, ["Use the focused test"])
         XCTAssertEqual(
-            viewModel.messages.map(\.content),
-            ["Initial request", "Before hint. ", "Use the focused test", "After hint."]
+            turn.phaseDurations(totalDuration: 10, finalPhaseDuration: assistant.activityScene?.finalPhaseDuration)
+                .compactMap { $0 },
+            [4, 6]
         )
-        XCTAssertEqual(viewModel.messages[2].name, "_talaria_steer_consumed")
-        let phaseDurations = viewModel.messages.filter { $0.role == "assistant" }.compactMap(\.turnDuration)
-        XCTAssertEqual(phaseDurations.count, 2)
-        XCTAssertGreaterThan(phaseDurations[0], 0)
-        XCTAssertGreaterThan(phaseDurations[1], 0)
-        XCTAssertEqual(phaseDurations.reduce(0, +), 10, accuracy: 0.01)
-        XCTAssertNil(viewModel.actionContext(for: viewModel.messages[2], visibleIndex: 2))
         XCTAssertFalse(viewModel.messages.contains { $0.content == "Steering hint delivered." })
     }
 
@@ -835,11 +853,10 @@ extension ChatViewModelSendTests {
                 "final_answer":"Final answer.",
                 "turn_duration":10,
                 "activity_rows":[
-                  {"row_id":"prose-1","order_index":0,"role":"prose","text":"Before hint. ","created_at":1},
-                  {"row_id":"tool-1","order_index":1,"role":"tool","tool_call_id":"call-1","status":"completed","created_at":2,"tool":{"id":"call-1","name":"read_file","done":true}},
-                  {"row_id":"local-steer-authoritative","order_index":2,"role":"steering","status":"consumed","text":"Keep this visible","created_at":4,"payload":{"steer_id":"local-steer-authoritative","created_at":3,"consumed_at":4}},
-                  {"row_id":"tool-2","order_index":3,"role":"tool","tool_call_id":"call-2","status":"completed","created_at":7,"tool":{"id":"call-2","name":"terminal","done":true}},
-                  {"row_id":"prose-2","order_index":4,"role":"prose","text":"Final answer.","created_at":9}
+                  {"row_id":"prose-1","order_index":0,"role":"prose","created_at":1,"text":"Before hint. "},
+                  {"row_id":"tool:call-1","order_index":1,"role":"tool","created_at":2,"tool":{"id":"call-1","name":"read_file","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null}},
+                  {"row_id":"steering:local-steer-authoritative","order_index":2,"role":"steering","created_at":4,"text":"Keep this visible","steering":{"steer_id":"local-steer-authoritative","consumed":true,"submitted_at":3,"consumed_at":4}},
+                  {"row_id":"tool:call-2","order_index":3,"role":"tool","created_at":7,"tool":{"id":"call-2","name":"terminal","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null}}
                 ]
               }
             }
@@ -871,6 +888,8 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(didStart)
         streamClient.emit(.token("Before hint. "))
         _ = await viewModel.submitStreamingMessage("Keep this visible", behavior: .steer)
+        let steerID = try XCTUnwrap(viewModel.messages.last(where: \.isLocalSteeringHint)?.messageId)
+        streamClient.emit(.steerConsumed(SteeringStreamEvent(steerId: steerID, text: "Keep this visible")))
         streamClient.emit(.token("Final answer."))
         streamClient.emit(.done(DoneStreamEvent(session: completedSession)))
         streamClient.emit(.streamEnd)
@@ -885,6 +904,78 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(turn.hasSteering)
         XCTAssertEqual(turn.phases.compactMap { $0.steeringAfter?.text }, ["Keep this visible"])
         XCTAssertEqual(turn.phaseDurations(totalDuration: assistant.turnDuration).compactMap { $0 }, [3, 7])
+    }
+
+    @MainActor
+    func testCompletionDropsTheLocalHintWhenTheSceneSaysTheTurnTookASteer() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+            case "/api/chat/steer":
+                return apiTestJSONResponse(#"{"accepted":true,"stream_id":"stream-123"}"#, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+        _ = await viewModel.sendMessage("Initial request")
+        streamClient.emit(.token("Working. "))
+        _ = await viewModel.submitStreamingMessage("Keep this once", behavior: .steer)
+        XCTAssertTrue(viewModel.messages.contains(where: \.isLocalSteeringHint))
+
+        // A long turn: the persisted steer row is outside the terminal window, and `done` precedes `steer_consumed`.
+        let completedSession = try makeSessionDetail(
+            """
+            {
+              "session_id": "session-abc",
+              "messages": [
+                {"role":"assistant","content":"Final.","message_id":"assistant-final","_turn_id":"stream-123",
+                 "_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"Final.","activity_rows_offset":90,"has_consumed_steering":true,"activity_rows":[]}}
+              ]
+            }
+            """
+        )
+        streamClient.emit(.done(DoneStreamEvent(session: completedSession)))
+
+        XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
+    }
+
+    @MainActor
+    func testErrorFrameSessionReplacesTheLiveTurnWithTheServerScene() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+        _ = await viewModel.sendMessage("Initial request")
+        streamClient.emit(.token("Partial work. "))
+
+        let settled = try makeSessionDetail(
+            """
+            {
+              "session_id": "session-abc",
+              "messages": [
+                {"role":"user","content":"Initial request","message_id":"user-1","_turn_id":"stream-123"},
+                {"role":"assistant","content":"**Error:** boom","message_id":"assistant-error","_error":true,"_turn_id":"stream-123",
+                 "_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"**Error:** boom","terminal_state":"error","expanded_by_default":true,"activity_rows":[{"row_id":"p","order_index":0,"role":"prose","text":"Partial work. "}]}}
+              ]
+            }
+            """
+        )
+        streamClient.emit(.settledSession(settled))
+        streamClient.emit(.error("boom"))
+
+        let assistant = try XCTUnwrap(viewModel.messages.last(where: { $0.role == "assistant" }))
+        XCTAssertEqual(assistant.messageId, "assistant-error")
+        XCTAssertEqual(assistant.activityScene?.terminalState, "error")
+        XCTAssertEqual(assistant.activityScene?.expandedByDefault, true)
     }
 
     @MainActor
@@ -1050,6 +1141,12 @@ extension ChatViewModelSendTests {
                 )
             case "/api/chat/cancel":
                 return apiTestJSONResponse(#"{"ok":true}"#, for: request)
+            case "/api/session":
+                // The server settled the cancelled turn before answering the cancel.
+                return apiTestJSONResponse(
+                    #"{"session":{"session_id":"session-abc","messages":[{"role":"user","content":"Initial request","message_id":"user-1","_turn_id":"stream-123"},{"role":"assistant","content":"**Task cancelled:** Task cancelled.","message_id":"assistant-cancelled","_error":true,"_turn_id":"stream-123","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"","terminal_state":"cancelled","activity_rows":[]}}]}}"#,
+                    for: request
+                )
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
                 throw URLError(.badURL)
@@ -1064,6 +1161,8 @@ extension ChatViewModelSendTests {
         let didCancel = await viewModel.cancelActiveStream()
         XCTAssertTrue(didCancel)
         XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
+        // The stopped live view gives way to the server's settled turn.
+        XCTAssertEqual(viewModel.messages.last?.activityScene?.terminalState, "cancelled")
     }
 
     @MainActor
@@ -1118,6 +1217,64 @@ extension ChatViewModelSendTests {
             ["Initial request", "Before hint. ", "Keep this after reconnect"]
         )
         XCTAssertEqual(viewModel.messages.last?.steeringHintState, .waiting)
+    }
+
+    @MainActor
+    func testReconnectSnapshotKeepsConsumedSteerTheServerAlreadySaved() async throws {
+        final class SteerIDBox: @unchecked Sendable { var value = "" }
+        let steerID = SteerIDBox()
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(
+                    #"{"session_id":"session-abc","stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/chat/steer":
+                return apiTestJSONResponse(
+                    #"{"accepted":true,"stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/session":
+                // Mid-turn: the server saved the steer as it entered the stream, as a hidden row.
+                return apiTestJSONResponse(
+                    """
+                    {
+                      "session": {
+                        "session_id": "session-abc",
+                        "active_stream_id": "stream-123",
+                        "messages": [
+                          {"role":"user","content":"Initial request","message_id":"user-1","_turn_id":"stream-123"},
+                          {"role":"user","content":"Keep this live","_turn_id":"stream-123","_steer":{"steer_id":"\(steerID.value)","submitted_at":3,"consumed_at":4,"phase_duration":4}},
+                          {"role":"assistant","content":"Before hint. ","message_id":"assistant-server","_turn_id":"stream-123"}
+                        ]
+                      }
+                    }
+                    """,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("Before hint. "))
+        _ = await viewModel.submitStreamingMessage("Keep this live", behavior: .steer)
+        steerID.value = try XCTUnwrap(viewModel.messages.last(where: \.isLocalSteeringHint)?.messageId)
+        streamClient.emit(.steerConsumed(SteeringStreamEvent(steerId: steerID.value, text: "Keep this live")))
+        viewModel.suspendStreamForNavigation()
+
+        await viewModel.loadMessages()
+
+        // The server row stays hidden until the turn's scene arrives; the live hint keeps rendering the steer.
+        XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+        let hints = viewModel.messages.filter(\.isLocalSteeringHint)
+        XCTAssertEqual(hints.map(\.content), ["Keep this live"])
+        XCTAssertEqual(hints.first?.steeringHintState, .consumed)
     }
 
     /// Issue #202: a queued slash message whose send fails must not be retried in a tight loop.
@@ -1326,5 +1483,63 @@ extension ChatViewModelSendTests {
             statusText.contains("Queued messages: 0"),
             "The queued message should have drained once the voice note released the pipeline. Status was:\n\(statusText)"
         )
+    }
+}
+
+/// Long completed turns arrive as a tail preview; the app pages the omitted rows like Web's history control.
+extension ChatViewModelSendTests {
+    @MainActor
+    func testLoadEarlierSceneRowsPagesTheOmittedRowsOldestFirst() async throws {
+        var requests: [URLComponents] = []
+        let viewModel = try makeViewModel { request in
+            let components = try XCTUnwrap(URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false))
+            requests.append(components)
+            XCTAssertEqual(components.path, "/api/session/anchor-scene")
+            let before = components.queryItems?.first { $0.name == "before" }?.value
+            // Two short pages, as a server with a small page size would send them (row kinds alternate as in a real turn).
+            let body = before == "3"
+                ? #"{"scene_ref":"ref","start":1,"end":3,"total":5,"complete":false,"rows":[{"row_id":"r1","order_index":1,"role":"prose","text":"Second"},{"row_id":"r2","order_index":2,"role":"reasoning","text":"Third"}]}"#
+                : #"{"scene_ref":"ref","start":0,"end":1,"total":5,"complete":true,"rows":[{"row_id":"r0","order_index":0,"role":"reasoning","text":"First"},"malformed"]}"#
+            return apiTestJSONResponse(body, for: request)
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data(#"""
+        {"role":"assistant","content":"Done.","message_id":"assistant-long","_turn_id":"run-1","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"Done.","activity_rows_offset":3,"activity_scene_ref":"ref","activity_rows":[{"row_id":"r3","order_index":3,"role":"prose","text":"Fourth"},{"row_id":"r4","order_index":4,"role":"reasoning","text":"Fifth"}]}}
+        """#.utf8))
+        let transcriptMessage = TranscriptMessage(
+            loadedIndex: 7,
+            renderID: "transcript:7",
+            anchorID: "assistant-long",
+            message: message,
+            assistantSegments: [TranscriptAssistantSegment(anchorID: "assistant-long", message: message)]
+        )
+
+        await viewModel.loadEarlierSceneRows(for: transcriptMessage)
+
+        let earlier = viewModel.earlierSceneRows(for: transcriptMessage)
+        XCTAssertEqual(earlier.map(\.rowID), ["r0", "r1", "r2"])
+        XCTAssertEqual(requests.map { $0.queryItems?.first { $0.name == "before" }?.value }, ["3", "1"])
+        XCTAssertEqual(requests.first?.queryItems?.first { $0.name == "message_ref" }?.value, "ref")
+        XCTAssertEqual(requests.first?.queryItems?.first { $0.name == "session_id" }?.value, "session-abc")
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: message, earlierRows: earlier))
+        XCTAssertEqual(timeline.rows.compactMap(\.text), ["First", "Second", "Third", "Fourth", "Fifth", "Done."])
+
+        // A loaded turn is not fetched again.
+        await viewModel.loadEarlierSceneRows(for: transcriptMessage)
+        XCTAssertEqual(requests.count, 2)
+
+        // A regenerated reply at the same position is a new server turn: it never shows the previous turn's rows.
+        let regenerated = try decoder.decode(ChatMessage.self, from: Data(#"""
+        {"role":"assistant","content":"Redone.","_turn_id":"run-2","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"Redone.","activity_rows_offset":3,"activity_rows":[]}}
+        """#.utf8))
+        let regeneratedMessage = TranscriptMessage(
+            loadedIndex: 7,
+            renderID: "transcript:7",
+            anchorID: "assistant-long",
+            message: regenerated,
+            assistantSegments: [TranscriptAssistantSegment(anchorID: "assistant-long", message: regenerated)]
+        )
+        XCTAssertTrue(viewModel.earlierSceneRows(for: regeneratedMessage).isEmpty)
     }
 }

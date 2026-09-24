@@ -31,12 +31,25 @@ export function stripWorkspacePrefix(text: string, includeLegacy = false): strin
 }
 
 /** Python `_message_text`: flatten string or multimodal content to text. */
+export function isReasoningBlock(part: Record<string, unknown>): boolean {
+  return part.type === 'reasoning' || part.type === 'thinking'
+}
+
+/** The text of a structured reasoning or thinking content block. */
+export function reasoningBlockText(part: Record<string, unknown>): string {
+  return str(part.text || part.thinking || part.reasoning)
+}
+
 export function messageText(content: unknown): string {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
     return content.map((part) => {
       if (isDict(part)) {
+        // Structured reasoning is never reply text; the scene reads it as reasoning.
+        if (isReasoningBlock(part)) return ''
         if (part.type === 'text' || 'text' in part) return str(part.text)
+        // Responses-style parts may carry their text under their own type name.
+        if (part.type === 'output_text' || part.type === 'input_text') return str(part[part.type])
         return ''
       }
       return str(part)
@@ -84,7 +97,8 @@ export function isContextCompressionMarker(msg: unknown): boolean {
 const normalizeUserText = (text: string): string => stripWorkspacePrefix(text, true).split(/\s+/).join(' ').trim()
 
 export function looksLikeCurrentUserTurn(msg: unknown, msgText: string): boolean {
-  if (!isDict(msg) || str(msg.role) !== 'user') return false
+  // A persisted steer is display-only: it is never the prompt that opened a turn.
+  if (!isDict(msg) || str(msg.role) !== 'user' || isDict(msg._steer)) return false
   const candidate = normalizeUserText(messageText(msg.content))
   const target = normalizeUserText(msgText)
   if (!candidate || !target) return false
@@ -110,7 +124,7 @@ export function findCurrentUserTurn(messages: unknown[], msgText: string): numbe
   return null
 }
 
-export interface MergeOptions { source?: string; activeTurnToken?: string | null; now?: number }
+export interface MergeOptions { source?: string; activeTurnToken?: string | null; now?: number; turnId?: string }
 
 /** Python `_merge_display_messages_after_agent_result` (append-only display merge). */
 /** Python `_assistant_message_has_final_visible_text`: a non-error assistant row carrying visible answer text. */
@@ -136,7 +150,7 @@ export function sessionLacksFinalAssistantAnswer(messages: Message[]): boolean {
     const msg = messages[i]
     if (!msg) continue
     if (msg._error) return false
-    if (isContextCompressionMarker(msg)) continue
+    if (isContextCompressionMarker(msg) || isDict(msg._steer)) continue
     if (msg.role === 'tool') return true
     if (msg.role === 'assistant') {
       if (assistantHasFinalVisibleText(msg)) return false
@@ -145,24 +159,6 @@ export function sessionLacksFinalAssistantAnswer(messages: Message[]): boolean {
     if (msg.role === 'user') return true
   }
   return true
-}
-
-/**
- * Codex (Responses API) narration between tool calls arrives as `phase: 'commentary'` message items; the Agent routes
- * that text into `reasoning` and leaves the row's `content` empty. A display row carries it as its prose instead, so the
- * settled transcript keeps what the turn showed live.
- */
-export function surfaceCodexCommentary(m: Message): void {
-  if (m.role !== 'assistant' || messageText(m.content).trim() || !Array.isArray(m.codex_message_items)) return
-  const parts = m.codex_message_items.flatMap((item) => isDict(item) && item.type === 'message' && str(item.phase).trim().toLowerCase() === 'commentary' && Array.isArray(item.content)
-    ? [item.content.map((part) => (isDict(part) && part.type === 'output_text' ? str(part.text) : '')).join('').trim()]
-    : []).filter(Boolean)
-  if (!parts.length) return
-  m.content = parts.join('\n\n')
-  if (typeof m.reasoning !== 'string') return
-  const rest = parts.reduce((text, part) => text.replace(part, ''), m.reasoning).replace(/\n{3,}/g, '\n\n').trim()
-  if (rest) m.reasoning = rest
-  else delete m.reasoning
 }
 
 /**
@@ -216,6 +212,7 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
   if (currentUserKey !== null && !currentUserIn && !alreadyCheckpointed && candidates.some((m) => isDict(m) && (m.role === 'assistant' || m.role === 'tool'))) {
     const user: Message = { role: 'user', content: msgText, timestamp: opts.now ?? Date.now() / 1000 }
     if (opts.activeTurnToken) user._active_turn_token = opts.activeTurnToken
+    if (opts.turnId) user._turn_id = opts.turnId
     if (opts.source && opts.source !== 'webui') user._source = opts.source
     let insertAt = 0
     while (insertAt < candidates.length && isContextCompressionMarker(candidates[insertAt])) insertAt += 1
@@ -236,7 +233,9 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
       display = { ...msg, content: msgText }
       if (opts.source && opts.source !== 'webui') display._source = opts.source
     }
-    merged.push(structuredClone(display))
+    const row = structuredClone(display)
+    if (opts.turnId) row._turn_id = opts.turnId
+    merged.push(row)
     if (key !== null) seen.add(key)
   }
   return merged
@@ -393,6 +392,16 @@ function toolCallId(tc: unknown): string {
 
 const API_SAFE_MSG_KEYS = new Set(['role', 'content', 'tool_calls', 'tool_call_id', 'name', 'refusal', 'reasoning_content'])
 const OOB_USER_MESSAGE_BLOCK_RE = /\[OUT-OF-BAND\s+USER\s+MESSAGE(?:\s*(?:—|-)\s*[\s\S]*?)?\]\s*?[\s\S]*?\[\/OUT-OF-BAND\s+USER\s+MESSAGE\]/gi
+const OOB_DELIVERY_RE = /^\s*\[OUT-OF-BAND\s+USER\s+MESSAGE[^\]]*\]\s*([\s\S]*?)\s*\[\/OUT-OF-BAND\s+USER\s+MESSAGE\]\s*$/i
+
+/** The Agent's own record of a steer it delivered (`display_kind: 'steer'`, an out-of-band block): its text, else null. */
+export function agentSteerText(m: Message): string | null {
+  if (m.role !== 'user' || isDict(m._steer)) return null
+  const content = messageText(m.content)
+  const inner = OOB_DELIVERY_RE.exec(content)?.[1]
+  if (inner !== undefined) return inner.trim()
+  return m.display_kind === 'steer' ? content.trim() : null
+}
 
 /** Python `_is_reasoning_only_assistant_message`: a display-only Thinking card with no visible reply. */
 function isReasoningOnlyAssistant(msg: Message): boolean {
@@ -425,7 +434,8 @@ export function sanitizeMessagesForApi(messages: Message[]): Message[] {
   for (const msg of messages) {
     if (!msg || typeof msg !== 'object') continue
     if (isReasoningOnlyAssistant(msg)) continue
-    if (msg._error) continue
+    // The Agent already received a steer mid-turn; its persisted row is display-only.
+    if (msg._error || isDict(msg._steer)) continue
     if (msg._partial && !messageText(msg.content).trim()) continue
     const recovered = Boolean(msg._recovered) && msg.role === 'user'
     if (msg.role === 'tool') { const tid = str(msg.tool_call_id); if (!tid || !validToolCallIds.has(tid)) continue }

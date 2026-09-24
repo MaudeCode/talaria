@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema } from '../views.js'
+import { SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema } from '../views.js'
 
 /** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
 
@@ -61,7 +61,7 @@ export const sessionsContract = {
     compressStatus: oc.route({ method: 'GET', path: '/api/session/compress/status', tags }).input(SessionQuery).output(CompressionStatusSchema),
     draftGet: oc.route({ method: 'GET', path: '/api/session/draft', tags }).input(SessionQuery).output(z.object({ draft: DraftSchema, draft_version: z.string().nullable() })),
     draftSave: oc.route({ method: 'POST', path: '/api/session/draft', tags }).input(z.object({ session_id: z.string(), text: Json.optional(), files: Json.optional(), draft_version: Json.optional() })).output(DraftResponseSchema),
-    anchorSceneGet: oc.route({ method: 'GET', path: '/api/session/anchor-scene', tags }).input(z.object({ session_id: z.string(), message_ref: z.string().optional(), message_index: z.string().optional(), before: z.string().optional(), limit: z.string().optional() })).output(z.object({ scene_ref: z.string(), rows: z.array(Json), start: z.number().int(), end: z.number().int(), total: z.number().int(), complete: z.boolean() })),
+    anchorSceneGet: oc.route({ method: 'GET', path: '/api/session/anchor-scene', tags }).input(z.object({ session_id: z.string(), message_ref: z.string().optional(), message_index: z.string().optional(), before: z.string().optional(), limit: z.string().optional() })).output(z.object({ scene_ref: z.string(), rows: z.array(ActivitySceneRowSchema), start: z.number().int(), end: z.number().int(), total: z.number().int(), complete: z.boolean() })),
     anchorSceneSave: oc.route({ method: 'POST', path: '/api/session/anchor-scene', tags }).input(z.object({ session_id: z.string(), scene: Json.optional(), message_ref: z.string().optional(), message_index: Json.optional(), message_offset: Json.optional(), message_window_index: Json.optional(), stream_id: z.string().optional() })).output(z.object({ ok: z.literal(true), message_index: z.number().int(), message_ref: z.string() })),
   },
   projects: {

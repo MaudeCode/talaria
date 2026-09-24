@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Progress messages between tool steps now also show under Worked in earlier chats and on iPhone, in the order they were written.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "A reply that ran out of tool steps keeps its outcome after the chat is reopened.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

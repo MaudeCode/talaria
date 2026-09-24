@@ -17,6 +17,8 @@ struct ChatTranscriptView: View {
     let reasoningGroups: [ReasoningGroup]
     let completedToolCallGroupsForAnchor: (String?) -> [ToolCallGroup]
     let archivedActivityRowsForAnchor: (String?) -> [AssistantActivityRow]
+    let earlierSceneRowsForTurn: (TranscriptMessage) -> [AssistantActivitySceneRow]
+    let onLoadEarlierSceneRows: (TranscriptMessage) -> Void
     let liveReasoningText: String
     let liveActivityRows: [AssistantActivityRow]
     let reasoningAnchorMessageID: String?
@@ -274,9 +276,8 @@ struct ChatTranscriptView: View {
                     transcriptMessage: transcriptMessage,
                     transcriptBlockSpacing: transcriptBlockSpacing,
                     showsThinkingAndToolCards: showsThinkingAndToolCards,
-                    reasoningGroups: reasoningGroups,
-                    toolCallGroups: activityAnchorIDs.flatMap(completedToolCallGroupsForAnchor),
                     archivedActivityRows: activityAnchorIDs.flatMap(archivedActivityRowsForAnchor),
+                    earlierSceneRows: earlierSceneRowsForTurn(transcriptMessage),
                     liveActivityRows: (isReasoningAnchor || isToolCallAnchor || isStreamingRow) ? liveActivityRows : [],
                     streamingAssistantMessageID: isStreamingRow ? streamingAssistantMessageID : nil,
                     liveTokensPerSecond: isStreamingRow ? liveTokensPerSecond : nil,
@@ -303,7 +304,8 @@ struct ChatTranscriptView: View {
                     onRegenerate: onRegenerate,
                     onEdit: onEdit,
                     onFork: onFork,
-                    onCopy: onCopy
+                    onCopy: onCopy,
+                    onLoadEarlierSceneRows: { onLoadEarlierSceneRows(transcriptMessage) }
                 )
                 .equatable()
                 .id(transcriptMessage.renderID)

@@ -201,6 +201,18 @@ describe('state.db projection', () => {
     expect((await s.get('/api/list?session_id=no-such-session&path=.')).status).toBe(404)
   })
 
+  it('pages a long state.db-only scene like a WebUI one', async () => {
+    insertSession(db, { id: 'tui-long', source: 'tui', started_at: 2000, title: 'Long', messages: [['user', 2001], ...Array.from({ length: 90 }, (_, i): [string, number] => ['assistant', 2002 + i])] })
+    const detail = ((await (await s.get('/api/session?session_id=tui-long')).json()) as { session: { messages: Record<string, unknown>[] } }).session
+    const index = detail.messages.length - 1
+    const scene = detail.messages[index]?._anchor_activity_scene as Record<string, unknown>
+    const offset = Number(scene.activity_rows_offset)
+    expect(offset).toBeGreaterThan(0)
+    const res = await s.get(`/api/session/anchor-scene?session_id=tui-long&message_index=${String(index)}&before=${String(offset)}&limit=80`)
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { rows: unknown[] }).rows).toHaveLength(offset)
+  })
+
   it('GET /api/session synthesizes a state.db-only transcript, mutations materialize a claimable CLI session, and foreign owners stay read-only', async () => {
     const post = (path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
     // A TUI conversation continued across a compression rotation: the tip stitches its parent segment.
@@ -211,6 +223,10 @@ describe('state.db projection', () => {
     let body = (await res.json()) as { session: Record<string, unknown> }
     expect(body.session).toMatchObject({ session_id: 'tui-tip', is_cli_session: true, read_only: false, message_count: 4, tool_calls: [] })
     expect((body.session.messages as { content: string }[]).map((m) => m.content)).toEqual(['user says', 'assistant says', 'user says', 'assistant says'])
+    // State.db-only transcripts get the same server turn projection as WebUI sessions: turn ids and each turn's scene.
+    const stateMessages = body.session.messages as Record<string, unknown>[]
+    expect(stateMessages.map((m) => m._turn_id)).toEqual(['legacy:0', 'legacy:0', 'legacy:2', 'legacy:2'])
+    expect(stateMessages[3]?._anchor_activity_scene).toMatchObject({ version: 'activity_scene_v1', final_answer: 'assistant says', terminal_state: 'completed', activity_rows: [] })
     // Archiving materializes a WebUI sidecar for the claimable CLI session (Python `_get_or_materialize_session`).
     res = await post('/api/session/archive', { session_id: 'tui-tip', archived: true })
     expect(res.status).toBe(200)

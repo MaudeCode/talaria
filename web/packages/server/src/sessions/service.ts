@@ -7,12 +7,12 @@ import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
 import { rmSync } from 'node:fs'
-import { copyJson, redactSessionData, stripPublicInternalFields } from '../redact.js'
+import { copyJson, redactSessionData, redactValue, stripPublicInternalFields } from '../redact.js'
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
 import { allSessions, buildSessionListPayload, isMessagingSessionRecord, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
-import { anchorSceneIntOrNull, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene } from './anchor.js'
+import { anchorSceneIntOrNull, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { attachTodoState } from './todo.js'
@@ -265,7 +265,8 @@ export class SessionService {
   /** `compact()` plus messages, redacted for the wire (Python `_public_session_projection`). */
   publicSession(s: Session, withMessages = true): Record<string, unknown> {
     const payload = s.compact()
-    if (withMessages) payload.messages = s.messages
+    // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
+    if (withMessages) payload.messages = hydrateAnchorActivityScenes(withTurnIds(s.messages), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id })
     return redactSessionData(payload, this.deps.redactEnabled())
   }
 
@@ -299,7 +300,8 @@ export class SessionService {
       throw new HttpFailure(404, 'Session not found')
     }
     this.clearStaleStreamState(s)
-    const all: unknown[] = loadMessages ? this.mergedTranscript(s) : []
+    // Turn ids and scenes are computed over the full transcript, so every window reports the same values.
+    const all: unknown[] = loadMessages ? hydrateAnchorActivityScenes(withTurnIds(this.mergedTranscript(s)), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null }) : []
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null
@@ -307,7 +309,6 @@ export class SessionService {
     if (loadMessages) {
       ;[truncated, offset] = messageWindowForDisplay(all, msgLimit, msgBefore)
       if (msgLimit !== null) truncated = messagesForLimitedPayload(truncated)
-      truncated = hydrateAnchorActivityScenes(truncated, s.anchor_activity_scenes, offset)
     } else {
       summaryCount = s.metadataMessageCount ?? s.messages.length
       summaryLast = lastMessageTimestamp(s.messages) ?? 0
@@ -353,8 +354,8 @@ export class SessionService {
     return redactSessionData(raw, this.deps.redactEnabled())
   }
 
-  /** Python `_handle_session_get` without a sidecar: the state.db transcript as a (read-only or claimable) foreign stub. */
-  private foreignSessionDetail(sid: string): Record<string, unknown> {
+  /** A session without a sidecar, synthesized from state.db for this profile; 404/409 like the detail. */
+  private foreignSession(sid: string): { synth: Session; meta: Row | null } {
     const meta = this.lookupCliMeta(sid)
     const profile = str(meta?.profile) || null
     const profileAgnostic = str(meta?.source_tag || meta?.raw_source).trim().toLowerCase() === 'claude_code'
@@ -364,7 +365,14 @@ export class SessionService {
     }
     const { session: synth, reason } = this.claimOrSynthesizeCliSession(sid, meta)
     if (!synth || reason === 'was_webui') throw new HttpFailure(404, 'Session not found')
-    const msgs = synth.messages
+    return { synth, meta }
+  }
+
+  /** Python `_handle_session_get` without a sidecar: the state.db transcript as a (read-only or claimable) foreign stub. */
+  private foreignSessionDetail(sid: string): Record<string, unknown> {
+    const { synth, meta } = this.foreignSession(sid)
+    // The same turn projection as a WebUI session: turn ids, then each completed turn's scene.
+    const msgs = hydrateAnchorActivityScenes(withTurnIds(synth.messages), {}) as Message[]
     const lastTs = Number(msgs[msgs.length - 1]?.timestamp ?? 0) || 0
     const sess: Record<string, unknown> = {
       session_id: synth.session_id, title: synth.title, workspace: synth.workspace, model: synth.model, message_count: msgs.length,
@@ -404,10 +412,11 @@ export class SessionService {
     // turn and an interruption marker follows it, so a dead stream never silently drops what the user sent.
     const pendingText = str(target.pending_user_message)
     if (pendingText) {
+      const turnId = str(target.active_stream_id)
       const startedAt = typeof target.pending_started_at === 'number' && target.pending_started_at > 0 ? target.pending_started_at : this.deps.now()
       const attachments = [...target.pending_attachments]
-      target.messages.push({ role: 'user', content: pendingText, timestamp: Math.trunc(startedAt), ...(attachments.length ? { attachments } : {}), _recovered: true, _source: target.pending_user_source ?? 'webui' })
-      target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', timestamp: Math.trunc(this.deps.now()), _error: true })
+      target.messages.push({ role: 'user', content: pendingText, timestamp: Math.trunc(startedAt), ...(attachments.length ? { attachments } : {}), _recovered: true, _source: target.pending_user_source ?? 'webui', ...(turnId ? { _turn_id: turnId } : {}) })
+      target.messages.push({ role: 'assistant', content: '**Interrupted:** The reply was interrupted before it could be saved.', timestamp: Math.trunc(this.deps.now()), _error: true, ...(turnId ? { _turn_id: turnId } : {}) })
     }
     target.active_stream_id = null
     target.pending_user_message = null
@@ -1050,16 +1059,22 @@ export class SessionService {
     const messageIndex = anchorSceneIntOrNull(query.message_index)
     if (!sid || (!messageRef && messageIndex === null)) throw new HttpFailure(400, 'session_id and message_ref or message_index are required')
     let session: Session
+    let transcript: Message[]
     try {
       session = this.store.get(sid)
       if (session.loadedMetadataOnly) session = this.store.load(sid) ?? session
-    } catch {
-      throw new HttpFailure(404, 'Session not found')
+      if (!this.visibleToActiveProfile(session.profile)) throw new HttpFailure(404, 'Session not found')
+      transcript = this.mergedTranscript(session)
+    } catch (error) {
+      if (error instanceof HttpFailure) throw error
+      // A state.db-only session pages the same synthesized transcript its detail was built from.
+      session = this.foreignSession(sid).synth
+      transcript = session.messages
     }
-    if (!this.visibleToActiveProfile(session.profile)) throw new HttpFailure(404, 'Session not found')
-    const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) })
+    const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) }, withTurnIds(transcript))
     if (!result) throw new HttpFailure(404, 'Anchor activity scene not found')
-    return result
+    // Paged rows come from the raw transcript, so they take the same credential redaction as the detail's preview.
+    return redactValue(result, this.deps.redactEnabled()) as typeof result
   }
 
   // ── shares ───────────────────────────────────────────────────────────────

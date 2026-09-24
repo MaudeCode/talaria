@@ -16,12 +16,10 @@ and final standalone heads must be reconciled again by TAL-204.
 
 ## App ownership
 
-Non-UI App pull requests build all targets, run App unit and contract checks,
-and launch the fixture App through opening a chat. UI-source changes run the
-full PR UI suite. App startup-only changes and release-provenance plist fields
-use the focused checks only when the Scene and other plist values are unchanged.
-Unknown App paths require the full suite. Main retains full UI validation; the
-measuring performance UI classes run on the scheduled UI Performance workflow. CI rejects a missing, failed, or skipped required launch smoke test.
+App pull requests build all targets, run App unit and contract checks, and
+launch the fixture App through opening a chat; they do not run the UI suite
+(TAL-332). Main pushes run the full UI suite; the measuring performance UI
+classes run on the scheduled UI Performance workflow. CI rejects a missing, failed, or skipped required launch smoke test.
 CI matches the local runner's disabled automatic simulator diagnostic collection;
 the XCTest result bundle and failure output remain available.
 
