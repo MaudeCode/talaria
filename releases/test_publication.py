@@ -329,7 +329,7 @@ class PublicationTests(unittest.TestCase):
             self.assertNotIn("artifact@", path.read_text(), path.name)
 
     def test_only_native_jobs_use_the_mac_runner(self):
-        # The single Mac runner is reserved for Xcode, simulator and Apple signing work; every other job runs on
+        # Mac runners are reserved for Xcode, simulator and Apple signing work; every other job runs on
         # the Linux pool, or on GitHub-hosted Linux where npm trusted publishing requires it. Each allowed Mac job
         # names the native dependency its steps must still show; moving a portable job back fails here.
         native = {
@@ -351,7 +351,7 @@ class PublicationTests(unittest.TestCase):
                 if "steps" not in job:
                     continue
                 runner = job["runs-on"]
-                if runner == "maude-mac":
+                if runner in ("maude-mac", "blacksmith-6vcpu-macos-26"):
                     found[(path.name, name)] = json.dumps(job["steps"])
                 else:
                     self.assertIn(runner, (["ghar-set-maudecode"], "ubuntu-latest"), (path.name, name))

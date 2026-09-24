@@ -96,7 +96,7 @@ jobs:
     needs: changes
     # Exercise the normal App PR suite for this workflow-only runner benchmark.
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || needs.changes.outputs.contracts != 'false' || github.head_ref == 'ci/TAL-338-blacksmith-benchmark') }}
-    runs-on: maude-mac
+    runs-on: blacksmith-6vcpu-macos-26
     timeout-minutes: 90
 
     env:
@@ -138,6 +138,12 @@ jobs:
 
       - name: Test CI helpers
         run: ci/require_successful_main_ci_test.sh
+
+      - name: Select Xcode 27
+        run: |
+          xcode_app=$(find /Applications -maxdepth 1 -type d -name 'Xcode_27*.app' -print -quit)
+          test -n "$xcode_app"
+          echo "DEVELOPER_DIR=$xcode_app/Contents/Developer" >> "$GITHUB_ENV"
 
       - name: Show Xcode version
         run: xcodebuild -version
