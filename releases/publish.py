@@ -123,11 +123,17 @@ def _npm_integrity(path):
     return "sha512-" + base64.b64encode(hashlib.sha512(path.read_bytes()).digest()).decode()
 
 
+def _npm_json(stdout):
+    """`npm view --json` output; npm 12 wraps a single version's value in a one-element array."""
+    value = json.loads(stdout)
+    return value[0] if isinstance(value, list) and len(value) == 1 else value
+
+
 def _npm_view(spec, field):
     """The registry's value for ``field`` of ``spec``, or None when that version is not published."""
     view = subprocess.run(["npm", "view", spec, field, "--json"], capture_output=True, text=True)
     if view.returncode == 0:
-        return json.loads(view.stdout) if view.stdout.strip() else None
+        return _npm_json(view.stdout) if view.stdout.strip() else None
     if "E404" in view.stderr:
         return None
     raise ValueError(f"npm registry lookup failed for {spec}: {view.stderr.strip()}")
@@ -175,17 +181,33 @@ def publish_npm(component, build, directory):
     return verify_npm(component, build, directory)
 
 
+NPM_READBACK_ATTEMPTS = 60
+NPM_READBACK_DELAY = 10
+
+
 def verify_npm(component, build, directory):
-    """The registry serves exactly the built tarballs under the channel's dist-tag; needs no publishing identity."""
+    """The registry serves exactly the built tarballs under the channel's dist-tag; needs no publishing identity.
+
+    npm processes a new version for a few minutes before serving it ("may take a few minutes to become
+    available"), so a missing version or dist-tag is awaited; different bytes fail at once.
+    """
     npm = _npm_packages(component, build, directory)
     expected, tarballs, ordered = npm["expected"], npm["tarballs"], npm["ordered"]
     dist_tag, packages = npm["dist_tag"], npm["packages"]
     for name in ordered:
         spec = f"{packages[name]}@{component['version']}"
-        if _npm_view(spec, "dist.integrity") != _npm_integrity(tarballs[name]):
-            raise ValueError("npm registry readback differs from the published tarball")
-        tags = json.loads(subprocess.check_output(["npm", "view", packages[name], "dist-tags", "--json"], text=True))
-        if tags.get(dist_tag) != component["version"]:
+        for attempt in range(NPM_READBACK_ATTEMPTS):
+            integrity = _npm_view(spec, "dist.integrity")
+            tags = _npm_json(subprocess.check_output(["npm", "view", packages[name], "dist-tags", "--json"], text=True))
+            if integrity is not None and integrity != _npm_integrity(tarballs[name]):
+                raise ValueError("npm registry readback differs from the published tarball")
+            if integrity is not None and tags.get(dist_tag) == component["version"]:
+                break
+            if attempt + 1 < NPM_READBACK_ATTEMPTS:
+                time.sleep(NPM_READBACK_DELAY)
+        else:
+            if integrity is None:
+                raise ValueError("npm registry readback differs from the published tarball: version never became available")
             raise ValueError(f"npm dist-tag {dist_tag} does not point at the published version")
     return expected
 
