@@ -1,3 +1,29 @@
+# Build the contracts and server packages natively on the build machine: compiling them (and node-pty) under
+# emulation for a foreign target is what made multi-platform releases slow (TAL-321). The frontend bundle is
+# the committed static/dist tree. node-pty has no Linux prebuilds, so a foreign target cross-compiles it.
+FROM --platform=$BUILDPLATFORM node:24-slim AS node-build
+ARG TARGETARCH
+WORKDIR /apptoo
+COPY . /apptoo
+RUN set -eu \
+    && native=$(dpkg --print-architecture) \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends make g++ python3 \
+    && if [ "$TARGETARCH" != "$native" ]; then \
+         case "$TARGETARCH" in \
+           amd64) triple=x86_64-linux-gnu toolchain=g++-x86-64-linux-gnu npm_arch=x64 ;; \
+           arm64) triple=aarch64-linux-gnu toolchain=g++-aarch64-linux-gnu npm_arch=arm64 ;; \
+           *) echo "no cross toolchain for $TARGETARCH" >&2; exit 1 ;; \
+         esac; \
+         apt-get install -y --no-install-recommends "$toolchain"; \
+         export CC="$triple-gcc" CXX="$triple-g++" npm_config_arch="$npm_arch" npm_config_cpu="$npm_arch"; \
+       fi \
+    && npm ci --no-audit --no-fund --include=dev --workspace packages/contracts --workspace packages/server \
+    && npm run build --workspace packages/contracts \
+    && npm run build --workspace packages/server \
+    && npm prune --omit=dev --no-audit --no-fund --workspace packages/contracts --workspace packages/server \
+    && rm -rf /root/.npm
+
 FROM node:24-slim
 
 LABEL maintainer="MaudeCode"
@@ -91,21 +117,10 @@ USER root
 # uv is already on PATH.
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
-COPY --chown=root:root . /apptoo
-
-# Build the contracts and server packages from the copied workspace, then keep only
-# production dependencies. The frontend bundle is the committed static/dist tree.
-# node-pty compiles from source where no prebuild matches; the toolchain is purged after the build.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends make g++ \
-    && npm ci --no-audit --no-fund --include=dev --workspace packages/contracts --workspace packages/server \
-    && npm run build --workspace packages/contracts \
-    && npm run build --workspace packages/server \
-    && npm prune --omit=dev --no-audit --no-fund --workspace packages/contracts --workspace packages/server \
-    && rm -rf /root/.npm \
-    && apt-get purge -y make g++ \
-    && apt-get autoremove -y \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+# The workspace built natively above: sources, contracts/server dist and production node_modules only.
+COPY --from=node-build --chown=root:root /apptoo /apptoo
+# A node-pty built for the wrong architecture would only fail at the first terminal; fail the build instead.
+RUN node -e 'require("node-pty")'
 
 # Bake the git version tag into the image so the settings badge works even
 # when .git is not present (it is excluded by .dockerignore).

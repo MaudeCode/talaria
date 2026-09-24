@@ -29,7 +29,7 @@ bucket=$TALARIA_S3_BUCKET
 # Expiration rules per bucket (days). Garage supports prefix filters and whole-day expiration only.
 case "$bucket" in
   talaria-ci) rules="fixtures/=7 test-results/=14 fuzz/=30 performance-metrics/=30 buildcache/=14" ;;
-  talaria-release) rules="handoffs/=30" ;;
+  talaria-release) rules="handoffs/=30 buildcache/=14" ;;
   *) echo "s3-artifact: no lifecycle rules are defined for bucket $bucket" >&2; exit 65 ;;
 esac
 
