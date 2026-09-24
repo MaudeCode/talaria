@@ -7,7 +7,7 @@ import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
 import { rmSync } from 'node:fs'
-import { copyJson, redactSessionData, stripPublicInternalFields } from '../redact.js'
+import { copyJson, redactSessionData, redactValue, stripPublicInternalFields } from '../redact.js'
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
@@ -1062,7 +1062,8 @@ export class SessionService {
     if (!this.visibleToActiveProfile(session.profile)) throw new HttpFailure(404, 'Session not found')
     const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) }, withTurnIds(this.mergedTranscript(session)))
     if (!result) throw new HttpFailure(404, 'Anchor activity scene not found')
-    return result
+    // Paged rows come from the raw transcript, so they take the same credential redaction as the detail's preview.
+    return redactValue(result, this.deps.redactEnabled()) as typeof result
   }
 
   // ── shares ───────────────────────────────────────────────────────────────
