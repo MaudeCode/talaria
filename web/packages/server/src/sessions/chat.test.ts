@@ -408,6 +408,9 @@ describe('chat turns through the sidecar', () => {
     const start2 = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'silent' }))
     const frames2 = await s.sse(`/api/chat/stream?stream_id=${String(start2.stream_id)}&replay=1`, (f) => f.event === 'apperror')
     expect((frames2.find((f) => f.event === 'apperror')?.data as Json).type).toBe('no_response')
+    // The persisted error row keeps that classification, so the settled scene says the same after a reload.
+    const reloaded = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(reloaded.at(-1)?._anchor_activity_scene).toMatchObject({ terminal_state: 'no_response' })
   })
 
   it('steers the live agent and reports fallbacks when nothing is running', async () => {

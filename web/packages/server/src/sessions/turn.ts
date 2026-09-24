@@ -201,6 +201,9 @@ export function explicitTextSignal(cfg: Config): boolean {
 
 export const GATEWAY_APPROVAL_RELAY_UNAVAILABLE = 'Gateway approval could not be relayed because the active run is unavailable. Reopen the session or retry after it reconnects.'
 
+/** Error classifications that are turn outcomes in their own right (not a generic failure). */
+const CLASSIFIED_OUTCOMES = new Set(['no_response', 'compression_exhausted', 'interrupted', 'cancelled'])
+
 export class TurnRunner {
   readonly writers = new Map<string, RunJournalWriter>()
   private readonly sessionPuts = new Map<string, (event: string, data: Record<string, unknown>) => void>()
@@ -732,6 +735,8 @@ export class TurnRunner {
     const hint = str(payload.hint)
     const errorMessage: Message = { role: 'assistant', content: `**${label}:** ${str(payload.message) || label}${hint ? `\n\n*${hint}*` : ''}`, timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: streamId }
     if (duration !== null) errorMessage._turnDuration = Math.round(duration * 1000) / 1000
+    // The classified outcome the live frame reported stays on the row, so the settled scene says the same.
+    if (CLASSIFIED_OUTCOMES.has(str(payload.type))) errorMessage._terminal_state = str(payload.type)
     if (payload.type === 'compression_exhausted') {
       // Python `stamp_compression_exhausted_recovery`: durable recovery metadata on the session, the marker, and the frame.
       const recovery = stampCompressionExhaustedRecovery(s, str(payload.message) || label, str(payload.details))
