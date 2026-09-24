@@ -1,6 +1,6 @@
 ---
 name: talaria-release
-description: Publish a Talaria release set including TestFlight when the user requests a production release; validate signed component tags without treating a tag push as publication.
+description: Publish a Talaria release (Relay, Web, App to TestFlight, release-set manifest) when the user requests one. Pushing one signed vX.Y.Z tag on main starts the whole production release in CI.
 ---
 
 # Talaria release
@@ -9,20 +9,17 @@ Run release orchestration from the repository root. Read
 [`releases/README.md`](../../../releases/README.md) for the request format,
 workflow dispatches, environment boundaries and partial-failure handling.
 
-1. Select a clean, current `main` source with successful exact-SHA CI. Resolve
-   the previous completed release set and identify changed components. Reuse
-   unchanged component tags exactly.
-2. Create signed namespaced tags for changed components at the selected source
-   and push them within the user's authorization. Confirm the validation-only
-   tag workflow succeeds.
-3. Dispatch `release-set.yml` with `dry_run=true` and the reviewed request.
-   Require successful compatibility/build jobs and a candidate manifest matching
-   the selected source, tags and previous set.
-4. With production publication authorized, dispatch `production-cutover.yml`
-   from `main` with the same request and `confirm_publication=true`. Report
+Release in one step: sign and push one tag, then watch.
+
+1. Pick the version (one for the whole release; it must exceed every component's
+   published version, and a version is used once).
+2. `git tag -s vX.Y.Z <green main commit> -m "Talaria X.Y.Z" && git push origin vX.Y.Z`.
+3. Watch the `Release` run (it tags the changed components and starts the
+   production cutover on main) and then the `Production cutover` run. Report
    Relay readback, Web digest publication, App archive/upload/processing and
-   completed root manifest separately. A failed or partial run is incomplete;
-   inspect its side effects before retrying.
+   the completed root manifest separately. A failed or partial run is
+   incomplete; inspect its side effects before retrying. A fix that needs code
+   ships as the next patch version.
 
 App Store Connect supplies the next build number. Repository version fields
 remain development defaults. External tester assignment, Beta App Review,

@@ -104,6 +104,62 @@ for rejected_tag in v1.6.0 exp-v1.6.0 web-v1.6.0 relay-v1.6.0 app-v01.6.0; do
   fi
 done
 
+# One-step releases (TAL-336): a signed root tag v<version> authorizes CI-created component tags at its commit.
+git -C "$repo" tag -a -m "Root fixture" v1.8.0
+git -C "$repo" tag -a -m "CI component fixture" app-v1.8.0
+git -C "$repo" tag -a -m "CI component fixture" web-v1.8.0
+signed_root_only() { [[ "$1" == v1.8.0 ]]; }
+for component in app web; do
+  (
+    cd "$repo"
+    source "$source_root/ci/validate_release_tag"
+    tag_signature_verified() { signed_root_only "$1"; }
+    export RELEASE_COMPONENT="$component" RELEASE_TAG="${component}-v1.8.0" EXPECTED_SHA="$(git rev-parse HEAD)"
+    validate_release_tag >/dev/null
+  )
+done
+(
+  cd "$repo"
+  source "$source_root/ci/validate_release_tag"
+  tag_signature_verified() { signed_root_only "$1"; }
+  export RELEASE_COMPONENT=release RELEASE_TAG=v1.8.0
+  validate_release_tag >/dev/null
+)
+if (
+  cd "$repo"
+  source "$source_root/ci/validate_release_tag"
+  tag_signature_verified() { return 1; }
+  export RELEASE_COMPONENT=app RELEASE_TAG=app-v1.8.0
+  validate_release_tag >/dev/null 2>&1
+); then
+  echo "Expected a component tag without a signed root tag to fail." >&2
+  exit 1
+fi
+if (
+  cd "$repo"
+  source "$source_root/ci/validate_release_tag"
+  tag_signature_verified() { return 1; }
+  export RELEASE_COMPONENT=release RELEASE_TAG=v1.8.0
+  validate_release_tag >/dev/null 2>&1
+); then
+  echo "Expected an unsigned root tag to fail." >&2
+  exit 1
+fi
+printf 'next\n' >> "$repo/release-fixture.txt"
+git -C "$repo" commit -qam "Next fixture"
+git -C "$repo" push -q origin main
+git -C "$repo" tag -a -m "Component at another commit" relay-v1.8.0
+if (
+  cd "$repo"
+  source "$source_root/ci/validate_release_tag"
+  tag_signature_verified() { signed_root_only "$1"; }
+  export RELEASE_COMPONENT=relay RELEASE_TAG=relay-v1.8.0
+  validate_release_tag >/dev/null 2>&1
+); then
+  echo "Expected a component tag at a different commit from its root tag to fail." >&2
+  exit 1
+fi
+
 git -C "$repo" switch -c side >/dev/null
 printf 'off-main\n' >> "$repo/release-fixture.txt"
 git -C "$repo" add .
