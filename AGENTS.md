@@ -6,6 +6,25 @@ Shared machine-readable interfaces belong in `contracts/`; cross-component
 changes must validate every affected consumer. Run component commands from
 their component directory. GitHub workflow orchestration stays at the root.
 
+Server-owned state: clients are display-only. The Web server
+(`web/packages/server` and its sidecar) computes every decision,
+classification, derivation, normalization, pairing, ordering, filtering,
+redaction, and computed value a client shows, and ships each one as an explicit
+field defined in `web/packages/contracts`; the generated
+`contracts/web-api.openapi.json` and `contracts/fixtures/` follow. Clients
+render those fields. Client logic is limited to localized wording; number,
+date, and unit formatting; local-date bucketing; layout, theme, animation, and
+accessibility; device-local UI state (disclosure, scroll, focus, drafts);
+live-stream rendering before the server persists a value, converging on the
+server field once it arrives; offline display of cached server fields; and
+platform integration (notifications, Live Activities, share sheets, input).
+Everything else, including anything uncertain, belongs on the server; when the
+server lacks the data, add it to the server or sidecar. A change that adds or
+edits client logic outside that list moves it to the server and contract in the
+same change, or files a linked Kaneo ticket before merge and cites it in the
+PR; reviewers treat unticketed client derivation as blocking. An old-server
+fallback sits behind the contract field and is deleted once the field ships.
+
 Kaneo Talaria is the canonical tracker for all components. Add one or more scope
 labels: `app`, `web`, `relay`, `tooling`, `contracts`. Use `contracts` alongside
 the affected components for shared schema/protocol work; CI and agent tooling
