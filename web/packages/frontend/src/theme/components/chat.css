@@ -199,5 +199,5 @@ textarea#msg::-webkit-scrollbar{display:var(--composer-scrollbar-display)}
 /* Live-turn indicator: laurel wreath plus a gold shimmer on the label, both from theme tokens. */
 .live-laurel{flex-shrink:0;color:var(--accent)}
 .live-laurel .laurel-leaf{animation:laurel-leaf 1s linear infinite}
-.live-run-label{font-size:var(--message-body-font-size);color:transparent;background:linear-gradient(100deg,var(--muted) 34%,var(--accent) 50%,var(--muted) 66%);background-size:240% 100%;background-clip:text;-webkit-background-clip:text;animation:reasoning-title-glow 2.2s ease-in-out infinite}
+.live-run-label{font-size:var(--message-body-font-size);line-height:var(--message-body-line-height);color:transparent;background:linear-gradient(100deg,var(--muted) 34%,var(--accent) 50%,var(--muted) 66%);background-size:240% 100%;background-clip:text;-webkit-background-clip:text;animation:reasoning-title-glow 2.2s ease-in-out infinite}
 @media (prefers-reduced-motion:reduce){.live-laurel .laurel-leaf{animation:none}.live-run-label{color:var(--muted);background:none;animation:none}}

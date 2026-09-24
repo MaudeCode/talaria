@@ -224,3 +224,35 @@ test('final-only mode retains recovered user steering', async ({ page }) => {
   await expect(page.locator('[data-tool-id]')).toHaveCount(0)
   await expect(page.getByText('Done.', { exact: true })).toBeVisible()
 })
+
+test('live label box covers its glyphs so the shimmer never clips descenders', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'live-label', title: 'Live label', messages: [{ role: 'user', id: 1, content: 'Hello' }], active_stream_id: 'label-run' } } }))
+  await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'label-run', replay_available: true } }))
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+    response.write(`id: label-run:1\nevent: server_turn_started\ndata: ${JSON.stringify({ session_id: 'live-label', stream_id: 'label-run', user_message_id: 1 })}\n\n`)
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}/stream` }))
+  try {
+    await page.goto('/session/live-label')
+    const label = page.locator('.live-run-label')
+    await expect(label).toHaveText('Responding…')
+    await expect(label).toHaveCSS('animation-name', 'reasoning-title-glow')
+    // background-clip:text paints only inside the box, so it must span the font's full ascent and descent.
+    const { box, glyphs } = await label.evaluate((el) => {
+      const style = getComputedStyle(el)
+      const ctx = document.createElement('canvas').getContext('2d')!
+      ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+      const m = ctx.measureText(el.textContent ?? '')
+      return { box: el.getBoundingClientRect().height, glyphs: m.fontBoundingBoxAscent + m.fontBoundingBoxDescent }
+    })
+    expect(box).toBeGreaterThanOrEqual(glyphs)
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
