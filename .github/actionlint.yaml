@@ -2,4 +2,4 @@ self-hosted-runner:
   labels:
     - ghar-set-maudecode
     - maude-mac
-    - blacksmith-6vcpu-macos-26
+    - blacksmith-12vcpu-macos-26

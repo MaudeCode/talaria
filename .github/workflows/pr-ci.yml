@@ -96,7 +96,7 @@ jobs:
     needs: changes
     # Exercise the normal App PR suite for this workflow-only runner benchmark.
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || needs.changes.outputs.contracts != 'false' || github.head_ref == 'ci/TAL-338-blacksmith-benchmark') }}
-    runs-on: blacksmith-6vcpu-macos-26
+    runs-on: blacksmith-12vcpu-macos-26
     timeout-minutes: 90
 
     env:

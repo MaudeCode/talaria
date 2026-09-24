@@ -351,7 +351,7 @@ class PublicationTests(unittest.TestCase):
                 if "steps" not in job:
                     continue
                 runner = job["runs-on"]
-                if runner in ("maude-mac", "blacksmith-6vcpu-macos-26"):
+                if runner in ("maude-mac", "blacksmith-12vcpu-macos-26"):
                     found[(path.name, name)] = json.dumps(job["steps"])
                 else:
                     self.assertIn(runner, (["ghar-set-maudecode"], "ubuntu-latest"), (path.name, name))
