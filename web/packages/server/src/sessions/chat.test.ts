@@ -521,6 +521,26 @@ describe('chat turns through the sidecar', () => {
     expect((scene.activity_rows as Json[]).some((r) => r.role === 'steering' && (r.steering as Json).steer_id === 'steer-c')).toBe(true)
   })
 
+  it('keeps a steer the Agent still held as a leftover when the run returns an error (TAL-300)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let release: () => void = () => undefined
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'partial' } })
+      release = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }], { status: 'error', error: 'provider failed', pending_steer: 'not applied' })) }
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'job' }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'not applied', steer_id: 'steer-held' })
+    release()
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'apperror')
+    expect(frames.some((f) => f.event === 'steer_consumed')).toBe(false)
+    expect(frames.find((f) => f.event === 'pending_steer_leftover')?.data).toMatchObject({ steer_id: 'steer-held', text: 'not applied' })
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(messages.some((m) => m._steer)).toBe(false)
+  })
+
   it('a Stop with a queued steer settles the steer as a leftover before the single cancel row', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))

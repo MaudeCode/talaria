@@ -491,8 +491,8 @@ export class TurnRunner {
         const classification = classifyProviderError(lastErr, { silentFailure: !lastErr })
         const errStr = lastErr || `${classification.label}.`
         const payload = providerErrorPayload(errStr, classification.type, classification.hint, deps.redactEnabled())
-        // Settle the steers first so the persisted turn carries every consumed one.
-        const steerEvents = this.takeSteerEventsBefore(streamId, 'apperror')
+        // Settle the steers first so the persisted turn carries every consumed one; the Agent's pending text stays a leftover.
+        const steerEvents = this.finalizeSteerEvents(streamId, str(result.pending_steer))
         this.persistError(s, streamId, classification.label, payload, activeTurnToken)
         payload.session = redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled())
         payload.session_id = s.session_id
