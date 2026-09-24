@@ -62,6 +62,47 @@ class ContractRunnerTests(unittest.TestCase):
             with self.subTest(runner=name), patch.object(previous.subprocess, "check_output", return_value=script):
                 self.assertEqual(previous.runner_avoids_clones("a" * 40), name == "new")
 
+    def test_old_app_runner_runs_one_worker_without_a_simulator_clone(self):
+        # The previous App's own test-ios hardcodes parallel testing, which clones the leased simulator even for
+        # one worker and races the previous clone's teardown; its disposable checkout must run without a clone.
+        spec = importlib.util.spec_from_file_location("previous_app", Path(__file__).resolve().parents[1] / "scripts/check-previous-app.py")
+        previous = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(previous)
+        old = 'xcodebuild test \\\n        -parallel-testing-enabled YES \\\n        -parallel-testing-worker-count "$TALARIA_TEST_WORKER_COUNT" \\\n'
+        cases = (("1", old, "-parallel-testing-enabled NO"), ("2", old, "-parallel-testing-enabled YES"),
+                 ("1", "xcodebuild test\n", None))
+        for workers, script, expected in cases:
+            with self.subTest(workers=workers, expected=expected), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                ran = []
+
+                def run(command, **kwargs):
+                    if command[:2] == ["git", "clone"]:
+                        app = Path(command[-1]) / "app"
+                        (app / "Talaria.xcodeproj").mkdir(parents=True)
+                        (app / "scripts").mkdir()
+                        (app / "scripts/test-ios").write_text(script)
+                    elif command[0].endswith("scripts/test-ios"):
+                        ran.append(Path(command[0]).read_text())
+                        raise subprocess.CalledProcessError(1, command)
+
+                def probe(web_sha, responses, log):
+                    responses.write_text("{}")
+
+                argv = ["check", "--app-ref", "a" * 40, "--web-ref", "b" * 40, "--output", str(root / "out")]
+                with patch.object(sys, "argv", argv), patch.dict(previous.os.environ, {"TALARIA_TEST_WORKER_COUNT": workers}), \
+                        patch.object(previous, "commit", side_effect=lambda ref: ref), \
+                        patch.object(previous, "probe_web", side_effect=probe), \
+                        patch.object(previous, "runner_avoids_clones", return_value=False), \
+                        patch.object(previous.subprocess, "run", side_effect=run), \
+                        self.assertRaises(ValueError if expected is None else subprocess.CalledProcessError):
+                    previous.main()
+                if expected is None:
+                    self.assertEqual(ran, [])
+                else:
+                    self.assertEqual(len(ran), 1)
+                    self.assertIn(expected, ran[0])
+
     def test_only_selector_splits_native_app_runs_from_portable_fixture_suites(self):
         plan = {"components": {"app": {"sourceRevision": "a" * 40}, "web": {"sourceRevision": "b" * 40},
                                "relay": {"sourceRevision": "c" * 40}}, "supportedWebSources": ["b" * 40, "d" * 40]}
