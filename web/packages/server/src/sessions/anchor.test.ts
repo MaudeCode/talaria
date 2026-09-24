@@ -218,4 +218,28 @@ describe('anchor scenes over HTTP', () => {
     expect(messages[3]?._anchor_activity_scene).toMatchObject({ terminal_state: 'no_response', expanded_by_default: true, activity_rows_total: 2 })
     expect((messages[3]?._anchor_activity_scene as Json).final_answer ?? '').toBe('')
   })
+
+  it('keeps full tool results in scenes, clipping them only in a limited response like raw tool rows', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    const big = 'x'.repeat(6000)
+    session.messages = [
+      { role: 'user', content: 'Dump it', _turn_id: 'run-big' },
+      { role: 'assistant', content: 'Reading.', tool_calls: [{ id: 'big', name: 'read_file' }], _turn_id: 'run-big' },
+      { role: 'tool', tool_call_id: 'big', content: big, _turn_id: 'run-big' },
+      { role: 'assistant', content: 'Done.', _turn_id: 'run-big' },
+    ]
+    s.deps.sessionStore.save(session)
+    const toolResult = async (query: string) => {
+      const messages = ((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages as Json[]
+      const scene = messages.at(-1)?._anchor_activity_scene as Json
+      return String(((scene.activity_rows as Json[]).find((r) => r.role === 'tool')?.tool as Json).result)
+    }
+    expect(await toolResult('')).toBe(big)
+    const limited = await toolResult('&msg_limit=10')
+    expect(limited.length).toBeLessThan(big.length)
+    expect(limited).toContain('Tool output truncated')
+    const page = await json(await s.get(`/api/session/anchor-scene?session_id=${sid}&message_index=3`))
+    expect(((page.rows as Json[]).find((r) => r.role === 'tool')?.tool as Json).result).toBe(big)
+  })
 })

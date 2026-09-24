@@ -302,7 +302,7 @@ function toolArgs(call: Record<string, unknown>): unknown {
  * under "Worked"), the visible final answer, the outcome, and whether "Worked" opens by default. Every decision a
  * client used to make about a settled turn is made here.
  */
-export function buildTurnScene(turn: [Record<string, unknown>, number][]): Record<string, unknown> | null {
+export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: { clipToolResults?: boolean } = {}): Record<string, unknown> | null {
   const assistants = turn.filter(([m]) => m.role === 'assistant')
   const last = assistants.at(-1)?.[0]
   if (!last) return null
@@ -333,7 +333,8 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][]): Recor
       if (seenTools.has(id)) return
       seenTools.add(id)
       const reply = results.get(id)
-      const result = reply ? messageText((toolMessageForLimitedPayload(reply) as Record<string, unknown>).content) : call.result ?? call.output ?? null
+      // Full results, except in a limited response, which clips them like its raw tool rows (the full detail keeps them).
+      const result = reply ? messageText((opts.clipToolResults ? toolMessageForLimitedPayload(reply) as Record<string, unknown> : reply).content) : call.result ?? call.output ?? null
       push({ row_id: `tool:${id}`, role: 'tool', ...at, tool: {
         id, name: str(call.name) || str(isDict(call.function) ? call.function.name : '') || 'tool', args: toolArgs(call),
         preview: str(call.preview) || null, result, done: typeof call.done === 'boolean' ? call.done : true,
@@ -416,7 +417,7 @@ function sceneLookup(messages: unknown[], records: Record<string, unknown>) {
  * (before any window, so every window agrees). A stored scene wins and is completed with the turn's outcome fields; a
  * turn without one gets a built scene. The running turn (`activeTurnId`) gets none: the live stream renders it.
  */
-export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null } = {}): unknown[] {
+export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null; clipToolResults?: boolean } = {}): unknown[] {
   if (!messages.length) return messages
   const lookup = sceneLookup(messages, records)
   // Any scene carried inline leaves in the one normalized shape, even off a turn's last row.
@@ -426,7 +427,7 @@ export function hydrateAnchorActivityScenes(messages: unknown[], records: Record
     const lastEntry = turn.filter(([m]) => m.role === 'assistant').at(-1)
     if (!lastEntry) continue
     const [message, index] = lastEntry
-    const built = buildTurnScene(turn)
+    const built = buildTurnScene(turn, { clipToolResults: opts.clipToolResults === true })
     const record = storedRecordFor(message, index, lookup)
     const inline = message._anchor_activity_scene
     const next: Record<string, unknown> = { ...message }

@@ -300,7 +300,7 @@ export class SessionService {
     }
     this.clearStaleStreamState(s)
     // Turn ids and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages ? hydrateAnchorActivityScenes(withTurnIds(this.mergedTranscript(s)), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id }) : []
+    const all: unknown[] = loadMessages ? hydrateAnchorActivityScenes(withTurnIds(this.mergedTranscript(s)), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null }) : []
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null
