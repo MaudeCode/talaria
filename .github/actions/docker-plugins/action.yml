@@ -25,16 +25,15 @@ runs:
           [[ ${#packages[@]} -gt 0 ]] || sudo apt-get update
           if candidate docker-buildx-plugin; then packages+=(docker-buildx-plugin); else packages+=(docker-buildx); fi
         fi
-        if [[ "$MULTI_PLATFORM" == "true" ]]; then
-          [[ ${#packages[@]} -gt 0 ]] || sudo apt-get update
-          packages+=(qemu-user-static binfmt-support)
-        fi
         if [[ ${#packages[@]} -gt 0 ]]; then
           sudo apt-get install -y --no-install-recommends "${packages[@]}"
         fi
         docker compose version
         docker buildx version
         if [[ "$MULTI_PLATFORM" == "true" ]]; then
+          # The runner container is unprivileged, so arm64 emulation is registered in the kernel through the
+          # pod's privileged Docker daemon (as docker/setup-qemu-action does), with a digest-pinned installer.
+          docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 --install arm64
           # OCI output for two platforms needs a docker-container builder and registered arm64 emulation.
           docker buildx create --driver docker-container --use --bootstrap
           docker buildx inspect --bootstrap | tee /dev/stderr | grep -E '^Platforms:.*linux/arm64' >/dev/null
