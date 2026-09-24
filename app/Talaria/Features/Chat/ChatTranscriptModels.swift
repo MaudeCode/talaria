@@ -54,6 +54,21 @@ struct AssistantActivityRow: Identifiable, Equatable {
     }
 }
 
+/// Localized wording for the server's turn outcome; an ordinary completed turn shows none.
+enum AssistantTurnOutcome {
+    static func label(for terminalState: String?) -> String? {
+        switch terminalState {
+        case nil, "", "completed", "running": nil
+        case "cancelled": String(localized: "Response cancelled")
+        case "no_response": String(localized: "No answer produced.")
+        case "interrupted", "connection_lost": String(localized: "Response interrupted")
+        case "tool_limit_reached": String(localized: "Tool limit reached")
+        case "compression_exhausted": String(localized: "Context limit reached")
+        default: String(localized: "Response failed")
+        }
+    }
+}
+
 struct CompletedAssistantTurn: Equatable {
     struct Phase: Identifiable, Equatable {
         let id: String

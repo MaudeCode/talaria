@@ -25313,6 +25313,9 @@
         }
       }
     },
+    "Context limit reached" : {
+
+    },
     "Context usage" : {
 
     },
@@ -84181,6 +84184,9 @@
         }
       }
     },
+    "Response interrupted" : {
+
+    },
     "Result" : {
       "localizations" : {
         "ar" : {
@@ -116206,6 +116212,9 @@
           }
         }
       }
+    },
+    "Tool limit reached" : {
+
     },
     "Top Sessions" : {
       "localizations" : {

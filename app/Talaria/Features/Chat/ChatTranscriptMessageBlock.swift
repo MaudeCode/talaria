@@ -78,6 +78,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                         activityTimeline(turn.segments, activeSegmentID: turn.segments.last?.id)
                     }
                 } else {
+                    outcomeRow
                     ForEach(Array(activityRows.enumerated()), id: \.element.id) { index, row in
                         activityItem(row, at: index)
                     }
@@ -85,6 +86,16 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             } else {
                 messageRow(transcriptMessage.message)
             }
+        }
+    }
+
+    /// The server's outcome for this turn, in its localized wording, when it is not an ordinary completion.
+    @ViewBuilder
+    private var outcomeRow: some View {
+        if let outcome = AssistantTurnOutcome.label(for: transcriptMessage.message.activityScene?.terminalState) {
+            Text(outcome)
+                .font(AppFont.body())
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -116,6 +127,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             activityTimeline(turn.workSegments, activeSegmentID: nil)
                 .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
         }
+
+        outcomeRow
 
         if !turn.finalAnswer.isEmpty {
             messageRow(
