@@ -59,21 +59,29 @@ describe('turn worklog presentation', () => {
     expect(remount.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('groups consecutive support rows, preserves intervening prose, and isolates nested toggles', () => {
+  it('keeps live work flat and forms nested groups only once the turn settles', () => {
     const run = liveRun()
     run.emit({ event: 'token', data: { text: 'Before tools' } })
     run.emit(tool('a')); run.emit(tool('b'))
     run.emit({ event: 'token', data: { text: 'Between batches' } })
     run.emit(tool('c'))
     const view = render(<View activity={liveActivity(run.turn)} />)
-    expect([...view.container.querySelectorAll('.msg-body, [data-tool-id]')].map((el) => el.getAttribute('data-tool-id') ?? el.textContent)).toEqual(['Before tools', 'a', 'b', 'Between batches', 'c'])
-    expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(1)
+    const order = () => [...view.container.querySelectorAll('.msg-body, [data-tool-id]')].map((el) => el.getAttribute('data-tool-id') ?? el.textContent)
+    expect(order()).toEqual(['Before tools', 'a', 'b', 'Between batches', 'c'])
+    // While live, rows never regroup into collapsed nested groups, so nothing above the newest row changes shape.
+    expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(0)
+    for (const id of ['a', 'b', 'c']) expect(view.container.querySelector(`[data-tool-id="${id}"]`)).toBeVisible()
+    run.emit({ event: 'token', data: { text: 'Done' } })
+    run.emit({ event: 'done', data: {} })
+    view.rerender(<View activity={liveActivity(run.turn)} />)
+    fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
+    expect(order()).toEqual(['Before tools', 'a', 'b', 'Between batches', 'c', 'Done'])
     const nested = view.container.querySelector('[data-activity-sequence-group] > button')!
+    expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(1)
     expect(nested).toHaveAttribute('aria-expanded', 'false')
     expect(nested.textContent).not.toContain('Worked')
     fireEvent.click(nested)
     fireEvent.click(view.container.querySelector('[data-tool-id="a"] button')!)
-    expect(view.container.querySelectorAll('.tool-worklog-summary')).toHaveLength(1)
     expect(nested).toHaveAttribute('aria-expanded', 'true')
     expect(view.container.querySelector('[data-tool-id="b"] button')).toHaveAttribute('aria-expanded', 'false')
   })

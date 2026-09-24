@@ -1,8 +1,8 @@
+import { useLayoutEffect, useRef } from 'react'
 import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
-import { cn } from '../../ui/cn'
 import type { LiveTurn } from '../../stream/reducer'
-import { TurnActivityView } from './TurnActivityView'
+import { rememberLiveTurnHeight, TurnActivityView } from './TurnActivityView'
 import { liveActivity } from './turnActivity'
 import type { ActivityMode } from './blocks/Worklog'
 
@@ -10,16 +10,32 @@ import type { ActivityMode } from './blocks/Worklog'
 export function LiveTurnView({ turn, name, mode, userVisible }: { turn: LiveTurn; name: string; mode: ActivityMode; userVisible: boolean }) {
   const activity = liveActivity(turn)
   const streaming = activity.status === 'running'
-  const hasContent = activity.items.length > 0 || !!activity.finalAnswer
+  const rowRef = useRef<HTMLDivElement>(null)
+  const statusRef = useRef<HTMLDivElement>(null)
+  const statusTop = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const row = rowRef.current
+    if (row) rememberLiveTurnHeight(activity.key, row.getBoundingClientRect().height)
+    // In a transcript too short to scroll, the indicator moves down as content lands above it: glide it there.
+    const status = statusRef.current
+    const scroller = row?.closest('#messages')
+    if (!status || !scroller) { statusTop.current = null; return }
+    const top = status.getBoundingClientRect().top
+    const from = statusTop.current
+    statusTop.current = top
+    if (from !== null && Math.abs(from - top) > 1 && scroller.scrollHeight <= scroller.clientHeight && !prefersReducedMotion()) {
+      status.animate?.([{ transform: `translateY(${from - top}px)` }, { transform: 'none' }], { duration: 180, easing: 'ease-out' })
+    }
+  })
   return (
-    <div className="msg-row assistant-turn live-turn" data-role="assistant" data-live="1" data-stream-id={turn.streamId} data-status={turn.status} aria-busy={streaming}>
+    <div ref={rowRef} className="msg-row assistant-turn live-turn" data-role="assistant" data-live="1" data-stream-id={turn.streamId} data-status={turn.status} aria-busy={streaming}>
       <div className="msg-role assistant"><span className="msg-role-name">{name}</span></div>
       <div className="assistant-turn-blocks">
         <TurnActivityView activity={activity} mode={mode} />
         {streaming && (
-          <div className="live-run-status flex items-center gap-2 text-muted" role="status" aria-live="polite">
+          <div ref={statusRef} className="live-run-status flex items-center gap-2 text-muted" role="status" aria-live="polite">
             <LaurelSpinner />
-            <span className={cn('live-run-label', hasContent && 'sr-only')}>{turn.status === 'reconnecting' ? m.live_reconnecting() : m.live_streaming()}</span>
+            <span className="live-run-label">{turn.status === 'reconnecting' ? m.live_reconnecting() : m.live_streaming()}</span>
           </div>
         )}
         {streaming && turn.tps !== null && <div className="mt-1 font-mono text-[11px] tabular-nums text-muted opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</div>}
@@ -51,4 +67,8 @@ function LaurelSpinner() {
       ))}
     </svg>
   )
+}
+
+function prefersReducedMotion() {
+  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 }

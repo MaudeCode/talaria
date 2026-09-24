@@ -44,7 +44,10 @@ describe('live turn spinner', () => {
     const status = all[0]!
     expect(status).toHaveAttribute('role', 'status')
     expect(status.querySelector('svg.live-laurel')).not.toBeNull()
-    expect(status.querySelector('.live-run-label.sr-only')).toHaveTextContent('Responding…')
+    // The label stays visible once content arrives, so the row never changes shape.
+    expect(status.querySelector('.live-run-label')).toBeVisible()
+    expect(status.querySelector('.live-run-label')).not.toHaveClass('sr-only')
+    expect(status.querySelector('.live-run-label')).toHaveTextContent('Responding…')
     for (const node of view.container.querySelectorAll('.msg-body, [data-tool-id]')) {
       expect(node.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     }
