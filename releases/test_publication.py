@@ -425,6 +425,19 @@ class PublicationTests(unittest.TestCase):
         for name in ("release-set.yml", "recover-cutover.yml", "ios-release-build.yml", "release.yml"):
             self.assertNotIn("blob:none", (root / ".github/workflows" / name).read_text(), name)
 
+    def test_component_builds_run_in_parallel_with_the_gates(self):
+        # Builds consume only the release plan, so they start after prepare; build-gate joins every gate and
+        # build, and publication (in relay, web, app order) waits for build-gate.
+        root = Path(__file__).resolve().parents[1]
+        jobs = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+            str(root / ".github/workflows/release-set.yml")], text=True))["jobs"]
+        builds = ("relay-build", "web-build", "app-dry-build", "app-signed-build")
+        for name in builds:
+            with self.subTest(job=name):
+                self.assertEqual(jobs[name]["needs"], "prepare")
+        self.assertTrue({"contracts", "component-contracts", "agent", *builds} <= set(jobs["build-gate"]["needs"]))
+
     def test_buildx_builders_are_never_fixed_names(self):
         # A Docker daemon that outlives a job would reject a second builder with the same fixed name.
         root = Path(__file__).resolve().parents[1]
