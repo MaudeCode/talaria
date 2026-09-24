@@ -103,7 +103,9 @@ jobs:
       SCHEME: Talaria
       DERIVED_DATA_PATH: DerivedData
       RESULT_BUNDLE_PATH: TestResults.xcresult
-      TEST_WORKER_COUNT: 4
+      # PRs run the unit tests and one smoke test on four clones. Main's full UI suite uses two: four
+      # clones launching UI test runners at once hit SpringBoard "Busy ... failed preflight" (TAL-333).
+      TEST_WORKER_COUNT: ${{ github.event_name == 'pull_request' && 4 || 2 }}
       APP_TESTS_REQUIRED: ${{ needs.changes.result != 'success' || needs.changes.outputs.app != 'false' }}
       # PRs run the unit tests plus one launch smoke test; the full UI suite runs on main pushes (TAL-332).
       APP_UI_REQUIRED: ${{ github.event_name != 'pull_request' }}
