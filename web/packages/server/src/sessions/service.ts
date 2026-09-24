@@ -354,8 +354,8 @@ export class SessionService {
     return redactSessionData(raw, this.deps.redactEnabled())
   }
 
-  /** Python `_handle_session_get` without a sidecar: the state.db transcript as a (read-only or claimable) foreign stub. */
-  private foreignSessionDetail(sid: string): Record<string, unknown> {
+  /** A session without a sidecar, synthesized from state.db for this profile; 404/409 like the detail. */
+  private foreignSession(sid: string): { synth: Session; meta: Row | null } {
     const meta = this.lookupCliMeta(sid)
     const profile = str(meta?.profile) || null
     const profileAgnostic = str(meta?.source_tag || meta?.raw_source).trim().toLowerCase() === 'claude_code'
@@ -365,6 +365,12 @@ export class SessionService {
     }
     const { session: synth, reason } = this.claimOrSynthesizeCliSession(sid, meta)
     if (!synth || reason === 'was_webui') throw new HttpFailure(404, 'Session not found')
+    return { synth, meta }
+  }
+
+  /** Python `_handle_session_get` without a sidecar: the state.db transcript as a (read-only or claimable) foreign stub. */
+  private foreignSessionDetail(sid: string): Record<string, unknown> {
+    const { synth, meta } = this.foreignSession(sid)
     // The same turn projection as a WebUI session: turn ids, then each completed turn's scene.
     const msgs = hydrateAnchorActivityScenes(withTurnIds(synth.messages), {}) as Message[]
     const lastTs = Number(msgs[msgs.length - 1]?.timestamp ?? 0) || 0
@@ -1053,14 +1059,19 @@ export class SessionService {
     const messageIndex = anchorSceneIntOrNull(query.message_index)
     if (!sid || (!messageRef && messageIndex === null)) throw new HttpFailure(400, 'session_id and message_ref or message_index are required')
     let session: Session
+    let transcript: Message[]
     try {
       session = this.store.get(sid)
       if (session.loadedMetadataOnly) session = this.store.load(sid) ?? session
-    } catch {
-      throw new HttpFailure(404, 'Session not found')
+      if (!this.visibleToActiveProfile(session.profile)) throw new HttpFailure(404, 'Session not found')
+      transcript = this.mergedTranscript(session)
+    } catch (error) {
+      if (error instanceof HttpFailure) throw error
+      // A state.db-only session pages the same synthesized transcript its detail was built from.
+      session = this.foreignSession(sid).synth
+      transcript = session.messages
     }
-    if (!this.visibleToActiveProfile(session.profile)) throw new HttpFailure(404, 'Session not found')
-    const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) }, withTurnIds(this.mergedTranscript(session)))
+    const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) }, withTurnIds(transcript))
     if (!result) throw new HttpFailure(404, 'Anchor activity scene not found')
     // Paged rows come from the raw transcript, so they take the same credential redaction as the detail's preview.
     return redactValue(result, this.deps.redactEnabled()) as typeof result
