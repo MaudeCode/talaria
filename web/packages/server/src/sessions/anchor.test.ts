@@ -177,6 +177,18 @@ describe('buildTurnScene', () => {
     ])
   })
 
+  it('keeps reasoning blocks in place in structured content without tool calls', () => {
+    const scene = buildTurnScene(turnOf([
+      { role: 'user', content: 'Go' },
+      { role: 'assistant', id: 1, content: [{ type: 'text', text: 'First look.' }, { type: 'thinking', thinking: 'Hmm.' }, { type: 'text', text: 'Then this.' }] },
+      { role: 'assistant', id: 2, content: [{ type: 'thinking', thinking: 'Wrap up.' }, { type: 'text', text: 'Answer.' }] },
+    ]))!
+    expect((scene.activity_rows as Json[]).map((r) => [r.role, r.text])).toEqual([
+      ['prose', 'First look.'], ['reasoning', 'Hmm.'], ['prose', 'Then this.'], ['reasoning', 'Wrap up.'],
+    ])
+    expect(scene.final_answer).toBe('Answer.')
+  })
+
   it('reads tool_result blocks from a user row as their calls\' results', () => {
     const scene = buildTurnScene(turnOf([
       { role: 'user', content: 'Search' },
@@ -322,7 +334,8 @@ describe('anchor scenes over HTTP', () => {
     expect(messages[1]?._anchor_activity_scene).toMatchObject({ final_answer: 'Done.', terminal_state: 'completed', expanded_by_default: false, activity_rows_total: 2 })
     expect(((messages[1]?._anchor_activity_scene as Json).activity_rows as Json[]).map((r) => r.row_id)).toEqual(['p', 'tool:t'])
     expect(messages[3]?._anchor_activity_scene).toMatchObject({ terminal_state: 'no_response', expanded_by_default: true, activity_rows_total: 2 })
-    expect((messages[3]?._anchor_activity_scene as Json).final_answer ?? '').toBe('')
+    // Present and empty, so every client reads the same "no answer" instead of an older server's fallback.
+    expect((messages[3]?._anchor_activity_scene as Json).final_answer).toBe('')
   })
 
   it('keeps full tool results in scenes, clipping them only in a limited response like raw tool rows', async () => {

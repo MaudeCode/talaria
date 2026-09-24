@@ -344,9 +344,9 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
     const createdAt = finite(m.timestamp)
     const at = createdAt === null ? {} : { created_at: createdAt }
     const commentary = codexCommentary(m)
-    // With tool_use blocks, reasoning blocks keep their place in the in-order walk below.
-    const blockReasoning = Array.isArray(m.content) && !hasToolUseBlocks(m) ? m.content.flatMap((part) => (isDict(part) && isReasoningBlock(part) ? [reasoningBlockText(part)] : [])) : []
-    let reasoning = [str(m.reasoning_content), typeof m.reasoning === 'string' ? m.reasoning : '', str(m.thinking), ...blockReasoning].filter(Boolean).join('\n')
+    // Structured content with tool_use or reasoning blocks is walked in order below, so its reasoning keeps its place.
+    const walked = hasToolUseBlocks(m) || (Array.isArray(m.content) && m.content.some((part) => isDict(part) && isReasoningBlock(part)))
+    let reasoning = [str(m.reasoning_content), typeof m.reasoning === 'string' ? m.reasoning : '', str(m.thinking)].filter(Boolean).join('\n')
     for (const part of commentary) reasoning = reasoning.replace(part, '')
     reasoning = reasoning.replace(/\n{3,}/g, '\n\n').trim()
     const titles = Array.isArray(m.reasoning_titles) ? m.reasoning_titles.filter((t): t is string => typeof t === 'string' && Boolean(t.trim())) : []
@@ -367,10 +367,13 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
         is_error: call.is_error === true || reply?.is_error === true, duration: finite(call.duration), cost_usd: finite(call.cost_usd),
       } })
     }
-    if (hasToolUseBlocks(m)) {
-      // Text, reasoning and tool_use blocks stay in the order the model wrote them; such a row is never the final answer.
+    if (walked) {
+      // Text, reasoning and tool_use blocks stay in the order the model wrote them. The final reply's text is its answer,
+      // so there only its reasoning is emitted.
+      const answering = m === last && Boolean(finalAnswer.trim())
       let chunk: unknown[] = []
       const flush = () => {
+        if (answering) { chunk = []; return }
         const text = splitThinkingFromContent(messageText(chunk))[0]
         if (text.trim()) push({ row_id: rows.some((r) => r.row_id === `${ref}:prose`) ? `${ref}:prose:${String(rows.length)}` : `${ref}:prose`, role: 'prose', text, ...at })
         chunk = []
@@ -407,7 +410,8 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
  */
 function withStoredFinalAnswer(scene: Record<string, unknown>, built: Record<string, unknown> | null): Record<string, unknown> {
   if (!built || str(scene.final_answer).trim()) return scene
-  if (normalizeSceneRows(scene.activity_rows).some((row) => row.steering?.consumed === true)) return scene
+  // An explicit empty answer, so no client takes the reply that answered the steer for the missing field's fallback.
+  if (normalizeSceneRows(scene.activity_rows).some((row) => row.steering?.consumed === true)) return { ...scene, final_answer: '' }
   return { ...scene, final_answer: built.final_answer }
 }
 
