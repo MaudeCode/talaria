@@ -68,11 +68,14 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                 if let turn = CompletedAssistantTurn(rows: activityRows) {
                     if turn.hasSteering {
                         steeredTurn(turn)
+                        outcomeRow
                     } else if liveActivityRows.isEmpty {
                         if transcriptMessage.shouldShowTurnSummary(hasActiveStream: ownsActiveStream) {
+                            // Renders the outcome between the work and the final answer.
                             completedTurn(turn)
                         } else {
                             activityTimeline(turn.segments, activeSegmentID: nil)
+                            outcomeRow
                         }
                     } else {
                         activityTimeline(turn.segments, activeSegmentID: turn.segments.last?.id)
@@ -84,6 +87,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                     }
                 }
             } else {
+                // A scene with no rows and no answer still carries the server's outcome.
+                outcomeRow
                 messageRow(transcriptMessage.message)
             }
         }

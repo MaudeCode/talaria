@@ -450,4 +450,20 @@ func testContentPartToolsUseResolvedResultsWithoutCompletingUnresolvedCalls() {
     XCTAssertEqual(timeline.toolCalls.last?.isCompleted, false)
 }
 
+func testEmptyTerminalSceneStillCarriesTheServerOutcome() throws {
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    let message = try decoder.decode(ChatMessage.self, from: Data("""
+    {
+      "role": "assistant",
+      "content": "",
+      "message_id": "assistant-empty-outcome",
+      "_anchor_activity_scene": {"version": "activity_scene_v1", "final_answer": "", "terminal_state": "no_response", "expanded_by_default": false, "activity_rows": []}
+    }
+    """.utf8))
+
+    // No rows and no answer: the block renders the plain message, and the outcome label alongside it.
+    XCTAssertNil(AssistantActivityTimeline.authoritativeScene(message: message))
+    XCTAssertEqual(AssistantTurnOutcome.label(for: message.activityScene?.terminalState), "No answer produced.")
+}
 }
