@@ -63,26 +63,30 @@ class ReleaseSetTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValidationError):
                 VALIDATOR.validate(broken)
 
-    def test_component_tag_workflow_cannot_publish(self):
+    def test_root_tag_workflow_only_starts_the_main_cutover(self):
+        # One step (TAL-336): a signed vX.Y.Z push validates, tags changed components and dispatches the
+        # production cutover on main; it holds no publishing credentials and publishes nothing itself.
         workflow = Path(__file__).resolve().parents[1] / ".github/workflows/release.yml"
         document = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e",
             "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(workflow),
         ], text=True))
         triggers = document.get("on", document.get("true"))
+        self.assertEqual(set(triggers), {"push"})
         patterns = triggers["push"]["tags"]
-        for historical in ("v1.8.0", "v0.1.12", "exp-v0.52.1"):
-            self.assertFalse(any(fnmatch.fnmatchcase(historical, pattern) for pattern in patterns))
-        for tag in ("app-v1.9.0", "web-v1.0.0", "web-exp-v1.0.0", "relay-v0.2.0"):
-            self.assertTrue(any(fnmatch.fnmatchcase(tag, pattern) for pattern in patterns))
-        self.assertEqual(document["permissions"], {"actions": "read", "contents": "read"})
+        self.assertTrue(any(fnmatch.fnmatchcase("v1.10.1", pattern) for pattern in patterns))
+        for component_tag in ("app-v1.9.0", "web-v1.0.0", "web-exp-v1.0.0", "relay-v0.2.0"):
+            self.assertFalse(any(fnmatch.fnmatchcase(component_tag, pattern) for pattern in patterns))
+        self.assertEqual(document["permissions"], {"actions": "write", "contents": "write"})
         for job in document["jobs"].values():
             self.assertNotIn("environment", job)
             self.assertNotIn("secrets", job)
-            self.assertNotIn("uses", job)  # No indirect publishing workflow.
+            self.assertNotIn("uses", job)  # Publication happens only in the dispatched main cutover.
             self.assertNotIn("permissions", job)
         commands = "\n".join(step.get("run", "") for job in document["jobs"].values() for step in job["steps"])
-        self.assertIn("app/ci/validate_release_tag", commands)
+        for required in ("app/ci/validate_release_tag", "app/ci/require_successful_main_ci", "releases/autorelease.py",
+                         "gh workflow run production-cutover.yml --repo \"$GITHUB_REPOSITORY\" --ref main"):
+            self.assertIn(required, commands)
         self.assertIn("app/ci/require_successful_main_ci", commands)
 
     def test_independent_versions_and_expanded_contracts(self):

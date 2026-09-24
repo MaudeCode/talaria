@@ -27,6 +27,7 @@ validate_release_tag() {
   local version commit prefix
 
   case "$component" in
+    release) prefix="v" ;;
     app|relay) prefix="${component}-v" ;;
     web)
       prefix="web-v"
@@ -44,12 +45,18 @@ validate_release_tag() {
     echo "Release tag ${tag} must be an annotated signed tag." >&2
     return 1
   fi
+  commit="$(git rev-list -n 1 "refs/tags/${tag}")"
   if ! tag_signature_verified "$tag"; then
-    echo "GitHub did not verify the signature for release tag ${tag}." >&2
-    return 1
+    # One-step releases (TAL-336): CI creates the component tags; the signed, admin-only root tag
+    # v<version> at the same commit is their authorization.
+    local root="v${version}"
+    if [[ "$component" == release || "$(git cat-file -t "refs/tags/${root}" 2>/dev/null)" != "tag" ]] \
+      || [[ "$(git rev-list -n 1 "refs/tags/${root}")" != "$commit" ]] || ! tag_signature_verified "$root"; then
+      echo "GitHub did not verify the signature for release tag ${tag} or a signed root tag ${root} at its commit." >&2
+      return 1
+    fi
   fi
 
-  commit="$(git rev-list -n 1 "refs/tags/${tag}")"
   if [[ -n "$expected_sha" && "$commit" != "$expected_sha" ]]; then
     echo "Release tag ${tag} resolves to ${commit}, expected ${expected_sha}." >&2
     return 1

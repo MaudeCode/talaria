@@ -145,34 +145,50 @@ the fixtures reached the test bundle and retains structured XCTest results.
 
 ## Root workflow
 
-Component-tag pushes run read-only validation. Production starts only through
-`production-cutover.yml` on `main`; direct `release-set.yml` dispatches support
-dry runs. Both take a JSON `request` with this shape:
+Release in one step (TAL-336): sign and push one tag on a green `main` commit.
+
+```sh
+git tag -s v1.10.1 <main commit> -m "Talaria 1.10.1" && git push origin v1.10.1
+```
+
+Only organization admins can create `v*` tags, and release tags are immutable,
+so the signed root tag is the release authorization. `release.yml` then:
+
+1. verifies the tag's GitHub signature and that its commit is on `main`;
+2. waits for that commit's `main` CI;
+3. reads the latest published release set and selects the components whose
+   `app/`, `web/` or `relay/` sources changed since their released source;
+4. creates `<component>-vX.Y.Z` tags at the same commit for the changed
+   components (unchanged ones keep their previous tags); `validate_release_tag`
+   accepts these because the signed root `vX.Y.Z` sits on the same commit;
+5. starts `production-cutover.yml` on `main` with the resulting request and
+   `confirm_publication=true`.
+
+The whole release shares one version. A version is used once: if a release
+fails and needs a code fix, push the next patch version.
+
+The cutover takes a JSON `request` with this shape, which `release.yml` builds;
+direct dispatches (and `release-set.yml` dry runs) use the same shape:
 
 ```json
 {
   "sourceRevision": "<40-character main commit SHA>",
-  "tags": {"app": "app-v1.9.0", "web": "web-v1.0.0", "relay": "relay-v0.2.0"},
+  "tags": {"app": "app-v1.10.1", "web": "web-v1.10.1", "relay": "relay-v0.2.0"},
   "relayDeploymentId": "<existing production deployment ID>"
 }
 ```
 
-These are illustrative versions, not a release selection. Supply
-`previous_release_set` as the last completed set's SHA; leave it empty only for
+`previous_release_set` is the last completed set's SHA; empty only for
 bootstrap. Preparation checks all published root releases and rejects a missing
 or stale predecessor once a release set exists. Changed tags must point to
-`sourceRevision`; unchanged tags must match the previous manifest. Production
-requires pushed, verified signed tags.
+`sourceRevision`; unchanged tags must match the previous manifest.
 
-First dispatch `release-set.yml` with `dry_run=true`. Require the candidate
-artifact and successful selected-source contracts, previous-App contracts,
-pinned Agent compatibility and component builds. The dry run uses no component
-publication credentials. It creates neither registry images nor GitHub releases.
-
-With publication authorized, dispatch `production-cutover.yml` on `main` using
-the same request and `confirm_publication=true`. It repeats the gates, builds
-all changed artifacts, then deploys Relay, publishes Web and uploads App in
-that order. Unchanged components skip their build/publication jobs. Required
+The cutover repeats every gate (selected-source and previous-App contracts,
+pinned Agent compatibility, component builds), then deploys Relay, publishes
+Web and uploads the App in that order, and publishes the manifest last.
+A `release-set.yml` dispatch with `dry_run=true` rehearses the same gates without
+publication credentials when a change to the release tooling needs it.
+Unchanged components skip their build/publication jobs. Required
 jobs that fail, cancel or unexpectedly skip block completion.
 
 Credentials are scoped to jobs: `relay-production` supplies the matching

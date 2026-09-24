@@ -1,70 +1,95 @@
-name: Validate component release tag
+name: Release
+
+# One step (TAL-336): push a signed vX.Y.Z tag on a main commit and nothing else. This run validates the
+# tag, waits for that commit's main CI, tags the components that changed since the last published release
+# set (app-vX.Y.Z, web-vX.Y.Z, relay-vX.Y.Z at the same commit) and starts the production cutover on main,
+# which repeats every gate, builds, and publishes Relay, Web, the App and the release-set manifest.
+# The cutover runs on main because the publishing environments and npm's trusted publisher require it.
 
 on:
   push:
     tags:
-      - "app-v*"
-      - "web-v*"
-      - "web-exp-v*"
-      - "relay-v*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing signed component tag to validate (no publication).
-        required: true
-        type: string
+      - "v*"
 
 permissions:
-  actions: read
-  contents: read
+  contents: write # create the component tags
+  actions: write # start the production cutover
 
 concurrency:
-  group: component-tag-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  group: talaria-release
   cancel-in-progress: false
 
 jobs:
-  validate-release:
-    name: Validate signed tag and exact-main CI
+  start:
+    name: Tag changed components and start the cutover
     runs-on: ["ghar-set-maudecode"]
-    timeout-minutes: 95
+    timeout-minutes: 100
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
           fetch-depth: 0
 
-      - name: Prepare Ruby runtime
-        run: sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
+      - uses: ./.github/actions/release-python
+      # app/ci/validate_release_tag parses GitHub tag metadata with Ruby, which the pool image lacks.
+      - uses: ./.github/actions/release-ruby
 
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
-
-      - name: Verify source and signature
+      - name: Validate the signed release tag
         id: tag
         env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          RELEASE_COMPONENT: release
         run: |
           set -euo pipefail
-          case "$RELEASE_TAG" in
-            app-v*) export RELEASE_COMPONENT=app ;;
-            web-v*|web-exp-v*) export RELEASE_COMPONENT=web ;;
-            relay-v*) export RELEASE_COMPONENT=relay ;;
-            *) echo "Unknown component tag" >&2; exit 1 ;;
-          esac
           git fetch --no-tags origin main:refs/remotes/origin/main
           app/ci/validate_release_tag
-          sha=$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")" >> "$GITHUB_OUTPUT"
 
-      - name: Verify successful exact-main CI
+      - name: Wait for main CI on the release commit
         env:
-          GH_TOKEN: ${{ github.token }}
           GITHUB_SHA: ${{ steps.tag.outputs.sha }}
           WAIT_FOR_MAIN_CI_SECONDS: "5400"
           MAIN_CI_POLL_SECONDS: "30"
         run: app/ci/require_successful_main_ci
 
-      - name: Record validation boundary
-        run: echo "Component tag validated. Publication requires the release-set cutover workflow." >> "$GITHUB_STEP_SUMMARY"
+      - name: Tag changed components
+        id: plan
+        run: |
+          set -euo pipefail
+          previous=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .published_at != null and (.tag_name | test("^release-set-[a-f0-9]{40}$"))) | "\(.published_at) \(.tag_name)"' \
+            | sort | tail -1 | cut -d' ' -f2)
+          previous="${previous#release-set-}"
+          [[ "$previous" =~ ^[a-f0-9]{40}$ ]] || { echo "No published release set to release after." >&2; exit 1; }
+          "$RELEASE_PYTHON" releases/cli.py previous "$previous" --output "$RUNNER_TEMP/previous.json"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          result=$("$RELEASE_PYTHON" releases/autorelease.py --tag "$RELEASE_TAG" --previous "$RUNNER_TEMP/previous.json" \
+            --output "$RUNNER_TEMP/request.json" --create-tags)
+          echo "$result"
+          for tag in $(printf '%s' "$result" | jq -r '.created[]'); do git push origin "refs/tags/${tag}"; done
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Release ${RELEASE_TAG}"
+            echo "- Source: \`${{ steps.tag.outputs.sha }}\`, after release set \`${previous}\`"
+            echo "- Changed: $(printf '%s' "$result" | jq -r '.changed | join(", ")')"
+            echo "- Component tags: $(printf '%s' "$result" | jq -r '.request.tags | to_entries | map(.value) | join(", ")')"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Start the production cutover
+        env:
+          PREVIOUS: ${{ steps.plan.outputs.previous }}
+        run: |
+          set -euo pipefail
+          started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run production-cutover.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f request="$(cat "$RUNNER_TEMP/request.json")" -f previous_release_set="$PREVIOUS" -f confirm_publication=true
+          for _ in $(seq 1 20); do
+            url=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow production-cutover.yml --event workflow_dispatch \
+              --created ">=${started}" --json url --jq '.[0].url // empty')
+            [[ -n "$url" ]] && break
+            sleep 6
+          done
+          echo "- Production cutover: ${url:-started; see the Production cutover workflow}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Production cutover: ${url:-started}"
