@@ -398,6 +398,13 @@ class PublicationTests(unittest.TestCase):
         self.assertNotIn("ios-ipa", restage)
         self.assertNotIn("ios-dsyms", restage)
 
+    def test_multi_platform_emulation_registers_through_privileged_dind(self):
+        # The runner container is unprivileged: apt's qemu-user-static cannot register kernel binfmt handlers, so
+        # arm64 emulation goes through the pod's privileged Docker daemon with a digest-pinned installer.
+        action = (Path(__file__).resolve().parents[1] / ".github/actions/docker-plugins/action.yml").read_text()
+        self.assertRegex(action, r"docker run --privileged --rm tonistiigi/binfmt:[\w.-]+@sha256:[0-9a-f]{64} --install arm64")
+        self.assertNotIn("qemu-user-static", action)
+
     def test_buildx_builders_are_never_fixed_names(self):
         # A Docker daemon that outlives a job would reject a second builder with the same fixed name.
         root = Path(__file__).resolve().parents[1]
