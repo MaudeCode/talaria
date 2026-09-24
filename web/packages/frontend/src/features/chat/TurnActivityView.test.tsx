@@ -30,24 +30,27 @@ function tool(id: string) { return { event: 'tool', data: { id, name: 'read_file
 function completed(id: string) { return { event: 'tool_complete', data: { id, name: 'read_file', result: `Contents of ${id}` } } as const }
 
 describe('turn worklog presentation', () => {
-  it('keeps live work open after the current tools finish and preserves explicit choices through settlement and remount', () => {
+  it('shows live work inline without a turn-level disclosure and preserves settled choices through remount', () => {
+    // A stored collapse for this turn must not hide live work.
+    localStorage.setItem('hermes-worklog:v1:profile/s', JSON.stringify({ [JSON.stringify(['user:u', 'turn'])]: false }))
     const run = liveRun()
+    run.emit({ event: 'reasoning', data: { text: 'Planning' } })
+    run.emit({ event: 'token', data: { text: 'Reading a.' } })
     run.emit(tool('a'))
     run.emit(completed('a'))
-    const view = render(<View activity={liveActivity(run.turn)} />)
-    const summary = view.container.querySelector('.tool-worklog-summary')!
-    expect(summary).toHaveAttribute('aria-expanded', 'true')
-    expect(summary.textContent).not.toContain('Worked')
-    expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(0)
-    fireEvent.click(summary)
     run.emit({ event: 'token', data: { text: 'Final answer' } })
-    view.rerender(<View activity={liveActivity(run.turn)} />)
-    expect(summary).toHaveAttribute('aria-expanded', 'false')
-    fireEvent.click(summary)
+    const view = render(<View activity={liveActivity(run.turn)} />)
+    expect(view.container.querySelector('.tool-worklog-summary')).toBeNull()
+    expect(view.container.textContent).not.toContain('Responding…')
+    expect(view.container.querySelector('[data-tool-id="a"]')).toBeVisible()
+    expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(0)
     run.emit({ event: 'done', data: {} })
     view.rerender(<View activity={liveActivity(run.turn)} />)
-    expect(summary).toHaveAttribute('aria-expanded', 'true')
+    const summary = view.container.querySelector('.tool-worklog-summary')!
+    expect(summary).toHaveAttribute('aria-expanded', 'false')
     expect(summary.textContent).toContain('Worked')
+    fireEvent.click(summary)
+    expect(summary).toHaveAttribute('aria-expanded', 'true')
     expect(view.container.querySelector('[data-final-answer]')?.closest('.activity-body')).toBeNull()
     view.unmount()
     const remount = render(<View activity={liveActivity(run.turn)} />)
@@ -56,21 +59,29 @@ describe('turn worklog presentation', () => {
     expect(remount.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('groups consecutive support rows, preserves intervening prose, and isolates nested toggles', () => {
+  it('keeps live work flat and forms nested groups only once the turn settles', () => {
     const run = liveRun()
     run.emit({ event: 'token', data: { text: 'Before tools' } })
     run.emit(tool('a')); run.emit(tool('b'))
     run.emit({ event: 'token', data: { text: 'Between batches' } })
     run.emit(tool('c'))
     const view = render(<View activity={liveActivity(run.turn)} />)
-    expect([...view.container.querySelectorAll('.msg-body, [data-tool-id]')].map((el) => el.getAttribute('data-tool-id') ?? el.textContent)).toEqual(['Before tools', 'a', 'b', 'Between batches', 'c'])
-    expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(1)
+    const order = () => [...view.container.querySelectorAll('.msg-body, [data-tool-id]')].map((el) => el.getAttribute('data-tool-id') ?? el.textContent)
+    expect(order()).toEqual(['Before tools', 'a', 'b', 'Between batches', 'c'])
+    // While live, rows never regroup into collapsed nested groups, so nothing above the newest row changes shape.
+    expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(0)
+    for (const id of ['a', 'b', 'c']) expect(view.container.querySelector(`[data-tool-id="${id}"]`)).toBeVisible()
+    run.emit({ event: 'token', data: { text: 'Done' } })
+    run.emit({ event: 'done', data: {} })
+    view.rerender(<View activity={liveActivity(run.turn)} />)
+    fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
+    expect(order()).toEqual(['Before tools', 'a', 'b', 'Between batches', 'c', 'Done'])
     const nested = view.container.querySelector('[data-activity-sequence-group] > button')!
+    expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(1)
     expect(nested).toHaveAttribute('aria-expanded', 'false')
     expect(nested.textContent).not.toContain('Worked')
     fireEvent.click(nested)
     fireEvent.click(view.container.querySelector('[data-tool-id="a"] button')!)
-    expect(view.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'true')
     expect(nested).toHaveAttribute('aria-expanded', 'true')
     expect(view.container.querySelector('[data-tool-id="b"] button')).toHaveAttribute('aria-expanded', 'false')
   })

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { fetchAnchorScene } from '../../api/endpoints'
 import { m } from '../../paraglide/messages.js'
@@ -9,6 +9,51 @@ import { ReasoningBlock } from './blocks/ReasoningBlock'
 import { ToolCard } from './blocks/ToolCard'
 import { DisclosureTurnContext, terminalOutcomeLabel, Worklog, type ActivityMode } from './blocks/Worklog'
 import type { ActivityItem, TurnActivity } from './turnActivity'
+
+// The live turn's last rendered height, so the settled row that replaces it can fold from that height.
+let lastLiveTurn: { key: string; height: number } | null = null
+export function rememberLiveTurnHeight(key: string, height: number) { lastLiveTurn = { key, height } }
+
+const FOLD = { duration: 320, easing: 'ease-out', fill: 'forwards' } as const
+
+/**
+ * Folds a just-settled turn from its live height: the collapsed "Worked" body is shown open and animated
+ * shut, and a spacer holds any remaining height the live turn lost and shrinks with it, so the work
+ * visibly folds into its summary and history glides instead of snapping.
+ */
+function SettleSpacer({ turnKey }: { turnKey: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const live = lastLiveTurn
+    const el = ref.current
+    const row = el?.closest('.assistant-turn')
+    if (live?.key !== turnKey || !el || !row) return
+    lastLiveTurn = null
+    if (typeof el.animate !== 'function' || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)) return
+    // Grow before measuring: a layout forced while the row is shorter than the live turn would clamp the scroll first.
+    el.style.height = `${live.height}px`
+    const body = row.querySelector<HTMLElement>(':scope > .assistant-turn-blocks > .activity:not(.open) > .activity-body')
+    if (body) body.hidden = false
+    const bodyHeight = body?.scrollHeight ?? 0
+    if (body && bodyHeight > 0) Object.assign(body.style, { maxHeight: `${bodyHeight}px`, opacity: '1', marginTop: '10px' })
+    else if (body) body.hidden = true
+    const gap = Math.max(0, live.height - (row.getBoundingClientRect().height - live.height))
+    el.style.height = `${gap}px`
+    const done = () => { el.style.height = '' }
+    if (gap > 1) void el.animate([{ height: `${gap}px` }, { height: '0px' }], FOLD).finished.then(done, () => undefined)
+    else done()
+    if (body && bodyHeight > 0) {
+      const fold = body.animate([{ maxHeight: `${bodyHeight}px`, opacity: 1, marginTop: '10px' }, { maxHeight: '0px', opacity: 0, marginTop: '0px' }], FOLD)
+      void fold.finished.then(() => {
+        // Hand the body back to the disclosure; a click during the fold may already have reopened it.
+        if (!body.parentElement?.classList.contains('open')) body.hidden = true
+        Object.assign(body.style, { maxHeight: '', opacity: '', marginTop: '' })
+        fold.cancel()
+      }, () => undefined)
+    }
+  }, [turnKey])
+  return <div ref={ref} aria-hidden="true" />
+}
 
 /** Live events and persisted history share ordering, nesting and final-answer boundaries. */
 export function TurnActivityView({ activity, mode, sessionId, scope }: { activity: TurnActivity; mode: ActivityMode; sessionId?: string | undefined; scope?: string | undefined }) {
@@ -47,7 +92,8 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
   for (let i = 0; i < items.length;) {
     const item = items[i]
     if (!item) break
-    if (item.kind === 'text' || item.kind === 'steering' || mode !== 'compact_worklog') { blocks.push(render(item, i === items.length - 1)); i++; continue }
+    // Live work stays flat; tier-2 groups form once the turn settles, so rows never regroup while streaming.
+    if (item.kind === 'text' || item.kind === 'steering' || mode !== 'compact_worklog' || running) { blocks.push(render(item, i === items.length - 1)); i++; continue }
     const start = i
     while (i < items.length && items[i]?.kind !== 'text' && items[i]?.kind !== 'steering') i++
     const run = items.slice(start, i)
@@ -62,6 +108,7 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
         ? <Worklog calls={calls} status={status}>{earlier}{blocks}</Worklog>
         : <>{earlier}{blocks}</>)}
       {mode === 'hide_all_activity' && items.filter((item) => item.kind === 'steering').map((item) => render(item, false))}
+      {!running && <SettleSpacer turnKey={activity.key} />}
       {outcome && <div role="status" className="text-muted">{outcome}</div>}
       {finalAnswer.trim() && <div className="msg-body" data-final-answer="1"><Markdown text={finalAnswer} /></div>}
     </DisclosureTurnContext>

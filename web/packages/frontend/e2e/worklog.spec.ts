@@ -77,34 +77,53 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   try {
   await page.goto(`/session/${sid}`)
   const outer = page.locator('.live-turn > .assistant-turn-blocks > .activity')
-  await expect(outer.locator(':scope > button')).toHaveAttribute('aria-expanded', 'true')
-  await expect(outer.locator(':scope > button')).not.toContainText('Worked')
-  await expect(page.locator('[data-activity-sequence-group]')).toHaveCount(1)
-  const nested = page.locator('[data-activity-sequence-group] > button')
-  await nested.click()
-  await expect(page.locator('[data-tool-id="a"] > button')).toBeVisible()
+  // Live work is inline with no turn-level "Responding…" disclosure; the status is a pill docked above the composer.
+  await expect(page.locator('[data-tool-id="c"] > button')).toBeVisible()
+  await expect(outer.locator(':scope > button')).toHaveCount(0)
+  await expect(page.locator('.live-turn').getByRole('button', { name: /Responding/ })).toHaveCount(0)
+  await expect(page.locator('.live-turn .live-run-status')).toHaveCount(0)
+  const spinner = page.locator('.live-run-status')
+  await expect(spinner).toHaveCount(1)
+  await expect(spinner.locator('svg.live-laurel')).toBeVisible()
+  await expect(spinner.locator('svg.live-laurel')).toHaveCSS('width', '24px')
+  // Reduced motion (the suite default) shows a still wreath and a plain label; otherwise the leaves and gold shimmer animate.
+  await expect(spinner.locator('.laurel-leaf').first()).toHaveCSS('animation-name', 'none')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await expect(spinner.locator('.laurel-leaf').first()).toHaveCSS('animation-name', 'laurel-leaf')
+  await expect(spinner.locator('.live-run-label')).toHaveCSS('animation-name', 'reasoning-title-glow')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const scrollerBox = (await page.locator('#messages').boundingBox())!
+  const spinnerBox = (await spinner.boundingBox())!
+  expect(Math.abs(spinnerBox.x + spinnerBox.width / 2 - (scrollerBox.x + scrollerBox.width / 2))).toBeLessThanOrEqual(2)
+  expect(spinnerBox.y + spinnerBox.height).toBeLessThanOrEqual(scrollerBox.y + scrollerBox.height)
+  expect(spinnerBox.y + spinnerBox.height).toBeGreaterThan(scrollerBox.y + scrollerBox.height - 60)
+  // Live work stays flat: every tool row is visible without opening a group.
+  await expect(page.locator('[data-activity-sequence-group]')).toHaveCount(0)
+  for (const id of ['a', 'b', 'c']) await expect(page.locator(`[data-tool-id="${id}"] > button`)).toBeVisible()
   await page.locator('[data-tool-id="a"] > button').click()
   await expect(page.getByText('A contents', { exact: true })).toBeVisible()
   await expect(page.locator('[data-tool-id="a"] .tool-card-detail')).toHaveCSS('opacity', '1')
-  await expect(outer.locator(':scope > button')).toHaveAttribute('aria-expanded', 'true')
   const order = await page.locator('.live-turn .msg-body, .live-turn [data-tool-id]').evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-tool-id') ?? n.textContent))
   expect(order).toEqual(['First pass', 'a', 'b', 'Second pass', 'c'])
-  // Explicit collapse survives reload and is scoped to this turn.
-  await outer.locator(':scope > button').click()
   finished = true
   stream?.write(`id: worklog-run:10\nevent: done\ndata: ${JSON.stringify({ session: { session_id: sid, title: 'Inspect the files', messages }, terminal_state: limited ? 'tool_limit_reached' : 'completed' })}\n\n`)
   await expect(page.locator('.live-turn')).toHaveCount(0)
   await expect(page.locator('.assistant-turn')).toHaveCount(1)
   if (limited) await expect(page.getByRole('status').filter({ hasText: 'Tool limit reached' })).toBeVisible()
   else await expect(page.locator('.assistant-turn > .assistant-turn-blocks > .activity > button')).toContainText('Worked')
-  await expect(page.locator('.assistant-turn > .assistant-turn-blocks > .activity > button')).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.locator('.live-run-status')).toHaveCount(0)
+  // Settled turns keep their default disclosure; an explicit expand survives reload.
+  const settled = page.locator('.assistant-turn > .assistant-turn-blocks > .activity > button')
+  await expect(settled).toHaveAttribute('aria-expanded', limited ? 'true' : 'false')
   await expect(page.getByText(closing, { exact: true })).toBeVisible()
-  await page.locator('.assistant-turn > .assistant-turn-blocks > .activity > button').click()
+  if (limited) await settled.click()
+  await settled.click()
   await expect(page.getByText('First pass', { exact: true })).toBeVisible()
   await expect(page.getByText('Second pass', { exact: true })).toBeVisible()
-  await expect(page.locator('[data-activity-sequence-group] > button')).toHaveAttribute('aria-expanded', 'true')
+  // Tier-2 groups form once the turn settles, collapsed by default.
+  await expect(page.locator('[data-activity-sequence-group] > button')).toHaveAttribute('aria-expanded', 'false')
   await page.reload()
-  await expect(page.locator('.assistant-turn > .assistant-turn-blocks > .activity > button')).toHaveAttribute('aria-expanded', 'true')
+  await expect(settled).toHaveAttribute('aria-expanded', 'true')
   } finally {
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
@@ -207,4 +226,126 @@ test('final-only mode retains recovered user steering', async ({ page }) => {
   await expect(page.locator('[data-activity-steering]')).toContainText('Stop after the next sleep')
   await expect(page.locator('[data-tool-id]')).toHaveCount(0)
   await expect(page.getByText('Done.', { exact: true })).toBeVisible()
+})
+
+test('live label box covers its glyphs so the shimmer never clips descenders', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'live-label', title: 'Live label', messages: [{ role: 'user', id: 1, content: 'Hello' }], active_stream_id: 'label-run' } } }))
+  await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'label-run', replay_available: true } }))
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+    response.write(`id: label-run:1\nevent: server_turn_started\ndata: ${JSON.stringify({ session_id: 'live-label', stream_id: 'label-run', user_message_id: 1 })}\n\n`)
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}/stream` }))
+  try {
+    await page.goto('/session/live-label')
+    const label = page.locator('.live-run-label')
+    await expect(label).toHaveText('Responding…')
+    await expect(label).toHaveCSS('animation-name', 'reasoning-title-glow')
+    // background-clip:text paints only inside the box, so it must span the font's full ascent and descent.
+    const { box, glyphs } = await label.evaluate((el) => {
+      const style = getComputedStyle(el)
+      const ctx = document.createElement('canvas').getContext('2d')!
+      ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+      const m = ctx.measureText(el.textContent ?? '')
+      return { box: el.getBoundingClientRect().height, glyphs: m.fontBoundingBoxAscent + m.fontBoundingBoxDescent }
+    })
+    expect(box).toBeGreaterThanOrEqual(glyphs)
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+test('streaming and settlement keep a pinned transcript steady', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'frame sampling needs one stable viewport')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  const sid = 'steady'
+  const history = Array.from({ length: 10 }, (_, i) => [
+    { role: 'user', id: 100 + i * 2, content: `Earlier question ${i + 1}` },
+    { role: 'assistant', id: 101 + i * 2, content: `Earlier answer ${i + 1}. `.repeat(6) },
+  ]).flat()
+  const answer = 'Both files agree: the service binds to port 8080 on host 0.0.0.0. No changes are needed, and the defaults in the second file only apply when the first is missing. You can start the service as it is.'
+  const messages = [...history, { role: 'user', id: 1, content: 'Check the config files' },
+    { role: 'assistant', id: 2, content: 'Reading both files.', reasoning: 'Compare the ports.', tool_calls: [{ id: 'a', name: 'read_file', args: { path: 'a.toml' }, result: 'port = 8080' }, { id: 'b', name: 'read_file', args: { path: 'b.toml' }, result: 'port = 8080' }] },
+    { role: 'assistant', id: 3, content: answer }]
+  let finished = false
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Steady', messages: finished ? messages : [...history, messages[history.length]], active_stream_id: finished ? null : 'steady-run' } } }))
+  await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'steady-run', replay_available: true } }))
+  let stream: ServerResponse | undefined
+  let seq = 0
+  const send = (event: string, data: Record<string, unknown>) => stream?.write(`id: steady-run:${++seq}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  const server = createServer((_request, response) => {
+    stream = response
+    response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+    send('server_turn_started', { session_id: sid, stream_id: 'steady-run', user_message_id: 1 })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}/stream` }))
+  try {
+    await page.goto(`/session/${sid}`)
+    await expect(page.locator('.live-run-status')).toBeVisible()
+    // Sample every frame: how far content extends below the viewport, and where an older message sits.
+    await page.evaluate(() => {
+      const w = window as unknown as { samples: { below: number; old: number; body: number; cover: number; phase: string }[]; phase: string }
+      w.samples = []; w.phase = 'stream'
+      const scroller = document.getElementById('messages')!
+      const old = [...document.querySelectorAll('.msg-row')].find((el) => el.textContent?.includes('Earlier question 10'))!
+      const tick = () => {
+        const body = document.querySelector('.assistant-turn:not(.live-turn):last-of-type .assistant-turn-blocks > .activity > .activity-body')
+        const pill = document.querySelector('.live-run-status')
+        const bodies = document.querySelectorAll('.live-turn .msg-body')
+        const last = bodies[bodies.length - 1]
+        w.samples.push({
+          below: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
+          old: old.getBoundingClientRect().top,
+          body: body ? body.getBoundingClientRect().height : -1,
+          cover: pill && last ? last.getBoundingClientRect().bottom - pill.getBoundingClientRect().top : 0,
+          phase: w.phase,
+        })
+        requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    })
+    send('reasoning', { text: 'Compare the ports.' })
+    send('token', { text: 'Reading both files.' })
+    send('tool', { id: 'a', name: 'read_file', args: { path: 'a.toml' } }); await page.waitForTimeout(150)
+    send('tool', { id: 'b', name: 'read_file', args: { path: 'b.toml' } }); await page.waitForTimeout(150)
+    send('tool_complete', { id: 'a', name: 'read_file', result: 'port = 8080' }); send('tool_complete', { id: 'b', name: 'read_file', result: 'port = 8080' })
+    for (const word of answer.split(/(?<= )/)) { send('token', { text: word }); await page.waitForTimeout(40) }
+    await page.waitForTimeout(300)
+    await page.evaluate(() => { (window as unknown as { phase: string }).phase = 'settle' })
+    finished = true
+    send('done', { session: { session_id: sid, title: 'Steady', messages } })
+    await expect(page.locator('.live-turn')).toHaveCount(0)
+    await page.waitForTimeout(700)
+    const samples = await page.evaluate(() => (window as unknown as { samples: { below: number; old: number; body: number; cover: number; phase: string }[] }).samples)
+    // Streamed lines never stay hidden below a pinned viewport for more than a couple of frames.
+    let run = 0, longest = 0
+    for (const s of samples.filter((f) => f.phase === 'stream')) { run = s.below > 2 ? run + 1 : 0; longest = Math.max(longest, run) }
+    expect(longest).toBeLessThanOrEqual(2)
+    // The docked pill never covers the newest streamed line.
+    expect(Math.max(...samples.filter((f) => f.phase === 'stream' && f.below <= 2).map((f) => f.cover))).toBeLessThanOrEqual(0)
+    // The finished work visibly folds into "Worked": its body shrinks through several heights instead of vanishing.
+    const folding = [...new Set(samples.filter((f) => f.phase === 'settle' && f.body > 0).map((f) => Math.round(f.body)))]
+    expect(folding.length).toBeGreaterThanOrEqual(3)
+    expect(samples.at(-1)!.body).toBe(0)
+    // Folding into "Worked" moves older history gradually, never in one snap.
+    const settle = samples.slice(Math.max(0, samples.findIndex((f) => f.phase === 'settle') - 1))
+    const down = settle.slice(1).map((f, i) => f.old - settle[i]!.old).filter((d) => d > 0.5)
+    const total = down.reduce((a, b) => a + b, 0)
+    if (total > 4) {
+      expect(down.length).toBeGreaterThanOrEqual(3)
+      expect(Math.max(...down)).toBeLessThan(total * 0.6)
+    }
+  } finally {
+    await page.close()
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
 })

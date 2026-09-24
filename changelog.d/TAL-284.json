@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "While a reply is being written, its work stays visible and a spinner sits below the newest text instead of a collapsible Responding row.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

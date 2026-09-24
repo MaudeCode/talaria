@@ -5,7 +5,7 @@ import { m } from '../../paraglide/messages.js'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import { AssistantMessageRow, UserMessageRow, type RowActions } from './MessageRow'
-import { LiveTurnView } from './LiveTurnView'
+import { LiveStatusPill, LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
 import { groupAssistantTurns, messageOwner, settledTerminalState } from './turnActivity'
@@ -76,12 +76,22 @@ export function Transcript(props: TranscriptProps) {
     setPinned(true)
   }, [])
 
-  // Auto-follow while pinned and content grows.
-  const liveKey = live ? `${live.streamId}:${live.segments.length}:${live.status}:${live.toolOrder.length}` : ''
+  // Auto-follow while pinned: track every size change of the content (each streamed line, each
+  // folding disclosure) before paint, instead of catching up in jumps when a new segment starts.
+  const innerRef = useRef<HTMLDivElement>(null)
+  const pinnedRef = useRef(pinned)
+  pinnedRef.current = pinned
+  const empty = rows.length === 0 && !showLive && !showLiveUser
   useLayoutEffect(() => {
-    if (!autoFollow || !pinned) return
-    scrollToBottom(false)
-  }, [rows.length, liveKey, autoFollow, pinned, scrollToBottom])
+    const inner = innerRef.current
+    if (!autoFollow || !inner) return
+    const follow = () => { if (pinnedRef.current) scrollToBottom(false) }
+    follow()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(follow)
+    observer.observe(inner)
+    return () => observer.disconnect()
+  }, [autoFollow, empty, scrollToBottom])
 
   // A new session starts pinned at the bottom.
   const firstKey = rows[0]?.key
@@ -101,13 +111,12 @@ export function Transcript(props: TranscriptProps) {
       : <AssistantMessageRow terminalState={settledTerminalState(row, live)} sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} />
   )
 
-  const empty = rows.length === 0 && !showLive && !showLiveUser
   return (
     <WorklogDisclosureProvider key={props.disclosureScope ?? sessionId} scope={props.disclosureScope ?? sessionId ?? ""}>
     <div className="messages-shell relative flex flex-1 min-h-0 flex-col">
       <div ref={scrollRef} onScroll={onScroll} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:auto] [@media(hover:hover)_and_(pointer:fine)]:[overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
         {empty ? emptyState : (
-          <div className="messages-inner mx-auto w-full flex flex-col max-w-(--msg-max) pt-5 pb-7 max-[641px]:pt-3 max-[641px]:pb-5 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
+          <div ref={innerRef} className="messages-inner mx-auto w-full flex flex-col max-w-(--msg-max) pt-5 pb-12 max-[641px]:pt-3 max-[641px]:pb-11 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
             {truncated && (
               <div className="flex justify-center py-2">
                 <Button variant="ghost" onClick={onLoadOlder} disabled={loadingOlder}>{loadingOlder ? m.loading() : m.load_older()}</Button>
@@ -145,6 +154,7 @@ export function Transcript(props: TranscriptProps) {
           <ArrowDown size={12} aria-hidden="true" /> <span className="max-[640px]:hidden">{m.scroll_to_bottom()}</span>
         </button>
       )}
+      {showLive && live && !isTerminal(live.status) && <LiveStatusPill turn={live} />}
     </div>
     </WorklogDisclosureProvider>
   )
