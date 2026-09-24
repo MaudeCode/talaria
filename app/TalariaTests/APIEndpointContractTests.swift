@@ -384,6 +384,31 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(CompletedAssistantTurn(rows: timeline.rows)?.finalAnswer, "Contract answer.")
     }
 
+    func testSharedWebSessionRendersServerBuiltTurnScenes() async throws {
+        let data = try fixture("web-session")
+        let session = session { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        defer { session.invalidateAndCancel() }
+        let client = APIClient(baseURL: URL(string: "https://contract.example")!, session: session)
+        let response = try await client.session(id: "contract-session")
+        let messages = try XCTUnwrap(response.session?.messages)
+        func turn(_ messageID: String) throws -> CompletedAssistantTurn {
+            let message = try XCTUnwrap(messages.first { $0.messageId == messageID })
+            let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: message))
+            return try XCTUnwrap(CompletedAssistantTurn(rows: timeline.rows))
+        }
+
+        // Codex commentary is prose under Worked, before its tool; the answer renders below Worked.
+        let codex = try turn("contract-run-c-2")
+        XCTAssertEqual(codex.workRows.map(\.kind), ["reasoning", "prose", "tools"])
+        XCTAssertEqual(codex.finalAnswer, "The service uses port 8080.")
+        XCTAssertEqual(try turn("contract-run-d-2").finalAnswer, "Tool budget exhausted; here is the saved explanation.")
+        // The running turn has no scene: the live stream renders it.
+        let running = try XCTUnwrap(messages.first { $0.messageId == "contract-run-f-1" })
+        XCTAssertNil(AssistantActivityTimeline.authoritativeScene(message: running))
+    }
+
     func testSharedRelaySnapshotAndRegistration() async throws {
         let snapshot = try fixture("relay-snapshot")
         let registration = try JSONSerialization.jsonObject(with: fixture("app-registration")) as! NSDictionary

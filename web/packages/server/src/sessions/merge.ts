@@ -148,24 +148,6 @@ export function sessionLacksFinalAssistantAnswer(messages: Message[]): boolean {
 }
 
 /**
- * Codex (Responses API) narration between tool calls arrives as `phase: 'commentary'` message items; the Agent routes
- * that text into `reasoning` and leaves the row's `content` empty. A display row carries it as its prose instead, so the
- * settled transcript keeps what the turn showed live.
- */
-export function surfaceCodexCommentary(m: Message): void {
-  if (m.role !== 'assistant' || messageText(m.content).trim() || !Array.isArray(m.codex_message_items)) return
-  const parts = m.codex_message_items.flatMap((item) => isDict(item) && item.type === 'message' && str(item.phase).trim().toLowerCase() === 'commentary' && Array.isArray(item.content)
-    ? [item.content.map((part) => (isDict(part) && part.type === 'output_text' ? str(part.text) : '')).join('').trim()]
-    : []).filter(Boolean)
-  if (!parts.length) return
-  m.content = parts.join('\n\n')
-  if (typeof m.reasoning !== 'string') return
-  const rest = parts.reduce((text, part) => text.replace(part, ''), m.reasoning).replace(/\n{3,}/g, '\n\n').trim()
-  if (rest) m.reasoning = rest
-  else delete m.reasoning
-}
-
-/**
  * Python `_maybe_inject_max_iteration_summary_fallback`: when the Agent exhausted its tool budget its closing
  * explanation can live only in `final_response`, so it is appended as the turn's assistant answer.
  */

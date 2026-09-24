@@ -299,7 +299,8 @@ export class SessionService {
       throw new HttpFailure(404, 'Session not found')
     }
     this.clearStaleStreamState(s)
-    const all: unknown[] = loadMessages ? withTurnIds(this.mergedTranscript(s)) : []
+    // Turn ids and scenes are computed over the full transcript, so every window reports the same values.
+    const all: unknown[] = loadMessages ? hydrateAnchorActivityScenes(withTurnIds(this.mergedTranscript(s)), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id }) : []
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null
@@ -307,7 +308,6 @@ export class SessionService {
     if (loadMessages) {
       ;[truncated, offset] = messageWindowForDisplay(all, msgLimit, msgBefore)
       if (msgLimit !== null) truncated = messagesForLimitedPayload(truncated)
-      truncated = hydrateAnchorActivityScenes(truncated, s.anchor_activity_scenes, offset)
     } else {
       summaryCount = s.metadataMessageCount ?? s.messages.length
       summaryLast = lastMessageTimestamp(s.messages) ?? 0
@@ -1058,7 +1058,7 @@ export class SessionService {
       throw new HttpFailure(404, 'Session not found')
     }
     if (!this.visibleToActiveProfile(session.profile)) throw new HttpFailure(404, 'Session not found')
-    const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) })
+    const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) }, withTurnIds(this.mergedTranscript(session)))
     if (!result) throw new HttpFailure(404, 'Anchor activity scene not found')
     return result
   }

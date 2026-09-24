@@ -2642,6 +2642,12 @@
                                       }
                                     ]
                                   },
+                                  "terminal_state": {
+                                    "type": "string"
+                                  },
+                                  "expanded_by_default": {
+                                    "type": "boolean"
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -3902,6 +3908,12 @@
                                       }
                                     ]
                                   },
+                                  "terminal_state": {
+                                    "type": "string"
+                                  },
+                                  "expanded_by_default": {
+                                    "type": "boolean"
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -4935,6 +4947,12 @@
                                         "type": "null"
                                       }
                                     ]
+                                  },
+                                  "terminal_state": {
+                                    "type": "string"
+                                  },
+                                  "expanded_by_default": {
+                                    "type": "boolean"
                                   },
                                   "activity_rows_total": {
                                     "type": "integer",
@@ -6772,6 +6790,12 @@
                                       }
                                     ]
                                   },
+                                  "terminal_state": {
+                                    "type": "string"
+                                  },
+                                  "expanded_by_default": {
+                                    "type": "boolean"
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -8539,6 +8563,12 @@
                                         "type": "null"
                                       }
                                     ]
+                                  },
+                                  "terminal_state": {
+                                    "type": "string"
+                                  },
+                                  "expanded_by_default": {
+                                    "type": "boolean"
                                   },
                                   "activity_rows_total": {
                                     "type": "integer",
@@ -17191,6 +17221,12 @@
                                         "type": "null"
                                       }
                                     ]
+                                  },
+                                  "terminal_state": {
+                                    "type": "string"
+                                  },
+                                  "expanded_by_default": {
+                                    "type": "boolean"
                                   },
                                   "activity_rows_total": {
                                     "type": "integer",

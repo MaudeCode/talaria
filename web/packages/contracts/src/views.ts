@@ -45,9 +45,13 @@ export const ActivitySceneRowSchema = z.looseObject({
 })
 export type ActivitySceneRow = z.infer<typeof ActivitySceneRowSchema>
 
-/** `_anchor_activity_scene`: a turn's server-owned presentation, a tail preview of its rows plus paging fields. */
+/** `_anchor_activity_scene`: a completed turn's server-owned presentation: the rows under "Worked" (a tail preview plus paging fields), the visible final answer, the outcome, and the default disclosure. */
 export const ActivitySceneSchema = z.looseObject({
   version: z.literal('activity_scene_v1'), activity_rows: z.array(ActivitySceneRowSchema), final_answer: z.string().optional(), turn_duration: z.number().nullable().optional(),
+  /** The turn's outcome (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...). */
+  terminal_state: z.string().optional(),
+  /** Whether the "Worked" disclosure opens by default: an unsuccessful outcome with work to read. */
+  expanded_by_default: z.boolean().optional(),
   activity_rows_total: z.number().int().optional(), activity_rows_offset: z.number().int().optional(), activity_rows_complete: z.boolean().optional(), activity_rows_omitted: z.number().int().optional(), activity_scene_ref: z.string().optional(),
 })
 export type ActivityScene = z.infer<typeof ActivitySceneSchema>

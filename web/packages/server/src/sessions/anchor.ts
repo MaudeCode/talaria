@@ -8,6 +8,7 @@ import { str } from '../util.js'
 import { createHash } from 'node:crypto'
 import { isContextCompressionMarker, messageText, splitThinkingFromContent } from './merge.js'
 import type { Session } from './session.js'
+import { toolMessageForLimitedPayload } from './window.js'
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
@@ -223,7 +224,7 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
     } else if (row.role === 'tool') {
       const status = str(row.status).toLowerCase()
       put({ ...base, role: 'tool', tool: {
-        id: toolId || rowId, name: str(tool.name) || 'tool', args: tool.args ?? null, preview: str(tool.snippet) || null,
+        id: toolId || rowId, name: str(tool.name) || 'tool', args: tool.args ?? null, preview: str(tool.snippet) || str(tool.preview) || null,
         result: tool.result ?? tool.output ?? tool.snippet ?? null,
         done: typeof tool.done === 'boolean' ? tool.done : status !== 'running',
         is_error: tool.is_error === true || tool.error === true || status === 'error' || status === 'failed',
@@ -234,13 +235,21 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
   return rows.map((row, i) => ({ ...row, order_index: i }))
 }
 
+/** The rows a client shows under "Worked": normalized, without the final answer's own prose row (it renders below). */
+function transportRows(scene: Record<string, unknown>): SceneRow[] {
+  const rows = normalizeSceneRows(scene.activity_rows)
+  const finalKey = anchorSceneCleanText(scene.final_answer)
+  const at = finalKey ? rows.findLastIndex((row) => row.role === 'prose' && anchorSceneCleanText(row.text) === finalKey) : -1
+  return at === -1 ? rows : rows.filter((_, i) => i !== at).map((row, i) => ({ ...row, order_index: i }))
+}
+
 /** Tail-only transport preview of a durable scene. */
 export function anchorActivitySceneTransportPreview(scene: Record<string, unknown>, sceneRef = ''): Record<string, unknown> {
   const preview: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(scene)) if (k !== 'activity_rows') preview[k] = structuredClone(v)
   if ('final_answer' in scene) preview.final_answer = str(scene.final_answer)
   if ('turn_duration' in scene) preview.turn_duration = finite(Number(scene.turn_duration ?? NaN))
-  const rows = normalizeSceneRows(scene.activity_rows)
+  const rows = transportRows(scene)
   const total = rows.length
   const offset = Math.max(0, total - ANCHOR_SCENE_PREVIEW_ROWS)
   preview.activity_rows = rows.slice(offset)
@@ -252,13 +261,135 @@ export function anchorActivitySceneTransportPreview(scene: Record<string, unknow
   return preview
 }
 
+/** Terminal outcomes whose "Worked" disclosure opens by default, so readable partial work is not hidden. */
+const EXPANDED_OUTCOMES = new Set(['error', 'no_response', 'degraded', 'connection_lost', 'tool_limit_reached', 'compression_exhausted'])
+
 /**
- * Attach each assistant message's scene preview for a window of messages.
- * ponytail: the durable scene is served as stored; the Python
- * `_complete_hydrated_anchor_scene` tool-body backfill is not reproduced.
+ * Codex (Responses API) narration between tool calls: `phase: 'commentary'` message items. The Agent routes that text
+ * into `reasoning` and leaves `content` empty, so the scene reads it here (`analysis` stays hidden).
  */
-export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, messageOffset = 0): unknown[] {
-  if (!messages.length) return messages
+function codexCommentary(message: Record<string, unknown>): string[] {
+  if (!Array.isArray(message.codex_message_items)) return []
+  return message.codex_message_items.flatMap((item) => isDict(item) && item.type === 'message' && str(item.phase).trim().toLowerCase() === 'commentary' && Array.isArray(item.content)
+    ? [item.content.map((part) => (isDict(part) && part.type === 'output_text' ? str(part.text) : '')).join('').trim()]
+    : []).filter(Boolean)
+}
+
+/** The final answer rule: the turn's last assistant row, with visible content, no tool calls, not interim or partial. */
+function finalAnswerOf(last: Record<string, unknown>): string {
+  if ((Array.isArray(last.tool_calls) && last.tool_calls.length > 0) || last._interim === true || last._partial === true) return ''
+  return splitThinkingFromContent(messageText(last.content))[0]
+}
+
+/** The turn's outcome: an explicit terminal state, else its error row's kind, else whether it answered. */
+function terminalStateOf(last: Record<string, unknown>, finalAnswer: string): string {
+  const label = str(last.provider_details_label)
+  const errorState = last._error === true ? (label === 'Cancellation details' ? 'cancelled' : label === 'Interruption details' ? 'interrupted' : 'error') : ''
+  return str(last.terminal_state) || str(last._terminal_state) || (last._max_iteration_summary_fallback === true ? 'tool_limit_reached' : '') || errorState || (finalAnswer.trim() ? 'completed' : 'no_response')
+}
+
+function toolArgs(call: Record<string, unknown>): unknown {
+  if (call.args !== undefined) return call.args
+  const raw = isDict(call.function) ? call.function.arguments : undefined
+  if (typeof raw !== 'string') return raw ?? null
+  try { return JSON.parse(raw) as unknown } catch { return raw }
+}
+
+/**
+ * One completed turn's presentation, built from its rows: ordered reasoning / prose / tool rows (the work that folds
+ * under "Worked"), the visible final answer, the outcome, and whether "Worked" opens by default. Every decision a
+ * client used to make about a settled turn is made here.
+ */
+export function buildTurnScene(turn: [Record<string, unknown>, number][]): Record<string, unknown> | null {
+  const assistants = turn.filter(([m]) => m.role === 'assistant')
+  const last = assistants.at(-1)?.[0]
+  if (!last) return null
+  const finalAnswer = finalAnswerOf(last)
+  const results = new Map<string, Record<string, unknown>>()
+  for (const [m] of turn) if (m.role === 'tool') results.set(str(m.tool_call_id) || str(m.tool_use_id), m)
+  const rows: SceneRow[] = []
+  const seenTools = new Set<string>()
+  const push = (row: Omit<SceneRow, 'order_index'>) => rows.push({ ...row, order_index: rows.length })
+  for (const [m, index] of assistants) {
+    const ref = str(m.message_id ?? m.id) || `i${String(index)}`
+    const createdAt = finite(m.timestamp)
+    const at = createdAt === null ? {} : { created_at: createdAt }
+    const commentary = codexCommentary(m)
+    let reasoning = [str(m.reasoning_content), typeof m.reasoning === 'string' ? m.reasoning : '', str(m.thinking)].filter(Boolean).join('\n')
+    for (const part of commentary) reasoning = reasoning.replace(part, '')
+    reasoning = reasoning.replace(/\n{3,}/g, '\n\n').trim()
+    const titles = Array.isArray(m.reasoning_titles) ? m.reasoning_titles.filter((t): t is string => typeof t === 'string' && Boolean(t.trim())) : []
+    if (reasoning || titles.length) push({ row_id: `${ref}:reasoning`, role: 'reasoning', text: reasoning, titles, ...at })
+    const [prose, inlineThinking] = splitThinkingFromContent(messageText(m.content))
+    if (inlineThinking) push({ row_id: `${ref}:thinking`, role: 'reasoning', text: inlineThinking, titles: [], ...at })
+    const text = prose.trim() ? prose : commentary.join('\n\n')
+    if (m !== last || !finalAnswer.trim()) { if (text.trim()) push({ row_id: `${ref}:prose`, role: 'prose', text, ...at }) }
+    const calls = Array.isArray(m.tool_calls) ? m.tool_calls : []
+    calls.forEach((raw, i) => {
+      const call = isDict(raw) ? raw : {}
+      const id = str(call.id) || str(call.call_id) || str(call.tool_call_id) || `${ref}-${String(i)}`
+      if (seenTools.has(id)) return
+      seenTools.add(id)
+      const reply = results.get(id)
+      const result = reply ? messageText((toolMessageForLimitedPayload(reply) as Record<string, unknown>).content) : call.result ?? call.output ?? null
+      push({ row_id: `tool:${id}`, role: 'tool', ...at, tool: {
+        id, name: str(call.name) || str(isDict(call.function) ? call.function.name : '') || 'tool', args: toolArgs(call),
+        preview: str(call.preview) || null, result, done: typeof call.done === 'boolean' ? call.done : true,
+        is_error: call.is_error === true || reply?.is_error === true, duration: finite(call.duration), cost_usd: finite(call.cost_usd),
+      } })
+    })
+  }
+  const terminalState = terminalStateOf(last, finalAnswer)
+  return {
+    version: 'activity_scene_v1', activity_rows: rows, final_answer: finalAnswer, terminal_state: terminalState,
+    expanded_by_default: EXPANDED_OUTCOMES.has(terminalState) && rows.length > 0, turn_duration: anchorSceneMessageTurnDuration(last),
+  }
+}
+
+/**
+ * A stored scene keeps its rows; the final answer it predates comes from its turn by the same rule, except after a
+ * consumed steer (the reply then answers the steer, so the last row is not promoted).
+ */
+function withStoredFinalAnswer(scene: Record<string, unknown>, built: Record<string, unknown> | null): Record<string, unknown> {
+  if (!built || str(scene.final_answer).trim()) return scene
+  if (normalizeSceneRows(scene.activity_rows).some((row) => row.steering?.consumed === true)) return scene
+  return { ...scene, final_answer: built.final_answer }
+}
+
+/** The outcome fields a stored scene predates, from its turn by the same rules as a built one. */
+function withStoredOutcome(preview: Record<string, unknown>, built: Record<string, unknown> | null): Record<string, unknown> {
+  const next = { ...preview }
+  // Only an explicit outcome carries over from the turn; answered or not follows the scene's own final answer.
+  const explicit = str(built?.terminal_state)
+  if (!str(next.terminal_state)) next.terminal_state = explicit && explicit !== 'completed' && explicit !== 'no_response' ? explicit : str(next.final_answer).trim() ? 'completed' : 'no_response'
+  if (typeof next.expanded_by_default !== 'boolean') next.expanded_by_default = EXPANDED_OUTCOMES.has(str(next.terminal_state)) && Number(next.activity_rows_total) > 0
+  return next
+}
+
+/** Rows of the full transcript grouped by `_turn_id` (see withTurnIds), with their absolute indexes. */
+function turnsOf(messages: unknown[]): Map<string, [Record<string, unknown>, number][]> {
+  const turns = new Map<string, [Record<string, unknown>, number][]>()
+  messages.forEach((m, index) => {
+    if (!isDict(m)) return
+    const id = str(m._turn_id)
+    if (!id) return
+    const rows = turns.get(id) ?? []
+    rows.push([m, index])
+    turns.set(id, rows)
+  })
+  return turns
+}
+
+/** The stored record for a message: a unique content ref first, then its absolute index when the content agrees. */
+function storedRecordFor(message: Record<string, unknown>, index: number, lookup: { byRef: Map<string, Record<string, unknown>>; byIndex: Map<number, Record<string, unknown>>; refCounts: Map<string, number> }): Record<string, unknown> | undefined {
+  const ref = assistantAnchorSceneMessageRef(message)
+  const record = (lookup.refCounts.get(ref) ?? 0) <= 1 ? lookup.byRef.get(ref) : undefined
+  if (record) return record
+  const candidate = lookup.byIndex.get(index)
+  return candidate && anchorSceneCandidateMatchesScene(message, candidate.scene ?? {}) ? candidate : undefined
+}
+
+function sceneLookup(messages: unknown[], records: Record<string, unknown>) {
   const byRef = new Map<string, Record<string, unknown>>()
   const byIndex = new Map<number, Record<string, unknown>>()
   for (const [key, record] of Object.entries(records)) {
@@ -275,27 +406,38 @@ export function hydrateAnchorActivityScenes(messages: unknown[], records: Record
       if (r) refCounts.set(r, (refCounts.get(r) ?? 0) + 1)
     }
   }
-  const out = [...messages]
-  messages.forEach((message, localIdx) => {
-    if (!isDict(message) || message.role !== 'assistant') return
-    const absoluteIdx = messageOffset + localIdx
-    const ref = assistantAnchorSceneMessageRef(message)
-    let record = (refCounts.get(ref) ?? 0) <= 1 ? byRef.get(ref) : undefined
-    if (!record) {
-      const candidate = byIndex.get(absoluteIdx)
-      if (candidate && anchorSceneCandidateMatchesScene(message, candidate.scene ?? {})) record = candidate
-    }
-    if (!record || !isDict(record.scene)) {
-      // A scene carried inline on the message still leaves in the one normalized shape.
-      const inline = message._anchor_activity_scene
-      if (isDict(inline)) out[localIdx] = { ...message, _anchor_activity_scene: anchorActivitySceneTransportPreview(inline, str(inline.activity_scene_ref)) }
-      return
-    }
+  return { byRef, byIndex, refCounts }
+}
+
+/**
+ * Attach every completed turn's scene preview to its last assistant row, over the full `_turn_id`-stamped transcript
+ * (before any window, so every window agrees). A stored scene wins and is completed with the turn's outcome fields; a
+ * turn without one gets a built scene. The running turn (`activeTurnId`) gets none: the live stream renders it.
+ */
+export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null } = {}): unknown[] {
+  if (!messages.length) return messages
+  const lookup = sceneLookup(messages, records)
+  // Any scene carried inline leaves in the one normalized shape, even off a turn's last row.
+  const out = messages.map((m) => (isDict(m) && isDict(m._anchor_activity_scene) ? { ...m, _anchor_activity_scene: anchorActivitySceneTransportPreview(m._anchor_activity_scene, str(m._anchor_activity_scene.activity_scene_ref)) } : m))
+  for (const [turnId, turn] of turnsOf(messages)) {
+    if (opts.activeTurnId && turnId === opts.activeTurnId) continue
+    const lastEntry = turn.filter(([m]) => m.role === 'assistant').at(-1)
+    if (!lastEntry) continue
+    const [message, index] = lastEntry
+    const built = buildTurnScene(turn)
+    const record = storedRecordFor(message, index, lookup)
+    const inline = message._anchor_activity_scene
     const next: Record<string, unknown> = { ...message }
-    next._anchor_activity_scene = anchorActivitySceneTransportPreview(record.scene, str(record.message_ref || ref))
-    if (record.stream_id) next._anchor_stream_id = str(record.stream_id)
-    out[localIdx] = next
-  })
+    if (record && isDict(record.scene)) {
+      next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(record.scene, built), str(record.message_ref) || assistantAnchorSceneMessageRef(message)), built)
+      if (record.stream_id) next._anchor_stream_id = str(record.stream_id)
+    } else if (isDict(inline)) {
+      next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(inline, built), str(inline.activity_scene_ref)), built)
+    } else if (built) {
+      next._anchor_activity_scene = anchorActivitySceneTransportPreview(built, assistantAnchorSceneMessageRef(message))
+    }
+    out[index] = next
+  }
   return out
 }
 
@@ -320,7 +462,7 @@ export function storeAnchorScene(session: Session, body: Record<string, unknown>
 }
 
 /** Page through one stored scene's rows (the GET semantics). */
-export function readAnchorSceneRows(session: Session, query: { messageRef: string; messageIndex: number | null; before: number | null; limit: number | null }): Record<string, unknown> | null {
+export function readAnchorSceneRows(session: Session, query: { messageRef: string; messageIndex: number | null; before: number | null; limit: number | null }, transcript: unknown[] = []): Record<string, unknown> | null {
   const records = anchorSceneRecords(session)
   let record: Record<string, unknown> | null = null
   if (query.messageRef) {
@@ -337,14 +479,21 @@ export function readAnchorSceneRows(session: Session, query: { messageRef: strin
       if (isDict(candidate) && anchorSceneIntOrNull(candidate.message_index) === query.messageIndex) { record = candidate; break }
     }
   }
-  const scene = record && isDict(record.scene) ? record.scene : null
-  const rows = scene && Array.isArray(scene.activity_rows) ? normalizeSceneRows(scene.activity_rows) : null
-  if (!rows || !record) return null
+  // The turn that ends at the requested message: its built scene, or the one that completes a stored scene.
+  const matches = transcript.map((m, i) => [m, i] as const).filter(([m, i]) => isDict(m) && m.role === 'assistant' && (query.messageRef ? assistantAnchorSceneMessageRef(m) === query.messageRef : i === query.messageIndex))
+  const target = matches.length === 1 ? matches[0] : matches.find(([, i]) => i === query.messageIndex)
+  const turn = target && isDict(target[0]) ? turnsOf(transcript).get(str(target[0]._turn_id)) : undefined
+  const built = turn ? buildTurnScene(turn) : null
+  const stored = record && isDict(record.scene) ? withStoredFinalAnswer(record.scene, built) : null
+  const scene = stored ?? built
+  const sceneRef = record ? str(record.message_ref || query.messageRef) : query.messageRef
+  if (!scene || !Array.isArray(scene.activity_rows)) return null
+  const rows = transportRows(scene)
   const total = rows.length
   const before = Math.max(0, Math.min(total, query.before ?? total))
   const limit = Math.max(1, Math.min(200, query.limit ?? 80))
   const start = Math.max(0, before - limit)
-  return { scene_ref: str(record.message_ref || query.messageRef), rows: rows.slice(start, before), start, end: before, total, complete: start === 0 }
+  return { scene_ref: sceneRef, rows: rows.slice(start, before), start, end: before, total, complete: start === 0 }
 }
 
 /** A turn opens at a user message the reader sees (text or attachments); hidden prompts and compaction markers do not. */
@@ -365,6 +514,6 @@ export function withTurnIds<T>(messages: T[]): T[] {
     const own = str(m._turn_id)
     if (own) { current = own; return m }
     if (opensTurn(m)) current = `legacy:${String(index)}`
-    return { ...m, _turn_id: current } as T
+    return { ...m, _turn_id: current }
   })
 }

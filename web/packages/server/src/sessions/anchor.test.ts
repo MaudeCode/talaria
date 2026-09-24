@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { normalizeSceneRows, withTurnIds } from './anchor.js'
+import { buildTurnScene, normalizeSceneRows, withTurnIds } from './anchor.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -72,6 +72,55 @@ describe('withTurnIds', () => {
   })
 })
 
+const turnOf = (rows: Json[]): [Json, number][] => rows.map((m, i) => [m, i])
+const commentaryItem = (text: string) => ({ type: 'message', role: 'assistant', phase: 'commentary', content: [{ type: 'output_text', text }] })
+
+describe('buildTurnScene', () => {
+  it('orders each step as reasoning, prose, tools and keeps the one final answer out of the rows', () => {
+    const scene = buildTurnScene(turnOf([
+      { role: 'user', content: 'Check' },
+      { role: 'assistant', id: 1, content: 'Reading a.', reasoning: 'Plan', reasoning_titles: ['Planning'], tool_calls: [{ id: 'a', function: { name: 'read_file', arguments: '{"path":"a"}' } }] },
+      { role: 'tool', tool_call_id: 'a', content: 'A' },
+      { role: 'assistant', id: 2, content: '<think>compare</think>Reading b.', tool_calls: [{ id: 'b', name: 'read_file', args: { path: 'b' }, is_error: true }] },
+      { role: 'tool', tool_call_id: 'b', content: 'missing' },
+      { role: 'assistant', id: 3, content: 'Both checked.', _turnDuration: 4.5 },
+    ]))!
+    expect((scene.activity_rows as Json[]).map((r) => [r.row_id, r.role, r.text ?? (r.tool as Json).result])).toEqual([
+      ['1:reasoning', 'reasoning', 'Plan'], ['1:prose', 'prose', 'Reading a.'], ['tool:a', 'tool', 'A'],
+      ['2:thinking', 'reasoning', 'compare'], ['2:prose', 'prose', 'Reading b.'], ['tool:b', 'tool', 'missing'],
+    ])
+    expect((scene.activity_rows as Json[])[0]?.titles).toEqual(['Planning'])
+    expect(((scene.activity_rows as Json[])[5]?.tool as Json).is_error).toBe(true)
+    expect(scene).toMatchObject({ final_answer: 'Both checked.', terminal_state: 'completed', expanded_by_default: false, turn_duration: 4.5 })
+  })
+
+  it('reads Codex commentary from a turn persisted before the settle path kept it', () => {
+    const scene = buildTurnScene(turnOf([
+      { role: 'assistant', content: '', reasoning: 'Plan.\n\nReading both files.', codex_message_items: [commentaryItem('Reading both files.'), { ...commentaryItem('scratch'), phase: 'analysis' }], tool_calls: [{ id: 'c', name: 'read_file' }] },
+      { role: 'tool', tool_call_id: 'c', content: 'port = 8080' },
+      { role: 'assistant', content: 'Port 8080.' },
+    ]))!
+    expect((scene.activity_rows as Json[]).map((r) => [r.role, r.text ?? null])).toEqual([['reasoning', 'Plan.'], ['prose', 'Reading both files.'], ['tool', null]])
+  })
+
+  it.each([
+    ['tool-only', [{ role: 'assistant', content: 'Working', tool_calls: [{ id: 't' }] }], 'no_response', true],
+    ['interim', [{ role: 'assistant', content: 'Still going', _interim: true }], 'no_response', true],
+    ['partial', [{ role: 'assistant', content: 'Half an ans', _partial: true }], 'no_response', true],
+    ['error', [{ role: 'assistant', content: 'Working', tool_calls: [{ id: 't' }] }, { role: 'assistant', content: '**Error:** failed', _error: true }], 'error', true],
+    ['cancelled', [{ role: 'assistant', content: 'Half', _partial: true }, { role: 'assistant', content: '**Task cancelled:** Task cancelled.', _error: true, provider_details_label: 'Cancellation details' }], 'cancelled', false],
+  ])('reports %s turns without promoting work to an answer', (_name, rows, state, expanded) => {
+    const scene = buildTurnScene(turnOf(rows))!
+    expect(scene.terminal_state).toBe(state)
+    expect(scene.expanded_by_default).toBe(expanded)
+    if (state === 'no_response') expect(scene.final_answer).toBe('')
+  })
+
+  it('builds nothing for a turn without an assistant row', () => {
+    expect(buildTurnScene(turnOf([{ role: 'user', content: 'Hi' }]))).toBeNull()
+  })
+})
+
 describe('anchor scenes over HTTP', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
@@ -106,9 +155,59 @@ describe('anchor scenes over HTTP', () => {
     s.deps.sessionStore.save(session)
     const ids = async (query: string) => Object.fromEntries((((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages as Json[]).map((m) => [String(m.content), m._turn_id]))
     const full = await ids('')
-    expect(full['A2']).toBe('legacy:6')
+    expect(full.A2).toBe('legacy:6')
     expect(full['A2 again']).toBe('legacy:6')
-    expect(await ids('&msg_limit=4')).toMatchObject({ 'A5': full['A5'], 'A5 again': full['A5 again'] })
+    expect(await ids('&msg_limit=4')).toMatchObject({ 'A5': full.A5, 'A5 again': full['A5 again'] })
     expect(await ids('&msg_limit=4&msg_before=9')).toMatchObject({ 'A2': 'legacy:6', 'A2 again': 'legacy:6' })
+  })
+
+  it('builds scenes for completed turns only, identically in every window, and pages them', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    const work = Array.from({ length: 45 }, (_, i) => [
+      { role: 'assistant', content: `step ${String(i)}`, tool_calls: [{ id: `c${String(i)}`, name: 'read_file' }], _turn_id: 'run-1' },
+      { role: 'tool', tool_call_id: `c${String(i)}`, content: `r${String(i)}`, _turn_id: 'run-1' },
+    ]).flat()
+    session.messages = [
+      { role: 'user', content: 'Old question' }, { role: 'assistant', content: 'Old answer' },
+      { role: 'user', content: 'Long task', _turn_id: 'run-1' }, ...work, { role: 'assistant', content: 'All done.', _turn_id: 'run-1' },
+      { role: 'user', content: 'Next', _turn_id: 'run-2' }, { role: 'assistant', content: 'Streaming…', _turn_id: 'run-2' },
+    ]
+    session.active_stream_id = 'run-2'
+    session.pending_started_at = Date.now() / 1000
+    session.pending_user_message = 'Next'
+    s.deps.sessionStore.save(session)
+    const stored = readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')
+    const load = async (query: string) => ((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages as Json[]
+    const full = await load('')
+    const doneIndex = full.findIndex((m) => m.content === 'All done.')
+    const scene = full[doneIndex]?._anchor_activity_scene as Json
+    expect(scene).toMatchObject({ final_answer: 'All done.', activity_rows_total: 90, activity_rows_offset: 10, activity_rows_complete: false })
+    expect(full[1]?._anchor_activity_scene).toMatchObject({ final_answer: 'Old answer', activity_rows: [] })
+    expect(full.at(-1)?._anchor_activity_scene).toBeUndefined()
+    const windowed = await load('&msg_limit=3')
+    expect(windowed.find((m) => m.content === 'All done.')?._anchor_activity_scene).toEqual(scene)
+    const page = await json(await s.get(`/api/session/anchor-scene?session_id=${sid}&message_ref=${String(scene.activity_scene_ref)}&message_index=${String(doneIndex)}&before=10`))
+    expect(page).toMatchObject({ start: 0, end: 10, total: 90, complete: true })
+    expect((page.rows as Json[]).map((r) => r.row_id)).toEqual(['i3:prose', 'tool:c0', 'i5:prose', 'tool:c1', 'i7:prose', 'tool:c2', 'i9:prose', 'tool:c3', 'i11:prose', 'tool:c4'])
+    expect(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')).toBe(stored)
+  })
+
+  it('completes stored legacy scenes: the final answer leaves the rows, and a consumed steer is never promoted', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [
+      { role: 'user', content: 'Check' }, { role: 'assistant', content: 'Done.' },
+      { role: 'user', content: 'Again' }, { role: 'assistant', content: 'Stopping as asked.' },
+    ]
+    s.deps.sessionStore.save(session)
+    const save = (index: number, rows: Json[]) => post(s, '/api/session/anchor-scene', { session_id: sid, message_index: index, scene: { version: 'activity_scene_v1', activity_rows: rows } })
+    expect((await save(1, [{ row_id: 'p', role: 'prose', text: 'Progress' }, { role: 'tool', tool_call_id: 't', status: 'completed', tool: { name: 'read_file' } }, { row_id: 'f', role: 'prose', text: ' Done. ' }])).status).toBe(200)
+    expect((await save(3, [{ row_id: 'p2', role: 'prose', text: 'Working' }, { role: 'steering', status: 'consumed', text: 'Stop now', payload: { steer_id: 's' } }])).status).toBe(200)
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(messages[1]?._anchor_activity_scene).toMatchObject({ final_answer: 'Done.', terminal_state: 'completed', expanded_by_default: false, activity_rows_total: 2 })
+    expect(((messages[1]?._anchor_activity_scene as Json).activity_rows as Json[]).map((r) => r.row_id)).toEqual(['p', 'tool:t'])
+    expect(messages[3]?._anchor_activity_scene).toMatchObject({ terminal_state: 'no_response', expanded_by_default: true, activity_rows_total: 2 })
+    expect((messages[3]?._anchor_activity_scene as Json).final_answer ?? '').toBe('')
   })
 })

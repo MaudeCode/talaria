@@ -172,7 +172,7 @@ describe('chat turns through the sidecar', () => {
     expect((list.sessions as Json[]).find((r) => r.session_id === sid)).toMatchObject({ title: 'Greeting exchange', message_count: 4 })
   })
 
-  it('keeps Codex commentary between tool calls as the settled row\'s prose instead of dropping it', async () => {
+  it('builds the settled turn\'s scene with Codex commentary as prose under Worked, leaving the stored rows as the Agent wrote them', async () => {
     const sid = await newSession(s)
     const commentary = (text: string) => ({ type: 'message', role: 'assistant', status: 'completed', phase: 'commentary', content: [{ type: 'output_text', text }] })
     sidecar.respond('chat.start', (params, emit) => {
@@ -193,8 +193,35 @@ describe('chat turns through the sidecar', () => {
     const settled = ((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[]
     const detail = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
     for (const messages of [settled, detail]) {
-      expect(messages[1]).toMatchObject({ role: 'assistant', content: 'Reading both config files.', reasoning: 'Plan the lookup.' })
-      expect(messages[3]).toMatchObject({ role: 'assistant', content: 'The service uses port 8080.' })
+      expect(messages[1]).toMatchObject({ role: 'assistant', content: '' })
+      expect(messages[3]?._anchor_activity_scene).toMatchObject({
+        version: 'activity_scene_v1', final_answer: 'The service uses port 8080.', terminal_state: 'completed', expanded_by_default: false,
+        activity_rows: [
+          { role: 'reasoning', text: 'Plan the lookup.' },
+          { role: 'prose', text: 'Reading both config files.' },
+          { role: 'tool', row_id: 'tool:call_1', tool: { id: 'call_1', name: 'read_file', args: { path: 'a' }, result: 'port = 8080', done: true, is_error: false } },
+        ],
+      })
+      expect((messages[3]?._anchor_activity_scene as Json).activity_rows).toHaveLength(3)
+      expect(messages[1]?._anchor_activity_scene).toBeUndefined()
+    }
+  })
+
+  it('persists the tool-limit outcome so the settled scene matches the live done frame after reload', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params) => completed([
+      { role: 'user', content: str(params.user_message) },
+      { role: 'assistant', content: 'Working', tool_calls: [{ id: 'l1', name: 'read_file' }] },
+      { role: 'tool', tool_call_id: 'l1', content: 'x' },
+    ], { tool_limit_reached: true, final_response: 'Tool budget exhausted; here is the saved explanation.' }))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Limited"', usage: null }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'loop' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const done = frames.find((f) => f.event === 'done')?.data as Json
+    expect(done.terminal_state).toBe('tool_limit_reached')
+    const detail = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    for (const messages of [(done.session as Json).messages as Json[], detail]) {
+      expect(messages.at(-1)?._anchor_activity_scene).toMatchObject({ terminal_state: 'tool_limit_reached', expanded_by_default: true, final_answer: 'Tool budget exhausted; here is the saved explanation.' })
     }
   })
 

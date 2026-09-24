@@ -24,10 +24,10 @@ import { dict, type Config } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
 import { attachTodoState } from './todo.js'
-import { withTurnIds } from './anchor.js'
+import { hydrateAnchorActivityScenes, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stripXmlToolCalls, surfaceCodexCommentary, workspaceContextPrefix } from './merge.js'
+import { assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
@@ -542,7 +542,6 @@ export class TurnRunner {
         const turnIdx = asstIdx
         asstIdx += 1
         if (turnIdx < prevAssistants) continue
-        surfaceCodexCommentary(m)
         const existing = str(m.reasoning)
         if (typeof m.content === 'string' && m.content) {
           const [content, merged] = splitThinkingFromContent(m.content, existing)
@@ -558,6 +557,8 @@ export class TurnRunner {
           m._turnDuration = Math.round(duration * 1000) / 1000
           if (usage.completion_tokens && duration > 0) m._turnTps = Math.round((usage.completion_tokens / duration) * 10) / 10
           if (result.model) m._usedModel = result.model
+          // The live `done` frame says the tool budget ran out; the persisted row says so too, so a reload agrees.
+          if (result.tool_limit_reached && m._turn_id === streamId) m._terminal_state = 'tool_limit_reached'
           break
         }
       }
@@ -705,7 +706,8 @@ export class TurnRunner {
    */
   private terminalSessionPayload(s: Session): Record<string, unknown> {
     const payload = s.compact({ includeRuntime: true, activeStreamIds: this.registry.liveIds })
-    const [window, offset] = messageWindowForDisplay(withTurnIds(s.messages), TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
+    const scened = hydrateAnchorActivityScenes(withTurnIds(s.messages), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id })
+    const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
     const limited = messagesForLimitedPayload(window)
     payload.messages = limited
     payload.message_count = s.messages.length

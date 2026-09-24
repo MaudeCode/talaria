@@ -8,16 +8,17 @@
         "message_id": "contract-assistant",
         "_anchor_activity_scene": {
           "version": "activity_scene_v1",
+          "activity_scene_ref": "contract-scene",
+          "final_answer": "Contract answer.",
           "activity_rows": [
             {
               "row_id": "contract-prose",
-              "order_index": 0,
               "role": "prose",
-              "text": "Inspecting fixture."
+              "text": "Inspecting fixture.",
+              "order_index": 0
             },
             {
               "row_id": "tool:contract-call",
-              "order_index": 1,
               "role": "tool",
               "tool": {
                 "id": "contract-call",
@@ -31,20 +32,16 @@
                 "is_error": false,
                 "duration": null,
                 "cost_usd": null
-              }
-            },
-            {
-              "row_id": "contract-answer",
-              "order_index": 2,
-              "role": "prose",
-              "text": "Contract answer."
+              },
+              "order_index": 1
             }
           ],
-          "activity_rows_total": 3,
+          "activity_rows_total": 2,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "contract-scene"
+          "terminal_state": "completed",
+          "expanded_by_default": false
         },
         "_turn_id": "legacy:start"
       },
@@ -61,19 +58,19 @@
         "_anchor_activity_scene": {
           "version": "activity_scene_v1",
           "final_answer": "Legacy answer.",
+          "activity_scene_ref": "contract-legacy-scene",
           "activity_rows": [
             {
               "row_id": "legacy-thinking",
-              "order_index": 0,
               "role": "reasoning",
               "text": "Plan the check.",
               "titles": [
                 "Plan"
-              ]
+              ],
+              "order_index": 0
             },
             {
               "row_id": "tool:legacy-failed",
-              "order_index": 1,
               "role": "tool",
               "tool": {
                 "id": "legacy-failed",
@@ -87,11 +84,11 @@
                 "is_error": true,
                 "duration": null,
                 "cost_usd": null
-              }
+              },
+              "order_index": 1
             },
             {
               "row_id": "tool:legacy-nostatus",
-              "order_index": 2,
               "role": "tool",
               "tool": {
                 "id": "legacy-nostatus",
@@ -105,11 +102,11 @@
                 "is_error": false,
                 "duration": null,
                 "cost_usd": null
-              }
+              },
+              "order_index": 2
             },
             {
               "row_id": "steering:legacy-steer",
-              "order_index": 3,
               "role": "steering",
               "text": "Also check b.txt",
               "steering": {
@@ -117,14 +114,16 @@
                 "consumed": false,
                 "submitted_at": null,
                 "consumed_at": null
-              }
+              },
+              "order_index": 3
             }
           ],
           "activity_rows_total": 4,
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "contract-legacy-scene"
+          "terminal_state": "completed",
+          "expanded_by_default": false
         },
         "_turn_id": "legacy:1"
       },
@@ -146,16 +145,303 @@
         "content": "Second reply in the same turn.",
         "message_id": "contract-run-a-2",
         "finish_reason": "stop",
-        "_turn_id": "contract-run-a"
+        "_turn_id": "contract-run-a",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "final_answer": "Second reply in the same turn.",
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "turn_duration": null,
+          "activity_rows": [
+            {
+              "row_id": "contract-run-a-1:prose",
+              "role": "prose",
+              "text": "First reply.",
+              "order_index": 0
+            }
+          ],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "f9928a710235ec20fd940085c6f26e7b37d1f1b0d3d52aba0664371eefd9fb8f"
+        }
       },
       {
         "role": "assistant",
         "content": "Next turn after a hidden wakeup.",
         "message_id": "contract-run-b-1",
         "finish_reason": "stop",
-        "_turn_id": "contract-run-b"
+        "_turn_id": "contract-run-b",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "final_answer": "Next turn after a hidden wakeup.",
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "turn_duration": null,
+          "activity_rows": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "12bef384f788f810bccc2f1750a8a6cfd29aea0184d0bfb135420e7ed6e0aabc"
+        }
+      },
+      {
+        "role": "user",
+        "content": "Which port does the service use?",
+        "message_id": "contract-user-c",
+        "_turn_id": "contract-run-c"
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "message_id": "contract-run-c-1",
+        "reasoning": "Plan the lookup.\n\nReading both config files.",
+        "codex_message_items": [
+          {
+            "type": "message",
+            "role": "assistant",
+            "status": "completed",
+            "phase": "commentary",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "Reading both config files."
+              }
+            ]
+          }
+        ],
+        "tool_calls": [
+          {
+            "id": "contract-port",
+            "type": "function",
+            "function": {
+              "name": "read_file",
+              "arguments": "{\"path\":\"a.toml\"}"
+            }
+          }
+        ],
+        "timestamp": 100,
+        "_turn_id": "contract-run-c"
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "contract-port",
+        "content": "port = 8080",
+        "message_id": "contract-run-c-tool",
+        "_turn_id": "contract-run-c"
+      },
+      {
+        "role": "assistant",
+        "content": "The service uses port 8080.",
+        "message_id": "contract-run-c-2",
+        "timestamp": 101,
+        "_turnDuration": 2.5,
+        "_turn_id": "contract-run-c",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "final_answer": "The service uses port 8080.",
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "turn_duration": 2.5,
+          "activity_rows": [
+            {
+              "row_id": "contract-run-c-1:reasoning",
+              "created_at": 100,
+              "role": "reasoning",
+              "text": "Plan the lookup.",
+              "titles": [],
+              "order_index": 0
+            },
+            {
+              "row_id": "contract-run-c-1:prose",
+              "created_at": 100,
+              "role": "prose",
+              "text": "Reading both config files.",
+              "order_index": 1
+            },
+            {
+              "row_id": "tool:contract-port",
+              "created_at": 100,
+              "role": "tool",
+              "tool": {
+                "id": "contract-port",
+                "name": "read_file",
+                "args": {
+                  "path": "a.toml"
+                },
+                "preview": null,
+                "result": "port = 8080",
+                "done": true,
+                "is_error": false,
+                "duration": null,
+                "cost_usd": null
+              },
+              "order_index": 2
+            }
+          ],
+          "activity_rows_total": 3,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "e47b99c9f7978ea6c1dbce5894c55d1724a6b10e70874ac245908af12a982075"
+        }
+      },
+      {
+        "role": "user",
+        "content": "Loop until done",
+        "message_id": "contract-user-d",
+        "_turn_id": "contract-run-d"
+      },
+      {
+        "role": "assistant",
+        "content": "Working",
+        "message_id": "contract-run-d-1",
+        "tool_calls": [
+          {
+            "id": "contract-loop",
+            "name": "read_file",
+            "args": {
+              "path": "b.txt"
+            }
+          }
+        ],
+        "_turn_id": "contract-run-d"
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "contract-loop",
+        "content": "B",
+        "message_id": "contract-run-d-tool",
+        "_turn_id": "contract-run-d"
+      },
+      {
+        "role": "assistant",
+        "content": "Tool budget exhausted; here is the saved explanation.",
+        "message_id": "contract-run-d-2",
+        "_max_iteration_summary_fallback": true,
+        "_terminal_state": "tool_limit_reached",
+        "_turn_id": "contract-run-d",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "final_answer": "Tool budget exhausted; here is the saved explanation.",
+          "terminal_state": "tool_limit_reached",
+          "expanded_by_default": true,
+          "turn_duration": null,
+          "activity_rows": [
+            {
+              "row_id": "contract-run-d-1:prose",
+              "role": "prose",
+              "text": "Working",
+              "order_index": 0
+            },
+            {
+              "row_id": "tool:contract-loop",
+              "role": "tool",
+              "tool": {
+                "id": "contract-loop",
+                "name": "read_file",
+                "args": {
+                  "path": "b.txt"
+                },
+                "preview": null,
+                "result": "B",
+                "done": true,
+                "is_error": false,
+                "duration": null,
+                "cost_usd": null
+              },
+              "order_index": 1
+            }
+          ],
+          "activity_rows_total": 2,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "9d328184a056a90fee315a9711c8f475bee7b3b9cf2e075576e67c283b7b8aeb"
+        }
+      },
+      {
+        "role": "user",
+        "content": "Only use tools",
+        "message_id": "contract-user-e",
+        "_turn_id": "contract-run-e"
+      },
+      {
+        "role": "assistant",
+        "content": "Checking",
+        "message_id": "contract-run-e-1",
+        "tool_calls": [
+          {
+            "id": "contract-only",
+            "name": "terminal",
+            "args": {
+              "command": "ls"
+            }
+          }
+        ],
+        "_turn_id": "contract-run-e",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "final_answer": "",
+          "terminal_state": "no_response",
+          "expanded_by_default": true,
+          "turn_duration": null,
+          "activity_rows": [
+            {
+              "row_id": "contract-run-e-1:prose",
+              "role": "prose",
+              "text": "Checking",
+              "order_index": 0
+            },
+            {
+              "row_id": "tool:contract-only",
+              "role": "tool",
+              "tool": {
+                "id": "contract-only",
+                "name": "terminal",
+                "args": {
+                  "command": "ls"
+                },
+                "preview": null,
+                "result": "a.txt",
+                "done": true,
+                "is_error": false,
+                "duration": null,
+                "cost_usd": null
+              },
+              "order_index": 1
+            }
+          ],
+          "activity_rows_total": 2,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "a9c678a881acc3f427bdd7fcf546980c993682b3412aee746d19dcf1d298c43a"
+        }
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "contract-only",
+        "content": "a.txt",
+        "message_id": "contract-run-e-tool",
+        "_turn_id": "contract-run-e"
+      },
+      {
+        "role": "user",
+        "content": "Keep going",
+        "message_id": "contract-user-f",
+        "_turn_id": "contract-run-f"
+      },
+      {
+        "role": "assistant",
+        "content": "Streaming…",
+        "message_id": "contract-run-f-1",
+        "_turn_id": "contract-run-f"
       }
     ],
-    "title": "Contract fixture"
+    "title": "Contract fixture",
+    "active_stream_id": "contract-run-f"
   }
 }
