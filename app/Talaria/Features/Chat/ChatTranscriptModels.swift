@@ -428,13 +428,14 @@ struct AssistantActivityTimeline: Equatable {
         return timeline
     }
 
-    static func authoritativeScene(message: ChatMessage) -> AssistantActivityTimeline? {
+    static func authoritativeScene(message: ChatMessage, earlierRows: [AssistantActivitySceneRow] = []) -> AssistantActivityTimeline? {
         guard let scene = message.activityScene,
               scene.version == "activity_scene_v1"
         else { return nil }
 
         var timeline = AssistantActivityTimeline()
-        for (sourceIndex, row) in (scene.activityRows ?? []).enumerated().sorted(by: { lhs, rhs in
+        // Paged earlier rows come first, then the tail preview; both are already in server order.
+        for (sourceIndex, row) in (earlierRows + (scene.activityRows ?? [])).enumerated().sorted(by: { lhs, rhs in
             (lhs.element.orderIndex ?? lhs.offset) < (rhs.element.orderIndex ?? rhs.offset)
         }) {
             timeline.appendSceneRow(row, sourceIndex: sourceIndex)

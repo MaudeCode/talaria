@@ -1328,3 +1328,49 @@ extension ChatViewModelSendTests {
         )
     }
 }
+
+/// Long completed turns arrive as a tail preview; the app pages the omitted rows like Web's history control.
+extension ChatViewModelSendTests {
+    @MainActor
+    func testLoadEarlierSceneRowsPagesTheOmittedRowsOldestFirst() async throws {
+        var requests: [URLComponents] = []
+        let viewModel = try makeViewModel { request in
+            let components = try XCTUnwrap(URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false))
+            requests.append(components)
+            XCTAssertEqual(components.path, "/api/session/anchor-scene")
+            let before = components.queryItems?.first { $0.name == "before" }?.value
+            // Two short pages, as a server with a small page size would send them (row kinds alternate as in a real turn).
+            let body = before == "3"
+                ? #"{"scene_ref":"ref","start":1,"end":3,"total":5,"complete":false,"rows":[{"row_id":"r1","order_index":1,"role":"prose","text":"Second"},{"row_id":"r2","order_index":2,"role":"reasoning","text":"Third"}]}"#
+                : #"{"scene_ref":"ref","start":0,"end":1,"total":5,"complete":true,"rows":[{"row_id":"r0","order_index":0,"role":"reasoning","text":"First"},"malformed"]}"#
+            return apiTestJSONResponse(body, for: request)
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data(#"""
+        {"role":"assistant","content":"Done.","message_id":"assistant-long","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"Done.","activity_rows_offset":3,"activity_scene_ref":"ref","activity_rows":[{"row_id":"r3","order_index":3,"role":"prose","text":"Fourth"},{"row_id":"r4","order_index":4,"role":"reasoning","text":"Fifth"}]}}
+        """#.utf8))
+        let transcriptMessage = TranscriptMessage(
+            loadedIndex: 7,
+            renderID: "transcript:7",
+            anchorID: "assistant-long",
+            message: message,
+            assistantSegments: [TranscriptAssistantSegment(anchorID: "assistant-long", message: message)],
+            endsBeforeSteeringHint: false
+        )
+
+        await viewModel.loadEarlierSceneRows(for: transcriptMessage)
+
+        let earlier = viewModel.earlierSceneRows(for: transcriptMessage)
+        XCTAssertEqual(earlier.map(\.rowID), ["r0", "r1", "r2"])
+        XCTAssertEqual(requests.map { $0.queryItems?.first { $0.name == "before" }?.value }, ["3", "1"])
+        XCTAssertEqual(requests.first?.queryItems?.first { $0.name == "message_ref" }?.value, "ref")
+        XCTAssertEqual(requests.first?.queryItems?.first { $0.name == "session_id" }?.value, "session-abc")
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: message, earlierRows: earlier))
+        XCTAssertEqual(timeline.rows.compactMap(\.text), ["First", "Second", "Third", "Fourth", "Fifth", "Done."])
+
+        // A loaded turn is not fetched again.
+        await viewModel.loadEarlierSceneRows(for: transcriptMessage)
+        XCTAssertEqual(requests.count, 2)
+    }
+}

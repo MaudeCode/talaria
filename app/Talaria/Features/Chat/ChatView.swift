@@ -1023,6 +1023,12 @@ struct ChatView: View {
             archivedActivityRowsForAnchor: { anchorMessageID in
                 viewModel.archivedActivityRowsForAnchor(anchorMessageID)
             },
+            earlierSceneRowsForTurn: { transcriptMessage in
+                viewModel.earlierSceneRows(for: transcriptMessage)
+            },
+            onLoadEarlierSceneRows: { transcriptMessage in
+                Task { await viewModel.loadEarlierSceneRows(for: transcriptMessage) }
+            },
             liveReasoningText: viewModel.liveReasoningText,
             liveActivityRows: viewModel.liveActivityRows,
             reasoningAnchorMessageID: viewModel.reasoningAnchorMessageID,

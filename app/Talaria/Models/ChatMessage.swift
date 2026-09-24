@@ -290,6 +290,9 @@ struct AssistantActivityScene: Codable, Equatable {
     let expandedByDefault: Bool
     /// Server-decided outcome of the turn (`completed`, `no_response`, `error`, `tool_limit_reached`, ...).
     let terminalState: String?
+    /// How many earlier rows the tail preview omits; page them from `/api/session/anchor-scene`.
+    let activityRowsOffset: Int
+    let activitySceneRef: String?
 
     enum CodingKeys: String, CodingKey {
         case version
@@ -298,6 +301,8 @@ struct AssistantActivityScene: Codable, Equatable {
         case turnDuration
         case expandedByDefault
         case terminalState
+        case activityRowsOffset
+        case activitySceneRef
     }
 
     init(from decoder: Decoder) throws {
@@ -307,20 +312,28 @@ struct AssistantActivityScene: Codable, Equatable {
         turnDuration = container.decodeLossyDoubleIfPresent(forKey: .turnDuration)
         expandedByDefault = (try? container.decodeIfPresent(Bool.self, forKey: .expandedByDefault)) ?? false
         terminalState = container.decodeLossyStringIfPresent(forKey: .terminalState)
+        activityRowsOffset = max(0, container.decodeLossyIntIfPresent(forKey: .activityRowsOffset) ?? 0)
+        activitySceneRef = container.decodeLossyStringIfPresent(forKey: .activitySceneRef)
 
-        guard let values = try? container.decodeIfPresent([JSONValue].self, forKey: .activityRows) else {
-            activityRows = nil
-            return
-        }
+        activityRows = (try? container.decodeIfPresent([JSONValue].self, forKey: .activityRows))
+            .map(AssistantActivitySceneRow.decodeLossily)
+    }
+}
 
-        let rowDecoder = JSONDecoder()
-        rowDecoder.keyDecodingStrategy = .convertFromSnakeCase
-        activityRows = values.compactMap { value in
-            guard case .object = value,
-                  let data = try? JSONEncoder().encode(value)
-            else { return nil }
-            return try? rowDecoder.decode(AssistantActivitySceneRow.self, from: data)
-        }
+/// One page of a scene's earlier rows (`GET /api/session/anchor-scene`), in the same normalized row shape.
+struct AnchorScenePageResponse: Decodable, Equatable {
+    let rows: [AssistantActivitySceneRow]
+    let start: Int
+
+    enum CodingKeys: String, CodingKey {
+        case rows
+        case start
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rows = AssistantActivitySceneRow.decodeLossily((try? container.decodeIfPresent([JSONValue].self, forKey: .rows)) ?? [])
+        start = max(0, container.decodeLossyIntIfPresent(forKey: .start) ?? 0)
     }
 }
 
@@ -377,6 +390,18 @@ struct AssistantActivitySceneRow: Codable, Equatable {
         createdAt = container.decodeLossyDoubleIfPresent(forKey: .createdAt)
         tool = try? container.decodeIfPresent([String: JSONValue].self, forKey: .tool)
         steering = try? container.decodeIfPresent([String: JSONValue].self, forKey: .steering)
+    }
+
+    /// Rows decode one by one, so a malformed row never drops its neighbours.
+    static func decodeLossily(_ values: [JSONValue]) -> [AssistantActivitySceneRow] {
+        let rowDecoder = JSONDecoder()
+        rowDecoder.keyDecodingStrategy = .convertFromSnakeCase
+        return values.compactMap { value in
+            guard case .object = value,
+                  let data = try? JSONEncoder().encode(value)
+            else { return nil }
+            return try? rowDecoder.decode(AssistantActivitySceneRow.self, from: data)
+        }
     }
 
     var isConsumedSteering: Bool {

@@ -16,6 +16,7 @@ enum Endpoint {
     case sessionsSearch(query: String, content: Bool, depth: Int)
     case session(id: String, includeMessages: Bool, messageLimit: Int?, messageBefore: Int?, expandRenderable: Bool = false)
     case sessionStatus(id: String)
+    case anchorScene(sessionID: String, messageRef: String?, messageIndex: Int, before: Int, limit: Int)
     case newSession
     case renameSession
     case deleteSession
@@ -167,6 +168,8 @@ enum Endpoint {
             return "/api/session"
         case .sessionStatus:
             return "/api/session/status"
+        case .anchorScene:
+            return "/api/session/anchor-scene"
         case .newSession:
             return "/api/session/new"
         case .renameSession:
@@ -466,6 +469,17 @@ enum Endpoint {
             return items
         case let .sessionStatus(id):
             return [URLQueryItem(name: "session_id", value: id)]
+        case let .anchorScene(sessionID, messageRef, messageIndex, before, limit):
+            var items = [URLQueryItem(name: "session_id", value: sessionID)]
+            if let messageRef, !messageRef.isEmpty {
+                items.append(URLQueryItem(name: "message_ref", value: messageRef))
+            }
+            items += [
+                URLQueryItem(name: "message_index", value: "\(messageIndex)"),
+                URLQueryItem(name: "before", value: "\(before)"),
+                URLQueryItem(name: "limit", value: "\(limit)")
+            ]
+            return items
         case let .chatStream(streamID),
             let .chatCancel(streamID),
             let .chatStreamStatus(streamID):

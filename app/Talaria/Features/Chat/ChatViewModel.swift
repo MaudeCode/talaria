@@ -81,6 +81,9 @@ final class ChatViewModel {
     private var completedToolCallGroupLookup = ToolCallGroupAnchorLookup()
     private(set) var completedReasoningGroups: [ReasoningGroup] = []
     private(set) var archivedAssistantActivity: [String: [AssistantActivityRow]] = [:]
+    /// Earlier scene rows paged from the server for long completed turns, keyed by the turn's anchor.
+    private(set) var earlierSceneRows: [String: [AssistantActivitySceneRow]] = [:]
+    private var loadingEarlierSceneRows = Set<String>()
     var displayedReasoningGroups: [ReasoningGroup] {
         Self.reasoningDisplayGroups(
             messages: messages,
@@ -93,6 +96,39 @@ final class ChatViewModel {
     }
     func archivedActivityRowsForAnchor(_ anchorMessageID: String?) -> [AssistantActivityRow] {
         anchorMessageID.flatMap { archivedAssistantActivity[$0] } ?? []
+    }
+
+    func earlierSceneRows(for transcriptMessage: TranscriptMessage) -> [AssistantActivitySceneRow] {
+        earlierSceneRows[transcriptMessage.anchorID] ?? []
+    }
+
+    /// Pages a completed turn's omitted scene rows (the server sends only the tail) until the scene is complete.
+    func loadEarlierSceneRows(for transcriptMessage: TranscriptMessage) async {
+        guard let sessionID,
+              let scene = transcriptMessage.message.activityScene,
+              scene.activityRowsOffset > 0
+        else { return }
+        let key = transcriptMessage.anchorID
+        guard earlierSceneRows[key] == nil, loadingEarlierSceneRows.insert(key).inserted else { return }
+        defer { loadingEarlierSceneRows.remove(key) }
+        var rows: [AssistantActivitySceneRow] = []
+        var before = scene.activityRowsOffset
+        do {
+            while before > 0 {
+                let page = try await client.anchorSceneRows(
+                    sessionID: sessionID,
+                    messageRef: scene.activitySceneRef,
+                    messageIndex: messagesOffset + transcriptMessage.loadedIndex,
+                    before: before
+                )
+                guard page.start < before, !page.rows.isEmpty else { break }
+                rows = page.rows + rows
+                before = page.start
+            }
+            earlierSceneRows[key] = rows
+        } catch {
+            errorMessage = String(localized: "Could not load earlier steps.")
+        }
     }
 
     /// Tool calls for the latest assistant turn, driving the in-chat "file changes" recap

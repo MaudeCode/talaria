@@ -9,6 +9,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     let transcriptBlockSpacing: CGFloat
     let showsThinkingAndToolCards: Bool
     let archivedActivityRows: [AssistantActivityRow]
+    let earlierSceneRows: [AssistantActivitySceneRow]
     let liveActivityRows: [AssistantActivityRow]
     let streamingAssistantMessageID: String?
     let liveTokensPerSecond: Double?
@@ -36,6 +37,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     let onEdit: (MessageActionContext) -> Void
     let onFork: (MessageActionContext) -> Void
     let onCopy: (MessageActionContext) -> Void
+    let onLoadEarlierSceneRows: () -> Void
 
     // Equality over the value inputs only. The closures are pure functions of
     // these values (e.g. `actionContext` is fully determined by
@@ -47,6 +49,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             lhs.transcriptBlockSpacing == rhs.transcriptBlockSpacing &&
             lhs.showsThinkingAndToolCards == rhs.showsThinkingAndToolCards &&
             lhs.archivedActivityRows == rhs.archivedActivityRows &&
+            lhs.earlierSceneRows == rhs.earlierSceneRows &&
             lhs.liveActivityRows == rhs.liveActivityRows &&
             lhs.streamingAssistantMessageID == rhs.streamingAssistantMessageID &&
             lhs.liveTokensPerSecond == rhs.liveTokensPerSecond &&
@@ -94,6 +97,17 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         }
     }
 
+    /// Long turns arrive as a tail preview; this pages the earlier rows in, like Web's "Show earlier steps".
+    @ViewBuilder
+    private var earlierStepsButton: some View {
+        let remaining = (transcriptMessage.message.activityScene?.activityRowsOffset ?? 0) - earlierSceneRows.count
+        if remaining > 0 {
+            Button(String(localized: "Earlier steps (\(remaining))"), action: onLoadEarlierSceneRows)
+                .font(AppFont.body())
+                .buttonStyle(.borderless)
+        }
+    }
+
     /// The server's outcome for this turn, in its localized wording, when it is not an ordinary completion.
     @ViewBuilder
     private var outcomeRow: some View {
@@ -111,7 +125,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         // A completed turn renders the server's scene; before it arrives, the just-finished live rows hold its place.
         // Without either (an older server), the message renders as plain text.
         if let authoritativeScene = AssistantActivityTimeline.authoritativeScene(
-            message: transcriptMessage.message
+            message: transcriptMessage.message,
+            earlierRows: earlierSceneRows
         ) {
             return authoritativeScene.rows
         }
@@ -129,6 +144,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         workedDisclosureHeader(disclosureID: disclosureID, title: title, isExpanded: isExpanded)
 
         if isExpanded {
+            earlierStepsButton
             activityTimeline(turn.workSegments, activeSegmentID: nil)
                 .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
         }
@@ -197,7 +213,9 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     @ViewBuilder
     private func workedPhase(_ phase: CompletedAssistantTurn.Phase, duration: Double?) -> some View {
         let disclosureID = "worked:\(transcriptMessage.anchorID):\(phase.id)"
-        let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
+        // Steered phases start from the server's default too; a tap flips relative to it.
+        let expandedByDefault = transcriptMessage.message.activityScene?.expandedByDefault ?? false
+        let isExpanded = expandedCompletedActivityIDs.contains(disclosureID) != expandedByDefault
         let title = AssistantTurnSummary.title(duration: duration)
 
         workedDisclosureHeader(disclosureID: disclosureID, title: title, isExpanded: isExpanded)
