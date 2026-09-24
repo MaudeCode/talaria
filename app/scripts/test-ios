@@ -91,11 +91,11 @@ for extended_class in \
     done
     (( explicitly_selected )) || test_filters+=("-skip-testing:$extended_class")
 done
-# Xcode clones the leased simulator once per worker, like PR CI's two workers;
+# Xcode clones the leased simulator once per worker, like PR CI's four workers;
 # the clones are removed when the run ends and the pool erases the lease. A single
 # worker runs on the leased device itself: a clone per run would race the previous
 # run's clone teardown on the same device (TAL-304).
-TALARIA_TEST_WORKER_COUNT=${TALARIA_TEST_WORKER_COUNT:-2}
+TALARIA_TEST_WORKER_COUNT=${TALARIA_TEST_WORKER_COUNT:-4}
 parallel_testing=NO
 (( TALARIA_TEST_WORKER_COUNT > 1 )) && parallel_testing=YES
 

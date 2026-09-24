@@ -1,4 +1,5 @@
-# Pull requests and main pushes run suites selected by the complete changed-path diff.
+# Pull requests and main pushes run suites selected by the complete changed-path diff;
+# the full iOS UI suite runs on main pushes only (pull requests run a launch smoke test).
 # Release metadata always validates; uncertain classification runs every suite.
 # The always-reporting CI Gate is the required check, including skipped jobs.
 #
@@ -40,7 +41,6 @@ jobs:
     timeout-minutes: 5
     outputs:
       app: ${{ steps.filter.outputs.app }}
-      app_ui: ${{ steps.filter.outputs.app_ui }}
       app_tooling: ${{ steps.filter.outputs.app_tooling }}
       web_server: ${{ steps.filter.outputs.web_server }}
       web_frontend: ${{ steps.filter.outputs.web_frontend }}
@@ -103,9 +103,10 @@ jobs:
       SCHEME: Talaria
       DERIVED_DATA_PATH: DerivedData
       RESULT_BUNDLE_PATH: TestResults.xcresult
-      TEST_WORKER_COUNT: 2
+      TEST_WORKER_COUNT: 4
       APP_TESTS_REQUIRED: ${{ needs.changes.result != 'success' || needs.changes.outputs.app != 'false' }}
-      APP_UI_REQUIRED: ${{ github.event_name != 'pull_request' || needs.changes.outputs.app_ui != 'false' }}
+      # PRs run the unit tests plus one launch smoke test; the full UI suite runs on main pushes (TAL-332).
+      APP_UI_REQUIRED: ${{ github.event_name != 'pull_request' }}
       CONTRACTS_SELECTED: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
       LIVE_CONTRACT_TEST: TalariaTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied
       LIVE_CONTRACT_RESULT_BUNDLE_PATH: LiveContractResults.xcresult
@@ -203,6 +204,7 @@ jobs:
               test_options+=("-only-testing:${contract_class}")
             done
           elif [[ "${APP_UI_REQUIRED}" == "false" ]]; then
+            # A pull request: unit tests and one launch smoke test; main runs every UI test.
             test_options+=("-only-testing:TalariaTests" "-only-testing:TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList")
           fi
           # The scheduled UI Performance workflow owns the measurement-only classes (TAL-287).

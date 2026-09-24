@@ -1,0 +1,1 @@
+{"skip": "CI speed only: UI tests run on more parallel simulators and without UIKit animations in the UI-test fixture; no app behavior changes."}

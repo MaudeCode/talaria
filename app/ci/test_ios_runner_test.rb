@@ -47,7 +47,7 @@ class TestIOSRunnerTest < Minitest::Test
       testable.include?('BlueprintName = "TalariaUITests"')
     end
 
-    assert_includes(workflow, "TEST_WORKER_COUNT: 2")
+    assert_includes(workflow, "TEST_WORKER_COUNT: 4")
     assert_includes(ui_testable, 'parallelizable = "YES"')
     assert_equal(26, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
     # CI skips the measurement-only UI classes and the scheduled UI Performance
