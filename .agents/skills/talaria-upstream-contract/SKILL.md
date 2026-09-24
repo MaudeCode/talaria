@@ -10,10 +10,9 @@ schemas), and the relevant `web/packages/server/src/api/*` handler before changi
 app requests, JSON decoding, or streaming. `web/` is the current source of truth;
 `app/UPSTREAM_*` records the pre-monorepo support history.
 
-Clients are display-only (root `AGENTS.md`, server-owned state). Before adding
-app decoding or logic for a value, confirm the server ships it as a contract
-field; when it does not, the change adds that field in `web/packages/contracts`
-and the server first.
+Clients are display-only (root `AGENTS.md`, server-owned state). Before app logic
+uses a value, confirm the server ships it as a contract field; when it does not,
+add that field in `web/packages/contracts` and the server first.
 
 Verify method, route, parameters, response shape, and SSE event sequence. Reuse
 root `contracts/` versions (`contracts/web-api.openapi.json` is generated from the
