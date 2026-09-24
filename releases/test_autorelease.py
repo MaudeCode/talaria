@@ -14,6 +14,10 @@ class AutoReleaseTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.git("init", "-q", "-b", "main")
+        # The code under test tags with the repository's own identity, as CI does after `git config`.
+        for key, value in (("user.name", "Test"), ("user.email", "test@example.invalid"),
+                           ("commit.gpgSign", "false"), ("tag.gpgSign", "false")):
+            self.git("config", key, value)
         for name in ("app", "web", "relay"):
             self.write(f"{name}/source.txt", "released")
         self.released = self.commit("released sources")
