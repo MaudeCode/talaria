@@ -36,11 +36,27 @@ export const MessageRoleSchema = z.enum(['user', 'assistant', 'system', 'tool'])
 /** Persisted rows have integer ids; live rows carry string ids. */
 export const MessageIdSchema = z.union([z.string(), z.number()])
 
+/** One normalized activity row: the server decides role, order, tool completion/error, and steering consumption. */
+export const ActivitySceneRowSchema = z.looseObject({
+  row_id: z.string(), order_index: z.number().int(), role: z.enum(['prose', 'reasoning', 'tool', 'steering']), created_at: z.number().optional(),
+  text: z.string().optional(), titles: z.array(z.string()).optional(),
+  tool: z.looseObject({ id: z.string(), name: z.string(), args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable() }).optional(),
+  steering: z.looseObject({ steer_id: z.string(), consumed: z.boolean(), submitted_at: z.number().nullable(), consumed_at: z.number().nullable() }).optional(),
+})
+export type ActivitySceneRow = z.infer<typeof ActivitySceneRowSchema>
+
+/** `_anchor_activity_scene`: a turn's server-owned presentation, a tail preview of its rows plus paging fields. */
+export const ActivitySceneSchema = z.looseObject({
+  version: z.literal('activity_scene_v1'), activity_rows: z.array(ActivitySceneRowSchema), final_answer: z.string().optional(), turn_duration: z.number().nullable().optional(),
+  activity_rows_total: z.number().int().optional(), activity_rows_offset: z.number().int().optional(), activity_rows_complete: z.boolean().optional(), activity_rows_omitted: z.number().int().optional(), activity_scene_ref: z.string().optional(),
+})
+export type ActivityScene = z.infer<typeof ActivitySceneSchema>
+
 export const MessageSchema = z.looseObject({
   role: z.string(), content: MessageContentSchema.optional(), id: MessageIdSchema.optional(), message_id: MessageIdSchema.optional(), timestamp: z.number().nullable().optional(),
   attachments: z.array(AttachmentSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(), reasoning: z.union([z.string(), z.array(Json)]).nullable().optional(), reasoning_content: z.string().nullable().optional(),
   thinking: z.string().nullable().optional(), tool_call_id: z.string().optional(), tool_use_id: z.string().optional(), name: z.string().optional(), badge: z.string().optional(), label: z.string().optional(),
-  provider_details: Json.optional(), provider_details_label: z.string().optional(), recovery_control: Json.optional(),
+  provider_details: Json.optional(), provider_details_label: z.string().optional(), recovery_control: Json.optional(), _anchor_activity_scene: ActivitySceneSchema.optional(),
 })
 export type Message = z.infer<typeof MessageSchema>
 

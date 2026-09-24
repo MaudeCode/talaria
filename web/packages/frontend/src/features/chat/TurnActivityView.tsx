@@ -70,7 +70,7 @@ function ActivityHistory({ activity, history, mode, sessionId, scope }: { activi
     enabled: false,
   })
   const pages = query.data?.pages.slice().reverse() ?? []
-  const items = pages.length ? sceneWorkItems([...pages.flatMap((page) => page.rows), ...(activity.sceneRows ?? [])], activity.finalAnswer, pages[0]?.start ?? history.before) : activity.items
+  const items = pages.length ? sceneWorkItems([...pages.flatMap((page) => page.rows), ...(activity.sceneRows ?? [])], activity.finalAnswer) : activity.items
   const remaining = query.data?.pages.at(-1)?.start ?? history.before
   const control = remaining > 0 ? <Button variant="ghost" disabled={query.isFetching} onClick={() => { void query.fetchNextPage() }}>{query.isFetching ? m.loading() : query.isError ? m.retry() : m.show_earlier_steps({ a0: String(remaining) })}</Button> : null
   return <ActivityBody activity={{ ...activity, items }} mode={mode} earlier={control} />

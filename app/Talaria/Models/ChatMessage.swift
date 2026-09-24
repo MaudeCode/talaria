@@ -311,16 +311,13 @@ struct AssistantActivityScene: Codable, Equatable {
 
 extension AssistantActivityScene {
     var hasConsumedSteering: Bool {
-        activityRows?.contains { $0.role == "steering" && $0.status == "consumed" } == true
+        activityRows?.contains(where: \.isConsumedSteering) == true
     }
 
     var steeringIDs: Set<String> {
         Set((activityRows ?? []).compactMap { row in
             guard row.role == "steering" else { return nil }
-            if case .string(let steerID)? = row.payload?["steer_id"], !steerID.isEmpty {
-                return steerID
-            }
-            return row.rowID
+            return row.steerID ?? row.rowID
         })
     }
 
@@ -332,29 +329,27 @@ extension AssistantActivityScene {
     }
 }
 
+/// One server-normalized scene row. The server decides order, role, tool completion and error, and
+/// steering consumption; the app reads those fields as sent.
 struct AssistantActivitySceneRow: Codable, Equatable {
     let rowID: String?
     let orderIndex: Int?
     let role: String?
     let text: String?
-    let status: String?
+    let titles: [String]?
     let createdAt: Double?
-    let toolCallID: String?
-    let thinking: [String: JSONValue]?
     let tool: [String: JSONValue]?
-    let payload: [String: JSONValue]?
+    let steering: [String: JSONValue]?
 
     enum CodingKeys: String, CodingKey {
         case rowID = "rowId"
         case orderIndex
         case role
         case text
-        case status
+        case titles
         case createdAt
-        case toolCallID = "toolCallId"
-        case thinking
         case tool
-        case payload
+        case steering
     }
 
     init(from decoder: Decoder) throws {
@@ -363,12 +358,20 @@ struct AssistantActivitySceneRow: Codable, Equatable {
         orderIndex = container.decodeLossyIntIfPresent(forKey: .orderIndex)
         role = container.decodeLossyStringIfPresent(forKey: .role)
         text = container.decodeLossyStringIfPresent(forKey: .text)
-        status = container.decodeLossyStringIfPresent(forKey: .status)
+        titles = try? container.decodeIfPresent([String].self, forKey: .titles)
         createdAt = container.decodeLossyDoubleIfPresent(forKey: .createdAt)
-        toolCallID = container.decodeLossyStringIfPresent(forKey: .toolCallID)
-        thinking = try? container.decodeIfPresent([String: JSONValue].self, forKey: .thinking)
         tool = try? container.decodeIfPresent([String: JSONValue].self, forKey: .tool)
-        payload = try? container.decodeIfPresent([String: JSONValue].self, forKey: .payload)
+        steering = try? container.decodeIfPresent([String: JSONValue].self, forKey: .steering)
+    }
+
+    var isConsumedSteering: Bool {
+        guard role == "steering", case .bool(true)? = steering?["consumed"] else { return false }
+        return true
+    }
+
+    var steerID: String? {
+        guard case .string(let steerID)? = steering?["steer_id"], !steerID.isEmpty else { return nil }
+        return steerID
     }
 }
 

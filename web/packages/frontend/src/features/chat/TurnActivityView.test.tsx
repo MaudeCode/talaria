@@ -169,7 +169,7 @@ describe('turn worklog presentation', () => {
   })
 
   it.each(['compact_worklog', 'transparent_stream', 'hide_all_activity'] as const)('preserves recovered steering boundaries in %s', (mode) => {
-    const activity = persistedActivity(projectMessages([sceneCases.steering])[0]!)
+    const activity = persistedActivity(projectMessages([sceneCases.steering as Message])[0]!)
     const view = render(<View activity={activity} mode={mode} />)
     if (mode === 'compact_worklog') fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
     expect(view.container.querySelector('[data-activity-steering]')).toHaveTextContent('Stop after the next sleep')

@@ -64,11 +64,11 @@ describe('assistant turn projection', () => {
     const { groupAssistantTurns, persistedActivity } = await import('./turnActivity')
     const rows = groupAssistantTurns(projectMessages([{ role: 'assistant', id: 4, content: 'Answer', _anchor_stream_id: 'run', _anchor_activity_scene: {
       version: 'activity_scene_v1', activity_rows: [
-        { row_id: 'p', role: 'prose', text: 'Progress' },
-        { row_id: 'a', role: 'tool', tool_call_id: 'a', tool: { name: 'read_file', done: false } },
-        { row_id: 'a-replayed', role: 'tool', tool_call_id: 'a', tool: { name: 'read_file', snippet: 'contents', done: true } },
-        { row_id: 'b', role: 'tool', tool_call_id: 'b', tool: { name: 'read_file', done: true } },
-        { row_id: 'answer', role: 'prose', text: 'Answer' },
+        // Server-normalized: the replayed `a` row already folded into its first position (anchor.test.ts).
+        { row_id: 'p', order_index: 0, role: 'prose', text: 'Progress' },
+        { row_id: 'tool:a', order_index: 1, role: 'tool', tool: { id: 'a', name: 'read_file', preview: 'contents', result: 'contents', done: true, is_error: false, duration: null, cost_usd: null } },
+        { row_id: 'tool:b', order_index: 2, role: 'tool', tool: { id: 'b', name: 'read_file', preview: null, done: true, is_error: false, duration: null, cost_usd: null } },
+        { row_id: 'answer', order_index: 3, role: 'prose', text: 'Answer' },
       ],
     } }]))
     const activity = persistedActivity(rows[0]!)
@@ -94,7 +94,7 @@ describe('persisted terminal outcomes', () => {
 })
 
 
-// Exact payload from App's testSessionDecodesActivitySceneInOrder; only the required Web title is added.
+// App's testSessionDecodesActivitySceneInOrder payload as the server sends it (normalized rows); only the required Web title is added.
 describe('canonical cross-client activity scene', () => {
   it('orders the unsorted persisted rows before separating the final answer', async () => {
     const { groupAssistantTurns, persistedActivity } = await import('./turnActivity')
@@ -110,23 +110,10 @@ describe('canonical cross-client activity scene', () => {
     const items = sceneItems(canonicalScene.session.messages[0]!._anchor_activity_scene.activity_rows)
     expect(items.find((item) => item.kind === 'reasoning')).toMatchObject({ text: 'I should inspect now.', titles: ['Planning implementation'] })
   })
-
-  it('uses stable source-index fallbacks and retains legacy top-level reasoning', async () => {
-    const { sceneItems } = await import('./turnActivity')
-    const items = sceneItems([
-      { row_id: 'a', order_index: 2, role: 'prose', text: 'A' },
-      { row_id: 'b', role: 'thinking', text: 'Legacy reasoning', titles: ['Legacy title'] },
-      { row_id: 'c', order_index: 2, role: 'prose', text: 'C' },
-      { row_id: 'd', order_index: 'invalid', role: 'prose', text: 'D' },
-      { row_id: 'e', order_index: '0', role: 'prose', text: 'E' },
-    ])
-    expect(items.map((item) => item.key)).toEqual(['e', 'b', 'a', 'c', 'd'])
-    expect(items[1]).toMatchObject({ text: 'Legacy reasoning', titles: ['Legacy title'] })
-  })
 })
 
 
-// Verbatim scene-bearing message fixtures from APIClientSessionDetailActivitySceneTests.swift.
+// APIClientSessionDetailActivitySceneTests.swift scene messages as the server sends them (normalized rows).
 describe('canonical scene boundaries', () => {
   it.each([
     { name: 'explicitFinal', kinds: ['tool'], final: 'Done.' },
@@ -147,9 +134,9 @@ describe('canonical scene boundaries', () => {
   it('removes only the last matching final prose, preserving earlier repeated progress', async () => {
     const { sceneWorkItems } = await import('./turnActivity')
     expect(sceneWorkItems([
-      { row_id: 'progress', role: 'prose', text: 'Done.' },
-      { row_id: 'final', role: 'prose', text: ' Done. ' },
-      { row_id: 'tool', role: 'tool', tool: { id: 't', name: 'terminal' } },
+      { row_id: 'progress', order_index: 0, role: 'prose', text: 'Done.' },
+      { row_id: 'final', order_index: 1, role: 'prose', text: ' Done. ' },
+      { row_id: 'tool:t', order_index: 2, role: 'tool', tool: { id: 't', name: 'terminal', done: true, is_error: false } },
     ], 'Done.').map((item) => item.key)).toEqual(['progress', 'tool:t'])
   })
 })

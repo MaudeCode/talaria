@@ -835,11 +835,11 @@ extension ChatViewModelSendTests {
                 "final_answer":"Final answer.",
                 "turn_duration":10,
                 "activity_rows":[
-                  {"row_id":"prose-1","order_index":0,"role":"prose","text":"Before hint. ","created_at":1},
-                  {"row_id":"tool-1","order_index":1,"role":"tool","tool_call_id":"call-1","status":"completed","created_at":2,"tool":{"id":"call-1","name":"read_file","done":true}},
-                  {"row_id":"local-steer-authoritative","order_index":2,"role":"steering","status":"consumed","text":"Keep this visible","created_at":4,"payload":{"steer_id":"local-steer-authoritative","created_at":3,"consumed_at":4}},
-                  {"row_id":"tool-2","order_index":3,"role":"tool","tool_call_id":"call-2","status":"completed","created_at":7,"tool":{"id":"call-2","name":"terminal","done":true}},
-                  {"row_id":"prose-2","order_index":4,"role":"prose","text":"Final answer.","created_at":9}
+                  {"row_id":"prose-1","order_index":0,"role":"prose","created_at":1,"text":"Before hint. "},
+                  {"row_id":"tool:call-1","order_index":1,"role":"tool","created_at":2,"tool":{"id":"call-1","name":"read_file","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null}},
+                  {"row_id":"steering:local-steer-authoritative","order_index":2,"role":"steering","created_at":4,"text":"Keep this visible","steering":{"steer_id":"local-steer-authoritative","consumed":true,"submitted_at":3,"consumed_at":4}},
+                  {"row_id":"tool:call-2","order_index":3,"role":"tool","created_at":7,"tool":{"id":"call-2","name":"terminal","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null}},
+                  {"row_id":"prose-2","order_index":4,"role":"prose","created_at":9,"text":"Final answer."}
                 ]
               }
             }

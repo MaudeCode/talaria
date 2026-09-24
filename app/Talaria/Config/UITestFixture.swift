@@ -627,20 +627,22 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                         [
                             "row_id": "thinking-1",
                             "order_index": 1,
-                            "role": "thinking",
-                            "thinking": ["text": "Inspect the fixture.", "titles": ["Inspecting fixture"]]
+                            "role": "reasoning",
+                            "text": "Inspect the fixture.",
+                            "titles": ["Inspecting fixture"]
                         ],
                         ["row_id": "prose-2", "order_index": 2, "role": "prose", "text": "Fixture progress."],
                         [
-                            "row_id": "tool-1",
+                            "row_id": "tool:ui-fixture-tool",
                             "order_index": 3,
                             "role": "tool",
-                            "status": "completed",
                             "tool": [
                                 "id": "ui-fixture-tool",
                                 "name": "fixture_tool",
+                                "preview": "fixture result",
+                                "result": "fixture result",
                                 "done": true,
-                                "snippet": "fixture result"
+                                "is_error": false
                             ]
                         ],
                         ["row_id": "prose-3", "order_index": 4, "role": "prose", "text": "Fixture finished."]

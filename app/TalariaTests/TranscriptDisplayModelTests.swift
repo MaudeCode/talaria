@@ -223,7 +223,7 @@ final class TranscriptMessageTests: XCTestCase {
           "_anchor_activity_scene":{
             "version":"activity_scene_v1",
             "activity_rows":[
-              {"row_id":"local-steer-consumed","order_index":0,"role":"steering","status":"consumed","text":"First hint","payload":{"steer_id":"local-steer-consumed"}}
+              {"row_id":"steering:local-steer-consumed","order_index":0,"role":"steering","text":"First hint","steering":{"steer_id":"local-steer-consumed","consumed":true,"submitted_at":null,"consumed_at":null}}
             ]
           }
         }

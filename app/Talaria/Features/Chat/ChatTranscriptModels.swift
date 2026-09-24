@@ -486,20 +486,12 @@ struct AssistantActivityTimeline: Equatable {
             if appendProseIfPresent(row.text, id: rowID) {
                 rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
             }
-        case "thinking":
-            if appendReasoningIfPresent(
-                Self.string(row.thinking?["text"]) ?? row.text,
-                titles: Self.strings(row.thinking?["titles"]),
-                id: rowID
-            ) {
+        case "reasoning":
+            if appendReasoningIfPresent(row.text, titles: row.titles ?? [], id: rowID) {
                 rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
             }
         case "tool":
-            if let toolCall = Self.toolCall(
-                object: row.tool ?? row.payload,
-                fallbackID: row.toolCallID ?? rowID,
-                status: row.status
-            ) {
+            if let toolCall = Self.sceneToolCall(row.tool, fallbackID: rowID) {
                 appendTool(toolCall, id: rowID)
                 if rows[rows.index(before: rows.endIndex)].createdAt == nil {
                     rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
@@ -507,14 +499,13 @@ struct AssistantActivityTimeline: Equatable {
             }
         case "steering":
             guard let text = Self.nonEmpty(row.text) else { break }
-            let steerID = Self.string(row.payload?["steer_id"]) ?? rowID
             rows.append(AssistantActivityRow(
                 id: rowID,
                 content: .steering(.init(
-                    id: steerID,
+                    id: row.steerID ?? rowID,
                     text: text,
-                    submittedAt: Self.number(row.payload?["created_at"]),
-                    consumedAt: Self.number(row.payload?["consumed_at"]) ?? row.createdAt
+                    submittedAt: Self.number(row.steering?["submitted_at"]),
+                    consumedAt: Self.number(row.steering?["consumed_at"])
                 )),
                 createdAt: row.createdAt
             ))
@@ -604,6 +595,20 @@ struct AssistantActivityTimeline: Equatable {
         guard let text = Self.nonEmpty(text) else { return false }
         appendReasoning(text, titles: titles, id: id)
         return true
+    }
+
+    /// A server-normalized scene tool: every field is explicit, so nothing is inferred here.
+    private static func sceneToolCall(_ object: [String: JSONValue]?, fallbackID: String) -> ToolCall? {
+        guard let object else { return nil }
+        return ToolCall(
+            id: Self.nonEmpty(Self.string(object["id"])) ?? fallbackID,
+            name: Self.nonEmpty(Self.string(object["name"])) ?? "tool",
+            preview: Self.nonEmpty(Self.string(object["preview"])) ?? Self.nonEmpty(Self.string(object["result"])),
+            args: Self.object(object["args"]),
+            duration: Self.number(object["duration"]),
+            isError: Self.bool(object["is_error"]),
+            isCompleted: Self.bool(object["done"]) == true
+        )
     }
 
     private static func toolCall(

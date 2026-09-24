@@ -15,10 +15,10 @@ func testSessionDecodesActivitySceneInOrder() async throws {
               "_anchor_activity_scene": {
                 "version": "activity_scene_v1",
                 "activity_rows": [
-                  {"row_id":"tool-1","order_index":2,"role":"tool","status":"completed","tool_call_id":"call-1","tool":{"id":"call-1","name":"read_file","args":{"path":"notes.md"},"snippet":"contents","done":true}},
+                  {"row_id":"tool:call-1","order_index":2,"role":"tool","tool":{"id":"call-1","name":"read_file","args":{"path":"notes.md"},"preview":"contents","result":"contents","done":true,"is_error":false,"duration":null,"cost_usd":null}},
                   {"row_id":"prose-1","order_index":0,"role":"prose","text":"Before tool."},
                   {"row_id":"prose-2","order_index":3,"role":"prose","text":"After tool."},
-                  {"row_id":"thinking-1","order_index":1,"role":"thinking","thinking":{"text":"I should inspect now.","titles":["Planning implementation"]}}
+                  {"row_id":"thinking-1","order_index":1,"role":"reasoning","text":"I should inspect now.","titles":["Planning implementation"]}
                 ]
               }
             }]
@@ -94,10 +94,10 @@ func testActivitySceneKeepsSteeringBoundaryBetweenWorkPhases() throws {
         "final_answer": "Done.",
         "turn_duration": 10,
         "activity_rows": [
-          {"row_id":"prose-before","order_index":0,"role":"prose","text":"First phase.","created_at":1},
-          {"row_id":"tool-before","order_index":1,"role":"tool","status":"completed","created_at":2,"tool":{"id":"call-1","name":"terminal","done":true}},
-          {"row_id":"local-steer-1","order_index":2,"role":"steering","status":"consumed","text":"Stop after the next sleep","created_at":4,"payload":{"steer_id":"local-steer-1","created_at":3,"consumed_at":4}},
-          {"row_id":"tool-after","order_index":3,"role":"tool","status":"completed","created_at":7,"tool":{"id":"call-2","name":"terminal","done":true}}
+          {"row_id":"prose-before","order_index":0,"role":"prose","created_at":1,"text":"First phase."},
+          {"row_id":"tool:call-1","order_index":1,"role":"tool","created_at":2,"tool":{"id":"call-1","name":"terminal","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null}},
+          {"row_id":"steering:local-steer-1","order_index":2,"role":"steering","created_at":4,"text":"Stop after the next sleep","steering":{"steer_id":"local-steer-1","consumed":true,"submitted_at":3,"consumed_at":4}},
+          {"row_id":"tool:call-2","order_index":3,"role":"tool","created_at":7,"tool":{"id":"call-2","name":"terminal","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null}}
         ]
       }
     }
@@ -120,8 +120,8 @@ func testActiveSteeringSceneKeepsPreSteerProseInTheFirstExpandedPhase() throws {
       "_anchor_activity_scene": {
         "version": "activity_scene_v1",
         "activity_rows": [
-          {"row_id":"prose-before","order_index":0,"role":"prose","text":"First phase.","created_at":1},
-          {"row_id":"local-steer-1","order_index":1,"role":"steering","status":"consumed","text":"Stop now","created_at":4,"payload":{"steer_id":"local-steer-1","created_at":3,"consumed_at":4}}
+          {"row_id":"prose-before","order_index":0,"role":"prose","created_at":1,"text":"First phase."},
+          {"row_id":"steering:local-steer-1","order_index":1,"role":"steering","created_at":4,"text":"Stop now","steering":{"steer_id":"local-steer-1","consumed":true,"submitted_at":3,"consumed_at":4}}
         ]
       }
     }
@@ -293,7 +293,7 @@ func testActivitySceneUsesAuthoritativeFinalAnswerInsteadOfFlattenedContent() th
         "final_answer": "Finished.",
         "activity_rows": [
           {"row_id":"progress","order_index":0,"role":"prose","text":"Progress update."},
-          {"row_id":"tool","order_index":1,"role":"tool","status":"completed","tool":{"id":"call-1","name":"terminal","done":true}}
+          {"row_id":"tool:call-1","order_index":1,"role":"tool","tool":{"id":"call-1","name":"terminal","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null}}
         ]
       }
     }
@@ -323,7 +323,7 @@ func testExplicitFinalProseBeforeTrailingToolKeepsTheToolInWork() throws {
         "final_answer": "Done.",
         "activity_rows": [
           {"row_id":"final","order_index":0,"role":"prose","text":"Done."},
-          {"row_id":"tool","order_index":1,"role":"tool","status":"completed","tool":{"id":"call-1","name":"terminal","done":true}}
+          {"row_id":"tool:call-1","order_index":1,"role":"tool","tool":{"id":"call-1","name":"terminal","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null}}
         ]
       }
     }
@@ -353,9 +353,9 @@ func testActivitySceneDecodingKeepsValidRowsAroundMalformedFields() throws {
         "final_answer": "Finished.",
         "turn_duration": "12.5",
         "activity_rows": [
-          {"row_id":"thinking","order_index":"1","role":"thinking","thinking":{"text":"Inspect first."}},
+          {"row_id":"thinking","order_index":"1","role":"reasoning","text":"Inspect first.","titles":[]},
           "malformed-row",
-          {"row_id":"tool","order_index":2,"role":"tool","status":"completed","tool":{"id":"call-1","name":"terminal","done":true}}
+          {"row_id":"tool:call-1","order_index":2,"role":"tool","tool":{"id":"call-1","name":"terminal","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null}}
         ]
       }
     }
@@ -385,9 +385,9 @@ func testActivitySceneIgnoresEmptyTimestampedRowsWithoutTouchingAdjacentRows() t
         "version": "activity_scene_v1",
         "final_answer": "Done.",
         "activity_rows": [
-          {"row_id":"empty-prose","order_index":0,"role":"prose","text":"   ","created_at":1},
-          {"row_id":"empty-thinking","order_index":1,"role":"thinking","thinking":{"text":""},"created_at":2},
-          {"row_id":"tool","order_index":2,"role":"tool","status":"completed","created_at":3,"tool":{"id":"call-1","name":"terminal","done":true}}
+          {"row_id":"empty-prose","order_index":0,"role":"prose","created_at":1,"text":"   "},
+          {"row_id":"empty-thinking","order_index":1,"role":"reasoning","created_at":2,"text":"","titles":[]},
+          {"row_id":"tool:call-1","order_index":2,"role":"tool","created_at":3,"tool":{"id":"call-1","name":"terminal","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null}}
         ]
       }
     }

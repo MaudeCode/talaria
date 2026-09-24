@@ -16,19 +16,21 @@
               "text": "Inspecting fixture."
             },
             {
-              "row_id": "contract-tool",
+              "row_id": "tool:contract-call",
               "order_index": 1,
               "role": "tool",
-              "status": "completed",
-              "tool_call_id": "contract-call",
               "tool": {
                 "id": "contract-call",
                 "name": "read_file",
                 "args": {
                   "path": "fixture.txt"
                 },
-                "snippet": "Synthetic contents",
-                "done": true
+                "preview": "Synthetic contents",
+                "result": "Synthetic contents",
+                "done": true,
+                "is_error": false,
+                "duration": null,
+                "cost_usd": null
               }
             },
             {
@@ -37,7 +39,90 @@
               "role": "prose",
               "text": "Contract answer."
             }
-          ]
+          ],
+          "activity_rows_total": 3,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "contract-scene"
+        }
+      },
+      {
+        "role": "user",
+        "content": "Check the legacy scene",
+        "message_id": "contract-user-2"
+      },
+      {
+        "role": "assistant",
+        "content": "Legacy answer.",
+        "message_id": "contract-legacy",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "final_answer": "Legacy answer.",
+          "activity_rows": [
+            {
+              "row_id": "legacy-thinking",
+              "order_index": 0,
+              "role": "reasoning",
+              "text": "Plan the check.",
+              "titles": [
+                "Plan"
+              ]
+            },
+            {
+              "row_id": "tool:legacy-failed",
+              "order_index": 1,
+              "role": "tool",
+              "tool": {
+                "id": "legacy-failed",
+                "name": "terminal",
+                "args": {
+                  "command": "false"
+                },
+                "preview": "exit 1",
+                "result": "exit 1",
+                "done": true,
+                "is_error": true,
+                "duration": null,
+                "cost_usd": null
+              }
+            },
+            {
+              "row_id": "tool:legacy-nostatus",
+              "order_index": 2,
+              "role": "tool",
+              "tool": {
+                "id": "legacy-nostatus",
+                "name": "read_file",
+                "args": {
+                  "path": "a.txt"
+                },
+                "preview": "A",
+                "result": "A",
+                "done": true,
+                "is_error": false,
+                "duration": null,
+                "cost_usd": null
+              }
+            },
+            {
+              "row_id": "steering:legacy-steer",
+              "order_index": 3,
+              "role": "steering",
+              "text": "Also check b.txt",
+              "steering": {
+                "steer_id": "legacy-steer",
+                "consumed": false,
+                "submitted_at": null,
+                "consumed_at": null
+              }
+            }
+          ],
+          "activity_rows_total": 4,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "contract-legacy-scene"
         }
       }
     ],

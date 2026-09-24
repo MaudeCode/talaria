@@ -78,53 +78,27 @@ function appendProse(items: ActivityItem[], key: string, raw: string) {
   if (split.content.trim()) items.push({ key, kind: 'text', text: split.content })
 }
 
-/** Decode the existing opaque scene at the rendering boundary, ignoring malformed rows. */
-export function sceneItems(value: unknown, sourceOffset = 0): ActivityItem[] {
+/** Server-normalized scene rows map one-to-one onto activity items; the server owns order, roles, and states. */
+export function sceneItems(value: unknown): ActivityItem[] {
   if (!Array.isArray(value)) return []
-  const items: ActivityItem[] = []
-  const positions = new Map<string, number>()
-  const put = (item: ActivityItem) => {
-    const index = positions.get(item.key)
-    if (index === undefined) { positions.set(item.key, items.length); items.push(item) }
-    else items[index] = item
-  }
-  const ordered = value.map((raw, index) => {
+  return value.flatMap((raw): ActivityItem[] => {
     const row = record(raw)
-    const numericOrder = typeof row.order_index === 'number' || (typeof row.order_index === 'string' && /^-?\d+$/.test(row.order_index.trim())) ? Number(row.order_index) : NaN
-    const order = Number.isFinite(numericOrder) ? numericOrder : sourceOffset + index
-    return { row, index: sourceOffset + index, order }
-  }).sort((a, b) => a.order - b.order || a.index - b.index)
-  for (const { row, index: i } of ordered) {
+    const key = text(row.row_id)
+    if (row.role === 'prose') return [{ key, kind: 'text', text: text(row.text) }]
+    if (row.role === 'reasoning') return [{ key, kind: 'reasoning', text: text(row.text), titles: Array.isArray(row.titles) ? row.titles.map(text) : [] }]
+    if (row.role === 'steering') return [{ key, kind: 'steering', text: text(row.text), consumed: record(row.steering).consumed === true }]
+    if (row.role !== 'tool') return []
     const tool = record(row.tool)
-    const id = text(row.tool_call_id) || text(tool.id)
-    const steerId = text(record(row.payload).steer_id)
-    const key = row.role === 'tool' && id ? `tool:${id}` : row.role === 'steering' && steerId ? `steering:${steerId}` : text(row.row_id) || `scene:${i}`
-    if (row.role === 'prose') {
-      const prose: ActivityItem[] = []
-      appendProse(prose, key, text(row.text))
-      prose.forEach(put)
-    }
-    else if (row.role === 'reasoning' || row.role === 'thinking') {
-      const thinking = record(row.thinking)
-      const titles = Array.isArray(thinking.titles) ? thinking.titles : row.titles
-      const reasoning = text(thinking.text) || text(row.text)
-      const labels = Array.isArray(titles) ? titles.filter((t): t is string => typeof t === 'string' && !!t.trim()) : []
-      if (reasoning.trim() || labels.length) put({ key, kind: 'reasoning', text: reasoning, titles: labels })
-    }
-    else if (row.role === 'steering' && text(row.text).trim()) put({ key, kind: 'steering', text: text(row.text), consumed: row.status === 'consumed' })
-    else if (row.role === 'tool') put({ key, kind: 'tool', call: {
-      id: id || key, name: text(tool.name) || 'tool', args: tool.args,
-      preview: text(tool.snippet) || null, result: tool.result ?? tool.output ?? tool.snippet ?? null,
-      done: typeof tool.done === 'boolean' ? tool.done : row.status !== 'running', isError: tool.is_error === true || row.status === 'error' || row.status === 'failed',
-      duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
-    } })
-  }
-  return items
+    return [{ key, kind: 'tool', call: {
+      id: text(tool.id), name: text(tool.name), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, result: tool.result ?? null,
+      done: tool.done === true, isError: tool.is_error === true, duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
+    } }]
+  })
 }
 
 /** A scene can include its final prose row; render that answer only outside the Worklog. */
-export function sceneWorkItems(rows: unknown, finalAnswer: string, sourceOffset = 0): ActivityItem[] {
-  const items = sceneItems(rows, sourceOffset)
+export function sceneWorkItems(rows: unknown, finalAnswer: string): ActivityItem[] {
+  const items = sceneItems(rows)
   const normalizedFinal = finalAnswer.trim().replace(/\s+/g, ' ')
   const finalIndex = items.findLastIndex((item) => item.kind === 'text' && item.text.trim().replace(/\s+/g, ' ') === normalizedFinal)
   if (finalIndex !== -1) items.splice(finalIndex, 1)
@@ -151,11 +125,11 @@ export function persistedActivity(row: VisibleMessage, terminalState?: string): 
   const scene = record(last.message._anchor_activity_scene)
   const errorStatus = last.message._error === true ? (last.message.provider_details_label === 'Cancellation details' ? 'cancelled' : last.message.provider_details_label === 'Interruption details' ? 'interrupted' : 'error') : ''
   const status = terminalState || text(scene.terminal_state) || text(last.message.terminal_state) || text(last.message._terminal_state) || errorStatus
-  const consumedSteering = scene.version === 'activity_scene_v1' && Array.isArray(scene.activity_rows) && scene.activity_rows.some((value) => { const entry = record(value); return entry.role === 'steering' && entry.status === 'consumed' })
+  const consumedSteering = scene.version === 'activity_scene_v1' && Array.isArray(scene.activity_rows) && scene.activity_rows.some((value) => { const entry = record(value); return entry.role === 'steering' && record(entry.steering).consumed === true })
   const finalAnswer = scene.version === 'activity_scene_v1' && text(scene.final_answer).trim() ? text(scene.final_answer) : !consumedSteering && !last.message.tool_calls?.length && last.message._interim !== true && last.message._partial !== true
     ? extractInlineThinking(messageText(last.message.content)).content : ''
   if (scene.version === 'activity_scene_v1' && Array.isArray(scene.activity_rows)) {
-    items.push(...sceneWorkItems(scene.activity_rows, finalAnswer, typeof scene.activity_rows_offset === 'number' ? scene.activity_rows_offset : 0))
+    items.push(...sceneWorkItems(scene.activity_rows, finalAnswer))
   } else {
     const seenTools = new Set<string>()
     for (const part of parts) {

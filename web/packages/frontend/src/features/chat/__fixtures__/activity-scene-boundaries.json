@@ -9,22 +9,31 @@
       "activity_rows": [
         {
           "row_id": "final",
-          "order_index": 0,
           "role": "prose",
-          "text": "Done."
+          "text": "Done.",
+          "order_index": 0
         },
         {
-          "row_id": "tool",
-          "order_index": 1,
+          "row_id": "tool:call-1",
           "role": "tool",
-          "status": "completed",
           "tool": {
             "id": "call-1",
             "name": "terminal",
-            "done": true
-          }
+            "args": null,
+            "preview": null,
+            "result": null,
+            "done": true,
+            "is_error": false,
+            "duration": null,
+            "cost_usd": null
+          },
+          "order_index": 1
         }
-      ]
+      ],
+      "activity_rows_total": 2,
+      "activity_rows_offset": 0,
+      "activity_rows_complete": true,
+      "activity_rows_omitted": 0
     }
   },
   "steering": {
@@ -38,49 +47,63 @@
       "activity_rows": [
         {
           "row_id": "prose-before",
-          "order_index": 0,
+          "created_at": 1,
           "role": "prose",
           "text": "First phase.",
-          "created_at": 1
+          "order_index": 0
         },
         {
-          "row_id": "tool-before",
-          "order_index": 1,
-          "role": "tool",
-          "status": "completed",
+          "row_id": "tool:call-1",
           "created_at": 2,
+          "role": "tool",
           "tool": {
             "id": "call-1",
             "name": "terminal",
-            "done": true
-          }
+            "args": null,
+            "preview": null,
+            "result": null,
+            "done": true,
+            "is_error": false,
+            "duration": null,
+            "cost_usd": null
+          },
+          "order_index": 1
         },
         {
-          "row_id": "local-steer-1",
-          "order_index": 2,
-          "role": "steering",
-          "status": "consumed",
-          "text": "Stop after the next sleep",
+          "row_id": "steering:local-steer-1",
           "created_at": 4,
-          "payload": {
+          "role": "steering",
+          "text": "Stop after the next sleep",
+          "steering": {
             "steer_id": "local-steer-1",
-            "created_at": 3,
+            "consumed": true,
+            "submitted_at": 3,
             "consumed_at": 4
-          }
+          },
+          "order_index": 2
         },
         {
-          "row_id": "tool-after",
-          "order_index": 3,
-          "role": "tool",
-          "status": "completed",
+          "row_id": "tool:call-2",
           "created_at": 7,
+          "role": "tool",
           "tool": {
             "id": "call-2",
             "name": "terminal",
-            "done": true
-          }
+            "args": null,
+            "preview": null,
+            "result": null,
+            "done": true,
+            "is_error": false,
+            "duration": null,
+            "cost_usd": null
+          },
+          "order_index": 3
         }
-      ]
+      ],
+      "activity_rows_total": 4,
+      "activity_rows_offset": 0,
+      "activity_rows_complete": true,
+      "activity_rows_omitted": 0
     }
   },
   "activeSteering": {
@@ -92,25 +115,29 @@
       "activity_rows": [
         {
           "row_id": "prose-before",
-          "order_index": 0,
+          "created_at": 1,
           "role": "prose",
           "text": "First phase.",
-          "created_at": 1
+          "order_index": 0
         },
         {
-          "row_id": "local-steer-1",
-          "order_index": 1,
-          "role": "steering",
-          "status": "consumed",
-          "text": "Stop now",
+          "row_id": "steering:local-steer-1",
           "created_at": 4,
-          "payload": {
+          "role": "steering",
+          "text": "Stop now",
+          "steering": {
             "steer_id": "local-steer-1",
-            "created_at": 3,
+            "consumed": true,
+            "submitted_at": 3,
             "consumed_at": 4
-          }
+          },
+          "order_index": 1
         }
-      ]
+      ],
+      "activity_rows_total": 2,
+      "activity_rows_offset": 0,
+      "activity_rows_complete": true,
+      "activity_rows_omitted": 0
     }
   },
   "flattenedContent": {
@@ -140,22 +167,31 @@
       "activity_rows": [
         {
           "row_id": "progress",
-          "order_index": 0,
           "role": "prose",
-          "text": "Progress update."
+          "text": "Progress update.",
+          "order_index": 0
         },
         {
-          "row_id": "tool",
-          "order_index": 1,
+          "row_id": "tool:call-1",
           "role": "tool",
-          "status": "completed",
           "tool": {
             "id": "call-1",
             "name": "terminal",
-            "done": true
-          }
+            "args": null,
+            "preview": null,
+            "result": null,
+            "done": true,
+            "is_error": false,
+            "duration": null,
+            "cost_usd": null
+          },
+          "order_index": 1
         }
-      ]
+      ],
+      "activity_rows_total": 2,
+      "activity_rows_offset": 0,
+      "activity_rows_complete": true,
+      "activity_rows_omitted": 0
     }
   },
   "malformedRows": {
@@ -164,29 +200,36 @@
     "_anchor_activity_scene": {
       "version": "activity_scene_v1",
       "final_answer": "Finished.",
-      "turn_duration": "12.5",
+      "turn_duration": 12.5,
       "activity_rows": [
         {
           "row_id": "thinking",
-          "order_index": "1",
-          "role": "thinking",
-          "thinking": {
-            "text": "Inspect first."
-          }
+          "role": "reasoning",
+          "text": "Inspect first.",
+          "titles": [],
+          "order_index": 0
         },
-        "malformed-row",
         {
-          "row_id": "tool",
-          "order_index": 2,
+          "row_id": "tool:call-1",
           "role": "tool",
-          "status": "completed",
           "tool": {
             "id": "call-1",
             "name": "terminal",
-            "done": true
-          }
+            "args": null,
+            "preview": null,
+            "result": null,
+            "done": true,
+            "is_error": false,
+            "duration": null,
+            "cost_usd": null
+          },
+          "order_index": 1
         }
-      ]
+      ],
+      "activity_rows_total": 2,
+      "activity_rows_offset": 0,
+      "activity_rows_complete": true,
+      "activity_rows_omitted": 0
     }
   },
   "emptyRows": {
@@ -197,34 +240,27 @@
       "final_answer": "Done.",
       "activity_rows": [
         {
-          "row_id": "empty-prose",
-          "order_index": 0,
-          "role": "prose",
-          "text": "   ",
-          "created_at": 1
-        },
-        {
-          "row_id": "empty-thinking",
-          "order_index": 1,
-          "role": "thinking",
-          "thinking": {
-            "text": ""
-          },
-          "created_at": 2
-        },
-        {
-          "row_id": "tool",
-          "order_index": 2,
-          "role": "tool",
-          "status": "completed",
+          "row_id": "tool:call-1",
           "created_at": 3,
+          "role": "tool",
           "tool": {
             "id": "call-1",
             "name": "terminal",
-            "done": true
-          }
+            "args": null,
+            "preview": null,
+            "result": null,
+            "done": true,
+            "is_error": false,
+            "duration": null,
+            "cost_usd": null
+          },
+          "order_index": 0
         }
-      ]
+      ],
+      "activity_rows_total": 1,
+      "activity_rows_offset": 0,
+      "activity_rows_complete": true,
+      "activity_rows_omitted": 0
     }
   }
 }

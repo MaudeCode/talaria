@@ -483,9 +483,9 @@ final class CacheStoreTests: XCTestCase {
             "final_answer": "Final answer.",
             "activity_rows": [
               {"row_id":"prose-1","order_index":0,"role":"prose","text":"Before tool."},
-              {"row_id":"tool-1","order_index":1,"role":"tool","status":"completed","tool":{"id":"call-1","name":"read_file","done":true}},
+              {"row_id":"tool:call-1","order_index":1,"role":"tool","tool":{"id":"call-1","name":"read_file","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null}},
               {"row_id":"prose-2","order_index":2,"role":"prose","text":"Between tool and thinking."},
-              {"row_id":"thinking-1","order_index":3,"role":"thinking","thinking":{"text":"Checking the result.","titles":["Reviewing results"]}},
+              {"row_id":"thinking-1","order_index":3,"role":"reasoning","text":"Checking the result.","titles":["Reviewing results"]},
               {"row_id":"prose-3","order_index":4,"role":"prose","text":"Final answer."}
             ]
           }

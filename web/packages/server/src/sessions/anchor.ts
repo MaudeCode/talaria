@@ -6,6 +6,7 @@
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
+import { splitThinkingFromContent } from './merge.js'
 import type { Session } from './session.js'
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
@@ -163,14 +164,86 @@ export function anchorSceneRecords(session: Session): Record<string, unknown> {
   return isDict(session.anchor_activity_scenes) ? session.anchor_activity_scenes : {}
 }
 
+export interface SceneTool { id: string; name: string; args: unknown; preview: string | null; result: unknown; done: boolean; is_error: boolean; duration: number | null; cost_usd: number | null }
+export interface SceneSteering { steer_id: string; consumed: boolean; submitted_at: number | null; consumed_at: number | null }
+/** The one scene row shape both clients render: every decoding decision is made here. */
+export interface SceneRow {
+  row_id: string
+  order_index: number
+  role: 'prose' | 'reasoning' | 'tool' | 'steering'
+  created_at?: number
+  text?: string
+  titles?: string[]
+  tool?: SceneTool
+  steering?: SceneSteering
+}
+
+const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
+/**
+ * Stored rows in durable order (numeric `order_index`, else source position), malformed rows dropped, and one explicit
+ * shape per role: legacy `thinking` is `reasoning`, a tool is `done` unless still `running`, `failed`/`error` statuses
+ * are errors, and steering is consumed only when marked so. A repeated row id keeps its first position, last content.
+ */
+export function normalizeSceneRows(value: unknown): SceneRow[] {
+  if (!Array.isArray(value)) return []
+  const ordered = value.map((raw, index) => {
+    const row = isDict(raw) ? raw : {}
+    const order = typeof row.order_index === 'number' || (typeof row.order_index === 'string' && /^-?\d+$/.test(row.order_index.trim())) ? Number(row.order_index) : NaN
+    return { row, index, order: Number.isFinite(order) ? order : index }
+  }).sort((a, b) => a.order - b.order || a.index - b.index)
+  const rows: SceneRow[] = []
+  const positions = new Map<string, number>()
+  const put = (row: Omit<SceneRow, 'order_index'>) => {
+    const at = positions.get(row.row_id)
+    const next = { ...row, order_index: 0 }
+    if (at === undefined) { positions.set(row.row_id, rows.length); rows.push(next) } else rows[at] = next
+  }
+  for (const { row, index } of ordered) {
+    const tool = isDict(row.tool) ? row.tool : {}
+    const payload = isDict(row.payload) ? row.payload : {}
+    const toolId = str(row.tool_call_id) || str(tool.id)
+    const steerId = str(payload.steer_id)
+    const rowId = row.role === 'tool' && toolId ? `tool:${toolId}` : row.role === 'steering' && steerId ? `steering:${steerId}` : str(row.row_id) || `scene:${String(index)}`
+    const createdAt = finite(row.created_at)
+    const base = createdAt === null ? { row_id: rowId } : { row_id: rowId, created_at: createdAt }
+    if (row.role === 'prose') {
+      const [content, reasoning] = splitThinkingFromContent(str(row.text))
+      if (reasoning) put({ ...base, row_id: `${rowId}:thinking`, role: 'reasoning', text: reasoning, titles: [] })
+      if (content.trim()) put({ ...base, role: 'prose', text: content })
+    } else if (row.role === 'reasoning' || row.role === 'thinking') {
+      const thinking = isDict(row.thinking) ? row.thinking : {}
+      const rawTitles = Array.isArray(thinking.titles) ? thinking.titles : row.titles
+      const titles = Array.isArray(rawTitles) ? rawTitles.filter((t): t is string => typeof t === 'string' && Boolean(t.trim())) : []
+      const text = str(thinking.text) || str(row.text)
+      if (text.trim() || titles.length) put({ ...base, role: 'reasoning', text, titles })
+    } else if (row.role === 'steering' && str(row.text).trim()) {
+      const consumed = row.status === 'consumed'
+      put({ ...base, role: 'steering', text: str(row.text), steering: { steer_id: steerId || rowId, consumed, submitted_at: finite(payload.created_at), consumed_at: consumed ? finite(payload.consumed_at) ?? createdAt : null } })
+    } else if (row.role === 'tool') {
+      const status = str(row.status).toLowerCase()
+      put({ ...base, role: 'tool', tool: {
+        id: toolId || rowId, name: str(tool.name) || 'tool', args: tool.args ?? null, preview: str(tool.snippet) || null,
+        result: tool.result ?? tool.output ?? tool.snippet ?? null,
+        done: typeof tool.done === 'boolean' ? tool.done : status !== 'running',
+        is_error: tool.is_error === true || tool.error === true || status === 'error' || status === 'failed',
+        duration: finite(tool.duration), cost_usd: finite(tool.cost_usd),
+      } })
+    }
+  }
+  return rows.map((row, i) => ({ ...row, order_index: i }))
+}
+
 /** Tail-only transport preview of a durable scene. */
 export function anchorActivitySceneTransportPreview(scene: Record<string, unknown>, sceneRef = ''): Record<string, unknown> {
   const preview: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(scene)) if (k !== 'activity_rows') preview[k] = structuredClone(v)
-  const rows = Array.isArray(scene.activity_rows) ? scene.activity_rows : []
+  if ('final_answer' in scene) preview.final_answer = str(scene.final_answer)
+  if ('turn_duration' in scene) preview.turn_duration = finite(Number(scene.turn_duration ?? NaN))
+  const rows = normalizeSceneRows(scene.activity_rows)
   const total = rows.length
   const offset = Math.max(0, total - ANCHOR_SCENE_PREVIEW_ROWS)
-  preview.activity_rows = structuredClone(rows.slice(offset))
+  preview.activity_rows = rows.slice(offset)
   preview.activity_rows_total = total
   preview.activity_rows_offset = offset
   preview.activity_rows_complete = offset === 0
@@ -185,7 +258,7 @@ export function anchorActivitySceneTransportPreview(scene: Record<string, unknow
  * `_complete_hydrated_anchor_scene` tool-body backfill is not reproduced.
  */
 export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, messageOffset = 0): unknown[] {
-  if (!messages.length || !Object.keys(records).length) return messages
+  if (!messages.length) return messages
   const byRef = new Map<string, Record<string, unknown>>()
   const byIndex = new Map<number, Record<string, unknown>>()
   for (const [key, record] of Object.entries(records)) {
@@ -212,7 +285,12 @@ export function hydrateAnchorActivityScenes(messages: unknown[], records: Record
       const candidate = byIndex.get(absoluteIdx)
       if (candidate && anchorSceneCandidateMatchesScene(message, candidate.scene ?? {})) record = candidate
     }
-    if (!record || !isDict(record.scene)) return
+    if (!record || !isDict(record.scene)) {
+      // A scene carried inline on the message still leaves in the one normalized shape.
+      const inline = message._anchor_activity_scene
+      if (isDict(inline)) out[localIdx] = { ...message, _anchor_activity_scene: anchorActivitySceneTransportPreview(inline, str(inline.activity_scene_ref)) }
+      return
+    }
     const next: Record<string, unknown> = { ...message }
     next._anchor_activity_scene = anchorActivitySceneTransportPreview(record.scene, str(record.message_ref || ref))
     if (record.stream_id) next._anchor_stream_id = str(record.stream_id)
@@ -260,11 +338,11 @@ export function readAnchorSceneRows(session: Session, query: { messageRef: strin
     }
   }
   const scene = record && isDict(record.scene) ? record.scene : null
-  const rows = scene && Array.isArray(scene.activity_rows) ? scene.activity_rows : null
+  const rows = scene && Array.isArray(scene.activity_rows) ? normalizeSceneRows(scene.activity_rows) : null
   if (!rows || !record) return null
   const total = rows.length
   const before = Math.max(0, Math.min(total, query.before ?? total))
   const limit = Math.max(1, Math.min(200, query.limit ?? 80))
   const start = Math.max(0, before - limit)
-  return { scene_ref: str(record.message_ref || query.messageRef), rows: structuredClone(rows.slice(start, before)), start, end: before, total, complete: start === 0 }
+  return { scene_ref: str(record.message_ref || query.messageRef), rows: rows.slice(start, before), start, end: before, total, complete: start === 0 }
 }
