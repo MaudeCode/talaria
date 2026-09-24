@@ -275,7 +275,9 @@ final class ChatRecoveryUITests: ChatUITestCase {
         stop.tap()
 
         XCTAssertTrue(stop.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Waiting for control input."].exists)
+        // The stopped turn settles into the server's scene: its outcome and the steer it took stay visible.
+        XCTAssertTrue(app.staticTexts["Response cancelled"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Keep the fixture concise"].exists)
         XCTAssertNotNil(waitForComposer(timeout: 5))
     }
 

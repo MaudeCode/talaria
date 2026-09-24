@@ -78,6 +78,7 @@ protocol ChatStreamCoordinatorDelegate: AnyObject {
     func streamCoordinatorUpdateTitle(_ payload: TitleStreamEvent) -> Bool
     @discardableResult
     func streamCoordinatorApplyDone(_ payload: DoneStreamEvent) -> Bool
+    func streamCoordinatorApplySettledSession(_ session: SessionDetail)
     func streamCoordinatorApplyApprovalUpdate(_ update: ApprovalPendingResponse)
     func streamCoordinatorApplyClarificationUpdate(_ update: ClarificationPendingResponse)
     @discardableResult
@@ -613,7 +614,7 @@ final class ChatStreamCoordinator {
         // one-shot teardown, never a second finalization.
         if isCurrentRunTerminated {
             switch event {
-            case .title, .metering, .streamEnd, .cancelled, .error, .transportError:
+            case .title, .metering, .streamEnd, .settledSession, .cancelled, .error, .transportError:
                 break
             default:
                 return
@@ -694,6 +695,9 @@ final class ChatStreamCoordinator {
                 liveActivityManager?.end(status: .complete, activity: String(localized: "Response complete"), errorSummary: nil)
             }
             finishStream()
+        case .settledSession(let session):
+            // The server's settled turn (its scene, outcome and answer) replaces the live view, as after `done`.
+            delegate?.streamCoordinatorApplySettledSession(session)
         case .cancelled:
             if !isCurrentRunTerminated {
                 liveActivityManager?.end(status: .cancelled, activity: String(localized: "Response cancelled"), errorSummary: nil)

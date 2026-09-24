@@ -1573,6 +1573,8 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
         return doneHasCompletedTranscript
     }
 
+    func streamCoordinatorApplySettledSession(_ session: SessionDetail) {}
+
     func streamCoordinatorApplyApprovalUpdate(_ update: ApprovalPendingResponse) {}
 
     func streamCoordinatorApplyClarificationUpdate(_ update: ClarificationPendingResponse) {}

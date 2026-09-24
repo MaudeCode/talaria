@@ -4118,6 +4118,8 @@ final class ChatViewModel {
             }
 
             removeUnresolvedSteeringHints()
+            // The server settled the turn before answering; its scene, not the stopped live view, is what stays.
+            await loadMessages()
             return true
         } catch {
             lastError = error
@@ -4430,7 +4432,7 @@ final class ChatViewModel {
             updateActiveBtwMessage(isLoading: true)
         case .done:
             updateActiveBtwMessage(isLoading: false)
-        case .approvalPending, .clarificationPending:
+        case .approvalPending, .clarificationPending, .settledSession:
             break
         case .streamEnd, .cancelled:
             finishBtwStream()
@@ -5901,6 +5903,10 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     @discardableResult
     func streamCoordinatorUpdateTitle(_ payload: TitleStreamEvent) -> Bool {
         updateTitle(payload)
+    }
+
+    func streamCoordinatorApplySettledSession(_ session: SessionDetail) {
+        applyCompletedStreamSession(session)
     }
 
     @discardableResult

@@ -943,6 +943,42 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testErrorFrameSessionReplacesTheLiveTurnWithTheServerScene() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+        _ = await viewModel.sendMessage("Initial request")
+        streamClient.emit(.token("Partial work. "))
+
+        let settled = try makeSessionDetail(
+            """
+            {
+              "session_id": "session-abc",
+              "messages": [
+                {"role":"user","content":"Initial request","message_id":"user-1","_turn_id":"stream-123"},
+                {"role":"assistant","content":"**Error:** boom","message_id":"assistant-error","_error":true,"_turn_id":"stream-123",
+                 "_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"**Error:** boom","terminal_state":"error","expanded_by_default":true,"activity_rows":[{"row_id":"p","order_index":0,"role":"prose","text":"Partial work. "}]}}
+              ]
+            }
+            """
+        )
+        streamClient.emit(.settledSession(settled))
+        streamClient.emit(.error("boom"))
+
+        let assistant = try XCTUnwrap(viewModel.messages.last(where: { $0.role == "assistant" }))
+        XCTAssertEqual(assistant.messageId, "assistant-error")
+        XCTAssertEqual(assistant.activityScene?.terminalState, "error")
+        XCTAssertEqual(assistant.activityScene?.expandedByDefault, true)
+    }
+
+    @MainActor
     func testComposerSteerShowsSendingStateBeforeServerAccepts() async throws {
         let streamClient = SpySSEStreamingClient()
         let steerRequests = LockedCounter()
@@ -1105,6 +1141,12 @@ extension ChatViewModelSendTests {
                 )
             case "/api/chat/cancel":
                 return apiTestJSONResponse(#"{"ok":true}"#, for: request)
+            case "/api/session":
+                // The server settled the cancelled turn before answering the cancel.
+                return apiTestJSONResponse(
+                    #"{"session":{"session_id":"session-abc","messages":[{"role":"user","content":"Initial request","message_id":"user-1","_turn_id":"stream-123"},{"role":"assistant","content":"**Task cancelled:** Task cancelled.","message_id":"assistant-cancelled","_error":true,"_turn_id":"stream-123","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"","terminal_state":"cancelled","activity_rows":[]}}]}}"#,
+                    for: request
+                )
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
                 throw URLError(.badURL)
@@ -1119,6 +1161,8 @@ extension ChatViewModelSendTests {
         let didCancel = await viewModel.cancelActiveStream()
         XCTAssertTrue(didCancel)
         XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
+        // The stopped live view gives way to the server's settled turn.
+        XCTAssertEqual(viewModel.messages.last?.activityScene?.terminalState, "cancelled")
     }
 
     @MainActor

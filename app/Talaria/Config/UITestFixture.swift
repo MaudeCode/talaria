@@ -649,6 +649,32 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                     ]
                 ]
             ])
+        } else if state.cancelled, UITestChatScenario.current == .controls {
+            // As the server settles a stopped turn: the partial work, the steer it took, and the cancelled outcome.
+            messages.append([
+                "role": "assistant",
+                "content": "**Task cancelled:** Task cancelled.",
+                "message_id": "ui-fixture-cancelled",
+                "_error": true,
+                "_ts": 2_000_000_101,
+                "_anchor_activity_scene": [
+                    "version": "activity_scene_v1",
+                    "final_answer": "",
+                    "terminal_state": "cancelled",
+                    "expanded_by_default": false,
+                    "has_consumed_steering": true,
+                    "activity_rows": [
+                        ["row_id": "prose-1", "order_index": 0, "role": "prose", "text": "Waiting for control input."],
+                        [
+                            "row_id": "steering:ui-fixture-steer",
+                            "order_index": 1,
+                            "role": "steering",
+                            "text": "Keep the fixture concise",
+                            "steering": ["steer_id": "ui-fixture-steer", "consumed": true]
+                        ]
+                    ]
+                ]
+            ])
         } else if state.started, UITestChatScenario.current == .reconnect {
             messages.append([
                 "role": "assistant",

@@ -132,6 +132,8 @@ enum SSEEvent: Equatable {
     case steerConsumed(SteeringStreamEvent)
     case pendingSteerLeftover(SteeringStreamEvent)
     case streamEnd
+    /// The settled session an error or cancel frame carries, delivered just before that terminal event.
+    case settledSession(SessionDetail)
     case cancelled
     case error(String)
     case transportError(String)
@@ -354,6 +356,15 @@ struct SSEEventDecoder {
         category: "SSEEventDecoder"
     )
 
+    /// One frame's events: error and cancel frames carry the settled session, applied first as `done`'s is.
+    static func decodeFrame(eventType: String, data: String) -> [SSEEvent] {
+        let event = decode(eventType: eventType, data: data)
+        guard ["cancel", "error", "apperror"].contains(eventType),
+              let session = (try? JSONDecoder().decode(DonePayload.self, from: Data(data.utf8)))?.event.session
+        else { return [event] }
+        return [.settledSession(session), event]
+    }
+
     static func decode(eventType: String, data: String) -> SSEEvent {
         let eventData = Data(data.utf8)
         let decoder = JSONDecoder()
@@ -519,14 +530,14 @@ private final class SSEEventHandler: EventHandler {
     func onClosed() {}
 
     func onMessage(eventType: String, messageEvent: MessageEvent) {
-        let event = SSEEventDecoder.decode(eventType: eventType, data: messageEvent.data)
+        let events = SSEEventDecoder.decodeFrame(eventType: eventType, data: messageEvent.data)
 
         Task { @MainActor in
             let eventID = messageEvent.lastEventId.trimmingCharacters(in: .whitespacesAndNewlines)
             if !eventID.isEmpty {
                 onEventID(eventID)
             }
-            onEvent(event)
+            events.forEach(onEvent)
         }
     }
 

@@ -709,6 +709,19 @@ final class SSEClientTests: XCTestCase {
         )))
     }
 
+    func testErrorAndCancelFramesDeliverTheirSettledSessionFirst() {
+        let failed = SSEEventDecoder.decodeFrame(
+            eventType: "apperror",
+            data: #"{"type":"error","message":"boom","session":{"session_id":"abc123","messages":[]}}"#
+        )
+        XCTAssertEqual(failed.count, 2)
+        guard case .settledSession(let session) = failed.first else { return XCTFail("Expected the settled session first") }
+        XCTAssertEqual(session.sessionId, "abc123")
+        XCTAssertEqual(failed.last, .error("boom"))
+        XCTAssertEqual(SSEEventDecoder.decodeFrame(eventType: "cancel", data: "{}"), [.cancelled])
+        XCTAssertEqual(SSEEventDecoder.decodeFrame(eventType: "token", data: #"{"text":"hi"}"#).count, 1)
+    }
+
     func testDecodesConsumedSteerEvent() {
         let event = SSEEventDecoder.decode(
             eventType: "steer_consumed",
