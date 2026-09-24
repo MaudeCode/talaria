@@ -94,7 +94,8 @@ jobs:
     # for the Linux probe: the one live-fixture test runs last, against the
     # probe's digest-checked fixture, and a failed probe fails that step.
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || needs.changes.outputs.contracts != 'false') }}
+    # Exercise the normal App PR suite for this workflow-only runner benchmark.
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || needs.changes.outputs.contracts != 'false' || github.head_ref == 'ci/TAL-338-blacksmith-benchmark') }}
     runs-on: maude-mac
     timeout-minutes: 90
 
@@ -106,7 +107,7 @@ jobs:
       # PRs run the unit tests and one smoke test on four clones. Main's full UI suite uses two: four
       # clones launching UI test runners at once hit SpringBoard "Busy ... failed preflight" (TAL-333).
       TEST_WORKER_COUNT: ${{ github.event_name == 'pull_request' && 4 || 2 }}
-      APP_TESTS_REQUIRED: ${{ needs.changes.result != 'success' || needs.changes.outputs.app != 'false' }}
+      APP_TESTS_REQUIRED: ${{ needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || github.head_ref == 'ci/TAL-338-blacksmith-benchmark' }}
       # PRs run the unit tests plus one launch smoke test; the full UI suite runs on main pushes (TAL-332).
       APP_UI_REQUIRED: ${{ github.event_name != 'pull_request' }}
       CONTRACTS_SELECTED: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
