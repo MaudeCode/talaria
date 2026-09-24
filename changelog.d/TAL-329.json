@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On iPhone, the final answer of a finished reply always shows below Worked instead of being folded inside it.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Changed",
+      "summary": "The web and iPhone apps show finished replies exactly as the server arranges them, so both always agree.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

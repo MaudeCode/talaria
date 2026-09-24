@@ -94,11 +94,12 @@ describe('turn worklog presentation', () => {
     const view = render(<View activity={activity} />)
     expect(view.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'true')
     expect(view.container.textContent).not.toContain('Worked')
-    view.rerender(<View activity={{ ...activity, status: 'error' }} />)
+    // Settled turns take the outcome and the default disclosure from the server scene.
+    view.rerender(<View activity={{ ...activity, status: 'error', expandedByDefault: true }} />)
     expect(view.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'true')
-    view.rerender(<View activity={{ ...activity, status: 'cancelled' }} />)
+    view.rerender(<View activity={{ ...activity, status: 'cancelled', expandedByDefault: false }} />)
     expect(view.container.textContent).not.toContain('Worked')
-    view.rerender(<View activity={{ ...activity, status: 'completed', finalAnswer: 'Done' }} />)
+    view.rerender(<View activity={{ ...activity, status: 'completed', finalAnswer: 'Done', expandedByDefault: false }} />)
     expect(view.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByText('Done', { exact: true })).toBeVisible()
   })
@@ -146,8 +147,13 @@ describe('turn worklog presentation', () => {
   it.each([null, 'u'])('settles tool-limit snapshots once with user identity %s', (userMessageId) => {
     const session: Session = { session_id: 's', title: 'Limited turn', _messages_offset: 40, messages: [
       { role: 'user', id: 'u', content: 'Inspect' },
-      { role: 'assistant', id: 'a', content: 'Working', tool_calls: [{ id: 'a', name: 'read_file' }] },
-      { role: 'assistant', id: 'closing', content: 'Tool budget exhausted; here is the saved explanation.' },
+      { role: 'assistant', id: 'a', content: 'Working', tool_calls: [{ id: 'a', name: 'read_file' }], _turn_id: 'run' },
+      // The server persists the tool-limit outcome and ships it in the settled turn's scene.
+      { role: 'assistant', id: 'closing', content: 'Tool budget exhausted; here is the saved explanation.', _turn_id: 'run', _terminal_state: 'tool_limit_reached', _anchor_activity_scene: {
+        version: 'activity_scene_v1', final_answer: 'Tool budget exhausted; here is the saved explanation.', terminal_state: 'tool_limit_reached', expanded_by_default: true, activity_rows: [
+          { row_id: 'a:prose', order_index: 0, role: 'prose', text: 'Working' },
+          { row_id: 'tool:a', order_index: 1, role: 'tool', tool: { id: 'a', name: 'read_file', preview: null, done: true, is_error: false, duration: null, cost_usd: null } },
+        ] } },
     ] }
     if (userMessageId === null) session.messages = session.messages?.map((message) => { const copy: Message = { ...message }; delete copy.id; return copy })
     const run = liveRun()

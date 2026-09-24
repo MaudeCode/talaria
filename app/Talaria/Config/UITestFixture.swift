@@ -619,6 +619,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 "content": "Fixture opening. Fixture progress. Fixture finished.",
                 "message_id": "ui-fixture-assistant",
                 "_ts": 2_000_000_101,
+                // As the server sends it: the rows under "Worked" exclude the answer, which rides in `final_answer`.
                 "_anchor_activity_scene": [
                     "version": "activity_scene_v1",
                     "final_answer": "Fixture finished.",
@@ -644,8 +645,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                                 "done": true,
                                 "is_error": false
                             ]
-                        ],
-                        ["row_id": "prose-3", "order_index": 4, "role": "prose", "text": "Fixture finished."]
+                        ]
                     ]
                 ]
             ])

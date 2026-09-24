@@ -404,6 +404,14 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(codex.workRows.map(\.kind), ["reasoning", "prose", "tools"])
         XCTAssertEqual(codex.finalAnswer, "The service uses port 8080.")
         XCTAssertEqual(try turn("contract-run-d-2").finalAnswer, "Tool budget exhausted; here is the saved explanation.")
+        // Earlier prose alone still folds under Worked; only the server's final answer stays visible.
+        let twoReplies = try turn("contract-run-a-2")
+        XCTAssertEqual(twoReplies.workRows.map(\.kind), ["prose"])
+        XCTAssertEqual(twoReplies.finalAnswer, "Second reply in the same turn.")
+        // A turn the server says has no answer never promotes its last prose.
+        XCTAssertEqual(try turn("contract-run-e-1").finalAnswer, "")
+        XCTAssertEqual(messages.first { $0.messageId == "contract-run-d-2" }?.activityScene?.expandedByDefault, true)
+        XCTAssertEqual(messages.first { $0.messageId == "contract-run-c-2" }?.activityScene?.expandedByDefault, false)
         // The running turn has no scene: the live stream renders it.
         let running = try XCTUnwrap(messages.first { $0.messageId == "contract-run-f-1" })
         XCTAssertNil(AssistantActivityTimeline.authoritativeScene(message: running))

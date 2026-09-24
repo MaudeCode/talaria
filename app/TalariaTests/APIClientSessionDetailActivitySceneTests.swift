@@ -14,10 +14,10 @@ func testSessionDecodesActivitySceneInOrder() async throws {
               "message_id": "assistant-1",
               "_anchor_activity_scene": {
                 "version": "activity_scene_v1",
+                "final_answer": "After tool.",
                 "activity_rows": [
                   {"row_id":"tool:call-1","order_index":2,"role":"tool","tool":{"id":"call-1","name":"read_file","args":{"path":"notes.md"},"preview":"contents","result":"contents","done":true,"is_error":false,"duration":null,"cost_usd":null}},
                   {"row_id":"prose-1","order_index":0,"role":"prose","text":"Before tool."},
-                  {"row_id":"prose-2","order_index":3,"role":"prose","text":"After tool."},
                   {"row_id":"thinking-1","order_index":1,"role":"reasoning","text":"I should inspect now.","titles":["Planning implementation"]}
                 ]
               }
@@ -322,8 +322,7 @@ func testExplicitFinalProseBeforeTrailingToolKeepsTheToolInWork() throws {
         "version": "activity_scene_v1",
         "final_answer": "Done.",
         "activity_rows": [
-          {"row_id":"final","order_index":0,"role":"prose","text":"Done."},
-          {"row_id":"tool:call-1","order_index":1,"role":"tool","tool":{"id":"call-1","name":"terminal","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null}}
+          {"row_id":"tool:call-1","order_index":0,"role":"tool","tool":{"id":"call-1","name":"terminal","args":null,"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null}}
         ]
       }
     }

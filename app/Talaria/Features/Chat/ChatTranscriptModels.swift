@@ -124,16 +124,8 @@ struct CompletedAssistantTurn: Equatable {
             pendingActivity = []
         }
 
-        let explicitFinalIndex = rows.lastIndex(where: \.isFinalAnswer)
-        var fallbackFinalIndex: Int?
-        if !rows.contains(where: { row in
-            if case .steering = row.content { return true }
-            return false
-        }), let lastIndex = rows.indices.last,
-           case .prose = rows[lastIndex].content {
-            fallbackFinalIndex = lastIndex
-        }
-        let finalIndex = explicitFinalIndex ?? fallbackFinalIndex
+        // The final answer is the row the server marked; the app never infers it from row position.
+        let finalIndex = rows.lastIndex(where: \.isFinalAnswer)
 
         for (rowIndex, row) in rows.enumerated() {
             switch row.content {
@@ -156,7 +148,12 @@ struct CompletedAssistantTurn: Equatable {
         }
         appendActivity()
 
-        guard segments.contains(where: {
+        // "Worked" exists whenever there is work besides the final answer, including earlier prose alone.
+        let foldsEarlierProse = finalIndex != nil && rows.indices.contains { index in
+            guard index != finalIndex, case .prose = rows[index].content else { return false }
+            return true
+        }
+        guard foldsEarlierProse || segments.contains(where: {
             switch $0.content {
             case .activity, .steering: true
             case .prose: false
@@ -365,7 +362,6 @@ struct AssistantActivityTimeline: Equatable {
             }
             if !timeline.rows.isEmpty {
                 timeline.enrichTools(from: toolCallGroups)
-                timeline.markLastProseAsFinal()
                 return timeline
             }
         }
@@ -428,11 +424,11 @@ struct AssistantActivityTimeline: Equatable {
         }) {
             timeline.appendSceneRow(row, sourceIndex: sourceIndex)
         }
+        // The server's rows exclude the answer, which it sends as `final_answer`.
+        if let finalAnswer = Self.nonEmpty(scene.finalAnswer) {
+            timeline.rows.append(AssistantActivityRow(id: "scene:final", content: .prose(finalAnswer), isFinalAnswer: true))
+        }
         guard !timeline.rows.isEmpty else { return nil }
-        let finalAnswer = scene.hasConsumedSteering
-            ? Self.nonEmpty(scene.finalAnswer)
-            : Self.nonEmpty(scene.finalAnswer) ?? message.content
-        timeline.appendFinalProseIfNeeded(finalAnswer)
         return timeline
     }
 
@@ -570,13 +566,6 @@ struct AssistantActivityTimeline: Equatable {
                 isFinalAnswer: true
             ))
         }
-    }
-
-    private mutating func markLastProseAsFinal() {
-        guard let index = rows.indices.last,
-              case .prose = rows[index].content
-        else { return }
-        rows[index].isFinalAnswer = true
     }
 
     @discardableResult

@@ -3,7 +3,7 @@ import { useInfiniteQuery } from '@tanstack/react-query'
 import { fetchAnchorScene } from '../../api/endpoints'
 import { m } from '../../paraglide/messages.js'
 import { Button } from '../../ui/Button'
-import { sceneWorkItems } from './turnActivity'
+import { sceneItems } from './turnActivity'
 import { Markdown } from './render/Markdown'
 import { ReasoningBlock } from './blocks/ReasoningBlock'
 import { ToolCard } from './blocks/ToolCard'
@@ -70,7 +70,7 @@ function ActivityHistory({ activity, history, mode, sessionId, scope }: { activi
     enabled: false,
   })
   const pages = query.data?.pages.slice().reverse() ?? []
-  const items = pages.length ? sceneWorkItems([...pages.flatMap((page) => page.rows), ...(activity.sceneRows ?? [])], activity.finalAnswer) : activity.items
+  const items = pages.length ? sceneItems([...pages.flatMap((page) => page.rows), ...(activity.sceneRows ?? [])]) : activity.items
   const remaining = query.data?.pages.at(-1)?.start ?? history.before
   const control = remaining > 0 ? <Button variant="ghost" disabled={query.isFetching} onClick={() => { void query.fetchNextPage() }}>{query.isFetching ? m.loading() : query.isError ? m.retry() : m.show_earlier_steps({ a0: String(remaining) })}</Button> : null
   return <ActivityBody activity={{ ...activity, items }} mode={mode} earlier={control} />
@@ -101,11 +101,12 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
     blocks.push(run.length === 1 ? contents[0] : <Worklog key={item.key} sequenceKey={`sequence:${item.key}`} calls={run.flatMap((entry) => entry.kind === 'tool' ? [entry.call] : [])} status={status}>{contents}</Worklog>)
   }
   const calls = items.flatMap((item) => item.kind === 'tool' ? [item.call] : [])
-  const hasWork = !!earlier || items.some((item) => item.kind !== 'text') || (finalAnswer.trim() !== '' && items.length > 0)
+  // A settled turn shows "Worked" whenever the server sent rows for it; live work keeps plain streamed text flat.
+  const hasWork = !!earlier || (running ? items.some((item) => item.kind !== 'text') : items.length > 0)
   return (
     <DisclosureTurnContext value={activity.key}>
       {mode !== 'hide_all_activity' && (mode === 'compact_worklog' && hasWork
-        ? <Worklog calls={calls} status={status}>{earlier}{blocks}</Worklog>
+        ? <Worklog calls={calls} status={status} expandedByDefault={activity.expandedByDefault === true}>{earlier}{blocks}</Worklog>
         : <>{earlier}{blocks}</>)}
       {mode === 'hide_all_activity' && items.filter((item) => item.kind === 'steering').map((item) => render(item, false))}
       {!running && <SettleSpacer turnKey={activity.key} />}

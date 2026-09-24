@@ -8,7 +8,7 @@ import { AssistantMessageRow, UserMessageRow, type RowActions } from './MessageR
 import { LiveStatusPill, LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
-import { groupAssistantTurns, settledTerminalState } from './turnActivity'
+import { groupAssistantTurns } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
 
@@ -106,7 +106,7 @@ export function Transcript(props: TranscriptProps) {
   const renderRow = (row: VisibleMessage, i: number) => (
     row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
-      : <AssistantMessageRow terminalState={settledTerminalState(row, live)} sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} />
+      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} />
   )
 
   return (

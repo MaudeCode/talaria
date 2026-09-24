@@ -203,8 +203,9 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
   for (const { row, index } of ordered) {
     const tool = isDict(row.tool) ? row.tool : {}
     const payload = isDict(row.payload) ? row.payload : {}
+    const steering = isDict(row.steering) ? row.steering : {}
     const toolId = str(row.tool_call_id) || str(tool.id)
-    const steerId = str(payload.steer_id)
+    const steerId = str(payload.steer_id) || str(steering.steer_id)
     const rowId = row.role === 'tool' && toolId ? `tool:${toolId}` : row.role === 'steering' && steerId ? `steering:${steerId}` : str(row.row_id) || `scene:${String(index)}`
     const createdAt = finite(row.created_at)
     const base = createdAt === null ? { row_id: rowId } : { row_id: rowId, created_at: createdAt }
@@ -219,8 +220,9 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
       const text = str(thinking.text) || str(row.text)
       if (text.trim() || titles.length) put({ ...base, role: 'reasoning', text, titles })
     } else if (row.role === 'steering' && str(row.text).trim()) {
-      const consumed = row.status === 'consumed'
-      put({ ...base, role: 'steering', text: str(row.text), steering: { steer_id: steerId || rowId, consumed, submitted_at: finite(payload.created_at), consumed_at: consumed ? finite(payload.consumed_at) ?? createdAt : null } })
+      // Already-normalized rows (built or re-read scenes) keep their fields: normalizing is idempotent.
+      const consumed = row.status === 'consumed' || steering.consumed === true
+      put({ ...base, role: 'steering', text: str(row.text), steering: { steer_id: steerId || rowId, consumed, submitted_at: finite(payload.created_at) ?? finite(steering.submitted_at), consumed_at: consumed ? finite(payload.consumed_at) ?? finite(steering.consumed_at) ?? createdAt : null } })
     } else if (row.role === 'tool') {
       const status = str(row.status).toLowerCase()
       put({ ...base, role: 'tool', tool: {

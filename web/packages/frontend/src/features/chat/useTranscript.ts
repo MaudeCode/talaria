@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
-import type { Message, Session, ToolCall } from '../../contracts'
+import type { Message, Session } from '../../contracts'
 import { attachToStream, teardown } from '../../stream/connection'
 import { useLiveTurn } from '../../stream/store'
 import { isTerminal } from '../../stream/reducer'
@@ -22,7 +22,6 @@ export interface VisibleMessage {
   key: string
   assistantRows?: VisibleMessage[]
   turnKey?: string
-  toolResults: Record<string, Message>
 }
 
 function isRenderable(msg: Message): boolean {
@@ -38,36 +37,20 @@ function isRenderable(msg: Message): boolean {
 }
 
 /**
- * Project raw messages into renderable rows; tool-role results attach to the owning assistant call by id.
+ * Project raw messages into renderable rows (a settled turn's tools and results arrive in its server scene).
  * `base` is the absolute index of `messages[0]` in the session (non-zero when only a window is loaded), so
  * `row.index` is always the position the truncate/branch `keep_count` contract expects.
  */
 export function projectMessages(messages: Message[], base = 0): VisibleMessage[] {
-  const results = new Map<string, Message>()
-  for (const msg of messages) {
-    if (msg.role === 'tool') {
-      const id = msg.tool_call_id ?? msg.tool_use_id
-      if (id) results.set(id, msg)
-    }
-  }
   const rows: VisibleMessage[] = []
   messages.forEach((message, i) => {
     const index = base + i
     if (!isRenderable(message)) return
-    const toolResults: Record<string, Message> = {}
-    for (const tc of message.tool_calls ?? []) {
-      const id = tc.id ?? tc.call_id ?? tc.tool_call_id
-      const r = id ? results.get(id) : undefined
-      if (id && r) toolResults[id] = r
-    }
-    rows.push({ index, message, key: messageKey(message) ?? `${index}-${message.role}`, toolResults })
+    rows.push({ index, message, key: messageKey(message) ?? `${index}-${message.role}` })
   })
   return rows
 }
 
-export function toolCallId(tc: ToolCall, fallback: string): string {
-  return tc.id ?? tc.call_id ?? tc.tool_call_id ?? fallback
-}
 
 /** Stable string id of a message (`message_id` wins; persisted rows carry integer `id`s). */
 export function messageKey(message: Message): string | undefined {
@@ -75,14 +58,6 @@ export function messageKey(message: Message): string | undefined {
   return raw === undefined || raw === null ? undefined : String(raw)
 }
 
-/** Tool name and arguments, whichever shape the call was stored in. */
-export function toolCallName(tc: ToolCall): string | undefined { return tc.name ?? tc.function?.name }
-export function toolCallArgs(tc: ToolCall): unknown {
-  if (tc.args !== undefined) return tc.args
-  const raw = tc.function?.arguments
-  if (typeof raw !== 'string') return raw
-  try { return JSON.parse(raw) as unknown } catch { return raw }
-}
 
 export function useTranscript(sessionId: string | null) {
   const qc = useQueryClient()

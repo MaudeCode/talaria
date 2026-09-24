@@ -274,8 +274,6 @@ struct ChatTranscriptView: View {
                     transcriptMessage: transcriptMessage,
                     transcriptBlockSpacing: transcriptBlockSpacing,
                     showsThinkingAndToolCards: showsThinkingAndToolCards,
-                    reasoningGroups: reasoningGroups,
-                    toolCallGroups: activityAnchorIDs.flatMap(completedToolCallGroupsForAnchor),
                     archivedActivityRows: activityAnchorIDs.flatMap(archivedActivityRowsForAnchor),
                     liveActivityRows: (isReasoningAnchor || isToolCallAnchor || isStreamingRow) ? liveActivityRows : [],
                     streamingAssistantMessageID: isStreamingRow ? streamingAssistantMessageID : nil,

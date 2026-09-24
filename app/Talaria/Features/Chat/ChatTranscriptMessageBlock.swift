@@ -8,8 +8,6 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     let transcriptMessage: TranscriptMessage
     let transcriptBlockSpacing: CGFloat
     let showsThinkingAndToolCards: Bool
-    let reasoningGroups: [ReasoningGroup]
-    let toolCallGroups: [ToolCallGroup]
     let archivedActivityRows: [AssistantActivityRow]
     let liveActivityRows: [AssistantActivityRow]
     let streamingAssistantMessageID: String?
@@ -48,8 +46,6 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         lhs.transcriptMessage == rhs.transcriptMessage &&
             lhs.transcriptBlockSpacing == rhs.transcriptBlockSpacing &&
             lhs.showsThinkingAndToolCards == rhs.showsThinkingAndToolCards &&
-            lhs.reasoningGroups == rhs.reasoningGroups &&
-            lhs.toolCallGroups == rhs.toolCallGroups &&
             lhs.archivedActivityRows == rhs.archivedActivityRows &&
             lhs.liveActivityRows == rhs.liveActivityRows &&
             lhs.streamingAssistantMessageID == rhs.streamingAssistantMessageID &&
@@ -96,26 +92,22 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         if !liveActivityRows.isEmpty {
             return liveActivityRows
         }
+        // A completed turn renders the server's scene; before it arrives, the just-finished live rows hold its place.
+        // Without either (an older server), the message renders as plain text.
         if let authoritativeScene = AssistantActivityTimeline.authoritativeScene(
             message: transcriptMessage.message
         ) {
             return authoritativeScene.rows
         }
-        if !archivedActivityRows.isEmpty {
-            return archivedActivityRows
-        }
-        let persisted = AssistantActivityTimeline.persisted(
-            assistantSegments: transcriptMessage.assistantSegments,
-            reasoningGroups: reasoningGroups,
-            toolCallGroups: toolCallGroups
-        ).rows
-        return persisted
+        return archivedActivityRows
     }
 
     @ViewBuilder
     private func completedTurn(_ turn: CompletedAssistantTurn) -> some View {
         let disclosureID = "worked:\(transcriptMessage.anchorID)"
-        let isExpanded = expandedCompletedActivityIDs.contains(disclosureID)
+        // The server picks the initial state; a tap flips it relative to that default.
+        let expandedByDefault = transcriptMessage.message.activityScene?.expandedByDefault ?? false
+        let isExpanded = expandedCompletedActivityIDs.contains(disclosureID) != expandedByDefault
         let title = AssistantTurnSummary.title(duration: transcriptMessage.message.turnDuration)
 
         workedDisclosureHeader(disclosureID: disclosureID, title: title, isExpanded: isExpanded)
@@ -214,7 +206,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         Button {
             chatDisclosureToggled()
             withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
-                if isExpanded {
+                // Membership records a flip from the default, so toggling always flips it.
+                if expandedCompletedActivityIDs.contains(disclosureID) {
                     expandedCompletedActivityIDs.remove(disclosureID)
                 } else {
                     expandedCompletedActivityIDs.insert(disclosureID)

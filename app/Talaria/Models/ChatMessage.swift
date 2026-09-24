@@ -286,12 +286,15 @@ struct AssistantActivityScene: Codable, Equatable {
     let finalAnswer: String?
     let activityRows: [AssistantActivitySceneRow]?
     let turnDuration: Double?
+    /// Server-decided initial state of the turn's "Worked" disclosure.
+    let expandedByDefault: Bool
 
     enum CodingKeys: String, CodingKey {
         case version
         case finalAnswer
         case activityRows
         case turnDuration
+        case expandedByDefault
     }
 
     init(from decoder: Decoder) throws {
@@ -299,6 +302,7 @@ struct AssistantActivityScene: Codable, Equatable {
         version = container.decodeLossyStringIfPresent(forKey: .version)
         finalAnswer = container.decodeLossyStringIfPresent(forKey: .finalAnswer)
         turnDuration = container.decodeLossyDoubleIfPresent(forKey: .turnDuration)
+        expandedByDefault = (try? container.decodeIfPresent(Bool.self, forKey: .expandedByDefault)) ?? false
 
         guard let values = try? container.decodeIfPresent([JSONValue].self, forKey: .activityRows) else {
             activityRows = nil

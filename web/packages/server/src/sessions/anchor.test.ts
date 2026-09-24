@@ -47,6 +47,13 @@ describe('normalizeSceneRows', () => {
     expect(rows[1]?.steering).toMatchObject({ consumed: true, consumed_at: 9 })
   })
 
+  it('is idempotent: normalizing normalized rows changes nothing', () => {
+    const once = normalizeSceneRows(legacyRows)
+    expect(normalizeSceneRows(once)).toEqual(once)
+    const consumed = normalizeSceneRows([{ role: 'steering', text: 'Stop', status: 'consumed', created_at: 9, payload: { steer_id: 's1', created_at: 8 } }])
+    expect(normalizeSceneRows(consumed)).toEqual(consumed)
+  })
+
   it('returns no rows for a malformed list', () => {
     expect(normalizeSceneRows(null)).toEqual([])
     expect(normalizeSceneRows({ rows: [] })).toEqual([])
@@ -109,6 +116,7 @@ describe('buildTurnScene', () => {
     ['partial', [{ role: 'assistant', content: 'Half an ans', _partial: true }], 'no_response', true],
     ['error', [{ role: 'assistant', content: 'Working', tool_calls: [{ id: 't' }] }, { role: 'assistant', content: '**Error:** failed', _error: true }], 'error', true],
     ['cancelled', [{ role: 'assistant', content: 'Half', _partial: true }, { role: 'assistant', content: '**Task cancelled:** Task cancelled.', _error: true, provider_details_label: 'Cancellation details' }], 'cancelled', false],
+    ['interrupted', [{ role: 'assistant', content: 'Half', _partial: true }, { role: 'assistant', content: '**Interrupted:** lost', _error: true, provider_details_label: 'Interruption details' }], 'interrupted', false],
   ])('reports %s turns without promoting work to an answer', (_name, rows, state, expanded) => {
     const scene = buildTurnScene(turnOf(rows))!
     expect(scene.terminal_state).toBe(state)

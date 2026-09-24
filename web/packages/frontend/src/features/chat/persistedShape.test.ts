@@ -3,7 +3,6 @@ import canonicalScene from './__fixtures__/activity-scene.json'
 import { describe, expect, it } from 'vitest'
 import { SessionSchema } from '../../contracts/session'
 import { projectMessages } from './useTranscript'
-import { toolCardsFor } from './MessageRow'
 
 /** The shape the Python server persists: integer message ids, OpenAI-style tool calls, JSON tool results. */
 const persisted = {
@@ -18,23 +17,10 @@ const persisted = {
   ],
 }
 
-describe('persisted session shape', () => {
-  it('parses integer ids and OpenAI-shaped tool calls', () => {
-    const s = SessionSchema.parse(persisted)
-    const rows = projectMessages(s.messages ?? [])
-    expect(rows.map((r) => r.key)).toEqual(['7', '8', '10'])
-    const cards = toolCardsFor(rows[1]!.message, rows[1]!.toolResults)
-    expect(cards).toHaveLength(1)
-    expect(cards[0]!.name).toBe('terminal')
-    expect(cards[0]!.args).toEqual({ command: 'ls src/theme' })
-    expect(cards[0]!.result).toContain('boot.ts')
-  })
-})
-
 // TAL-233: presentation grouping retains the raw index used by branch/edit actions.
 describe('assistant turn projection', () => {
   it('groups a multi-step turn once while preserving the final raw message index', async () => {
-    const { groupAssistantTurns, persistedActivity } = await import('./turnActivity')
+    const { groupAssistantTurns } = await import('./turnActivity')
     const messages = [...persisted.messages.slice(0, 3),
       { role: 'assistant', id: 11, content: 'Checking another file.', tool_calls: [{ id: 'call_b', name: 'read_file', args: { path: 'b' } }] },
       { role: 'tool', id: 12, tool_call_id: 'call_b', content: 'b contents' },
@@ -45,8 +31,6 @@ describe('assistant turn projection', () => {
     const rows = groupAssistantTurns(projectMessages(SessionSchema.parse({ ...persisted, messages }).messages!, 120))
     expect(rows.map((r) => r.message.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
     expect(rows[1]!.index).toBe(125)
-    expect(persistedActivity(rows[1]!).items.map((i) => i.kind)).toEqual(['reasoning', 'text', 'tool', 'text', 'tool'])
-    expect(persistedActivity(rows[1]!).finalAnswer).toBe('Done.')
     expect(groupAssistantTurns(projectMessages(messages.slice(1), 121))[0]!.index).toBe(125)
   })
 
@@ -71,8 +55,7 @@ describe('assistant turn projection', () => {
         { row_id: 'p', order_index: 0, role: 'prose', text: 'Progress' },
         { row_id: 'tool:a', order_index: 1, role: 'tool', tool: { id: 'a', name: 'read_file', preview: 'contents', result: 'contents', done: true, is_error: false, duration: null, cost_usd: null } },
         { row_id: 'tool:b', order_index: 2, role: 'tool', tool: { id: 'b', name: 'read_file', preview: null, done: true, is_error: false, duration: null, cost_usd: null } },
-        { row_id: 'answer', order_index: 3, role: 'prose', text: 'Answer' },
-      ],
+      ], final_answer: 'Answer', terminal_state: 'completed', expanded_by_default: false,
     } }]))
     const activity = persistedActivity(rows[0]!)
     expect(activity.items.map((item) => item.key)).toEqual(['p', 'tool:a', 'tool:b'])
@@ -83,16 +66,22 @@ describe('assistant turn projection', () => {
 
 
 describe('persisted terminal outcomes', () => {
-  it.each(['Cancellation details', 'Interruption details', 'Provider details'])('retains partial work before %s without reporting Worked', async (label) => {
+  // The server classifies the outcome (anchor.test.ts buildTurnScene); the client renders the fields it sends.
+  it.each(['cancelled', 'interrupted', 'error'])('renders the server outcome %s with its partial work', async (state) => {
     const { groupAssistantTurns, persistedActivity } = await import('./turnActivity')
     const grouped = groupAssistantTurns(projectMessages([
-      { role: 'user', id: 1, content: 'Inspect' },
-      { role: 'assistant', id: 2, content: 'Partial output', _partial: true, tool_calls: [{ id: 'a', name: 'read_file' }] },
-      { role: 'assistant', id: 3, content: 'Terminal explanation', _error: true, provider_details_label: label },
+      { role: 'user', id: 1, content: 'Inspect', _turn_id: 't' },
+      { role: 'assistant', id: 2, content: 'Partial output', _partial: true, tool_calls: [{ id: 'a', name: 'read_file' }], _turn_id: 't' },
+      { role: 'assistant', id: 3, content: 'Terminal explanation', _error: true, _turn_id: 't', _anchor_activity_scene: {
+        version: 'activity_scene_v1', final_answer: 'Terminal explanation', terminal_state: state, expanded_by_default: state === 'error', activity_rows: [
+          { row_id: '2:prose', order_index: 0, role: 'prose', text: 'Partial output' },
+          { row_id: 'tool:a', order_index: 1, role: 'tool', tool: { id: 'a', name: 'read_file', preview: null, done: true, is_error: false, duration: null, cost_usd: null } },
+        ] } },
     ]))
     expect(grouped).toHaveLength(2)
-    expect(persistedActivity(grouped[1]!).status).toBe(label === 'Cancellation details' ? 'cancelled' : label === 'Interruption details' ? 'interrupted' : 'error')
-    expect(persistedActivity(grouped[1]!).items.map((item) => item.kind)).toEqual(['text', 'tool'])
+    const activity = persistedActivity(grouped[1]!)
+    expect(activity).toMatchObject({ status: state, expandedByDefault: state === 'error', finalAnswer: 'Terminal explanation' })
+    expect(activity.items.map((item) => item.kind)).toEqual(['text', 'tool'])
   })
 })
 
@@ -132,14 +121,5 @@ describe('canonical scene boundaries', () => {
     expect(activity.items.map((item) => item.kind)).toEqual(kinds)
     expect(activity.finalAnswer).toBe(final)
     if (!final) expect(activity.status).not.toBe('completed')
-  })
-
-  it('removes only the last matching final prose, preserving earlier repeated progress', async () => {
-    const { sceneWorkItems } = await import('./turnActivity')
-    expect(sceneWorkItems([
-      { row_id: 'progress', order_index: 0, role: 'prose', text: 'Done.' },
-      { row_id: 'final', order_index: 1, role: 'prose', text: ' Done. ' },
-      { row_id: 'tool:t', order_index: 2, role: 'tool', tool: { id: 't', name: 'terminal', done: true, is_error: false } },
-    ], 'Done.').map((item) => item.key)).toEqual(['progress', 'tool:t'])
   })
 })
