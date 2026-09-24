@@ -521,6 +521,34 @@ describe('chat turns through the sidecar', () => {
     expect((scene.activity_rows as Json[]).some((r) => r.role === 'steering' && (r.steering as Json).steer_id === 'steer-c')).toBe(true)
   })
 
+  it('places a steer after the result it followed when one message made several calls (TAL-300)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let release: () => void = () => undefined
+    let emitLive: ((frame: { event: string; data: Json }) => void) | null = null
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emitLive = emit
+      const call = (id: string) => ({ id, type: 'function', function: { name: 'read_file', arguments: '{}' } })
+      release = () => { resolve(completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: '', tool_calls: [call('ta'), call('tb')] }, { role: 'tool', tool_call_id: 'ta', content: 'A' }, { role: 'tool', tool_call_id: 'tb', content: 'B' },
+        { role: 'assistant', content: 'Done.' },
+      ])) }
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', args: {}, tid: 'ta' } })
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'read both' }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'tool')
+    emitLive!({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', tid: 'ta', preview: 'A' } })
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'skip b', steer_id: 'steer-m' })
+    emitLive!({ event: 'steer_pending', data: { text: '' } })
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'steer_consumed')
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(messages.map((m) => (m._steer ? 'steer' : m.role === 'tool' ? `tool:${String(m.content)}` : String(m.role)))).toEqual(['user', 'assistant', 'tool:A', 'steer', 'tool:B', 'assistant'])
+  })
+
   it('places a steer after the Anthropic-style tool_use call it followed (TAL-300)', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))

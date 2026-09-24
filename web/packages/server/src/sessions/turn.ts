@@ -1271,6 +1271,16 @@ function steerInsertIndex(messages: Message[], turnId: string, afterToolCallId: 
     ...(Array.isArray(m.tool_calls) ? m.tool_calls : []).map((tc) => str((tc as Record<string, unknown>).id) || str((tc as Record<string, unknown>).call_id) || str((tc as Record<string, unknown>).tool_call_id)),
     ...(Array.isArray(m.content) ? m.content : []).flatMap((part) => (isDict(part) && part.type === 'tool_use' ? [str(part.id)] : [])),
   ]
+  // The steer followed that call's result: right after its row (a `tool` row, or a user row of `tool_result` blocks), even
+  // when the same assistant message made later calls; steers already placed there keep their consumption order.
+  const answers = (m: Message) => (m.role === 'tool' && (str(m.tool_call_id) || str(m.tool_use_id)) === afterToolCallId)
+    || (m.role === 'user' && Array.isArray(m.content) && m.content.some((part) => isDict(part) && part.type === 'tool_result' && str(part.tool_use_id) === afterToolCallId))
+  const result = afterToolCallId ? messages.findIndex((m) => m._turn_id === turnId && answers(m)) : -1
+  if (result !== -1) {
+    let i = result + 1
+    while (i < messages.length && messages[i]!._turn_id === turnId && messages[i]!._steer) i += 1
+    return i
+  }
   let at = afterToolCallId ? messages.findIndex((m) => m._turn_id === turnId && m.role === 'assistant' && callIds(m).includes(afterToolCallId)) : -1
   if (at === -1) at = messages.findIndex((m) => m._turn_id === turnId && m.role === 'user' && !m._steer)
   if (at === -1) return messages.length
