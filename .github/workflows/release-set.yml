@@ -307,7 +307,22 @@ jobs:
         TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
         TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
-    - run: '"$RELEASE_PYTHON" releases/build.py web --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/web-build"'
+    - name: Build the npm packages and the multi-platform image
+      env:
+        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
+        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
+        TALARIA_S3_BUCKET: talaria-release
+        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+        # Buildx hands these to BuildKit for the S3 layer cache; they never appear in arguments.
+        AWS_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+      run: |
+        set -euo pipefail
+        # Reuse Web image layers from the NAS (buildcache/ expires after 14 days); docker-plugins made a container builder.
+        scripts/s3-artifact lifecycle
+        export TALARIA_DOCKER_CACHE="type=s3,region=${TALARIA_S3_REGION},bucket=talaria-release,endpoint_url=${TALARIA_S3_ENDPOINT},use_path_style=true,prefix=buildcache/,name=web-release"
+        "$RELEASE_PYTHON" releases/build.py web --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/web-build"
     - name: Separate the large OCI archive from the receipt and npm handoff
       run: |
         set -euo pipefail
