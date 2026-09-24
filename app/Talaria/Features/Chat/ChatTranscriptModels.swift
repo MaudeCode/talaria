@@ -746,13 +746,8 @@ struct TranscriptMessage: Identifiable, Equatable {
     let anchorID: String
     let message: ChatMessage
     let assistantSegments: [TranscriptAssistantSegment]
-    let endsBeforeSteeringHint: Bool
 
     var id: String { renderID }
-
-    func shouldShowTurnSummary(hasActiveStream: Bool) -> Bool {
-        !hasActiveStream || !endsBeforeSteeringHint
-    }
 
     func ownsActiveStream(
         hasLiveActivity: Bool,
@@ -897,7 +892,7 @@ extension ChatViewModel {
         transcriptMessages.reserveCapacity(messages.count)
         var assistantSegments: [(loadedIndex: Int, segment: TranscriptAssistantSegment)] = []
 
-        func appendAssistantTurn(endsBeforeSteeringHint: Bool = false) {
+        func appendAssistantTurn() {
             guard let first = assistantSegments.first,
                   let last = assistantSegments.last
             else { return }
@@ -907,8 +902,7 @@ extension ChatViewModel {
                 renderID: "transcript:\(offset + first.loadedIndex)",
                 anchorID: last.segment.anchorID,
                 message: last.segment.message,
-                assistantSegments: assistantSegments.map(\.segment),
-                endsBeforeSteeringHint: endsBeforeSteeringHint
+                assistantSegments: assistantSegments.map(\.segment)
             ))
             assistantSegments.removeAll(keepingCapacity: true)
         }
@@ -940,7 +934,7 @@ extension ChatViewModel {
                 continue
             }
 
-            appendAssistantTurn(endsBeforeSteeringHint: message.isLocalSteeringHint)
+            appendAssistantTurn()
             let absoluteIndex = offset + loadedIndex
             let renderID = "transcript:\(absoluteIndex)"
 
@@ -949,8 +943,7 @@ extension ChatViewModel {
                 renderID: renderID,
                 anchorID: anchorID,
                 message: message,
-                assistantSegments: [],
-                endsBeforeSteeringHint: false
+                assistantSegments: []
             ))
         }
 

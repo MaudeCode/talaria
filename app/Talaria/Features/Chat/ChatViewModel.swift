@@ -5119,8 +5119,7 @@ final class ChatViewModel {
             renderID: existingTranscriptMessage.renderID,
             anchorID: lastSegment.anchorID,
             message: lastSegment.message,
-            assistantSegments: updatedSegments,
-            endsBeforeSteeringHint: existingTranscriptMessage.endsBeforeSteeringHint
+            assistantSegments: updatedSegments
         )
     }
 

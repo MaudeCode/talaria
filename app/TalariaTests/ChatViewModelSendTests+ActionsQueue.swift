@@ -1432,8 +1432,7 @@ extension ChatViewModelSendTests {
             renderID: "transcript:7",
             anchorID: "assistant-long",
             message: message,
-            assistantSegments: [TranscriptAssistantSegment(anchorID: "assistant-long", message: message)],
-            endsBeforeSteeringHint: false
+            assistantSegments: [TranscriptAssistantSegment(anchorID: "assistant-long", message: message)]
         )
 
         await viewModel.loadEarlierSceneRows(for: transcriptMessage)

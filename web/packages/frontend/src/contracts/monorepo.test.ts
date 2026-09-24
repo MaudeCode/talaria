@@ -33,4 +33,10 @@ describe('shared monorepo contracts', () => {
     // Persisted steers sit where the Agent took them: after the tool that had completed.
     expect(view('contract-run-g')).toMatchObject({ kinds: ['text', 'tool', 'steering', 'text', 'tool', 'steering'], final: 'Both files read.' })
   })
+
+  it('keeps an assistant row whose only content is its server scene', () => {
+    const scene = { version: 'activity_scene_v1' as const, activity_rows: [], final_answer: '', terminal_state: 'no_response', expanded_by_default: false }
+    const rows = projectMessages([{ role: 'user', content: 'Go' }, { role: 'assistant', content: '', _anchor_activity_scene: scene }])
+    expect(rows.map((row) => row.message.role)).toEqual(['user', 'assistant'])
+  })
 })

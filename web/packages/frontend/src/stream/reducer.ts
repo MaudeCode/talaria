@@ -90,6 +90,12 @@ export const initialStreamState: StreamState = { turns: {} }
 
 const TERMINAL: ReadonlySet<TurnStatus> = new Set(['done', 'error', 'cancelled'])
 
+/** The settled session a terminal frame carries, which replaces the live view with the server's scenes. */
+function sessionOf(data: unknown): Session | null {
+  const session = data && typeof data === 'object' ? (data as { session?: unknown }).session : null
+  return session && typeof session === 'object' ? (session as Session) : null
+}
+
 export function isTerminal(status: TurnStatus): boolean {
   return TERMINAL.has(status)
 }
@@ -252,6 +258,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
         doneAt: now,
         error: cancelled ? null : { type, message: event.data.message ?? '', hint: event.data.hint, continuationSessionId: event.data.continuation_session_id ?? event.data.new_session_id },
         cancelledMessage: cancelled ? (event.data.message ?? '') : null,
+        doneSession: sessionOf(event.data),
         approval: null,
         clarify: null,
         streamEnded: true,
@@ -259,7 +266,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
     }
     case 'cancel': {
       if (terminal) return { ...stamped, streamEnded: true }
-      return { ...stamped, status: 'cancelled', doneAt: now, cancelledMessage: '', approval: null, clarify: null, streamEnded: true }
+      return { ...stamped, status: 'cancelled', doneAt: now, cancelledMessage: '', doneSession: sessionOf(event.data), approval: null, clarify: null, streamEnded: true }
     }
     case 'stream_end':
       return { ...stamped, streamEnded: true }

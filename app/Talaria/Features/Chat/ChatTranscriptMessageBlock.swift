@@ -68,20 +68,17 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     var body: some View {
         VStack(alignment: .leading, spacing: transcriptBlockSpacing) {
             if transcriptMessage.message.role == "assistant", !activityRows.isEmpty {
+                // Only the server's scene folds work under "Worked"; without one the turn is live (or just ended) and
+                // its work stays open until the scene arrives.
                 if let turn = CompletedAssistantTurn(rows: activityRows) {
                     if turn.hasSteering {
-                        steeredTurn(turn)
+                        steeredTurn(turn, folds: serverScene != nil)
                         outcomeRow
-                    } else if liveActivityRows.isEmpty {
-                        if transcriptMessage.shouldShowTurnSummary(hasActiveStream: ownsActiveStream) {
-                            // Renders the outcome between the work and the final answer.
-                            completedTurn(turn)
-                        } else {
-                            activityTimeline(turn.segments, activeSegmentID: nil)
-                            outcomeRow
-                        }
+                    } else if serverScene != nil {
+                        // Renders the outcome between the work and the final answer.
+                        completedTurn(turn)
                     } else {
-                        activityTimeline(turn.segments, activeSegmentID: turn.segments.last?.id)
+                        activityTimeline(turn.segments, activeSegmentID: liveActivityRows.isEmpty ? nil : turn.segments.last?.id)
                     }
                 } else {
                     outcomeRow
@@ -118,19 +115,19 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         }
     }
 
+    /// The server's scene for a settled turn; live rows win while the turn streams.
+    private var serverScene: AssistantActivityTimeline? {
+        guard liveActivityRows.isEmpty else { return nil }
+        return AssistantActivityTimeline.authoritativeScene(message: transcriptMessage.message, earlierRows: earlierSceneRows)
+    }
+
     private var activityRows: [AssistantActivityRow] {
         if !liveActivityRows.isEmpty {
             return liveActivityRows
         }
         // A completed turn renders the server's scene; before it arrives, the just-finished live rows hold its place.
         // Without either (an older server), the message renders as plain text.
-        if let authoritativeScene = AssistantActivityTimeline.authoritativeScene(
-            message: transcriptMessage.message,
-            earlierRows: earlierSceneRows
-        ) {
-            return authoritativeScene.rows
-        }
-        return archivedActivityRows
+        return serverScene?.rows ?? archivedActivityRows
     }
 
     @ViewBuilder
@@ -164,22 +161,24 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     }
 
     @ViewBuilder
-    private func steeredTurn(_ turn: CompletedAssistantTurn) -> some View {
+    private func steeredTurn(_ turn: CompletedAssistantTurn, folds: Bool) -> some View {
         let durations = turn.phaseDurations(
             totalDuration: transcriptMessage.message.turnDuration,
             finalPhaseDuration: transcriptMessage.message.activityScene?.finalPhaseDuration
         )
 
+        // Paged rows are the earliest work, so they land ahead of the first phase.
+        earlierStepsButton
         ForEach(Array(turn.phases.enumerated()), id: \.element.id) { index, phase in
             if !phase.workRows.isEmpty {
-                if ownsActiveStream {
+                if !folds {
                     ForEach(Array(phase.workRows.enumerated()), id: \.element.id) { rowIndex, row in
                         activityItem(
                             row,
                             at: rowIndex,
                             includesAttachments: false,
                             includesTurnMetrics: false,
-                            isActive: index == turn.phases.count - 1
+                            isActive: ownsActiveStream && index == turn.phases.count - 1
                         )
                     }
                 } else {

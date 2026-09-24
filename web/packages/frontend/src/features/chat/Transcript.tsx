@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown, ArrowUp } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
@@ -45,7 +46,8 @@ export function Transcript(props: TranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [pinned, setPinned] = useState(true)
   const [atTop, setAtTop] = useState(true)
-  const showLive = !!live && (!isTerminal(live.status) || live.doneSession === null || live.status === 'error' || live.status === 'cancelled')
+  // The live turn gives way to the server's scene as soon as a terminal frame brings the settled session.
+  const showLive = !!live && (!isTerminal(live.status) || live.doneSession === null)
   const grouped = useMemo(() => groupAssistantTurns(rawRows), [rawRows])
   const rows = useMemo(() => {
     if (!showLive || !live) return grouped
@@ -139,6 +141,8 @@ export function Transcript(props: TranscriptProps) {
               </div>
             )}
             {showLive && live && <LiveTurnView turn={live} name={assistantName} mode={mode} userVisible />}
+            {/* The settled error row carries the message; only the frame's continuation link lives outside the session. */}
+            {!showLive && live?.error?.continuationSessionId && <Link to="/session/$sessionId" params={{ sessionId: live.error.continuationSessionId }} className="mt-1 inline-block text-[13px] text-accent-text underline">{m.live_continuation()}</Link>}
           </div>
         )}
       </div>

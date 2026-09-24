@@ -18,6 +18,8 @@ export interface TurnActivity {
   status: string
   /** Server-decided initial state of the turn's "Worked" disclosure. */
   expandedByDefault?: boolean
+  /** Projected from the live stream: no server scene yet, so nothing folds and no answer is split out. */
+  live?: boolean
   sceneRows?: unknown[]
   history?: { ref: string; index: number; before: number }
 }
@@ -93,8 +95,6 @@ export function persistedActivity(row: VisibleMessage): TurnActivity {
   }
 }
 
-const LIVE_EXPANDED_OUTCOMES = new Set(['error', 'no_response', 'degraded', 'connection_lost', 'tool_limit_reached', 'compression_exhausted'])
-
 export function liveActivity(turn: LiveTurn): TurnActivity {
   const items: ActivityItem[] = []
   const seen = new Set<string>()
@@ -108,11 +108,8 @@ export function liveActivity(turn: LiveTurn): TurnActivity {
       if (call) items.push({ key: `tool:${call.id}`, kind: 'tool', call })
     }
   })
-  let finalAnswer = ''
-  const tail = items.at(-1)
-  const lastSegment = turn.segments.at(-1)
-  if (lastSegment?.kind === 'text' && !lastSegment.interim && turn.status === 'done' && (!turn.terminalState || turn.terminalState === 'completed') && tail?.kind === 'text') { finalAnswer = tail.text; items.pop() }
-  const status = !isTerminal(turn.status) ? 'running' : turn.status === 'done' ? (turn.terminalState && turn.terminalState !== 'completed' ? turn.terminalState : finalAnswer ? 'completed' : 'no_response') : turn.terminalState === 'interrupted' ? 'interrupted' : turn.status
-  // Live rendering until the server's scene arrives: a failed live turn keeps its partial work open.
-  return { key: turn.turnId ?? turn.streamId, items, finalAnswer, status, expandedByDefault: LIVE_EXPANDED_OUTCOMES.has(status) }
+  // Live rendering only: the server's scene decides the settled answer, outcome and fold. Until it replaces this view,
+  // a finished turn stays as it streamed, labelled with the outcome the server's terminal event reported.
+  const status = isTerminal(turn.status) ? (turn.terminalState ?? turn.status) : 'running'
+  return { key: turn.turnId ?? turn.streamId, items, finalAnswer: '', status, live: true }
 }

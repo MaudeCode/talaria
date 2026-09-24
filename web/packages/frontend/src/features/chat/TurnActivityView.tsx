@@ -93,7 +93,7 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
     const item = items[i]
     if (!item) break
     // Live work stays flat; tier-2 groups form once the turn settles, so rows never regroup while streaming.
-    if (item.kind === 'text' || item.kind === 'steering' || mode !== 'compact_worklog' || running) { blocks.push(render(item, i === items.length - 1)); i++; continue }
+    if (item.kind === 'text' || item.kind === 'steering' || mode !== 'compact_worklog' || running || activity.live) { blocks.push(render(item, i === items.length - 1)); i++; continue }
     const start = i
     while (i < items.length && items[i]?.kind !== 'text' && items[i]?.kind !== 'steering') i++
     const run = items.slice(start, i)
@@ -105,7 +105,7 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
   const hasWork = !!earlier || (running ? items.some((item) => item.kind !== 'text') : items.length > 0)
   return (
     <DisclosureTurnContext value={activity.key}>
-      {mode !== 'hide_all_activity' && (mode === 'compact_worklog' && hasWork
+      {mode !== 'hide_all_activity' && (mode === 'compact_worklog' && hasWork && (running || !activity.live)
         ? <Worklog calls={calls} status={status} expandedByDefault={activity.expandedByDefault === true}>{earlier}{blocks}</Worklog>
         : <>{earlier}{blocks}</>)}
       {mode === 'hide_all_activity' && items.filter((item) => item.kind === 'steering').map((item) => render(item, false))}

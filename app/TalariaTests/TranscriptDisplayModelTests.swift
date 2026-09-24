@@ -211,7 +211,8 @@ final class TranscriptMessageTests: XCTestCase {
         XCTAssertEqual(transcriptMessages.map(\.message.role), ["user", "assistant"])
     }
 
-    func testPreSteerActivityStaysExpandedUntilStreamCompletes() {
+    /// Only the server's scene folds work under "Worked"; the pre-steer part of a live turn has none, so it stays open.
+    func testPreSteerActivityHasNoServerSceneUntilTheTurnSettles() {
         let messages = [
             ChatMessage(role: "user", content: "Initial request", timestamp: 1, messageId: "u1"),
             ChatMessage(role: "assistant", content: "Working", timestamp: 2, messageId: "a1"),
@@ -226,9 +227,8 @@ final class TranscriptMessageTests: XCTestCase {
 
         let preSteerActivity = ChatViewModel.transcriptMessages(from: messages)[1]
 
-        XCTAssertTrue(preSteerActivity.endsBeforeSteeringHint)
-        XCTAssertFalse(preSteerActivity.shouldShowTurnSummary(hasActiveStream: true))
-        XCTAssertTrue(preSteerActivity.shouldShowTurnSummary(hasActiveStream: false))
+        XCTAssertEqual(preSteerActivity.message.messageId, "a1")
+        XCTAssertNil(AssistantActivityTimeline.authoritativeScene(message: preSteerActivity.message))
     }
 
     func testAuthoritativeConsumedSteerKeepsLaterUnresolvedHintDuringReconnect() throws {

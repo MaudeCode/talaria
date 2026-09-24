@@ -27,6 +27,15 @@ function View({ activity, mode = 'compact_worklog', scope = 'profile/s' }: { act
 }
 
 function tool(id: string) { return { event: 'tool', data: { id, name: 'read_file', args: { path: `${id}.txt` } } } as const }
+/** A settled turn as the server ships it: its scene decides the answer, the outcome and what folds. */
+function settled(scene: Record<string, unknown>): TurnActivity {
+  const message = { role: 'assistant', id: 'settled', content: '', _turn_id: 'turn', _anchor_activity_scene: { version: 'activity_scene_v1', terminal_state: 'completed', final_answer: '', ...scene } } as Message
+  return persistedActivity(groupAssistantTurns(projectMessages([message]))[0]!)
+}
+const proseRow = (id: string, text: string) => ({ row_id: id, role: 'prose', text })
+const toolRow = (id: string) => ({ row_id: `tool:${id}`, role: 'tool', tool: { id, name: 'read_file', preview: null, result: `Contents of ${id}`, done: true, is_error: false, duration: null, cost_usd: null } })
+type SceneRows = NonNullable<Message['_anchor_activity_scene']>['activity_rows']
+const rows = (...list: Record<string, unknown>[]): SceneRows => list.map((row, order_index) => ({ ...row, order_index })) as SceneRows
 function completed(id: string) { return { event: 'tool_complete', data: { id, name: 'read_file', result: `Contents of ${id}` } } as const }
 
 describe('turn worklog presentation', () => {
@@ -45,7 +54,13 @@ describe('turn worklog presentation', () => {
     expect(view.container.querySelector('[data-tool-id="a"]')).toBeVisible()
     expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(0)
     run.emit({ event: 'done', data: {} })
+    // Without the server's scene a finished turn stays as it streamed: the client never folds it.
     view.rerender(<View activity={liveActivity(run.turn)} />)
+    expect(view.container.querySelector('.tool-worklog-summary')).toBeNull()
+    expect(view.container.querySelector('[data-tool-id="a"]')).toBeVisible()
+    // The server's scene folds it.
+    const scene = settled({ final_answer: 'Final answer', activity_rows: rows({ row_id: 'r', role: 'reasoning', text: 'Planning' }, proseRow('p', 'Reading a.'), toolRow('a')) })
+    view.rerender(<View activity={scene} />)
     const summary = view.container.querySelector('.tool-worklog-summary')!
     expect(summary).toHaveAttribute('aria-expanded', 'false')
     expect(summary.textContent).toContain('Worked')
@@ -53,9 +68,9 @@ describe('turn worklog presentation', () => {
     expect(summary).toHaveAttribute('aria-expanded', 'true')
     expect(view.container.querySelector('[data-final-answer]')?.closest('.activity-body')).toBeNull()
     view.unmount()
-    const remount = render(<View activity={liveActivity(run.turn)} />)
+    const remount = render(<View activity={scene} />)
     expect(remount.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'true')
-    remount.rerender(<View scope="other/s" activity={liveActivity(run.turn)} />)
+    remount.rerender(<View scope="other/s" activity={scene} />)
     expect(remount.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'false')
   })
 
@@ -74,6 +89,9 @@ describe('turn worklog presentation', () => {
     run.emit({ event: 'token', data: { text: 'Done' } })
     run.emit({ event: 'done', data: {} })
     view.rerender(<View activity={liveActivity(run.turn)} />)
+    expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(0)
+    // Groups form from the server's settled scene.
+    view.rerender(<View activity={settled({ final_answer: 'Done', activity_rows: rows(proseRow('p1', 'Before tools'), toolRow('a'), toolRow('b'), proseRow('p2', 'Between batches'), toolRow('c')) })} />)
     fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
     expect(order()).toEqual(['Before tools', 'a', 'b', 'Between batches', 'c', 'Done'])
     const nested = view.container.querySelector('[data-activity-sequence-group] > button')!
@@ -87,10 +105,7 @@ describe('turn worklog presentation', () => {
   })
 
   it('folds normal completion, keeps errors readable, and never calls cancellation or no-answer completion Worked', () => {
-    const run = liveRun()
-    run.emit(tool('a')); run.emit(completed('a'))
-    run.emit({ event: 'done', data: {} })
-    const activity = liveActivity(run.turn)
+    const activity = settled({ terminal_state: 'no_response', expanded_by_default: true, activity_rows: rows(toolRow('a')) })
     const view = render(<View activity={activity} />)
     expect(view.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'true')
     expect(view.container.textContent).not.toContain('Worked')
@@ -108,7 +123,7 @@ describe('turn worklog presentation', () => {
     const run = liveRun()
     run.emit({ event: 'token', data: { text: 'Progress' } }); run.emit(tool('a'))
     run.emit({ event: 'token', data: { text: 'Answer' } }); run.emit({ event: 'done', data: {} })
-    const activity = liveActivity(run.turn)
+    const activity = settled({ final_answer: 'Answer', activity_rows: rows(proseRow('p', 'Progress'), toolRow('a')) })
     const view = render(<View activity={activity} mode="transparent_stream" />)
     expect(view.container.querySelector('.tool-worklog-summary')).toBeNull()
     expect([...view.container.querySelectorAll('.msg-body, [data-tool-id]')].map((el) => el.getAttribute('data-tool-id') ?? el.textContent)).toEqual(['Progress', 'a', 'Answer'])
@@ -116,11 +131,11 @@ describe('turn worklog presentation', () => {
     expect(view.container.textContent).toBe('Answer')
   })
 
-  it('does not promote interim-only or explicitly limited turns to successful completion', () => {
+  it('labels a finished live turn with the server\'s terminal outcome and never splits an answer out itself', () => {
     const run = liveRun()
     run.emit({ event: 'interim_assistant', data: { text: 'Still inspecting' } })
     run.emit({ event: 'done', data: {} })
-    expect(liveActivity(run.turn)).toMatchObject({ finalAnswer: '', status: 'no_response' })
+    expect(liveActivity(run.turn)).toMatchObject({ finalAnswer: '', status: 'completed', live: true })
     const limited = liveRun()
     limited.emit({ event: 'token', data: { text: 'Partial result' } })
     limited.emit({ event: 'done', data: { terminal_state: 'tool_limit_reached' } })
@@ -167,6 +182,29 @@ describe('turn worklog presentation', () => {
       expect(view.container.querySelector('.live-turn')).toBeNull()
       expect(screen.getByText('Tool budget exhausted; here is the saved explanation.')).toBeVisible()
       expect(screen.getByRole('status')).toHaveTextContent('Tool limit reached')
+      view.unmount()
+    } finally {
+      if (originalScroll) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScroll)
+      else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo')
+    }
+  })
+
+  it.each(['apperror', 'cancel'] as const)('replaces the live turn with the server\'s settled turn on %s', (event) => {
+    const session: Session = { session_id: 's', title: 'Failed turn', messages: [
+      { role: 'user', id: 'u', content: 'Inspect' },
+      { role: 'assistant', id: 'e', content: '**Error:** boom', _error: true, _turn_id: 'run', _anchor_activity_scene: {
+        version: 'activity_scene_v1', final_answer: '**Error:** boom', terminal_state: 'error', expanded_by_default: true, activity_rows: rows(toolRow('a')) } },
+    ] }
+    const run = liveRun()
+    run.emit(tool('a'))
+    run.emit(event === 'apperror' ? { event, data: { type: 'error', message: 'boom', session } } : { event, data: { session } })
+    const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
+    try {
+      const view = render(<Transcript rows={projectMessages(session.messages ?? [])} live={run.turn} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
+      expect(view.container.querySelector('.live-turn')).toBeNull()
+      expect(view.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getByRole('status')).toHaveTextContent('The response failed')
       view.unmount()
     } finally {
       if (originalScroll) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScroll)
