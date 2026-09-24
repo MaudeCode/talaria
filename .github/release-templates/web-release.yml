@@ -14,7 +14,7 @@ jobs:
       packages: write   # required: push to ghcr.io
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Check whether this is a stable or experimental release
       - name: Detect release channel
