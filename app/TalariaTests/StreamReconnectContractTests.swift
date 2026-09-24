@@ -411,9 +411,10 @@ final class StreamReconnectContractTests: APIClientTestCase {
         return Dictionary(uniqueKeysWithValues: queryItems.map { ($0.name, $0.value ?? "") })
     }
 
+    // Generous: a passing condition returns at once, and parallel-clone CI can starve the main actor for seconds.
     @MainActor
     private func waitUntil(
-        timeout: TimeInterval = 2,
+        timeout: TimeInterval = 10,
         _ condition: @MainActor () -> Bool
     ) async throws {
         let deadline = Date().addingTimeInterval(timeout)
