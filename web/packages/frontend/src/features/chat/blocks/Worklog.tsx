@@ -13,6 +13,7 @@ export type ActivityMode = 'compact_worklog' | 'transparent_stream' | 'hide_all_
 
 const DisclosureContext = createContext<{ choices: Record<string, boolean>; choose: (key: string, open: boolean) => void } | null>(null)
 export const DisclosureTurnContext = createContext('')
+const WorklogOpen = createContext(true)
 
 /** Renderer preferences only, scoped to profile/session and bounded to recent disclosures. */
 export function WorklogDisclosureProvider({ scope, children }: { scope: string; children: ReactNode }) {
@@ -49,6 +50,11 @@ export function terminalOutcomeLabel(status: string): string | null {
   }
 }
 
+/** Supporting rows of a turn-level Worklog; its prose stays in the transcript while these fold away. */
+export function WorklogDetail({ children }: { children: ReactNode }) {
+  return <div className="tool-worklog-list activity-detail" hidden={!useContext(WorklogOpen)}>{children}</div>
+}
+
 export function Worklog({ calls, status, children, sequenceKey }: { calls: ToolCardData[]; status: string; children: ReactNode; sequenceKey?: string }) {
   const locale = useLocale()
   const nested = sequenceKey !== undefined
@@ -76,7 +82,8 @@ export function Worklog({ calls, status, children, sequenceKey }: { calls: ToolC
           <span className={cn('tool-call-group-chevron as-caret', open && 'rotate-90')}><ChevronRight size={12} aria-hidden="true" /></span>
         </button>
       )}
-      <div id={bodyId} className="tool-call-group-body tool-worklog-body activity-body" hidden={!open}><div className="worklog"><div className="tool-worklog-list">{children}</div></div></div>
+      {/* A turn-level body stays visible: prose remains readable and each WorklogDetail hides its own rows. */}
+      <div id={bodyId} className={cn('tool-call-group-body tool-worklog-body', nested ? 'activity-body' : 'activity-flow')} hidden={nested && !open}><div className="worklog"><div className="tool-worklog-list"><WorklogOpen value={open}>{children}</WorklogOpen></div></div></div>
     </div>
   )
 }

@@ -26,7 +26,7 @@ test('expanded worklog and tool details are visually readable', async ({ page },
     await page.screenshot({ path: testInfo.outputPath('worklog-narrow.png'), fullPage: true })
     await page.setViewportSize({ width: 1280, height: 800 })
   }
-  const body = page.locator('.activity-body').first()
+  const body = page.locator('.activity-detail').first()
   await expect(body).toHaveCSS('opacity', '1')
   expect((await body.boundingBox())?.height).toBeGreaterThan(0)
   const tool = page.locator('[data-tool-id="read-a"]')
@@ -199,10 +199,14 @@ for (const name of ['explicitFinal', 'steering', 'activeSteering'] as const) {
     await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Scene boundary', messages: [sceneCases[name]] } } }))
     await page.goto(`/session/${sid}`)
     const summary = page.locator('.tool-worklog-summary').first()
-    await expect(summary).toBeVisible()
-    if (await summary.getAttribute('aria-expanded') === 'false') await summary.click()
+    // Prose and steering stay in the transcript, so a turn without tool or reasoning rows has no disclosure.
+    if (name === 'activeSteering') await expect(summary).toHaveCount(0)
+    else {
+      await expect(summary).toBeVisible()
+      if (await summary.getAttribute('aria-expanded') === 'false') await summary.click()
+    }
     if (name === 'explicitFinal') {
-      await expect(page.locator('.activity-body').getByText('Done.', { exact: true })).toHaveCount(0)
+      await expect(page.locator('.activity').getByText('Done.', { exact: true })).toHaveCount(0)
       await expect(page.getByText('Done.', { exact: true })).toHaveCount(1)
       await expect(page.locator('[data-tool-id="call-1"] > button')).toBeVisible()
     } else {
@@ -212,7 +216,6 @@ for (const name of ['explicitFinal', 'steering', 'activeSteering'] as const) {
       expect(kinds).toEqual(name === 'steering' ? ['prose', 'tool', 'steering', 'tool', 'prose'] : ['prose', 'steering'])
       if (name === 'activeSteering') {
         await expect(page.locator('[data-final-answer]')).toHaveCount(0)
-        await expect(summary).not.toContainText('Worked')
         await expect(page.getByText('First phase.', { exact: true })).toBeVisible()
       }
     }
@@ -297,14 +300,14 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
       const scroller = document.getElementById('messages')!
       const old = [...document.querySelectorAll('.msg-row')].find((el) => el.textContent?.includes('Earlier question 10'))!
       const tick = () => {
-        const body = document.querySelector('.assistant-turn:not(.live-turn):last-of-type .assistant-turn-blocks > .activity > .activity-body')
+        const details = [...document.querySelectorAll('.assistant-turn:not(.live-turn):last-of-type .assistant-turn-blocks > .activity .activity-detail')]
         const pill = document.querySelector('.live-run-status')
         const bodies = document.querySelectorAll('.live-turn .msg-body')
         const last = bodies[bodies.length - 1]
         w.samples.push({
           below: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
           old: old.getBoundingClientRect().top,
-          body: body ? body.getBoundingClientRect().height : -1,
+          body: details.length ? details.reduce((height, detail) => height + detail.getBoundingClientRect().height, 0) : -1,
           cover: pill && last ? last.getBoundingClientRect().bottom - pill.getBoundingClientRect().top : 0,
           phase: w.phase,
         })
@@ -331,7 +334,7 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
     expect(longest).toBeLessThanOrEqual(2)
     // The docked pill never covers the newest streamed line.
     expect(Math.max(...samples.filter((f) => f.phase === 'stream' && f.below <= 2).map((f) => f.cover))).toBeLessThanOrEqual(0)
-    // The finished work visibly folds into "Worked": its body shrinks through several heights instead of vanishing.
+    // The finished work visibly folds into "Worked": its supporting rows shrink through several heights instead of vanishing.
     const folding = [...new Set(samples.filter((f) => f.phase === 'settle' && f.body > 0).map((f) => Math.round(f.body)))]
     expect(folding.length).toBeGreaterThanOrEqual(3)
     expect(samples.at(-1)!.body).toBe(0)

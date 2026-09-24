@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Progress messages between tool steps stay visible after a reply finishes.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -74,7 +74,13 @@ describe('turn worklog presentation', () => {
     run.emit({ event: 'token', data: { text: 'Done' } })
     run.emit({ event: 'done', data: {} })
     view.rerender(<View activity={liveActivity(run.turn)} />)
-    fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
+    // Folding hides only supporting rows; the prose around them stays readable.
+    const summary = view.container.querySelector('.tool-worklog-summary')!
+    expect(summary).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByText('Before tools')).toBeVisible()
+    expect(screen.getByText('Between batches')).toBeVisible()
+    expect(view.container.querySelector('[data-tool-id="c"]')).not.toBeVisible()
+    fireEvent.click(summary)
     expect(order()).toEqual(['Before tools', 'a', 'b', 'Between batches', 'c', 'Done'])
     const nested = view.container.querySelector('[data-activity-sequence-group] > button')!
     expect(view.container.querySelectorAll('[data-activity-sequence-group]')).toHaveLength(1)
@@ -191,5 +197,29 @@ describe('turn worklog presentation', () => {
     const view = render(<View activity={persistedActivity(row)} />)
     expect(view.container.querySelector('.activity')).toBeNull()
     expect(screen.getByText('Answer')).toBeVisible()
+    view.rerender(<View activity={{ ...persistedActivity(row), items: [{ key: 'p', kind: 'text', text: 'Progress' }] }} />)
+    expect(view.container.querySelector('.activity')).toBeNull()
+    expect(screen.getByText('Progress')).toBeVisible()
+  })
+
+  it('keeps persisted prose visible outside a collapsed Worked without duplicating it', () => {
+    const row = groupAssistantTurns(projectMessages([
+      { role: 'assistant', id: 1, content: 'Before tools', tool_calls: [{ id: 'a', name: 'read_file', args: { path: 'a.txt' }, result: 'A' }] },
+      { role: 'assistant', id: 2, content: 'Between batches', tool_calls: [{ id: 'b', name: 'read_file', args: { path: 'b.txt' }, result: 'B' }] },
+      { role: 'assistant', id: 3, content: 'Final answer' },
+    ]))[0]!
+    const view = render(<View activity={persistedActivity(row)} />)
+    const summary = view.container.querySelector('.tool-worklog-summary')!
+    const prose = () => ['Before tools', 'Between batches', 'Final answer'].map((text) => screen.getAllByText(text).length)
+    expect(summary).toHaveAttribute('aria-expanded', 'false')
+    for (const text of ['Before tools', 'Between batches', 'Final answer']) expect(screen.getByText(text)).toBeVisible()
+    expect(view.container.querySelector('[data-tool-id="a"]')).not.toBeVisible()
+    expect(view.container.querySelector('[data-final-answer]')).toHaveTextContent('Final answer')
+    fireEvent.click(summary)
+    expect(view.container.querySelector('[data-tool-id="a"]')).toBeVisible()
+    expect(prose()).toEqual([1, 1, 1])
+    fireEvent.click(summary)
+    expect(screen.getByText('Between batches')).toBeVisible()
+    expect(prose()).toEqual([1, 1, 1])
   })
 })
