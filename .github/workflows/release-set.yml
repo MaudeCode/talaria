@@ -114,21 +114,31 @@ jobs:
         TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
         TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
+    # One simulator per concurrent gate: the selected App (its Web pairs share one warm checkout, so they run
+    # in turn) and the previously released App.
     - name: Prepare simulator pool
       env:
-        IOS_SIMULATOR_POOL_SIZE: '1'
+        IOS_SIMULATOR_POOL_SIZE: '2'
       run: app/scripts/setup-ios-test-pool
-    - name: Verify the selected App against every retained Web source
-      run: |
-        "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name currentContracts --output "$RUNNER_TEMP/contract-receipts/currentContracts.json" -- \
-          "$RELEASE_PYTHON" scripts/check-release-contracts.py --only app --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/current-contracts"
-    - name: Verify previously released App against selected Web
+    - name: Verify the selected and previously released App against the Web sources
+      env:
+        TALARIA_TEST_WORKER_COUNT: '1'
       run: |
         set -euo pipefail
-        previous=$(/usr/bin/plutil -extract previousAppSource raw "$RUNNER_TEMP/release-plan/plan.json")
-        web=$(/usr/bin/plutil -extract components.web.sourceRevision raw "$RUNNER_TEMP/release-plan/plan.json")
-        "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name previousAppContracts --output "$RUNNER_TEMP/contract-receipts/previousAppContracts.json" -- \
-          "$RELEASE_PYTHON" scripts/check-previous-app.py --app-ref "$previous" --web-ref "$web" --output "$RUNNER_TEMP/previous-app"
+        plan="$RUNNER_TEMP/release-plan/plan.json"
+        previous=$(/usr/bin/plutil -extract previousAppSource raw "$plan")
+        web=$(/usr/bin/plutil -extract components.web.sourceRevision raw "$plan")
+        # The gates are independent; run them together and fail if either fails.
+        "$RELEASE_PYTHON" releases/cli.py gate --plan "$plan" --name currentContracts --output "$RUNNER_TEMP/contract-receipts/currentContracts.json" -- \
+          "$RELEASE_PYTHON" scripts/check-release-contracts.py --only app --plan "$plan" --output "$RUNNER_TEMP/current-contracts" &
+        current=$!
+        "$RELEASE_PYTHON" releases/cli.py gate --plan "$plan" --name previousAppContracts --output "$RUNNER_TEMP/contract-receipts/previousAppContracts.json" -- \
+          "$RELEASE_PYTHON" scripts/check-previous-app.py --app-ref "$previous" --web-ref "$web" --output "$RUNNER_TEMP/previous-app" &
+        prior=$!
+        status=0
+        wait "$current" || status=1
+        wait "$prior" || status=1
+        exit "$status"
     - name: Stage contract-receipts for other runners
       id: store
       env:

@@ -3,6 +3,7 @@
 
 import argparse
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -19,6 +20,21 @@ TESTS = ["ContractReadinessTests", "APIClientAuthAndErrorTests", "APIClientSessi
 
 def commit(ref):
     return subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"], text=True).strip()
+
+
+def runner_avoids_clones(app_sha):
+    """Whether this App revision's own test-ios runs one worker on the leased simulator without cloning it.
+
+    Older runners clone even for one worker, and back-to-back runs on a reused checkout race the previous
+    clone's teardown, so only these revisions may share a warm checkout (TAL-304)."""
+    for path in ("app/scripts/test-ios", "scripts/test-ios"):
+        try:
+            script = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{app_sha}:{path}"], text=True,
+                                             stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            continue
+        return "(( TALARIA_TEST_WORKER_COUNT > 1 )) && parallel_testing=YES" in script
+    return False
 
 
 def probe_web(web_sha, responses, log):
@@ -41,6 +57,8 @@ def main():
     parser.add_argument("--web-ref", required=True)
     parser.add_argument("--shared-contracts", action="store_true", help="Also exercise monorepo App/Relay fixtures.")
     parser.add_argument("--output", type=Path, required=True, help="New directory for retained verification evidence.")
+    parser.add_argument("--app-checkout", type=Path,
+                        help="Reusable App checkout (and warm DerivedData) shared by consecutive runs of one App revision.")
     args = parser.parse_args()
     tests = [*TESTS, *(["SharedContractTests"] if args.shared_contracts else [])]
     app_sha, web_sha = commit(args.app_ref), commit(args.web_ref)
@@ -49,10 +67,16 @@ def main():
     responses = output / "responses.json"
     with (output / "web-probe.log").open("w") as log:
         probe_web(web_sha, responses, log)
-    with tempfile.TemporaryDirectory(prefix="talaria-previous-app-") as temporary:
-        checkout = Path(temporary) / "source"
-        subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(checkout)], check=True)
-        subprocess.run(["git", "-C", str(checkout), "checkout", "--quiet", "--detach", app_sha], check=True)
+    with contextlib.ExitStack() as stack:
+        if args.app_checkout and runner_avoids_clones(app_sha):
+            checkout = args.app_checkout.resolve()
+        else:
+            checkout = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="talaria-previous-app-"))) / "source"
+        reused = (checkout / ".git").exists() and subprocess.check_output(
+            ["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True).strip() == app_sha
+        if not reused:
+            subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(checkout)], check=True)
+            subprocess.run(["git", "-C", str(checkout), "checkout", "--quiet", "--detach", app_sha], check=True)
         app = checkout / "app" if (checkout / "app/Talaria.xcodeproj").is_dir() else checkout
         if not (app / "Talaria.xcodeproj").is_dir():
             raise ValueError("selected revision does not contain the App project")

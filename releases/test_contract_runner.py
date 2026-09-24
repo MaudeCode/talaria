@@ -32,6 +32,36 @@ class ContractRunnerTests(unittest.TestCase):
                 runner.verify_app_web(plan, Path("out"))
 
 
+    def test_app_web_pairs_share_one_warm_app_checkout(self):
+        # The selected App is the same source for every Web, so its pairs reuse one checkout (and DerivedData)
+        # instead of cold-building it per Web; the checkout is removed afterwards.
+        plan = {"components": {"app": {"sourceRevision": "a" * 40}, "web": {"sourceRevision": "b" * 40}},
+                "supportedWebSources": ["b" * 40, "c" * 40]}
+        checkouts = []
+
+        def run(command, **kwargs):
+            checkout = Path(command[command.index("--app-checkout") + 1])
+            checkouts.append(checkout)
+            self.assertTrue(checkout.parent.is_dir())
+
+        with patch.object(runner.subprocess, "run", side_effect=run):
+            runner.verify_app_web(plan, Path("out"))
+        self.assertEqual(len(checkouts), 2)
+        self.assertEqual(len(set(checkouts)), 1)
+        self.assertFalse(checkouts[0].parent.exists())
+
+    def test_warm_checkout_is_shared_only_when_the_app_runner_avoids_clones(self):
+        # A Web-only release keeps an older App revision whose own test-ios still clones the simulator for one
+        # worker; reusing its checkout back-to-back would race the previous clone's teardown.
+        spec = importlib.util.spec_from_file_location("previous_app", Path(__file__).resolve().parents[1] / "scripts/check-previous-app.py")
+        previous = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(previous)
+        runners = {"new": 'parallel_testing=NO\n(( TALARIA_TEST_WORKER_COUNT > 1 )) && parallel_testing=YES\n',
+                   "old": '-parallel-testing-enabled YES \\\n'}
+        for name, script in runners.items():
+            with self.subTest(runner=name), patch.object(previous.subprocess, "check_output", return_value=script):
+                self.assertEqual(previous.runner_avoids_clones("a" * 40), name == "new")
+
     def test_only_selector_splits_native_app_runs_from_portable_fixture_suites(self):
         plan = {"components": {"app": {"sourceRevision": "a" * 40}, "web": {"sourceRevision": "b" * 40},
                                "relay": {"sourceRevision": "c" * 40}}, "supportedWebSources": ["b" * 40, "d" * 40]}

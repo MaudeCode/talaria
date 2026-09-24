@@ -10,6 +10,14 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(script, "-collect-test-diagnostics never")
   end
 
+  def test_single_worker_runs_on_the_leased_simulator_without_cloning
+    script = File.read(File.expand_path("../scripts/test-ios", __dir__))
+
+    # A clone per run races the previous run's clone teardown on the same leased device.
+    assert_match(/\(\( TALARIA_TEST_WORKER_COUNT > 1 \)\) && parallel_testing=YES/, script)
+    assert_includes(script, '-parallel-testing-enabled "$parallel_testing"')
+  end
+
   def test_pr_ci_uses_a_unique_simulator_destination
     workflow = File.read(
       File.expand_path("../../.github/workflows/pr-ci.yml", __dir__),
