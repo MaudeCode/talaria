@@ -393,6 +393,18 @@ final class SharedContractTests: XCTestCase {
         let client = APIClient(baseURL: URL(string: "https://contract.example")!, session: session)
         let response = try await client.session(id: "contract-session")
         let messages = try XCTUnwrap(response.session?.messages)
+        // A release checks this App against every retained Web. A Web from before server-built scenes stamps no turn
+        // ids; against it every reply still yields its answer, from its stored scene or as plain text.
+        guard messages.contains(where: { $0.turnId != nil }) else {
+            let replies = messages.filter { $0.role == "assistant" }
+            XCTAssertFalse(replies.isEmpty)
+            for reply in replies {
+                let answer = AssistantActivityTimeline.authoritativeScene(message: reply)
+                    .flatMap { CompletedAssistantTurn(rows: $0.rows)?.finalAnswer } ?? reply.content
+                XCTAssertFalse((answer ?? "").isEmpty, "\(reply.messageId ?? "reply") renders no answer")
+            }
+            return
+        }
         func turn(_ messageID: String) throws -> CompletedAssistantTurn {
             let message = try XCTUnwrap(messages.first { $0.messageId == messageID })
             let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: message))
