@@ -22,6 +22,21 @@ def commit(ref):
     return subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"], text=True).strip()
 
 
+def runner_avoids_clones(app_sha):
+    """Whether this App revision's own test-ios runs one worker on the leased simulator without cloning it.
+
+    Older runners clone even for one worker, and back-to-back runs on a reused checkout race the previous
+    clone's teardown, so only these revisions may share a warm checkout (TAL-304)."""
+    for path in ("app/scripts/test-ios", "scripts/test-ios"):
+        try:
+            script = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{app_sha}:{path}"], text=True,
+                                             stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            continue
+        return "(( TALARIA_TEST_WORKER_COUNT > 1 )) && parallel_testing=YES" in script
+    return False
+
+
 def probe_web(web_sha, responses, log):
     """Probe a Web source with the harness from its own revision.
 
@@ -53,7 +68,7 @@ def main():
     with (output / "web-probe.log").open("w") as log:
         probe_web(web_sha, responses, log)
     with contextlib.ExitStack() as stack:
-        if args.app_checkout:
+        if args.app_checkout and runner_avoids_clones(app_sha):
             checkout = args.app_checkout.resolve()
         else:
             checkout = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="talaria-previous-app-"))) / "source"
