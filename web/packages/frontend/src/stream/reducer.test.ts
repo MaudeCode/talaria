@@ -93,6 +93,16 @@ describe('stream reducer: consumed steering', () => {
     const kinds = s.turns[SID]!.segments.map((seg) => (seg.kind === 'steering' ? `steer:${seg.steerId}` : seg.kind === 'tool' ? `tool:${seg.toolId}` : seg.kind))
     expect(kinds).toEqual(['steer:s0', 'text', 'tool:ta', 'steer:s1', 'tool:tb'])
   })
+
+  it('keeps steers taken after the same tool in consumption order', () => {
+    let s = started()
+    s = ev(s, 'tool', { id: 'ta', name: 'read_file' })
+    s = ev(s, 'tool_complete', { id: 'ta', name: 'read_file', result: 'A' })
+    s = ev(s, 'tool', { id: 'tb', name: 'read_file' })
+    for (const id of ['s1', 's2']) s = ev(s, 'steer_consumed', { steer_id: id, text: id, after_tool_call_id: 'ta' })
+    const kinds = s.turns[SID]!.segments.map((seg) => (seg.kind === 'steering' ? `steer:${seg.steerId}` : seg.kind === 'tool' ? `tool:${seg.toolId}` : seg.kind))
+    expect(kinds).toEqual(['tool:ta', 'steer:s1', 'steer:s2', 'tool:tb'])
+  })
 })
 
 describe('stream reducer: idempotency and ownership', () => {

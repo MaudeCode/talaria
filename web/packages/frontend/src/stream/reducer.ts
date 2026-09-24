@@ -217,7 +217,9 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const id = event.data.steer_id ?? `${now}`
       if (stamped.segments.some((s) => s.kind === 'steering' && s.steerId === id)) return stamped
       const after = event.data.after_tool_call_id
-      const at = after ? stamped.segments.findIndex((s) => s.kind === 'tool' && s.toolId === after) + 1 : 0
+      let at = after ? stamped.segments.findIndex((s) => s.kind === 'tool' && s.toolId === after) + 1 : 0
+      // Steers the Agent took at the same point keep the server's consumption order.
+      while (stamped.segments[at]?.kind === 'steering') at += 1
       const segment: Segment = { kind: 'steering', steerId: id, text: event.data.text ?? '' }
       return { ...stamped, segments: [...stamped.segments.slice(0, at), segment, ...stamped.segments.slice(at)], pendingSteerLeftover: null }
     }
