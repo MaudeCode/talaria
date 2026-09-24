@@ -344,7 +344,8 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
     const createdAt = finite(m.timestamp)
     const at = createdAt === null ? {} : { created_at: createdAt }
     const commentary = codexCommentary(m)
-    const blockReasoning = Array.isArray(m.content) ? m.content.flatMap((part) => (isDict(part) && isReasoningBlock(part) ? [reasoningBlockText(part)] : [])) : []
+    // With tool_use blocks, reasoning blocks keep their place in the in-order walk below.
+    const blockReasoning = Array.isArray(m.content) && !hasToolUseBlocks(m) ? m.content.flatMap((part) => (isDict(part) && isReasoningBlock(part) ? [reasoningBlockText(part)] : [])) : []
     let reasoning = [str(m.reasoning_content), typeof m.reasoning === 'string' ? m.reasoning : '', str(m.thinking), ...blockReasoning].filter(Boolean).join('\n')
     for (const part of commentary) reasoning = reasoning.replace(part, '')
     reasoning = reasoning.replace(/\n{3,}/g, '\n\n').trim()
@@ -367,7 +368,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       } })
     }
     if (hasToolUseBlocks(m)) {
-      // Text and tool_use blocks stay in the order the model wrote them; such a row is never the final answer.
+      // Text, reasoning and tool_use blocks stay in the order the model wrote them; such a row is never the final answer.
       let chunk: unknown[] = []
       const flush = () => {
         const text = splitThinkingFromContent(messageText(chunk))[0]
@@ -375,6 +376,12 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
         chunk = []
       }
       for (const [i, part] of (m.content as unknown[]).entries()) {
+        if (isDict(part) && isReasoningBlock(part)) {
+          flush()
+          const text = reasoningBlockText(part).trim()
+          if (text) push({ row_id: `${ref}:reasoning:${String(i)}`, role: 'reasoning', text, titles: [], ...at })
+          continue
+        }
         if (!isDict(part) || part.type !== 'tool_use') { chunk.push(part); continue }
         flush()
         pushTool({ id: part.id, name: part.name, args: part.input ?? null }, i)

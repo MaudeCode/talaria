@@ -166,6 +166,17 @@ describe('buildTurnScene', () => {
     expect(scene.final_answer).toBe('You are in /work.')
   })
 
+  it('keeps reasoning blocks in place among text and tool_use blocks', () => {
+    const scene = buildTurnScene(turnOf([
+      { role: 'user', content: 'Go' },
+      { role: 'assistant', id: 1, content: [{ type: 'text', text: 'Listing.' }, { type: 'tool_use', id: 'a', name: 'ls', input: {} }, { type: 'thinking', thinking: 'Now read it.' }, { type: 'tool_use', id: 'b', name: 'cat', input: {} }] },
+      { role: 'assistant', id: 2, content: 'Read.' },
+    ]))!
+    expect((scene.activity_rows as Json[]).map((r) => [r.role, r.text ?? (r.tool as Json).id])).toEqual([
+      ['prose', 'Listing.'], ['tool', 'a'], ['reasoning', 'Now read it.'], ['tool', 'b'],
+    ])
+  })
+
   it('reads tool_result blocks from a user row as their calls\' results', () => {
     const scene = buildTurnScene(turnOf([
       { role: 'user', content: 'Search' },
@@ -231,6 +242,24 @@ describe('anchor scenes over HTTP', () => {
     expect(page.rows).toEqual(all.slice(0, all.length - 80))
     expect((page.rows as Json[])[0]).toMatchObject({ role: 'reasoning', text: 'step 0', order_index: 0 })
     expect(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')).toBe(stored)
+  })
+
+  it('redacts credentials in paged rows like the preview', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    const secret = 'sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
+    const calls = Array.from({ length: 90 }, (_, i) => [
+      { role: 'assistant', content: '', tool_calls: [{ id: `t${String(i)}`, name: 'terminal' }], _turn_id: 'run' },
+      { role: 'tool', tool_call_id: `t${String(i)}`, content: i === 0 ? `export KEY=${secret}` : 'ok', _turn_id: 'run' },
+    ]).flat()
+    session.messages = [{ role: 'user', content: 'Go', _turn_id: 'run' }, ...calls, { role: 'assistant', content: 'Done.', _turn_id: 'run' }]
+    s.deps.sessionStore.save(session)
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    const scene = (detail.messages as Json[]).at(-1)?._anchor_activity_scene as Json
+    const page = await json(await s.get(`/api/session/anchor-scene?session_id=${sid}&message_index=${String((detail.messages as Json[]).length - 1)}&before=${String(scene.activity_rows_offset)}&limit=80`))
+    const first = (page.rows as Json[])[0]?.tool as Json
+    expect(first.id).toBe('t0')
+    expect(JSON.stringify(page)).not.toContain(secret)
   })
 
   it('gives legacy rows the same turn ids in every window', async () => {
