@@ -1,5 +1,4 @@
 import { Link } from '@tanstack/react-router'
-import { LoaderCircle } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import type { LiveTurn } from '../../stream/reducer'
@@ -18,9 +17,9 @@ export function LiveTurnView({ turn, name, mode, userVisible }: { turn: LiveTurn
       <div className="assistant-turn-blocks">
         <TurnActivityView activity={activity} mode={mode} />
         {streaming && (
-          <div className="live-run-status flex items-center gap-2 text-[13px] text-muted" role="status" aria-live="polite">
-            <LoaderCircle size={14} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
-            <span className={cn(hasContent && 'sr-only')}>{turn.status === 'reconnecting' ? m.live_reconnecting() : m.live_streaming()}</span>
+          <div className="live-run-status flex items-center gap-2 text-muted" role="status" aria-live="polite">
+            <LaurelSpinner />
+            <span className={cn('live-run-label', hasContent && 'sr-only')}>{turn.status === 'reconnecting' ? m.live_reconnecting() : m.live_streaming()}</span>
           </div>
         )}
         {streaming && turn.tps !== null && <div className="mt-1 font-mono text-[11px] tabular-nums text-muted opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</div>}
@@ -38,5 +37,18 @@ export function LiveTurnView({ turn, name, mode, userVisible }: { turn: LiveTurn
         {!userVisible && turn.status === 'done' && <span className="sr-only" role="status">{m.done()}</span>}
       </div>
     </div>
+  )
+}
+
+/** Laurel-wreath activity indicator: ten leaves brighten in turn around the ring (styles in chat.css). */
+function LaurelSpinner() {
+  return (
+    <svg className="live-laurel" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+      {Array.from({ length: 10 }, (_, i) => (
+        <g key={i} transform={`rotate(${i * 36} 12 12)`}>
+          <ellipse className="laurel-leaf" style={{ animationDelay: `${(i - 10) / 10}s` }} cx="12" cy="4" rx="1.3" ry="2.9" transform="rotate(35 12 4)" fill="currentColor" />
+        </g>
+      ))}
+    </svg>
   )
 }

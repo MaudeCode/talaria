@@ -27,7 +27,10 @@ describe('live turn spinner', () => {
     expect(rest).toHaveLength(0)
     expect(status).toHaveAttribute('role', 'status')
     expect(status).toHaveTextContent('Responding…')
-    expect(status!.querySelector('svg')).toHaveClass('animate-spin', 'motion-reduce:animate-none')
+    const wreath = status!.querySelector('svg.live-laurel')!
+    expect(wreath).toHaveAttribute('width', '24')
+    expect(wreath.querySelectorAll('.laurel-leaf')).toHaveLength(10)
+    expect(status!.querySelector('.live-run-label')).toBeVisible()
   })
 
   it.each(['compact_worklog', 'transparent_stream', 'hide_all_activity'] as const)('keeps one spinner after all streamed content in %s', (mode) => {
@@ -40,8 +43,8 @@ describe('live turn spinner', () => {
     expect(all).toHaveLength(1)
     const status = all[0]!
     expect(status).toHaveAttribute('role', 'status')
-    expect(status.querySelector('svg')).toHaveClass('animate-spin')
-    expect(status.querySelector('.sr-only')).toHaveTextContent('Responding…')
+    expect(status.querySelector('svg.live-laurel')).not.toBeNull()
+    expect(status.querySelector('.live-run-label.sr-only')).toHaveTextContent('Responding…')
     for (const node of view.container.querySelectorAll('.msg-body, [data-tool-id]')) {
       expect(node.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     }
