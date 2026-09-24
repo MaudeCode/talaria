@@ -1139,6 +1139,64 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.messages.last?.steeringHintState, .waiting)
     }
 
+    @MainActor
+    func testReconnectSnapshotKeepsConsumedSteerTheServerAlreadySaved() async throws {
+        final class SteerIDBox: @unchecked Sendable { var value = "" }
+        let steerID = SteerIDBox()
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(
+                    #"{"session_id":"session-abc","stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/chat/steer":
+                return apiTestJSONResponse(
+                    #"{"accepted":true,"stream_id":"stream-123"}"#,
+                    for: request
+                )
+            case "/api/session":
+                // Mid-turn: the server saved the steer as it entered the stream, as a hidden row.
+                return apiTestJSONResponse(
+                    """
+                    {
+                      "session": {
+                        "session_id": "session-abc",
+                        "active_stream_id": "stream-123",
+                        "messages": [
+                          {"role":"user","content":"Initial request","message_id":"user-1","_turn_id":"stream-123"},
+                          {"role":"user","content":"Keep this live","_turn_id":"stream-123","_steer":{"steer_id":"\(steerID.value)","submitted_at":3,"consumed_at":4,"phase_duration":4}},
+                          {"role":"assistant","content":"Before hint. ","message_id":"assistant-server","_turn_id":"stream-123"}
+                        ]
+                      }
+                    }
+                    """,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("Before hint. "))
+        _ = await viewModel.submitStreamingMessage("Keep this live", behavior: .steer)
+        steerID.value = try XCTUnwrap(viewModel.messages.last(where: \.isLocalSteeringHint)?.messageId)
+        streamClient.emit(.steerConsumed(SteeringStreamEvent(steerId: steerID.value, text: "Keep this live")))
+        viewModel.suspendStreamForNavigation()
+
+        await viewModel.loadMessages()
+
+        // The server row stays hidden until the turn's scene arrives; the live hint keeps rendering the steer.
+        XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+        let hints = viewModel.messages.filter(\.isLocalSteeringHint)
+        XCTAssertEqual(hints.map(\.content), ["Keep this live"])
+        XCTAssertEqual(hints.first?.steeringHintState, .consumed)
+    }
+
     /// Issue #202: a queued slash message whose send fails must not be retried in a tight loop.
     /// This is the verify-first verdict test — it queues one message behind a live stream, makes
     /// every drained send fail, triggers the drain, and counts how many times the send is retried.

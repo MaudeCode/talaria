@@ -1749,8 +1749,9 @@ final class ChatViewModel {
         }
     }
 
-    /// The server persists a consumed steer as a `_steer` row when its turn settles, so a reload keeps only local hints
-    /// it has not persisted, after the in-flight turn's rows. A consumed hint survives only while its stream is live.
+    /// The server persists a steer as a hidden `_steer` row once the Agent takes it and renders it from the turn's
+    /// scene when the turn completes. While the stream is live the local hint is its only rendering, so every hint
+    /// survives; afterwards only hints the server has neither taken nor persisted do, after the in-flight turn's rows.
     nonisolated private static func preservingLocalSteeringTurns(
         _ loadedMessages: [ChatMessage],
         cachedMessages: [ChatMessage],
@@ -1762,8 +1763,10 @@ final class ChatViewModel {
         })
         let pendingHints = cachedMessages.filter { message in
             message.isLocalSteeringHint
-                && (streamIsActive || message.steeringHintState != .consumed)
-                && message.messageId.map(persistedSteerIDs.contains) != true
+                && (streamIsActive || (
+                    message.steeringHintState != .consumed
+                        && message.messageId.map(persistedSteerIDs.contains) != true
+                ))
         }
         return pendingHints.isEmpty ? loadedMessages : loadedMessages + pendingHints
     }

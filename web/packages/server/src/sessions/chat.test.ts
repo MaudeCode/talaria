@@ -474,6 +474,11 @@ describe('chat turns through the sidecar', () => {
     emitLive!({ event: 'steer_pending', data: { text: '' } })
     const live = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'steer_consumed' && (f.data as Json).steer_id === 'steer-b')
     expect(live.filter((f) => f.event === 'steer_consumed').map((f) => [(f.data as Json).steer_id, (f.data as Json).after_tool_call_id])).toEqual([['steer-a', 'ta'], ['steer-b', 'tb']])
+    // Saved as they enter the stream, before the turn settles: a mid-turn reload already has them.
+    const midTurn = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    expect((midTurn.messages as Json[]).filter((m) => m._steer).map((m) => [m.content, m._turn_id, (m._steer as Json).steer_id])).toEqual([
+      ['Check b too', streamId, 'steer-a'], ['then stop', streamId, 'steer-b'],
+    ])
     step[0]!()
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
     const done = frames.find((f) => f.event === 'done')?.data as Json

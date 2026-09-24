@@ -407,6 +407,7 @@ export class TurnRunner {
             }
             case 'steer_pending':
               for (const record of this.takeConsumedSteers(streamId, str(data.text), { keepLeftovers: true })) put('steer_consumed', record)
+              this.saveConsumedSteers(sessionId, streamId)
               return
             case 'tool':
               liveToolCalls.push({ name: data.name, args: data.args ?? {}, tid: str(data.tid), done: false })
@@ -1082,23 +1083,41 @@ export class TurnRunner {
   /**
    * Consumed steers become display-only `_steer` user rows at their causal place in the turn: after the tool results of
    * the call that had completed when the Agent took them (else right after the turn's prompt), in consumption order,
-   * each with the phase it ended. The turn's last reply carries the final phase. Leftover steers are not persisted.
+   * each with the phase it ended. Returns where the last phase starts. Replaces the turn's earlier placement, so the
+   * mid-turn save and the terminal one agree. Leftover steers are not persisted.
    */
-  private persistConsumedSteers(s: Session, streamId: string, startedAt: number | null, endedAt: number): void {
+  private placeConsumedSteers(s: Session, streamId: string, startedAt: number | null): number | null {
     const steers = this.consumedSteers.get(streamId) ?? []
-    this.consumedSteers.delete(streamId)
-    if (!steers.length) return
-    const round = (n: number) => Math.round(Math.max(0, n) * 1000) / 1000
+    if (!steers.length) return null
+    s.messages = s.messages.filter((m) => !(m._steer && m._turn_id === streamId))
     let boundary = typeof startedAt === 'number' && startedAt > 0 ? startedAt : steers[0]!.submitted_at
     for (const steer of steers) {
       s.messages.splice(steerInsertIndex(s.messages, streamId, steer.after_tool_call_id), 0, {
         role: 'user', content: steer.text, timestamp: steer.consumed_at, _turn_id: streamId,
-        _steer: { steer_id: steer.steer_id, submitted_at: steer.submitted_at, consumed_at: steer.consumed_at, phase_duration: round(steer.consumed_at - boundary) },
+        _steer: { steer_id: steer.steer_id, submitted_at: steer.submitted_at, consumed_at: steer.consumed_at, phase_duration: roundDuration(steer.consumed_at - boundary) },
       })
       boundary = steer.consumed_at
     }
+    return boundary
+  }
+
+  /** A steer is saved as it enters the stream, so a reload mid-turn already has it; the terminal save re-places it. */
+  private saveConsumedSteers(sessionId: string, streamId: string): void {
+    let s: Session
+    try { s = this.deps.store.get(sessionId) } catch { return }
+    if (s.active_stream_id !== streamId || this.placeConsumedSteers(s, streamId, s.pending_started_at) === null) return
+    try { this.deps.store.save(s, { touchUpdatedAt: false }) } catch (error) {
+      this.deps.log(`[webui] WARNING: failed to save consumed steer for ${sessionId}: ${(error as Error).message}`)
+    }
+  }
+
+  /** Terminal placement: the turn's rows are final now, and its last reply carries the final phase. */
+  private persistConsumedSteers(s: Session, streamId: string, startedAt: number | null, endedAt: number): void {
+    const boundary = this.placeConsumedSteers(s, streamId, startedAt)
+    this.consumedSteers.delete(streamId)
+    if (boundary === null) return
     const last = s.messages.findLast((m) => m.role === 'assistant' && m._turn_id === streamId)
-    if (last) last._final_phase_duration = round(endedAt - boundary)
+    if (last) last._final_phase_duration = roundDuration(endedAt - boundary)
   }
 
   /**
@@ -1237,6 +1256,10 @@ function dedupeContext(messages: Message[]): Message[] {
 export { HttpFailure }
 
 /** Where a consumed steer goes: past the tool results of the call it followed, else past the turn's prompt. */
+function roundDuration(seconds: number): number {
+  return Math.round(Math.max(0, seconds) * 1000) / 1000
+}
+
 function steerInsertIndex(messages: Message[], turnId: string, afterToolCallId: string | null): number {
   const callIds = (m: Message) => (Array.isArray(m.tool_calls) ? m.tool_calls : []).map((tc) => str((tc as Record<string, unknown>).id) || str((tc as Record<string, unknown>).call_id) || str((tc as Record<string, unknown>).tool_call_id))
   let at = afterToolCallId ? messages.findIndex((m) => m._turn_id === turnId && m.role === 'assistant' && callIds(m).includes(afterToolCallId)) : -1
