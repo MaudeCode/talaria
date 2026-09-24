@@ -49,9 +49,13 @@ jobs:
       contracts: ${{ steps.filter.outputs.contracts }}
       tooling: ${{ steps.filter.outputs.tooling }}
     steps:
+      # Classification needs history and trees for the merge-base and diff, not every historical blob;
+      # git fetches the few file contents it compares on demand (TAL-317).
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: scripts
       - name: Classify changed files
         working-directory: .
         id: filter
