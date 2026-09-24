@@ -231,7 +231,9 @@ class PublicationTests(unittest.TestCase):
                         self.assertEqual(step.get("env", {}).get("TALARIA_S3_SECRET_ACCESS_KEY"),
                                          "${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}", (name, step.get("name")))
         self.assertEqual(document["permissions"], {"contents": "read", "actions": "read"})
-        environments = {"relay-publish": "relay-production", "web-publication": "web-release",
+        # npm trusted publishing runs on the GitHub-hosted web-publication job; the GHCR push runs self-hosted in
+        # web-publish. Both publish Web, so both use the web-release environment.
+        environments = {"relay-publish": "relay-production", "web-publication": "web-release", "web-publish": "web-release",
                         "app-publish": "testflight", "publish-set": "release-set-publication"}
         secrets = {"relay-publish": {"CONVEX_DEPLOY_KEY"}, "app-publish": {
             "APP_STORE_CONNECT_ISSUER_ID", "APP_STORE_CONNECT_KEY_ID", "APP_STORE_CONNECT_PRIVATE_KEY"}}
@@ -243,7 +245,7 @@ class PublicationTests(unittest.TestCase):
             self.assertEqual(set(re.findall(r"secrets\.([A-Z0-9_]+)", json.dumps(job))) - store, secrets.get(name, set()))
             permissions = job.get("permissions", document["permissions"])
             self.assertEqual(permissions.get("contents"), "write" if name == "publish-set" else "read")
-            self.assertEqual(permissions.get("packages"), "write" if name == "web-publication" else None)
+            self.assertEqual(permissions.get("packages"), "write" if name == "web-publish" else None)
             self.assertEqual(permissions.get("id-token"), "write" if name == "web-publication" else None)
         jobs = document["jobs"]
         # The alternate dry/signed App build is deliberately skipped. Publication
@@ -257,6 +259,15 @@ class PublicationTests(unittest.TestCase):
         self.assertIn("build-gate", jobs["relay-publish"]["needs"])
         self.assertIn("relay-publish", jobs["web-publication"]["needs"])
         self.assertIn("web-publication", jobs["web-publish"]["needs"])
+        # The GitHub-hosted npm job cannot reach the private NAS: it never touches the store, and gets its
+        # tarballs from the Actions cache under the digest the self-hosted build job recorded.
+        hosted = json.dumps(jobs["web-publication"])
+        self.assertNotIn("TALARIA_S3", hosted)
+        self.assertNotIn("artifacts.py", hosted)
+        restore = next(step for step in jobs["web-publication"]["steps"] if "actions/cache/restore" in step.get("uses", ""))
+        self.assertIn("needs.web-build.outputs.npm_handoff_sha256", restore["with"]["key"])
+        self.assertIs(restore["with"]["fail-on-cache-miss"], True)
+        self.assertTrue(any("sha256sum --check" in step.get("run", "") for step in jobs["web-publication"]["steps"]))
         self.assertIn("web-publish", jobs["app-publish"]["needs"])
         self.assertEqual(set(jobs["publish-set"]["needs"]), {
             "prepare", "build-gate", "relay-publish", "web-publish", "app-publish"})
@@ -294,7 +305,7 @@ class PublicationTests(unittest.TestCase):
             "ios-release-build.yml": {"build": "RELEASE"},
             "release-set.yml": {name: "RELEASE" for name in (
                 "prepare", "contracts", "component-contracts", "agent", "relay-build", "web-build", "app-dry-build",
-                "candidate", "relay-publish", "web-publication", "app-publish", "publish-set")},
+                "candidate", "relay-publish", "web-publish", "app-publish", "publish-set")},
             "recover-cutover.yml": {"app": "RELEASE", "publish-set": "RELEASE"},
         }
         root = Path(__file__).resolve().parents[1]
@@ -644,8 +655,9 @@ class PublicationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 collect(root / "artifacts", root / "other")
 
-    def test_web_publication_preflights_npm_before_the_image_tag_is_pushed(self):
-        """An npm rejection must surface before `skopeo copy` publishes the GHCR tag."""
+    def test_web_publication_confirms_npm_before_the_image_tag_is_pushed(self):
+        """GHCR follows npm (published on the GitHub-hosted runner): a registry that does not serve the built
+        tarballs must stop the self-hosted job before `skopeo copy` publishes the GHCR tag."""
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "npm").mkdir()
@@ -659,14 +671,13 @@ class PublicationTests(unittest.TestCase):
             def run(args, **kwargs):
                 commands.append(args)
                 if args[:2] == ["npm", "view"]:
-                    # The version already exists with other bytes: immutable, so publication must be refused.
+                    # The registry serves other bytes under this version: the npm publication did not land as built.
                     return SimpleNamespace(returncode=0, stdout=json.dumps("sha512-other"), stderr="")
                 self.fail("unexpected command " + " ".join(args))
 
-            with patch.dict(os.environ, {"ACTIONS_ID_TOKEN_REQUEST_URL": "https://oidc.invalid", "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "synthetic",
-                                         "GITHUB_ACTOR": "bot", "GH_TOKEN": "t"}), \
+            with patch.dict(os.environ, {"GITHUB_ACTOR": "bot", "GH_TOKEN": "t"}), \
                     patch("publish.subprocess.run", side_effect=run), patch("publish.write") as write:
-                with self.assertRaisesRegex(ValueError, "different contents"):
+                with self.assertRaisesRegex(ValueError, "readback differs"):
                     publish.web(plan, build, root, root / "out.json")
             self.assertFalse([args for args in commands if args[0] == "skopeo"])
             write.assert_not_called()

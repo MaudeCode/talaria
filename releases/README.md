@@ -77,6 +77,13 @@ its exact live responses reach the Mac `test` job as a same-run artifact whose
 SHA-256 travels in the probe job's outputs, and the App's real request,
 decoding and SSE contract classes run against them from one build-for-testing.
 
+The one GitHub-hosted job, npm publication, cannot reach the private NAS. The
+self-hosted `web-build` job hands it only the plan, the build receipt and the npm
+tarballs through the Actions cache, keyed by their SHA-256, which travels in job
+outputs and is checked on restore; the GHCR push and the publication receipt stay
+on the self-hosted `web-publish` job. Both Web jobs run the workflow's own
+`publish.py`, as Relay does, so a publication fix applies to an existing release.
+
 Release handoffs cross runners through the self-hosted NAS S3 endpoint; GitHub
 artifact storage is not used (`test_publication.py` rejects any
 `upload-artifact`/`download-artifact` step). `scripts/s3-artifact` is the
