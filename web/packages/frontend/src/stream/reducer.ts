@@ -134,8 +134,8 @@ function appendReasoning(segments: Segment[], text: string, titles: string[] | n
 }
 
 let toolSeq = 0
-function toolIdFor(data: { id?: string | undefined; call_id?: string | undefined; tool_call_id?: string | undefined; name?: string | undefined }, turn: LiveTurn, completing: boolean): string {
-  const explicit = data.id ?? data.call_id ?? data.tool_call_id
+function toolIdFor(data: { id?: string | undefined; call_id?: string | undefined; tool_call_id?: string | undefined; tid?: string | undefined; name?: string | undefined }, turn: LiveTurn, completing: boolean): string {
+  const explicit = data.id ?? data.call_id ?? data.tool_call_id ?? data.tid
   if (explicit) return explicit
   if (completing) {
     // Match the oldest still-running call with the same name (legacy upsertLiveToolCall semantics).

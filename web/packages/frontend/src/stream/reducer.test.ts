@@ -94,6 +94,16 @@ describe('stream reducer: consumed steering', () => {
     expect(kinds).toEqual(['steer:s0', 'text', 'tool:ta', 'steer:s1', 'tool:tb'])
   })
 
+  it('places a steer after the tool the server names by its `tid`', () => {
+    let s = started()
+    s = ev(s, 'tool', { tid: 'ta', name: 'read_file' })
+    s = ev(s, 'tool_complete', { tid: 'ta', name: 'read_file', preview: 'A' })
+    s = ev(s, 'tool', { tid: 'tb', name: 'read_file' })
+    s = ev(s, 'steer_consumed', { steer_id: 's1', text: 'check b', after_tool_call_id: 'ta' })
+    const kinds = s.turns[SID]!.segments.map((seg) => (seg.kind === 'steering' ? `steer:${seg.steerId}` : seg.kind === 'tool' ? `tool:${seg.toolId}` : seg.kind))
+    expect(kinds).toEqual(['tool:ta', 'steer:s1', 'tool:tb'])
+  })
+
   it('keeps steers taken after the same tool in consumption order', () => {
     let s = started()
     s = ev(s, 'tool', { id: 'ta', name: 'read_file' })
