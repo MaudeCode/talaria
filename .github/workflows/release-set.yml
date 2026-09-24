@@ -242,11 +242,9 @@ jobs:
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
   relay-build:
-    needs:
-    - prepare
-    - contracts
-    - component-contracts
-    - agent
+    # Builds consume only the release plan, so they run alongside the gates and each other; build-gate
+    # joins every gate and build before anything publishes (TAL-319).
+    needs: prepare
     if: needs.prepare.outputs.relay_changed == 'true'
     runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 30
@@ -280,14 +278,10 @@ jobs:
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
   web-build:
-    needs:
-    - prepare
-    - contracts
-    - component-contracts
-    - agent
-    - relay-build
-    if: ${{ !cancelled() && needs.prepare.outputs.web_changed == 'true' && needs.contracts.result == 'success' && needs.component-contracts.result == 'success' && needs.agent.result == 'success'
-      && (needs.relay-build.result == 'success' || needs.relay-build.result == 'skipped') }}
+    # Builds consume only the release plan, so they run alongside the gates and each other; build-gate
+    # joins every gate and build before anything publishes (TAL-319).
+    needs: prepare
+    if: needs.prepare.outputs.web_changed == 'true'
     runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 90
     steps:
@@ -333,16 +327,10 @@ jobs:
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
   app-dry-build:
-    needs:
-    - prepare
-    - contracts
-    - component-contracts
-    - agent
-    - relay-build
-    - web-build
-    if: ${{ !cancelled() && inputs.dry_run && needs.prepare.outputs.app_changed == 'true' && needs.contracts.result == 'success' && needs.component-contracts.result
-      == 'success' && needs.agent.result == 'success' && (needs.relay-build.result == 'success' || needs.relay-build.result == 'skipped')
-      && (needs.web-build.result == 'success' || needs.web-build.result == 'skipped') }}
+    # Builds consume only the release plan, so they run alongside the gates and each other; build-gate
+    # joins every gate and build before anything publishes (TAL-319).
+    needs: prepare
+    if: inputs.dry_run && needs.prepare.outputs.app_changed == 'true'
     runs-on: maude-mac
     timeout-minutes: 90
     steps:
@@ -430,16 +418,10 @@ jobs:
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
   app-signed-build:
-    needs:
-    - prepare
-    - contracts
-    - component-contracts
-    - agent
-    - relay-build
-    - web-build
-    if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.app_changed == 'true' && needs.contracts.result == 'success' && needs.component-contracts.result
-      == 'success' && needs.agent.result == 'success' && (needs.relay-build.result == 'success' || needs.relay-build.result == 'skipped')
-      && (needs.web-build.result == 'success' || needs.web-build.result == 'skipped') }}
+    # Builds consume only the release plan, so they run alongside the gates and each other; build-gate
+    # joins every gate and build before anything publishes (TAL-319).
+    needs: prepare
+    if: ${{ !inputs.dry_run && needs.prepare.outputs.app_changed == 'true' }}
     uses: ./.github/workflows/ios-release-build.yml
     secrets: inherit
     with:
