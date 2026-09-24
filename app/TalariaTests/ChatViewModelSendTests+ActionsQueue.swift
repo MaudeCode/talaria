@@ -1425,7 +1425,7 @@ extension ChatViewModelSendTests {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let message = try decoder.decode(ChatMessage.self, from: Data(#"""
-        {"role":"assistant","content":"Done.","message_id":"assistant-long","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"Done.","activity_rows_offset":3,"activity_scene_ref":"ref","activity_rows":[{"row_id":"r3","order_index":3,"role":"prose","text":"Fourth"},{"row_id":"r4","order_index":4,"role":"reasoning","text":"Fifth"}]}}
+        {"role":"assistant","content":"Done.","message_id":"assistant-long","_turn_id":"run-1","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"Done.","activity_rows_offset":3,"activity_scene_ref":"ref","activity_rows":[{"row_id":"r3","order_index":3,"role":"prose","text":"Fourth"},{"row_id":"r4","order_index":4,"role":"reasoning","text":"Fifth"}]}}
         """#.utf8))
         let transcriptMessage = TranscriptMessage(
             loadedIndex: 7,
@@ -1448,5 +1448,18 @@ extension ChatViewModelSendTests {
         // A loaded turn is not fetched again.
         await viewModel.loadEarlierSceneRows(for: transcriptMessage)
         XCTAssertEqual(requests.count, 2)
+
+        // A regenerated reply at the same position is a new server turn: it never shows the previous turn's rows.
+        let regenerated = try decoder.decode(ChatMessage.self, from: Data(#"""
+        {"role":"assistant","content":"Redone.","_turn_id":"run-2","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"Redone.","activity_rows_offset":3,"activity_rows":[]}}
+        """#.utf8))
+        let regeneratedMessage = TranscriptMessage(
+            loadedIndex: 7,
+            renderID: "transcript:7",
+            anchorID: "assistant-long",
+            message: regenerated,
+            assistantSegments: [TranscriptAssistantSegment(anchorID: "assistant-long", message: regenerated)]
+        )
+        XCTAssertTrue(viewModel.earlierSceneRows(for: regeneratedMessage).isEmpty)
     }
 }
