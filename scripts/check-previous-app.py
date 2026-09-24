@@ -37,6 +37,18 @@ def runner_avoids_clones(app_sha):
     return False
 
 
+def disable_simulator_clones(app):
+    """Run an older App's own test-ios on the leased simulator itself when only one worker is requested.
+
+    Those runners hardcode parallel testing, which clones the simulator even for one worker and races the
+    previous run's clone teardown (TAL-323). Only a disposable checkout is edited."""
+    runner = app / "scripts/test-ios"
+    script = runner.read_text()
+    if "-parallel-testing-enabled YES" not in script:
+        raise ValueError("older App runner no longer declares -parallel-testing-enabled YES; update the TAL-323 shim")
+    runner.write_text(script.replace("-parallel-testing-enabled YES", "-parallel-testing-enabled NO"))
+
+
 def probe_web(web_sha, responses, log):
     """Probe a Web source with the harness from its own revision.
 
@@ -80,6 +92,8 @@ def main():
         app = checkout / "app" if (checkout / "app/Talaria.xcodeproj").is_dir() else checkout
         if not (app / "Talaria.xcodeproj").is_dir():
             raise ValueError("selected revision does not contain the App project")
+        if not runner_avoids_clones(app_sha) and os.environ.get("TALARIA_TEST_WORKER_COUNT", "2") == "1":
+            disable_simulator_clones(app)
         if args.shared_contracts:
             web_fixture = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{web_sha}:contracts/fixtures/web-session.json"])
             (checkout / "contracts/fixtures/web-session.json").write_bytes(web_fixture)
