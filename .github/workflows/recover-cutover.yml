@@ -132,6 +132,9 @@ jobs:
           "$RELEASE_PYTHON" releases/cli.py assemble --complete --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" \
             --receipts "$RUNNER_TEMP/receipts" --notes "$RUNNER_TEMP/recovered/release-plan/notes" \
             --output "$RUNNER_TEMP/completed/release-set.json" "${options[@]}"
+          # Releases attach to existing tags; GitHub refuses GITHUB_TOKEN a workflow-changing target_commitish (TAL-340).
+          source=$(jq -r .releaseSet "$RUNNER_TEMP/recovered/release-plan/plan.json")
+          git ls-remote --exit-code origin "refs/tags/release-set-${source}" >/dev/null || git push origin "${source}:refs/tags/release-set-${source}"
           PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" finalize \
             --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" --manifest "$RUNNER_TEMP/completed/release-set.json" \
             --directory "$RUNNER_TEMP/recovered" "${options[@]}"
