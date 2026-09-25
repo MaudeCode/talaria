@@ -111,9 +111,11 @@ def path_suites(path):
         return {"web_server"}
     if path.startswith("relay/tests/"):
         return {"relay"}
-    documentation = (path.count("/") <= 1 or path.startswith((
-        "docs/", "app/docs/", "web/docs/", "relay/docs/", ".agents/skills/", ".github/ISSUE_TEMPLATE/")))
-    if (documentation and path.endswith((".md", ".markdown", ".rst"))) or path in ("LICENSE", "web/NOTICE"):
+    docs_directory = path.startswith(("docs/", "app/docs/", "web/docs/", "relay/docs/"))
+    documentation = path.count("/") <= 1 or docs_directory or path.startswith((".agents/skills/", ".github/ISSUE_TEMPLATE/"))
+    if ((documentation and path.endswith((".md", ".markdown", ".rst")))
+            or (docs_directory and path.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif")))
+            or path in ("LICENSE", "web/NOTICE")):
         return set()
     if path.startswith("contracts/") or path in ("web/contract_versions.json", "relay/convex/releaseInfo.json"):
         return CONSUMERS

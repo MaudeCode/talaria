@@ -108,6 +108,10 @@ class RoutingTests(unittest.TestCase):
             with self.subTest(paths=paths):
                 self.assertEqual(routing.affected(paths), expected)
 
+    def test_documentation_image_selects_no_suites(self):
+        self.assertEqual(routing.affected(["web/docs/pr-media/tal-346/after-desktop.png"]), set())
+        self.assertEqual(routing.affected(["web/icon.png"]), {"web_server", "web_frontend", "docker", "contracts"})
+
     def test_real_diffs_include_renames_and_full_push_range(self):
         with tempfile.TemporaryDirectory(prefix="talaria-ci-routing-") as temporary:
             root = Path(temporary)
