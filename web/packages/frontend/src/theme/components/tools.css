@@ -37,6 +37,7 @@
 .tool-worklog-list .tool-card-icon{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex:0 0 18px;color:var(--muted);opacity:.42}
 .tool-worklog-list .tool-card-icon svg{width:14px;height:14px}
 .tool-worklog-list .tool-card-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-family:inherit;font-size:var(--message-body-font-size);font-weight:400;line-height:var(--message-body-line-height);letter-spacing:0;position:relative;opacity:.56}
+.tool-worklog-list .tool-card[data-tool-error="1"] .tool-card-icon,.tool-worklog-list .tool-card[data-tool-error="1"] .tool-card-icon svg,.tool-worklog-list .tool-card[data-tool-error="1"] .tool-card-name{color:var(--error);opacity:.85}
 .tool-worklog-list .tool-card-result pre{margin:0}
 .tool-worklog-list > .thinking-card{margin:0;max-width:none;border:0;border-radius:0;background:transparent}
 .tool-worklog-list > .thinking-card .thinking-card-header{display:flex;align-items:center;gap:7px;padding:3px 8px;margin-left:-8px;border-radius:7px;color:var(--muted);font-size:var(--message-body-font-size);font-weight:400;line-height:var(--message-body-line-height);opacity:.56}

@@ -50,7 +50,7 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   const messages = [
     { role: 'user', id: 1, content: 'Inspect the files' },
     { role: 'assistant', id: 2, content: 'First pass', tool_calls: [
-      { id: 'a', name: 'read_file', args: { path: 'a.txt' }, result: 'A contents' },
+      { id: 'a', name: 'read_file', args: { path: 'a.txt' }, result: 'A failed', is_error: true },
     ] },
     { role: 'assistant', id: 3, content: 'Second pass', tool_calls: [
       { id: 'b', name: 'read_file', args: { path: 'b.txt' }, result: 'B contents' },
@@ -65,7 +65,7 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
     ['server_turn_started', { session_id: sid, stream_id: 'worklog-run', user_message_id: 1 }],
     ['token', { text: 'First pass' }],
     ['tool', { id: 'a', name: 'read_file', args: { path: 'a.txt' } }],
-    ['tool_complete', { id: 'a', name: 'read_file', result: 'A contents' }],
+    ['tool_complete', { id: 'a', name: 'read_file', result: 'A failed', is_error: true }],
     ['token', { text: 'Second pass' }],
     ['tool', { id: 'b', name: 'read_file', args: { path: 'b.txt' } }],
     ['tool', { id: 'c', name: 'read_file', args: { path: 'c.txt' } }],
@@ -102,6 +102,19 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   await expect(groupLabel).toHaveText('Verifying results')
   await expect(page.locator('[data-tool-id="a"] > button')).toBeVisible()
   await expect(page.locator('[data-activity-sequence-group] [data-tool-id="a"]')).toHaveCount(0)
+  const failureColors = await page.locator('[data-tool-id="a"]').evaluate((row) => {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--error)'
+    row.append(probe)
+    const colors = {
+      label: getComputedStyle(row.querySelector('.tool-card-name-label')!).color,
+      icon: getComputedStyle(row.querySelector('.tool-card-icon svg')!).color,
+      error: getComputedStyle(probe).color,
+    }
+    probe.remove()
+    return colors
+  })
+  expect(failureColors).toEqual({ label: failureColors.error, icon: failureColors.error, error: failureColors.error })
   await expect(page.locator('[data-tool-id="b"] > button')).not.toBeVisible()
   await expect(page.locator('[data-tool-id="c"] > button')).not.toBeVisible()
   await expect(group.locator('.thinking-card')).toHaveAttribute('data-reasoning-active', '1')
@@ -135,7 +148,7 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
     await expect(page.locator(`[data-tool-id="${id}"]`)).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   }
   await page.locator('[data-tool-id="a"] > button').click()
-  await expect(page.getByText('A contents', { exact: true })).toBeVisible()
+  await expect(page.getByText('A failed', { exact: true })).toBeVisible()
   await expect(page.locator('[data-tool-id="a"] .tool-card-detail')).toHaveCSS('opacity', '1')
   const order = await page.locator('.live-turn .msg-body, .live-turn [data-tool-id]').evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-tool-id') ?? n.textContent))
   expect(order).toEqual(['First pass', 'a', 'Second pass', 'b', 'c'])

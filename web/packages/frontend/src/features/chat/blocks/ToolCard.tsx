@@ -42,7 +42,7 @@ export function ToolCard({ call, timestamp }: { call: ToolCardData; timestamp?: 
   const args = pretty(call.args)
   const result = call.result !== null && call.result !== undefined ? pretty(call.result) : call.preview ?? ''
   return (
-    <div className={cn('tool-card-row tool-card my-1 rounded-lg border border-border-subtle bg-surface-subtle text-[13px]', call.isError && 'border-error/40', !call.done && 'tool-card-running')} data-tool-id={call.id} data-tool-kind={kind} data-tool-done={call.done ? '1' : '0'}>
+    <div className={cn('tool-card-row tool-card my-1 rounded-lg border border-border-subtle bg-surface-subtle text-[13px]', call.isError && 'border-error/40', !call.done && 'tool-card-running')} data-tool-id={call.id} data-tool-kind={kind} data-tool-done={call.done ? '1' : '0'} data-tool-error={call.isError ? '1' : undefined}>
       <button type="button" className="tool-card-header flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-text" aria-expanded={open} onClick={toggle}>
         <ChevronRight size={14} className={cn('tool-card-toggle shrink-0 text-muted transition-transform', open && 'rotate-90')} aria-hidden="true" />
         <span className="tool-card-icon"><ToolKindIcon kind={kind} /></span>
