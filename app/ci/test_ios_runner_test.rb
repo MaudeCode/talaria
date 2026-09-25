@@ -29,7 +29,7 @@ class TestIOSRunnerTest < Minitest::Test
     refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
   end
 
-  def test_pr_ci_runs_ui_tests_with_two_workers
+  def test_pr_ci_runs_pr_smoke_without_clones_and_main_ui_with_two_workers
     workflow = File.read(
       File.expand_path("../../.github/workflows/pr-ci.yml", __dir__),
       encoding: "UTF-8"
@@ -47,7 +47,9 @@ class TestIOSRunnerTest < Minitest::Test
       testable.include?('BlueprintName = "TalariaUITests"')
     end
 
-    assert_includes(workflow, "TEST_WORKER_COUNT: ${{ github.event_name == 'pull_request' && 4 || 2 }}")
+    assert_includes(workflow, "TEST_WORKER_COUNT: ${{ github.event_name == 'pull_request' && 1 || 2 }}")
+    assert_includes(workflow, "(( TEST_WORKER_COUNT > 1 )) && parallel_testing=YES")
+    assert_includes(workflow, '-parallel-testing-enabled "${parallel_testing}"')
     assert_includes(ui_testable, 'parallelizable = "YES"')
     assert_equal(26, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
     # CI skips the measurement-only UI classes and the scheduled UI Performance
