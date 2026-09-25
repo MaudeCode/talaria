@@ -845,12 +845,12 @@ describe('published release sets (test_tal203_published_releases.py)', () => {
   })
 
   it('marks only unreachable, slow, or overloaded GitHub answers as transient', async () => {
-    const answer = (status: number): typeof fetch => (() => Promise.resolve(new Response('{}', { status }))) as typeof fetch
+    const answer = (status: number): typeof fetch => (() => Promise.resolve(new Response('{}', { status })))
     const transient = async (f: typeof fetch): Promise<boolean> => {
       try { await githubJson(f, {})('/releases', { asset: false }) } catch (error) { return (error as ReleaseUnavailable).transient }
       throw new Error('expected a failure')
     }
-    expect(await transient((() => Promise.reject(new TypeError('fetch failed'))) as typeof fetch)).toBe(true)
+    expect(await transient((() => Promise.reject(new TypeError('fetch failed'))))).toBe(true)
     expect(await transient(answer(502))).toBe(true)
     expect(await transient(answer(429))).toBe(true)
     expect(await transient(answer(404))).toBe(false)
