@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Live work groups related reasoning and tool activity under quiet, readable status rows.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

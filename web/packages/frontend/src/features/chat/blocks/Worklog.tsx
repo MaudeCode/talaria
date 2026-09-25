@@ -49,7 +49,7 @@ export function terminalOutcomeLabel(status: string): string | null {
   }
 }
 
-export function Worklog({ calls, status, children, sequenceKey, expandedByDefault = false }: { calls: ToolCardData[]; status: string; children: ReactNode; sequenceKey?: string; expandedByDefault?: boolean }) {
+export function Worklog({ calls, status, children, sequenceKey, active = false, activeLabel, expandedByDefault = false }: { calls: ToolCardData[]; status: string; children: ReactNode; sequenceKey?: string; active?: boolean; activeLabel?: string | undefined; expandedByDefault?: boolean }) {
   const locale = useLocale()
   const nested = sequenceKey !== undefined
   const running = status === 'running'
@@ -64,11 +64,11 @@ export function Worklog({ calls, status, children, sequenceKey, expandedByDefaul
   const byKind = new Map<string, number>()
   for (const c of calls) byKind.set(toolKind(c.name), (byKind.get(toolKind(c.name)) ?? 0) + 1)
   const failed = calls.filter((call) => call.isError).length
-  const summary = nested || (!running && status !== 'completed')
+  const summary = activeLabel || (nested || (!running && status !== 'completed')
     ? text.summaryJoin([...byKind.entries()].map(([kind, n]) => text.worklogSummary(kind, calls.some((c) => !c.done) ? 'running' : 'done', n))) || m.thinking_label()
-    : text.processedElapsed()
+    : text.processedElapsed())
   return (
-    <div className={cn('tool-group tool-worklog-group agent-activity-group activity', open && 'open', running && 'running', !open && 'tool-worklog-tool-group-collapsed')} data-tool-worklog-group="1" data-worklog-status={status} data-activity-sequence-group={nested ? '1' : undefined} data-open={open ? '1' : '0'}>
+    <div className={cn('tool-group tool-worklog-group agent-activity-group activity', nested && 'activity-sequence-group', open && 'open', running && 'running', !open && 'tool-worklog-tool-group-collapsed')} data-tool-worklog-group="1" data-worklog-status={status} data-activity-sequence-group={nested ? '1' : undefined} data-live-activity-current={active ? '1' : undefined} data-open={open ? '1' : '0'}>
       {!live && (
         <button type="button" className="tool-call-group-summary tool-worklog-summary activity-summary" aria-expanded={open} aria-controls={bodyId} onClick={toggle}>
           <span className="as-dot" aria-hidden="true" />

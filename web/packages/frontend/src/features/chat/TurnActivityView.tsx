@@ -6,8 +6,9 @@ import { Button } from '../../ui/Button'
 import { sceneItems } from './turnActivity'
 import { Markdown } from './render/Markdown'
 import { ReasoningBlock } from './blocks/ReasoningBlock'
-import { ToolCard } from './blocks/ToolCard'
+import { ToolCard, toolCardLabel } from './blocks/ToolCard'
 import { DisclosureTurnContext, terminalOutcomeLabel, Worklog, type ActivityMode } from './blocks/Worklog'
+import { useLocale } from '../../i18n/useLocale'
 import type { ActivityItem, TurnActivity } from './turnActivity'
 
 // The live turn's last rendered height, so the settled row that replaces it can fold from that height.
@@ -78,6 +79,7 @@ function ActivityHistory({ activity, history, mode, sessionId, scope }: { activi
 
 function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mode: ActivityMode; earlier?: ReactNode }) {
   const { items, finalAnswer, status } = activity
+  const locale = useLocale()
   const running = status === 'running'
   const outcome = terminalOutcomeLabel(status)
   const render = (item: ActivityItem, last: boolean): ReactNode => {
@@ -92,16 +94,20 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
   for (let i = 0; i < items.length;) {
     const item = items[i]
     if (!item) break
-    // Live work stays flat; tier-2 groups form once the turn settles, so rows never regroup while streaming.
-    if (item.kind === 'text' || item.kind === 'steering' || mode !== 'compact_worklog' || running || activity.live) { blocks.push(render(item, i === items.length - 1)); i++; continue }
+    if (item.kind === 'text' || item.kind === 'steering' || mode !== 'compact_worklog') { blocks.push(render(item, i === items.length - 1)); i++; continue }
     const start = i
     while (i < items.length && items[i]?.kind !== 'text' && items[i]?.kind !== 'steering') i++
     const run = items.slice(start, i)
     const contents = run.map((entry, j) => render(entry, start + j === items.length - 1))
-    blocks.push(run.length === 1 ? contents[0] : <Worklog key={item.key} sequenceKey={`sequence:${item.key}`} calls={run.flatMap((entry) => entry.kind === 'tool' ? [entry.call] : [])} status={status}>{contents}</Worklog>)
+    const active = running && i === items.length
+    const current = run.at(-1)
+    const activeLabel = active && current?.kind === 'tool'
+      ? toolCardLabel(current.call, locale)
+      : active && current?.kind === 'reasoning' ? current.titles?.at(-1) ?? m.voice_thinking() : undefined
+    blocks.push(run.length === 1 ? contents[0] : <Worklog key={item.key} sequenceKey={`sequence:${item.key}`} calls={run.flatMap((entry) => entry.kind === 'tool' ? [entry.call] : [])} status={status} active={active} activeLabel={activeLabel}>{contents}</Worklog>)
   }
   const calls = items.flatMap((item) => item.kind === 'tool' ? [item.call] : [])
-  // A settled turn shows "Worked" whenever the server sent rows for it; live work keeps plain streamed text flat.
+  // A settled turn shows "Worked" whenever the server sent rows for it; live work has no turn-level disclosure.
   const hasWork = !!earlier || (running ? items.some((item) => item.kind !== 'text') : items.length > 0)
   return (
     <DisclosureTurnContext value={activity.key}>

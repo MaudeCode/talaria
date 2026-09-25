@@ -31,11 +31,19 @@
 .activity.open > .activity-body{max-height:none;overflow:visible;opacity:1;margin-top:10px}
 .tool-worklog-list{--worklog-rail:24px;margin:3px 0 0 0;padding-left:0;border-left:0;background:transparent;display:flex;flex-direction:column;gap:1px}
 .tool-worklog-list .tool-card-row{margin:0}
+.tool-worklog-list .tool-card{margin:0;border:0;border-radius:0;background:transparent}
 .tool-worklog-list .tool-card-row + .tool-card-row{border-top:0}
+.tool-worklog-list .tool-card-header{display:flex;align-items:center;padding:3px 8px;margin-left:-8px;border-radius:7px;min-width:0;overflow:hidden;white-space:nowrap;gap:7px}
+.tool-worklog-list .tool-card-icon{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex:0 0 18px;color:var(--muted);opacity:.42}
+.tool-worklog-list .tool-card-icon svg{width:14px;height:14px}
+.tool-worklog-list .tool-card-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-family:inherit;font-size:var(--message-body-font-size);font-weight:400;line-height:var(--message-body-line-height);letter-spacing:0;position:relative;opacity:.56}
 .tool-worklog-list .tool-card-result pre{margin:0}
-[data-reasoning-active="1"] .thinking-card-header{opacity:1}
-[data-reasoning-active="1"] .thinking-card-label{color:transparent;background:linear-gradient(100deg,var(--muted) 34%,color-mix(in srgb,var(--text) 78%,var(--muted)) 50%,var(--muted) 66%);background-size:240% 100%;background-clip:text;-webkit-background-clip:text;animation:reasoning-title-glow var(--activity-glow-duration,4s) ease-in-out infinite}
-@media (prefers-reduced-motion:reduce){[data-reasoning-active="1"] .thinking-card-label{color:var(--muted);background:none;animation:none}}
+.tool-worklog-list > .thinking-card{margin:0;max-width:none;border:0;border-radius:0;background:transparent}
+.tool-worklog-list > .thinking-card .thinking-card-header{display:flex;align-items:center;gap:7px;padding:3px 8px;margin-left:-8px;border-radius:7px;color:var(--muted);font-size:var(--message-body-font-size);font-weight:400;line-height:var(--message-body-line-height);opacity:.56}
+.tool-worklog-list > .thinking-card .thinking-card-label{font-weight:400;letter-spacing:0}
+.tool-worklog-list .thinking-card[data-reasoning-active="1"] .thinking-card-header,.tool-worklog-list .tool-card-running .tool-card-name{opacity:1}
+.tool-worklog-list .thinking-card[data-reasoning-active="1"] .thinking-card-label,.tool-worklog-list .tool-card-running .tool-card-name-label,.activity-sequence-group[data-live-activity-current="1"] > .tool-worklog-summary .tool-worklog-label{color:transparent;background:linear-gradient(100deg,var(--muted) 34%,color-mix(in srgb,var(--text) 78%,var(--muted)) 50%,var(--muted) 66%);background-size:240% 100%;background-clip:text;-webkit-background-clip:text;animation:reasoning-title-glow var(--activity-glow-duration,4s) ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.tool-worklog-list .thinking-card[data-reasoning-active="1"] .thinking-card-label,.tool-worklog-list .tool-card-running .tool-card-name-label,.activity-sequence-group[data-live-activity-current="1"] > .tool-worklog-summary .tool-worklog-label{color:var(--muted);background:none;animation:none}}
 [data-anchor-scene-live-owner="1"] [data-anchor-scene-owner="1"] > .tool-worklog-summary{display:none !important}
 [data-anchor-scene-live-owner="1"] [data-anchor-scene-owner="1"] > .tool-worklog-body{padding-left:0}
 .tool-group{width:100%;max-width:100%;box-sizing:border-box;margin:0;padding:0;background:transparent;border:0}
