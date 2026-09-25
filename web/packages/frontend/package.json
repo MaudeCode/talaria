@@ -6,7 +6,7 @@
   "description": "Hermes WebUI browser application (TanStack Start SPA, React, TypeScript). Built output is committed under ../../static/dist and served by the Talaria Web server.",
   "scripts": {
     "dev": "vite dev",
-    "build": "node scripts/i18n-gate.mjs && npm run i18n:compile && tsc --noEmit -p tsconfig.json && eslint . && vite build && node scripts/finalize-dist.mjs && node scripts/build-sw.mjs",
+    "build": "node scripts/i18n-gate.mjs && npm run i18n:compile && npm run routes:generate && tsc --noEmit -p tsconfig.json && eslint . && vite build && node scripts/finalize-dist.mjs && node scripts/build-sw.mjs",
     "build:fast": "vite build && node scripts/finalize-dist.mjs && node scripts/build-sw.mjs",
     "check-dist": "node scripts/check-dist.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
