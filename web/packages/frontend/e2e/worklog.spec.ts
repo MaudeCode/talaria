@@ -42,7 +42,7 @@ test('expanded worklog and tool details are visually readable', async ({ page },
 })
 
 for (const limited of [false, true]) {
-test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, async ({ page }) => {
+test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, async ({ page }, testInfo) => {
   const sid = 'worklog-live'
   const closing = limited ? 'Tool budget exhausted; saved closing explanation.' : 'All files checked.'
   let finished = false
@@ -50,11 +50,14 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   const messages = [
     { role: 'user', id: 1, content: 'Inspect the files' },
     { role: 'assistant', id: 2, content: 'First pass', tool_calls: [
-      { id: 'a', name: 'read_file', args: { path: 'a.txt' }, result: 'A contents' },
-      { id: 'b', name: 'read_file', args: { path: 'b.txt' }, result: 'B contents' },
+      { id: 'a', name: 'read_file', args: { path: 'a.txt' }, result: 'A failed', is_error: true },
     ] },
-    { role: 'assistant', id: 3, content: 'Second pass', tool_calls: [{ id: 'c', name: 'read_file', args: { path: 'c.txt' } }] },
-    { role: 'assistant', id: 4, content: closing, ...(limited ? { _terminal_state: 'tool_limit_reached' } : {}) },
+    { role: 'assistant', id: 3, content: 'Second pass', tool_calls: [
+      { id: 'b', name: 'read_file', args: { path: 'b.txt' }, result: 'B contents' },
+      { id: 'c', name: 'read_file', args: { path: 'c.txt' }, result: 'C contents' },
+    ] },
+    { role: 'assistant', id: 4, content: '', reasoning: 'Verifying the second batch.' },
+    { role: 'assistant', id: 5, content: closing, ...(limited ? { _terminal_state: 'tool_limit_reached' } : {}) },
   ].map((m) => ({ ...m, _turn_id: 'worklog-run' }))
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Inspect the files', messages: finished ? asServer(messages) : messages.slice(0, 1), active_stream_id: finished ? null : 'worklog-run' } } }))
   await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'worklog-run', replay_available: true } }))
@@ -62,12 +65,13 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
     ['server_turn_started', { session_id: sid, stream_id: 'worklog-run', user_message_id: 1 }],
     ['token', { text: 'First pass' }],
     ['tool', { id: 'a', name: 'read_file', args: { path: 'a.txt' } }],
-    ['tool', { id: 'b', name: 'read_file', args: { path: 'b.txt' } }],
-    ['tool_complete', { id: 'a', name: 'read_file', result: 'A contents' }],
-    ['tool_complete', { id: 'b', name: 'read_file', result: 'B contents' }],
+    ['tool_complete', { id: 'a', name: 'read_file', result: 'A failed', is_error: true }],
     ['token', { text: 'Second pass' }],
+    ['tool', { id: 'b', name: 'read_file', args: { path: 'b.txt' } }],
     ['tool', { id: 'c', name: 'read_file', args: { path: 'c.txt' } }],
+    ['tool_complete', { id: 'b', name: 'read_file', result: 'B contents' }],
     ['tool_complete', { id: 'c', name: 'read_file', result: 'C contents' }],
+    ['reasoning', { text: 'Verifying the second batch.', titles: ['Verifying results'] }],
   ]
   let stream: ServerResponse | undefined
   const server = createServer((_request, response) => {
@@ -83,7 +87,6 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   await page.goto(`/session/${sid}`)
   const outer = page.locator('.live-turn > .assistant-turn-blocks > .activity')
   // Live work is inline with no turn-level "Responding…" disclosure; the status is a pill docked above the composer.
-  await expect(page.locator('[data-tool-id="c"] > button')).toBeVisible()
   await expect(outer.locator(':scope > button')).toHaveCount(0)
   await expect(page.locator('.live-turn').getByRole('button', { name: /Responding/ })).toHaveCount(0)
   await expect(page.locator('.live-turn .live-run-status')).toHaveCount(0)
@@ -91,27 +94,67 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   await expect(spinner).toHaveCount(1)
   await expect(spinner.locator('svg.live-laurel')).toBeVisible()
   await expect(spinner.locator('svg.live-laurel')).toHaveCSS('width', '24px')
-  // Reduced motion (the suite default) shows a still wreath and a plain label; otherwise the leaves and gold shimmer animate.
+  const group = page.locator('[data-activity-sequence-group]')
+  const groupLabel = group.locator(':scope > button .tool-worklog-label')
+  await expect(group).toHaveCount(1)
+  await expect(group).toHaveAttribute('data-live-activity-current', '1')
+  await expect(group.locator(':scope > button')).toHaveAttribute('aria-expanded', 'false')
+  await expect(groupLabel).toHaveText('Verifying results')
+  await expect(page.locator('[data-tool-id="a"] > button')).toBeVisible()
+  await expect(page.locator('[data-activity-sequence-group] [data-tool-id="a"]')).toHaveCount(0)
+  const failureColors = await page.locator('[data-tool-id="a"]').evaluate((row) => {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--error)'
+    row.append(probe)
+    const colors = {
+      label: getComputedStyle(row.querySelector('.tool-card-name-label')!).color,
+      icon: getComputedStyle(row.querySelector('.tool-card-icon svg')!).color,
+      error: getComputedStyle(probe).color,
+    }
+    probe.remove()
+    return colors
+  })
+  expect(failureColors).toEqual({ label: failureColors.error, icon: failureColors.error, error: failureColors.error })
+  await expect(page.locator('[data-tool-id="b"] > button')).not.toBeVisible()
+  await expect(page.locator('[data-tool-id="c"] > button')).not.toBeVisible()
+  await expect(group.locator('.thinking-card')).toHaveAttribute('data-reasoning-active', '1')
+  // Reduced motion (the suite default) keeps labels static; otherwise the active activity label shimmers.
   await expect(spinner.locator('.laurel-leaf').first()).toHaveCSS('animation-name', 'none')
+  await expect(groupLabel).toHaveCSS('animation-name', 'none')
+  await expect(groupLabel).toHaveCSS('background-image', 'none')
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await expect(spinner.locator('.laurel-leaf').first()).toHaveCSS('animation-name', 'laurel-leaf')
   await expect(spinner.locator('.live-run-label')).toHaveCSS('animation-name', 'reasoning-title-glow')
+  await expect(groupLabel).toHaveCSS('animation-name', 'reasoning-title-glow')
+  await expect(groupLabel).toHaveCSS('background-image', /linear-gradient/)
   await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect(groupLabel).toHaveCSS('background-image', 'none')
   const scrollerBox = (await page.locator('#messages').boundingBox())!
   const spinnerBox = (await spinner.boundingBox())!
   expect(Math.abs(spinnerBox.x + spinnerBox.width / 2 - (scrollerBox.x + scrollerBox.width / 2))).toBeLessThanOrEqual(2)
   expect(spinnerBox.y + spinnerBox.height).toBeLessThanOrEqual(scrollerBox.y + scrollerBox.height)
   expect(spinnerBox.y + spinnerBox.height).toBeGreaterThan(scrollerBox.y + scrollerBox.height - 60)
-  // Live work stays flat: every tool row is visible without opening a group.
-  await expect(page.locator('[data-activity-sequence-group]')).toHaveCount(0)
-  for (const id of ['a', 'b', 'c']) await expect(page.locator(`[data-tool-id="${id}"] > button`)).toBeVisible()
+  if (!limited && testInfo.project.name === 'desktop') {
+    await page.screenshot({ path: testInfo.outputPath('live-worklog-desktop.png'), fullPage: true })
+    await page.setViewportSize({ width: 800, height: 800 })
+    await page.screenshot({ path: testInfo.outputPath('live-worklog-narrow.png'), fullPage: true })
+    await page.setViewportSize({ width: 1280, height: 800 })
+  }
+  await group.locator(':scope > button').click()
+  for (const id of ['b', 'c']) await expect(page.locator(`[data-tool-id="${id}"] > button`)).toBeVisible()
+  for (const id of ['a', 'b', 'c']) {
+    await expect(page.locator(`[data-tool-id="${id}"]`)).toHaveCSS('border-top-width', '0px')
+    await expect(page.locator(`[data-tool-id="${id}"]`)).toHaveCSS('border-radius', '0px')
+    await expect(page.locator(`[data-tool-id="${id}"]`)).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  }
   await page.locator('[data-tool-id="a"] > button').click()
-  await expect(page.getByText('A contents', { exact: true })).toBeVisible()
+  await expect(page.getByText('A failed', { exact: true })).toBeVisible()
   await expect(page.locator('[data-tool-id="a"] .tool-card-detail')).toHaveCSS('opacity', '1')
   const order = await page.locator('.live-turn .msg-body, .live-turn [data-tool-id]').evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-tool-id') ?? n.textContent))
-  expect(order).toEqual(['First pass', 'a', 'b', 'Second pass', 'c'])
+  expect(order).toEqual(['First pass', 'a', 'Second pass', 'b', 'c'])
+  await group.locator(':scope > button').click()
   finished = true
-  stream?.write(`id: worklog-run:10\nevent: done\ndata: ${JSON.stringify({ session: { session_id: sid, title: 'Inspect the files', messages: asServer(messages) }, terminal_state: limited ? 'tool_limit_reached' : 'completed' })}\n\n`)
+  stream?.write(`id: worklog-run:${events.length + 1}\nevent: done\ndata: ${JSON.stringify({ session: { session_id: sid, title: 'Inspect the files', messages: asServer(messages) }, terminal_state: limited ? 'tool_limit_reached' : 'completed' })}\n\n`)
   await expect(page.locator('.live-turn')).toHaveCount(0)
   await expect(page.locator('.assistant-turn')).toHaveCount(1)
   if (limited) await expect(page.getByRole('status').filter({ hasText: 'Tool limit reached' })).toBeVisible()

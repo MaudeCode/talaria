@@ -11,7 +11,7 @@ export function ReasoningBlock({ text, titles, live = false, defaultOpen = false
   const latest = titles?.[titles.length - 1]
   if (!clean && !live && !latest) return null
   return (
-    <div className={cn('thinking-card', open && 'open', live && 'thinking-card-live')} data-live={live ? '1' : undefined}>
+    <div className={cn('thinking-card', open && 'open', live && 'thinking-card-live')} data-live={live ? '1' : undefined} data-reasoning-active={live ? '1' : undefined}>
       <div className="thinking-card-head-row">
         <button type="button" className="thinking-card-header" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           <span className="thinking-card-icon"><Lightbulb size={14} aria-hidden="true" /></span>

@@ -18,6 +18,11 @@ export interface ToolCardData {
   result: unknown
 }
 
+export function toolCardLabel(call: ToolCardData, locale: string): string {
+  const kind = toolKind(call.name)
+  return toolText(locale).actionLabel(kind, call.done ? 'done' : 'running', toolTarget(call.name, call.args), call.name, call.isError)
+}
+
 function pretty(value: unknown): string {
   if (value === null || value === undefined) return ''
   if (typeof value === 'string') return value
@@ -33,16 +38,15 @@ export function ToolCard({ call, timestamp }: { call: ToolCardData; timestamp?: 
   const locale = useLocale()
   const [open, toggle] = useDisclosure(`tool:${call.id}`, false)
   const kind = toolKind(call.name)
-  const target = toolTarget(call.name, call.args)
-  const label = toolText(locale).actionLabel(kind, call.done ? 'done' : 'running', target, call.name, call.isError)
+  const label = toolCardLabel(call, locale)
   const args = pretty(call.args)
   const result = call.result !== null && call.result !== undefined ? pretty(call.result) : call.preview ?? ''
   return (
-    <div className={cn('tool-card-row my-1 rounded-lg border border-border-subtle bg-surface-subtle text-[13px]', call.isError && 'border-error/40', !call.done && 'tool-card-running')} data-tool-id={call.id} data-tool-kind={kind} data-tool-done={call.done ? '1' : '0'}>
-      <button type="button" className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-text" aria-expanded={open} onClick={toggle}>
-        <ChevronRight size={14} className={cn('shrink-0 text-muted transition-transform', open && 'rotate-90')} aria-hidden="true" />
-        <ToolKindIcon kind={kind} />
-        <span className="min-w-0 flex-1 truncate">{label}</span>
+    <div className={cn('tool-card-row tool-card my-1 rounded-lg border border-border-subtle bg-surface-subtle text-[13px]', call.isError && 'border-error/40', !call.done && 'tool-card-running')} data-tool-id={call.id} data-tool-kind={kind} data-tool-done={call.done ? '1' : '0'} data-tool-error={call.isError ? '1' : undefined}>
+      <button type="button" className="tool-card-header flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-text" aria-expanded={open} onClick={toggle}>
+        <ChevronRight size={14} className={cn('tool-card-toggle shrink-0 text-muted transition-transform', open && 'rotate-90')} aria-hidden="true" />
+        <span className="tool-card-icon"><ToolKindIcon kind={kind} /></span>
+        <span className="tool-card-name min-w-0 flex-1 truncate"><span className="tool-card-name-label">{label}</span></span>
         {!call.done && <span className="tool-card-running-dot h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" aria-label={m.status_streaming()} />}
         {call.done && call.duration !== null && <span className="shrink-0 text-[11px] tabular-nums text-muted">{call.duration.toFixed(1)}s</span>}
         {timestamp && <span className="shrink-0 text-[11px] tabular-nums text-muted">{timestamp}</span>}
