@@ -17,7 +17,7 @@ WEB_BUILD = {"web_server", "web_frontend", "docker", "contracts"}
 JOBS = {"test": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
 WORKFLOWS = {
-    "pr-ci.yml": {"tooling"},
+    "pr-ci.yml": {"app", "tooling"},
     "web-verify.yml": {"web_server", "web_frontend", "tooling"},
     "web-docker-smoke.yml": {"docker", "tooling"},
     "relay-verify.yml": {"relay", "tooling"},

@@ -103,9 +103,8 @@ jobs:
       SCHEME: Talaria
       DERIVED_DATA_PATH: DerivedData
       RESULT_BUNDLE_PATH: TestResults.xcresult
-      # PRs run the unit tests and one smoke test on four clones. Main's full UI suite uses two: four
-      # clones launching UI test runners at once hit SpringBoard "Busy ... failed preflight" (TAL-333).
-      TEST_WORKER_COUNT: ${{ github.event_name == 'pull_request' && 4 || 2 }}
+      # PRs run the unit tests and launch smoke without simulator clones; main's full UI suite uses two workers.
+      TEST_WORKER_COUNT: ${{ github.event_name == 'pull_request' && 1 || 2 }}
       APP_TESTS_REQUIRED: ${{ needs.changes.result != 'success' || needs.changes.outputs.app != 'false' }}
       # PRs run the unit tests plus one launch smoke test; the full UI suite runs on main pushes (TAL-332).
       APP_UI_REQUIRED: ${{ github.event_name != 'pull_request' }}
@@ -213,6 +212,8 @@ jobs:
           for performance_class in ${PERFORMANCE_UI_TEST_CLASSES}; do
             test_options+=("-skip-testing:${performance_class}")
           done
+          parallel_testing=NO
+          (( TEST_WORKER_COUNT > 1 )) && parallel_testing=YES
           xcodebuild test-without-building \
             -project "${PROJECT_PATH}" \
             -scheme "${SCHEME}" \
@@ -223,7 +224,7 @@ jobs:
             -resultBundlePath "${RESULT_BUNDLE_PATH}" \
             -disableAutomaticPackageResolution \
             -collect-test-diagnostics never \
-            -parallel-testing-enabled YES \
+            -parallel-testing-enabled "${parallel_testing}" \
             -parallel-testing-worker-count "${TEST_WORKER_COUNT}" \
             "${test_options[@]}" \
             APP_IDENTIFIER_SUFFIX=.xctest \

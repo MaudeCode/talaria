@@ -94,7 +94,7 @@ class RoutingTests(unittest.TestCase):
             ([".github/workflows/release-set.yml"], {"tooling"}),
             ([".github/workflows/web-verify.yml"], {"web_server", "web_frontend", "tooling"}),
             ([".github/workflows/relay-verify.yml"], {"relay", "tooling"}),
-            ([".github/workflows/pr-ci.yml"], {"tooling"}),
+            ([".github/workflows/pr-ci.yml"], {"app", "tooling"}),
             (["scripts/changed-components.py"], {"tooling"}),
             (["scripts/new-unknown-tool.py"], ALL),
             (["new-component/runtime.rs"], ALL),
