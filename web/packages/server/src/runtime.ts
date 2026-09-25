@@ -580,6 +580,11 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     getJson: githubJson(lazyFetch, env),
     identity: { release: () => release, stamped: () => stampedRelease, runningSourceRevision: () => runningSourceRevision },
     webuiVersion: version,
+    // Describe again only while HEAD is still the running revision; a pending restart keeps the running label.
+    refreshWebuiVersion: () => {
+      if (!opts.version && runningSourceRevision && checkoutRevision(config.webRoot) === runningSourceRevision) deps.version = detectWebuiVersion(release, config.webRoot, (env.TALARIA_WEB_VERSION ?? '').trim() || packageVersion())
+      return deps.version
+    },
     agentDir: () => sidecar?.describe?.agent_dir ?? null,
     channel: () => normalizeChannel(settings.load().update_channel),
     agentChannel: () => normalizeChannel(settings.load().agent_update_channel),

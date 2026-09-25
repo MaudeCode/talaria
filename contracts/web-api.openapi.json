@@ -24289,6 +24289,9 @@
                             "ignored": {
                               "type": "boolean"
                             },
+                            "stale_check": {
+                              "type": "boolean"
+                            },
                             "current_version": {
                               "type": "string"
                             }
@@ -24391,6 +24394,9 @@
                               "type": "string"
                             },
                             "ignored": {
+                              "type": "boolean"
+                            },
+                            "stale_check": {
                               "type": "boolean"
                             },
                             "current_version": {
@@ -24570,6 +24576,9 @@
                             "ignored": {
                               "type": "boolean"
                             },
+                            "stale_check": {
+                              "type": "boolean"
+                            },
                             "current_version": {
                               "type": "string"
                             }
@@ -24672,6 +24681,9 @@
                               "type": "string"
                             },
                             "ignored": {
+                              "type": "boolean"
+                            },
+                            "stale_check": {
                               "type": "boolean"
                             },
                             "current_version": {

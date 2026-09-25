@@ -23,7 +23,7 @@ import { detectWebuiVersion, developmentInfo } from '../release.js'
 import { WEB_ROOT } from '../test/harness.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
-  applyAgentUpdate, applyWebUpdate, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
+  applyAgentUpdate, applyWebUpdate, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
   REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, WEB_BUILD_STEPS, WEB_SERVER_ENTRY, type BuildRun, type GetJson, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers,
 } from './updates.js'
 
@@ -216,6 +216,45 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect((await svc.apply('webui')).restart_scheduled).toBe(true)
     expect(restarts).toHaveLength(1)
     expect(s.commands.some((c) => c[0] === 'fetch' && c.includes('--tags'))).toBe(false)
+  })
+
+  it('main retries one transient fetch failure and fetches Web release tags', async () => {
+    const s = sourceInstall()
+    git(s.upstream, 'tag', '-a', 'web-v1.0.0', '-m', 'synthetic installed release', s.old)
+    let failures = 1
+    const flaky: GitRun = (args, cwd, t) => args[0] === 'fetch' && failures-- > 0 ? Promise.resolve({ ok: false, out: 'fatal: unable to access: Could not resolve host: github.com' }) : s.run(args, cwd, t)
+    const status = await checkWebUpdate(web(s.client), 'development', 'experimental', flaky, noReleases, s.identity)
+    expect(status).toMatchObject({ behind: 1, latest_sha: s.latest })
+    expect(status.error).toBeUndefined()
+    expect(git(s.client, 'tag', '--list', 'web-v*')).toBe('web-v1.0.0\nweb-v2.0.0')
+    expect(detectWebuiVersion(DEV, web(s.client))).toBe('web-v1.0.0')
+  })
+
+  it('a failed main fetch keeps the channel\'s last good status until the cache expires, then names the git error', async () => {
+    const s = sourceInstall()
+    let down = false
+    let now = 1000
+    const run: GitRun = (args, cwd, t) => down && args[0] === 'fetch' ? Promise.resolve({ ok: false, out: 'fatal: unable to access https://token@github.com/MaudeCode/talaria.git/: Could not resolve host: github.com' }) : s.run(args, cwd, t)
+    const logs: string[] = []
+    const svc = new UpdateService({
+      webRoot: web(s.client), git: run, getJson: s.getJson, identity: s.identity, webuiVersion: 'test', refreshWebuiVersion: () => 'web-v1.0.0', now: () => now,
+      agentDir: () => null, channel: () => 'experimental', includeAgent: () => false,
+      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), log: (line) => logs.push(line),
+    })
+    expect((await svc.check(true)).webui).toMatchObject({ behind: 1, current_version: 'web-v1.0.0' })
+    // A good Stable result must not evict the Experimental snapshot.
+    expect((await svc.check(true, false, 'stable')).webui).toMatchObject({ release_based: true })
+    down = true
+    now += 60
+    const kept = (await svc.check(true)).webui as Dict
+    expect(kept).toMatchObject({ behind: 1, stale_check: true, channel: 'experimental', release_based: false })
+    expect(kept.error).toBeUndefined()
+    expect(logs.some((l) => l.includes('webui fetch failed') && l.includes('Could not resolve host'))).toBe(true)
+    now += CACHE_TTL_S
+    const failed = (await svc.check(true)).webui as Dict
+    expect(failed).toMatchObject({ behind: null, stale_check: true })
+    expect(failed.error).toContain('Could not fetch origin/main: fatal: unable to access https://<redacted>@github.com')
   })
 
   it('automatically applies relevant Experimental main changes and retries active-chat blockers', async () => {
@@ -803,6 +842,23 @@ describe('published release sets (test_tal203_published_releases.py)', () => {
       const bad = ((): Promise<Response> => Promise.resolve(new Response(null, { status: 302, headers: { location } }))) as typeof fetch
       await expect(githubJson(bad, {})('/releases/assets/123', { asset: true })).rejects.toBeInstanceOf(ReleaseUnavailable)
     }
+  })
+
+  it('marks only unreachable, slow, or overloaded GitHub answers as transient', async () => {
+    const answer = (status: number): typeof fetch => (() => Promise.resolve(new Response('{}', { status })))
+    const transient = async (f: typeof fetch): Promise<boolean> => {
+      try { await githubJson(f, {})('/releases', { asset: false }) } catch (error) { return (error as ReleaseUnavailable).transient }
+      throw new Error('expected a failure')
+    }
+    expect(await transient((() => Promise.reject(new TypeError('fetch failed'))))).toBe(true)
+    expect(await transient(answer(502))).toBe(true)
+    expect(await transient(answer(429))).toBe(true)
+    expect(await transient(answer(404))).toBe(false)
+    const s = sourceInstall()
+    const down: GetJson = () => Promise.reject(new ReleaseUnavailable('GitHub answered 503', true))
+    expect(await checkWebUpdate(web(s.client), 'development', 'stable', s.run, down, s.identity)).toMatchObject({ stale_check: true, error: 'GitHub answered 503' })
+    const missing: GetJson = () => Promise.reject(new ReleaseUnavailable('GitHub answered 404'))
+    expect((await checkWebUpdate(web(s.client), 'development', 'stable', s.run, missing, s.identity)).stale_check).toBeUndefined()
   })
 
   it('selects by publication order, not response array order', async () => {

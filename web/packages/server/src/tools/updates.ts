@@ -119,6 +119,15 @@ function fetchFailureMessage(out: string, network: string): string {
   return NETWORK_FAILURES.some((s) => lower.includes(s)) ? network : `fetch failed: ${detail}`
 }
 
+/** One delayed retry absorbs a transient network blip; a lock conflict is not transient. */
+export const FETCH_RETRY_MS = 1000
+async function fetchWithRetry(git: GitRun, args: string[], cwd: string, timeoutMs: number): Promise<GitOutcome> {
+  const first = await git(args, cwd, timeoutMs)
+  if (first.ok || isGitLockError(first.out)) return first
+  await new Promise((r) => setTimeout(r, FETCH_RETRY_MS))
+  return git(args, cwd, timeoutMs)
+}
+
 function gitFailure(out: string, message: string): Dict {
   if (isGitLockError(out)) return { ok: false, lock_conflict: true, message: 'Web update is blocked by a repository lock. Wait for the other Git operation or inspect the checkout manually.' }
   return { ok: false, message }
@@ -149,7 +158,10 @@ const same = (a: unknown, b: unknown): boolean => canon(a) === canon(b)
 
 // ── published release sets ───────────────────────────────────────────────────
 
-export class ReleaseUnavailable extends Error {}
+/** `transient`: GitHub was unreachable, slow, or overloaded, so a retry can succeed; the rest describe published state. */
+export class ReleaseUnavailable extends Error {
+  constructor(message: string, readonly transient = false) { super(message) }
+}
 
 export type GetJson = (path: string, opts: { asset: boolean }) => Promise<unknown>
 
@@ -159,15 +171,18 @@ export function githubJson(fetchImpl: typeof fetch, env: Record<string, string |
     const headers: Record<string, string> = { Accept: asset ? 'application/octet-stream' : 'application/vnd.github+json', 'User-Agent': 'Talaria-Web', 'X-GitHub-Api-Version': '2026-03-10' }
     const token = (env.TALARIA_RELEASE_TOKEN ?? '').trim()
     if (token) headers.Authorization = `Bearer ${token}`
-    let res = await fetchImpl(API_ROOT + path, { headers, redirect: 'manual', signal: AbortSignal.timeout(5000) })
+    const send = async (url: string, init: RequestInit): Promise<Response> => {
+      try { return await fetchImpl(url, init) } catch (error) { throw new ReleaseUnavailable(`GitHub is unreachable: ${(error as Error).message}`, true) }
+    }
+    let res = await send(API_ROOT + path, { headers, redirect: 'manual', signal: AbortSignal.timeout(5000) })
     if (res.status >= 300 && res.status < 400) {
       const target = new URL(res.headers.get('location') ?? '', API_ROOT + path)
       if (target.protocol !== 'https:' || target.hostname !== 'release-assets.githubusercontent.com') throw new ReleaseUnavailable('Unexpected release download redirect')
       const anonymous = { ...headers }
       delete anonymous.Authorization
-      res = await fetchImpl(target.toString(), { headers: anonymous, signal: AbortSignal.timeout(5000) })
+      res = await send(target.toString(), { headers: anonymous, signal: AbortSignal.timeout(5000) })
     }
-    if (!res.ok) throw new ReleaseUnavailable(`GitHub answered ${String(res.status)}`)
+    if (!res.ok) throw new ReleaseUnavailable(`GitHub answered ${String(res.status)}`, res.status >= 500 || res.status === 429)
     const body = await readCapped(res, 2_000_000)
     if (!body) throw new ReleaseUnavailable('Release metadata exceeds the download limit')
     return JSON.parse(body.toString('utf8')) as unknown
@@ -181,7 +196,7 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
   const tagPattern = new RegExp(`^${channel === 'experimental' ? 'web-exp-v' : 'web-v'}${VERSION}$`)
   const deadline = now() + 15_000
   const fetchJson = (path: string, asset = false): Promise<unknown> => {
-    if (now() >= deadline) throw new ReleaseUnavailable('Release lookup exceeded its deadline; retry or update manually')
+    if (now() >= deadline) throw new ReleaseUnavailable('Release lookup exceeded its deadline; retry or update manually', true)
     return getJson(path, { asset })
   }
   const published: Dict[] = []
@@ -350,8 +365,11 @@ function mainStamp(root: string, id: ReleaseIdentity): string | null {
 }
 
 async function mainRevision(root: string, git: GitRun): Promise<[string | null, string]> {
-  const fetched = await git(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main'], root, 30_000)
+  const fetched = await fetchWithRetry(git, ['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main'], root, 30_000)
   if (!fetched.ok) return [null, fetched.out]
+  // Single-branch clones never receive tags, so `git describe` would name a stale Web release.
+  // Best effort and unforced: a conflicting local tag is kept and never fails the main fetch.
+  await git(['fetch', '--no-tags', 'origin', 'refs/tags/web-v*:refs/tags/web-v*', 'refs/tags/web-exp-v*:refs/tags/web-exp-v*'], root, 30_000)
   const source = await git(['rev-parse', 'refs/remotes/origin/main^{commit}'], root)
   return source.ok && SHA.test(source.out) ? [source.out, ''] : [null, '']
 }
@@ -381,7 +399,10 @@ async function checkMainUpdate(root: string | null, result: Dict, git: GitRun, i
   Object.assign(result, { branch: 'origin/main', release_based: false })
   if (root === null) return { ...result, manual_update: true, message: 'Main updates require an authenticated Talaria source checkout with Web under web/.' }
   const [source, error] = await mainRevision(root, git)
-  if (source === null) return { ...result, error: gitFailure(error, 'Could not fetch origin/main; check Git read access.').message }
+  if (source === null) {
+    const detail = sanitizeGitDiagnostic(error)
+    return { ...result, stale_check: true, error: gitFailure(error, detail ? `Could not fetch origin/main: ${detail}` : 'Could not fetch origin/main; check Git read access.').message }
+  }
   Object.assign(result, { latest_sha: source, latest_version: `main@${source.slice(0, 12)}` })
   const head = await git(['rev-parse', 'HEAD'], root)
   const status = await git(['status', '--porcelain', '--untracked-files=all'], root)
@@ -410,7 +431,7 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
   try {
     release = await publishedWebRelease(channel, getJson)
   } catch (error) {
-    if (error instanceof ReleaseUnavailable) return { ...result, manual_update: true, error: error.message }
+    if (error instanceof ReleaseUnavailable) return { ...result, manual_update: true, error: error.message, ...(error.transient ? { stale_check: true } : {}) }
     return { ...result, manual_update: true, error: 'Talaria release metadata is unavailable. Private repositories require TALARIA_RELEASE_TOKEN with Contents read access.' }
   }
   Object.assign(result, { latest_version: release.tag, latest_sha: release.sourceRevision, branch: release.tag, release_based: true, release_url: release.release_url, image: release.image })
@@ -680,7 +701,7 @@ async function isDirty(path: string, git: GitRun): Promise<boolean> {
 /** Fetch and compare the independently selected Agent channel. */
 export async function checkAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { name: 'agent', behind: null, no_git: true }
-  const fetched = await git(['fetch', 'origin', '--tags', '--force'], path, 15_000)
+  const fetched = await fetchWithRetry(git, ['fetch', 'origin', '--tags', '--force'], path, 15_000)
   if (!fetched.ok) {
     const message = fetched.out ? `fetch failed: ${sanitizeGitDiagnostic(fetched.out)}` : 'fetch failed'
     return { name: 'agent', channel, behind: null, error: message, stale_check: true, dirty: await isDirty(path, git) }
@@ -888,6 +909,8 @@ export interface UpdateServiceDeps {
   getJson: GetJson
   identity: ReleaseIdentity
   webuiVersion: string
+  /** Re-derive the installed Web version after a check (tags can arrive after startup); returns the current label. */
+  refreshWebuiVersion?: () => string
   agentDir: () => string | null
   channel: () => Channel
   agentChannel?: () => Channel
@@ -910,6 +933,7 @@ export class UpdateService {
   private readonly cache: Dict = { webui: null, agent: null, checked_at: 0, include_agent: true, channel: DEFAULT_CHANNEL, agent_channel: DEFAULT_CHANNEL }
   private checking: Promise<Dict> | null = null
   private checkingKey: string | null = null
+  private readonly lastGood = new Map<string, { at: number; result: Dict }>()
   private applying = false
   private autoTimer: NodeJS.Timeout | null = null
   private autoStarted = false
@@ -960,8 +984,10 @@ export class UpdateService {
     this.checkingKey = key
     this.checking = (async () => {
       try {
-        const webui = await checkWebUpdate(this.deps.webRoot, this.deps.webuiVersion, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm)
-        const agent = includeAgent ? await checkAgentUpdate(this.deps.agentDir(), this.git, agentChannel) : ignoredAgent()
+        const webui = this.keepLastGood('webui', channel, await checkWebUpdate(this.deps.webRoot, this.deps.webuiVersion, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm))
+        // The check may have fetched release tags the startup `git describe` never saw.
+        if (this.deps.refreshWebuiVersion) webui.current_version = this.deps.refreshWebuiVersion()
+        const agent = includeAgent ? this.keepLastGood('agent', agentChannel, await checkAgentUpdate(this.deps.agentDir(), this.git, agentChannel)) : ignoredAgent()
         if (agent.latest_sha) Object.assign(agent, agentWarning(agent, this.agentPolicy()))
         Object.assign(this.cache, { webui, agent, checked_at: this.now(), include_agent: includeAgent, channel, agent_channel: agentChannel })
         return { ...this.cache }
@@ -971,6 +997,18 @@ export class UpdateService {
       }
     })()
     return this.checking
+  }
+
+  /** A failed fetch (`stale_check`) keeps the channel's last good result until the cache TTL, so a network blip never flips the status; persistent failures surface. */
+  private keepLastGood(target: 'webui' | 'agent', channel: Channel, result: Dict): Dict {
+    const key = `${target}:${channel}`
+    if (!result.stale_check) {
+      if (!result.error) this.lastGood.set(key, { at: this.now(), result })
+      return result
+    }
+    this.deps.log(`[updates] ${target} fetch failed: ${str(result.error)}`)
+    const prior = this.lastGood.get(key)
+    return prior && this.now() - prior.at < CACHE_TTL_S ? { ...prior.result, stale_check: true } : result
   }
 
   startAutoApply(intervalMs = AUTO_UPDATE_INTERVAL_MS): void {
