@@ -96,6 +96,15 @@ describe('SystemSection "Check now"', () => {
     expect(await screen.findByText('Talaria Web update check failed')).toBeInTheDocument()
   })
 
+  it('does not keep a cached status from another channel when a poll fails', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ channel: 'stable', agent_channel: 'stable', webui: { behind: 0 }, agent: { behind: 0 } })
+    const qc = renderSystem()
+    expect(await screen.findByText('Talaria Web is up to date')).toBeInTheDocument()
+    vi.mocked(api.fetchUpdatesCheck).mockRejectedValue(new Error('Failed to fetch'))
+    await qc.refetchQueries({ queryKey: keys.updates.check })
+    expect(await screen.findByText('Talaria Web update check failed')).toBeInTheDocument()
+  })
+
   it.each([{ behind: 0 }, { behind: 1, manual_update: true }, { error: 'Web unavailable' }])('keeps Agent updates independent of Web status %j', async (webui) => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui, agent: { behind: 1 } })
     vi.mocked(api.applyUpdates).mockResolvedValue({ ok: true })

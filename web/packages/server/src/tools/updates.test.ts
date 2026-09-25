@@ -220,31 +220,35 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
 
   it('main retries one transient fetch failure and fetches Web release tags', async () => {
     const s = sourceInstall()
+    git(s.upstream, 'tag', '-a', 'web-v1.0.0', '-m', 'synthetic installed release', s.old)
     let failures = 1
     const flaky: GitRun = (args, cwd, t) => args[0] === 'fetch' && failures-- > 0 ? Promise.resolve({ ok: false, out: 'fatal: unable to access: Could not resolve host: github.com' }) : s.run(args, cwd, t)
     const status = await checkWebUpdate(web(s.client), 'development', 'experimental', flaky, noReleases, s.identity)
     expect(status).toMatchObject({ behind: 1, latest_sha: s.latest })
     expect(status.error).toBeUndefined()
-    expect(git(s.client, 'tag', '--list', 'web-v*')).toBe('web-v2.0.0')
+    expect(git(s.client, 'tag', '--list', 'web-v*')).toBe('web-v1.0.0\nweb-v2.0.0')
+    expect(detectWebuiVersion(DEV, web(s.client))).toBe('web-v1.0.0')
   })
 
-  it('a failed main fetch keeps the last good status until the cache expires, then names the git error', async () => {
+  it('a failed main fetch keeps the channel\'s last good status until the cache expires, then names the git error', async () => {
     const s = sourceInstall()
     let down = false
     let now = 1000
     const run: GitRun = (args, cwd, t) => down && args[0] === 'fetch' ? Promise.resolve({ ok: false, out: 'fatal: unable to access https://token@github.com/MaudeCode/talaria.git/: Could not resolve host: github.com' }) : s.run(args, cwd, t)
     const logs: string[] = []
     const svc = new UpdateService({
-      webRoot: web(s.client), git: run, getJson: noReleases, identity: s.identity, webuiVersion: 'test', now: () => now,
+      webRoot: web(s.client), git: run, getJson: s.getJson, identity: s.identity, webuiVersion: 'test', refreshWebuiVersion: () => 'web-v1.0.0', now: () => now,
       agentDir: () => null, channel: () => 'experimental', includeAgent: () => false,
       blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
       scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), log: (line) => logs.push(line),
     })
-    expect((await svc.check(true)).webui).toMatchObject({ behind: 1 })
+    expect((await svc.check(true)).webui).toMatchObject({ behind: 1, current_version: 'web-v1.0.0' })
+    // A good Stable result must not evict the Experimental snapshot.
+    expect((await svc.check(true, false, 'stable')).webui).toMatchObject({ release_based: true })
     down = true
     now += 60
     const kept = (await svc.check(true)).webui as Dict
-    expect(kept).toMatchObject({ behind: 1, stale_check: true })
+    expect(kept).toMatchObject({ behind: 1, stale_check: true, channel: 'experimental', release_based: false })
     expect(kept.error).toBeUndefined()
     expect(logs.some((l) => l.includes('webui fetch failed') && l.includes('Could not resolve host'))).toBe(true)
     now += CACHE_TTL_S

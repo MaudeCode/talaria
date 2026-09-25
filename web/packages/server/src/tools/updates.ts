@@ -903,6 +903,8 @@ export interface UpdateServiceDeps {
   getJson: GetJson
   identity: ReleaseIdentity
   webuiVersion: string
+  /** Re-derive the installed Web version after a check (tags can arrive after startup); returns the current label. */
+  refreshWebuiVersion?: () => string
   agentDir: () => string | null
   channel: () => Channel
   agentChannel?: () => Channel
@@ -925,7 +927,7 @@ export class UpdateService {
   private readonly cache: Dict = { webui: null, agent: null, checked_at: 0, include_agent: true, channel: DEFAULT_CHANNEL, agent_channel: DEFAULT_CHANNEL }
   private checking: Promise<Dict> | null = null
   private checkingKey: string | null = null
-  private readonly lastGood: Partial<Record<'webui' | 'agent', { at: number; channel: Channel; result: Dict }>> = {}
+  private readonly lastGood = new Map<string, { at: number; result: Dict }>()
   private applying = false
   private autoTimer: NodeJS.Timeout | null = null
   private autoStarted = false
@@ -977,6 +979,8 @@ export class UpdateService {
     this.checking = (async () => {
       try {
         const webui = this.keepLastGood('webui', channel, await checkWebUpdate(this.deps.webRoot, this.deps.webuiVersion, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm))
+        // The check may have fetched release tags the startup `git describe` never saw.
+        if (this.deps.refreshWebuiVersion) webui.current_version = this.deps.refreshWebuiVersion()
         const agent = includeAgent ? this.keepLastGood('agent', agentChannel, await checkAgentUpdate(this.deps.agentDir(), this.git, agentChannel)) : ignoredAgent()
         if (agent.latest_sha) Object.assign(agent, agentWarning(agent, this.agentPolicy()))
         Object.assign(this.cache, { webui, agent, checked_at: this.now(), include_agent: includeAgent, channel, agent_channel: agentChannel })
@@ -991,13 +995,14 @@ export class UpdateService {
 
   /** A failed fetch (`stale_check`) keeps the channel's last good result until the cache TTL, so a network blip never flips the status; persistent failures surface. */
   private keepLastGood(target: 'webui' | 'agent', channel: Channel, result: Dict): Dict {
+    const key = `${target}:${channel}`
     if (!result.stale_check) {
-      if (!result.error) this.lastGood[target] = { at: this.now(), channel, result }
+      if (!result.error) this.lastGood.set(key, { at: this.now(), result })
       return result
     }
     this.deps.log(`[updates] ${target} fetch failed: ${str(result.error)}`)
-    const prior = this.lastGood[target]
-    return prior?.channel === channel && this.now() - prior.at < CACHE_TTL_S ? { ...prior.result, stale_check: true } : result
+    const prior = this.lastGood.get(key)
+    return prior && this.now() - prior.at < CACHE_TTL_S ? { ...prior.result, stale_check: true } : result
   }
 
   startAutoApply(intervalMs = AUTO_UPDATE_INTERVAL_MS): void {
