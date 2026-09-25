@@ -23,7 +23,7 @@ import { detectWebuiVersion, developmentInfo } from '../release.js'
 import { WEB_ROOT } from '../test/harness.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
-  applyAgentUpdate, applyWebUpdate, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
+  applyAgentUpdate, applyWebUpdate, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
   REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, WEB_BUILD_STEPS, WEB_SERVER_ENTRY, type BuildRun, type GetJson, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers,
 } from './updates.js'
 
@@ -216,6 +216,41 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect((await svc.apply('webui')).restart_scheduled).toBe(true)
     expect(restarts).toHaveLength(1)
     expect(s.commands.some((c) => c[0] === 'fetch' && c.includes('--tags'))).toBe(false)
+  })
+
+  it('main retries one transient fetch failure and fetches Web release tags', async () => {
+    const s = sourceInstall()
+    let failures = 1
+    const flaky: GitRun = (args, cwd, t) => args[0] === 'fetch' && failures-- > 0 ? Promise.resolve({ ok: false, out: 'fatal: unable to access: Could not resolve host: github.com' }) : s.run(args, cwd, t)
+    const status = await checkWebUpdate(web(s.client), 'development', 'experimental', flaky, noReleases, s.identity)
+    expect(status).toMatchObject({ behind: 1, latest_sha: s.latest })
+    expect(status.error).toBeUndefined()
+    expect(git(s.client, 'tag', '--list', 'web-v*')).toBe('web-v2.0.0')
+  })
+
+  it('a failed main fetch keeps the last good status until the cache expires, then names the git error', async () => {
+    const s = sourceInstall()
+    let down = false
+    let now = 1000
+    const run: GitRun = (args, cwd, t) => down && args[0] === 'fetch' ? Promise.resolve({ ok: false, out: 'fatal: unable to access https://token@github.com/MaudeCode/talaria.git/: Could not resolve host: github.com' }) : s.run(args, cwd, t)
+    const logs: string[] = []
+    const svc = new UpdateService({
+      webRoot: web(s.client), git: run, getJson: noReleases, identity: s.identity, webuiVersion: 'test', now: () => now,
+      agentDir: () => null, channel: () => 'experimental', includeAgent: () => false,
+      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), log: (line) => logs.push(line),
+    })
+    expect((await svc.check(true)).webui).toMatchObject({ behind: 1 })
+    down = true
+    now += 60
+    const kept = (await svc.check(true)).webui as Dict
+    expect(kept).toMatchObject({ behind: 1, stale_check: true })
+    expect(kept.error).toBeUndefined()
+    expect(logs.some((l) => l.includes('webui fetch failed') && l.includes('Could not resolve host'))).toBe(true)
+    now += CACHE_TTL_S
+    const failed = (await svc.check(true)).webui as Dict
+    expect(failed).toMatchObject({ behind: null, stale_check: true })
+    expect(failed.error).toContain('Could not fetch origin/main: fatal: unable to access https://<redacted>@github.com')
   })
 
   it('automatically applies relevant Experimental main changes and retries active-chat blockers', async () => {

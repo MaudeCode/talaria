@@ -90,8 +90,9 @@ export function SystemSection() {
   const agentUpdate = updates.data?.agent
   const canApplyAgent = (agentUpdate?.behind ?? 0) > 0 && !agentUpdate?.error && !agentUpdate?.manual_update && !agentUpdate?.no_git && !bool('ignore_agent_updates') && !updates.data?.disabled
   const updatesOff = updates.data?.disabled === true
-  const webStatus = pathStatus(webUpdate, WEB, { off: updatesOff, failed: updates.isError, pending: updates.isPending, dirtyBlocks: true })
-  const agentStatus = pathStatus(agentUpdate, AGENT, { off: updatesOff || bool('ignore_agent_updates'), failed: updates.isError, pending: updates.isPending, dirtyBlocks: false })
+  // One failed poll is a transport blip, not a failed check: keep rendering the last server payload.
+  const webStatus = pathStatus(webUpdate, WEB, { off: updatesOff, failed: updates.isError && !updates.data, pending: updates.isPending, dirtyBlocks: true })
+  const agentStatus = pathStatus(agentUpdate, AGENT, { off: updatesOff || bool('ignore_agent_updates'), failed: updates.isError && !updates.data, pending: updates.isPending, dirtyBlocks: false })
   const heading = 'text-[15px] font-semibold text-text'
   return (
     <div className="flex flex-col gap-9" data-section="system">

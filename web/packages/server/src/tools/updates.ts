@@ -119,6 +119,15 @@ function fetchFailureMessage(out: string, network: string): string {
   return NETWORK_FAILURES.some((s) => lower.includes(s)) ? network : `fetch failed: ${detail}`
 }
 
+/** One delayed retry absorbs a transient network blip; a lock conflict is not transient. */
+export const FETCH_RETRY_MS = 1000
+async function fetchWithRetry(git: GitRun, args: string[], cwd: string, timeoutMs: number): Promise<GitOutcome> {
+  const first = await git(args, cwd, timeoutMs)
+  if (first.ok || isGitLockError(first.out)) return first
+  await new Promise((r) => setTimeout(r, FETCH_RETRY_MS))
+  return git(args, cwd, timeoutMs)
+}
+
 function gitFailure(out: string, message: string): Dict {
   if (isGitLockError(out)) return { ok: false, lock_conflict: true, message: 'Web update is blocked by a repository lock. Wait for the other Git operation or inspect the checkout manually.' }
   return { ok: false, message }
@@ -350,8 +359,11 @@ function mainStamp(root: string, id: ReleaseIdentity): string | null {
 }
 
 async function mainRevision(root: string, git: GitRun): Promise<[string | null, string]> {
-  const fetched = await git(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main'], root, 30_000)
+  const fetched = await fetchWithRetry(git, ['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main'], root, 30_000)
   if (!fetched.ok) return [null, fetched.out]
+  // Single-branch clones never receive tags, so `git describe` would name a stale Web release.
+  // Best effort and unforced: a conflicting local tag is kept and never fails the main fetch.
+  await git(['fetch', '--no-tags', 'origin', 'refs/tags/web-v*:refs/tags/web-v*', 'refs/tags/web-exp-v*:refs/tags/web-exp-v*'], root, 30_000)
   const source = await git(['rev-parse', 'refs/remotes/origin/main^{commit}'], root)
   return source.ok && SHA.test(source.out) ? [source.out, ''] : [null, '']
 }
@@ -381,7 +393,10 @@ async function checkMainUpdate(root: string | null, result: Dict, git: GitRun, i
   Object.assign(result, { branch: 'origin/main', release_based: false })
   if (root === null) return { ...result, manual_update: true, message: 'Main updates require an authenticated Talaria source checkout with Web under web/.' }
   const [source, error] = await mainRevision(root, git)
-  if (source === null) return { ...result, error: gitFailure(error, 'Could not fetch origin/main; check Git read access.').message }
+  if (source === null) {
+    const detail = sanitizeGitDiagnostic(error)
+    return { ...result, stale_check: true, error: gitFailure(error, detail ? `Could not fetch origin/main: ${detail}` : 'Could not fetch origin/main; check Git read access.').message }
+  }
   Object.assign(result, { latest_sha: source, latest_version: `main@${source.slice(0, 12)}` })
   const head = await git(['rev-parse', 'HEAD'], root)
   const status = await git(['status', '--porcelain', '--untracked-files=all'], root)
@@ -680,7 +695,7 @@ async function isDirty(path: string, git: GitRun): Promise<boolean> {
 /** Fetch and compare the independently selected Agent channel. */
 export async function checkAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { name: 'agent', behind: null, no_git: true }
-  const fetched = await git(['fetch', 'origin', '--tags', '--force'], path, 15_000)
+  const fetched = await fetchWithRetry(git, ['fetch', 'origin', '--tags', '--force'], path, 15_000)
   if (!fetched.ok) {
     const message = fetched.out ? `fetch failed: ${sanitizeGitDiagnostic(fetched.out)}` : 'fetch failed'
     return { name: 'agent', channel, behind: null, error: message, stale_check: true, dirty: await isDirty(path, git) }
@@ -910,6 +925,7 @@ export class UpdateService {
   private readonly cache: Dict = { webui: null, agent: null, checked_at: 0, include_agent: true, channel: DEFAULT_CHANNEL, agent_channel: DEFAULT_CHANNEL }
   private checking: Promise<Dict> | null = null
   private checkingKey: string | null = null
+  private readonly lastGood: Partial<Record<'webui' | 'agent', { at: number; channel: Channel; result: Dict }>> = {}
   private applying = false
   private autoTimer: NodeJS.Timeout | null = null
   private autoStarted = false
@@ -960,8 +976,8 @@ export class UpdateService {
     this.checkingKey = key
     this.checking = (async () => {
       try {
-        const webui = await checkWebUpdate(this.deps.webRoot, this.deps.webuiVersion, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm)
-        const agent = includeAgent ? await checkAgentUpdate(this.deps.agentDir(), this.git, agentChannel) : ignoredAgent()
+        const webui = this.keepLastGood('webui', channel, await checkWebUpdate(this.deps.webRoot, this.deps.webuiVersion, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm))
+        const agent = includeAgent ? this.keepLastGood('agent', agentChannel, await checkAgentUpdate(this.deps.agentDir(), this.git, agentChannel)) : ignoredAgent()
         if (agent.latest_sha) Object.assign(agent, agentWarning(agent, this.agentPolicy()))
         Object.assign(this.cache, { webui, agent, checked_at: this.now(), include_agent: includeAgent, channel, agent_channel: agentChannel })
         return { ...this.cache }
@@ -971,6 +987,17 @@ export class UpdateService {
       }
     })()
     return this.checking
+  }
+
+  /** A failed fetch (`stale_check`) keeps the channel's last good result until the cache TTL, so a network blip never flips the status; persistent failures surface. */
+  private keepLastGood(target: 'webui' | 'agent', channel: Channel, result: Dict): Dict {
+    if (!result.stale_check) {
+      if (!result.error) this.lastGood[target] = { at: this.now(), channel, result }
+      return result
+    }
+    this.deps.log(`[updates] ${target} fetch failed: ${str(result.error)}`)
+    const prior = this.lastGood[target]
+    return prior?.channel === channel && this.now() - prior.at < CACHE_TTL_S ? { ...prior.result, stale_check: true } : result
   }
 
   startAutoApply(intervalMs = AUTO_UPDATE_INTERVAL_MS): void {

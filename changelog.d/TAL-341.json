@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Settings no longer flashes \"update check failed\" after a brief network hiccup; a failed check retries and keeps the last good result until it is 30 minutes old.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Experimental source installs now fetch Web release tags, so the installed version names the right release instead of an old one.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
