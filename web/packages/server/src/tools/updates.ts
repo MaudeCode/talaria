@@ -158,7 +158,10 @@ const same = (a: unknown, b: unknown): boolean => canon(a) === canon(b)
 
 // ── published release sets ───────────────────────────────────────────────────
 
-export class ReleaseUnavailable extends Error {}
+/** `transient`: GitHub was unreachable, slow, or overloaded, so a retry can succeed; the rest describe published state. */
+export class ReleaseUnavailable extends Error {
+  constructor(message: string, readonly transient = false) { super(message) }
+}
 
 export type GetJson = (path: string, opts: { asset: boolean }) => Promise<unknown>
 
@@ -168,15 +171,18 @@ export function githubJson(fetchImpl: typeof fetch, env: Record<string, string |
     const headers: Record<string, string> = { Accept: asset ? 'application/octet-stream' : 'application/vnd.github+json', 'User-Agent': 'Talaria-Web', 'X-GitHub-Api-Version': '2026-03-10' }
     const token = (env.TALARIA_RELEASE_TOKEN ?? '').trim()
     if (token) headers.Authorization = `Bearer ${token}`
-    let res = await fetchImpl(API_ROOT + path, { headers, redirect: 'manual', signal: AbortSignal.timeout(5000) })
+    const send = async (url: string, init: RequestInit): Promise<Response> => {
+      try { return await fetchImpl(url, init) } catch (error) { throw new ReleaseUnavailable(`GitHub is unreachable: ${(error as Error).message}`, true) }
+    }
+    let res = await send(API_ROOT + path, { headers, redirect: 'manual', signal: AbortSignal.timeout(5000) })
     if (res.status >= 300 && res.status < 400) {
       const target = new URL(res.headers.get('location') ?? '', API_ROOT + path)
       if (target.protocol !== 'https:' || target.hostname !== 'release-assets.githubusercontent.com') throw new ReleaseUnavailable('Unexpected release download redirect')
       const anonymous = { ...headers }
       delete anonymous.Authorization
-      res = await fetchImpl(target.toString(), { headers: anonymous, signal: AbortSignal.timeout(5000) })
+      res = await send(target.toString(), { headers: anonymous, signal: AbortSignal.timeout(5000) })
     }
-    if (!res.ok) throw new ReleaseUnavailable(`GitHub answered ${String(res.status)}`)
+    if (!res.ok) throw new ReleaseUnavailable(`GitHub answered ${String(res.status)}`, res.status >= 500 || res.status === 429)
     const body = await readCapped(res, 2_000_000)
     if (!body) throw new ReleaseUnavailable('Release metadata exceeds the download limit')
     return JSON.parse(body.toString('utf8')) as unknown
@@ -190,7 +196,7 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
   const tagPattern = new RegExp(`^${channel === 'experimental' ? 'web-exp-v' : 'web-v'}${VERSION}$`)
   const deadline = now() + 15_000
   const fetchJson = (path: string, asset = false): Promise<unknown> => {
-    if (now() >= deadline) throw new ReleaseUnavailable('Release lookup exceeded its deadline; retry or update manually')
+    if (now() >= deadline) throw new ReleaseUnavailable('Release lookup exceeded its deadline; retry or update manually', true)
     return getJson(path, { asset })
   }
   const published: Dict[] = []
@@ -425,7 +431,7 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
   try {
     release = await publishedWebRelease(channel, getJson)
   } catch (error) {
-    if (error instanceof ReleaseUnavailable) return { ...result, manual_update: true, error: error.message }
+    if (error instanceof ReleaseUnavailable) return { ...result, manual_update: true, error: error.message, ...(error.transient ? { stale_check: true } : {}) }
     return { ...result, manual_update: true, error: 'Talaria release metadata is unavailable. Private repositories require TALARIA_RELEASE_TOKEN with Contents read access.' }
   }
   Object.assign(result, { latest_version: release.tag, latest_sha: release.sourceRevision, branch: release.tag, release_based: true, release_url: release.release_url, image: release.image })

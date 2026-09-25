@@ -844,6 +844,23 @@ describe('published release sets (test_tal203_published_releases.py)', () => {
     }
   })
 
+  it('marks only unreachable, slow, or overloaded GitHub answers as transient', async () => {
+    const answer = (status: number): typeof fetch => (() => Promise.resolve(new Response('{}', { status }))) as typeof fetch
+    const transient = async (f: typeof fetch): Promise<boolean> => {
+      try { await githubJson(f, {})('/releases', { asset: false }) } catch (error) { return (error as ReleaseUnavailable).transient }
+      throw new Error('expected a failure')
+    }
+    expect(await transient((() => Promise.reject(new TypeError('fetch failed'))) as typeof fetch)).toBe(true)
+    expect(await transient(answer(502))).toBe(true)
+    expect(await transient(answer(429))).toBe(true)
+    expect(await transient(answer(404))).toBe(false)
+    const s = sourceInstall()
+    const down: GetJson = () => Promise.reject(new ReleaseUnavailable('GitHub answered 503', true))
+    expect(await checkWebUpdate(web(s.client), 'development', 'stable', s.run, down, s.identity)).toMatchObject({ stale_check: true, error: 'GitHub answered 503' })
+    const missing: GetJson = () => Promise.reject(new ReleaseUnavailable('GitHub answered 404'))
+    expect((await checkWebUpdate(web(s.client), 'development', 'stable', s.run, missing, s.identity)).stale_check).toBeUndefined()
+  })
+
   it('selects by publication order, not response array order', async () => {
     const f = fixture()
     const older = structuredClone(f.manifest)
