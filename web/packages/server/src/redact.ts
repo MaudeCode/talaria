@@ -84,10 +84,11 @@ const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]
 /** A lower-case pattern matched in any case, letter by letter, so the camelCase lookahead below stays case-exact. */
 const anyCase = (pattern: string): string => pattern.replace(/[a-z]/g, (c) => `[${c}${c.toUpperCase()}]`)
 /**
- * A credential key: up to four snake/kebab (`aws_`, `X-`) or camelCase (`aws`, `Secret` in `awsSecretAccessKey`) name
- * segments, then a credential name. Each segment has one possible end, so the scan stays linear.
+ * A credential key: up to four snake/kebab (`aws_`, `X-`), camelCase (`aws`, `Secret` in `awsSecretAccessKey`) or
+ * acronym (`X` in `XApiKey`, `AWS` in `AWSSecretAccessKey`) name segments, then a credential name. Each segment has one
+ * possible end, so the scan stays linear.
  */
-const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]|[A-Z]?[a-z0-9]+(?=[A-Z])){0,4}${anyCase(CRED_KEY_NAME)}`
+const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]|[A-Z]?[a-z0-9]+(?=[A-Z])|[A-Z]+(?=[A-Z][a-z])){0,4}${anyCase(CRED_KEY_NAME)}`
 /** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
 const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
 /** An argument or JSON key naming a credential; its scalar value is masked whatever it contains. */

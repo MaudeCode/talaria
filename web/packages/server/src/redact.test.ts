@@ -48,6 +48,7 @@ describe('redactSensitive', () => {
     expect(redactSensitive(String.raw`curl -H "Cookie: session=\"abc def\"; theme=x" https://x`)).toBe(String.raw`curl -H "Cookie: ***" https://x`)
     expect(redactSensitive(String.raw`curl -d "{\"password\":\"hunter2\",\"token\":\"a b\",\"user\":\"bob\"}" https://x`)).toBe(String.raw`curl -d "{\"password\":\"***\",\"token\":\"***\",\"user\":\"bob\"}" https://x`)
     expect(redactSensitive(`curl -u user:'correct horse' -u bob:"pw word" -ualice:pw3 https://x`)).toBe(`curl -u user:'***' -u bob:"***" -ualice:*** https://x`)
+    expect(redactSensitive('login --XApiKey=opaque1 --AWSSecretAccessKey opaque2 {"XAuthToken": "x"}')).toBe('login --XApiKey=*** --AWSSecretAccessKey *** {"XAuthToken": "***"}')
     // Compound camelCase and upper snake credential names.
     expect(redactSensitive('deploy --secretAccessKey=opaque123 --awsSessionToken opaque456 AWS_SECRET_ACCESS_KEY: opaque789 {"sessionToken": "x"}')).toBe('deploy --secretAccessKey=*** --awsSessionToken *** AWS_SECRET_ACCESS_KEY: *** {"sessionToken": "***"}')
     // A backslash-escaped shell word is one value.
@@ -88,7 +89,7 @@ describe('surrogate pairs', () => {
 describe('redactSensitive cost', () => {
   it('stays linear on long runs of scheme and identifier characters', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
-    for (const seg of ['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_']) {
+    for (const seg of ['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB']) {
       const text = seg.repeat(Math.ceil(200_000 / seg.length))
       const started = performance.now()
       redactSensitive(text)
@@ -102,7 +103,7 @@ describe('publicToolFrame', () => {
     const frame = publicToolFrame({ name: 'login', args: { user: 'bob', password: 'hunter2', auth: { apiKey: 'opaque', token: 12345 } } }, true)
     expect(frame.args).toEqual({ user: 'bob', password: '***', auth: { apiKey: '***', token: '***' } })
     expect(publicToolFrame({ name: 'login', args: { password: 'hunter2' } }, false).args).toEqual({ password: 'hunter2' })
-    expect(publicToolFrame({ name: 'aws', args: { secretAccessKey: 'a', awsSessionToken: 'b', region: 'us' } }, true).args).toEqual({ secretAccessKey: '***', awsSessionToken: '***', region: 'us' })
+    expect(publicToolFrame({ name: 'aws', args: { secretAccessKey: 'a', awsSessionToken: 'b', XApiKey: 'c', AWSSecretAccessKey: 'd', region: 'us' } }, true).args).toEqual({ secretAccessKey: '***', awsSessionToken: '***', XApiKey: '***', AWSSecretAccessKey: '***', region: 'us' })
     // Structured results and outputs are redacted by key as well.
     expect(publicToolFrame({ name: 'vault', args: {}, result: { token: 'opaque', ttl: 60 }, output: [{ password: 'x' }] }, true)).toMatchObject({ result: { token: '***', ttl: 60 }, output: [{ password: '***' }] })
     // Cookie keys, header tuples and name/value pairs are credentials too.
