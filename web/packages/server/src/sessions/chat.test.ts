@@ -733,6 +733,47 @@ describe('chat turns through the sidecar', () => {
     expect((await post(s, '/api/goal', { session_id: sid, args: '[SILENT]' })).status).toBe(200)
   })
 
+  it('exposes a questions-only clarify batch as ordered steps and relays keyed answers as the Agent envelope (TAL-362)', async () => {
+    const sid = await newSession(s)
+    const relayed: string[] = []
+    let release: () => void = () => undefined
+    sidecar.respond('clarify.respond', (params) => { relayed.push(params.response); release(); return { ok: true, clarify_id: String(params.clarify_id) } })
+    sidecar.respond('chat.start', async (params, emit) => {
+      // The Agent's batch callback frame: no top-level question, the questions already Agent-normalized.
+      emit({ event: 'clarify', data: { clarify_id: 'batch-1', question: '', choices_offered: [], session_id: sid, questions: [
+        { qid: 'q0', id: null, question: 'What sounds best for a quiet evening?', choices: ['A book (Recommended)', 'A movie'], choices_offered: ['A book', 'A movie'], multi_select: false },
+        { qid: 'q1', id: 'snacks', question: 'Which snacks?', choices: ['Popcorn (Recommended)', 'Tea', 'Chips'], choices_offered: ['Popcorn', 'Tea', 'Chips'], multi_select: true },
+      ] } })
+      await new Promise<void>((resolve) => { release = resolve })
+      emit({ event: 'clarify', data: { clarify_id: 'single-1', question: 'Which env?', choices_offered: ['dev', 'prod'], session_id: sid } })
+      await new Promise<void>((resolve) => { release = resolve })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'plan my evening' }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'clarify')
+    const initial = await s.sse(`/api/clarify/stream?session_id=${sid}`, (f) => f.event === 'initial')
+    const pending = (initial[initial.length - 1]?.data as Json).pending as Json
+    expect(pending.steps).toEqual([
+      { qid: 'q0', question: 'What sounds best for a quiet evening?', choices: ['A book (Recommended)', 'A movie'], multi_select: false },
+      { qid: 'q1', question: 'Which snacks?', choices: ['Popcorn (Recommended)', 'Tea', 'Chips'], multi_select: true },
+    ])
+    // Every step needs an answer and only known question ids are accepted; nothing reaches the Agent otherwise.
+    expect((await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'batch-1', answers: { q0: 'A movie' } })).status).toBe(400)
+    expect((await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'batch-1', answers: { q0: 'A movie', q1: ['Tea'], q9: 'x' } })).status).toBe(400)
+    expect(relayed).toEqual([])
+    const res = await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'batch-1', answers: { q0: 'A movie', q1: ['Popcorn (Recommended)', 'Tea'] } })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(relayed[0] ?? '')).toEqual({ answers: { q0: 'A movie', q1: ['Popcorn (Recommended)', 'Tea'] } })
+
+    // A single-question prompt is one step and its keyed answer reaches the Agent as plain text.
+    const single = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'clarify' && (f.data as Json).clarify_id === 'single-1')
+    expect((single[single.length - 1]?.data as Json).steps).toEqual([{ qid: 'q0', question: 'Which env?', choices: ['dev', 'prod'], multi_select: false }])
+    expect((await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'single-1', answers: { q0: 'prod' } })).status).toBe(200)
+    expect(relayed[1]).toBe('prod')
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
+  })
+
   it('carries the queue head on clarify/approval frames, re-emits the new head on resolution, and toasts persisted memory/skills', async () => {
     const sid = await newSession(s)
     let releaseAll: () => void = () => undefined

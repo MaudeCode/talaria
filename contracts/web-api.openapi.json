@@ -19100,6 +19100,36 @@
                         {
                           "type": "object",
                           "properties": {
+                            "steps": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "qid": {
+                                    "type": "string"
+                                  },
+                                  "question": {
+                                    "type": "string"
+                                  },
+                                  "choices": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "multi_select": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "qid",
+                                  "question",
+                                  "choices",
+                                  "multi_select"
+                                ],
+                                "additionalProperties": {}
+                              }
+                            },
                             "clarify_id": {
                               "type": "string"
                             },
@@ -19214,6 +19244,25 @@
                 "properties": {
                   "session_id": {
                     "type": "string"
+                  },
+                  "answers": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
                   },
                   "response": {
                     "type": "string"

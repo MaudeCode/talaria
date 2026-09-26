@@ -43,6 +43,12 @@ stream's health:
 
 Non-browser clients that hold the chat stream open can follow the same rule.
 
+A clarify head carries server-owned `steps` (`qid`, `question`, `choices`,
+`multi_select`), in order; a single-question prompt is one `q0` step. Clients
+answer with `POST /api/clarify/respond` and `answers` keyed by `qid` (a list for
+a multi-select step); the server shapes the reply the Agent expects. A raw
+`response` string is still relayed unchanged.
+
 ## Merged sidebar stream
 
 A browser allows six concurrent HTTP/1.1 connections per origin, and every SSE

@@ -16,7 +16,8 @@ import type { SessionService } from './service.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
-import { PendingPrompts } from './pending.js'
+import type { ClarifyAnswers } from '@maudecode/talaria-web-contracts'
+import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
 import { Session, titleFrom, type Message } from './session.js'
 import { buildActiveTurnToken, redactSessionData, redactString } from '../redact.js'
@@ -1224,10 +1225,16 @@ export class TurnRunner {
     })
   }
 
-  /** `stale` when no such prompt is queued; `ok:false` without `stale` when the sidecar did not acknowledge (prompt retained). */
-  async respondClarify(sessionId: string, clarifyId: string, response: string): Promise<{ ok: boolean; stale?: boolean; error?: string }> {
+  /**
+   * `reply` is the raw Agent reply or keyed step answers the server shapes for the prompt. `stale` when no such
+   * prompt is queued; `invalid` when the answers do not fit its steps; `ok:false` without either when the sidecar
+   * did not acknowledge (prompt retained).
+   */
+  async respondClarify(sessionId: string, clarifyId: string, reply: string | ClarifyAnswers): Promise<{ ok: boolean; response?: string; stale?: boolean; invalid?: boolean; error?: string }> {
     const entry = this.deps.pending.peekClarify(sessionId, clarifyId)
     if (!entry) return { ok: false, stale: true }
+    const response = typeof reply === 'string' ? reply : clarifyReply(entry, reply)
+    if (response === null) return { ok: false, invalid: true }
     const sidecar = this.deps.sidecar()
     if (!sidecar) return { ok: false, error: 'The Agent sidecar is not running; retry in a moment.' }
     let ok = false
@@ -1239,7 +1246,7 @@ export class TurnRunner {
     if (!ok) return { ok: false, stale: true }
     const { head } = this.deps.pending.resolveClarify(sessionId, str(entry.clarify_id))
     if (head) this.emitToSession(sessionId, 'clarify', head)
-    return { ok: true }
+    return { ok: true, response }
   }
 }
 

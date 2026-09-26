@@ -2,10 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-vi.mock('../../api/endpoints', () => ({ respondApproval: vi.fn(() => Promise.resolve({ ok: true })), respondClarify: vi.fn(() => Promise.resolve({ ok: true })) }))
+vi.mock('../../api/endpoints', () => ({ respondApproval: vi.fn(() => Promise.resolve({ ok: true })) }))
 import * as api from '../../api/endpoints'
 import { ApprovalCard } from './ApprovalCard'
-import { ClarifyCard } from './ClarifyCard'
 
 describe('ApprovalCard', () => {
   it('renders the command with alertdialog semantics and answers "allow once"', async () => {
@@ -37,24 +36,3 @@ describe('ApprovalCard', () => {
   })
 })
 
-describe('ClarifyCard', () => {
-  it('sends a choice as the response and clears on success', async () => {
-    const onResolved = vi.fn()
-    render(<ClarifyCard sessionId="s1" pending={{ clarify_id: 'c1', question: 'Which one?', choices: ['alpha', { label: 'beta', value: 'b' }] }} onResolved={onResolved} />)
-    expect(screen.getByText('Which one?')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'beta' }))
-    await waitFor(() => expect(onResolved).toHaveBeenCalled())
-    expect(api.respondClarify).toHaveBeenCalledWith(expect.objectContaining({ session_id: 's1', response: 'beta', clarify_id: 'c1' }))
-  })
-
-  it('ignores an empty free-text answer', async () => {
-    vi.mocked(api.respondClarify).mockClear()
-    render(<ClarifyCard sessionId="s1" pending={{ clarify_id: 'c2', question: 'Q' }} onResolved={() => undefined} />)
-    const input = screen.getByRole('textbox')
-    await userEvent.type(input, '   {Enter}')
-    expect(api.respondClarify).not.toHaveBeenCalled()
-    await userEvent.clear(input)
-    await userEvent.type(input, 'an answer{Enter}')
-    await waitFor(() => expect(api.respondClarify).toHaveBeenCalledWith(expect.objectContaining({ response: 'an answer' })))
-  })
-})

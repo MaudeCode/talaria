@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web clarification requests show every question and its choices, and answers typed in the message box reach the agent.",
+      "highlight": true,
+      "components": ["web"]
+    }
+  ]
+}

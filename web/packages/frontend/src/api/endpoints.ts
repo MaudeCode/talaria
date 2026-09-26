@@ -93,6 +93,7 @@ export const cancelChat = (stream_id: string) => orpc().chat.cancel({ stream_id 
 export const steerChat = (body: z.infer<typeof SteerRequestSchema>) => orpc().chat.steer(body)
 export const fetchStreamStatus = (stream_id: string) => orpc().chat.streamStatus({ stream_id })
 export const respondApproval = (body: z.infer<typeof ApprovalRespondRequestSchema>) => orpc().approval.respond(body)
+export const fetchClarifyPending = (session_id: string) => orpc().clarify.pending({ session_id })
 export const respondClarify = (body: z.infer<typeof ClarifyRespondRequestSchema>) => orpc().clarify.respond(body)
 export const uploadFile = (session_id: SessionId, file: File) => {
   const form = new FormData()

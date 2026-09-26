@@ -415,13 +415,16 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             elif "non-retryable error" in lower:
                 emit("status", {"kind": "terminal_error", "message": text})
 
-        def clarify_callback(question, choices, questions=None):
+        def clarify_callback(question, choices, multi_select=False, questions=None):
             choices_list = [str(c) for c in (choices or [])]
             # Predecessor `_clarify_timeout_seconds`: the Agent's own resolver over this profile's config
             # (``clarify.timeout`` else ``agent.clarify_timeout`` else 3600); ``<= 0`` waits until answered or cancelled.
             # The advertised ``timeout_seconds`` is what the clients count down, so it is the same number.
             timeout = _clarify_timeout(params)
             data = {"question": str(question or ""), "choices_offered": choices_list, "session_id": session_id, "kind": "clarify", "requested_at": time.time(), "timeout_seconds": timeout}
+            if multi_select:
+                data["multi_select"] = True
+            # Batch prompts (the Agent's ``_run_batch``) carry no top-level question and expect the ``{"answers": {...}}`` reply.
             if isinstance(questions, list) and questions:
                 data["questions"] = questions
             entry = _ClarifyEntry(data)
