@@ -69,7 +69,8 @@ describe('redactSensitive', () => {
     expect(redactSensitive(`login --password=correct]horse --token=a,b}c|next {"secret": 123}, {'token': 'x'}`)).toBe(`login --password=*** --token=***|next {"secret": ***}, {'token': '***'}`)
     // Command substitution, backticks and parameter expansion are part of the word.
     // A command substitution cannot be bounded without a shell parser (`case` patterns have unmatched `)`): it is masked to the line end.
-    expect(redactSensitive('login --token=`cat t` --secret=${S:-x y} --password=$(printf hunter2) next\nls')).toBe('login --token=*** --secret=*** --password=***\nls')
+    expect(redactSensitive('login --secret=${S:-x y} --password=$(printf hunter2) next\nls')).toBe('login --secret=*** --password=***\nls')
+    expect(redactSensitive('login --password=`printf foo\\` hunter2` next\nls')).toBe('login --password=***\nls')
     expect(redactSensitive('login --password=$(case x in x) echo hunter2;; esac) next')).toBe('login --password=***')
     expect(redactSensitive(`login --password=$(printf '%s)' "a)b" \\) hunter2) next`)).toBe('login --password=***')
     // Every prefiltered key alias, and Python tuple containers.
@@ -84,6 +85,8 @@ describe('redactSensitive', () => {
     // An apostrophe inside a word is prose, not a quote.
     expect(redactSensitive("don't share it: password: hunter2 and it's fine")).toBe("don't share it: password: *** and it's fine")
     expect(redactSensitive(`ssh-keygen --passphrase 'correct horse' && openssl rsa -passin=pass:abc {"pass_phrase": "x"}`)).toBe(`ssh-keygen --passphrase '***' && openssl rsa -passin=*** {"pass_phrase": "***"}`)
+    // Escaped JSON inside a shell string ends only at its real closing quote.
+    expect(redactSensitive(String.raw`curl -d "{\"password\":\"foo\\\"bar baz\",\"user\":\"bob\"}" x`)).toBe(String.raw`curl -d "{\"password\":\"***\",\"user\":\"bob\"}" x`)
     // Ordinary words and non-credential parameters stay readable.
     expect(redactSensitive('keep the secret sauce --secret-file ./s.txt')).toBe('keep the secret sauce --secret-file ./s.txt')
     expect(redactSensitive('apiKeyId: 12 max_tokens=100 --user-agent curl')).toBe('apiKeyId: 12 max_tokens=100 --user-agent curl')

@@ -170,6 +170,25 @@ function enclosingClose(text: string): (from: number, quote: string) => number {
 }
 
 /**
+ * The index of the `\"` closing a JSON string escaped inside a double-quoted shell string, scanning from `from` (just after
+ * the opening `\"`): shell escapes decode first (`\\` is a JSON backslash, `\"` a JSON quote), then a JSON backslash escapes
+ * the next JSON character, so `\\\"` inside the value is an escaped quote, not the close. `-1` if none.
+ */
+function escapedJsonClose(text: string, from: number): number {
+  let jsonEscape = false
+  for (let k = from; k < text.length; ) {
+    let json: string
+    let width: number
+    if (text[k] === '\\' && (text[k + 1] === '\\' || text[k + 1] === '"')) { json = text[k + 1]!; width = 2 } else { json = text[k]!; width = 1 }
+    if (jsonEscape) jsonEscape = false
+    else if (json === '\\') jsonEscape = true
+    else if (json === '"') return width === 2 ? k : -1
+    k += width
+  }
+  return -1
+}
+
+/**
  * The end (exclusive) of the shell word starting at `start`: adjacent quoted (`'…'`, `"…"` with escapes, `$'…'`), escaped
  * (`\ `) and bare pieces, a leading `[…]`/`{…}`/`(…)` container (balanced; the sidecar's Python repr of nested args), or JSON escaped inside a shell string (`\"…\"`).
  * It stops at shell metacharacters outside a container, at `, ] }` that follow the word, and at the quote that encloses the argument
@@ -196,7 +215,7 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
     // an escaped quote like any other escape.
     if (c === '\\' && text[i + 1] === '"' && i !== start && depth === 0) i += 2
     else if (c === '\\' && text[i + 1] === '"') {
-      const close = text.indexOf('\\"', i + 2)
+      const close = escapedJsonClose(text, i + 2)
       if (close === -1) return lineEnd(i)
       i = close + 2
     } else if (c === '\\') i += 2
@@ -207,8 +226,8 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
       if (k >= text.length) return i === start ? lineEnd(i) : i
       i = k + 1
     } else if (c === '$' && text[i + 1] === '"') i += 1
-    // A command substitution cannot be bounded without a shell parser (`case` patterns carry unmatched `)`): mask to the
-    // line end. `${…}` is balanced, quote- and escape-aware; backticks run to the next backtick.
+    // A command substitution (`$(…)`, backticks) cannot be bounded without a shell parser (`case` patterns carry unmatched
+    // `)`, backticks nest by escaping): mask to the line end. `${…}` is balanced, quote- and escape-aware.
     else if (c === '$' && text[i + 1] === '(') return lineEnd(i)
     else if (c === '$' && text[i + 1] === '{') {
       let k = i + 2
@@ -222,11 +241,7 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
       }
       if (d > 0) return lineEnd(i)
       i = k
-    } else if (c === '`') {
-      const close = text.indexOf('`', i + 1)
-      if (close === -1) return lineEnd(i)
-      i = close + 1
-    }
+    } else if (c === '`') return lineEnd(i)
     else if (c === "'") {
       const close = text.indexOf("'", i + 1)
       if (close === -1) return i === start ? lineEnd(i) : i
