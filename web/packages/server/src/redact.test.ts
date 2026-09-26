@@ -259,6 +259,15 @@ describe('shell-composed words', () => {
     expect(redactText(`curl https://bob':'hunter2@example.com next`, true)).toBe(`curl https://bob:***@example.com next`)
   })
 
+  it('fails closed where an expansion may supply a delimiter', () => {
+    expect(redactText('AT=@; curl https://bob:hunter2${AT}example.com next', true)).toBe('AT=@; curl https://bob:*** next')
+    expect(redactText(`SEP='='; login --password"\${SEP}"hunter2 next`, true)).not.toContain('hunter2')
+    expect(redactText(`SEP='='; login --password"\${SEP}"hunter2 next`, true)).toContain(' next')
+    for (const kept of ['curl https://api.github.com/repos/$OWNER/x', 'curl https://$HOST:8080/x', "echo '$HOME' --token-file=$HOME/.tok"]) {
+      expect(redactText(kept, true)).toBe(kept)
+    }
+  })
+
   it('removes a line continuation as the shell does', () => {
     expect(redactText('login --pass\\\nword=hunter2 next', true)).toBe('login --password=*** next')
     expect(redactText('login --api\\\n_key "hunter2" next', true)).not.toContain('hunter2')

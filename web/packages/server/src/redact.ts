@@ -526,16 +526,56 @@ function revealsMore(plain: string, got: string, wanted: string): boolean {
   return false
 }
 
+/** The index of a shell word's first parameter or command expansion outside single and ANSI-C quotes (`-1` if none). */
+function firstExpansion(word: string): number {
+  let quote = ''
+  for (let i = 0; i < word.length; i += 1) {
+    const c = word[i]!
+    if (quote === "'") { if (c === "'") quote = ''; continue }
+    if (c === '\\') { i += 1; continue }
+    if (!quote && c === '$' && word[i + 1] === "'") {
+      for (i += 2; i < word.length && word[i] !== "'"; i += word[i] === '\\' ? 2 : 1);
+      continue
+    }
+    if (c === '"') quote = quote ? '' : '"'
+    else if (!quote && c === "'") quote = "'"
+    else if (c === '`' || (c === '$' && /[({A-Za-z_0-9@*#?$!-]/.test(word[i + 1] ?? ''))) return i
+  }
+  return -1
+}
+
+/**
+ * A word whose expansion may supply a delimiter, masked from where the expansion could reveal a credential: after a
+ * credential key (`--password"${SEP}"hunter2`), or in a URL's authority after a `:` and non-port text
+ * (`https://bob:hunter2${AT}host`). `null` when neither applies (`$HOST:8080`, `$USER:$PASS@host`, `--token-file=$HOME`).
+ */
+function redactExpansionWord(word: string, at: number): string | null {
+  // Only a quoted expansion after the key: an unquoted one is the computed-key rules' (`--password${SEP}x`).
+  const before = shellDequote(word.slice(0, at)).replaceAll(WORD_SPACE, ' ')
+  const key = /(?:^|[^A-Za-z0-9_.[\]-])-{0,2}([A-Za-z0-9_][A-Za-z0-9_.[\]-]*)[=:]?$/.exec(before)
+  if (key && /["']/.test(word.slice(0, at)) && isCredentialKey(key[1]!)) return `${word.slice(0, at)}***`
+  const url = /[A-Za-z][A-Za-z0-9+.-]*:\/\/([^\s/]*)/.exec(word)
+  if (!url) return null
+  const authEnd = url.index + url[0].length
+  const authStart = authEnd - url[1]!.length
+  const inAuthority = firstExpansion(word.slice(authStart, authEnd))
+  if (inAuthority < 0) return null
+  const expansion = authStart + inAuthority
+  const colon = word.lastIndexOf(':', expansion - 1)
+  return colon >= authStart && /[^0-9]/.test(word.slice(colon + 1, expansion)) ? `${word.slice(0, colon + 1)}***${word.slice(authEnd)}` : null
+}
+
 /**
  * Shell words whose quoting or escapes compose a delimiter, key or credential (`--password'='x`, `bob:pw'@'host`): each
  * is redacted as the program receives it. When the word as written, once redacted, still shows a token the dequoted
  * redaction masks, the redacted dequoted form replaces it, so no quoting variant hides a credential from the rules. A
  * quoted flag is read with the value word after it (`'--password' x`). A single quoted argument and a data container
- * (JSON, a Python repr) are not composed words and keep their quoting; a word with a substitution is the computed-key
- * rules' (its dequoted form is not what the program receives).
+ * (JSON, a Python repr) are not composed words and keep their quoting. A word with an expansion is not what the program
+ * receives once dequoted: it fails closed where the expansion may supply a delimiter (`redactExpansionWord`), and a
+ * substitution is otherwise the computed-key rules'.
  */
 function redactComposedWords(text: string): string {
-  if (!/["'\\]/.test(text)) return text
+  if (!/["'\\$`]/.test(text)) return text
   const closeOf = enclosingClose(text)
   const words: [start: number, end: number][] = []
   for (let i = 0; i < text.length; ) {
@@ -549,7 +589,15 @@ function redactComposedWords(text: string): string {
   for (let k = 0; k < words.length; k += 1) {
     const [start, end] = words[k]!
     const word = text.slice(start, end)
-    if (!/["'\\]/.test(word) || /^[[{(]/.test(word) || /\$[({]|`/.test(word)) continue
+    if (/^[[{(]/.test(word)) continue
+    const at = firstExpansion(word)
+    const expanded = at >= 0 ? redactExpansionWord(word, at) : null
+    if (expanded !== null) {
+      out += text.slice(last, start) + expanded
+      last = end
+      continue
+    }
+    if (!/["'\\]/.test(word) || /\$[({]|`/.test(word)) continue
     const glued = shellDequote(word)
     // A quoted flag (`'--password'`, `"--us"er`) takes its value from the next word: the two are read together.
     const next = words[k + 1]
