@@ -35,6 +35,8 @@
               "tool": {
                 "id": "call-1",
                 "name": "read_file",
+                "kind": "read",
+                "target": "notes.md",
                 "args": {
                   "path": "notes.md"
                 },

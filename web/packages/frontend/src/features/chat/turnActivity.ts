@@ -2,6 +2,7 @@ import type { Message } from '../../contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import type { ToolCardData } from './blocks/ToolCard'
+import { ToolKindSchema, type ToolKind } from '@maudecode/talaria-web-contracts'
 import { extractInlineThinking, messageText } from './render/text'
 import type { VisibleMessage } from './useTranscript'
 
@@ -26,6 +27,8 @@ export interface TurnActivity {
 
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
 const text = (v: unknown): string => typeof v === 'string' ? v : ''
+/** The server's kind as sent; an older server's missing or unrecognized value shows as `unknown`. */
+const toolKindOf = (v: unknown): ToolKind => ToolKindSchema.safeParse(v).data ?? 'unknown'
 
 /** The server stamps every row with its turn; clients group by equality and never infer turn boundaries. */
 export function turnIdOf(message: Message): string | undefined {
@@ -70,7 +73,7 @@ export function sceneItems(value: unknown): ActivityItem[] {
     if (row.role !== 'tool') return []
     const tool = record(row.tool)
     return [{ key, kind: 'tool', call: {
-      id: text(tool.id), name: text(tool.name), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, result: tool.result ?? null,
+      id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), target: text(tool.target), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, result: tool.result ?? null,
       done: tool.done === true, isError: tool.is_error === true, duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
     } }]
   })
