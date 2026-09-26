@@ -94,14 +94,17 @@ const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]
 const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
 /** A credential name matched against a whole `_`-joined word run (`secret_access_key`, `session_token`). */
 const CRED_KEY_NAME_WORDS_RE = new RegExp(String.raw`^${CRED_KEY_NAME}$`, 'i')
+/** A shell word with its quote and escape characters removed, as the shell passes it (`--pass'word'` → `--password`). */
+const dequote = (text: string): string => text.replace(/\$(?=['"])|['"\\]/g, '')
 /**
  * A key names a credential when any of its path segments (`auth.token`, `database.password`, `auth[password]`,
- * `auth["password"]`) ends in a credential name at a word boundary, however deep its namespace
+ * `auth["password"]`) ends in a credential name at a word boundary, however deep its namespace, once dequoted
+ * (`--pass'word'`)
  * (`COMPANY_PROD_EU_AWS_SECRET_ACCESS_KEY`, `companyProdEuAwsSessionToken`).
  */
 function isCredentialKey(key: string): boolean {
-  return key.split(/[.:/[\]]/).some((segment) => {
-    const words = segment.replace(/^[-"'\\]+|[\\"']+$/g, '').split(/[_-]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/).filter(Boolean).slice(-8)
+  return dequote(key).split(/[.:/[\]]/).some((segment) => {
+    const words = segment.replace(/^-+/, '').split(/[_-]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/).filter(Boolean).slice(-8)
     for (let i = 0; i < words.length; i += 1) if (CRED_KEY_NAME_WORDS_RE.test(words.slice(i).join('_'))) return true
     return false
   })
@@ -109,11 +112,12 @@ function isCredentialKey(key: string): boolean {
 /**
  * A `key=value`, `key: value` or `--flag value` in text. Any identifier matches; the loop keeps only those
  * `isCredentialKey` accepts (`access_token`, `"clientSecret"`, `X-Api-Key`, `--companyProdEuAwsSecretAccessKey`,
- * `--auth["password"]`), and
+ * `--auth["password"]`, the shell-composed `--pass'word'` / `--pass\word`), and
  * consumes a value only for those, so a non-credential key never swallows the text after it. The whole identifier is
- * read, however long: the lookbehind starts a match only at an identifier's first character, so the scan stays linear.
+ * read, however long, and matched whole even without a separator: the scan never restarts inside an identifier, so it
+ * stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z](?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-])*)((?:\\?["'])?\s*\+?[=:]\s*|\s+)`, 'g')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z](?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-]|\$?'[A-Za-z0-9_.-]*'|\$?"[A-Za-z0-9_.-]*"|\\[A-Za-z0-9_.-])*)((?:\\?["'])?\s*\+?[=:]\s*|\s+|)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /**
  * `curl -u user:secret` / `-uuser:secret` / `--user user:secret`, and the proxy forms `-U` / `--proxy-user`; a quoted
@@ -332,6 +336,8 @@ function redactCredentialParams(text: string): string {
   CRED_PARAM_RE.lastIndex = 0
   for (let m = CRED_PARAM_RE.exec(text); m; m = CRED_PARAM_RE.exec(text)) {
     const [head, dash = '', key = '', sep = ''] = m
+    // No separator: the identifier is matched whole anyway, so the scan never restarts inside it (`a'a'a'…` stays linear).
+    if (!sep) continue
     // Prose (`secret sauce`): a bare space only separates a CLI flag from its value.
     if (!/[=:]/.test(sep) && !dash) continue
     if (!isCredentialKey(key)) continue
@@ -348,7 +354,7 @@ function redactCredentialParams(text: string): string {
     // Nothing to mask: empty or already masked.
     if (!inner.trim() || inner === '***') continue
     // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers when the whole value is one plain `\S+` token.
-    if (!quoted && sep.includes('=') && !sep.includes('+') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && /^[^\s\\]+$/.test(value)) continue
+    if (!quoted && sep.includes('=') && !sep.includes('+') && key === key.toUpperCase() && !/["'\\]/.test(key) && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && /^[^\s\\]+$/.test(value)) continue
     // Fully masked: a partial mask would leak part of a password or passphrase.
     out += text.slice(last, valueStart) + (/^[[{(]/.test(value) ? '***' : maskShellWord(value))
     last = valueEnd
@@ -424,6 +430,8 @@ export function mightContainSensitiveText(text: string): boolean {
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
   if (CRED_KEY_NAME_RE.test(text)) return true
+  // A key the shell assembles from pieces (`--pass'word'`) names a credential only once dequoted.
+  if (/["'\\]/.test(text) && CRED_KEY_NAME_RE.test(dequote(text))) return true
   if (USER_FLAG_TEST_RE.test(text)) return true
   if (text.includes(':') && TELEGRAM_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true

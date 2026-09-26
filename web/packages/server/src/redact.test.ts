@@ -159,6 +159,16 @@ describe('round 44 shapes', () => {
     expect(redactText(`login --user["name"]=bob`, true)).toBe(`login --user["name"]=bob`)
   })
 
+  it('dequotes a credential option name the shell assembles from quoted or escaped pieces, through the prefilter', () => {
+    // A `'` piece inside a word reads as a contraction, so its closing quote opens one: the mask runs to the line end.
+    expect(redactText(`login --pass'word'=hunter2 next`, true)).toBe(`login --pass'word'=***`)
+    expect(redactText(String.raw`login --pass\word=hunter2 next`, true)).toBe(String.raw`login --pass\word=*** next`)
+    expect(redactText(`login --pa"ss"word=hunter2 next`, true)).toBe(`login --pa"ss"word=*** next`)
+    expect(redactText(`login --pass$'word'=hunter2 next`, true)).toBe(`login --pass$'word'=*** next`)
+    expect(redactText(`PASS'WORD'=hunter2 next`, true)).toBe(`PASS'WORD'=***`)
+    expect(redactText(`login --us'er'=bob --pass'word'=hunter2`, true)).toBe(`login --us'er'=bob --pass'word'=***`)
+  })
+
   it('routes an attached upper-case curl -U through the prefilter', () => {
     expect(redactText('curl -Ubob:hunter2 example.com', true)).toBe('curl -Ubob:*** example.com')
   })
@@ -180,7 +190,9 @@ describe('redactSensitive cost', () => {
     for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
-      `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200)]) {
+      `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
+      // Shell-composed identifiers: unclosed and alternating quote and escape pieces.
+      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`)]) {
       const started = performance.now()
       redactSensitive(text)
       expect(performance.now() - started).toBeLessThan(1000)
