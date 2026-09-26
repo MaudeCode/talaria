@@ -268,6 +268,11 @@ describe('shell-composed words', () => {
     }
   })
 
+  it('masks the value after a computed header name', () => {
+    expect(redactText('HEADER=Authorization; curl -H "${HEADER}: Basic hunter2" x', true)).toBe('HEADER=Authorization; curl -H "${HEADER}: ***" x')
+    expect(redactText('curl "http://$HOST:$PORT/x" -o $OUT:file', true)).toBe('curl "http://$HOST:$PORT/x" -o $OUT:file')
+  })
+
   it('removes a line continuation as the shell does', () => {
     expect(redactText('login --pass\\\nword=hunter2 next', true)).toBe('login --password=*** next')
     expect(redactText('login --api\\\n_key "hunter2" next', true)).not.toContain('hunter2')
