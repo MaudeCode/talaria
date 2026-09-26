@@ -58,13 +58,13 @@ describe('UpdateNotificationStore', () => {
     const root = temp()
     const first = new UpdateNotificationStore(root).begin(alice, 'webui')
     let restarted = new UpdateNotificationStore(root)
-    restarted.reconcileWebRestart('a'.repeat(40))
+    restarted.reconcileInterruptedUpdates('a'.repeat(40))
     expect(restarted.list(alice).notifications.find((row) => row.id === first.id)?.phase).toBe('unknown')
 
     const restarting = restarted.begin(alice, 'webui')
     restarted.transition(restarting.id, 'restarting', 'b'.repeat(40))
     restarted = new UpdateNotificationStore(root)
-    restarted.reconcileWebRestart('b'.repeat(40), 'web-v2.0.0')
+    restarted.reconcileInterruptedUpdates('b'.repeat(40), 'web-v2.0.0')
     expect(restarted.list(alice).notifications.find((row) => row.id === restarting.id)).toMatchObject({
       phase: 'succeeded', verified_revision: 'b'.repeat(40), verified_version: 'web-v2.0.0',
     })
@@ -72,8 +72,21 @@ describe('UpdateNotificationStore', () => {
     const unverified = restarted.begin(alice, 'webui')
     restarted.transition(unverified.id, 'restarting', 'c'.repeat(40))
     restarted = new UpdateNotificationStore(root)
-    restarted.reconcileWebRestart('d'.repeat(40))
+    restarted.reconcileInterruptedUpdates('d'.repeat(40))
     expect(restarted.list(alice).notifications.find((row) => row.id === unverified.id)).toMatchObject({ phase: 'unknown', verified_revision: null, verified_version: null })
+
+    const interruptedAgent = restarted.begin(alice, 'agent')
+    restarted = new UpdateNotificationStore(root)
+    restarted.reconcileInterruptedUpdates('d'.repeat(40))
+    expect(restarted.list(alice).notifications.find((row) => row.id === interruptedAgent.id)).toMatchObject({ phase: 'unknown', verified_revision: null, verified_version: null })
+
+    const clearedAgent = restarted.begin(alice, 'agent')
+    restarted.clear(alice)
+    restarted = new UpdateNotificationStore(root)
+    restarted.reconcileInterruptedUpdates('d'.repeat(40))
+    expect(restarted.activeUpdate(alice, 'agent')).toBeNull()
+    expect(restarted.list(alice).notifications.some((row) => row.id === clearedAgent.id)).toBe(false)
+    expect(restarted.begin(alice, 'agent').id).not.toBe(clearedAgent.id)
   })
 
   it('cancels an awaiting confirmation idempotently', () => {

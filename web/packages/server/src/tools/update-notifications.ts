@@ -228,18 +228,18 @@ export class UpdateNotificationStore {
     return copy(row)
   }
 
-  reconcileWebRestart(currentIdentity: string | null, currentVersion: string | null = null): void {
+  reconcileInterruptedUpdates(currentWebIdentity: string | null, currentWebVersion: string | null = null): void {
     let changed = false
     for (const row of this.rows) {
-      if (row.kind !== 'update' || row.target !== 'webui' || !['applying', 'restarting'].includes(row.phase)) continue
-      const phase: UpdateNotificationPhase = row.phase === 'restarting' && currentIdentity && REVISION.test(currentIdentity) && row.expected_identity === currentIdentity ? 'succeeded' : 'unknown'
+      if (row.kind !== 'update' || (row.target !== 'webui' && row.target !== 'agent') || !['applying', 'restarting'].includes(row.phase)) continue
+      const phase: UpdateNotificationPhase = row.target === 'webui' && row.phase === 'restarting' && currentWebIdentity && REVISION.test(currentWebIdentity) && row.expected_identity === currentWebIdentity ? 'succeeded' : 'unknown'
       row.phase = phase
       Object.assign(row, wording(row.target, phase))
       row.updated_at = this.now().toISOString()
       row.read_at = null
       if (phase === 'succeeded') {
-        row.verified_revision = currentIdentity
-        row.verified_version = safeText(currentVersion, '', 80) || null
+        row.verified_revision = currentWebIdentity
+        row.verified_version = safeText(currentWebVersion, '', 80) || null
       }
       changed = true
     }

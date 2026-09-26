@@ -115,7 +115,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const version = opts.version ?? detectWebuiVersion(release, config.webRoot, (env.TALARIA_WEB_VERSION ?? '').trim() || packageVersion())
   const updateNotifications = new UpdateNotificationStore(config.stateDir, () => new Date(now() * 1000))
   const verifiedRunningVersion = /^web-(?:exp-)?v\d+\.\d+\.\d+$/.test(version) ? version : null
-  updateNotifications.reconcileWebRestart(runningSourceRevision ?? release.sourceRevision, verifiedRunningVersion)
+  updateNotifications.reconcileInterruptedUpdates(runningSourceRevision ?? release.sourceRevision, verifiedRunningVersion)
   const home = opts.home ?? config.homeDir
   const PROFILE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
   // Python `init_profile_state` + `switch_profile(process_wide=False)`: the sticky `~/.hermes/active_profile` is
