@@ -89,11 +89,11 @@ const EMBEDDED_AWS_RE = /AKIA[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
 /**
  * `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The user
- * and password may be assembled from quoted and escaped shell pieces (`bob:hun'ter2'@`), and their `:` escaped
- * (`bob\:hunter2@`). The scheme starts at a run
- * boundary, so the scan stays linear however long it is.
+ * and password may be assembled from quoted and escaped shell pieces (`bob:hun'ter2'@`), and every delimiter may be
+ * shell-escaped (`https\:\/\/`, `bob\:hunter2`, `hunter2\@`). The scheme starts at a run boundary, so the scan stays
+ * linear however long it is.
  */
-const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*:\/\/(?:[^\s:@/'"\\]|'[^'\n:@/]*'|"[^"\n:@/]*"|\\[^\s:])*\\?:)((?:[^\s@/'"\\]|'[^'\n@/]*'|"[^"\n@/]*"|\\\S)+)(?=@)/g
+const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*\\?:\\?\/\\?\/(?:[^\s:@/'"\\]|'[^'\n:@/]*'|"[^"\n:@/]*"|\\[^\s:@/])*\\?:)((?:[^\s@/'"\\]|'[^'\n@/]*'|"[^"\n@/]*"|\\[^\s@/])+)(?=\\?@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
 const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
 /** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
@@ -506,8 +506,11 @@ export function mightContainSensitiveText(text: string): boolean {
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
   if (CRED_KEY_NAME_RE.test(text)) return true
-  // A key the shell assembles from pieces (`--pass'word'`) names a credential only once dequoted.
-  if (/["'\\]/.test(text) && CRED_KEY_NAME_RE.test(dequote(text))) return true
+  // A key or URL the shell assembles from pieces (`--pass'word'`, `https\:\/\/`) is recognizable only once dequoted.
+  if (/["'\\]/.test(text)) {
+    const plain = dequote(text)
+    if (CRED_KEY_NAME_RE.test(plain) || plain.includes('://')) return true
+  }
   if (DYNAMIC_KEY_PIECE_RE.test(text) || /\$[({A-Za-z_']|`/.test(text)) return true
   if (USER_FLAG_TEST_RE.test(text)) return true
   if (text.includes(':') && TELEGRAM_RE.test(text)) return true
