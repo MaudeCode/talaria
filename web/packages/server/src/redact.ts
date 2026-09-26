@@ -61,10 +61,11 @@ const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]){0,4}(?:(?:access|refresh|id|aut
 const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`, 'i')
 /**
  * Credential parameters in text (`access_token=`, `"clientSecret": "..."`, `X-Api-Key:`) and CLI flags with a
- * space-separated value (`--password hunter2`). `ENV_RE` already masked an upper-case `KEY=value` whose name it covers.
+ * space-separated value (`--password hunter2`); a quoted value is masked through its closing quote. An unquoted upper-case
+ * `KEY=value` whose name `ENV_RE` covers is left to it.
  * The name prefix is capped at four segments so the scan stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})(["']?\s*[=:]\s*["']?|\s+["']?)([^\s"'&,;)}\]]+)`, 'gi')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})(["']?\s*[=:]\s*|\s+)("[^"\n]*"|'[^'\n]*'|[^\s"'&,;)}\]]+)`, 'gi')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `--user user:secret`. */
 const USER_FLAG_RE = /((?<![A-Za-z0-9-])(?:-u|--user)\s+["']?[^\s:"']+:)([^\s"'@]+)/g
@@ -116,17 +117,20 @@ export function redactSensitive(text: string): string {
   let out = text.replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = out.replace(AUTH_HDR_RE, (_, head: string, token: string) => head + mask(token))
-  out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
-  out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
   out = out.replace(CRED_PARAM_RE, (whole, dash: string, key: string, sep: string, value: string) => {
-    if (!/[A-Za-z0-9]/.test(value)) return whole
+    const quote = /^["']/.test(value) ? value[0]! : ''
+    const inner = quote ? value.slice(1, -1) : value
+    if (!/[A-Za-z0-9]/.test(inner)) return whole
     // A bare space only separates a CLI flag from its value; `secret sauce` is prose.
     if (!/[=:]/.test(sep) && !dash) return whole
-    if (sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key)) return whole
-    // A bare `Authorization:` header is `AUTH_HDR_RE`'s: it already masked the credential after the scheme word.
-    if (/authorization$/i.test(key) && /^\s*:\s*$/.test(sep)) return whole
-    return dash + key + sep + mask(value)
+    if (!quote && sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key)) return whole
+    // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s.
+    if (!quote && /authorization$/i.test(key) && /^\s*:\s*$/.test(sep)) return whole
+    // Fully masked: a partial mask would leak part of a password or passphrase.
+    return `${dash}${key}${sep}${quote}***${quote}`
   })
+  out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
+  out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
   out = out.replace(USER_FLAG_RE, (_, head: string, secret: string) => head + mask(secret))
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
   out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]')
@@ -321,7 +325,7 @@ function redactArgs(value: unknown, enabled: boolean): unknown {
   if (!enabled) return value
   if (Array.isArray(value)) return value.map((item) => redactArgs(item, enabled))
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, CRED_KEY_RE.test(key) && (typeof item === 'string' || typeof item === 'number') && String(item) !== '' ? mask(String(item)) : redactArgs(item, enabled)]))
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, CRED_KEY_RE.test(key) && (typeof item === 'string' || typeof item === 'number') && String(item) !== '' ? '***' : redactArgs(item, enabled)]))
   }
   return redactValue(value, enabled)
 }
