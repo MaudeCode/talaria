@@ -1058,6 +1058,7 @@ struct ChatView: View {
             listeningMessageID: viewModel.listeningMessageID,
             isViewingCachedData: viewModel.isViewingCachedData,
             isSessionReadOnly: viewModel.isSessionReadOnly,
+            canBranch: viewModel.canBranch,
             hasOlderMessages: viewModel.hasOlderMessages,
             isLoadingOlderMessages: viewModel.isLoadingOlderMessages,
             isRegeneratingMessage: viewModel.isRegeneratingMessage,

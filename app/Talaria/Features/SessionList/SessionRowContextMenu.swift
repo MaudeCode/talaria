@@ -25,29 +25,31 @@ struct SessionRowContextMenu: View {
             }
         }
 
-        if SessionRowActionPolicy.offersMutationActions(for: session) {
+        if SessionRowActionPolicy.canPin(session) {
             Button {
                 actions.togglePinned(session)
             } label: {
                 Label(session.pinned == true ? "Unpin" : "Pin", systemImage: "pin")
             }
-            .disabled(!canShowSessionMutationActions || isMutating)
+            .disabled(!isLiveServerSession || isMutating)
+        }
 
+        if SessionRowActionPolicy.canDuplicate(session) {
+            Button {
+                actions.duplicate(session)
+            } label: {
+                Label("Duplicate", systemImage: "doc.on.doc")
+            }
+            .disabled(isViewingCachedData || session.sessionId == nil || isMutating)
+        }
+
+        if SessionRowActionPolicy.offersMutationActions(for: session) {
             Button {
                 actions.rename(session)
             } label: {
                 Label("Rename", systemImage: "pencil")
             }
             .disabled(isViewingCachedData || isRenamingSession || !hasServerSessionID(session))
-
-            if SessionRowActionPolicy.canDuplicate(session) {
-                Button {
-                    actions.duplicate(session)
-                } label: {
-                    Label("Duplicate", systemImage: "doc.on.doc")
-                }
-                .disabled(isViewingCachedData || session.sessionId == nil || isMutating)
-            }
 
             Menu {
                 SessionProjectMoveMenu(
@@ -95,14 +97,16 @@ struct SessionRowContextMenu: View {
         }
         .disabled(!canExportSession || isMutating)
 
-        if SessionRowActionPolicy.offersMutationActions(for: session) {
+        if SessionRowActionPolicy.canArchive(session) {
             Button {
                 actions.archive(session)
             } label: {
                 Label("Archive", systemImage: "archivebox")
             }
-            .disabled(!canShowSessionMutationActions || isMutating)
+            .disabled(!isLiveServerSession || isMutating)
+        }
 
+        if SessionRowActionPolicy.offersMutationActions(for: session) {
             Button(role: .destructive) {
                 actions.delete(session)
             } label: {
@@ -113,9 +117,11 @@ struct SessionRowContextMenu: View {
     }
 
     private var canShowSessionMutationActions: Bool {
-        SessionRowActionPolicy.offersMutationActions(for: session)
-            && !isViewingCachedData
-            && hasServerSessionID(session)
+        SessionRowActionPolicy.offersMutationActions(for: session) && isLiveServerSession
+    }
+
+    private var isLiveServerSession: Bool {
+        !isViewingCachedData && hasServerSessionID(session)
     }
 
     private var canExportSession: Bool {

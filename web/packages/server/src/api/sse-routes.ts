@@ -10,6 +10,7 @@ import { parseRunJournalEventId, SSE_RELAY_CLOSE_EVENTS, type JournalEvent } fro
 import { nextItem, nextSessionItem, type StreamSubscriber } from '../sessions/streams.js'
 import { nextPendingItem } from '../sessions/pending.js'
 import type { Session } from '../sessions/session.js'
+import { withSessionWireFlags } from '../sessions/list.js'
 import type { GatewayWatcher } from '../sessions/gateway-watcher.js'
 import { str } from '../util.js'
 import { streamOwnerSessionId } from './session-visibility.js'
@@ -384,7 +385,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
   const snapshot = (activeStreamId: string | null): void => {
     let fresh = session
     try { fresh = ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }) } catch { fresh = session }
-    sse.event('session_snapshot', { session: fresh.compact(activeStreamId ? { includeRuntime: true, activeStreamIds: new Set([activeStreamId]) } : {}) })
+    sse.event('session_snapshot', { session: withSessionWireFlags(fresh.compact(), new Set(activeStreamId ? [activeStreamId] : [])) })
   }
   const attach = (): { sub: StreamSubscriber | null; streamId: string | null; snapshot: { last_event_id: string | null } } => {
     const streamId = ctx.deps.registry.activeRunStreamForSession(sessionId)

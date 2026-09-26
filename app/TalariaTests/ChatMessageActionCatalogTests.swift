@@ -78,6 +78,14 @@ final class ChatMessageActionCatalogTests: XCTestCase {
         XCTAssertEqual(disabledIDs(catalog(for: .assistant, state: readOnly)), ["regenerate"])
     }
 
+    func testServerBranchGateDisablesForkOnly() {
+        var state = idleState
+        state.canBranch = false
+
+        XCTAssertEqual(disabledIDs(catalog(for: .assistant, state: state)), ["fork"])
+        XCTAssertEqual(disabledIDs(catalog(for: .user, state: state)), ["fork"])
+    }
+
     func testInFlightForkOnlyDisablesForking() {
         let actions = catalog(for: .assistant, state: ChatMessageActionState(
             listeningMessageID: nil,

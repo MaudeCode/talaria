@@ -608,6 +608,7 @@ extension SessionListMutationTests {
                   "title": "Untitled",
                   "message_count": 0,
                   "active_stream_id": "stream-123",
+                  "is_streaming": true,
                   "archived": false
                 },
                 {

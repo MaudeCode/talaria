@@ -56,7 +56,7 @@ struct SessionInteractiveRow: View {
 
     @ViewBuilder
     private func sessionLeadingSwipeActions(for session: SessionSummary) -> some View {
-        if canShowSessionMutationActions(for: session) {
+        if SessionRowActionPolicy.canPin(session), isLiveServerSession(session) {
             Button {
                 actions.togglePinned(session)
             } label: {
@@ -69,7 +69,7 @@ struct SessionInteractiveRow: View {
 
     @ViewBuilder
     private func sessionTrailingSwipeActions(for session: SessionSummary) -> some View {
-        if canShowSessionMutationActions(for: session) {
+        if SessionRowActionPolicy.canArchive(session), isLiveServerSession(session) {
             Button {
                 actions.archive(session)
             } label: {
@@ -77,7 +77,9 @@ struct SessionInteractiveRow: View {
             }
             .disabled(viewModel.isMutating(session))
             .tint(.orange)
+        }
 
+        if canShowSessionMutationActions(for: session) {
             Button {
                 actions.delete(session)
             } label: {
@@ -89,8 +91,10 @@ struct SessionInteractiveRow: View {
     }
 
     private func canShowSessionMutationActions(for session: SessionSummary) -> Bool {
-        SessionRowActionPolicy.offersMutationActions(for: session)
-            && !viewModel.isViewingCachedData
-            && hasServerSessionID(session)
+        SessionRowActionPolicy.offersMutationActions(for: session) && isLiveServerSession(session)
+    }
+
+    private func isLiveServerSession(_ session: SessionSummary) -> Bool {
+        !viewModel.isViewingCachedData && hasServerSessionID(session)
     }
 }

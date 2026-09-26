@@ -11,7 +11,7 @@ import { copyJson, redactSessionData, redactValue, stripPublicInternalFields } f
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, buildSessionListPayload, isMessagingSessionRecord, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, isClaimableCliSource, isMessagingSessionRecord, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
@@ -184,19 +184,6 @@ export class SessionService {
     }
   }
 
-  /** Python `_is_claimable_cli_source`: a denylist of foreign families that own their sessions. */
-  private claimableCliSource(meta: Row, stateDbSource: string): boolean {
-    if (meta.read_only) return false
-    const sessionSource = str(meta.session_source).trim().toLowerCase()
-    if (['messaging', 'external_agent'].includes(sessionSource)) return false
-    const tag = str(meta.source_tag || meta.raw_source).trim().toLowerCase()
-    const refused = new Set(['claude_code', 'cron', 'external_agent', 'gateway', 'messaging', 'subagent', 'unknown'])
-    if (tag && refused.has(tag)) return false
-    if (isMessagingSessionRecord(meta)) return false
-    if (!tag && stateDbSource && refused.has(stateDbSource.trim().toLowerCase())) return false
-    return true
-  }
-
   /** Python `_session_index_marks_was_webui`: an index row that once owned a WebUI sidecar (self-heal 404). */
   private indexMarksWasWebui(sid: string): boolean {
     let entries: Record<string, unknown>[]
@@ -236,7 +223,7 @@ export class SessionService {
       if (!meta.created_at && row.started_at) meta.created_at = row.started_at
       if (!meta.updated_at && (row.ended_at || row.started_at)) meta.updated_at = row.ended_at || row.started_at
     }
-    const claimable = this.claimableCliSource(meta, stateDbSource)
+    const claimable = isClaimableCliSource(meta, stateDbSource)
     const workspace = str(meta.workspace || meta.cwd).trim() || this.deps.workspaces.lastWorkspace(profile)
     const defaults = this.store.deps.defaults(profile)
     const session = new Session({
@@ -264,10 +251,15 @@ export class SessionService {
 
   /** `compact()` plus messages, redacted for the wire (Python `_public_session_projection`). */
   publicSession(s: Session, withMessages = true): Record<string, unknown> {
-    const payload = s.compact()
+    const payload = this.wireRow(s)
     // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
     if (withMessages) payload.messages = hydrateAnchorActivityScenes(withTurnIds(s.messages), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id })
     return redactSessionData(payload, this.deps.redactEnabled())
+  }
+
+  /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
+  wireRow(s: Session): Record<string, unknown> {
+    return withSessionWireFlags(s.compact(), this.deps.runtime.activeStreamIds)
   }
 
   /** Python `public_session_projection(s.__dict__)`: every persisted field, redacted (session export). */
@@ -327,7 +319,6 @@ export class SessionService {
       messages: truncated,
       message_count: mergedCount,
       tool_calls: toolCalls,
-      active_stream_id: s.active_stream_id,
       pending_user_message: s.pending_user_message,
       pending_attachments: loadMessages ? s.pending_attachments : [],
       pending_started_at: s.pending_started_at,
@@ -347,10 +338,7 @@ export class SessionService {
     raw._msg_limit_max = MAX_MSG_LIMIT
     const revisionAfter = this.loadRevision(s)
     raw._load_revision = revisionBefore !== null && revisionBefore === revisionAfter ? hashRevision(revisionBefore) : `unstable-${randomUUID().replace(/-/g, '')}`
-    if (str(raw.source_tag || raw.raw_source || raw.session_source).trim().toLowerCase() === 'subagent') {
-      raw.is_cli_session = false
-      raw.read_only = true
-    }
+    withSessionWireFlags(raw, activeStreamIds)
     return redactSessionData(raw, this.deps.redactEnabled())
   }
 
@@ -379,10 +367,10 @@ export class SessionService {
       created_at: synth.created_at, updated_at: synth.updated_at, last_message_at: meta?.last_message_at || meta?.updated_at || lastTs,
       pinned: synth.pinned, archived: synth.archived, project_id: synth.project_id ?? null, profile: synth.profile,
       is_cli_session: synth.is_cli_session, source_tag: synth.source_tag, raw_source: synth.raw_source, session_source: synth.session_source,
-      source_label: synth.source_label, read_only: synth.read_only, messages: msgs, tool_calls: [],
+      source_label: synth.source_label, read_only: synth.read_only, can_duplicate: false, messages: msgs, tool_calls: [],
     }
     attachTodoState(sess, msgs)
-    const merged = meta ? mergeCliSidebarMetadata(sess, meta) : sess
+    const merged = withSessionWireFlags(meta ? mergeCliSidebarMetadata(sess, meta) : sess, this.deps.runtime.activeStreamIds)
     return redactSessionData(merged, this.deps.redactEnabled())
   }
 
@@ -453,6 +441,7 @@ export class SessionService {
     if (!opts.allProfiles) sessions = sessions.filter((r) => this.deps.profilesMatch(str(r.profile) || null, activeProfile))
     const redact = this.deps.redactEnabled()
     const redactRow = (item: Row) => {
+      withSessionWireFlags(item, this.deps.runtime.activeStreamIds)
       if (typeof item.title === 'string') item.title = redactText(item.title, redact)
       for (const f of ['display_title', '_state_db_title', 'parent_title']) if (typeof item[f] === 'string') item[f] = redactText(item[f], redact)
       return item
@@ -491,10 +480,10 @@ export class SessionService {
     const profile = full.profile || 'default'
     let hermesHome = ''
     try { hermesHome = this.deps.workspaces.deps.profileHome(profile) } catch { hermesHome = '' }
-    const live = full.active_stream_id && this.deps.runtime.activeStreamIds.has(full.active_stream_id) ? full.active_stream_id : null
+    const { is_streaming: streaming, active_stream_id: live, read_only: readOnly } = this.wireRow(full)
     return {
       session_id: full.session_id, title: full.title, model: full.model, profile, hermes_home: hermesHome, workspace: full.workspace, personality: full.personality,
-      message_count: full.messages.length, created_at: full.created_at, updated_at: full.updated_at, agent_running: Boolean(full.active_stream_id), active_stream_id: live,
+      message_count: full.messages.length, created_at: full.created_at, updated_at: full.updated_at, agent_running: streaming, is_streaming: streaming, active_stream_id: live, read_only: readOnly,
       input_tokens: inp, output_tokens: out, total_tokens: inp + out, estimated_cost: full.estimated_cost,
     }
   }
@@ -572,7 +561,7 @@ export class SessionService {
     })
     await this.deps.syncTitle(s)
     this.publish('session_rename', s.profile, s.session_id)
-    return { session: s.compact() }
+    return { session: this.wireRow(s) }
   }
 
   // The pin quota is counted across sessions, so the count-and-save transaction runs on one process-wide chain;
@@ -604,7 +593,7 @@ export class SessionService {
       this.store.save(s)
     })
     this.publish('session_pin', s.profile, s.session_id)
-    return { ok: true, session: s.compact() }
+    return { ok: true, session: this.wireRow(s) }
   }
 
   async archive(sid: string, archived: boolean): Promise<Record<string, unknown>> {
@@ -617,7 +606,7 @@ export class SessionService {
       this.store.save(s, { touchUpdatedAt: false })
     })
     this.publish('session_archive', s.profile, s.session_id)
-    return { ok: true, session: s.compact(), ...worktreeRetainedPayload(s) }
+    return { ok: true, session: this.wireRow(s), ...worktreeRetainedPayload(s) }
   }
 
   async move(sid: string, targetProjectId: string | null): Promise<Record<string, unknown>> {
@@ -637,7 +626,7 @@ export class SessionService {
       throw error
     }
     this.publish('session_move', s.profile, s.session_id)
-    return { ok: true, session: s.compact() }
+    return { ok: true, session: this.wireRow(s) }
   }
 
   async update(sid: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -741,7 +730,7 @@ export class SessionService {
       if (hadMessages) { try { rmSync(`${this.store.pathFor(sid)}.bak`, { force: true }) } catch { /* ignore */ } }
     })
     this.deps.runtime.evictAgent(sid)
-    return { ok: true, session: s.compact() }
+    return { ok: true, session: this.wireRow(s) }
   }
 
   async retry(sid: string): Promise<Record<string, unknown>> {
