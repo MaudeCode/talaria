@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -43,6 +43,7 @@ export function SystemSection() {
   const agentChannel = agentChannelDraft ?? str('agent_update_channel', 'stable')
   const setAgentChannel = (v: string) => { setAgentChannelDraft(v); save.mutate({ agent_update_channel: v }, { onError: fail, onSettled: () => { setAgentChannelDraft(undefined); void qc.invalidateQueries({ queryKey: keys.updates.check }) } }) }
   const [agentConfirmation, setAgentConfirmation] = useState<{ revision: string; supported: string; version: string; channel: 'stable' | 'experimental'; notificationId?: string } | null>(null)
+  const acceptedAgentConfirmation = useRef(false)
   // The server reads persisted settings (channel, ignore-agent) for the forced check, so let every
   // in-flight settings save settle first; the cache then holds whatever actually persisted.
   const settledChannel = () => { const v = qc.getQueryData<Record<string, unknown>>(keys.settings)?.update_channel; return typeof v === 'string' ? v : undefined }
@@ -64,6 +65,7 @@ export function SystemSection() {
     },
     onSuccess: (r) => {
       if (r.confirmation_required && r.candidate_revision && r.agent_channel) {
+        acceptedAgentConfirmation.current = false
         setAgentConfirmation({ revision: r.candidate_revision, supported: r.supported_revision ?? '—', version: r.supported_version ?? '—', channel: r.agent_channel, ...(r.notification_id ? { notificationId: r.notification_id } : {}) })
       } else if (r.ok === false) fail(new Error(r.message ?? r.error ?? m.settings_update_check_failed()))
       else showToast(r.message ?? r.status ?? m.saved())
@@ -182,7 +184,7 @@ export function SystemSection() {
         </section>
       )}
       <ConfirmDialog open={confirmShutdown} onOpenChange={setConfirmShutdown} title={m.system_shutdown()} description={m.system_shutdown_confirm()} confirmLabel={m.system_shutdown()} cancelLabel={m.cancel()} danger onConfirm={() => shutdown.mutate()} />
-      <ConfirmDialog open={agentConfirmation !== null} onOpenChange={(open) => { if (!open && agentConfirmation) { const pending = agentConfirmation; setAgentConfirmation(null); if (pending.notificationId) void api.cancelUpdateNotification(pending.notificationId).catch(fail).finally(() => qc.invalidateQueries({ queryKey: keys.updateNotifications })) } }} title={m.system_agent_unsupported_title()} description={agentConfirmation ? `${m.system_agent_unsupported_warning()} ${m.system_agent_unsupported_identity({ version: agentConfirmation.version, supported: agentConfirmation.supported.slice(0, 12), candidate: agentConfirmation.revision.slice(0, 12) })}` : ''} confirmLabel={m.system_agent_update_anyway()} cancelLabel={m.cancel()} danger onConfirm={() => { if (agentConfirmation) { const pending = agentConfirmation; setAgentConfirmation(null); apply.mutate({ target: 'agent', confirmedRevision: pending.revision, agentChannel: pending.channel }) } }} />
+      <ConfirmDialog open={agentConfirmation !== null} onOpenChange={(open) => { if (!open && agentConfirmation) { const pending = agentConfirmation; setAgentConfirmation(null); if (acceptedAgentConfirmation.current) { acceptedAgentConfirmation.current = false; return } if (pending.notificationId) void api.cancelUpdateNotification(pending.notificationId).catch(fail).finally(() => qc.invalidateQueries({ queryKey: keys.updateNotifications })) } }} title={m.system_agent_unsupported_title()} description={agentConfirmation ? `${m.system_agent_unsupported_warning()} ${m.system_agent_unsupported_identity({ version: agentConfirmation.version, supported: agentConfirmation.supported.slice(0, 12), candidate: agentConfirmation.revision.slice(0, 12) })}` : ''} confirmLabel={m.system_agent_update_anyway()} cancelLabel={m.cancel()} danger onConfirm={() => { if (agentConfirmation) { const pending = agentConfirmation; acceptedAgentConfirmation.current = true; setAgentConfirmation(null); apply.mutate({ target: 'agent', confirmedRevision: pending.revision, agentChannel: pending.channel }) } }} />
     </div>
   )
 }
