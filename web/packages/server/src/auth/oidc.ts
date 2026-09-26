@@ -320,6 +320,8 @@ export class OidcService {
       this.enforceAllowlist(claims, cfg)
       const boundProfile = this.resolveBoundProfile(cfg, claims)
       const binding = this.binding(cfg, boundProfile, this.ownerPermission(cfg, claims))
+      binding.issuer = cfg.issuer
+      binding.subject = str(claims.sub)
       return { next_path: pending.next_path, native_flow_id: pending.native_flow_id, subject: str(claims.sub), email: str(claims.email), bound_profile: boundProfile, oidc_binding: binding, claims }
     } catch (error) {
       if (error instanceof OidcAuthError || error instanceof OidcConfigError) error.nativeFlowId = pending.native_flow_id

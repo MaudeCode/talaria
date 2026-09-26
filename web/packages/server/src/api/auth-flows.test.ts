@@ -97,6 +97,7 @@ describe('OIDC browser login', () => {
     expect(cb.headers.get('location')).toBe('/settings')
     const cookie = cookieOf(cb, s.deps.auth.cookieName())
     expect(cookie).toBeTruthy()
+    expect(s.deps.auth.getSessionInfo(cookie)).toMatchObject({ oidc_issuer: ISSUER, oidc_subject: 'user-1' })
     expect(idp.tokens.at(-1)).toMatchObject({ grant_type: 'authorization_code', client_id: 'web-client', redirect_uri: `http://127.0.0.1:${String(s.running.port)}/api/auth/oidc/callback` })
     const status = await json(await s.get('/api/auth/status', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } }))
     expect(status).toMatchObject({ logged_in: true, auth_type: 'oidc', user: 'kim@example.com', bound_profile: null, can_manage_server: false })
@@ -119,6 +120,35 @@ describe('OIDC browser login', () => {
     expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).logged_in).toBe(false)
     s.deps.config.env.HERMES_WEBUI_OIDC_OWNER_VALUES = 'owners'
   }, 15_000)
+
+  it('isolates notification history and mutations between OIDC owners sharing an email and profile', async () => {
+    const originalClaims = idp.claimsFor
+    const origin = `http://127.0.0.1:${String(s.running.port)}`
+    const login = async (subject: string): Promise<{ cookie: string; headers: Record<string, string> }> => {
+      idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: subject, email: 'shared@example.com', groups: ['admins', 'owners'], exp: now() + 300, nonce })
+      const start = await s.get('/api/auth/oidc/start')
+      const { state, code } = providerCode(start.headers.get('location') ?? '')
+      const callback = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+      const value = cookieOf(callback, s.deps.auth.cookieName()) ?? ''
+      const cookie = `${s.deps.auth.cookieName()}=${value}`
+      return { cookie, headers: { cookie, origin, 'x-csrf-token': s.deps.auth.csrfTokenForSession(value) ?? '' } }
+    }
+    try {
+      const first = await login('principal-a')
+      const applied = await json(await post(s, '/api/updates/apply', { target: 'webui' }, first.headers))
+      const notificationID = String(applied.notification_id)
+      expect(notificationID).toMatch(/^[0-9a-f-]{36}$/)
+      const firstList = await json(await s.get('/api/update-notifications', { headers: { cookie: first.cookie } }))
+      expect((firstList.notifications as Json[]).some((row) => row.id === notificationID)).toBe(true)
+
+      const second = await login('principal-b')
+      expect((await post(s, `/api/update-notifications/${notificationID}/read`, { read: true }, second.headers)).status).toBe(404)
+      const secondList = await json(await s.get('/api/update-notifications', { headers: { cookie: second.cookie } }))
+      expect((secondList.notifications as Json[]).some((row) => row.id === notificationID)).toBe(false)
+    } finally {
+      idp.claimsFor = originalClaims
+    }
+  })
 
   it('rejects identities outside the allowlist, bad state, and provider errors [py:test_issue3825_oidc_auth.py::test_oidc_callback_rejects_invalid_state_without_setting_session_cookie] [py:test_issue3825_oidc_auth.py::test_oidc_callback_rejects_allowlist_failure_without_setting_session_cookie]', async () => {
     idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-3', groups: ['guests'], exp: now() + 300, nonce })

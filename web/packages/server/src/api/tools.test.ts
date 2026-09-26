@@ -164,7 +164,8 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { sanitizeClientEvent, WindowLimiter } from './tools-router.js'
+import { sanitizeClientEvent, updateNotificationOwner, WindowLimiter } from './tools-router.js'
+import type { SessionInfo } from '../auth/store.js'
 import { buildInsights } from '../tools/insights.js'
 import { serverSummary, maskSecrets } from '../tools/mcp.js'
 import { readProjectContext } from '../tools/memory.js'
@@ -559,6 +560,23 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
 })
 
 describe('tools helpers', () => {
+  it('keys OIDC notifications by stable issuer and subject without cross-owner sharing', () => {
+    const session = (token: string, issuer: string, subject: string, boundProfile = 'work'): SessionInfo => ({
+      token, expiry: 2_000_000_000, auth_type: 'oidc', username: 'shared@example.test', bound_profile: boundProfile,
+      oidc_issuer: issuer, oidc_subject: subject,
+    })
+    const first = updateNotificationOwner(session('token-a', 'https://issuer.example', 'principal-a'))
+    expect(updateNotificationOwner(session('token-b', 'https://issuer.example', 'principal-a'))).toBe(first)
+    expect(updateNotificationOwner(session('token-c', 'https://issuer.example', 'principal-a', 'personal'))).toBe(first)
+    expect(updateNotificationOwner(session('token-d', 'https://issuer.example', 'principal-b'))).not.toBe(first)
+    expect(updateNotificationOwner(session('token-e', 'https://other-issuer.example', 'principal-a'))).not.toBe(first)
+    expect(updateNotificationOwner(session('token-f', 'https://issuer.example', 'principal-a '))).not.toBe(first)
+    expect(first.length).toBeLessThanOrEqual(256)
+
+    const legacy = (token: string): SessionInfo => ({ token, expiry: 2_000_000_000, auth_type: 'oidc', username: 'shared@example.test', bound_profile: 'work' })
+    expect(updateNotificationOwner(legacy('legacy-a'))).not.toBe(updateNotificationOwner(legacy('legacy-b')))
+  })
+
   it('window limiter, toggle list, mcp summary, project context', () => {
     let t = 0
     const limiter = new WindowLimiter(60, 2, () => t)

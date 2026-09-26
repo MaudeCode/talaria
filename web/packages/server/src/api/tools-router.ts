@@ -1,5 +1,6 @@
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, diagnostics (Python `api/routes.py` handlers of the same paths). */
 import { implement } from '@orpc/server'
+import { createHash } from 'node:crypto'
 import { toolsContract } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
@@ -17,6 +18,7 @@ import { normalizeChannel } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
 import { str } from '../util.js'
 import type { UpdateNotificationScope, UpdateNotificationTarget } from '../tools/update-notifications.js'
+import type { SessionInfo } from '../auth/store.js'
 
 const os = implement(toolsContract).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -40,11 +42,25 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
 
+const principalHash = (...parts: string[]): string => createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex')
+
+export function updateNotificationOwner(session: SessionInfo | null): string {
+  const authType = str(session?.auth_type).trim()
+  if (authType === 'oidc') {
+    const issuer = str(session?.oidc_issuer).trim()
+    const subject = typeof session?.oidc_subject === 'string' ? session.oidc_subject : ''
+    if (issuer && subject.trim()) return `oidc:${principalHash(issuer, subject)}`
+    const token = str(session?.token).trim()
+    if (token) return `oidc-session:${principalHash(token)}`
+  }
+  const username = str(session?.username).trim()
+  return username ? `${authType || 'auth'}:${username}` : 'local-owner'
+}
+
 async function updateNotificationScope(ctx: RequestContext): Promise<UpdateNotificationScope> {
   const session = await ensureTrustedAuthSession(ctx)
-  const durableIdentity = str(session?.oidc_profile_identity || session?.username).trim()
   return {
-    owner: durableIdentity ? `${session?.auth_type ?? 'auth'}:${durableIdentity}` : 'local-owner',
+    owner: updateNotificationOwner(session),
     profile: activeProfileName(ctx),
     serverOwner: await sessionCanManageServer(ctx, session),
   }
