@@ -62,7 +62,7 @@ import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { str } from '../util.js'
-import { withoutRunningTurnOutput } from './merge.js'
+import { withPendingUserTurn, withoutRunningTurnOutput } from './merge.js'
 import { RunJournalWriter } from './journal.js'
 
 type Json = Record<string, unknown>
@@ -737,5 +737,120 @@ describe('session detail transcript cursor (TAL-316)', () => {
     expect(withoutRunningTurnOutput(deferred, { ...turn, localCount: 2 }).map((m) => m.content)).toEqual(['earlier', 'earlier reply', 'prompt'])
     // Nothing of the turn persisted yet: the transcript is unchanged.
     expect(withoutRunningTurnOutput([rows[0]!, rows[1]!], { ...turn, localCount: 2 })).toHaveLength(2)
+  })
+})
+
+describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+  })
+  afterAll(() => s.close())
+
+  const detail = async (sid: string, query = ''): Promise<Json> => (await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json
+  const users = (session: Json): Json[] => (session.messages as Json[]).filter((m) => m.role === 'user')
+
+  /** A deferred-save turn held after its first token; the Agent has written nothing to state.db. */
+  async function heldTurn(message: string, history: Json[], attachments?: Json[]): Promise<{ sid: string; streamId: string; startedAt: number; release: () => void }> {
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, history)
+    let release: () => void = () => undefined
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'Agent is still working.' } })
+      const turn = [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Agent is still working.' }]
+      release = () => { resolve(completedTurn(turn)) }
+      opts.signal?.addEventListener('abort', () => { resolve({ ...completedTurn(turn.slice(0, 1)), status: 'cancelled' }) })
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message, ...(attachments ? { attachments } : {}) }))
+    const streamId = String(start.stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token')
+    return { sid, streamId, startedAt: Number(start.pending_started_at), release }
+  }
+
+  const history = [{ role: 'user', content: 'continue', timestamp: 1000 }, { role: 'assistant', content: 'earlier reply', timestamp: 1001 }]
+
+  it('shows the pending prompt exactly once, last, in full and windowed reads, and settles to one canonical row', async () => {
+    const { sid, streamId, release } = await heldTurn('Unique pending follow-up', history, [{ name: 'notes.txt', path: '/tmp/notes.txt', mime: 'text/plain' }])
+    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+    for (const session of [await detail(sid), await detail(sid, '&msg_limit=1')]) {
+      const last = (session.messages as Json[]).at(-1)
+      expect(last).toMatchObject({ role: 'user', content: 'Unique pending follow-up', _turn_id: streamId, _active_turn_user: true })
+      expect(JSON.stringify(last?.attachments)).toContain('notes.txt')
+      expect(users(session).filter((m) => m.content === 'Unique pending follow-up')).toHaveLength(1)
+      expect(session.message_count).toBe(3)
+      expect(session.transcript_seq).toEqual({ stream_id: streamId, seq: 0 })
+    }
+    // The projection is a read: deferred save still holds the prompt back from the sidecar.
+    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    const res = await s.get(`/api/session?session_id=${sid}&messages=1`)
+    expect(res.status, await res.clone().text()).toBe(200)
+    const settled = users((await json(res)).session as Json)
+    expect(settled.map((m) => m.content)).toEqual(['continue', 'Unique pending follow-up'])
+    expect(settled[1]?.attachments).toEqual([{ name: 'notes.txt', path: '/tmp/notes.txt', mime: 'text/plain' }])
+    expect(settled.some((m) => m._active_turn_user)).toBe(false)
+  })
+
+  it('keeps a repeated prompt distinct from identical older text', async () => {
+    const { sid, release } = await heldTurn('continue', history)
+    try {
+      const session = await detail(sid)
+      expect(users(session).map((m) => m.content)).toEqual(['continue', 'continue'])
+      expect(users(session)[1]?._active_turn_user).toBe(true)
+    } finally {
+      release()
+    }
+  })
+
+  it('keeps the Agent\'s state.db prompt once instead of projecting another', async () => {
+    const { sid, startedAt, release } = await heldTurn('from state db', history)
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
+    for (const [role, content, ts] of [['user', 'continue', 1000], ['assistant', 'earlier reply', 1001], ['user', 'from state db', startedAt + 0.5]] as const) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+    db.close()
+    try {
+      expect(users(await detail(sid)).map((m) => m.content)).toEqual(['continue', 'from state db'])
+      // Without a journal the persisted rows stand as they are, still with one prompt.
+      const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockReturnValue(null)
+      try {
+        expect(users(await detail(sid)).map((m) => m.content)).toEqual(['continue', 'from state db'])
+      } finally {
+        findRunSummary.mockRestore()
+      }
+    } finally {
+      release()
+    }
+  })
+
+  it('projects the prompt without a journal, and a cancelled turn settles to one row with its attachments', async () => {
+    const { sid, streamId } = await heldTurn('cancel me', history, [{ name: 'cat.png', path: '/tmp/cat.png', mime: 'image/png' }])
+    const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockReturnValue(null)
+    try {
+      const session = await detail(sid)
+      expect(session.transcript_seq).toBeNull()
+      expect(users(session).map((m) => m.content)).toEqual(['continue', 'cancel me'])
+    } finally {
+      findRunSummary.mockRestore()
+    }
+    expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel')
+    const settled = users(await detail(sid))
+    expect(settled.map((m) => m.content)).toEqual(['continue', 'cancel me'])
+    expect(JSON.stringify(settled[1]?.attachments)).toContain('cat.png')
+    expect(settled[1]?._active_turn_user).toBeUndefined()
+  })
+
+  it('projects an attachment-only prompt ahead of the turn\'s first Agent row', () => {
+    const turn = { localCount: 2, turnId: 'run1', startedAt: 100, activeTurnToken: 'run1:100', prompt: { role: 'user', content: '', attachments: [{ name: 'a.png' }] } }
+    const rows = [{ role: 'user', content: 'earlier', timestamp: 1 }, { role: 'assistant', content: 'reply', timestamp: 2 }]
+    expect(withPendingUserTurn(rows, turn).at(-1)).toMatchObject({ role: 'user', content: '', attachments: [{ name: 'a.png' }] })
+    // An Agent row of the turn already past the sidecar: the prompt opens the turn ahead of it.
+    const withOutput = [...rows, { role: 'assistant', content: 'partial', timestamp: 101 }]
+    expect(withPendingUserTurn(withOutput, turn).map((m) => m.content)).toEqual(['earlier', 'reply', '', 'partial'])
   })
 })

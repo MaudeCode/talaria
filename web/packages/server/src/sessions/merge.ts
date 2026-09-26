@@ -3,6 +3,7 @@
  * `_merge_display_messages_after_agent_result`, `_message_identity`,
  * `_extract_tool_calls_from_messages`, `_build_partial_message`).
  */
+import { buildActiveTurnToken } from '../redact.js'
 import { str } from '../util.js'
 import type { Message } from './session.js'
 
@@ -403,6 +404,31 @@ export function withoutRunningTurnOutput(rows: Message[], turn: { localCount: nu
     prompt = true
     return true
   })
+}
+
+/** The running turn's prompt as eager save checkpoints it (Python `_checkpoint_user_message_for_eager_session_save`). */
+export function pendingUserRow(msg: string, attachments: unknown[], startedAt: number | null, source: string, turnId: string): Message {
+  const user: Message = { role: 'user', content: msg, _turn_id: turnId }
+  const token = buildActiveTurnToken(turnId, startedAt)
+  if (token) user._active_turn_token = token
+  if (source !== 'webui') user._source = source
+  if (typeof startedAt === 'number' && startedAt > 0) user.timestamp = startedAt
+  if (attachments.length) user.attachments = [...attachments]
+  return user
+}
+
+/**
+ * TAL-368: the merged transcript with the running turn's prompt, which deferred save keeps out of the sidecar until
+ * settlement. A prompt already persisted for the turn (its checkpoint, a row stamped with its id, or a state.db prompt past
+ * the sidecar at or after its start) stays the only one; otherwise `prompt` opens the turn. Turn identity, never text,
+ * decides, so a repeated prompt stays a turn of its own. Read-only: settlement writes the canonical row.
+ */
+export function withPendingUserTurn(rows: Message[], turn: { localCount: number; turnId: string; startedAt: number; activeTurnToken: string; prompt: Message }): Message[] {
+  const inTurn = (m: Message, i: number): boolean => m._turn_id === turn.turnId || (i >= turn.localCount && Number(m.timestamp) >= turn.startedAt)
+  if (rows.some((m, i) => m.role === 'user' && !m._steer && agentSteerText(m) === null && (m._active_turn_token === turn.activeTurnToken || inTurn(m, i)))) return rows
+  const first = rows.findIndex(inTurn)
+  const at = first < 0 ? rows.length : first
+  return [...rows.slice(0, at), turn.prompt, ...rows.slice(at)]
 }
 
 function toolCallId(tc: unknown): string {
