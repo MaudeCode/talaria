@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { redactSensitive } from './redact.js'
+import { publicToolFrame, redactSensitive } from './redact.js'
 
 describe('redactSensitive', () => {
   it('masks the password of a URL with userinfo and keeps the user and host', () => {
@@ -21,6 +21,8 @@ describe('redactSensitive', () => {
     expect(redactSensitive('{"apiKey": "opaqueA", "clientSecret": "opaqueB", "accessToken": "opaqueC"}')).toBe('{"apiKey": "***", "clientSecret": "***", "accessToken": "***"}')
     expect(redactSensitive('aws_secret_access_key = opaqueD private_key: opaqueE session_key=opaqueF credentials=opaqueG PRIVATE_KEY=opaqueH')).toBe('aws_secret_access_key = *** private_key: *** session_key=*** credentials=*** PRIVATE_KEY=***')
     expect(redactSensitive('curl -H "Authorization: Basic dXNlcjpwYXNz" -H "X-Api-Key: opaqueI" -u user:hunter2 https://x')).toBe('curl -H "Authorization: Basic ***" -H "X-Api-Key: ***" -u user:*** https://x')
+    expect(redactSensitive('login --authorization=opaque123 --Authorization opaque456 authorization: opaque789')).toBe('login --authorization=*** --Authorization *** authorization: ***')
+    expect(redactSensitive('curl -H "Authorization: Bearer synthetic-bearer-0123456789abcdef"')).toBe('curl -H "Authorization: Bearer synthe...cdef"')
     // Ordinary words and non-credential parameters stay readable.
     expect(redactSensitive('keep the secret sauce --secret-file ./s.txt')).toBe('keep the secret sauce --secret-file ./s.txt')
     expect(redactSensitive('apiKeyId: 12 max_tokens=100 --user-agent curl')).toBe('apiKeyId: 12 max_tokens=100 --user-agent curl')
@@ -29,5 +31,24 @@ describe('redactSensitive', () => {
 
   it('never trusts a secret that looks like a masked value', () => {
     expect(redactSensitive('Authorization: Bearer abcdef...wxyz')).toBe('Authorization: Bearer ***')
+  })
+})
+
+describe('redactSensitive cost', () => {
+  it('stays linear on long runs of scheme and identifier characters', () => {
+    // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
+    for (const seg of ['abcdefghij-', 'a.b+c-', 'token_', '--password ']) {
+      const text = seg.repeat(Math.ceil(200_000 / seg.length))
+      const started = performance.now()
+      redactSensitive(text)
+      expect(performance.now() - started).toBeLessThan(1000)
+    }
+  })
+})
+
+describe('publicToolFrame', () => {
+  it('omits the target of a frame without args, so a completion keeps the target its start frame set', () => {
+    expect(publicToolFrame({ name: 'terminal', tid: 't1', preview: 'ok' }, true)).toEqual({ name: 'terminal', tid: 't1', preview: 'ok', kind: 'shell' })
+    expect(publicToolFrame({ name: 'terminal', tid: 't1', args: { command: 'ls' } }, true)).toMatchObject({ kind: 'shell', target: 'ls' })
   })
 })

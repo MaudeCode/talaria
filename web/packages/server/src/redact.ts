@@ -52,14 +52,14 @@ const CRED_RE = new RegExp(
 const AUTH_HDR_RE = /(Authorization:\s*(?:Bearer|Bot|Basic|Token)\s+)([^\s'",\])]+)/gi
 const EMBEDDED_AWS_RE = /AKIA[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
-/** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. */
-const URL_USERINFO_RE = /([A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s:@/'"]+:)([^\s@/'"]+)(?=@)/g
+/** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The scheme starts at a run boundary and is capped so the scan stays linear. */
+const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s:@/'"]+:)([^\s@/'"]+)(?=@)/g
 /**
  * Credential parameters in any case and naming style (`access_token=`, `"clientSecret": "..."`, `aws_secret_access_key =`,
  * `X-Api-Key:`), and CLI flags with a space-separated value (`--password hunter2`). `ENV_RE` already masked an upper-case
- * `KEY=value` whose name it covers.
+ * `KEY=value` whose name it covers. The name prefix is capped at four segments so the scan stays linear.
  */
-const CRED_PARAM_RE = /(?<![A-Za-z0-9])(-{0,2})((?:[A-Za-z0-9]+[_-])*(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|secret|token|password|passwd))(["']?\s*[=:]\s*["']?|\s+["']?)([^\s"'&,;)}\]]+)/gi
+const CRED_PARAM_RE = /(?<![A-Za-z0-9])(-{0,2})((?:[A-Za-z0-9]+[_-]){0,4}(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|secret|token|password|passwd))(["']?\s*[=:]\s*["']?|\s+["']?)([^\s"'&,;)}\]]+)/gi
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `--user user:secret`. */
 const USER_FLAG_RE = /((?<![A-Za-z0-9-])(?:-u|--user)\s+["']?[^\s:"']+:)([^\s"'@]+)/g
@@ -118,6 +118,8 @@ export function redactSensitive(text: string): string {
     // A bare space only separates a CLI flag from its value; `secret sauce` is prose.
     if (!/[=:]/.test(sep) && !dash) return whole
     if (sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key)) return whole
+    // `Authorization: Bearer <token>` names its scheme; `AUTH_HDR_RE` already masked the token after it.
+    if (/authorization$/i.test(key) && /^(?:Bearer|Bot|Basic|Token|Digest)$/i.test(value)) return whole
     return dash + key + sep + mask(value)
   })
   out = out.replace(USER_FLAG_RE, (_, head: string, secret: string) => head + mask(secret))
@@ -345,7 +347,10 @@ function redactToolCalls(toolCalls: unknown, enabled: boolean): unknown {
 
 /** A live `tool` / `tool_complete` frame as it leaves the server (SSE, journal, legacy replay): redacted like session detail, then stamped. */
 export function publicToolFrame(data: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
-  return withToolDisplay(data, redactValue(data, enabled) as Record<string, unknown>, enabled)
+  const frame = withToolDisplay(data, redactValue(data, enabled) as Record<string, unknown>, enabled)
+  // A frame without args (a bare completion) has no target of its own: omitting it keeps the one its start frame set.
+  if (data.args === undefined) delete frame.target
+  return frame
 }
 
 function redactNestedMessageContainers(value: unknown, enabled: boolean): unknown {
