@@ -1367,7 +1367,8 @@
                             ]
                           },
                           "is_streaming": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True only while the session's run is a live stream on this server."
                           },
                           "is_cli_session": {
                             "type": "boolean"
@@ -1376,7 +1377,24 @@
                             "type": "boolean"
                           },
                           "read_only": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                          },
+                          "can_branch": {
+                            "type": "boolean",
+                            "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          },
+                          "can_pin": {
+                            "type": "boolean",
+                            "description": "Web may pin or unpin this session: never a subagent child."
+                          },
+                          "can_archive": {
+                            "type": "boolean",
+                            "description": "Web may archive or unarchive this session: never a subagent child."
+                          },
+                          "can_duplicate": {
+                            "type": "boolean",
+                            "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                           },
                           "attention": {
                             "anyOf": [
@@ -1455,7 +1473,8 @@
                               {
                                 "type": "null"
                               }
-                            ]
+                            ],
+                            "description": "The live stream id; non-null only while `is_streaming` is true."
                           },
                           "share_token": {
                             "anyOf": [
@@ -1493,7 +1512,13 @@
                         },
                         "required": [
                           "session_id",
-                          "title"
+                          "title",
+                          "is_streaming",
+                          "read_only",
+                          "can_branch",
+                          "can_pin",
+                          "can_archive",
+                          "can_duplicate"
                         ],
                         "additionalProperties": {}
                       }
@@ -1569,7 +1594,8 @@
                             ]
                           },
                           "is_streaming": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True only while the session's run is a live stream on this server."
                           },
                           "is_cli_session": {
                             "type": "boolean"
@@ -1578,7 +1604,24 @@
                             "type": "boolean"
                           },
                           "read_only": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                          },
+                          "can_branch": {
+                            "type": "boolean",
+                            "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          },
+                          "can_pin": {
+                            "type": "boolean",
+                            "description": "Web may pin or unpin this session: never a subagent child."
+                          },
+                          "can_archive": {
+                            "type": "boolean",
+                            "description": "Web may archive or unarchive this session: never a subagent child."
+                          },
+                          "can_duplicate": {
+                            "type": "boolean",
+                            "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                           },
                           "attention": {
                             "anyOf": [
@@ -1657,7 +1700,8 @@
                               {
                                 "type": "null"
                               }
-                            ]
+                            ],
+                            "description": "The live stream id; non-null only while `is_streaming` is true."
                           },
                           "share_token": {
                             "anyOf": [
@@ -1695,7 +1739,13 @@
                         },
                         "required": [
                           "session_id",
-                          "title"
+                          "title",
+                          "is_streaming",
+                          "read_only",
+                          "can_branch",
+                          "can_pin",
+                          "can_archive",
+                          "can_duplicate"
                         ],
                         "additionalProperties": {}
                       }
@@ -1915,7 +1965,8 @@
                             ]
                           },
                           "is_streaming": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "True only while the session's run is a live stream on this server."
                           },
                           "is_cli_session": {
                             "type": "boolean"
@@ -1924,7 +1975,24 @@
                             "type": "boolean"
                           },
                           "read_only": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                          },
+                          "can_branch": {
+                            "type": "boolean",
+                            "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          },
+                          "can_pin": {
+                            "type": "boolean",
+                            "description": "Web may pin or unpin this session: never a subagent child."
+                          },
+                          "can_archive": {
+                            "type": "boolean",
+                            "description": "Web may archive or unarchive this session: never a subagent child."
+                          },
+                          "can_duplicate": {
+                            "type": "boolean",
+                            "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                           },
                           "attention": {
                             "anyOf": [
@@ -2003,7 +2071,8 @@
                               {
                                 "type": "null"
                               }
-                            ]
+                            ],
+                            "description": "The live stream id; non-null only while `is_streaming` is true."
                           },
                           "share_token": {
                             "anyOf": [
@@ -2041,7 +2110,13 @@
                         },
                         "required": [
                           "session_id",
-                          "title"
+                          "title",
+                          "is_streaming",
+                          "read_only",
+                          "can_branch",
+                          "can_pin",
+                          "can_archive",
+                          "can_duplicate"
                         ],
                         "additionalProperties": {}
                       }
@@ -2914,10 +2989,12 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -3059,7 +3136,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -3251,7 +3345,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -3308,10 +3408,20 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "The live stream id; non-null only while `is_streaming` is true."
                     },
                     "agent_running": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "True only while the session's run is a live stream on this server."
+                    },
+                    "is_streaming": {
+                      "type": "boolean",
+                      "description": "True only while the session's run is a live stream on this server."
+                    },
+                    "read_only": {
+                      "type": "boolean",
+                      "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                     },
                     "message_count": {
                       "type": "number"
@@ -3363,7 +3473,10 @@
                     }
                   },
                   "required": [
-                    "session_id"
+                    "session_id",
+                    "agent_running",
+                    "is_streaming",
+                    "read_only"
                   ],
                   "additionalProperties": {}
                 }
@@ -4251,10 +4364,12 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -4396,7 +4511,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -4588,7 +4720,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     },
@@ -5362,10 +5500,12 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -5507,7 +5647,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -5699,7 +5856,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -5873,7 +6036,8 @@
                           ]
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "is_cli_session": {
                           "type": "boolean"
@@ -5882,7 +6046,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "attention": {
                           "anyOf": [
@@ -5961,7 +6142,8 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
                           "anyOf": [
@@ -5999,7 +6181,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -6124,7 +6312,8 @@
                           ]
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "is_cli_session": {
                           "type": "boolean"
@@ -6133,7 +6322,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "attention": {
                           "anyOf": [
@@ -6212,7 +6418,8 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
                           "anyOf": [
@@ -6250,7 +6457,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -6382,7 +6595,8 @@
                           ]
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "is_cli_session": {
                           "type": "boolean"
@@ -6391,7 +6605,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "attention": {
                           "anyOf": [
@@ -6470,7 +6701,8 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
                           "anyOf": [
@@ -6508,7 +6740,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -7275,10 +7513,12 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -7420,7 +7660,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -7612,7 +7869,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -7811,7 +8074,8 @@
                           ]
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "is_cli_session": {
                           "type": "boolean"
@@ -7820,7 +8084,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "attention": {
                           "anyOf": [
@@ -7899,7 +8180,8 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
                           "anyOf": [
@@ -7937,7 +8219,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -8059,7 +8347,8 @@
                           ]
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "is_cli_session": {
                           "type": "boolean"
@@ -8068,7 +8357,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "attention": {
                           "anyOf": [
@@ -8147,7 +8453,8 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
                           "anyOf": [
@@ -8185,7 +8492,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -9120,10 +9433,12 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -9265,7 +9580,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -9457,7 +9789,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -9752,7 +10090,8 @@
                           ]
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "is_cli_session": {
                           "type": "boolean"
@@ -9761,7 +10100,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "attention": {
                           "anyOf": [
@@ -9840,7 +10196,8 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
                           "anyOf": [
@@ -9878,7 +10235,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -10001,7 +10364,8 @@
                           ]
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "is_cli_session": {
                           "type": "boolean"
@@ -10010,7 +10374,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "attention": {
                           "anyOf": [
@@ -10089,7 +10470,8 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
                           "anyOf": [
@@ -10127,7 +10509,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     },
@@ -10283,7 +10671,8 @@
                           ]
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "is_cli_session": {
                           "type": "boolean"
@@ -10292,7 +10681,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "attention": {
                           "anyOf": [
@@ -10371,7 +10777,8 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
                           "anyOf": [
@@ -10409,7 +10816,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     },
@@ -10548,7 +10961,8 @@
                           ]
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "is_cli_session": {
                           "type": "boolean"
@@ -10557,7 +10971,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "attention": {
                           "anyOf": [
@@ -10636,7 +11067,8 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
                           "anyOf": [
@@ -10674,7 +11106,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     },
@@ -11658,7 +12096,8 @@
                           ]
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "is_cli_session": {
                           "type": "boolean"
@@ -11667,7 +12106,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "attention": {
                           "anyOf": [
@@ -11746,7 +12202,8 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
                           "anyOf": [
@@ -11784,7 +12241,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -11906,7 +12369,8 @@
                           ]
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "is_cli_session": {
                           "type": "boolean"
@@ -11915,7 +12379,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "attention": {
                           "anyOf": [
@@ -11994,7 +12475,8 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "share_token": {
                           "anyOf": [
@@ -12032,7 +12514,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -17859,10 +18347,12 @@
                             {
                               "type": "null"
                             }
-                          ]
+                          ],
+                          "description": "The live stream id; non-null only while `is_streaming` is true."
                         },
                         "is_streaming": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "True only while the session's run is a live stream on this server."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -18004,7 +18494,24 @@
                           "type": "boolean"
                         },
                         "read_only": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                        },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
                         },
                         "source_tag": {
                           "anyOf": [
@@ -18196,7 +18703,13 @@
                       },
                       "required": [
                         "session_id",
-                        "title"
+                        "title",
+                        "is_streaming",
+                        "read_only",
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }

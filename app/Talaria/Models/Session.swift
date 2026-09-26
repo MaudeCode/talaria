@@ -261,7 +261,12 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     let parentSessionId: String?
     let relationshipType: String?
     let readOnly: Bool?
-    let isReadOnly: Bool?
+    /// The server's branch gate (TAL-312): absent on older servers, which offered branching everywhere.
+    let canBranch: Bool?
+    /// The server's pin, archive and duplicate gates (TAL-312); absent on older servers.
+    let canPin: Bool?
+    let canArchive: Bool?
+    let canDuplicate: Bool?
     let matchType: String?
     /// Server-redacted excerpt around the content hit; only `/api/sessions/search`
     /// rows with `match_type == "content"` carry it, and older servers omit it.
@@ -298,7 +303,10 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         parentSessionId: String? = nil,
         relationshipType: String? = nil,
         readOnly: Bool? = nil,
-        isReadOnly: Bool? = nil,
+        canBranch: Bool? = nil,
+        canPin: Bool? = nil,
+        canArchive: Bool? = nil,
+        canDuplicate: Bool? = nil,
         matchType: String? = nil,
         matchPreview: String? = nil
     ) {
@@ -332,7 +340,10 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         self.parentSessionId = parentSessionId
         self.relationshipType = relationshipType
         self.readOnly = readOnly
-        self.isReadOnly = isReadOnly
+        self.canBranch = canBranch
+        self.canPin = canPin
+        self.canArchive = canArchive
+        self.canDuplicate = canDuplicate
         self.matchType = matchType
         self.matchPreview = matchPreview
     }
@@ -345,7 +356,7 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         case activeStreamId, isStreaming, isCliSession
         case userMessageCount, hasPendingUserMessage, pendingStartedAt, worktreePath
         case sourceTag, rawSource, sessionSource, sourceLabel
-        case parentSessionId, relationshipType, readOnly, isReadOnly, matchType, matchPreview
+        case parentSessionId, relationshipType, readOnly, canBranch, canPin, canArchive, canDuplicate, matchType, matchPreview
     }
 
     /// Lossy field by field, like `SessionDetail` and `ProjectSummary` already
@@ -390,7 +401,10 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         parentSessionId = container.decodeLossyStringIfPresent(forKey: .parentSessionId)
         relationshipType = container.decodeLossyStringIfPresent(forKey: .relationshipType)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)
-        isReadOnly = container.decodeLossyBoolIfPresent(forKey: .isReadOnly)
+        canBranch = container.decodeLossyBoolIfPresent(forKey: .canBranch)
+        canPin = container.decodeLossyBoolIfPresent(forKey: .canPin)
+        canArchive = container.decodeLossyBoolIfPresent(forKey: .canArchive)
+        canDuplicate = container.decodeLossyBoolIfPresent(forKey: .canDuplicate)
         matchType = container.decodeLossyStringIfPresent(forKey: .matchType)
         matchPreview = container.decodeLossyStringIfPresent(forKey: .matchPreview)
     }
@@ -436,7 +450,7 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         outputTokens = detail.outputTokens
         estimatedCost = detail.estimatedCost
         activeStreamId = detail.activeStreamId
-        isStreaming = nil
+        isStreaming = detail.isStreaming
         isCliSession = detail.isCliSession
         userMessageCount = nil
         if Self.nonEmpty(detail.pendingUserMessage) != nil || detail.pendingAttachments?.isEmpty == false {
@@ -453,7 +467,10 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         parentSessionId = detail.parentSessionId
         relationshipType = detail.relationshipType
         readOnly = detail.readOnly
-        isReadOnly = detail.isReadOnly
+        canBranch = detail.canBranch
+        canPin = nil
+        canArchive = nil
+        canDuplicate = nil
         matchType = nil
         matchPreview = nil
     }
@@ -492,7 +509,10 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
             parentSessionId: parentSessionId,
             relationshipType: relationshipType,
             readOnly: readOnly,
-            isReadOnly: isReadOnly,
+            canBranch: canBranch,
+            canPin: canPin,
+            canArchive: canArchive,
+            canDuplicate: canDuplicate,
             matchType: matchType,
             matchPreview: matchPreview
         )
@@ -559,12 +579,6 @@ extension SessionSummary {
     /// `match_type`) survives an import round trip. Update this when
     /// `SessionSummary` gains a new stored property.
     func merging(onto row: SessionSummary) -> SessionSummary {
-        // Upstream answers with one of the two historical read-only spellings, so an
-        // authoritative value in either replaces both. Falling back per-spelling
-        // would let a stale `is_read_only` on the list row keep a freshly imported
-        // writable session view-only.
-        let authoritativeReadOnly = readOnly ?? isReadOnly
-
         return SessionSummary(
             sessionId: sessionId ?? row.sessionId,
             title: title ?? row.title,
@@ -595,18 +609,21 @@ extension SessionSummary {
             sourceLabel: sourceLabel ?? row.sourceLabel,
             parentSessionId: parentSessionId ?? row.parentSessionId,
             relationshipType: relationshipType ?? row.relationshipType,
-            readOnly: authoritativeReadOnly ?? row.readOnly,
-            isReadOnly: authoritativeReadOnly == nil ? row.isReadOnly : nil,
+            readOnly: readOnly ?? row.readOnly,
+            canBranch: canBranch ?? row.canBranch,
+            canPin: canPin ?? row.canPin,
+            canArchive: canArchive ?? row.canArchive,
+            canDuplicate: canDuplicate ?? row.canDuplicate,
             matchType: matchType ?? row.matchType,
             matchPreview: matchPreview ?? row.matchPreview
         )
     }
 
-    /// Delegated children are runner-owned and view-only. Upstream has also
-    /// emitted both read-only spellings across row sources, so either explicit
-    /// true value preserves that safety for other imported sessions.
+    /// The server folds read-only imports, view-only subagent children and
+    /// not-claimable foreign sessions into `read_only` (TAL-312); an absent flag
+    /// is writable, and the server still refuses a mutation it does not allow.
     var isSessionReadOnly: Bool {
-        isDelegatedSubagentSession || readOnly == true || isReadOnly == true
+        readOnly == true
     }
 
     var shouldAppearInSessionList: Bool {
@@ -661,7 +678,6 @@ extension SessionSummary {
     private var hasSidebarState: Bool {
         pinned == true
             || isStreaming == true
-            || Self.nonEmpty(activeStreamId) != nil
             || hasPendingUserMessage == true
             || pendingStartedAt != nil
             || Self.nonEmpty(worktreePath) != nil
@@ -760,6 +776,7 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
     let outputTokens: Int?
     let estimatedCost: Double?
     let activeStreamId: String?
+    let isStreaming: Bool?
     let pendingUserMessage: String?
     let pendingAttachments: [JSONValue]?
     let pendingStartedAt: Double?
@@ -775,7 +792,7 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
     let parentSessionId: String?
     let relationshipType: String?
     let readOnly: Bool?
-    let isReadOnly: Bool?
+    let canBranch: Bool?
     let messages: [ChatMessage]?
     let toolCalls: [PersistedToolCall]?
     let messagesTruncated: Bool?
@@ -806,6 +823,7 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
         case outputTokens
         case estimatedCost
         case activeStreamId
+        case isStreaming
         case pendingUserMessage
         case pendingAttachments
         case pendingStartedAt
@@ -821,7 +839,7 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
         case parentSessionId
         case relationshipType
         case readOnly
-        case isReadOnly
+        case canBranch
         case messages
         case toolCalls
         case messagesTruncated
@@ -858,6 +876,7 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
         outputTokens = container.decodeLossyIntIfPresent(forKey: .outputTokens)
         estimatedCost = container.decodeLossyDoubleIfPresent(forKey: .estimatedCost)
         activeStreamId = container.decodeLossyStringIfPresent(forKey: .activeStreamId)
+        isStreaming = container.decodeLossyBoolIfPresent(forKey: .isStreaming)
         pendingUserMessage = container.decodeLossyStringIfPresent(forKey: .pendingUserMessage)
         pendingAttachments = try? container.decodeIfPresent([JSONValue].self, forKey: .pendingAttachments)
         pendingStartedAt = container.decodeLossyDoubleIfPresent(forKey: .pendingStartedAt)
@@ -873,7 +892,7 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
         parentSessionId = container.decodeLossyStringIfPresent(forKey: .parentSessionId)
         relationshipType = container.decodeLossyStringIfPresent(forKey: .relationshipType)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)
-        isReadOnly = container.decodeLossyBoolIfPresent(forKey: .isReadOnly)
+        canBranch = container.decodeLossyBoolIfPresent(forKey: .canBranch)
         messages = Self.decodeMessagesTolerantly(from: container)
         toolCalls = Self.decodeToolCallsTolerantly(from: container)
         messagesTruncated = container.decodeLossyBoolIfPresent(forKey: .underscoredMessagesTruncated)

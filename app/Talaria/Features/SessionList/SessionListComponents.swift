@@ -42,8 +42,17 @@ enum SessionRowActionPolicy {
         !session.isSessionReadOnly
     }
 
+    /// The server's own gates (TAL-312); an older server that omits them keeps the earlier rules.
+    static func canPin(_ session: SessionSummary) -> Bool {
+        session.canPin ?? offersMutationActions(for: session)
+    }
+
+    static func canArchive(_ session: SessionSummary) -> Bool {
+        session.canArchive ?? offersMutationActions(for: session)
+    }
+
     static func canDuplicate(_ session: SessionSummary) -> Bool {
-        offersMutationActions(for: session) && !session.isExternalSourceSession
+        session.canDuplicate ?? (offersMutationActions(for: session) && !session.isExternalSourceSession)
     }
 
     static func canExport(_ session: SessionSummary, isViewingCachedData: Bool) -> Bool {

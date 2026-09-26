@@ -41,7 +41,7 @@ struct SessionRowView: View {
     }
 
     static func isActiveStreaming(_ session: SessionSummary) -> Bool {
-        session.isStreaming == true || nonEmpty(session.activeStreamId) != nil
+        session.isStreaming == true
     }
 
     static func metadataLabel(
@@ -335,14 +335,6 @@ enum SessionRowStateBadgeKind: String, Identifiable {
             return .orange
         }
     }
-}
-
-
-
-private func nonEmpty(_ value: String?) -> String? {
-    guard let value else { return nil }
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? nil : trimmed
 }
 
 private enum SessionRelativeDateFormatter {

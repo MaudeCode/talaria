@@ -42,6 +42,13 @@ describe('shared monorepo contracts', () => {
     expect(journaled.messages?.at(-1)?.role).toBe('user')
   })
 
+  it('carries the server streaming and read-only flags on every session example (TAL-312)', () => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Record<string, unknown>
+    expect(SessionSchema.parse(fixture.session)).toMatchObject({ is_streaming: true, active_stream_id: 'contract-run-f', read_only: false })
+    expect(SessionSchema.parse(fixture.stale_stream_session)).toMatchObject({ is_streaming: false, active_stream_id: null, read_only: false })
+    expect(SessionSchema.parse(fixture.subagent_session)).toMatchObject({ is_streaming: false, read_only: true, can_branch: false })
+  })
+
   it('keeps an assistant row whose only content is its server scene', () => {
     const scene = { version: 'activity_scene_v1' as const, activity_rows: [], final_answer: '', terminal_state: 'no_response', expanded_by_default: false }
     const rows = projectMessages([{ role: 'user', content: 'Go' }, { role: 'assistant', content: '', _anchor_activity_scene: scene }])

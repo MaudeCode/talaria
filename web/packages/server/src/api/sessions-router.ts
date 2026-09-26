@@ -227,7 +227,7 @@ export const sessionsRouter = os.router({
       const generated = await ctx.deps.turns.generateTitle(session, { preferLatest: Boolean(input.prefer_latest) })
       if (!generated.title) throw new HttpError(422, `Could not generate a better title (${generated.status || 'empty'})`)
       const current = await ctx.deps.sessions.persistGeneratedTitle(sid, generated.title, 'session_title_regenerate')
-      return { session: current.compact({ includeRuntime: true, activeStreamIds: ctx.deps.sessions.deps.runtime.activeStreamIds }), title: current.title, status: generated.status, raw_preview: generated.rawPreview.slice(0, 240) }
+      return { session: ctx.deps.sessions.wireRow(current), title: current.title, status: generated.status, raw_preview: generated.rawPreview.slice(0, 240) }
     })),
     // Manual compression runs the Agent's context compressor in-process in Python; the sidecar has no such method yet.
     compressStart: os.session.compressStart.handler(({ input, context: { ctx } }) => run(() => {

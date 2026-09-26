@@ -30,13 +30,15 @@ final class SessionIdentityTests: XCTestCase {
         XCTAssertEqual(SessionRowView.displayTitle(for: untitled), "Untitled Session")
     }
 
-    func testSessionRowActiveStreamingUsesStreamingFlagOrActiveStreamID() {
+    func testSessionRowActiveStreamingUsesOnlyTheServerStreamingFlag() {
         XCTAssertTrue(SessionRowView.isActiveStreaming(SessionSummary(sessionId: "streaming", isStreaming: true)))
-        XCTAssertTrue(
+        // TAL-312: a leftover stream id from a crashed or finished run is not streaming.
+        XCTAssertFalse(
             SessionRowView.isActiveStreaming(
-                SessionSummary(sessionId: "stream-id", activeStreamId: "stream-123", isStreaming: false)
+                SessionSummary(sessionId: "stale-stream", activeStreamId: "stream-123", isStreaming: false)
             )
         )
+        XCTAssertFalse(SessionRowView.isActiveStreaming(SessionSummary(sessionId: "old-server", activeStreamId: "stream-123")))
     }
 
     func testSessionRowActiveStreamingIsFalseWhenNoActiveSignalExists() {
@@ -83,7 +85,7 @@ final class SessionIdentityTests: XCTestCase {
             sessionId: "stateful",
             pinned: true,
             activeStreamId: "stream-123",
-            isStreaming: false
+            isStreaming: true
         )
 
         XCTAssertEqual(

@@ -40,6 +40,7 @@ final class CachedSession {
     var parentSessionId: String?
     var relationshipType: String?
     var readOnly: Bool?
+    // Retired with the `is_read_only` spelling (TAL-312); kept so the unversioned cache store opens without a migration.
     var isReadOnly: Bool?
     var cachedAt: Date
     var expiresAt: Date
@@ -88,7 +89,6 @@ final class CachedSession {
         parentSessionId = session.parentSessionId
         relationshipType = session.relationshipType
         readOnly = session.readOnly
-        isReadOnly = session.isReadOnly
         self.cachedAt = cachedAt
         expiresAt = cachedAt.addingTimeInterval(CachePolicy.ttl)
     }

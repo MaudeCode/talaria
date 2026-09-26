@@ -305,6 +305,9 @@ export function Composer(props: ComposerProps) {
   const contextTotal = session?.context_length ?? null
   const canSend = (text.trim() !== '' || files.some((f) => f.status === 'done')) && !sending && !locked
 
+  // The server marks sessions Web may not continue (TAL-312); it would refuse every send, so none is offered.
+  if (session?.read_only) return <div className="composer-wrap" id="composerWrap"><div className="mx-auto max-w-(--msg-max) px-3 py-2 text-center text-xs text-muted" role="note">{m.session_read_only_notice()}</div></div>
+
   return (
     <div className="composer-wrap" id="composerWrap">
       {queued.length > 0 && (

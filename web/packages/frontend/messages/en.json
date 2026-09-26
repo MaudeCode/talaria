@@ -1253,6 +1253,7 @@
 	"session_lineage_static_hint": "{a0} — earlier context turns are collapsed here.",
 	"session_child_toggle_hint": "{a0} — child conversations spawned from this session. Click to show or hide them.",
 	"session_readonly_title_hint": "Read-only imported session — {a0}",
+	"session_read_only_notice": "This session is read-only. You can read it here, but it cannot be continued or changed from Web.",
 	"session_lineage_segment_untitled": "Untitled segment",
 	"session_lineage_segment_open": "Open lineage segment",
 	"new_profile": "New profile",
