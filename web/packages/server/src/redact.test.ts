@@ -251,6 +251,13 @@ describe('shell-composed words', () => {
     expect(redactText(`curl https://bob':'hunter2@example.com next`, true)).toBe(`curl https://bob:***@example.com next`)
   })
 
+  it('reads a quoted flag with the value word after it', () => {
+    expect(redactText(`login '--password' hunter2 next`, true)).toBe(`login --password *** next`)
+    expect(redactText(`curl '--user' bob:hunter2 https://x`, true)).toBe(`curl --user bob:*** https://x`)
+    expect(redactText(`login "--pass"word 'hunter2' next`, true)).not.toContain('hunter2')
+    expect(redactText(`curl '-H' 'Accept: json' "--data" 'a b' x`, true)).toBe(`curl '-H' 'Accept: json' "--data" 'a b' x`)
+  })
+
   it('keeps words the rules already read as written', () => {
     expect(redactText(`curl -H "Authorization: Bearer opaque" -d '{"a": 1}' x`, true)).toBe(`curl -H "Authorization: Bearer ***" -d '{"a": 1}' x`)
     expect(redactText(`login "--password=two words" next`, true)).toBe(`login "--password=***" next`)

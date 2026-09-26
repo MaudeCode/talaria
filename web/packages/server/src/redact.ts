@@ -512,30 +512,44 @@ function revealsMore(plain: string, got: string, wanted: string): boolean {
  * Shell words whose quoting or escapes compose a delimiter, key or credential (`--password'='x`, `bob:pw'@'host`): each
  * is redacted as the program receives it. When the word as written, once redacted, still shows a token the dequoted
  * redaction masks, the redacted dequoted form replaces it, so no quoting variant hides a credential from the rules. A
- * single quoted argument and a data container (JSON, a Python repr) are not composed words and keep their quoting; a
- * word with a substitution is the computed-key rules' (its dequoted form is not what the program receives).
+ * quoted flag is read with the value word after it (`'--password' x`). A single quoted argument and a data container
+ * (JSON, a Python repr) are not composed words and keep their quoting; a word with a substitution is the computed-key
+ * rules' (its dequoted form is not what the program receives).
  */
 function redactComposedWords(text: string): string {
   if (!/["'\\]/.test(text)) return text
   const closeOf = enclosingClose(text)
-  let out = ''
-  let last = 0
+  const words: [start: number, end: number][] = []
   for (let i = 0; i < text.length; ) {
     if (/\s/.test(text[i]!)) { i += 1; continue }
     const end = Math.max(i + 1, shellWordEnd(text, i, '', closeOf))
-    const word = text.slice(i, end)
-    if (/["'\\]/.test(word.slice(1)) && !/^[[{(]/.test(word) && !/\$[({]|`/.test(word) && !splitQuoted(word)) {
-      // The leak check reads quoted spaces as spaces (prose apostrophes pair up across words); the replacement keeps them
-      // inside the token, so a quoted value is masked whole.
-      const glued = shellDequote(word)
-      const plain = glued.replaceAll(WORD_SPACE, ' ')
-      const wanted = redactRules(plain)
-      if (wanted !== plain && revealsMore(plain, shellDequote(redactRules(word)).replaceAll(WORD_SPACE, ' '), wanted)) {
-        out += text.slice(last, i) + redactRules(glued).replaceAll(WORD_SPACE, ' ')
-        last = end
-      }
-    }
+    words.push([i, end])
     i = end
+  }
+  let out = ''
+  let last = 0
+  for (let k = 0; k < words.length; k += 1) {
+    const [start, end] = words[k]!
+    const word = text.slice(start, end)
+    if (!/["'\\]/.test(word) || /^[[{(]/.test(word) || /\$[({]|`/.test(word)) continue
+    const glued = shellDequote(word)
+    // A quoted flag (`'--password'`, `"--us"er`) takes its value from the next word: the two are read together.
+    const next = words[k + 1]
+    const flag = /^-[^=:]*$/.test(glued) && next !== undefined && /^[ \t]+$/.test(text.slice(end, next[0]))
+    if (!flag && (!/["'\\]/.test(word.slice(1)) || splitQuoted(word))) continue
+    const spanEnd = flag ? next[1] : end
+    const span = text.slice(start, spanEnd)
+    const unit = flag ? `${glued} ${shellDequote(text.slice(next[0], next[1]))}` : glued
+    // The leak check reads quoted spaces as spaces (prose apostrophes pair up across words); the replacement keeps them
+    // inside the token, so a quoted value is masked whole.
+    const plain = unit.replaceAll(WORD_SPACE, ' ')
+    const wanted = redactRules(plain)
+    if (wanted === plain) continue
+    const asWritten = shellDequote(redactRules(span)).replaceAll(WORD_SPACE, ' ')
+    if (!revealsMore(plain, asWritten, wanted)) continue
+    out += text.slice(last, start) + redactRules(unit).replaceAll(WORD_SPACE, ' ')
+    last = spanEnd
+    if (flag) k += 1
   }
   return out + text.slice(last)
 }
