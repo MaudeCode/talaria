@@ -52,10 +52,11 @@ const CRED_RE = new RegExp(
 /** One `name=value` auth parameter: an escaped-quoted, quoted or bare value. */
 const AUTH_PARAM = String.raw`[A-Za-z0-9_-]+=(?:\\"(?:[^"\\\r\n]|\\[^"])*\\"|"(?:[^"\\\r\n]|\\.)*"|'[^'\r\n]*'|[^\s,"'\\]*)`
 /**
- * The credential of an `Authorization:` header, after an optional scheme word (`Bearer`, `ApiKey`, `AWS4-HMAC-SHA256`, ...).
+ * The credential of an `Authorization:` header, after an optional scheme token read whole (`Bearer`, `ApiKey`,
+ * `AWS4-HMAC-SHA256`, `Custom_Scheme`, ...; RFC 7235 token characters other than the shell's quotes).
  * A parameterized credential (`Digest username="bob", response="..."`, `Credential=..., Signature=...`) is masked whole.
  */
-const AUTH_HDR_RE = new RegExp(String.raw`(Authorization:\s*(?:[A-Za-z][A-Za-z0-9-]{0,31}\s+)?)(${AUTH_PARAM}(?:\s*,\s*${AUTH_PARAM})*|[^\s'",\])]+)`, 'gi')
+const AUTH_HDR_RE = new RegExp(String.raw`(Authorization:\s*(?:[A-Za-z][A-Za-z0-9!#$%&*+.^_|~-]*\s+)?)(${AUTH_PARAM}(?:\s*,\s*${AUTH_PARAM})*|[^\s'",\])]+)`, 'gi')
 /** A JSON Web Token anywhere (`eyJ<header>.<payload>.<signature>`). */
 const JWT_RE = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g
 /** A bearer credential in any header or text (`X-Auth: Bearer ...`); `AUTH_HDR_RE` owns the `Authorization:` header. */
@@ -100,18 +101,19 @@ const CRED_KEY_NAME_WORDS_RE = new RegExp(String.raw`^${CRED_KEY_NAME}$`, 'i')
  */
 function isCredentialKey(key: string): boolean {
   return key.split(/[.:/[\]]/).some((segment) => {
-    const words = segment.replace(/^[-"']+|["']+$/g, '').split(/[_-]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/).filter(Boolean).slice(-8)
+    const words = segment.replace(/^[-"'\\]+|[\\"']+$/g, '').split(/[_-]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/).filter(Boolean).slice(-8)
     for (let i = 0; i < words.length; i += 1) if (CRED_KEY_NAME_WORDS_RE.test(words.slice(i).join('_'))) return true
     return false
   })
 }
 /**
  * A `key=value`, `key: value` or `--flag value` in text. Any identifier matches; the loop keeps only those
- * `isCredentialKey` accepts (`access_token`, `"clientSecret"`, `X-Api-Key`, `--companyProdEuAwsSecretAccessKey`), and
+ * `isCredentialKey` accepts (`access_token`, `"clientSecret"`, `X-Api-Key`, `--companyProdEuAwsSecretAccessKey`,
+ * `--auth["password"]`), and
  * consumes a value only for those, so a non-credential key never swallows the text after it. The whole identifier is
  * read, however long: the lookbehind starts a match only at an identifier's first character, so the scan stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z][A-Za-z0-9_.[\]-]*)((?:\\?["'])?\s*\+?[=:]\s*|\s+)`, 'g')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z](?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-])*)((?:\\?["'])?\s*\+?[=:]\s*|\s+)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /**
  * `curl -u user:secret` / `-uuser:secret` / `--user user:secret`, and the proxy forms `-U` / `--proxy-user`; a quoted
@@ -166,8 +168,9 @@ function restoreCodeEnvKeyLiterals(original: string, redacted: string): string {
 }
 
 /**
- * The index of the quote closing an enclosing `quote` at or after `from` (`-1` if none), memoized per quoted region so
- * many values inside one long quoted argument share one scan.
+ * The index of the quote closing an enclosing `quote` (`'`, `"` or ANSI-C `$'`) at or after `from` (`-1` if none),
+ * skipping escaped quotes inside `"…"` and `$'…'`, memoized per quoted region so many values inside one long quoted
+ * argument share one scan.
  */
 function enclosingClose(text: string): (from: number, quote: string) => number {
   let cachedQuote = ''
@@ -175,8 +178,9 @@ function enclosingClose(text: string): (from: number, quote: string) => number {
   let cachedClose = -1
   return (from: number, quote: string): number => {
     if (quote === cachedQuote && from >= cachedFrom && (cachedClose === -1 || from <= cachedClose)) return cachedClose
+    const close = quote.slice(-1)
     let k = from
-    while (k < text.length && text[k] !== quote) k += quote === '"' && text[k] === '\\' ? 2 : 1
+    while (k < text.length && text[k] !== close) k += quote !== "'" && text[k] === '\\' ? 2 : 1
     cachedQuote = quote
     cachedFrom = from
     cachedClose = k < text.length ? k : -1
@@ -225,7 +229,7 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
   let i = start
   while (i < text.length) {
     const c = text[i]!
-    if (i !== start && c === enclosing) return i
+    if (i !== start && c === enclosing.slice(-1)) return i
     // `\"…\"` is a piece (JSON escaped inside a shell string) at the value's start or in a container; mid-word, `\"` is
     // an escaped quote like any other escape.
     if (c === '\\' && text[i + 1] === '"' && i !== start && depth === 0) i += 2
@@ -294,14 +298,17 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
 function quoteTracker(text: string): (index: number) => string {
   let pos = 0
   let state = ''
+  let escaped = -1
   return (index: number): string => {
     for (; pos < index; pos += 1) {
       const c = text[pos]
-      if (c === '\\' && state !== "'") pos += 1
+      if (c === '\\' && state !== "'") escaped = pos += 1
       // An apostrophe between two letters is prose (`don't`), not a quote.
       else if (c === "'" && /\p{L}/u.test(text[pos - 1] ?? '') && /\p{L}/u.test(text[pos + 1] ?? '')) continue
+      // `$'…'` is ANSI-C quoted: a backslash inside escapes the next character, `\'` included.
+      else if (state === '' && c === "'" && text[pos - 1] === '$' && escaped !== pos - 1) state = "$'"
       else if (state === '' && (c === "'" || c === '"')) state = c
-      else if (c === state) state = ''
+      else if (c === state.slice(-1)) state = ''
     }
     return state
   }
@@ -417,7 +424,7 @@ export function mightContainSensitiveText(text: string): boolean {
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
   if (CRED_KEY_NAME_RE.test(text)) return true
-  if (text.includes('-u') && USER_FLAG_TEST_RE.test(text)) return true
+  if (USER_FLAG_TEST_RE.test(text)) return true
   if (text.includes(':') && TELEGRAM_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true
   if (text.includes('+') && PHONE_RE.test(text)) return true

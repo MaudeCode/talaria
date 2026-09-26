@@ -140,6 +140,30 @@ describe('curl -u', () => {
   })
 })
 
+describe('round 44 shapes', () => {
+  it('reads an argument enclosed in ANSI-C quotes with its escaped quotes', () => {
+    expect(redactText(String.raw`login $'--password=correct\' horse' next`, true)).toBe(String.raw`login $'--password=***' next`)
+    expect(redactText(String.raw`login '--password=a b' next`, true)).toBe(String.raw`login '--password=***' next`)
+  })
+
+  it('reads a whole Authorization scheme token before masking the credential', () => {
+    const scheme = 'A'.repeat(33)
+    expect(redactText(`curl -H 'Authorization: ${scheme} hunter2' x`, true)).toBe(`curl -H 'Authorization: ${scheme} ***' x`)
+    expect(redactText(`curl -H 'Authorization: Custom_Scheme hunter2' x`, true)).toBe(`curl -H 'Authorization: Custom_Scheme ***' x`)
+  })
+
+  it('reads quoted bracket segments of a text credential key', () => {
+    expect(redactText(`login --auth["password"]=hunter2 next`, true)).toBe(`login --auth["password"]=*** next`)
+    expect(redactText(`login --auth['token']=hunter2 next`, true)).toBe(`login --auth['token']=*** next`)
+    expect(redactText(String.raw`login --auth[\"password\"]=hunter2 next`, true)).toBe(String.raw`login --auth[\"password\"]=*** next`)
+    expect(redactText(`login --user["name"]=bob`, true)).toBe(`login --user["name"]=bob`)
+  })
+
+  it('routes an attached upper-case curl -U through the prefilter', () => {
+    expect(redactText('curl -Ubob:hunter2 example.com', true)).toBe('curl -Ubob:*** example.com')
+  })
+})
+
 describe('credential key length', () => {
   it('masks a credential option whose identifier is longer than any fixed cap, through the public prefilter', () => {
     const namespace = 'company'.repeat(40)
