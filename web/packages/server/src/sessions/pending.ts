@@ -7,11 +7,11 @@
 import { randomUUID } from 'node:crypto'
 import type { SessionEventBus } from './events.js'
 import { str } from '../util.js'
+import type { ClarifyAnswers, ClarifyStep } from '@maudecode/talaria-web-contracts'
 
 export interface PendingSubscriber { queue: Record<string, unknown>[]; wake: (() => void) | null; closed: boolean }
 
 export const CLARIFY_DEFAULT_TIMEOUT_SECONDS = 3600
-export const CLARIFY_MAX_QUESTIONS = 5
 export const CLARIFY_MAX_CHOICES = 4
 
 function choiceText(choice: unknown): string {
@@ -32,9 +32,12 @@ function normalizedChoices(raw: unknown): string[] | null {
   return choices.length ? choices : null
 }
 
-/** Python `clarify.normalize_questions`. */
+/**
+ * Python `clarify.normalize_questions`, without its question cap: the Agent enforces its own batch limit before it
+ * parks, so any non-empty list it sends stays a batch (dropping the shape would leave it waiting on an envelope).
+ */
 export function normalizeQuestions(questions: unknown): Record<string, unknown>[] | null {
-  if (!Array.isArray(questions) || !questions.length || questions.length > CLARIFY_MAX_QUESTIONS) return null
+  if (!Array.isArray(questions) || !questions.length) return null
   return questions.map((raw, index) => {
     let item: Record<string, unknown>
     if (typeof raw === 'string') item = { question: raw }
@@ -46,6 +49,42 @@ export function normalizeQuestions(questions: unknown): Record<string, unknown>[
     const choices = normalizedChoices(item.choices) ?? offered
     return { qid: str(item.qid).trim() || `q${String(index)}`, id: str(item.id).trim() || null, question: text, choices, choices_offered: offered ?? choices, multi_select: Boolean(item.multi_select) && Boolean(choices) }
   })
+}
+
+
+/** The ordered questions a client asks, one per step; a single-question prompt is one `q0` step. */
+function clarifySteps(data: Record<string, unknown>): ClarifyStep[] {
+  const batch = data.questions as Record<string, unknown>[] | undefined
+  if (batch) return batch.map((q) => ({ qid: str(q.qid), question: str(q.question), choices: (q.choices as string[] | null) ?? [], multi_select: Boolean(q.multi_select) }))
+  const choices = normalizedChoices(data.choices_offered) ?? normalizedChoices(data.choices) ?? []
+  return [{ qid: 'q0', question: str(data.question).trim(), choices, multi_select: Boolean(data.multi_select) && choices.length > 0 }]
+}
+
+/**
+ * The reply string the parked Agent callback expects for keyed step answers: the batch envelope
+ * (`clarify_tool._run_batch`) or the single answer (a JSON array for multi-select). Null when an answer
+ * is missing, empty, keyed to an unknown step, or a list for a single-select step.
+ */
+export function clarifyReply(entry: Record<string, unknown>, answers: ClarifyAnswers): string | null {
+  const steps = entry.steps as ClarifyStep[]
+  if (Object.keys(answers).some((qid) => !steps.some((step) => step.qid === qid))) return null
+  const cleaned: ClarifyAnswers = {}
+  for (const step of steps) {
+    const raw = answers[step.qid]
+    if (Array.isArray(raw)) {
+      if (!step.multi_select) return null
+      const list = raw.map((v) => v.trim()).filter(Boolean)
+      if (!list.length) return null
+      cleaned[step.qid] = list
+    } else {
+      const text = str(raw).trim()
+      if (!text) return null
+      cleaned[step.qid] = step.multi_select ? [text] : text
+    }
+  }
+  if (entry.questions) return JSON.stringify({ answers: cleaned })
+  const only = cleaned.q0
+  return Array.isArray(only) ? JSON.stringify(only) : str(only)
 }
 
 function withTimeoutMetadata(data: Record<string, unknown>, now: number): Record<string, unknown> {
@@ -176,6 +215,11 @@ export class PendingPrompts {
   // ── clarify ──
   submitClarify(sid: string, data: Record<string, unknown>): Record<string, unknown> {
     const item = withTimeoutMetadata(data, this.now())
+    // The server owns the batch shape: the normalized list (iOS reads it) and the steps every client renders.
+    const batch = normalizeQuestions(item.questions)
+    if (batch) item.questions = batch
+    else delete item.questions
+    item.steps = clarifySteps(item)
     const q = this.queue(this.clarifies, sid)
     const last = q.entries[q.entries.length - 1]
     let entry: Record<string, unknown>
