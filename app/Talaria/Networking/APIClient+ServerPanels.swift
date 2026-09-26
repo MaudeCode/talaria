@@ -158,6 +158,26 @@ extension APIClient {
         )
     }
 
+    func updateNotifications() async throws -> UpdateNotificationsResponse {
+        try await send(endpoint: .updateNotifications, method: "GET")
+    }
+
+    func clearUpdateNotifications() async throws -> UpdateNotificationsResponse {
+        try await send(endpoint: .updateNotificationsClear, method: "POST", body: UpdateNotificationsClearRequest(clear: true))
+    }
+
+    func readUpdateNotification(id: String) async throws -> UpdateNotificationRecord {
+        try await send(endpoint: .updateNotificationRead(id: id), method: "POST", body: UpdateNotificationReadRequest(read: true))
+    }
+
+    func dismissUpdateNotification(id: String) async throws -> UpdateNotificationDismissResponse {
+        try await send(endpoint: .updateNotificationDismiss(id: id), method: "POST", body: UpdateNotificationDismissRequest(dismiss: true))
+    }
+
+    func performUpdateNotificationAction(id: String, actionID: String) async throws -> UpdateNotificationRecord {
+        try await send(endpoint: .updateNotificationAction(id: id, actionID: actionID), method: "POST", body: UpdateNotificationActionRequest(perform: true))
+    }
+
     func insights(days: Int) async throws -> InsightsResponse {
         try await send(endpoint: .insights(days: days), method: "GET")
     }
@@ -179,6 +199,11 @@ private struct DefaultModelRequest: Encodable {
 private struct ReasoningEffortRequest: Encodable {
     let effort: String
 }
+
+private struct UpdateNotificationReadRequest: Encodable { let read: Bool }
+private struct UpdateNotificationsClearRequest: Encodable { let clear: Bool }
+private struct UpdateNotificationDismissRequest: Encodable { let dismiss: Bool }
+private struct UpdateNotificationActionRequest: Encodable { let perform: Bool }
 
 private struct ReasoningDisplayRequest: Encodable {
     let display: String

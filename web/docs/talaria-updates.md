@@ -182,6 +182,25 @@ Validation lives in `packages/server/src/tools/updates.test.ts` and the frontend
 System settings/browser tests. Source tests own their repositories, tags, worktrees, locks, and state;
 browser fixtures own release responses and never install updates.
 
+## Durable update notifications
+
+Owner sessions receive server-owned notification records for Web and Agent update attempts. The server
+creates one stable record per operation, persists its lifecycle across navigation and restart, and owns
+read, acknowledgement, dismissal, severity, actions, destinations, and clearability. Update records are
+visible across the same owner's profiles because the installation being updated is server-wide; records
+for another authenticated owner remain isolated. Automatic Web updates produce server-wide owner notices.
+
+The notification lifecycle is `applying`, `awaiting_confirmation`, `restarting`, then `succeeded`,
+`blocked`, `failed`, or `unknown`. A restarted server marks an interrupted `applying` operation unknown.
+A `restarting` Web operation becomes succeeded only when the running release identity exactly matches the
+persisted expected identity; otherwise it becomes unknown. A dropped connection never proves success.
+
+`GET /api/update-notifications` returns the active owner's bounded history plus server-computed unread and
+clear capabilities. The typed read, dismiss, clear, cancel, and action routes are idempotent. Clear all
+preserves unresolved required acknowledgements. Opening a notification is distinct from acknowledgement;
+only its explicit acknowledging action satisfies that requirement. Semantic destinations such as
+`settings.system` are mapped by each client to its native route and never carry arbitrary URLs or code.
+
 Packaged installations compare version numbers only within the selected channel.
 Switching between stable and experimental reports a manual update with unknown
 distance, even when both tags refer to the same source.

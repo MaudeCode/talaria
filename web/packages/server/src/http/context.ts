@@ -57,6 +57,7 @@ import type { McpHealthProber } from '../tools/mcp-health.js'
 import type { GatewayWatcherRegistry } from '../sessions/gateway-watcher.js'
 import type { PasskeyStore } from '../auth/passkeys.js'
 import type { UpdateService } from '../tools/updates.js'
+import type { UpdateNotificationStore } from '../tools/update-notifications.js'
 
 export interface AppDeps {
   config: ServerConfig
@@ -139,6 +140,7 @@ export interface AppDeps {
   /** Self-update: exit with the supervisor's restart code once active chat work drains (ticket §13). */
   requestRestart: () => void
   updates: UpdateService
+  updateNotifications: UpdateNotificationStore
   cspLimiter: WindowLimiter
   clientEventLimiter: WindowLimiter
   ttsLimiter: WindowLimiter

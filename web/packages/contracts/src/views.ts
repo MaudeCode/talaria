@@ -306,7 +306,51 @@ export const SystemHealthSchema = z.looseObject({
 export const UpdateTargetSchema = z.looseObject({ name: z.string().optional(), channel: z.enum(['stable', 'experimental']).optional(), unsupported: z.boolean().optional(), supported_revision: z.string().optional(), supported_version: z.string().optional(), candidate_revision: z.string().optional(), behind: z.number().nullable().optional(), current_sha: z.string().nullable().optional(), latest_sha: z.string().nullable().optional(), compare_url: z.string().optional(), repo_url: z.string().optional(), error: z.string().optional(), ok: z.boolean().optional(), manual_update: z.boolean().optional(), no_git: z.boolean().optional(), install_kind: z.literal('npm').optional(), npm: z.string().optional(), dirty: z.boolean().optional(), metadata_repair: z.boolean().optional(), release_url: z.string().optional(), ignored: z.boolean().optional(), stale_check: z.boolean().optional(), current_version: z.string().optional() })
 export const UpdatesCheckSchema = z.looseObject({ disabled: z.boolean().optional(), cached: z.boolean().optional(), channel: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), checked_at: z.number().optional(), include_agent: z.boolean().optional(), webui: UpdateTargetSchema.nullable().optional(), agent: UpdateTargetSchema.nullable().optional() })
 export const UpdatesSummarySchema = z.looseObject({ summary: z.string().optional(), text: z.string().optional(), ok: z.boolean().optional(), error: z.string().optional(), diff_links: z.array(Json).optional() })
-export const UpdateApplySchema = z.looseObject({ ok: z.boolean().optional(), status: z.string().optional(), error: z.string().optional(), message: z.string().optional(), lock: Json.optional(), confirmation_required: z.boolean().optional(), candidate_revision: z.string().optional(), supported_revision: z.string().optional(), supported_version: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional() })
+export const UpdateApplySchema = z.looseObject({ ok: z.boolean().optional(), status: z.string().optional(), error: z.string().optional(), message: z.string().optional(), lock: Json.optional(), confirmation_required: z.boolean().optional(), candidate_revision: z.string().optional(), supported_revision: z.string().optional(), supported_version: z.string().optional(), agent_channel: z.enum(['stable', 'experimental']).optional(), notification_id: z.uuid().optional() })
+export const UpdateNotificationPhaseSchema = z.enum(['applying', 'awaiting_confirmation', 'restarting', 'succeeded', 'blocked', 'failed', 'unknown'])
+export const UpdateNotificationActionSchema = z.object({
+  id: z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9_-]*$/),
+  label: z.string().min(1).max(80),
+  style: z.enum(['default', 'primary', 'destructive']),
+  acknowledges: z.boolean(),
+})
+export const UpdateNotificationDestinationSchema = z.object({
+  key: z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9_.-]*$/),
+  label: z.string().min(1).max(80),
+})
+export const UpdateNotificationSchema = z.object({
+  id: z.uuid(),
+  kind: z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9_-]*$/),
+  target: z.enum(['webui', 'agent']).nullable(),
+  phase: z.union([UpdateNotificationPhaseSchema, z.string().min(1).max(64)]),
+  severity: z.enum(['info', 'warning', 'critical']),
+  persistent: z.boolean(),
+  requires_acknowledgement: z.boolean(),
+  actions: z.array(UpdateNotificationActionSchema).max(4),
+  destination: UpdateNotificationDestinationSchema.nullable(),
+  title: z.string(),
+  message: z.string(),
+  created_at: z.iso.datetime(),
+  updated_at: z.iso.datetime(),
+  read_at: z.iso.datetime().nullable(),
+  acknowledged_at: z.iso.datetime().nullable(),
+  acknowledged_action_id: z.string().nullable(),
+  verified_revision: z.string().regex(/^[a-f0-9]{40}$/).nullable(),
+  verified_version: z.string().min(1).max(80).nullable(),
+  unread: z.boolean(),
+  active: z.boolean(),
+  requires_interaction: z.boolean(),
+  can_dismiss: z.boolean(),
+})
+export const UpdateNotificationsSchema = z.object({
+  scope_id: z.string().min(1).max(64),
+  notifications: z.array(UpdateNotificationSchema),
+  unread_count: z.number().int().nonnegative(),
+  clearable_count: z.number().int().nonnegative(),
+  can_clear: z.boolean(),
+})
+export type UpdateNotification = z.infer<typeof UpdateNotificationSchema>
+export type UpdateNotifications = z.infer<typeof UpdateNotificationsSchema>
 export const PluginSchema = z.looseObject({ key: z.string(), name: z.string().optional(), kind: z.string().optional(), enabled: z.boolean().optional(), description: z.string().optional(), version: z.string().optional(), activation: z.string().optional(), is_active_provider: z.boolean().optional(), hooks: z.array(Json).optional() })
 export const PluginsSchema = z.looseObject({ plugins: z.array(PluginSchema), empty: z.boolean().optional(), read_only: z.boolean().optional(), supported_hooks: z.array(z.string()).optional(), unavailable: z.boolean().optional() })
 export const McpServerSchema = z.looseObject({ name: z.string(), id: z.string().optional(), transport: z.string().optional(), enabled: z.boolean().optional(), active: z.boolean().optional(), status: z.string().optional(), tools: z.number().optional(), tool_count: z.number().int().nullable().optional(), health: z.string().optional(), health_detail: z.string().optional(), health_checked_at: Json.optional(), health_pending: z.boolean().optional() })

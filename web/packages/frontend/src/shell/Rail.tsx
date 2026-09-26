@@ -10,6 +10,7 @@ import { useLocale } from '../i18n/useLocale'
 import { useExtensionManifests } from '../extensions/registry'
 import { Puzzle } from 'lucide-react'
 import { Brandmark } from './Brandmark'
+import { UpdateNotificationCenterButton } from '../features/notifications/UpdateNotificationCenter'
 
 /**
  * Desktop primary navigation. Markup and class names follow the legacy shell
@@ -67,6 +68,7 @@ export function Rail() {
         </a>
       )}
       <div className="rail-spacer flex-1 min-h-2" />
+      <UpdateNotificationCenterButton placement="rail" />
       <span className="seam seam-tr rail-seam" aria-hidden="true" />
       <span className="seam seam-br rail-seam" aria-hidden="true" />
       {settingsItem && (

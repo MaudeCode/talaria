@@ -99,6 +99,11 @@ enum Endpoint {
     case talariaRelayPair
     case updatesCheck
     case updatesApply
+    case updateNotifications
+    case updateNotificationsClear
+    case updateNotificationRead(id: String)
+    case updateNotificationDismiss(id: String)
+    case updateNotificationAction(id: String, actionID: String)
     case insights(days: Int)
     case crons
     case cronCreate
@@ -326,6 +331,16 @@ enum Endpoint {
             return "/api/updates/check"
         case .updatesApply:
             return "/api/updates/apply"
+        case .updateNotifications:
+            return "/api/update-notifications"
+        case .updateNotificationsClear:
+            return "/api/update-notifications/clear"
+        case let .updateNotificationRead(id):
+            return "/api/update-notifications/\(id)/read"
+        case let .updateNotificationDismiss(id):
+            return "/api/update-notifications/\(id)/dismiss"
+        case let .updateNotificationAction(id, actionID):
+            return "/api/update-notifications/\(id)/actions/\(actionID)"
         case .insights:
             return "/api/insights"
         case .crons:
@@ -632,6 +647,12 @@ enum Endpoint {
             url = kanbanTaskURL(relativeTo: baseURL, cardID: request.cardID, suffix: "/block")
         case let .kanbanUnblockCard(request):
             url = kanbanTaskURL(relativeTo: baseURL, cardID: request.cardID, suffix: "/unblock")
+        case let .updateNotificationRead(id):
+            url = updateNotificationURL(relativeTo: baseURL, id: id, suffix: "/read")
+        case let .updateNotificationDismiss(id):
+            url = updateNotificationURL(relativeTo: baseURL, id: id, suffix: "/dismiss")
+        case let .updateNotificationAction(id, actionID):
+            url = updateNotificationURL(relativeTo: baseURL, id: id, actionID: actionID)
         default:
             url = baseURL.appending(path: path)
         }
@@ -663,6 +684,20 @@ enum Endpoint {
             return root
         }
         components.percentEncodedPath += "/\(encodedSlug)\(suffix)"
+        return components.url ?? root
+    }
+
+    private func updateNotificationURL(relativeTo baseURL: URL, id: String, actionID: String? = nil, suffix: String = "") -> URL {
+        let root = baseURL.appending(path: "/api/update-notifications")
+        guard var components = URLComponents(url: root, resolvingAgainstBaseURL: false),
+              let encodedID = id.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed)
+        else { return root }
+        components.percentEncodedPath += "/\(encodedID)"
+        if let actionID, let encodedActionID = actionID.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed) {
+            components.percentEncodedPath += "/actions/\(encodedActionID)"
+        } else {
+            components.percentEncodedPath += suffix
+        }
         return components.url ?? root
     }
 

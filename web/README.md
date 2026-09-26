@@ -167,6 +167,9 @@ Enable **Automatically apply Web updates** to apply them: source installations c
 npm installations can install the exact package in a completed Stable release. Containers remain manual image
 replacements. Details:
 [docs/talaria-updates.md](docs/talaria-updates.md).
+The Notifications bell keeps a bounded server-owned history of update progress and results across Web
+restarts. Talaria Web and the iPhone app render the same records, including required acknowledgement and
+links back to System settings.
 
 ## MCP server
 

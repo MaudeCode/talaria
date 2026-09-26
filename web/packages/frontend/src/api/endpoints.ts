@@ -191,5 +191,11 @@ export const applyUpdates = (action: 'apply' | 'force' | 'clear_lock', channel?:
   const opts = { signal: timeout(300_000) }
   return action === 'apply' ? u.apply(body, opts) : action === 'force' ? u.force(body, opts) : u.clearLock(body, opts)
 }
+export const fetchUpdateNotifications = () => orpc().updateNotifications.list()
+export const readUpdateNotification = (id: string) => orpc().updateNotifications.read({ id, read: true })
+export const dismissUpdateNotification = (id: string) => orpc().updateNotifications.dismiss({ id, dismiss: true })
+export const clearUpdateNotifications = () => orpc().updateNotifications.clear({ clear: true })
+export const cancelUpdateNotification = (id: string) => orpc().updateNotifications.cancel({ id, cancel: true })
+export const performUpdateNotificationAction = (id: string, action_id: string) => orpc().updateNotifications.action({ id, action_id, perform: true })
 export const fetchPlugins = () => orpc().plugins()
 export const shutdownServer = () => orpc().ops.shutdown({})

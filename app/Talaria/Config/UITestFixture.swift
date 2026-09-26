@@ -23,6 +23,7 @@ struct UITestFixtureEnvironment {
     /// budgets (TAL-75). The functional fixtures keep the small counts so their
     /// scrolling and layout assertions stay fast.
     nonisolated static let denseArgument = "--ui-test-dense"
+    nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
     nonisolated static var isDense: Bool {
         ProcessInfo.processInfo.arguments.contains(denseArgument)
     }
@@ -309,6 +310,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     private static let recoveryState = NSLock()
     nonisolated(unsafe) private static var sessionReads = 0
     nonisolated(unsafe) private static var recovered = false
+    nonisolated(unsafe) private static var urgentNotificationAcknowledged = false
+    nonisolated(unsafe) private static var readUpdateNotificationIDs: Set<String> = ["ui-update-succeeded"]
+    nonisolated(unsafe) private static var dismissedUpdateNotificationIDs: Set<String> = []
     private static var testsReauthentication: Bool {
         ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.reauthenticationArgument)
     }
@@ -528,6 +532,28 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(["ok": !response.isEmpty, "response": response])
         case "/api/clarify/pending":
             return json(["pending_count": 0])
+        case "/api/update-notifications":
+            guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.updateNotificationsArgument) else {
+                return json(["scope_id": "ui-fixture-scope", "notifications": [], "unread_count": 0, "clearable_count": 0, "can_clear": false])
+            }
+            return json(updateNotificationsEnvelope())
+        case "/api/update-notifications/clear":
+            recoveryState.withLock {
+                dismissedUpdateNotificationIDs.formUnion(["ui-update-applying", "ui-update-blocked", "ui-update-succeeded"])
+                if urgentNotificationAcknowledged { dismissedUpdateNotificationIDs.insert("ui-update-urgent") }
+            }
+            return json(updateNotificationsEnvelope())
+        case let path where path.hasPrefix("/api/update-notifications/") && path.hasSuffix("/read"):
+            let id = path.split(separator: "/").dropLast().last.map(String.init) ?? "ui-update-applying"
+            _ = recoveryState.withLock { readUpdateNotificationIDs.insert(id) }
+            return json(updateNotificationRecord(id: id))
+        case let path where path.hasPrefix("/api/update-notifications/") && path.hasSuffix("/dismiss"):
+            let id = path.split(separator: "/").dropLast().last.map(String.init) ?? ""
+            recoveryState.withLock { dismissedUpdateNotificationIDs.insert(id); readUpdateNotificationIDs.insert(id) }
+            return json(["ok": true])
+        case let path where path.hasPrefix("/api/update-notifications/") && path.contains("/actions/"):
+            recoveryState.withLock { urgentNotificationAcknowledged = true; readUpdateNotificationIDs.insert("ui-update-urgent") }
+            return json(updateNotificationRecord(id: "ui-update-urgent"))
         case "/api/session/yolo":
             return json(["ok": true, "yolo_enabled": false])
         case "/api/chat/stream", "/api/approval/stream", "/api/clarify/stream", "/api/kanban/events/stream":
@@ -728,6 +754,122 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 ]]
             ]]
         ])
+    }
+
+    private static func updateNotification(
+        id: String,
+        target: String,
+        phase: String,
+        title: String,
+        message: String,
+        updatedAt: String,
+        readAt: Any
+    ) -> [String: Any] {
+        [
+            "id": id,
+            "kind": "update",
+            "target": target,
+            "phase": phase,
+            "severity": phase == "blocked" ? "warning" : "info",
+            "persistent": false,
+            "requires_acknowledgement": false,
+            "actions": [],
+            "destination": ["key": "settings.system", "label": "Open System settings"],
+            "title": title,
+            "message": message,
+            "created_at": updatedAt,
+            "updated_at": updatedAt,
+            "read_at": readAt,
+            "acknowledged_at": NSNull(),
+            "acknowledged_action_id": NSNull(),
+            "verified_revision": phase == "succeeded" ? String(repeating: "a", count: 40) : NSNull(),
+            "verified_version": phase == "succeeded" ? "web-v1.2.3" : NSNull(),
+            "unread": readAt is NSNull,
+            "active": phase == "applying" || phase == "restarting",
+            "requires_interaction": false,
+            "can_dismiss": true
+        ]
+    }
+
+    private static func urgentUpdateNotification(acknowledged: Bool, read: Bool) -> [String: Any] {
+        [
+            "id": "ui-update-urgent",
+            "kind": "system",
+            "target": NSNull(),
+            "phase": "attention",
+            "severity": "critical",
+            "persistent": true,
+            "requires_acknowledgement": true,
+            "actions": [["id": "acknowledge", "label": "Acknowledge", "style": "primary", "acknowledges": true]],
+            "destination": ["key": "settings.system", "label": "Open System settings"],
+            "title": "Action required",
+            "message": "Please acknowledge this server notice before it can be cleared.",
+            "created_at": "2026-09-26T13:24:00Z",
+            "updated_at": "2026-09-26T13:24:00Z",
+            "read_at": read ? "2026-09-26T13:25:00Z" : NSNull(),
+            "acknowledged_at": acknowledged ? "2026-09-26T13:25:00Z" : NSNull(),
+            "acknowledged_action_id": acknowledged ? "acknowledge" : NSNull(),
+            "verified_revision": NSNull(),
+            "verified_version": NSNull(),
+            "unread": !read,
+            "active": false,
+            "requires_interaction": !acknowledged,
+            "can_dismiss": acknowledged
+        ]
+    }
+
+    private static func updateNotificationsEnvelope() -> [String: Any] {
+        let snapshot = recoveryState.withLock {
+            (urgentNotificationAcknowledged, readUpdateNotificationIDs, dismissedUpdateNotificationIDs)
+        }
+        let notifications = allUpdateNotifications(acknowledged: snapshot.0, readIDs: snapshot.1)
+            .filter { !snapshot.2.contains($0["id"] as? String ?? "") }
+        let clearableCount = notifications.filter {
+            ($0["requires_acknowledgement"] as? Bool) != true || snapshot.0
+        }.count
+        return [
+            "scope_id": "ui-fixture-scope",
+            "notifications": notifications,
+            "unread_count": notifications.filter { ($0["read_at"] as? NSNull) != nil }.count,
+            "clearable_count": clearableCount,
+            "can_clear": clearableCount > 0
+        ]
+    }
+
+    private static func updateNotificationRecord(id: String) -> [String: Any] {
+        let snapshot = recoveryState.withLock { (urgentNotificationAcknowledged, readUpdateNotificationIDs) }
+        return allUpdateNotifications(acknowledged: snapshot.0, readIDs: snapshot.1)
+            .first { ($0["id"] as? String) == id }
+            ?? updateNotification(
+                id: id,
+                target: "webui",
+                phase: "applying",
+                title: "Talaria Web update",
+                message: "Installing the selected Talaria Web update.",
+                updatedAt: "2026-09-26T13:21:00Z",
+                readAt: "2026-09-26T13:25:00Z"
+            )
+    }
+
+    private static func allUpdateNotifications(acknowledged: Bool, readIDs: Set<String>) -> [[String: Any]] {
+        [
+            urgentUpdateNotification(acknowledged: acknowledged, read: readIDs.contains("ui-update-urgent")),
+            updateNotification(
+                id: "ui-update-applying", target: "webui", phase: "applying",
+                title: "Talaria Web update", message: "Installing the selected Talaria Web update.",
+                updatedAt: "2026-09-26T13:21:00Z", readAt: readIDs.contains("ui-update-applying") ? "2026-09-26T13:25:00Z" : NSNull()
+            ),
+            updateNotification(
+                id: "ui-update-blocked", target: "agent", phase: "blocked",
+                title: "Hermes Agent update", message: "The update is waiting for active work to finish.",
+                updatedAt: "2026-09-26T13:13:00Z", readAt: readIDs.contains("ui-update-blocked") ? "2026-09-26T13:25:00Z" : NSNull()
+            ),
+            updateNotification(
+                id: "ui-update-succeeded", target: "webui", phase: "succeeded",
+                title: "Talaria Web update", message: "Talaria Web was updated successfully.",
+                updatedAt: "2026-09-26T12:48:00Z", readAt: "2026-09-26T12:49:00Z"
+            )
+        ]
     }
 
     private static func json(_ object: Any) -> Data {

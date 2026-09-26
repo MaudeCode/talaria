@@ -24,7 +24,7 @@ import { WEB_ROOT } from '../test/harness.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
   applyAgentUpdate, applyWebUpdate, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
-  REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, WEB_BUILD_STEPS, WEB_SERVER_ENTRY, type BuildRun, type GetJson, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers,
+  REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, WEB_BUILD_STEPS, WEB_SERVER_ENTRY, type BuildRun, type GetJson, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
 } from './updates.js'
 
 const GIT_ENV = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_COMMITTER_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' }
@@ -177,13 +177,14 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(s.commands.some((c) => c[0] === 'fetch')).toBe(false)
   })
 
-  function service(s: Install, opts: { channel?: 'stable' | 'experimental'; getJson?: GetJson; agentDir?: string | null; blockers?: () => RestartBlockers; gateway?: () => Promise<Dict>; llm?: (system: string, user: string) => Promise<string>; autoApply?: () => boolean; checkEnabled?: () => boolean; npm?: BuildRun } = {}): { svc: UpdateService; restarts: number[] } {
+  function service(s: Install, opts: { channel?: 'stable' | 'experimental'; getJson?: GetJson; agentDir?: string | null; blockers?: () => RestartBlockers; gateway?: () => Promise<Dict>; llm?: (system: string, user: string) => Promise<string>; autoApply?: () => boolean; checkEnabled?: () => boolean; npm?: BuildRun; autoNotification?: UpdateServiceDeps['autoNotification'] } = {}): { svc: UpdateService; restarts: number[] } {
     const restarts: number[] = []
     const svc = new UpdateService({
       webRoot: web(s.client), git: s.run, build: s.build, getJson: opts.getJson ?? s.getJson, identity: s.identity, webuiVersion: 'development',
       agentDir: () => opts.agentDir ?? null, channel: () => opts.channel ?? 'stable', includeAgent: () => true,
       ...(opts.autoApply ? { autoApply: opts.autoApply } : {}), ...(opts.npm ? { npm: opts.npm } : {}),
       ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
+      ...(opts.autoNotification ? { autoNotification: opts.autoNotification } : {}),
       blockers: opts.blockers ?? (() => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false })),
       scheduleRestart: () => restarts.push(1), gatewayRestart: opts.gateway ?? (() => Promise.resolve({ status: 'completed' })), llm: opts.llm ?? null, sleep: () => Promise.resolve(), log: () => undefined,
     })
@@ -261,17 +262,21 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const s = sourceInstall()
     let enabled = false
     let blocked = true
+    const notificationEvents: string[] = []
     const { svc, restarts } = service(s, {
       channel: 'experimental', getJson: noReleases, autoApply: () => enabled,
       blockers: () => ({ active_streams: blocked ? 1 : 0, active_runs: 0, blocking_stream_ids: blocked ? ['s'] : [], blocking_run_ids: [], restart_blocked: blocked }),
+      autoNotification: { begin: () => { notificationEvents.push('begin'); return `notice-${String(notificationEvents.length)}` }, transition: (_id, phase) => { notificationEvents.push(phase) } },
     })
     expect(await svc.autoApplyOnce()).toBeNull()
     enabled = true
     expect(await svc.autoApplyOnce()).toMatchObject({ ok: false, restart_blocked: true })
+    expect(notificationEvents).toEqual(['begin', 'blocked'])
     expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.old)
     expect(restarts).toEqual([])
     blocked = false
     expect(await svc.autoApplyOnce()).toMatchObject({ ok: true, restart_scheduled: true })
+    expect(notificationEvents).toEqual(['begin', 'blocked', 'begin', 'restarting'])
     expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.latest)
     expect(restarts).toEqual([1])
   })
@@ -904,7 +909,7 @@ describe('Agent checkout updates', () => {
     expect(result).toMatchObject({ ok: false, confirmation_required: true, candidate_revision: a.v2 })
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v1)
     expect(await applyAgentUpdate(a.agent, runGit, 'stable', { ...policy, confirmedRevision: a.v1 })).toMatchObject({ ok: false, confirmation_required: true })
-    expect(await applyAgentUpdate(a.agent, runGit, 'stable', { ...policy, confirmedRevision: a.v2 })).toMatchObject({ ok: true })
+    expect(await applyAgentUpdate(a.agent, runGit, 'stable', { ...policy, confirmedRevision: a.v2 })).toMatchObject({ ok: true, verified_revision: a.v2, verified_version: 'v2.0.0' })
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
   })
 
@@ -1012,7 +1017,7 @@ describe('Agent checkout updates', () => {
     expect(git(a.agent, 'symbolic-ref', 'refs/remotes/origin/HEAD')).toBe('refs/remotes/origin/master')
     expect(git(a.agent, 'rev-parse', 'origin/master')).toBe(a.v2)
     expect(await checkAgentUpdate(a.agent, runGit, 'experimental')).toMatchObject({ branch: `origin/${branch}`, behind: 2, latest_sha: target })
-    expect(await applyAgentUpdate(a.agent, runGit, 'experimental', { supportedRevision: target, supportedVersion: '3.0.0' })).toMatchObject({ ok: true })
+    expect(await applyAgentUpdate(a.agent, runGit, 'experimental', { supportedRevision: target, supportedVersion: '3.0.0' })).toMatchObject({ ok: true, verified_revision: target, verified_version: null })
     expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(target)
   })
 

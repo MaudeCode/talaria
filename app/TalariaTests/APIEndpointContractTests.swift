@@ -198,6 +198,13 @@ final class ContractReadinessTests: APIClientTestCase {
                 query: ["refresh": "1"]
             ),
             .init(name: "settings", endpoint: .settings, path: "/api/settings"),
+            .init(name: "updates check", endpoint: .updatesCheck, path: "/api/updates/check"),
+            .init(name: "updates apply", endpoint: .updatesApply, path: "/api/updates/apply"),
+            .init(name: "update notifications", endpoint: .updateNotifications, path: "/api/update-notifications"),
+            .init(name: "clear update notifications", endpoint: .updateNotificationsClear, path: "/api/update-notifications/clear"),
+            .init(name: "read update notification", endpoint: .updateNotificationRead(id: "notice-123"), path: "/api/update-notifications/notice-123/read"),
+            .init(name: "dismiss update notification", endpoint: .updateNotificationDismiss(id: "notice-123"), path: "/api/update-notifications/notice-123/dismiss"),
+            .init(name: "update notification action", endpoint: .updateNotificationAction(id: "notice-123", actionID: "acknowledge"), path: "/api/update-notifications/notice-123/actions/acknowledge"),
             .init(
                 name: "insights",
                 endpoint: .insights(days: 30),
@@ -320,6 +327,13 @@ final class ContractReadinessTests: APIClientTestCase {
 
     private func queryDictionary(from components: URLComponents) -> [String: String] {
         Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+    }
+
+    func testUpdateNotificationPathSegmentsCannotReshapeTheRoute() throws {
+        let base = try XCTUnwrap(URL(string: "https://webui.example.test"))
+        let url = Endpoint.updateNotificationAction(id: "../private", actionID: "../../ack").url(relativeTo: base)
+        let path = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath)
+        XCTAssertEqual(path, "/api/update-notifications/%2E%2E%2Fprivate/actions/%2E%2E%2F%2E%2E%2Fack")
     }
 }
 

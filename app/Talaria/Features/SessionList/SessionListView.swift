@@ -25,6 +25,7 @@ struct SessionListView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: SessionListViewModel
     @State private var quotaViewModel: ProvidersViewModel
+    @State private var updateNotificationViewModel: UpdateNotificationCenterViewModel
     @State private var navigationState: SessionNavigationState
     @State private var sessionPendingRename: SessionSummary?
     @State private var sessionPendingDeletion: SessionSummary?
@@ -39,6 +40,7 @@ struct SessionListView: View {
     @State private var selectedProjectID: String?
     @State private var sidebarScrollPosition: String?
     @State private var isAppSidebarPresented = false
+    @State private var isPresentingUpdateNotifications: Bool
     @AccessibilityFocusState private var openNavigationIsFocused: Bool
     @State private var didCompleteInitialLoad = false
     @State private var immediateRefreshID: UUID?
@@ -104,6 +106,14 @@ struct SessionListView: View {
         _requestedNewChat = requestedNewChat
         _viewModel = State(initialValue: SessionListViewModel(server: server))
         _quotaViewModel = State(initialValue: ProvidersViewModel(server: server))
+        _updateNotificationViewModel = State(initialValue: UpdateNotificationCenterViewModel(server: server))
+        #if DEBUG
+        _isPresentingUpdateNotifications = State(
+            initialValue: ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.updateNotificationsArgument)
+        )
+        #else
+        _isPresentingUpdateNotifications = State(initialValue: false)
+        #endif
         _navigationState = State(
             initialValue: SessionNavigationState(
                 lastSelectedSessionID: SessionNavigationPersistence.load(for: server)
@@ -144,6 +154,13 @@ struct SessionListView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             if hasWaitingSharedImport { waitingSharedImportBanner }
         }
+            .fullScreenCover(isPresented: $isPresentingUpdateNotifications) {
+                UpdateNotificationsPresentation(
+                    viewModel: updateNotificationViewModel,
+                    onAPIError: { authManager.handleAPIError($0, server: server) },
+                    openDestination: openNotificationDestination
+                )
+            }
             .sheet(item: $sessionExportShareItem) { item in
                 SessionExportShareSheet(fileURL: item.fileURL)
                     .presentationDetents([.medium, .large])
@@ -362,6 +379,9 @@ struct SessionListView: View {
                 )
             )
             .focusedSceneValue(\.talariaSceneActions, sceneActions)
+            .task(id: updateNotificationRefreshTaskID) {
+                await refreshUpdateNotificationsWhileActive()
+            }
     }
 
     private var waitingSharedImportBanner: some View {
@@ -450,6 +470,10 @@ struct SessionListView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 sidebarButton
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                updateNotificationsButton
             }
 
             ToolbarItem(placement: .topBarTrailing) {
@@ -724,6 +748,42 @@ struct SessionListView: View {
                 addServer: { isPresentingAddServer = true },
                 manageServers: { navigationState.select(.settings(.servers)) }
             )
+        }
+    }
+
+    private var updateNotificationsButton: some View {
+        Button {
+            isPresentingUpdateNotifications = true
+        } label: {
+            Image(systemName: updateNotificationViewModel.unreadCount > 0 ? "bell.badge.fill" : "bell")
+                .symbolRenderingMode(.hierarchical)
+        }
+        .accessibilityLabel("Notifications")
+        .accessibilityValue(updateNotificationViewModel.unreadCount > 0 ? "\(updateNotificationViewModel.unreadCount) unread" : "No unread notifications")
+    }
+
+    private var updateNotificationRefreshTaskID: String {
+        "\(server.absoluteString)|\(scenePhase == .active)"
+    }
+
+    private func handleUpdateNotificationError() {
+        if let error = updateNotificationViewModel.lastError {
+            authManager.handleAPIError(error, server: server)
+        }
+    }
+
+    private func openNotificationDestination(_ destination: UpdateNotificationDestination) {
+        guard destination.key == "settings.system" else { return }
+        isPresentingUpdateNotifications = false
+        navigationState.select(.settings(.system))
+    }
+
+    private func refreshUpdateNotificationsWhileActive() async {
+        guard scenePhase == .active else { return }
+        while !Task.isCancelled {
+            await updateNotificationViewModel.refresh()
+            handleUpdateNotificationError()
+            try? await Task.sleep(for: .seconds(5))
         }
     }
 

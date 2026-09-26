@@ -38,6 +38,7 @@ export const keys = {
   dashboard: ['dashboard'] as const,
   health: { agent: ['health', 'agent'] as const, system: ['health', 'system'] as const },
   updates: { check: ['updates', 'check'] as const, summary: ['updates', 'summary'] as const },
+  updateNotifications: ['update-notifications'] as const,
   plugins: ['plugins'] as const,
   mcp: { servers: ['mcp', 'servers'] as const, tools: ['mcp', 'tools'] as const },
   notes: { sources: ['notes', 'sources'] as const },
