@@ -385,6 +385,26 @@ export function mergeSessionMessagesAppendOnly(sidecar: Message[], state: Messag
   return merged
 }
 
+/**
+ * TAL-316: the merged transcript without the running turn's output, which the run journal replays from its start. The turn
+ * begins at its checkpointed prompt, else at its first stamped row or the first state.db row appended past the sidecar
+ * (`localCount`) at or after its start. The turn's prompt and the server's consumed-steer rows stay; everything else of the
+ * turn goes, so the transcript holds nothing the journal delivers after sequence 0.
+ */
+export function withoutRunningTurnOutput(rows: Message[], turn: { localCount: number; turnId: string; startedAt: number; activeTurnToken: string }): Message[] {
+  const checkpointed = rows.findIndex((m) => m.role === 'user' && m._active_turn_token === turn.activeTurnToken)
+  const first = checkpointed >= 0 ? checkpointed : rows.findIndex((m, i) => m._turn_id === turn.turnId || (i >= turn.localCount && Number(m.timestamp) >= turn.startedAt))
+  if (first < 0) return rows
+  let prompt = false
+  return rows.filter((m, i) => {
+    if (i < first) return true
+    if (m._steer && m._turn_id === turn.turnId) return true
+    if (prompt || m.role !== 'user' || m._steer || agentSteerText(m) !== null) return false
+    prompt = true
+    return true
+  })
+}
+
 function toolCallId(tc: unknown): string {
   if (!isDict(tc)) return ''
   return str(tc.id) || str(tc.call_id)

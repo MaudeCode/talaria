@@ -626,6 +626,36 @@
       }
     ],
     "title": "Contract fixture",
-    "active_stream_id": "contract-run-f"
+    "active_stream_id": "contract-run-f",
+    "transcript_seq": null
+  },
+  "journaled_session": {
+    "session_id": "contract-running",
+    "title": "Contract running",
+    "active_stream_id": "contract-run-h",
+    "transcript_seq": {
+      "stream_id": "contract-run-h",
+      "seq": 0
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "Earlier question",
+        "message_id": "contract-user-g0",
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "assistant",
+        "content": "Earlier answer.",
+        "message_id": "contract-run-g0-1",
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "user",
+        "content": "Read the file",
+        "message_id": "contract-user-h",
+        "_turn_id": "contract-run-h"
+      }
+    ]
   }
 }

@@ -16,6 +16,8 @@ import { setTodoState } from '../features/todos/todoStore'
 import { showToast } from '../features/toast/toast'
 import { isApiError } from '../contracts/common'
 
+interface Replay { afterSeq: number; afterEventId: string }
+
 interface Live {
   sessionId: string
   streamId: string
@@ -85,7 +87,7 @@ function closeLive(sessionId: string): void {
   live.delete(sessionId)
 }
 
-function open(sessionId: string, streamId: string, replay: { afterSeq: number; afterEventId: string } | null): void {
+function open(sessionId: string, streamId: string, replay: Replay | null): void {
   closeLive(sessionId)
   const entry: Live = { sessionId, streamId, handle: { close: () => undefined, readyState: () => SSE_CLOSED }, reconnectTimer: null, reconnectAttempts: 0, lastSeq: replay?.afterSeq ?? 0, lastEventId: replay?.afterEventId ?? '', settling: false }
   live.set(sessionId, entry)
@@ -118,6 +120,18 @@ function open(sessionId: string, streamId: string, replay: { afterSeq: number; a
       if (readyState === SSE_CLOSED) scheduleReconnect(entry)
     },
   })
+}
+
+/**
+ * Where to resume `streamId`: this page's own cursor while its live turn holds that stream, else the session detail's
+ * `transcript_seq` for that stream (its transcript holds nothing the journal delivers after it), else null — attach live
+ * without replay. A cursor for another stream is never used.
+ */
+function resumeFrom(sessionId: string, streamId: string, transcriptSeq: Session['transcript_seq']): Replay | null {
+  const turn = getStreamState().turns[sessionId]
+  if (turn?.streamId === streamId && !isTerminal(turn.status)) return { afterSeq: turn.lastSeq, afterEventId: turn.lastEventId }
+  if (transcriptSeq?.stream_id === streamId) return { afterSeq: transcriptSeq.seq, afterEventId: '' }
+  return null
 }
 
 function scheduleReconnect(entry: Live): void {
@@ -153,8 +167,9 @@ async function settleFromServer(sessionId: string, streamId: string): Promise<vo
       // Server still reports the run as active; try again shortly.
       const st = await api.fetchStreamStatus(streamId).catch(() => null)
       if (st?.active) {
-        dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: true })
-        open(sessionId, streamId, { afterSeq: 0, afterEventId: '' })
+        const replay = resumeFrom(sessionId, streamId, session.transcript_seq)
+        dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null })
+        open(sessionId, streamId, replay)
         return
       }
     }
@@ -183,7 +198,7 @@ export async function startTurn(input: StartTurnInput) {
 }
 
 /** Re-attach to a run the server reports as active (hard refresh, tab restore, sidebar switch). */
-export async function attachToStream(sessionId: string, streamId: string): Promise<void> {
+export async function attachToStream(sessionId: string, streamId: string, transcriptSeq: Session['transcript_seq'] = null): Promise<void> {
   const existing = live.get(sessionId)
   if (existing?.streamId === streamId && existing.handle.readyState() !== SSE_CLOSED) return
   const st = await api.fetchStreamStatus(streamId)
@@ -191,8 +206,9 @@ export async function attachToStream(sessionId: string, streamId: string): Promi
     dispatch({ type: 'settle', sessionId, streamId, session: null })
     return
   }
-  dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: true })
-  open(sessionId, streamId, { afterSeq: existing?.lastSeq ?? 0, afterEventId: existing?.lastEventId ?? '' })
+  const replay = resumeFrom(sessionId, streamId, transcriptSeq)
+  dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null })
+  open(sessionId, streamId, replay)
 }
 
 /** Explicit user stop: backend cancel; the terminal `cancel` event settles the turn. */

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reopening a chat while a reply is still running shows each part of that reply once, in order, instead of repeating or dropping text.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

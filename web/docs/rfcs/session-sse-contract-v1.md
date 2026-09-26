@@ -219,6 +219,27 @@ not provide one.
 **Clients dedupe by `event_id`.** If a reconnect causes overlap with already-seen
 events, clients use `event_id` to detect and skip duplicates.
 
+## Session detail transcript cursor
+
+`GET /api/session` states where its `messages` end in the active run's journal
+as `transcript_seq: { stream_id, seq } | null` (TAL-316). The guarantee is that
+`messages` hold nothing the journal of `stream_id` delivers after `seq`, so a
+client opens that stream with `after_seq = seq` and renders the replay as-is,
+without matching replayed text against the transcript.
+
+- For an active run with a journal, the server leaves the running turn's output
+  to the replay: it keeps the turn's prompt and its persisted steer rows, drops
+  every other row of that turn, and returns `{ stream_id: active_stream_id,
+  seq: 0 }`. It cannot map individual state.db rows to journal sequence
+  numbers, so the cursor is true by construction rather than by lookup.
+- With no active run, or when the run has no journal (degraded or pruned),
+  `messages` are the whole persisted transcript and `transcript_seq` is `null`;
+  the client attaches live without replay.
+- Windowing (`msg_limit` / `msg_before`) applies after the omission, so every
+  window agrees on `message_count` and the cursor.
+- Reconnects within one client keep that client's own same-stream cursor. A
+  cursor whose stream id differs from the target stream is never used.
+
 ## Replay source
 
 Phase 1 uses the **durable run journal** as the replay source for replayable

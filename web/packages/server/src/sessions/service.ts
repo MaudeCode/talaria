@@ -7,7 +7,7 @@ import type { RunJournal } from './journal.js'
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
 import { rmSync } from 'node:fs'
-import { copyJson, redactSessionData, redactValue, stripPublicInternalFields } from '../redact.js'
+import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPublicInternalFields } from '../redact.js'
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
@@ -17,7 +17,7 @@ import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow } from './state-db.js'
-import { mergeSessionMessagesAppendOnly } from './merge.js'
+import { mergeSessionMessagesAppendOnly, withoutRunningTurnOutput } from './merge.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
@@ -300,8 +300,11 @@ export class SessionService {
       throw new HttpFailure(404, 'Session not found')
     }
     this.clearStaleStreamState(s)
+    const journaled = loadMessages ? this.journaledActiveTurn(s) : null
+    let transcript = loadMessages ? this.mergedTranscript(s) : []
+    if (journaled) transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages ? hydrateAnchorActivityScenes(withTurnIds(this.mergedTranscript(s)), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null }) : []
+    const all: unknown[] = loadMessages ? hydrateAnchorActivityScenes(withTurnIds(transcript), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null }) : []
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null
@@ -336,6 +339,7 @@ export class SessionService {
       threshold_tokens: Number(s.threshold_tokens ?? 0) || 0,
       last_prompt_tokens: Number(s.last_prompt_tokens ?? 0) || 0,
     }
+    if (loadMessages) raw.transcript_seq = journaled ? { stream_id: journaled.turnId, seq: 0 } : null
     if (loadMessages && all.length) attachTodoState(raw, all)
     if (mergedLast) {
       raw.last_message_at = Math.max(Number(raw.last_message_at ?? 0) || 0, mergedLast)
@@ -352,6 +356,19 @@ export class SessionService {
       raw.read_only = true
     }
     return redactSessionData(raw, this.deps.redactEnabled())
+  }
+
+  /**
+   * TAL-316: the active run whose journal can replay its output from the start. The detail then leaves that output to the
+   * replay; with no active run, no identifiable prompt, or no journal, it returns the persisted transcript unchanged.
+   */
+  private journaledActiveTurn(s: Session): { turnId: string; startedAt: number; activeTurnToken: string } | null {
+    const turnId = str(s.active_stream_id).trim()
+    const activeTurnToken = buildActiveTurnToken(turnId, s.pending_started_at)
+    if (!turnId || !activeTurnToken) return null
+    const summary = this.deps.journal?.findRunSummary(turnId)
+    if (summary?.session_id !== s.session_id || summary.journal_pruned) return null
+    return { turnId, startedAt: Number(s.pending_started_at), activeTurnToken }
   }
 
   /** A session without a sidecar, synthesized from state.db for this profile; 404/409 like the detail. */
@@ -379,7 +396,7 @@ export class SessionService {
       created_at: synth.created_at, updated_at: synth.updated_at, last_message_at: meta?.last_message_at || meta?.updated_at || lastTs,
       pinned: synth.pinned, archived: synth.archived, project_id: synth.project_id ?? null, profile: synth.profile,
       is_cli_session: synth.is_cli_session, source_tag: synth.source_tag, raw_source: synth.raw_source, session_source: synth.session_source,
-      source_label: synth.source_label, read_only: synth.read_only, messages: msgs, tool_calls: [],
+      source_label: synth.source_label, read_only: synth.read_only, messages: msgs, tool_calls: [], transcript_seq: null,
     }
     attachTodoState(sess, msgs)
     const merged = meta ? mergeCliSidebarMetadata(sess, meta) : sess
