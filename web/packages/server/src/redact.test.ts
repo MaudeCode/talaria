@@ -259,6 +259,11 @@ describe('shell-composed words', () => {
     expect(redactText(`curl https://bob':'hunter2@example.com next`, true)).toBe(`curl https://bob:***@example.com next`)
   })
 
+  it('removes a line continuation as the shell does', () => {
+    expect(redactText('login --pass\\\nword=hunter2 next', true)).toBe('login --password=*** next')
+    expect(redactText('login --api\\\n_key "hunter2" next', true)).not.toContain('hunter2')
+  })
+
   it('reads a quoted flag with the value word after it', () => {
     expect(redactText(`login '--password' hunter2 next`, true)).toBe(`login --password *** next`)
     expect(redactText(`curl '--user' bob:hunter2 https://x`, true)).toBe(`curl --user bob:*** https://x`)

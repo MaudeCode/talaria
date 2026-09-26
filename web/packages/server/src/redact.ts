@@ -101,7 +101,7 @@ const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
 /** A credential name matched against a whole `_`-joined word run (`secret_access_key`, `session_token`). */
 const CRED_KEY_NAME_WORDS_RE = new RegExp(String.raw`^${CRED_KEY_NAME}$`, 'i')
 /** A shell word with its quote and escape characters removed, as the shell passes it (`--pass'word'` → `--password`). */
-const dequote = (text: string): string => text.replace(/\$(?=['"])|['"\\]/g, '')
+const dequote = (text: string): string => text.replace(/\\\r?\n/g, '').replace(/\$(?=['"])|['"\\]/g, '')
 /**
  * A key names a credential when any of its path segments (`auth.token`, `database.password`, `auth[password]`,
  * `auth["password"]`) ends in a credential name at a word boundary, however deep its namespace, once dequoted
@@ -504,7 +504,8 @@ function shellDequote(word: string): string {
     else if (c === '\\' && quote !== "'" && i + 1 < word.length) {
       i += 1
       const escaped = word[i]!
-      out += /\s/.test(escaped) ? WORD_SPACE : escaped
+      // A line continuation (`\` then a newline) is removed, joining the word's pieces.
+      if (escaped !== '\n') out += /\s/.test(escaped) ? WORD_SPACE : escaped
     } else out += quote && /\s/.test(c) ? WORD_SPACE : c
   }
   return out
