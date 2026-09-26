@@ -158,10 +158,12 @@ export function redactSensitive(text: string): string {
   out = out.replace(CRED_PARAM_RE, (whole, dash: string, key: string, sep: string, value: string) => {
     const quoted = splitQuoted(value)
     const inner = quoted ? quoted.inner : value
-    if (!/[A-Za-z0-9]/.test(inner)) return whole
+    // Any non-empty value under a credential name is a credential (`--password='!@#$'`); `***` is already masked.
+    if (!inner.trim() || inner === '***') return whole
     // A bare space only separates a CLI flag from its value; `secret sauce` is prose.
     if (!/[=:]/.test(sep) && !dash) return whole
-    if (!quoted && sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key)) return whole
+    // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers, when the value has a letter or digit.
+    if (!quoted && sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner)) return whole
     // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s.
     if (!quoted && /authorization$/i.test(key) && /^\s*:\s*$/.test(sep)) return whole
     // Fully masked: a partial mask would leak part of a password or passphrase.
@@ -170,9 +172,10 @@ export function redactSensitive(text: string): string {
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
   out = out.replace(USER_FLAG_RE, (whole, head: string, quote: string | undefined, quotedUser: string | undefined, quotedSecret: string | undefined, user: string | undefined, secret: string | undefined) => {
-    if (quote) return /[A-Za-z0-9]/.test(quotedSecret ?? '') ? `${head}${quote}${quotedUser ?? ''}***${quote}` : whole
-    if (!/[A-Za-z0-9]/.test(secret ?? '')) return whole
+    if (quote) return quotedSecret && quotedSecret !== '***' ? `${head}${quote}${quotedUser ?? ''}***${quote}` : whole
     const quoted = splitQuoted(secret ?? '')
+    const inner = quoted ? quoted.inner : secret ?? ''
+    if (!inner || inner === '***') return whole
     return `${head}${user ?? ''}${quoted ? `${quoted.open}***${quoted.close}` : '***'}`
   })
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
