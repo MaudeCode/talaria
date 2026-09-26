@@ -54,6 +54,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { readMetadataJsonPrefixWithSignature, statSignature } from './store.js'
+import type { Session } from './session.js'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -308,7 +309,7 @@ describe('session lifecycle over HTTP', () => {
   it('marks persisted read-only and subagent sessions read_only on every payload (TAL-312)', async () => {
     const readOnly = String((await newSession(s)).session_id)
     const subagent = String((await newSession(s)).session_id)
-    for (const [sid, apply] of [[readOnly, (x: { read_only: boolean }) => { x.read_only = true }], [subagent, (x: { source_tag: string | null }) => { x.source_tag = 'subagent' }]] as const) {
+    for (const [sid, apply] of [[readOnly, (x: Session) => { x.read_only = true }], [subagent, (x: Session) => { x.source_tag = 'subagent' }]] as const) {
       const stored = s.deps.sessionStore.get(sid)
       apply(stored)
       stored.title = 'Roprobe'
@@ -319,6 +320,24 @@ describe('session lifecycle over HTTP', () => {
       const status = await json(await s.get(`/api/session/status?session_id=${sid}`))
       for (const payload of [detail, hit, status]) expect(payload, sid).toMatchObject({ read_only: true, is_streaming: false })
       expect(detail).not.toHaveProperty('is_read_only')
+      // The server refuses to branch either, and says so up front.
+      for (const payload of [detail, hit]) expect(payload.can_branch, sid).toBe(false)
+      expect((await post(s, '/api/session/branch', { session_id: sid })).status, sid).toBeGreaterThanOrEqual(400)
+    }
+  })
+
+  it('offers branching exactly where the branch gate allows it, including a read-only cron run (TAL-312)', async () => {
+    const writable = String((await newSession(s)).session_id)
+    const cron = String((await newSession(s)).session_id)
+    const stored = s.deps.sessionStore.get(cron)
+    stored.read_only = true
+    stored.source_tag = 'cron'
+    s.deps.sessionStore.save(stored)
+    for (const sid of [writable, cron]) {
+      writeMessages(s, sid, [{ role: 'user', content: 'branchprobe' }, { role: 'assistant', content: 'ok' }])
+      const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+      expect(detail.can_branch, sid).toBe(true)
+      expect((await post(s, '/api/session/branch', { session_id: sid })).status, sid).toBe(200)
     }
   })
 

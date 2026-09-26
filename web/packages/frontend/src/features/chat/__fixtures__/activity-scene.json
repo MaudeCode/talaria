@@ -3,6 +3,7 @@
     "session_id": "abc123",
     "is_streaming": false,
     "read_only": false,
+    "can_branch": true,
     "messages": [
       {
         "role": "assistant",

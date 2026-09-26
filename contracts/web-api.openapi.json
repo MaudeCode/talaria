@@ -1380,6 +1380,10 @@
                             "type": "boolean",
                             "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                           },
+                          "can_branch": {
+                            "type": "boolean",
+                            "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          },
                           "attention": {
                             "anyOf": [
                               {
@@ -1498,7 +1502,8 @@
                           "session_id",
                           "title",
                           "is_streaming",
-                          "read_only"
+                          "read_only",
+                          "can_branch"
                         ],
                         "additionalProperties": {}
                       }
@@ -1587,6 +1592,10 @@
                             "type": "boolean",
                             "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                           },
+                          "can_branch": {
+                            "type": "boolean",
+                            "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          },
                           "attention": {
                             "anyOf": [
                               {
@@ -1705,7 +1714,8 @@
                           "session_id",
                           "title",
                           "is_streaming",
-                          "read_only"
+                          "read_only",
+                          "can_branch"
                         ],
                         "additionalProperties": {}
                       }
@@ -1938,6 +1948,10 @@
                             "type": "boolean",
                             "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                           },
+                          "can_branch": {
+                            "type": "boolean",
+                            "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                          },
                           "attention": {
                             "anyOf": [
                               {
@@ -2056,7 +2070,8 @@
                           "session_id",
                           "title",
                           "is_streaming",
-                          "read_only"
+                          "read_only",
+                          "can_branch"
                         ],
                         "additionalProperties": {}
                       }
@@ -3079,6 +3094,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -3247,7 +3266,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     }
@@ -4410,6 +4430,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -4578,7 +4602,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     },
@@ -5502,6 +5527,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -5670,7 +5699,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     }
@@ -5857,6 +5887,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -5975,7 +6009,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     }
@@ -6113,6 +6148,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -6231,7 +6270,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     }
@@ -6376,6 +6416,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -6494,7 +6538,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     }
@@ -7411,6 +7456,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -7579,7 +7628,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     }
@@ -7791,6 +7841,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -7909,7 +7963,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     }
@@ -8044,6 +8099,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -8162,7 +8221,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     }
@@ -9247,6 +9307,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -9415,7 +9479,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     }
@@ -9723,6 +9788,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -9841,7 +9910,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     }
@@ -9977,6 +10047,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -10095,7 +10169,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     },
@@ -10264,6 +10339,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -10382,7 +10461,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     },
@@ -10534,6 +10614,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -10652,7 +10736,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     },
@@ -11649,6 +11734,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -11767,7 +11856,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     }
@@ -11902,6 +11992,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -12020,7 +12114,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     }
@@ -17997,6 +18092,10 @@
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
                         },
+                        "can_branch": {
+                          "type": "boolean",
+                          "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -18165,7 +18264,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
-                        "read_only"
+                        "read_only",
+                        "can_branch"
                       ],
                       "additionalProperties": {}
                     }

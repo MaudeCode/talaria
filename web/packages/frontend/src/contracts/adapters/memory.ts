@@ -45,6 +45,7 @@ export function makeSession(over: Partial<Session> = {}): Session {
     archived: false,
     is_streaming: false,
     read_only: false,
+    can_branch: true,
     ...over,
   })
 }

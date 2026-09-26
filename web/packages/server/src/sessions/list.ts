@@ -302,7 +302,7 @@ export const SIDEBAR_SESSION_RESPONSE_FIELDS = new Set([
   'is_cli_session', 'is_messaging_session', 'is_streaming', 'cron_running', 'active_stream_id', 'has_pending_user_message', 'pending_started_at', 'default_hidden',
   'worktree_path', 'worktree_branch', 'parent_session_id', 'parent_title', 'parent_source', 'relationship_type', 'pre_compression_snapshot', '_lineage_root_id',
   '_lineage_tip_id', '_compression_segment_count', '_lineage_collapsed_count', '_parent_lineage_root_id', '_parent_lineage_tip_id', '_cross_surface_child_session',
-  'match_type', 'match_preview', 'read_only', 'gateway_routing',
+  'match_type', 'match_preview', 'read_only', 'can_branch', 'gateway_routing',
 ])
 
 export function isCliSessionRow(row: Row): boolean {
@@ -422,7 +422,8 @@ export function isSubagentRow(row: Row): boolean {
 /**
  * TAL-312: the streaming and read-only flags every session payload ships. `is_streaming` holds only while the row's
  * `active_stream_id` is a live runtime stream, and a stale id goes out as `null`; `read_only` folds the persisted flag
- * with the view-only subagent rule (a not-claimable foreign row arrives already marked). Clients render these as-is.
+ * with the view-only subagent rule (a not-claimable foreign row arrives already marked); `can_branch` mirrors the branch
+ * gate. Clients render these as-is.
  */
 export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: ReadonlySet<string>): T {
   const r: Row = row
@@ -430,6 +431,8 @@ export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: Rea
   r.is_streaming = Boolean(streamId && activeStreamIds.has(streamId))
   if (!r.is_streaming) r.active_stream_id = null
   if (isSubagentRow(r)) { r.read_only = true; r.is_cli_session = false } else r.read_only = Boolean(r.read_only)
+  // The branch gate (`SessionService.branch`): never a subagent child, and a read-only source only when it is a cron run.
+  r.can_branch = !isSubagentRow(r) && (!r.read_only || str(r.source_tag || r.raw_source).trim().toLowerCase() === 'cron')
   return row
 }
 

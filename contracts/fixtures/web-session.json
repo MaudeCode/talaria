@@ -628,7 +628,8 @@
     "title": "Contract fixture",
     "active_stream_id": "contract-run-f",
     "is_streaming": true,
-    "read_only": false
+    "read_only": false,
+    "can_branch": true
   },
   "stale_stream_session": {
     "session_id": "contract-stale",
@@ -636,6 +637,7 @@
     "active_stream_id": null,
     "is_streaming": false,
     "read_only": false,
+    "can_branch": true,
     "messages": []
   },
   "subagent_session": {
@@ -646,6 +648,7 @@
     "active_stream_id": null,
     "is_streaming": false,
     "read_only": true,
+    "can_branch": false,
     "messages": []
   }
 }
