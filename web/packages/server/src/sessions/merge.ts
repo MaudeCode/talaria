@@ -420,12 +420,23 @@ export function pendingUserRow(msg: string, attachments: unknown[], startedAt: n
 /**
  * TAL-368: the merged transcript with the running turn's prompt, which deferred save keeps out of the sidecar until
  * settlement. A prompt already persisted for the turn (its checkpoint, a row stamped with its id, or a state.db prompt past
- * the sidecar at or after its start) stays the only one; otherwise `prompt` opens the turn. Turn identity, never text,
- * decides, so a repeated prompt stays a turn of its own. Read-only: settlement writes the canonical row.
+ * the sidecar at or after its start) stays the only one, carrying the turn's identity and pending attachments; otherwise
+ * `prompt` opens the turn. Turn identity, never text, decides, so a repeated prompt stays a turn of its own. Read-only:
+ * settlement writes the canonical row.
  */
 export function withPendingUserTurn(rows: Message[], turn: { localCount: number; turnId: string; startedAt: number; activeTurnToken: string; prompt: Message }): Message[] {
   const inTurn = (m: Message, i: number): boolean => m._turn_id === turn.turnId || (i >= turn.localCount && Number(m.timestamp) >= turn.startedAt)
-  if (rows.some((m, i) => m.role === 'user' && !m._steer && agentSteerText(m) === null && (m._active_turn_token === turn.activeTurnToken || inTurn(m, i)))) return rows
+  const persisted = rows.findIndex((m, i) => m.role === 'user' && !m._steer && agentSteerText(m) === null && (m._active_turn_token === turn.activeTurnToken || inTurn(m, i)))
+  if (persisted >= 0) {
+    const row = rows[persisted]!
+    if (row._active_turn_token === turn.activeTurnToken) return rows
+    // A state.db prompt has neither the turn's identity nor its attachments: take them from the pending turn.
+    const { _turn_id, _active_turn_token, _source, attachments } = turn.prompt
+    const stamped: Message = { ...row, _turn_id, _active_turn_token }
+    if (_source !== undefined) stamped._source = _source
+    if (!row.attachments && attachments) stamped.attachments = attachments
+    return rows.map((m, i) => (i === persisted ? stamped : m))
+  }
   const first = rows.findIndex(inTurn)
   const at = first < 0 ? rows.length : first
   return [...rows.slice(0, at), turn.prompt, ...rows.slice(at)]

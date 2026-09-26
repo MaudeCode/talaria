@@ -806,15 +806,17 @@ describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
     }
   })
 
-  it('keeps the Agent\'s state.db prompt once instead of projecting another', async () => {
-    const { sid, startedAt, release } = await heldTurn('from state db', history)
+  it('keeps the Agent\'s state.db prompt once, stamped as the running turn with its attachments', async () => {
+    const { sid, streamId, startedAt, release } = await heldTurn('from state db', history, [{ name: 'plan.md', path: '/tmp/plan.md', mime: 'text/markdown' }])
     const db = new DatabaseSync(join(s.state, 'state.db'))
     db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
     for (const [role, content, ts] of [['user', 'continue', 1000], ['assistant', 'earlier reply', 1001], ['user', 'from state db', startedAt + 0.5]] as const) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
     db.close()
     try {
-      expect(users(await detail(sid)).map((m) => m.content)).toEqual(['continue', 'from state db'])
+      const prompts = users(await detail(sid))
+      expect(prompts.map((m) => m.content)).toEqual(['continue', 'from state db'])
+      expect(prompts[1]).toMatchObject({ _turn_id: streamId, _active_turn_user: true, attachments: [{ name: 'plan.md', path: '/tmp/plan.md', mime: 'text/markdown' }] })
       // Without a journal the persisted rows stand as they are, still with one prompt.
       const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockReturnValue(null)
       try {
