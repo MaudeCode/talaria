@@ -87,9 +87,10 @@ const COOKIE_DQ_RE = /("(?:Set-)?Cookie:\s*)((?:[^"\\\r\n]|\\.)*)/gi
 const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?:${QUOTED}|[^'"\\\r\n]|\\(?!"))+)`, 'gi')
 /**
  * `user:password@host` with no scheme (curl reads it as a URL), or after an expansion that may supply one
- * (`${SCHEME}bob:pw@host`); `git@host:org/repo` has no password before its `@`.
+ * (`${SCHEME}bob:pw@host`). The password runs from the first `:` to the `@`, colons included (`bob:hunter:2@`);
+ * `git@host:org/repo` has no password before its `@`.
  */
-const BARE_USERINFO_RE = /(?<![^\s'"=(<,})\x60])([A-Za-z0-9._%+-]+:)([^\s@/'"\\:]+)(?=@[^\s@/'"\\])/g
+const BARE_USERINFO_RE = /(?<![^\s'"=(<,})\x60])([A-Za-z0-9._%+-]+:)([^\s@/'"\\]+)(?=@[^\s@/'"\\])/g
 /** A `key=value` whose key is percent-encoded (`api%5Fkey=`): the destination decodes the key once, so it is checked decoded. */
 const PERCENT_KEY_RE = /(?<![A-Za-z0-9_.%-])((?=[A-Za-z0-9_.%-]*%[0-9A-Fa-f]{2})[A-Za-z0-9_.%-]+=)([^&#\s"'<>]*)/g
 const percentDecode = (text: string): string => text.replace(/%([0-9A-Fa-f]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
