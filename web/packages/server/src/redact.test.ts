@@ -352,6 +352,12 @@ describe('publicToolFrame', () => {
     expect(plural.args).toEqual({ h: { name: 'Authorization', values: ['***'], data: { v: '***' } } })
   })
 
+  it('masks AWS access key IDs, temporary ones included, by key and by prefix', () => {
+    expect(redactText('AWS_ACCESS_KEY_ID=ASIAIOSFODNN7EXAMPLE aws s3 ls', true)).not.toContain('IOSFODNN7EXA')
+    expect(redactText('id is ASIAIOSFODNN7EXAMPLE here', true)).not.toContain('IOSFODNN7EXA')
+    expect(publicToolFrame({ name: 'aws', args: { accessKeyId: 'opaque-id', access_key_id: 'opaque-2', region: 'us' } }, true).args).toEqual({ accessKeyId: '***', access_key_id: '***', region: 'us' })
+  })
+
   it('omits the target of a frame without args, so a completion keeps the target its start frame set', () => {
     expect(publicToolFrame({ name: 'terminal', tid: 't1', preview: 'ok' }, true)).toEqual({ name: 'terminal', tid: 't1', preview: 'ok', kind: 'shell' })
     expect(publicToolFrame({ name: 'terminal', tid: 't1', args: { command: 'ls' } }, true)).toMatchObject({ kind: 'shell', target: 'ls' })

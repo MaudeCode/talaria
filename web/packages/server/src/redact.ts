@@ -25,7 +25,7 @@ const CRED_RE = new RegExp(
     '|fc-[A-Za-z0-9]{10,}' +
     '|bb_live_[A-Za-z0-9_-]{10,}' +
     '|gAAAA[A-Za-z0-9_=-]{20,}' +
-    '|AKIA[A-Z0-9]{16}' +
+    '|(?:AKIA|ASIA)[A-Z0-9]{16}' +
     '|sk_live_[A-Za-z0-9]{10,}' +
     '|sk_test_[A-Za-z0-9]{10,}' +
     '|rk_live_[A-Za-z0-9]{10,}' +
@@ -85,7 +85,7 @@ const COOKIE_ANSI_RE = /(\$'(?:Set-)?Cookie:\s*)((?:[^'\\\r\n]|\\.)*)/gi
 const COOKIE_SQ_RE = /((?<!\$)'(?:Set-)?Cookie:\s*)([^'\r\n]*)/gi
 const COOKIE_DQ_RE = /("(?:Set-)?Cookie:\s*)((?:[^"\\\r\n]|\\.)*)/gi
 const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?:${QUOTED}|[^'"\\\r\n]|\\(?!"))+)`, 'gi')
-const EMBEDDED_AWS_RE = /AKIA[A-Z0-9]{16}/g
+const EMBEDDED_AWS_RE = /(?:AKIA|ASIA)[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
 /**
  * `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The user
@@ -95,7 +95,7 @@ const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENT
  */
 const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*\\?:\\?\/\\?\/(?:[^\s:@/'"\\]|'[^'\n:@/]*'|"[^"\n:@/]*"|\\[^\s:@/])*\\?:)((?:[^\s@/'"\\]|'[^'\n@/]*'|"[^"\n@/]*"|\\[^\s@/])+)(?=\\?@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
-const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
+const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|access[_-]?key[_-]?id|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
 /** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
 const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
 /** A credential name matched against a whole `_`-joined word run (`secret_access_key`, `session_token`). */
@@ -698,7 +698,7 @@ function redactRules(text: string): string {
 }
 
 const CASE_MARKERS = [
-  'sk-', 'ghp_', 'github_pat_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'AKIA', 'xoxb-', 'xoxa-', 'xoxp-', 'xoxr-', 'xoxs-', 'AIza', 'pplx-', 'fal_', 'fc-',
+  'sk-', 'ghp_', 'github_pat_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'AKIA', 'ASIA', 'xoxb-', 'xoxa-', 'xoxp-', 'xoxr-', 'xoxs-', 'AIza', 'pplx-', 'fal_', 'fc-',
   'bb_live_', 'gAAAA', 'sk_live_', 'sk_test_', 'rk_live_', 'SG.', 'hf_', 'r8_', 'npm_', 'pypi-', 'dop_v1_', 'doo_v1_', 'am_', 'sk_', 'tvly-', 'exa_',
   'gsk_', 'syt_', 'retaindb_', 'hsk-', 'mem0_', 'brv_', 'eyJ', '-----BEGIN',
 ]
