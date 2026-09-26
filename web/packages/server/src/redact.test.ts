@@ -90,6 +90,8 @@ describe('redactSensitive', () => {
     expect(redactSensitive(`ssh-keygen --passphrase 'correct horse' && openssl rsa -passin=pass:abc {"pass_phrase": "x"}`)).toBe(`ssh-keygen --passphrase '***' && openssl rsa -passin=*** {"pass_phrase": "***"}`)
     // Escaped JSON inside a shell string ends only at its real closing quote.
     expect(redactSensitive(String.raw`curl -d "{\"password\":\"foo\\\"bar baz\",\"user\":\"bob\"}" x`)).toBe(String.raw`curl -d "{\"password\":\"***\",\"user\":\"bob\"}" x`)
+    expect(redactSensitive('PASSWORD+=hunter2 token+=abc next')).toBe('PASSWORD+=*** token+=*** next')
+    expect(redactSensitive(String.raw`curl -H $'Cookie: session=foo\'; auth=hunter2' x`)).toBe(String.raw`curl -H $'Cookie: ***' x`)
     // Ordinary words and non-credential parameters stay readable.
     expect(redactSensitive('keep the secret sauce --secret-file ./s.txt')).toBe('keep the secret sauce --secret-file ./s.txt')
     expect(redactSensitive('apiKeyId: 12 max_tokens=100 --user-agent curl')).toBe('apiKeyId: 12 max_tokens=100 --user-agent curl')

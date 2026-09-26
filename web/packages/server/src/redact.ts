@@ -72,7 +72,8 @@ function splitQuoted(value: string): { open: string; inner: string; close: strin
  * A `Cookie:` / `Set-Cookie:` header's whole value (session cookies are credentials), up to the quote that encloses the
  * header (`-H 'Cookie: a="b c"'`, `-H "Cookie: a=\"b c\""`), or to the line end when it is not quoted.
  */
-const COOKIE_SQ_RE = /('(?:Set-)?Cookie:\s*)([^'\r\n]*)/gi
+const COOKIE_ANSI_RE = /(\$'(?:Set-)?Cookie:\s*)((?:[^'\\\r\n]|\\.)*)/gi
+const COOKIE_SQ_RE = /((?<!\$)'(?:Set-)?Cookie:\s*)([^'\r\n]*)/gi
 const COOKIE_DQ_RE = /("(?:Set-)?Cookie:\s*)((?:[^"\\\r\n]|\\.)*)/gi
 const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?:${QUOTED}|[^'"\\\r\n]|\\(?!"))+)`, 'gi')
 const EMBEDDED_AWS_RE = /AKIA[A-Z0-9]{16}/g
@@ -111,7 +112,7 @@ function isCredentialKey(key: string): boolean {
  * `KEY=value` whose name `ENV_RE` covers is left to it.
  * The name prefix is capped at four segments so the scan stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})((?:\\?["'])?\s*[=:]\s*|\s+)`, 'g')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})((?:\\?["'])?\s*\+?[=:]\s*|\s+)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `-uuser:secret` / `--user user:secret`; a quoted pair or quoted secret is masked through its closing quote. */
 const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-u[ \t]*|--user[ \t]+)(?=\$?["']?[^\s:"']*:)/g
@@ -336,7 +337,7 @@ function redactCredentialParams(text: string): string {
     // Nothing to mask: empty or already masked.
     if (!inner.trim() || inner === '***') continue
     // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers when the whole value is one plain `\S+` token.
-    if (!quoted && sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && /^[^\s\\]+$/.test(value)) continue
+    if (!quoted && sep.includes('=') && !sep.includes('+') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && /^[^\s\\]+$/.test(value)) continue
     // Fully masked: a partial mask would leak part of a password or passphrase.
     out += text.slice(last, valueStart) + (/^[[{(]/.test(value) ? '***' : maskShellWord(value))
     last = valueEnd
@@ -379,7 +380,7 @@ export function redactSensitive(text: string): string {
   out = out.replace(AUTH_HDR_RE, (_, head: string, token: string) => head + (/^[A-Za-z0-9_-]+=/.test(token) ? '***' : mask(token)))
   out = out.replace(JWT_RE, (t) => mask(t))
   out = out.replace(BEARER_RE, (_, head: string, token: string) => head + mask(token))
-  for (const re of [COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
+  for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = redactCredentialParams(out)
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
