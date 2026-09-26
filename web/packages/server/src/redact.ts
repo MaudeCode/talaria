@@ -65,14 +65,14 @@ const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]){0,4}(?:(?:access|refresh|id|aut
 const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`, 'i')
 /**
  * Credential parameters in text (`access_token=`, `"clientSecret": "..."`, `X-Api-Key:`) and CLI flags with a
- * space-separated value (`--password hunter2`); a quoted value is masked through its closing quote. An unquoted upper-case
+ * space-separated value (`--password hunter2`); a quoted value (including bash `$'...'`) is masked through its closing quote. An unquoted upper-case
  * `KEY=value` whose name `ENV_RE` covers is left to it.
  * The name prefix is capped at four segments so the scan stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})(["']?\s*[=:]\s*|\s+)("[^"\n]*"|'[^'\n]*'|[^\s"'&,;)}\]]+)`, 'gi')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})(["']?\s*[=:]\s*|\s+)(\$?"[^"\n]*"|\$?'[^'\n]*'|[^\s"'&,;)}\]$]+)`, 'gi')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `--user user:secret`; a quoted pair is masked through its closing quote. */
-const USER_FLAG_RE = /((?<![A-Za-z0-9-])(?:-u|--user)\s+)(?:(["'])([^\n:'"]*:)([^\n'"]*)\2|([^\s:"']+:)([^\s"'@]+))/g
+const USER_FLAG_RE = /((?<![A-Za-z0-9-])(?:-u|--user)\s+\$?)(?:(["'])([^\n:'"]*:)([^\n'"]*)\2|([^\s:"'$]+:)([^\s"'@]+))/g
 const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
@@ -124,8 +124,9 @@ export function redactSensitive(text: string): string {
   out = out.replace(BEARER_RE, (_, head: string, token: string) => head + mask(token))
   out = out.replace(COOKIE_HDR_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = out.replace(CRED_PARAM_RE, (whole, dash: string, key: string, sep: string, value: string) => {
-    const quote = /^["']/.test(value) ? value[0]! : ''
-    const inner = quote ? value.slice(1, -1) : value
+    const dollar = value.startsWith('$') ? '$' : ''
+    const quote = /^["']/.test(value.slice(dollar.length)) ? value[dollar.length]! : ''
+    const inner = quote ? value.slice(dollar.length + 1, -1) : value
     if (!/[A-Za-z0-9]/.test(inner)) return whole
     // A bare space only separates a CLI flag from its value; `secret sauce` is prose.
     if (!/[=:]/.test(sep) && !dash) return whole
@@ -133,7 +134,7 @@ export function redactSensitive(text: string): string {
     // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s.
     if (!quote && /authorization$/i.test(key) && /^\s*:\s*$/.test(sep)) return whole
     // Fully masked: a partial mask would leak part of a password or passphrase.
-    return `${dash}${key}${sep}${quote}***${quote}`
+    return `${dash}${key}${sep}${dollar}${quote}***${quote}`
   })
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))

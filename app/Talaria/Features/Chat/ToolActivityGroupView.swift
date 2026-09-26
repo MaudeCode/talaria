@@ -115,12 +115,13 @@ enum AssistantActivitySummary {
 
     private static func specificLabel(for toolCall: ToolCall) -> String? {
         let kind = toolCall.kind ?? .unknown
-        guard kind != .unknown, let target = collapsedTarget(for: toolCall, kind: kind) else {
+        guard let target = collapsedTarget(for: toolCall, kind: kind) else {
             return nil
         }
         if toolCall.isError == true {
             switch kind {
-            case .shell: return String(localized: "Failed to run \(target)")
+            // An unknown tool with a target takes the generic run verb, as on Web.
+            case .shell, .unknown: return String(localized: "Failed to run \(target)")
             case .read: return String(localized: "Failed to read \(target)")
             case .list: return String(localized: "Failed to list \(target)")
             case .search: return String(localized: "Failed to search for \(target)")
@@ -129,12 +130,11 @@ enum AssistantActivitySummary {
             case .skill: return String(localized: "Failed to load \(target)")
             case .memory: return String(localized: "Failed to save \(target)")
             case .delegate: return String(localized: "Failed to delegate \(target)")
-            case .unknown: return nil
             }
         }
         switch (kind, toolCall.isCompleted) {
-        case (.shell, true): return String(localized: "Ran \(target)")
-        case (.shell, false): return String(localized: "Running \(target)")
+        case (.shell, true), (.unknown, true): return String(localized: "Ran \(target)")
+        case (.shell, false), (.unknown, false): return String(localized: "Running \(target)")
         case (.read, true): return String(localized: "Read \(target)")
         case (.read, false): return String(localized: "Reading \(target)")
         case (.list, true): return String(localized: "Listed \(target)")
@@ -151,7 +151,6 @@ enum AssistantActivitySummary {
         case (.memory, false): return String(localized: "Saving \(target)")
         case (.delegate, true): return String(localized: "Delegated \(target)")
         case (.delegate, false): return String(localized: "Delegating \(target)")
-        case (.unknown, _): return nil
         }
     }
 

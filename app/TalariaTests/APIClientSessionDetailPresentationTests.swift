@@ -57,6 +57,9 @@ func testAssistantActivitySummaryRendersTheServerKindAndTarget() {
     )
     // `merge_pull_request` is whatever the server says, never a search guessed from its name.
     XCTAssertEqual(label("merge_pull_request", .unknown, ""), "Called a tool")
+    // An unknown tool with a server target reads like Web's: the generic run verb and the target.
+    XCTAssertEqual(label("merge_pull_request", .unknown, "gh pr merge 1"), "Ran gh pr merge 1")
+    XCTAssertEqual(label("merge_pull_request", .unknown, "gh pr merge 1", isError: true), "Failed to run gh pr merge 1")
     // An older server sends no kind or target: a generic tool, never a client guess from the name or args.
     XCTAssertEqual(label("terminal", nil, nil), "Called a tool")
     XCTAssertEqual(label("terminal", .shell, nil), "Ran a command")
