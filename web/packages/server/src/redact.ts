@@ -258,8 +258,8 @@ function redactCredentialParams(text: string): string {
     const quoted = /["']/.test(value)
     // Nothing to mask: empty, already masked, or prose (`secret sauce`: a bare space only separates a CLI flag's value).
     if (!inner.trim() || inner === '***' || (!/[=:]/.test(sep) && !dash)) continue
-    // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers when the value is one plain token.
-    if (!quoted && sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && !inner.includes('\\')) continue
+    // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers when the whole value is one plain `\S+` token.
+    if (!quoted && sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && /^[^\s\\]+$/.test(value)) continue
     // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s.
     if (!quoted && /authorization$/i.test(key) && /^\s*:\s*$/.test(sep)) continue
     // Fully masked: a partial mask would leak part of a password or passphrase.
