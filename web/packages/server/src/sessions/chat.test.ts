@@ -235,9 +235,11 @@ describe('chat turns through the sidecar', () => {
     // With redaction off, live frames match session detail: both show the command as written.
     s.deps.settings.save({ api_redact_enabled: false })
     let offStream = ''
+    let offSid = ''
     try {
       const off = await run()
       offStream = off.streamId
+      offSid = off.sid
       expect(off.frames.map((f) => (f.data as Json).target)).toEqual([command, command].map((c) => c.slice(0, 200)))
       expect((off.detail.tool_calls as Json[])[0]).toMatchObject({ kind: 'shell', target: command.slice(0, 200) })
     } finally {
@@ -247,6 +249,11 @@ describe('chat turns through the sidecar', () => {
     const reopened = (await s.sse(`/api/chat/stream?stream_id=${offStream}&after_event_id=${offStream}:0`, (f) => f.event === 'stream_end')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
     expect(reopened).toHaveLength(2)
     expect(leaks(reopened.map((f) => f.data))).toEqual([])
+    // The per-session journal relay replays the same rows through the same projection.
+    const perSession = (await s.sse(`/api/sessions/${offSid}/events?after_event_id=${offStream}:1`, (f) => f.event === 'tool_complete', { timeoutMs: 3000 })).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
+    expect(perSession).toHaveLength(2)
+    expect(leaks(perSession.map((f) => f.data))).toEqual([])
+    expect(perSession.map((f) => (f.data as Json).kind)).toEqual(['shell', 'shell'])
   })
 
   it('builds the settled turn\'s scene with Codex commentary as prose under Worked, leaving the stored rows as the Agent wrote them', async () => {

@@ -54,8 +54,12 @@ const EMBEDDED_AWS_RE = /AKIA[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
 /** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. */
 const URL_USERINFO_RE = /([A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s:@/'"]+:)([^\s@/'"]+)(?=@)/g
-/** Lowercase credential parameters (`access_token=`, `--password=`, `"token": "..."`, `?key=`); uppercase env keys are `ENV_RE`'s. */
-const CRED_PARAM_RE = /((?<![A-Za-z0-9_])(?:access_token|refresh_token|id_token|auth_token|api_key|apikey|client_secret|secret|token|password|passwd)["']?\s*[=:]\s*["']?|[?&]key=)([^\s"'&,;)}\]]+)/g
+/**
+ * Credential parameters in any case: `access_token=`, `"Token": "..."`, `--password=`, and CLI flags with a
+ * space-separated value (`--password hunter2`). An upper-case `KEY=value` is `ENV_RE`'s and is already masked.
+ */
+const CRED_PARAM_RE = /(?<![A-Za-z0-9_])(-{0,2})(access[_-]token|refresh[_-]token|id[_-]token|auth[_-]token|api[_-]?key|client[_-]secret|secret|token|password|passwd)(["']?\s*[=:]\s*["']?|\s+)([^\s"'&,;)}\]]+)/gi
+const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
 const ENV_KEY_PREFIX_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)/g
@@ -105,7 +109,14 @@ export function redactSensitive(text: string): string {
   out = out.replace(AUTH_HDR_RE, (_, head: string, token: string) => head + mask(token))
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
-  out = out.replace(CRED_PARAM_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
+  out = out.replace(CRED_PARAM_RE, (whole, dash: string, key: string, sep: string, value: string) => {
+    if (!/[A-Za-z0-9]/.test(value)) return whole
+    // A bare space only separates a CLI flag from its value; `secret sauce` is prose.
+    if (!/[=:]/.test(sep) && !dash) return whole
+    if (sep.includes('=') && key === key.toUpperCase()) return whole
+    return dash + key + sep + mask(value)
+  })
+  out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
   out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]')
   return restoreCodeEnvKeyLiterals(text, out)
 }
@@ -118,7 +129,7 @@ const CASE_MARKERS = [
 const LOWER_MARKERS = [
   'authorization: bearer ', 'authorization: bot ', 'private key', 'postgres://', 'postgresql://', 'mysql://', 'mongodb://', 'redis://', 'amqp://', '://',
   'access_token', 'refresh_token', 'id_token', 'api_key', 'apikey', 'client_secret', 'auth_token', 'raw_secret', 'secret_input', 'key_material',
-  'x-amz-signature', 'token=', 'secret=', 'password=', 'passwd=', 'token:', 'secret:', 'password:', 'passwd:', 'authorization=', 'key=', '"token"', '"secret"', '"password"', '"bearer"',
+  'x-amz-signature', 'token=', 'secret=', 'password=', 'passwd', 'password', 'secret', 'token', 'api-key', 'authorization=', 'key=', '"token"', '"secret"', '"password"', '"bearer"',
 ]
 const TELEGRAM_RE = /(?:bot)?\d{8,}:[-A-Za-z0-9_]{30,}/
 const DISCORD_RE = /<@!?\d{17,20}>/

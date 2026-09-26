@@ -136,17 +136,19 @@ function resumeCursor(ctx: RequestContext, streamId: string): { afterSeq: number
   return { afterSeq: null, requested: true }
 }
 
+/** A journal row's payload as it may cross the SSE boundary: a tool frame journaled unredacted (before this server redacted them, or with redaction off) is redacted and stamped on read. */
+function publicJournalPayload(ctx: RequestContext, entry: JournalEvent): unknown {
+  const tool = (entry.event === 'tool' || entry.event === 'tool_complete') && entry.redacted !== true && entry.payload && typeof entry.payload === 'object' && !Array.isArray(entry.payload)
+  return tool ? publicToolFrame(entry.payload as Record<string, unknown>, ctx.deps.sessions.deps.redactEnabled()) : entry.payload
+}
+
 function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: string, afterSeq: number | null, opts: { maxSeq?: number | null; includeStale?: boolean } = {}): { found: boolean; terminal: boolean } {
   const summary = ctx.deps.journal.findRunSummary(streamId)
   if (!summary) return { found: false, terminal: false }
   let terminal = false
   const events = ctx.deps.journal.readRunEvents(summary.session_id, streamId, { afterSeq, maxSeq: opts.maxSeq ?? null })
   for (const entry of events) {
-    // A tool frame journaled unredacted (before this server redacted them, or with redaction off) is redacted and stamped on read.
-    const payload = (entry.event === 'tool' || entry.event === 'tool_complete') && entry.redacted !== true && entry.payload && typeof entry.payload === 'object' && !Array.isArray(entry.payload)
-      ? publicToolFrame(entry.payload as Record<string, unknown>, ctx.deps.sessions.deps.redactEnabled())
-      : entry.payload
-    sse.event(entry.event || 'message', payload, entry.event_id)
+    sse.event(entry.event || 'message', publicJournalPayload(ctx, entry), entry.event_id)
     if (SSE_RELAY_CLOSE_EVENTS.has(entry.event)) terminal = true
   }
   if ((opts.includeStale ?? true) && !summary.terminal) {
@@ -382,7 +384,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
       const seq = streamId ? sameRunSeq(entry.event_id, streamId) : null
       if (cutoff !== null && seq !== null && seq > cutoff) continue
       if (entry.event_id && sent.has(entry.event_id)) continue
-      sse.event(entry.event || 'message', entry.payload, entry.event_id)
+      sse.event(entry.event || 'message', publicJournalPayload(ctx, entry), entry.event_id)
       if (entry.event_id) note(entry.event_id)
     }
   }
