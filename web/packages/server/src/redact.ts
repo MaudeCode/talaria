@@ -99,7 +99,7 @@ const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`)
  * `KEY=value` whose name `ENV_RE` covers is left to it.
  * The name prefix is capped at four segments so the scan stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})((?:\\?["'])?\s*[=:]\s*|\s+)(${QUOTED}|(?:[^\s"'\\&,;)}\]$]|\\[^"\n])+)`, 'g')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})((?:\\?["'])?\s*[=:]\s*|\s+)(${QUOTED}|\[[^\]\n]*\]|\{[^}\n]*\}|(?:[^\s"'\\&,;)}\]$[{]|\\[^"\n])+)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `-uuser:secret` / `--user user:secret`; a quoted pair or quoted secret is masked through its closing quote. */
 const USER_FLAG_RE = new RegExp(String.raw`((?<![A-Za-z0-9-])(?:-u\s*|--user\s+)\$?)(?:(["'])([^\n:'"]*:)([^'"]*)\2|([^\s:"'$]+:)((?:${QUOTED}|[^\s"'@\\]|\\[^"\n])+))`, 'g')
@@ -157,6 +157,8 @@ export function redactSensitive(text: string): string {
   out = out.replace(BEARER_RE, (_, head: string, token: string) => head + mask(token))
   for (const re of [COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = out.replace(CRED_PARAM_RE, (whole, dash: string, key: string, sep: string, value: string) => {
+    // A container value (`['x']`, `{'a': 1}`: the sidecar's Python repr of nested args) is masked whole.
+    if (/^[[{]/.test(value)) return value.length > 2 ? `${dash}${key}${sep}***` : whole
     const quoted = splitQuoted(value)
     const inner = quoted ? quoted.inner : value
     // Any non-empty value under a credential name is a credential (`--password='!@#$'`); `***` is already masked.

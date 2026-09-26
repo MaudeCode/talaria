@@ -58,6 +58,9 @@ describe('redactSensitive', () => {
     expect(redactSensitive(`login --password='!@#$' --token=%%% -u bob:'!!' {"secret": ""} password=*** PASSWORD=!@#%`)).toBe(`login --password='***' --token=*** -u bob:'***' {"secret": ""} password=*** PASSWORD=***`)
     // A quoted value spanning lines is masked through its closing quote.
     expect(redactSensitive("login --password 'correct\nhorse' -u 'bob:pw\nword' --token=\"a\nb\" x")).toBe("login --password '***' -u 'bob:***' --token=\"***\" x")
+    // A container value (the sidecar's Python repr of nested args) is masked whole.
+    expect(redactSensitive(`{'password': ['hunter2'], 'auth': {'token': 'x'}, "secret": {"a": 1}, 'user': 'bob'}`)).toBe(`{'password': ***, 'auth': {'token': '***'}, "secret": ***, 'user': 'bob'}`)
+    expect(publicToolFrame({ name: 'deploy', args: { config: "{'password': ['hunter2']}" } }, true).args).toEqual({ config: "{'password': ***}" })
     // Ordinary words and non-credential parameters stay readable.
     expect(redactSensitive('keep the secret sauce --secret-file ./s.txt')).toBe('keep the secret sauce --secret-file ./s.txt')
     expect(redactSensitive('apiKeyId: 12 max_tokens=100 --user-agent curl')).toBe('apiKeyId: 12 max_tokens=100 --user-agent curl')
