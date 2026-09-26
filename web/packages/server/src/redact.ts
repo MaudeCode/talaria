@@ -78,7 +78,7 @@ const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?
 const EMBEDDED_AWS_RE = /AKIA[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
 /** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The scheme starts at a run boundary and is capped so the scan stays linear. */
-const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s:@/'"]+:)([^\s@/'"]+)(?=@)/g
+const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s:@/'"]*:)([^\s@/'"]+)(?=@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
 const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
 /** A lower-case pattern matched in any case, letter by letter, so the camelCase lookahead below stays case-exact. */
@@ -93,8 +93,8 @@ const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]|[A-Z]?[a-z0-9]+(?=[A-Z])|[A-Z]+(
 const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
 /** An argument or JSON key naming a credential; its scalar value is masked whatever it contains. */
 const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`)
-/** A structured key names a credential when any of its path segments does (`auth.token`, `database.password`). */
-const isCredentialKey = (key: string): boolean => key.split(/[.:/]/).some((segment) => CRED_KEY_RE.test(segment))
+/** A structured key names a credential when any of its path segments does (`auth.token`, `database.password`, `auth[password]`). */
+const isCredentialKey = (key: string): boolean => key.split(/[.:/[\]]/).some((segment) => CRED_KEY_RE.test(segment))
 /**
  * Credential parameters in text (`access_token=`, `"clientSecret": "..."`, `X-Api-Key:`) and CLI flags with a
  * space-separated value (`--password hunter2`); a quoted value (including bash `$'...'`) is masked through its closing quote. An unquoted upper-case

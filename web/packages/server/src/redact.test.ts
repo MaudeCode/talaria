@@ -6,6 +6,7 @@ describe('redactSensitive', () => {
     expect(redactSensitive('psql postgres://u:pgSyntheticSecret42@h/db')).toBe('psql postgres://u:pgSynt...et42@h/db')
     expect(redactSensitive('curl https://user:pw@example.com/x')).toBe('curl https://user:***@example.com/x')
     expect(redactSensitive('see https://example.com/a:b@c')).toBe('see https://example.com/a:b@c')
+    expect(redactSensitive('curl https://:hunter2@example.com/x')).toBe('curl https://:***@example.com/x')
   })
 
   it('masks lowercase credential parameters in commands, URLs and JSON', () => {
@@ -147,7 +148,7 @@ describe('publicToolFrame', () => {
     // Structured results and outputs are redacted by key as well.
     expect(publicToolFrame({ name: 'vault', args: {}, result: { token: 'opaque', ttl: 60 }, output: [{ password: 'x' }] }, true)).toMatchObject({ result: { token: '***', ttl: 60 }, output: [{ password: '***' }] })
     // A namespaced key is a credential when any of its path segments names one.
-    expect(publicToolFrame({ name: 'cfg', args: { 'auth.token': 'a', 'database.password': 'b', 'db/user': 'bob', 'x:api_key': 'c' } }, true).args).toEqual({ 'auth.token': '***', 'database.password': '***', 'db/user': 'bob', 'x:api_key': '***' })
+    expect(publicToolFrame({ name: 'cfg', args: { 'auth.token': 'a', 'database.password': 'b', 'db/user': 'bob', 'x:api_key': 'c', 'auth[password]': 'd', 'user[name]': 'e' } }, true).args).toEqual({ 'auth.token': '***', 'database.password': '***', 'db/user': 'bob', 'x:api_key': '***', 'auth[password]': '***', 'user[name]': 'e' })
     // Cookie keys, header tuples and name/value pairs are credentials too.
     expect(publicToolFrame({ name: 'http', args: { headers: { Cookie: 'session=abc123', 'Set-Cookie': ['sid=x'] }, pairs: [['X-Token', 'abc'], ['Accept', 'json']], har: [{ name: 'Authorization', value: 'opaque' }, { name: 'Accept', value: 'json' }] } }, true).args)
       .toEqual({ headers: { Cookie: '***', 'Set-Cookie': ['***'] }, pairs: [['X-Token', '***'], ['Accept', 'json']], har: [{ name: 'Authorization', value: '***' }, { name: 'Accept', value: 'json' }] })
