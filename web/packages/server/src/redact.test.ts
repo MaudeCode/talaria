@@ -318,7 +318,7 @@ describe('redactSensitive cost', () => {
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
       // Shell-composed identifiers: unclosed and alternating quote and escape pieces.
-      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`, `a{b,`, `a{b`, `a{,}`, `a$'\\`, `--$'\\x`, `a'='`, `a'b `, `x:'@'`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`)]) {
+      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`, `a{b,`, `a{b`, `a{,}`, `a$'\\`, `--$'\\x`, `a'='`, `a'b `, `x:'@'`, `%41`, `a%4`, `a:b`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`)]) {
       const started = performance.now()
       redactSensitive(text)
       expect(performance.now() - started).toBeLessThan(1000)
@@ -356,6 +356,17 @@ describe('publicToolFrame', () => {
     expect(redactText('AWS_ACCESS_KEY_ID=ASIAIOSFODNN7EXAMPLE aws s3 ls', true)).not.toContain('IOSFODNN7EXA')
     expect(redactText('id is ASIAIOSFODNN7EXAMPLE here', true)).not.toContain('IOSFODNN7EXA')
     expect(publicToolFrame({ name: 'aws', args: { accessKeyId: 'opaque-id', access_key_id: 'opaque-2', region: 'us' } }, true).args).toEqual({ accessKeyId: '***', access_key_id: '***', region: 'us' })
+  })
+
+  it('decodes a percent-encoded parameter name once before the credential check', () => {
+    expect(redactText(`curl 'https://x?api%5Fkey=hunter2&y=1' -d 'pass%77ord=hunter3&user=bob'`, true)).toBe(`curl 'https://x?api%5Fkey=***&y=1' -d 'pass%77ord=***&user=bob'`)
+    expect(redactText(`curl 'https://x?q=a%20b&page=2'`, true)).toBe(`curl 'https://x?q=a%20b&page=2'`)
+  })
+
+  it('masks userinfo behind a computed or missing scheme', () => {
+    expect(redactText('SCHEME=https; curl ${SCHEME}://bob:hunter2@example.com && curl $S://amy:pw2@x', true)).toBe('SCHEME=https; curl ${SCHEME}://bob:***@example.com && curl $S://amy:***@x')
+    expect(redactText('curl bob:hunter2@example.com/x', true)).toBe('curl bob:***@example.com/x')
+    expect(redactText('ssh git@github.com && git clone git@github.com:org/repo.git && echo 10:30', true)).toBe('ssh git@github.com && git clone git@github.com:org/repo.git && echo 10:30')
   })
 
   it('omits the target of a frame without args, so a completion keeps the target its start frame set', () => {
