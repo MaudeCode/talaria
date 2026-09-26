@@ -216,6 +216,7 @@ describe('round 44 shapes', () => {
     expect(redactText(String.raw`curl https\:\/\/amy:pw2@x next`, true)).toBe(String.raw`curl https\:\/\/amy:***@x next`)
     expect(redactText(`set -- word; login --pass$1=hunter2 --pass$@=hunter3 -$#=x next`, true)).toBe(`set -- word; login --pass$1=*** --pass$@=*** -$#=*** next`)
     expect(redactText(`echo "costs $5 or $10" && ls $1`, true)).toBe(`echo "costs $5 or $10" && ls $1`)
+    expect(redactText(`SEP='='; login --password\${SEP}hunter2 --api_key$(printf =)hunter3 --token\${S}x=hunter4 next`, true)).toBe(`SEP='='; login --password*** --api_key*** --token*** next`)
     // Markdown code spans are prose, not substitutions.
     expect(redactText('answer with **markdown** and `code` about the token', true)).toBe('answer with **markdown** and `code` about the token')
     expect(redactText('check the `token` field; use `${base}/api` and `a=$(date)`.', true)).toBe('check the `token` field; use `${base}/api` and `a=$(date)`.')

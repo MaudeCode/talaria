@@ -135,6 +135,8 @@ const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})((?:[A
  * A substitution, variable or brace-expansion piece of a key (`$(…)`, `` `…` ``, `${…}`, `$NAME`, `{a,b}`, `{1..3}`) right
  * after an identifier character.
  */
+/** Where a key's first computed piece starts (`$…`, an escaped ANSI-C `$'…'`, a backtick, a brace expansion). */
+const COMPUTED_PIECE_RE = /\$(?:[({A-Za-z_0-9@*#?$!-]|'(?=[^'\s=:]*\\))|\x60|\{(?=[^{}\s]*(?:,|\.\.))/
 const DYNAMIC_KEY_PIECE_RE = /[A-Za-z0-9_](?:\$[({A-Za-z_0-9@*#?$!-]|\$'(?=[^'\s=:]*\\)|`|\{(?=[^{}\s]*(?:,|\.\.)[^{}\s]*\}))/
 /** An `Authorization` value's first word when it is a scheme token (`Basic`), and the gap to the credential after it. */
 const AUTH_SCHEME_WORD_RE = /^(?!\*+$)[A-Za-z0-9!#$%&*+.^_|~-]+$/
@@ -366,13 +368,24 @@ function redactCredentialParams(text: string): string {
     if (computedStart && (!sep.includes('=') || (key.startsWith('\x60') && !dash)) && sep) continue
     // A substitution the key grammar cannot parse (`$(` nested or quoted, `${` nested) may still build a credential name:
     // fail closed to the end of the text, as `shellWordEnd` does for a substitution in a value. An unclosed backtick or a
-    // nested brace expansion does so only after a flag: in prose a backtick is a Markdown code span's close (`` `code` ``). A backtick piece inside a key has no
-    // outer spaces, so the prose between two code spans (`` ` and ` ``) is never read as one.
+    // nested brace expansion does so only after a flag: in prose a backtick is a Markdown code span's close
+    // (`` `code` ``). A backtick piece inside a key has no outer spaces, so the prose between two code spans
+    // (`` ` and ` ``) is never read as one.
     const keyEnd = m.index + head.length
     if (!sep && ((/^\$[({]/.test(text.slice(keyEnd, keyEnd + 2)) && (dash || !computedStart)) || (dash && /^[\x60{]/.test(text[keyEnd] ?? '')))) {
       out += `${text.slice(last, keyEnd)}***`
       last = text.length
       break
+    }
+    // A credential key continued by a computed piece (`--password${SEP}hunter2` with `SEP='='`): the piece may be the
+    // separator itself, so everything from it to the end of the key is masked, and through the value after a real `=`/`:`.
+    const computedAt = key.search(COMPUTED_PIECE_RE)
+    if (computedAt > 0 && isCredentialKey(key.slice(0, computedAt))) {
+      const end = /[=:]/.test(sep) ? shellWordEnd(text, keyEnd, quoteAt(keyEnd), closeOf) : m.index + dash.length + key.length
+      out += `${text.slice(last, m.index + dash.length + computedAt)}***`
+      last = end
+      CRED_PARAM_RE.lastIndex = Math.max(last, CRED_PARAM_RE.lastIndex)
+      continue
     }
     // No separator: the identifier is matched whole anyway, so the scan never restarts inside it (`a'a'a'…` stays linear).
     if (!sep) continue
