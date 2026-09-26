@@ -84,8 +84,9 @@ extension APIClient {
 
     func respondClarification(
         sessionID: String,
-        response: String,
-        clarifyID: String?
+        response: String? = nil,
+        clarifyID: String?,
+        answers: [String: JSONValue]? = nil
     ) async throws -> ClarificationRespondResponse {
         try await send(
             endpoint: .clarifyRespond,
@@ -93,7 +94,8 @@ extension APIClient {
             body: ClarificationRespondRequest(
                 sessionId: sessionID,
                 response: response,
-                clarifyId: clarifyID
+                clarifyId: clarifyID,
+                answers: answers
             )
         )
     }
@@ -183,8 +185,9 @@ private struct ApprovalRespondRequest: Encodable {
 
 private struct ClarificationRespondRequest: Encodable {
     let sessionId: String
-    let response: String
+    let response: String?
     let clarifyId: String?
+    let answers: [String: JSONValue]?
 }
 
 private struct BtwRequest: Encodable {

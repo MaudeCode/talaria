@@ -3,6 +3,74 @@ import Observation
 @testable import Talaria
 
 final class ClarificationTests: APIClientTestCase {
+    func testServerStepsOnlyFramesRenderEveryStep() throws {
+        let payload = #"{"steps":[{"qid":"branch","question":"Which branch?","choices":["main","dev"],"multi_select":false},{"qid":"checks","question":"Which checks?","choices":["unit","ui"],"multi_select":true}]}"#
+        for eventType in ["initial", "clarify"] {
+            guard case .clarificationPending(let update) = SSEEventDecoder.decode(eventType: eventType, data: payload) else {
+                XCTFail("Steps-only \(eventType) must be a clarification")
+                continue
+            }
+            var prompt = ClarificationPromptState(sessionID: "session-abc", pending: try XCTUnwrap(update.pending), pendingCount: 1)
+            XCTAssertEqual(prompt.questionCount, 2)
+            XCTAssertEqual(prompt.questionID, "branch")
+            XCTAssertEqual(prompt.question, "Which branch?")
+            XCTAssertEqual(prompt.choices, ["main", "dev"])
+            XCTAssertFalse(prompt.isMultiSelect)
+            prompt.questionIndex = 1
+            XCTAssertEqual(prompt.questionID, "checks")
+            XCTAssertEqual(prompt.question, "Which checks?")
+            XCTAssertEqual(prompt.choices, ["unit", "ui"])
+            XCTAssertTrue(prompt.isMultiSelect)
+        }
+    }
+
+    @MainActor
+    func testServerStepsSubmitKeyedAnswersForSingleMultiSelectAndBatch() async throws {
+        for isBatch in [false, true] {
+            var received: [String: JSONValue]?
+            let model = try makeViewModel { request in
+                switch request.url?.path {
+                case "/api/chat/start":
+                    return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+                case "/api/clarify/respond":
+                    let body = try XCTUnwrap(apiTestJSONBody(from: request))
+                    XCTAssertEqual(body["session_id"] as? String, "session-abc")
+                    XCTAssertEqual(body["clarify_id"] as? String, "server-steps")
+                    XCTAssertNil(body["response"], "The server owns the Agent reply envelope")
+                    let answers = try XCTUnwrap(body["answers"])
+                    received = try JSONDecoder().decode([String: JSONValue].self, from: JSONSerialization.data(withJSONObject: answers))
+                    return apiTestJSONResponse(#"{"ok":true}"#, for: request)
+                case "/api/clarify/pending":
+                    return apiTestJSONResponse(#"{"pending":null}"#, for: request)
+                default:
+                    throw URLError(.badURL)
+                }
+            }
+            _ = await model.sendMessage("Continue")
+            let first = isBatch ? #"{"qid":"branch","question":"Branch?","choices":[],"multi_select":false},"# : ""
+            let payload = #"{"pending":{"clarify_id":"server-steps","question":"Legacy text","choices_offered":["wrong"],"steps":["# + first + #"{"qid":"checks","question":"Checks?","choices":["unit","ui"],"multi_select":true}]}}"#
+            let update = try JSONDecoder().decode(ClarificationPendingResponse.self, from: Data(payload.utf8))
+            model.applyClarificationUpdate(update, sessionID: "session-abc")
+            if isBatch {
+                let advanced = await model.respondToClarification("main")
+                XCTAssertTrue(advanced)
+                XCTAssertNil(received, "Paging must not submit early")
+            }
+            let prompt = try XCTUnwrap(model.clarificationPrompt)
+            XCTAssertEqual(prompt.question, "Checks?")
+            XCTAssertTrue(prompt.isMultiSelect)
+            model.toggleClarificationChoice("unit", promptID: prompt.id)
+            model.toggleClarificationChoice("ui", promptID: prompt.id)
+            XCTAssertEqual(model.clarificationSelectedChoices, ["unit", "ui"])
+            let submitted = await model.submitClarificationDraft(promptID: prompt.id)
+            XCTAssertTrue(submitted)
+            var expected: [String: JSONValue] = ["checks": .array([.string("unit"), .string("ui")])]
+            if isBatch { expected["branch"] = .string("main") }
+            XCTAssertEqual(received, expected)
+            XCTAssertNil(model.clarificationPrompt)
+        }
+    }
+
     func testClarificationPendingDecodesUpstreamShapeTolerantly() throws {
         let response = try JSONDecoder().decode(
             ClarificationPendingResponse.self,
