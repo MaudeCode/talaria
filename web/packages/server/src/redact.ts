@@ -99,10 +99,10 @@ const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`)
  * `KEY=value` whose name `ENV_RE` covers is left to it.
  * The name prefix is capped at four segments so the scan stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})((?:\\?["'])?\s*[=:]\s*|\s+)(${QUOTED}|\[[^\]\n]*\]|\{[^}\n]*\}|(?:[^\s"'\\&,;)}\]$[{]|\\[^"\n])+)`, 'g')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})((?:\\?["'])?\s*[=:]\s*|\s+)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `-uuser:secret` / `--user user:secret`; a quoted pair or quoted secret is masked through its closing quote. */
-const USER_FLAG_RE = new RegExp(String.raw`((?<![A-Za-z0-9-])(?:-u\s*|--user\s+)\$?)(?:(["'])([^\n:'"]*:)([^'"]*)\2|([^\s:"'$]+:)((?:${QUOTED}|[^\s"'@\\]|\\[^"\n])+))`, 'g')
+const USER_FLAG_RE = /((?<![A-Za-z0-9-])(?:-u\s*|--user\s+)\$?)(?:(["'])([^\n:'"]*:)([^'"]*)\2|([^\s:"'$]+:))/g
 const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
@@ -148,6 +148,128 @@ function restoreCodeEnvKeyLiterals(original: string, redacted: string): string {
   return pieces.join('')
 }
 
+/**
+ * The end (exclusive) of the shell word starting at `start`: adjacent quoted (`'…'`, `"…"` with escapes, `$'…'`), escaped
+ * (`\ `) and bare pieces, a leading `[…]`/`{…}` container (balanced), or JSON escaped inside a shell string (`\"…\"`).
+ * It stops at whitespace or `& , ; ) ] }` outside a container, and at the quote that encloses the whole argument
+ * (`-H "X-Api-Key: value"`). An unterminated quote at the word's start runs to the line end; one mid-word ends the word.
+ * One pass, so redaction stays linear.
+ */
+function shellWordEnd(text: string, start: number, enclosing: string): number {
+  const lineEnd = (from: number): number => { const n = text.indexOf('\n', from); return n === -1 ? text.length : n }
+  let depth = 0
+  let i = start
+  while (i < text.length) {
+    const c = text[i]!
+    if (i !== start && c === enclosing) return i
+    if (c === '\\' && text[i + 1] === '"') {
+      if (i !== start && depth === 0) return i
+      const close = text.indexOf('\\"', i + 2)
+      if (close === -1) return lineEnd(i)
+      i = close + 2
+    } else if (c === '\\') i += 2
+    else if (c === '$' && (text[i + 1] === "'" || text[i + 1] === '"')) i += 1
+    else if (c === "'") {
+      const close = text.indexOf("'", i + 1)
+      if (close === -1) return i === start ? lineEnd(i) : i
+      i = close + 1
+    } else if (c === '"') {
+      let k = i + 1
+      while (k < text.length && text[k] !== '"') k += text[k] === '\\' ? 2 : 1
+      if (k >= text.length) return i === start ? lineEnd(i) : i
+      i = k + 1
+    } else if ((c === '[' || c === '{') && (i === start || depth > 0)) { depth += 1; i += 1 }
+    else if (c === ']' || c === '}') {
+      if (depth === 0) return i
+      depth -= 1; i += 1
+    } else if (c === '\n') return i
+    else if (depth === 0 && /[\s&,;)]/.test(c)) return i
+    else i += 1
+  }
+  return Math.min(i, text.length)
+}
+
+/**
+ * The shell quote open at each position, read left to right once: `advance(index)` returns the quote (`'` or `"`) that
+ * encloses `index`, or `''`. A newline resets it, so an apostrophe in prose cannot leak into the next line.
+ */
+function quoteTracker(text: string): (index: number) => string {
+  let pos = 0
+  let state = ''
+  return (index: number): string => {
+    for (; pos < index; pos += 1) {
+      const c = text[pos]
+      if (c === '\n') state = ''
+      else if (c === '\\' && state !== "'") pos += 1
+      else if (state === '' && (c === "'" || c === '"')) state = c
+      else if (c === state) state = ''
+    }
+    return state
+  }
+}
+
+/** A masked shell word: a single quoted piece keeps its quotes (`'***'`), anything else is `***`. */
+function maskShellWord(value: string): string {
+  const quoted = splitQuoted(value)
+  return quoted && !/^\$?(["']).*\1.+/s.test(value) ? `${quoted.open}***${quoted.close}` : '***'
+}
+
+/** A shell word's content, for the "nothing to mask" checks: the inside of a single quoted piece, else the word. */
+const shellWordInner = (value: string): string => splitQuoted(value)?.inner ?? value
+
+/** Credential parameters (`CRED_PARAM_RE`) with their whole shell-word value fully masked. */
+function redactCredentialParams(text: string): string {
+  let out = ''
+  let last = 0
+  const quoteAt = quoteTracker(text)
+  CRED_PARAM_RE.lastIndex = 0
+  for (let m = CRED_PARAM_RE.exec(text); m; m = CRED_PARAM_RE.exec(text)) {
+    const [head, dash = '', key = '', sep = ''] = m
+    const valueStart = m.index + head.length
+    const valueEnd = shellWordEnd(text, valueStart, quoteAt(valueStart))
+    const value = text.slice(valueStart, valueEnd)
+    const inner = shellWordInner(value)
+    const quoted = /["']/.test(value)
+    // Nothing to mask: empty, already masked, or prose (`secret sauce`: a bare space only separates a CLI flag's value).
+    if (!inner.trim() || inner === '***' || (!/[=:]/.test(sep) && !dash)) continue
+    // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers when the value is one plain token.
+    if (!quoted && sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && !inner.includes('\\')) continue
+    // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s.
+    if (!quoted && /authorization$/i.test(key) && /^\s*:\s*$/.test(sep)) continue
+    // Fully masked: a partial mask would leak part of a password or passphrase.
+    out += text.slice(last, valueStart) + (/^[[{]/.test(value) ? '***' : maskShellWord(value))
+    last = valueEnd
+    CRED_PARAM_RE.lastIndex = Math.max(valueEnd, CRED_PARAM_RE.lastIndex)
+  }
+  return out + text.slice(last)
+}
+
+/** `curl -u user:secret`: a quoted pair is masked inside its quotes, a bare `user:` keeps the user and masks the whole shell word after it. */
+function redactUserFlags(text: string): string {
+  let out = ''
+  let last = 0
+  const quoteAt = quoteTracker(text)
+  USER_FLAG_RE.lastIndex = 0
+  for (let m = USER_FLAG_RE.exec(text); m; m = USER_FLAG_RE.exec(text)) {
+    const [whole, head = '', quote, quotedUser = '', quotedSecret = '', user = ''] = m
+    if (quote) {
+      if (!quotedSecret || quotedSecret === '***') continue
+      out += text.slice(last, m.index) + `${head}${quote}${quotedUser}***${quote}`
+      last = m.index + whole.length
+      continue
+    }
+    const secretStart = m.index + whole.length
+    const secretEnd = shellWordEnd(text, secretStart, quoteAt(secretStart))
+    const secret = text.slice(secretStart, secretEnd)
+    const inner = shellWordInner(secret)
+    if (!inner || inner === '***') continue
+    out += text.slice(last, m.index) + head + user + maskShellWord(secret)
+    last = secretEnd
+    USER_FLAG_RE.lastIndex = Math.max(secretEnd, USER_FLAG_RE.lastIndex)
+  }
+  return out + text.slice(last)
+}
+
 export function redactSensitive(text: string): string {
   if (!text) return text
   let out = text.replace(CRED_RE, (_, t: string) => mask(t))
@@ -156,32 +278,10 @@ export function redactSensitive(text: string): string {
   out = out.replace(JWT_RE, (t) => mask(t))
   out = out.replace(BEARER_RE, (_, head: string, token: string) => head + mask(token))
   for (const re of [COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
-  out = out.replace(CRED_PARAM_RE, (whole, dash: string, key: string, sep: string, value: string) => {
-    // A container value (`['x']`, `{'a': 1}`: the sidecar's Python repr of nested args) is masked whole.
-    if (/^[[{]/.test(value)) return value.length > 2 ? `${dash}${key}${sep}***` : whole
-    const quoted = splitQuoted(value)
-    const inner = quoted ? quoted.inner : value
-    // Any non-empty value under a credential name is a credential (`--password='!@#$'`); `***` is already masked.
-    if (!inner.trim() || inner === '***') return whole
-    // A bare space only separates a CLI flag from its value; `secret sauce` is prose.
-    if (!/[=:]/.test(sep) && !dash) return whole
-    // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers when the value is one plain token (a letter or digit, no
-    // backslash escape: `ENV_RE` would stop at an escaped space).
-    if (!quoted && sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && !inner.includes('\\')) return whole
-    // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s.
-    if (!quoted && /authorization$/i.test(key) && /^\s*:\s*$/.test(sep)) return whole
-    // Fully masked: a partial mask would leak part of a password or passphrase.
-    return `${dash}${key}${sep}${quoted ? `${quoted.open}***${quoted.close}` : '***'}`
-  })
+  out = redactCredentialParams(out)
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
-  out = out.replace(USER_FLAG_RE, (whole, head: string, quote: string | undefined, quotedUser: string | undefined, quotedSecret: string | undefined, user: string | undefined, secret: string | undefined) => {
-    if (quote) return quotedSecret && quotedSecret !== '***' ? `${head}${quote}${quotedUser ?? ''}***${quote}` : whole
-    const quoted = splitQuoted(secret ?? '')
-    const inner = quoted ? quoted.inner : secret ?? ''
-    if (!inner || inner === '***') return whole
-    return `${head}${user ?? ''}${quoted ? `${quoted.open}***${quoted.close}` : '***'}`
-  })
+  out = redactUserFlags(out)
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
   out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]')
   return restoreCodeEnvKeyLiterals(text, out)
