@@ -53,10 +53,11 @@ const CRED_RE = new RegExp(
 const AUTH_PARAM = String.raw`[A-Za-z0-9_-]+=(?:\\"(?:[^"\\\r\n]|\\[^"])*\\"|"(?:[^"\\\r\n]|\\.)*"|'[^'\r\n]*'|[^\s,"'\\]*)`
 /**
  * The credential of an `Authorization:` header, after an optional scheme token read whole (`Bearer`, `ApiKey`,
- * `AWS4-HMAC-SHA256`, `Custom_Scheme`, ...; RFC 7235 token characters other than the shell's quotes).
+ * `AWS4-HMAC-SHA256`, `Custom_Scheme`, `2FA`, ...; RFC 7235 token characters other than the shell's quotes; an
+ * all-asterisk word is a mask, not a scheme).
  * A parameterized credential (`Digest username="bob", response="..."`, `Credential=..., Signature=...`) is masked whole.
  */
-const AUTH_HDR_RE = new RegExp(String.raw`(Authorization:\s*(?:[A-Za-z][A-Za-z0-9!#$%&*+.^_|~-]*\s+)?)(${AUTH_PARAM}(?:\s*,\s*${AUTH_PARAM})*|[^\s'",\])]+)`, 'gi')
+const AUTH_HDR_RE = new RegExp(String.raw`(Authorization:\s*(?:(?!\*+\s)[A-Za-z0-9!#$%&*+.^_|~-]+\s+)?)(${AUTH_PARAM}(?:\s*,\s*${AUTH_PARAM})*|[^\s'",\])]+)`, 'gi')
 /** A JSON Web Token anywhere (`eyJ<header>.<payload>.<signature>`). */
 const JWT_RE = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g
 /** A bearer credential in any header or text (`X-Auth: Bearer ...`); `AUTH_HDR_RE` owns the `Authorization:` header. */
@@ -393,11 +394,40 @@ function redactUserFlags(text: string): string {
   return out + text.slice(last)
 }
 
+/**
+ * `Authorization:` credentials (`AUTH_HDR_RE`). A parameterized credential is masked whole; a single credential is read
+ * to the end of its shell word, so an adjacent quoted piece (`Bearer foo'bar`, which the shell passes as `foobar`) is
+ * masked with it.
+ */
+function redactAuthHeaders(text: string): string {
+  let out = ''
+  let last = 0
+  const quoteAt = quoteTracker(text)
+  const closeOf = enclosingClose(text)
+  AUTH_HDR_RE.lastIndex = 0
+  for (let m = AUTH_HDR_RE.exec(text); m; m = AUTH_HDR_RE.exec(text)) {
+    const [whole, head = '', token = ''] = m
+    const start = m.index + head.length
+    const matchEnd = m.index + whole.length
+    let masked: string
+    let end = matchEnd
+    if (/^[A-Za-z0-9_-]+=/.test(token)) masked = '***'
+    else {
+      end = Math.max(matchEnd, shellWordEnd(text, start, quoteAt(start), closeOf))
+      masked = end === matchEnd ? mask(token) : maskShellWord(text.slice(start, end))
+    }
+    out += text.slice(last, start) + masked
+    last = end
+    AUTH_HDR_RE.lastIndex = Math.max(end, AUTH_HDR_RE.lastIndex)
+  }
+  return out + text.slice(last)
+}
+
 export function redactSensitive(text: string): string {
   if (!text) return text
   let out = text.replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
-  out = out.replace(AUTH_HDR_RE, (_, head: string, token: string) => head + (/^[A-Za-z0-9_-]+=/.test(token) ? '***' : mask(token)))
+  out = redactAuthHeaders(out)
   out = out.replace(JWT_RE, (t) => mask(t))
   out = out.replace(BEARER_RE, (_, head: string, token: string) => head + mask(token))
   for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))

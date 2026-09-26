@@ -152,6 +152,15 @@ describe('round 44 shapes', () => {
     expect(redactText(`curl -H 'Authorization: Custom_Scheme hunter2' x`, true)).toBe(`curl -H 'Authorization: Custom_Scheme ***' x`)
   })
 
+  it('reads any RFC 7235 scheme token and the credential\'s whole shell word', () => {
+    expect(redactText(`curl -H 'Authorization: 2FA hunter2' x`, true)).toBe(`curl -H 'Authorization: 2FA ***' x`)
+    expect(redactText(`curl -H 'Authorization: Bearer foo'bar x`, true)).toBe(`curl -H 'Authorization: Bearer *** x`)
+    expect(redactText(`curl -H "Authorization: Bearer foo"'bar' x`, true)).toBe(`curl -H "Authorization: Bearer *** x`)
+    expect(redactText(`curl -H "Authorization: Bearer opaque" x`, true)).toBe(`curl -H "Authorization: Bearer ***" x`)
+    // Re-redaction is idempotent: an all-asterisk word is a mask, not a scheme.
+    expect(redactText(`Authorization: *** next`, true)).toBe(`Authorization: *** next`)
+  })
+
   it('reads quoted bracket segments of a text credential key', () => {
     expect(redactText(`login --auth["password"]=hunter2 next`, true)).toBe(`login --auth["password"]=*** next`)
     expect(redactText(`login --auth['token']=hunter2 next`, true)).toBe(`login --auth['token']=*** next`)
