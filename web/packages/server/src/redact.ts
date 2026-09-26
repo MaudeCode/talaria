@@ -387,7 +387,10 @@ function redactCredentialParams(text: string): string {
     // real `=`/`:`) when the static part before it names a credential, or when a flag's name goes on after it.
     const computedAt = key.search(COMPUTED_PIECE_RE)
     const staticTail = computedAt >= 0 && key.slice(computedAt).replace(COMPUTED_PIECES_RE, '') !== ''
-    if (computedAt >= 0 && ((computedAt > 0 && isCredentialKey(key.slice(0, computedAt))) || (dash && staticTail))) {
+    // A long flag computed whole (`--${KEY} hunter2`) may name a credential and take the next word; a short one
+    // (`ls -$OPTS dir`) is an option bundle.
+    const computedLongFlag = computedAt === 0 && dash === '--' && /^\s+$/.test(sep)
+    if (computedAt >= 0 && ((computedAt > 0 && isCredentialKey(key.slice(0, computedAt))) || (dash && staticTail) || computedLongFlag)) {
       // A flag whose name ends in the computed piece (`--password${X} hunter2`) takes its value from the next word.
       const nextWord = dash && !staticTail && /^\s+$/.test(sep)
       const end = /[=:]/.test(sep) || nextWord ? shellWordEnd(text, keyEnd, quoteAt(keyEnd), closeOf) : m.index + dash.length + key.length
@@ -960,7 +963,7 @@ function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean): T {
 function maskLeaves(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(maskLeaves)
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, maskLeaves(item)]))
-  return (typeof value === 'string' || typeof value === 'number') && String(value) !== '' ? '***' : value
+  return (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') && String(value) !== '' ? '***' : value
 }
 
 /** An argv element that is a flag (`--password`), and one that takes `user:password` (`-u`, `--user`, `--proxy-user`). */

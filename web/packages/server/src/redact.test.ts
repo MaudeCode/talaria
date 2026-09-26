@@ -224,6 +224,7 @@ describe('round 44 shapes', () => {
     expect(redactText(`KEY=password; SEP='='; login --\${KEY}\${SEP}hunter2 next`, true)).toBe(`KEY=password; SEP='='; login --*** next`)
     expect(redactText(`login --pass\${TAIL}\${SEP}hunter2 next`, true)).toBe(`login --pass*** next`)
     expect(redactText('X=; login --password${X} hunter2 --password$Y hunter3 next', true)).toBe('X=; login --password*** *** --password*** *** next')
+    expect(redactText('KEY=password; login --${KEY} hunter2 next', true)).toBe('KEY=password; login --*** *** next')
     expect(redactText(`ls -$OPTS dir && tar --out-$(date +%F) x && login --pass$X`, true)).toBe(`ls -$OPTS dir && tar --out-$(date +%F) x && login --pass$X`)
     expect(redactText(`login --{password,user}=hunter2 --{pass,pass}word=hunter3 --{p{a,b},x}=hunter4 next`, true)).toBe(`login --{password,user}=*** --*** --***`)
     expect(redactText(`echo --{a,b} {x,y}=1`, true)).toBe(`echo --{a,b} {x,y}=1`)
@@ -402,6 +403,11 @@ describe('publicToolFrame', () => {
   it('decodes JSON unicode escapes in a key name', () => {
     expect(redactText(String.raw`{"pass\u0077ord":"hunter2","user":"bob"}`, true)).not.toContain('hunter2')
     expect(JSON.stringify(publicToolFrame({ name: 'http', args: { body: String.raw`{"api\u005fkey": "opaque"}` } }, true))).not.toContain('opaque')
+  })
+
+  it('masks boolean credential leaves', () => {
+    expect(publicToolFrame({ name: 'x', args: { password: true, cmd: ['login', '--password', false], h: { name: 'Authorization', value: true }, verbose: true } }, true).args)
+      .toEqual({ password: '***', cmd: ['login', '--password', '***'], h: { name: 'Authorization', value: '***' }, verbose: true })
   })
 
   it('omits the target of a frame without args, so a completion keeps the target its start frame set', () => {
