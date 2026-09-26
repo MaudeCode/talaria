@@ -93,6 +93,8 @@ const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]|[A-Z]?[a-z0-9]+(?=[A-Z])|[A-Z]+(
 const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
 /** An argument or JSON key naming a credential; its scalar value is masked whatever it contains. */
 const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`)
+/** A structured key names a credential when any of its path segments does (`auth.token`, `database.password`). */
+const isCredentialKey = (key: string): boolean => key.split(/[.:/]/).some((segment) => CRED_KEY_RE.test(segment))
 /**
  * Credential parameters in text (`access_token=`, `"clientSecret": "..."`, `X-Api-Key:`) and CLI flags with a
  * space-separated value (`--password hunter2`); a quoted value (including bash `$'...'`) is masked through its closing quote. An unquoted upper-case
@@ -574,15 +576,15 @@ function redactArgs(value: unknown, enabled: boolean): unknown {
   if (!enabled) return value
   if (Array.isArray(value)) {
     // A `[name, value]` header tuple naming a credential.
-    if (value.length === 2 && typeof value[0] === 'string' && CRED_KEY_RE.test(value[0])) return [value[0], maskLeaves(value[1])]
+    if (value.length === 2 && typeof value[0] === 'string' && isCredentialKey(value[0])) return [value[0], maskLeaves(value[1])]
     return value.map((item) => redactArgs(item, enabled))
   }
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>
     // A `{ name: 'Authorization', value: ... }` pair (HAR and similar header lists).
     const label = [record.name, record.key, record.header].find((v): v is string => typeof v === 'string')
-    const labelled = label !== undefined && CRED_KEY_RE.test(label)
-    return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, CRED_KEY_RE.test(key) || (labelled && key === 'value') ? maskLeaves(item) : redactArgs(item, enabled)]))
+    const labelled = label !== undefined && isCredentialKey(label)
+    return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, isCredentialKey(key) || (labelled && key === 'value') ? maskLeaves(item) : redactArgs(item, enabled)]))
   }
   return redactValue(value, enabled)
 }
