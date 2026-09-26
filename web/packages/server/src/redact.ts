@@ -171,11 +171,10 @@ function shellWordEnd(text: string, start: number, enclosing: string): number {
       i = close + 2
     } else if (c === '\\') i += 2
     else if (c === '$' && (text[i + 1] === "'" || text[i + 1] === '"')) i += 1
-    // `$(…)`, `${…}` and backticks are part of the word, balanced.
-    else if (c === '$' && (text[i + 1] === '(' || text[i + 1] === '{')) {
-      const open = text[i + 1]!
-      const close = open === '(' ? ')' : '}'
-      // Quoted and escaped delimiters inside the substitution do not count.
+    // A command substitution cannot be bounded without a shell parser (`case` patterns carry unmatched `)`): mask to the
+    // line end. `${…}` is balanced, quote- and escape-aware; backticks run to the next backtick.
+    else if (c === '$' && text[i + 1] === '(') return lineEnd(i)
+    else if (c === '$' && text[i + 1] === '{') {
       let k = i + 2
       let d = 1
       while (k < text.length && d > 0) {
@@ -183,7 +182,7 @@ function shellWordEnd(text: string, start: number, enclosing: string): number {
         if (ch === '\\') k += 2
         else if (ch === "'") { const q = text.indexOf("'", k + 1); k = q === -1 ? text.length : q + 1 }
         else if (ch === '"') { k += 1; while (k < text.length && text[k] !== '"') k += text[k] === '\\' ? 2 : 1; k += 1 }
-        else { if (ch === open) d += 1; else if (ch === close) d -= 1; k += 1 }
+        else { if (ch === '{') d += 1; else if (ch === '}') d -= 1; k += 1 }
       }
       if (d > 0) return lineEnd(i)
       i = k
