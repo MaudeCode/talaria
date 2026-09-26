@@ -85,8 +85,8 @@ const COOKIE_DQ_RE = /("(?:Set-)?Cookie:\s*)((?:[^"\\\r\n]|\\.)*)/gi
 const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?:${QUOTED}|[^'"\\\r\n]|\\(?!"))+)`, 'gi')
 const EMBEDDED_AWS_RE = /AKIA[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
-/** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The scheme starts at a run boundary and is capped so the scan stays linear. */
-const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s:@/'"]*:)([^\s@/'"]+)(?=@)/g
+/** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The scheme starts at a run boundary, so the scan stays linear however long it is. */
+const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s:@/'"]*:)([^\s@/'"]+)(?=@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
 const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
 /** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
@@ -108,10 +108,10 @@ function isCredentialKey(key: string): boolean {
 /**
  * A `key=value`, `key: value` or `--flag value` in text. Any identifier matches; the loop keeps only those
  * `isCredentialKey` accepts (`access_token`, `"clientSecret"`, `X-Api-Key`, `--companyProdEuAwsSecretAccessKey`), and
- * consumes a value only for those, so a non-credential key never swallows the text after it. The identifier is capped
- * so the scan stays linear.
+ * consumes a value only for those, so a non-credential key never swallows the text after it. The whole identifier is
+ * read, however long: the lookbehind starts a match only at an identifier's first character, so the scan stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z][A-Za-z0-9_.[\]-]{0,127})((?:\\?["'])?\s*\+?[=:]\s*|\s+)`, 'g')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z][A-Za-z0-9_.[\]-]*)((?:\\?["'])?\s*\+?[=:]\s*|\s+)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /**
  * `curl -u user:secret` / `-uuser:secret` / `--user user:secret`, and the proxy forms `-U` / `--proxy-user`; a quoted
@@ -351,8 +351,9 @@ function redactCredentialParams(text: string): string {
 }
 
 /**
- * `curl -u user:secret` (also `-uuser:secret`, `--user user:secret`, `-U` / `--proxy-user`): the whole argument is read with the shell-word
- * scanner, and everything after its first `:` is masked. A single quoted pair keeps its quotes (`"bob:***"`).
+ * `curl -u user:secret` (also `-uuser:secret`, `--user user:secret`, `-U` / `--proxy-user`): the whole argument is read
+ * with the shell-word scanner, and everything after its first `:` is masked. A single quoted pair keeps its quotes
+ * (`"bob:***"`).
  */
 function redactUserFlags(text: string): string {
   let out = ''

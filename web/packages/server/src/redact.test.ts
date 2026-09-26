@@ -140,12 +140,23 @@ describe('curl -u', () => {
   })
 })
 
+describe('credential key length', () => {
+  it('masks a credential option whose identifier is longer than any fixed cap, through the public prefilter', () => {
+    const namespace = 'company'.repeat(40)
+    expect(redactText(`login --${namespace}Password=hunter2 --user bob`, true)).toBe(`login --${namespace}Password=*** --user bob`)
+    expect(redactText(`${namespace}_api_key: "opaque value"`, true)).toBe(`${namespace}_api_key: "***"`)
+    expect(redactText(`${namespace}+ssh://bob:hunter2@host`, true)).toBe(`${namespace}+ssh://bob:***@host`)
+  })
+})
+
 describe('redactSensitive cost', () => {
   it('stays linear on long runs of scheme and identifier characters', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
     // Unquoted runs, and many credential keys inside one long quoted argument.
     for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
-      ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`)]) {
+      ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
+      // One huge identifier that does name a credential, and many long ones that are followed by a separator.
+      `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200)]) {
       const started = performance.now()
       redactSensitive(text)
       expect(performance.now() - started).toBeLessThan(1000)
