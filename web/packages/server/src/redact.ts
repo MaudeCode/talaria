@@ -491,15 +491,44 @@ function redactHeaderCredentials(text: string, re: RegExp): string {
 const WORD_SPACE = '\u2423'
 
 /**
- * A shell word as the program receives it: quotes and `$` quote prefixes removed, escapes resolved (ANSI-C escapes are
- * not decoded; `SUBST_PIECE` fails those closed), and a quoted or escaped space kept inside the token as `WORD_SPACE`.
+ * A shell word as the program receives it: quotes and `$` quote prefixes removed, escapes resolved (ANSI-C escapes
+ * decoded), and a quoted or escaped space kept inside the token as `WORD_SPACE`.
  */
+/** An ANSI-C `$'…'` escape after its backslash (at `j`): the character Bash decodes and how many characters it spans. */
+function ansiEscape(word: string, j: number): [string, number] {
+  const c = word[j]!
+  const named: Record<string, string> = { a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v', '\\': '\\', "'": "'", '"': '"', '?': '?' }
+  if (named[c] !== undefined) return [named[c], 1]
+  const hex = (max: number): string => /^[0-9A-Fa-f]+/.exec(word.slice(j + 1, j + 1 + max))?.[0] ?? ''
+  if (c === 'x' || c === 'u' || c === 'U') {
+    const digits = hex(c === 'x' ? 2 : c === 'u' ? 4 : 8)
+    if (digits) return [String.fromCodePoint(Math.min(parseInt(digits, 16), 0x10ffff)), 1 + digits.length]
+  }
+  const octal = /^[0-7]{1,3}/.exec(word.slice(j, j + 3))?.[0]
+  if (octal) return [String.fromCharCode(parseInt(octal, 8) & 0xff), octal.length]
+  if (c === 'c' && j + 1 < word.length) return [String.fromCharCode(word.charCodeAt(j + 1) & 0x1f), 2]
+  return [`\\${c}`, 1]
+}
+
 function shellDequote(word: string): string {
   let out = ''
   let quote = ''
   for (let i = 0; i < word.length; i += 1) {
     const c = word[i]!
-    if (!quote && c === '$' && (word[i + 1] === "'" || word[i + 1] === '"')) continue
+    // ANSI-C `$'…'`: escapes are decoded (`\x3d` is `=`), so an escaped key name or delimiter reads as the program's.
+    if (!quote && c === '$' && word[i + 1] === "'") {
+      for (i += 2; i < word.length && word[i] !== "'"; i += 1) {
+        let ch = word[i]!
+        if (ch === '\\' && i + 1 < word.length) {
+          const [decoded, span] = ansiEscape(word, i + 1)
+          ch = decoded
+          i += span
+        }
+        out += /\s/.test(ch) ? WORD_SPACE : ch
+      }
+      continue
+    }
+    if (!quote && c === '$' && word[i + 1] === '"') continue
     if (!quote && (c === "'" || c === '"')) quote = c
     else if (quote && c === quote) quote = ''
     else if (c === '\\' && quote !== "'" && i + 1 < word.length) {
@@ -603,7 +632,8 @@ function redactComposedWords(text: string): string {
     // A quoted flag (`'--password'`, `"--us"er`) takes its value from the next word: the two are read together.
     const next = words[k + 1]
     const flag = /^-[^=:]*$/.test(glued) && next !== undefined && /^[ \t]+$/.test(text.slice(end, next[0]))
-    if (!flag && (!/["'\\]/.test(word.slice(1)) || splitQuoted(word))) continue
+    // A single quoted argument keeps its quoting, unless it is ANSI-C quoted with escapes (`$'--password\x3dx'`).
+    if (!flag && (!/["'\\]/.test(word.slice(1)) || (splitQuoted(word) && !/\$'[^']*\\/.test(word)))) continue
     const spanEnd = flag ? next[1] : end
     const span = text.slice(start, spanEnd)
     const unit = flag ? `${glued} ${shellDequote(text.slice(next[0], next[1]))}` : glued

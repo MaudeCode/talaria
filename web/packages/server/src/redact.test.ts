@@ -273,6 +273,13 @@ describe('shell-composed words', () => {
     expect(redactText('curl "http://$HOST:$PORT/x" -o $OUT:file', true)).toBe('curl "http://$HOST:$PORT/x" -o $OUT:file')
   })
 
+  it('decodes ANSI-C escapes as the shell does', () => {
+    expect(redactText(String.raw`login $'--password\x3dhunter2' next`, true)).toBe('login --password=*** next')
+    expect(redactText(String.raw`curl -H $'Authorization\x3a Basic hunter2' x`, true)).not.toContain('hunter2')
+    expect(redactText(String.raw`login $'--\160assword=hunter2' $'--pass\u0077ord=hunter3' next`, true)).not.toMatch(/hunter/)
+    expect(redactText(String.raw`printf $'a\tb' && echo $'it\'s'`, true)).toBe(String.raw`printf $'a\tb' && echo $'it\'s'`)
+  })
+
   it('removes a line continuation as the shell does', () => {
     expect(redactText('login --pass\\\nword=hunter2 next', true)).toBe('login --password=*** next')
     expect(redactText('login --api\\\n_key "hunter2" next', true)).not.toContain('hunter2')
