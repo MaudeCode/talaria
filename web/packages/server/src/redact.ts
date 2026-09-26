@@ -80,7 +80,7 @@ const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENT
 /** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The scheme starts at a run boundary and is capped so the scan stays linear. */
 const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s:@/'"]+:)([^\s@/'"]+)(?=@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
-const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|secret|token|password|passwd)`
+const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|secret|token|password|passwd)`
 /** A lower-case pattern matched in any case, letter by letter, so the camelCase lookahead below stays case-exact. */
 const anyCase = (pattern: string): string => pattern.replace(/[a-z]/g, (c) => `[${c}${c.toUpperCase()}]`)
 /**
@@ -150,7 +150,7 @@ function restoreCodeEnvKeyLiterals(original: string, redacted: string): string {
 
 /**
  * The end (exclusive) of the shell word starting at `start`: adjacent quoted (`'…'`, `"…"` with escapes, `$'…'`), escaped
- * (`\ `) and bare pieces, a leading `[…]`/`{…}` container (balanced), or JSON escaped inside a shell string (`\"…\"`).
+ * (`\ `) and bare pieces, a leading `[…]`/`{…}`/`(…)` container (balanced; the sidecar's Python repr of nested args), or JSON escaped inside a shell string (`\"…\"`).
  * It stops at shell metacharacters outside a container, at `, ] }` that follow the word, and at the quote that encloses the argument
  * (`-H "X-Api-Key: value"`). An unterminated quote at the word's start runs to the line end; one mid-word ends the word.
  * One pass, so redaction stays linear.
@@ -199,8 +199,9 @@ function shellWordEnd(text: string, start: number, enclosing: string): number {
       while (k < text.length && text[k] !== '"') k += text[k] === '\\' ? 2 : 1
       if (k >= text.length) return i === start ? lineEnd(i) : i
       i = k + 1
-    } else if ((c === '[' || c === '{') && (i === start || depth > 0)) { depth += 1; i += 1 }
-    else if ((c === ']' || c === '}') && depth > 0) {
+    } else if ((c === '[' || c === '{' || (c === '(' && i === start)) && (i === start || depth > 0)) { depth += 1; i += 1 }
+    else if (c === '(' && depth > 0) { depth += 1; i += 1 }
+    else if ((c === ']' || c === '}' || c === ')') && depth > 0) {
       depth -= 1; i += 1
       // A leading container is the whole value.
       if (depth === 0) return i
@@ -262,7 +263,7 @@ function redactCredentialParams(text: string): string {
     // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s.
     if (!quoted && /authorization$/i.test(key) && /^\s*:\s*$/.test(sep)) continue
     // Fully masked: a partial mask would leak part of a password or passphrase.
-    out += text.slice(last, valueStart) + (/^[[{]/.test(value) ? '***' : maskShellWord(value))
+    out += text.slice(last, valueStart) + (/^[[{(]/.test(value) ? '***' : maskShellWord(value))
     last = valueEnd
     CRED_PARAM_RE.lastIndex = Math.max(valueEnd, CRED_PARAM_RE.lastIndex)
   }

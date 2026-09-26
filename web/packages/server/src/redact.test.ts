@@ -70,6 +70,8 @@ describe('redactSensitive', () => {
     // Command substitution, backticks and parameter expansion are part of the word.
     expect(redactSensitive('login --password=$(printf hunter2) --token=`cat t` --secret=${S:-x y} next')).toBe('login --password=*** --token=*** --secret=*** next')
     expect(redactSensitive(`login --password=$(printf '%s)' "a)b" \\) hunter2) next`)).toBe('login --password=*** next')
+    // Every prefiltered key alias, and Python tuple containers.
+    expect(redactSensitive(`login --secret_input opaque1 --key-material=opaque2 {"bearer": "opaque3"} {'password': ('hunter2', 'second'), 'user': 'bob'}`)).toBe(`login --secret_input *** --key-material=*** {"bearer": "***"} {'password': ***, 'user': 'bob'}`)
     // Ordinary words and non-credential parameters stay readable.
     expect(redactSensitive('keep the secret sauce --secret-file ./s.txt')).toBe('keep the secret sauce --secret-file ./s.txt')
     expect(redactSensitive('apiKeyId: 12 max_tokens=100 --user-agent curl')).toBe('apiKeyId: 12 max_tokens=100 --user-agent curl')
