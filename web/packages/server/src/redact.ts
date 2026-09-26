@@ -151,14 +151,39 @@ function restoreCodeEnvKeyLiterals(original: string, redacted: string): string {
 }
 
 /**
+ * The index of the quote closing an enclosing `quote` at or after `from` (`-1` if none), memoized per quoted region so
+ * many values inside one long quoted argument share one scan.
+ */
+function enclosingClose(text: string): (from: number, quote: string) => number {
+  let cachedQuote = ''
+  let cachedFrom = -1
+  let cachedClose = -1
+  return (from: number, quote: string): number => {
+    if (quote === cachedQuote && from >= cachedFrom && (cachedClose === -1 || from <= cachedClose)) return cachedClose
+    let k = from
+    while (k < text.length && text[k] !== quote) k += quote === '"' && text[k] === '\\' ? 2 : 1
+    cachedQuote = quote
+    cachedFrom = from
+    cachedClose = k < text.length ? k : -1
+    return cachedClose
+  }
+}
+
+/**
  * The end (exclusive) of the shell word starting at `start`: adjacent quoted (`'…'`, `"…"` with escapes, `$'…'`), escaped
  * (`\ `) and bare pieces, a leading `[…]`/`{…}`/`(…)` container (balanced; the sidecar's Python repr of nested args), or JSON escaped inside a shell string (`\"…\"`).
  * It stops at shell metacharacters outside a container, at `, ] }` that follow the word, and at the quote that encloses the argument
  * (`-H "X-Api-Key: value"`). An unterminated quote at the word's start runs to the line end; one mid-word ends the word.
  * One pass, so redaction stays linear.
  */
-function shellWordEnd(text: string, start: number, enclosing: string): number {
+function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (from: number, quote: string) => number = enclosingClose(text)): number {
   const lineEnd = (from: number): number => { const n = text.indexOf('\n', from); return n === -1 ? text.length : n }
+  // Inside an enclosing quote a bare value is literal up to that quote's close, spaces and newlines included; a quoted,
+  // container or escaped-JSON value keeps its own piece structure.
+  if (enclosing && !/^(?:\$?["'`]|[[{(]|\\")/.test(text.slice(start, start + 2))) {
+    const close = closeOf(start, enclosing)
+    return close === -1 ? lineEnd(start) : close
+  }
   let depth = 0
   let i = start
   while (i < text.length) {
@@ -226,7 +251,7 @@ function shellWordEnd(text: string, start: number, enclosing: string): number {
 
 /**
  * The shell quote open at each position, read left to right once: `advance(index)` returns the quote (`'` or `"`) that
- * encloses `index`, or `''`. A newline resets it, so an apostrophe in prose cannot leak into the next line.
+ * encloses `index`, or `''`. Quotes span lines (a multi-line argument); an apostrophe inside a word is prose.
  */
 function quoteTracker(text: string): (index: number) => string {
   let pos = 0
@@ -234,8 +259,9 @@ function quoteTracker(text: string): (index: number) => string {
   return (index: number): string => {
     for (; pos < index; pos += 1) {
       const c = text[pos]
-      if (c === '\n') state = ''
-      else if (c === '\\' && state !== "'") pos += 1
+      if (c === '\\' && state !== "'") pos += 1
+      // An apostrophe between two letters is prose (`don't`), not a quote.
+      else if (c === "'" && /\p{L}/u.test(text[pos - 1] ?? '') && /\p{L}/u.test(text[pos + 1] ?? '')) continue
       else if (state === '' && (c === "'" || c === '"')) state = c
       else if (c === state) state = ''
     }
@@ -257,20 +283,26 @@ function redactCredentialParams(text: string): string {
   let out = ''
   let last = 0
   const quoteAt = quoteTracker(text)
+  const closeOf = enclosingClose(text)
   CRED_PARAM_RE.lastIndex = 0
   for (let m = CRED_PARAM_RE.exec(text); m; m = CRED_PARAM_RE.exec(text)) {
     const [head, dash = '', key = '', sep = ''] = m
+    // Prose (`secret sauce`): a bare space only separates a CLI flag from its value.
+    if (!/[=:]/.test(sep) && !dash) continue
     const valueStart = m.index + head.length
-    const valueEnd = shellWordEnd(text, valueStart, quoteAt(valueStart))
+    // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s (decided before scanning the value).
+    if (/authorization$/i.test(key) && /^\s*:\s*$/.test(sep) && !/^\$?["']/.test(text.slice(valueStart, valueStart + 2))) continue
+    // A URL query parameter's value ends at the next `&`, `#`, space or quote.
+    const query = /[?&]/.test(text[m.index - 1] ?? '') && sep === '='
+    const queryEnd = query ? text.slice(valueStart).search(/[&#\s"'<>]/) : -1
+    const valueEnd = query ? (queryEnd === -1 ? text.length : valueStart + queryEnd) : shellWordEnd(text, valueStart, quoteAt(valueStart), closeOf)
     const value = text.slice(valueStart, valueEnd)
     const inner = shellWordInner(value)
     const quoted = /["']/.test(value)
-    // Nothing to mask: empty, already masked, or prose (`secret sauce`: a bare space only separates a CLI flag's value).
-    if (!inner.trim() || inner === '***' || (!/[=:]/.test(sep) && !dash)) continue
+    // Nothing to mask: empty or already masked.
+    if (!inner.trim() || inner === '***') continue
     // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers when the whole value is one plain `\S+` token.
     if (!quoted && sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && /^[^\s\\]+$/.test(value)) continue
-    // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s.
-    if (!quoted && /authorization$/i.test(key) && /^\s*:\s*$/.test(sep)) continue
     // Fully masked: a partial mask would leak part of a password or passphrase.
     out += text.slice(last, valueStart) + (/^[[{(]/.test(value) ? '***' : maskShellWord(value))
     last = valueEnd
@@ -287,10 +319,11 @@ function redactUserFlags(text: string): string {
   let out = ''
   let last = 0
   const quoteAt = quoteTracker(text)
+  const closeOf = enclosingClose(text)
   USER_FLAG_RE.lastIndex = 0
   for (let m = USER_FLAG_RE.exec(text); m; m = USER_FLAG_RE.exec(text)) {
     const wordStart = m.index + m[0].length
-    const wordEnd = shellWordEnd(text, wordStart, quoteAt(wordStart))
+    const wordEnd = shellWordEnd(text, wordStart, quoteAt(wordStart), closeOf)
     const word = text.slice(wordStart, wordEnd)
     const quoted = splitQuoted(word)
     const body = quoted ? quoted.inner : word

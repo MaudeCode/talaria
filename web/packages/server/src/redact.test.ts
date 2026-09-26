@@ -77,6 +77,10 @@ describe('redactSensitive', () => {
     expect(redactSensitive('TOKEN=${TOKEN:-fallback secret} PASSWORD=$(printf hunter2) next')).toBe('TOKEN=*** PASSWORD=***')
     expect(redactSensitive(String.raw`login --password=foo\"bar next`)).toBe('login --password=*** next')
     expect(redactSensitive(String.raw`login --password=$'correct\' horse' next -u $'bob:a\' b' x`)).toBe(String.raw`login --password=*** next -u $'bob:***' x`)
+    // Inside an enclosing quote a bare value runs to its closing quote, newlines and spaces included.
+    expect(redactSensitive('login "--password=correct\nhorse" next \'--token=a b\' x')).toBe('login "--password=***" next \'--token=***\' x')
+    // An apostrophe inside a word is prose, not a quote.
+    expect(redactSensitive("don't share it: password: hunter2 and it's fine")).toBe("don't share it: password: *** and it's fine")
     // Ordinary words and non-credential parameters stay readable.
     expect(redactSensitive('keep the secret sauce --secret-file ./s.txt')).toBe('keep the secret sauce --secret-file ./s.txt')
     expect(redactSensitive('apiKeyId: 12 max_tokens=100 --user-agent curl')).toBe('apiKeyId: 12 max_tokens=100 --user-agent curl')
@@ -117,8 +121,9 @@ describe('curl -u', () => {
 describe('redactSensitive cost', () => {
   it('stays linear on long runs of scheme and identifier characters', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
-    for (const seg of ['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB']) {
-      const text = seg.repeat(Math.ceil(200_000 / seg.length))
+    // Unquoted runs, and many credential keys inside one long quoted argument.
+    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+      ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`)]) {
       const started = performance.now()
       redactSensitive(text)
       expect(performance.now() - started).toBeLessThan(1000)
