@@ -1,4 +1,5 @@
 import { str } from './util.js'
+import { toolArgs, toolDisplay, toolName } from './sessions/tool-display.js'
 /**
  * Credential redaction and the public session projection (Python
  * `api/helpers.py`). API responses are a hard boundary: transcript-bearing
@@ -51,12 +52,18 @@ const CRED_RE = new RegExp(
 const AUTH_HDR_RE = /(Authorization:\s*(?:Bearer|Bot)\s+)([^\s'",\])]+)/gi
 const EMBEDDED_AWS_RE = /AKIA[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
+/** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. */
+const URL_USERINFO_RE = /([A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s:@/'"]+:)([^\s@/'"]+)(?=@)/g
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
 const ENV_KEY_PREFIX_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)/g
 const REDACTED_ENV_VALUE_RE = /(?:\*{3,}|[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,32}\.\.\.[A-Za-z0-9_.:/+-]{1,16})/y
 
+/** `mask`'s own long-token output: re-redacting a redacted frame (journal replay) leaves it unchanged. */
+const MASKED_RE = /^\S{6}\.\.\.\S{4}$/
+
 function mask(token: string): string {
+  if (MASKED_RE.test(token)) return token
   return token.length >= 18 ? `${token.slice(0, 6)}...${token.slice(-4)}` : '***'
 }
 
@@ -99,6 +106,7 @@ export function redactSensitive(text: string): string {
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = out.replace(AUTH_HDR_RE, (_, head: string, token: string) => head + mask(token))
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
+  out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
   out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]')
   return restoreCodeEnvKeyLiterals(text, out)
 }
@@ -261,12 +269,43 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
   const scrubbed = (scrubInternalReplayFields([message], { messageRecords: true }) as unknown[])[0]
   if (!scrubbed || typeof scrubbed !== 'object' || Array.isArray(scrubbed)) return redactValue(scrubbed, enabled)
   const item: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(scrubbed as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(withMessageToolDisplay(scrubbed as Record<string, unknown>, enabled))) {
     if (PUBLIC_MESSAGE_INTERNAL_FIELDS.has(key)) continue
     item[key] = redactValue(value, enabled)
   }
   if (isActive) item._active_turn_user = true
   return item
+}
+
+/**
+ * A call with its server `kind` and `target`. The target comes from the redacted parsed args (never a redacted JSON
+ * string, which masks a different span), so a call shows one target live, after replay and after reload.
+ */
+function withToolDisplay<T>(call: T, enabled: boolean): T {
+  if (!call || typeof call !== 'object' || Array.isArray(call)) return call
+  const record = call as Record<string, unknown>
+  return { ...record, ...toolDisplay(toolName(record), redactValue(toolArgs(record), enabled)) } as T
+}
+
+/** Every tool call a message carries (OpenAI `tool_calls`, `tool_use` blocks, scene rows), stamped before the message is redacted. */
+function withMessageToolDisplay(message: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
+  const item = { ...message }
+  if (Array.isArray(item.tool_calls)) item.tool_calls = item.tool_calls.map((call: unknown) => withToolDisplay(call, enabled))
+  if (Array.isArray(item.content)) item.content = item.content.map((part: unknown) => (part && typeof part === 'object' && (part as Record<string, unknown>).type === 'tool_use' ? withToolDisplay(part, enabled) : part))
+  const scene = item._anchor_activity_scene
+  if (scene && typeof scene === 'object' && !Array.isArray(scene) && Array.isArray((scene as Record<string, unknown>).activity_rows)) {
+    item._anchor_activity_scene = { ...scene, activity_rows: withSceneToolDisplay((scene as Record<string, unknown>).activity_rows as unknown[], enabled) }
+  }
+  return item
+}
+
+/** Scene rows (the detail preview and the paged rows) stamp their tool the same way. */
+export function withSceneToolDisplay(rows: unknown[], enabled: boolean): unknown[] {
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return row
+    const tool = (row as Record<string, unknown>).tool
+    return tool && typeof tool === 'object' ? { ...row, tool: withToolDisplay(tool, enabled) } : row
+  })
 }
 
 function redactMessages(messages: unknown, enabled: boolean, activeTurnToken: string | null): unknown {
@@ -275,7 +314,13 @@ function redactMessages(messages: unknown, enabled: boolean, activeTurnToken: st
 }
 
 function redactToolCalls(toolCalls: unknown, enabled: boolean): unknown {
-  return redactValue(scrubInternalReplayFields(toolCalls, { messageRecords: false }), enabled)
+  const scrubbed = scrubInternalReplayFields(toolCalls, { messageRecords: false })
+  return redactValue(Array.isArray(scrubbed) ? scrubbed.map((call: unknown) => withToolDisplay(call, enabled)) : scrubbed, enabled)
+}
+
+/** A live `tool` / `tool_complete` frame as it leaves the server (SSE, journal, replay): redacted like session detail, then stamped. */
+export function publicToolFrame(data: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
+  return redactValue(withToolDisplay(data, enabled), enabled) as Record<string, unknown>
 }
 
 function redactNestedMessageContainers(value: unknown, enabled: boolean): unknown {

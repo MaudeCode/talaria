@@ -19,7 +19,7 @@ import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.j
 import { PendingPrompts } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
 import { Session, titleFrom, type Message } from './session.js'
-import { buildActiveTurnToken, redactSessionData, redactString } from '../redact.js'
+import { buildActiveTurnToken, publicToolFrame, redactSessionData, redactString } from '../redact.js'
 import { dict, type Config } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
@@ -411,7 +411,7 @@ export class TurnRunner {
               return
             case 'tool':
               liveToolCalls.push({ name: data.name, args: data.args ?? {}, tid: str(data.tid), done: false })
-              put('tool', data)
+              put('tool', publicToolFrame(data, deps.redactEnabled()))
               return
             case 'tool_complete':
               for (let i = liveToolCalls.length - 1; i >= 0; i -= 1) {
@@ -420,7 +420,7 @@ export class TurnRunner {
                 if ((str(data.tid) && tc.tid === str(data.tid)) || (!tc.tid && tc.name === data.name)) { tc.done = true; tc.snippet = data.preview; break }
               }
               if (str(data.tid)) this.lastCompletedTool.set(streamId, str(data.tid))
-              put('tool_complete', data)
+              put('tool_complete', publicToolFrame(data, deps.redactEnabled()))
               return
             // Python: the live chat frame carries the queue head plus depth, not the entry that just arrived.
             case 'approval': {

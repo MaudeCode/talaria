@@ -151,7 +151,7 @@ describe('chat turns through the sidecar', () => {
     // Reasoning streamed before the first tool call belongs to that first assistant row (Python per-segment attribution).
     expect((detail.messages as Json[])[1]).toMatchObject({ role: 'assistant', reasoning: 'thinking' })
     expect((detail.messages as Json[])[3]).toMatchObject({ content: 'Hi back', _usedModel: 'test-model' })
-    expect(detail.tool_calls).toEqual([{ name: 'read_file', snippet: 'contents', tid: 'call_1', assistant_msg_idx: 1, args: { path: 'a' } }])
+    expect(detail.tool_calls).toEqual([{ name: 'read_file', snippet: 'contents', tid: 'call_1', assistant_msg_idx: 1, args: { path: 'a' }, kind: 'read', target: 'a' }])
     expect(detail.input_tokens).toBe(120)
     expect(detail.output_tokens).toBe(30)
     expect(detail.context_length).toBe(200000)
@@ -170,6 +170,73 @@ describe('chat turns through the sidecar', () => {
     expect((await s.get('/api/chat/stream?stream_id=unknownstream')).status).toBe(404)
     const list = await json(await s.get('/api/sessions'))
     expect((list.sessions as Json[]).find((r) => r.session_id === sid)).toMatchObject({ title: 'Greeting exchange', message_count: 4 })
+  })
+
+  it('redacts live, journaled and replayed tool frames and ships one kind and target live, after replay and after reload', async () => {
+    const bearer = 'synthetic-bearer-0123456789abcdef'
+    const pg = 'pgSyntheticSecret42'
+    const gh = 'syntheticGithubToken0123456789'
+    const command = `curl -H "Authorization: Bearer ${bearer}" https://x && psql postgres://u:${pg}@h/db && GITHUB_TOKEN=${gh} gh api user`
+    const secrets = [bearer, pg, gh]
+    const leaks = (value: unknown) => secrets.filter((secret) => JSON.stringify(value).includes(secret))
+    const run = async () => {
+      const sid = await newSession(s)
+      sidecar.respond('chat.start', (params, emit) => {
+        emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: command, args: { command }, tid: 'call_1' } })
+        emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: command, args: { command }, tid: 'call_1', is_error: false } })
+        return completed([
+          { role: 'user', content: str(params.user_message) },
+          { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'terminal', arguments: JSON.stringify({ command }) } }] },
+          { role: 'tool', tool_call_id: 'call_1', content: 'ok' },
+          { role: 'assistant', content: 'Done.' },
+        ])
+      })
+      sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Tool run"', usage: null }))
+      const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'run it' }))).stream_id)
+      const frames = (await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
+      const journalPath = join(realpathSync(s.state), 'sessions', '_run_journal', sid, `${streamId}.jsonl`)
+      const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+      return { sid, streamId, frames, journalPath, detail }
+    }
+
+    const { streamId, frames, journalPath, detail } = await run()
+    expect(frames.map((f) => f.event)).toEqual(['tool', 'tool_complete'])
+    expect(leaks(frames.map((f) => f.data))).toEqual([])
+    expect(leaks(readFileSync(journalPath, 'utf8'))).toEqual([])
+    const live = frames.map((f) => f.data as Json)
+    expect(live.map((d) => d.kind)).toEqual(['shell', 'shell'])
+    const target = String(live[0]?.target)
+    expect(target).toMatch(/^curl -H "Authorization: Bearer /)
+    expect(live[1]?.target).toBe(target)
+
+    // A journal written before redaction existed is redacted and stamped on read.
+    const legacy = readFileSync(journalPath, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Json).map((row) => {
+      if (row.event !== 'tool' && row.event !== 'tool_complete') return row
+      return { ...row, payload: { event_type: 'tool.started', name: 'terminal', preview: command, args: { command }, tid: 'call_1' } }
+    })
+    writeFileSync(journalPath, `${legacy.map((row) => JSON.stringify(row)).join('\n')}\n`)
+    const replayed = (await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
+    expect(replayed).toHaveLength(2)
+    expect(leaks(replayed.map((f) => f.data))).toEqual([])
+    expect(replayed.map((f) => [(f.data as Json).kind, (f.data as Json).target])).toEqual([['shell', target], ['shell', target]])
+
+    // After reload: the persisted call, the session-level call, and the scene row carry the same kind and target.
+    expect(leaks(detail)).toEqual([])
+    const messages = detail.messages as Json[]
+    expect((messages[1]?.tool_calls as Json[])[0]).toMatchObject({ kind: 'shell', target })
+    expect((detail.tool_calls as Json[])[0]).toMatchObject({ kind: 'shell', target })
+    const sceneTool = ((messages[3]?._anchor_activity_scene as Json).activity_rows as Json[]).find((row) => row.role === 'tool')?.tool as Json
+    expect(sceneTool).toMatchObject({ kind: 'shell', target })
+
+    // With redaction off, live frames match session detail: both show the command as written.
+    s.deps.settings.save({ api_redact_enabled: false })
+    try {
+      const off = await run()
+      expect(off.frames.map((f) => (f.data as Json).target)).toEqual([command, command].map((c) => c.slice(0, 200)))
+      expect((off.detail.tool_calls as Json[])[0]).toMatchObject({ kind: 'shell', target: command.slice(0, 200) })
+    } finally {
+      s.deps.settings.save({ api_redact_enabled: true })
+    }
   })
 
   it('builds the settled turn\'s scene with Codex commentary as prose under Worked, leaving the stored rows as the Agent wrote them', async () => {

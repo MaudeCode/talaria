@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { anchorActivitySceneTransportPreview, buildTurnScene, normalizeSceneRows, withTurnIds } from './anchor.js'
+import { withSceneToolDisplay } from '../redact.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -245,7 +246,8 @@ describe('anchor scenes over HTTP', () => {
 
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     const scene = (detail.messages as Json[])[1]?._anchor_activity_scene as Json
-    const all = normalizeSceneRows([...rows, ...legacyRows])
+    // Both the preview and the paged rows carry each tool's server kind and target.
+    const all = withSceneToolDisplay(normalizeSceneRows([...rows, ...legacyRows]), true)
     expect(scene).toMatchObject({ activity_rows_total: all.length, activity_rows_offset: all.length - 80, activity_rows_complete: false })
     expect(scene.activity_rows).toEqual(all.slice(-80))
 

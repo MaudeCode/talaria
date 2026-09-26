@@ -13,6 +13,7 @@ import type { Session } from '../sessions/session.js'
 import type { GatewayWatcher } from '../sessions/gateway-watcher.js'
 import { str } from '../util.js'
 import { streamOwnerSessionId } from './session-visibility.js'
+import { publicToolFrame } from '../redact.js'
 
 export const SSE_HEARTBEAT_INTERVAL_MS = 5_000
 const SESSION_SSE_SENT_EVENT_ID_LIMIT = 4096
@@ -141,7 +142,11 @@ function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: string,
   let terminal = false
   const events = ctx.deps.journal.readRunEvents(summary.session_id, streamId, { afterSeq, maxSeq: opts.maxSeq ?? null })
   for (const entry of events) {
-    sse.event(entry.event || 'message', entry.payload, entry.event_id)
+    // Journals written before live tool frames were redacted are redacted and stamped on read.
+    const payload = (entry.event === 'tool' || entry.event === 'tool_complete') && entry.payload && typeof entry.payload === 'object' && !Array.isArray(entry.payload)
+      ? publicToolFrame(entry.payload as Record<string, unknown>, ctx.deps.sessions.deps.redactEnabled())
+      : entry.payload
+    sse.event(entry.event || 'message', payload, entry.event_id)
     if (SSE_RELAY_CLOSE_EVENTS.has(entry.event)) terminal = true
   }
   if ((opts.includeStale ?? true) && !summary.terminal) {

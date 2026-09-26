@@ -22,8 +22,15 @@ export const AttachmentSchema = z.looseObject({
 })
 export type Attachment = z.infer<typeof AttachmentSchema>
 
+/** The server's display class for a tool call: clients map it to an icon and localized verb, and never classify names themselves. */
+export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'unknown'])
+export type ToolKind = z.infer<typeof ToolKindSchema>
+/** Server-derived display fields every tool call carries: the kind, and the redacted first-line label of its main argument (`''` when none). */
+export const ToolDisplayFields = { kind: ToolKindSchema.optional(), target: z.string().optional() }
+
 /** Stored transcripts carry the OpenAI shape (`function.name` / `function.arguments` JSON string); live events carry `name` / `args`. */
 export const ToolCallSchema = z.looseObject({
+  ...ToolDisplayFields,
   name: z.string().optional(), args: Json.optional(), function: z.looseObject({ name: z.string().optional(), arguments: Json.optional() }).optional(), id: z.string().optional(), call_id: z.string().optional(), tool_call_id: z.string().optional(),
   done: z.boolean().optional(), is_error: z.boolean().optional(), preview: z.string().nullable().optional(), result: Json.optional(), output: Json.optional(), duration: z.number().nullable().optional(), cost_usd: z.number().nullable().optional(),
   timestamp: z.number().nullable().optional(), event_type: z.string().optional(),
@@ -40,7 +47,7 @@ export const MessageIdSchema = z.union([z.string(), z.number()])
 export const ActivitySceneRowSchema = z.looseObject({
   row_id: z.string(), order_index: z.number().int(), role: z.enum(['prose', 'reasoning', 'tool', 'steering']), created_at: z.number().optional(),
   text: z.string().optional(), titles: z.array(z.string()).optional(),
-  tool: z.looseObject({ id: z.string(), name: z.string(), args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable() }).optional(),
+  tool: z.looseObject({ id: z.string(), name: z.string(), ...ToolDisplayFields, args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable() }).optional(),
   steering: z.looseObject({ steer_id: z.string(), consumed: z.boolean(), submitted_at: z.number().nullable(), consumed_at: z.number().nullable(), phase_duration: z.number().nullable().optional() }).optional(),
 })
 export type ActivitySceneRow = z.infer<typeof ActivitySceneRowSchema>

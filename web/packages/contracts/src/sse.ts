@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ToolDisplayFields } from './views.js'
 
 /**
  * Wire events of `GET /api/chat/stream` as emitted by api/streaming.py
@@ -8,7 +9,7 @@ import { z } from 'zod'
  */
 const Text = z.looseObject({ text: z.string().optional(), already_streamed: z.boolean().optional(), reasoning_echo: z.boolean().optional(), session_id: z.string().optional() })
 const Reasoning = z.looseObject({ text: z.string().optional(), titles: z.array(z.string()).optional(), name: z.string().optional(), session_id: z.string().optional() })
-const Tool = z.looseObject({ name: z.string().optional(), preview: z.string().nullable().optional(), args: z.unknown().optional(), event_type: z.string().optional(), session_id: z.string().optional(), id: z.string().optional(), call_id: z.string().optional(), tool_call_id: z.string().optional(), /** The server's call id for `tool`/`tool_complete` frames; `after_tool_call_id` names it. */ tid: z.string().optional(), timestamp: z.number().optional() })
+const Tool = z.looseObject({ name: z.string().optional(), ...ToolDisplayFields, preview: z.string().nullable().optional(), args: z.unknown().optional(), event_type: z.string().optional(), session_id: z.string().optional(), id: z.string().optional(), call_id: z.string().optional(), tool_call_id: z.string().optional(), /** The server's call id for `tool`/`tool_complete` frames; `after_tool_call_id` names it. */ tid: z.string().optional(), timestamp: z.number().optional() })
 const ToolComplete = Tool.extend({ duration: z.number().nullable().optional(), is_error: z.boolean().optional(), cost_usd: z.number().nullable().optional(), result: z.unknown().optional(), output: z.unknown().optional() })
 const Approval = z.looseObject({ approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), question: z.string().optional(), status: z.string().optional(), pending_count: z.number().optional(), run_id: z.string().optional(), mirror_token: z.string().optional() })
 const Clarify = z.looseObject({ clarify_id: z.string().optional(), session_id: z.string().optional(), question: z.string().optional(), choices: z.array(z.unknown()).optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), status: z.string().optional(), raw_preview: z.string().optional(), timeout_seconds: z.number().optional(), timeout_at: z.number().optional(), index: z.number().optional(), total: z.number().optional() })
