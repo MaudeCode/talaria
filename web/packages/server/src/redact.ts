@@ -172,7 +172,13 @@ function shellWordEnd(text: string, start: number, enclosing: string): number {
       if (close === -1) return lineEnd(i)
       i = close + 2
     } else if (c === '\\') i += 2
-    else if (c === '$' && (text[i + 1] === "'" || text[i + 1] === '"')) i += 1
+    // ANSI-C `$'…'`: a backslash escapes the next character, `\'` included.
+    else if (c === '$' && text[i + 1] === "'") {
+      let k = i + 2
+      while (k < text.length && text[k] !== "'") k += text[k] === '\\' ? 2 : 1
+      if (k >= text.length) return i === start ? lineEnd(i) : i
+      i = k + 1
+    } else if (c === '$' && text[i + 1] === '"') i += 1
     // A command substitution cannot be bounded without a shell parser (`case` patterns carry unmatched `)`): mask to the
     // line end. `${…}` is balanced, quote- and escape-aware; backticks run to the next backtick.
     else if (c === '$' && text[i + 1] === '(') return lineEnd(i)
