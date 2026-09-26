@@ -25,7 +25,7 @@ export type Attachment = z.infer<typeof AttachmentSchema>
 /** The server's display class for a tool call: clients map it to an icon and localized verb, and never classify names themselves. */
 export const ToolKindSchema = z.enum(['shell', 'read', 'list', 'search', 'web', 'write', 'skill', 'memory', 'delegate', 'unknown'])
 export type ToolKind = z.infer<typeof ToolKindSchema>
-/** Server-derived display fields every tool call carries: the kind, and the redacted first-line label of its main argument (`''` when none; omitted on a live frame without args, which keeps its start frame's target). */
+/** Server-derived display fields every tool call carries: the kind, and the redacted first-line label of its main argument (`''` when none; omitted on a live frame with none, which keeps its start frame's target). */
 export const ToolDisplayFields = { kind: ToolKindSchema.optional(), target: z.string().optional() }
 
 /** Stored transcripts carry the OpenAI shape (`function.name` / `function.arguments` JSON string); live events carry `name` / `args`. */

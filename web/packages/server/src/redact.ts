@@ -71,8 +71,8 @@ const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`, 'i')
  */
 const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})(["']?\s*[=:]\s*|\s+)("[^"\n]*"|'[^'\n]*'|[^\s"'&,;)}\]]+)`, 'gi')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
-/** `curl -u user:secret` / `--user user:secret`. */
-const USER_FLAG_RE = /((?<![A-Za-z0-9-])(?:-u|--user)\s+["']?[^\s:"']+:)([^\s"'@]+)/g
+/** `curl -u user:secret` / `--user user:secret`; a quoted pair is masked through its closing quote. */
+const USER_FLAG_RE = /((?<![A-Za-z0-9-])(?:-u|--user)\s+)(?:(["'])([^\n:'"]*:)([^\n'"]*)\2|([^\s:"']+:)([^\s"'@]+))/g
 const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
@@ -137,7 +137,10 @@ export function redactSensitive(text: string): string {
   })
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
-  out = out.replace(USER_FLAG_RE, (_, head: string, secret: string) => head + mask(secret))
+  out = out.replace(USER_FLAG_RE, (whole, head: string, quote: string | undefined, quotedUser: string | undefined, quotedSecret: string | undefined, user: string | undefined, secret: string | undefined) => {
+    if (quote) return /[A-Za-z0-9]/.test(quotedSecret ?? '') ? `${head}${quote}${quotedUser ?? ''}***${quote}` : whole
+    return /[A-Za-z0-9]/.test(secret ?? '') ? `${head}${user ?? ''}***` : whole
+  })
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
   out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]')
   return restoreCodeEnvKeyLiterals(text, out)
@@ -387,8 +390,9 @@ function redactToolCalls(toolCalls: unknown, enabled: boolean): unknown {
 /** A live `tool` / `tool_complete` frame as it leaves the server (SSE, journal, legacy replay): redacted like session detail, then stamped. */
 export function publicToolFrame(data: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
   const frame = withToolDisplay(data, redactValue(data, enabled) as Record<string, unknown>, enabled)
-  // A frame without args (a bare completion) has no target of its own: omitting it keeps the one its start frame set.
-  if (data.args === undefined) delete frame.target
+  // A frame without a displayable argument (a bare completion, or `args: {}`) has no target of its own: omitting it keeps
+  // the one its start frame set.
+  if (!frame.target) delete frame.target
   return frame
 }
 
