@@ -235,8 +235,18 @@ without matching replayed text against the transcript.
 - With no active run, or when the run has no journal (degraded or pruned),
   `messages` are the whole persisted transcript and `transcript_seq` is `null`;
   the client attaches live without replay.
-- Windowing (`msg_limit` / `msg_before`) applies after the omission, so every
-  window agrees on `message_count` and the cursor.
+- An active run's prompt is always in `messages`, exactly once, before its
+  activity (TAL-368). Deferred save keeps it out of the sidecar until
+  settlement, so the detail projects `pending_user_message` and
+  `pending_attachments` as the turn's user row (`_turn_id: active_stream_id`,
+  `_active_turn_user: true`) unless a row for that run already exists: its
+  checkpoint, a row stamped with its id, or a state.db prompt past the sidecar
+  at or after `pending_started_at`; a state.db prompt takes the pending text,
+  turn id, and attachments. Run identity decides, never text, so a repeated
+  prompt is its own row. The projection is read-only; settlement
+  replaces it with the canonical row.
+- Windowing (`msg_limit` / `msg_before`) applies after the projection and the
+  omission, so every window agrees on `message_count` and the cursor.
 - Reconnects within one client keep that client's own same-stream cursor. A
   cursor whose stream id differs from the target stream is never used.
 

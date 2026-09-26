@@ -29,7 +29,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
@@ -278,13 +278,7 @@ export class TurnRunner {
   private checkpointUserMessage(s: Session, msg: string, attachments: Record<string, unknown>[], startedAt: number | null, source: string, turnId: string): void {
     const latest = s.messages[s.messages.length - 1]
     if (latest?.role === 'user' && messageText(latest.content).split(/\s+/).join(' ') === msg.split(/\s+/).join(' ')) return
-    const user: Message = { role: 'user', content: msg, _turn_id: turnId }
-    const token = buildActiveTurnToken(s.active_stream_id, startedAt)
-    if (token) user._active_turn_token = token
-    if (source !== 'webui') user._source = source
-    if (typeof startedAt === 'number' && startedAt > 0) user.timestamp = startedAt
-    if (attachments.length) user.attachments = [...attachments]
-    s.messages.push(user)
+    s.messages.push(pendingUserRow(msg, attachments, startedAt, source, turnId))
   }
 
   // ── worker ───────────────────────────────────────────────────────────────
@@ -544,13 +538,12 @@ export class TurnRunner {
       s.pending_user_source = null
       const attachments = opts.attachments ?? []
       if (attachments.length) {
-        const names = attachments.map((a) => str(a.name || a.filename)).filter(Boolean)
         for (let i = s.messages.length - 1; i >= 0; i -= 1) {
           const m = s.messages[i]!
           if (m.role === 'user') {
             const content = messageText(m.content)
             const base = msgText.includes('\n\n[Attached files:') ? (msgText.split('\n\n[Attached files:')[0] ?? '').trim() : msgText
-            if (content.includes(base.slice(0, 60)) || msgText.includes(content.slice(0, 60))) m.attachments = names
+            if (content.includes(base.slice(0, 60)) || msgText.includes(content.slice(0, 60))) m.attachments = [...attachments]
             break
           }
         }
