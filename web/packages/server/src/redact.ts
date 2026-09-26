@@ -98,10 +98,10 @@ const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`)
  * `KEY=value` whose name `ENV_RE` covers is left to it.
  * The name prefix is capped at four segments so the scan stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})((?:\\?["'])?\s*[=:]\s*|\s+)(${QUOTED}|[^\s"'\\&,;)}\]$]+)`, 'g')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})((?:\\?["'])?\s*[=:]\s*|\s+)(${QUOTED}|(?:[^\s"'\\&,;)}\]$]|\\[^"\n])+)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `-uuser:secret` / `--user user:secret`; a quoted pair or quoted secret is masked through its closing quote. */
-const USER_FLAG_RE = new RegExp(String.raw`((?<![A-Za-z0-9-])(?:-u\s*|--user\s+)\$?)(?:(["'])([^\n:'"]*:)([^\n'"]*)\2|([^\s:"'$]+:)((?:${QUOTED}|[^\s"'@\\])+))`, 'g')
+const USER_FLAG_RE = new RegExp(String.raw`((?<![A-Za-z0-9-])(?:-u\s*|--user\s+)\$?)(?:(["'])([^\n:'"]*:)([^\n'"]*)\2|([^\s:"'$]+:)((?:${QUOTED}|[^\s"'@\\]|\\[^"\n])+))`, 'g')
 const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
@@ -357,6 +357,8 @@ function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean): T {
   const out = { ...redacted } as Record<string, unknown>
   if (record.args !== undefined) out.args = redactArgs(record.args, enabled)
   if (record.input !== undefined) out.input = redactArgs(record.input, enabled)
+  // Structured results are redacted by key too (`{ result: { token } }`); text results keep the text redaction.
+  for (const key of ['result', 'output'] as const) if (record[key] && typeof record[key] === 'object') out[key] = redactArgs(record[key], enabled)
   const fn = record.function
   if (enabled && fn && typeof fn === 'object' && typeof (fn as Record<string, unknown>).arguments === 'string' && out.function && typeof out.function === 'object') {
     try { out.function = { ...out.function, arguments: JSON.stringify(redactArgs(JSON.parse((fn as Record<string, unknown>).arguments as string), enabled)) } } catch { /* unparseable: the text redaction stands */ }
