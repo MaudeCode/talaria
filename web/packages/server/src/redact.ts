@@ -89,7 +89,7 @@ const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?
  * `user:password@host` with no scheme (curl reads it as a URL), or after an expansion that may supply one
  * (`${SCHEME}bob:pw@host`); `git@host:org/repo` has no password before its `@`.
  */
-const BARE_USERINFO_RE = /(?<![^\s'"=(<,})\x60])([A-Za-z0-9._%+-]+:)([^\s@/'"\\:]+)(?=@[A-Za-z0-9[])/g
+const BARE_USERINFO_RE = /(?<![^\s'"=(<,})\x60])([A-Za-z0-9._%+-]+:)([^\s@/'"\\:]+)(?=@[^\s@/'"\\])/g
 /** A `key=value` whose key is percent-encoded (`api%5Fkey=`): the destination decodes the key once, so it is checked decoded. */
 const PERCENT_KEY_RE = /(?<![A-Za-z0-9_.%-])((?=[A-Za-z0-9_.%-]*%[0-9A-Fa-f]{2})[A-Za-z0-9_.%-]+=)([^&#\s"'<>]*)/g
 const percentDecode = (text: string): string => text.replace(/%([0-9A-Fa-f]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
@@ -464,6 +464,14 @@ function redactUserFlags(text: string): string {
     const quoted = splitQuoted(word)
     const body = quoted ? quoted.inner : word
     const colon = body.indexOf(':')
+    // No literal `:`, but an expansion may supply it (`bob${SEP}hunter2`): literal text after it may be the password.
+    const at = colon === -1 ? firstExpansion(word) : -1
+    if (at >= 0 && expansionEnd(word, at) < word.length) {
+      out += `${text.slice(last, wordStart)}${word.slice(0, at)}***`
+      last = wordEnd
+      USER_FLAG_RE.lastIndex = Math.max(wordEnd, USER_FLAG_RE.lastIndex)
+      continue
+    }
     const secret = colon === -1 ? '' : body.slice(colon + 1)
     if (!secret || secret === '***' || shellWordInner(secret) === '***') continue
     const masked = quoted ? `${quoted.open}${body.slice(0, colon + 1)}***${quoted.close}` : `${body.slice(0, colon + 1)}${maskShellWord(secret)}`

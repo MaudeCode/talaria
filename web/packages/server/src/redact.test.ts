@@ -133,6 +133,11 @@ describe('curl -u', () => {
     expect(redactSensitive(`curl -u 'bob':'hunter2' https://x`)).toBe(`curl -u 'bob':'***' https://x`)
   })
 
+  it('masks the rest of a -u value when an expansion may supply its colon', () => {
+    expect(redactText('SEP=:; curl -u bob${SEP}hunter2 https://x', true)).toBe('SEP=:; curl -u bob*** https://x')
+    expect(redactText('curl -u $USER https://x', true)).toBe('curl -u $USER https://x')
+  })
+
   it('masks curl proxy credentials (-U, --proxy-user), through the public prefilter', () => {
     expect(redactText('curl --proxy-user bob:hunter2 https://x', true)).toBe('curl --proxy-user bob:*** https://x')
     expect(redactText('curl -U bob:hunter2 https://x', true)).toBe('curl -U bob:*** https://x')
@@ -371,6 +376,7 @@ describe('publicToolFrame', () => {
   it('masks userinfo behind a computed or missing scheme', () => {
     expect(redactText('SCHEME=https; curl ${SCHEME}://bob:hunter2@example.com && curl $S://amy:pw2@x', true)).toBe('SCHEME=https; curl ${SCHEME}://bob:***@example.com && curl $S://amy:***@x')
     expect(redactText('curl bob:hunter2@example.com/x', true)).toBe('curl bob:***@example.com/x')
+    expect(redactText('curl bob:hunter2@%C3%A9xample.com && curl amy:pw2@éxample.com', true)).toBe('curl bob:***@%C3%A9xample.com && curl amy:***@éxample.com')
     expect(redactText('curl $(printf https)://bob:hunter2@example.com && curl {http,https}://amy:pw2@x', true)).toBe('curl $(printf https)://bob:***@example.com && curl {http,https}://amy:***@x')
     expect(redactText("SCHEME='https://'; curl ${SCHEME}bob:hunter2@example.com", true)).toBe("SCHEME='https://'; curl ${SCHEME}bob:***@example.com")
     expect(redactText('ssh git@github.com && git clone git@github.com:org/repo.git && echo 10:30', true)).toBe('ssh git@github.com && git clone git@github.com:org/repo.git && echo 10:30')
