@@ -785,6 +785,8 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
     let compressionAnchorSummary: String?
     /// Where `messages` end in the active run's journal (TAL-316); nil means attach live without replay.
     let transcriptSeq: TranscriptSeq?
+    /// False for a server that predates `transcript_seq` (the key is absent, not null).
+    let statesTranscriptSeq: Bool
 
     enum CodingKeys: String, CodingKey {
         case sessionId
@@ -893,6 +895,7 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
         compressionAnchorSummary = container.decodeLossyStringIfPresent(forKey: .compressionAnchorSummary)
             ?? container.decodeLossyStringIfPresent(forKey: .snakeCasedCompressionAnchorSummary)
         transcriptSeq = try? container.decodeIfPresent(TranscriptSeq.self, forKey: .transcriptSeq)
+        statesTranscriptSeq = container.contains(.transcriptSeq)
     }
 
     private static func decodeMessagesTolerantly(

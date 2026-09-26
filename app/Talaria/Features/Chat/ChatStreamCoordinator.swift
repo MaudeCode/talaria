@@ -43,6 +43,9 @@ protocol ChatStreamCoordinatorDelegate: AnyObject {
 
     func streamCoordinatorLoadMessages(modelContext: ModelContext?) async
     func streamCoordinatorLatestAssistantMessageID() -> String?
+    /// Old-server fallback (TAL-316): drop the loaded running turn after its prompt
+    /// so a replay from 0 renders it once. False when the load has no turn start.
+    func streamCoordinatorOmitLoadedRunningTurn() -> Bool
     func streamCoordinatorStartAuxiliaryMonitoring()
     func streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: Bool)
     func streamCoordinatorSaveSnapshotIfNeeded()
@@ -135,6 +138,8 @@ final class ChatStreamCoordinator {
     // The latest applied session load's `transcript_seq` (TAL-316): its messages
     // hold nothing that stream's journal delivers after this cursor.
     private var loadedTranscriptSeq: TranscriptSeq?
+    // The latest applied load came from a server that predates `transcript_seq`.
+    private var loadedTranscriptPredatesCursor = false
     private var sharedReconnect: SharedReconnect?
 
     /// Whether the current run already reached `.done` or finished teardown.
@@ -289,12 +294,14 @@ final class ChatStreamCoordinator {
         preparation: ChatStreamLoadPreparation,
         usedCacheFallback: Bool,
         runStartedAt: Date? = nil,
-        transcriptSeq: TranscriptSeq? = nil
+        transcriptSeq: TranscriptSeq? = nil,
+        statesTranscriptSeq: Bool = true
     ) {
         hasCompletedCurrentResponse = false
         hasFinishedCurrentRun = false
         liveTokensPerSecond = nil
         loadedTranscriptSeq = usedCacheFallback ? nil : transcriptSeq
+        loadedTranscriptPredatesCursor = !usedCacheFallback && !statesTranscriptSeq
 
         if usedCacheFallback {
             activeStreamID = nil
@@ -401,8 +408,14 @@ final class ChatStreamCoordinator {
                 if delegate?.streamCoordinatorStreamingAssistantMessageID == nil {
                     adoptLoadedStreamingAssistantMessage(streamID: streamIDToResume)
                 }
+                var replayAfterSeq = resumeAfterSeq(streamID: streamIDToResume)
+                // ponytail: old-server fallback — delete once every supported Web ships `transcript_seq`.
+                if replayAfterSeq == nil, loadedTranscriptPredatesCursor, response.replayAvailable == true,
+                   delegate?.streamCoordinatorOmitLoadedRunningTurn() == true {
+                    replayAfterSeq = 0
+                }
                 isConnectionSuspended = false
-                start(streamID: streamIDToResume, replayAfterSeq: resumeAfterSeq(streamID: streamIDToResume))
+                start(streamID: streamIDToResume, replayAfterSeq: replayAfterSeq)
             } else if response.replayAvailable == true {
                 let replayAfterSeq = Self.runJournalReplayAfterSeq(from: lastEventID, streamID: activeStreamID) ?? 0
                 // Replaying a finished journal restores the transcript, not a running card.

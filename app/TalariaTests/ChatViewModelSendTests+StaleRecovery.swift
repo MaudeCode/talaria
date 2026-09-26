@@ -1189,6 +1189,41 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.messages.filter { $0.role == "assistant" }.count, 2)
     }
 
+    // Old-server fallback: a Web without `transcript_seq` still sends the running
+    // turn's persisted rows, so the app drops them after the prompt and replays from 0.
+    @MainActor
+    func testColdRelaunchAgainstServerWithoutCursorFieldRendersEachSegmentOnce() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, transcriptJSON: """
+        "messages": [
+          { "role": "user", "content": "Earlier question", "timestamp": 1770000000, "message_id": "user-0" },
+          { "role": "assistant", "content": "Earlier answer.", "timestamp": 1770000001, "message_id": "assistant-0" },
+          { "role": "user", "content": "Tell me a tiger story", "timestamp": 1770000100, "message_id": "user-1" },
+          { "role": "assistant", "content": "Once Raj reached the river. ", "timestamp": 1770000101, "message_id": "assistant-1" }
+        ]
+        """)
+
+        await viewModel.loadMessages()
+        await viewModel.reconnectStreamIfNeeded()
+
+        let replayURL = try XCTUnwrap(streamClient.startedURLs.last)
+        let queryItems = URLComponents(url: replayURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "0")
+        XCTAssertEqual(
+            viewModel.messages.compactMap(\.content),
+            ["Earlier question", "Earlier answer.", "Tell me a tiger story"]
+        )
+
+        streamClient.emit(.token("Once Raj reached the river. "), lastEventID: "stream-123:1")
+        streamClient.emit(.token("The snare broke."), lastEventID: "stream-123:2")
+
+        XCTAssertEqual(liveProse(viewModel), ["Once Raj reached the river. The snare broke."])
+        XCTAssertEqual(
+            viewModel.messages.compactMap(\.content),
+            ["Earlier question", "Earlier answer.", "Tell me a tiger story", "Once Raj reached the river. The snare broke."]
+        )
+    }
+
     @MainActor
     func testColdRelaunchWithoutJournalRendersPersistedSegmentsAndRequestsNoReplay() async throws {
         let streamClient = SpySSEStreamingClient()

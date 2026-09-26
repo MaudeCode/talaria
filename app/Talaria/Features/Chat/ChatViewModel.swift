@@ -1362,7 +1362,8 @@ final class ChatViewModel {
                 preparation: streamLoadPreparation,
                 usedCacheFallback: false,
                 runStartedAt: Self.activeRunStartDate(pendingStartedAt: session?.pendingStartedAt, messages: messages),
-                transcriptSeq: session?.transcriptSeq
+                transcriptSeq: session?.transcriptSeq,
+                statesTranscriptSeq: session?.statesTranscriptSeq ?? true
             )
             latestAppliedSessionLoadRequestGeneration = loadRequestGeneration
         } catch {
@@ -5413,6 +5414,17 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     func streamCoordinatorLatestAssistantMessageID() -> String? {
         Self.latestAssistantMessageIDAfterLatestSteeringHint(in: messages)
+    }
+
+    func streamCoordinatorOmitLoadedRunningTurn() -> Bool {
+        guard let prompt = messages.lastIndex(where: Self.isOrdinaryUserTurnBoundary) else { return false }
+
+        messages.removeSubrange(messages.index(after: prompt)...)
+        liveAssistantActivity.removeAll()
+        streamingAssistantMessageID = nil
+        toolCallAnchorMessageID = nil
+        reasoningAnchorMessageID = nil
+        return true
     }
 
     func streamCoordinatorStartAuxiliaryMonitoring() {

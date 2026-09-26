@@ -1107,6 +1107,27 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testColdRelaunchAgainstServerWithoutCursorFieldOmitsLoadedTurnAndReplaysFromZero() async throws {
+        let (streamClient, delegate, _) = try await coldRelaunch(transcriptSeq: nil, statesTranscriptSeq: false)
+
+        let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
+        let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "0")
+        XCTAssertEqual(delegate.omitLoadedRunningTurnCount, 1)
+    }
+
+    @MainActor
+    func testColdRelaunchAgainstServerWithoutCursorFieldAttachesLiveWhenNoTurnStartIsLoaded() async throws {
+        let (streamClient, _, _) = try await coldRelaunch(
+            transcriptSeq: nil, statesTranscriptSeq: false, omitsLoadedRunningTurn: false
+        )
+
+        let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
+        let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertNil(queryItems.first(where: { $0.name == "after_seq" }))
+    }
+
+    @MainActor
     func testColdRelaunchIgnoresATranscriptCursorForAnotherStream() async throws {
         let (streamClient, _, _) = try await coldRelaunch(
             transcriptSeq: TranscriptSeq(streamId: "stream-other", seq: 3)
@@ -1122,11 +1143,14 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     /// run already adopted, exactly as `ChatViewModel.loadMessages` does.
     @MainActor
     private func coldRelaunch(
-        transcriptSeq: TranscriptSeq?
+        transcriptSeq: TranscriptSeq?,
+        statesTranscriptSeq: Bool = true,
+        omitsLoadedRunningTurn: Bool = true
     ) async throws -> (CoordinatorSpySSEStreamingClient, CoordinatorDelegateSpy, ChatStreamCoordinator) {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let delegate = CoordinatorDelegateSpy()
         delegate.restoredSnapshotEventID = nil
+        delegate.omitsLoadedRunningTurn = omitsLoadedRunningTurn
         let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate) { request in
             XCTAssertEqual(request.url?.path, "/api/chat/stream/status")
             return apiTestJSONResponse(
@@ -1140,7 +1164,8 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
                 loadedActiveStreamID: "stream-cold",
                 preparation: reloadPreparation,
                 usedCacheFallback: false,
-                transcriptSeq: transcriptSeq
+                transcriptSeq: transcriptSeq,
+                statesTranscriptSeq: statesTranscriptSeq
             )
         }
 
@@ -1149,7 +1174,8 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
             loadedActiveStreamID: "stream-cold",
             preparation: preparation,
             usedCacheFallback: false,
-            transcriptSeq: transcriptSeq
+            transcriptSeq: transcriptSeq,
+            statesTranscriptSeq: statesTranscriptSeq
         )
         XCTAssertTrue(coordinator.isConnectionSuspended)
         XCTAssertNil(coordinator.lastEventID)
@@ -1527,6 +1553,14 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
 
     func streamCoordinatorLatestAssistantMessageID() -> String? {
         latestAssistantMessageID
+    }
+
+    var omitsLoadedRunningTurn = true
+    private(set) var omitLoadedRunningTurnCount = 0
+
+    func streamCoordinatorOmitLoadedRunningTurn() -> Bool {
+        omitLoadedRunningTurnCount += 1
+        return omitsLoadedRunningTurn
     }
 
     func streamCoordinatorStartAuxiliaryMonitoring() {
