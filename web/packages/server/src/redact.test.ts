@@ -278,6 +278,7 @@ describe('shell-composed words', () => {
 
   it('masks the value after a computed header name', () => {
     expect(redactText('HEADER=Authorization; curl -H "${HEADER}: Basic hunter2" x', true)).toBe('HEADER=Authorization; curl -H "${HEADER}: ***" x')
+    expect(redactText('curl -H "${HEADER}:Basic hunter2" --header ${H}:tok2 x', true)).toBe('curl -H "${HEADER}:***" --header ${H}:*** x')
     expect(redactText('curl "http://$HOST:$PORT/x" -o $OUT:file', true)).toBe('curl "http://$HOST:$PORT/x" -o $OUT:file')
   })
 

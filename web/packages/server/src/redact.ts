@@ -403,7 +403,9 @@ function redactCredentialParams(text: string): string {
     // only with `=` or a `:` and a space: `$HOST:$PORT`, `-$OPTS dir` and a Markdown `` `code`: `` are not assignments. A
     // leading backtick needs a flag besides.
     const computedStart = /^(?:\$[({A-Za-z_0-9@*#?$!-]|\$'(?=[^'\s=:]*\\)|\x60|\{)/.test(key)
-    if (computedStart && (!/=|:\s/.test(sep) || (key.startsWith('\x60') && !dash)) && sep) continue
+    // A `-H`/`--header` argument is a header even with the value tight against its colon (`-H "${HEADER}:Basic x"`).
+    const headerArg = sep.startsWith(':') && /(?:^|\s)(?:-H|--header)[ \t]*["']?$/.test(text.slice(Math.max(0, m.index - 16), m.index))
+    if (computedStart && ((!/=|:\s/.test(sep) && !headerArg) || (key.startsWith('\x60') && !dash)) && sep) continue
     // A substitution the key grammar cannot parse (`$(` nested or quoted, `${` nested) may still build a credential name:
     // fail closed to the end of the text, as `shellWordEnd` does for a substitution in a value. An unclosed backtick or a
     // nested brace expansion does so only after a flag: in prose a backtick is a Markdown code span's close
