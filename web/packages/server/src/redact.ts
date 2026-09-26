@@ -50,7 +50,7 @@ const CRED_RE = new RegExp(
   'g',
 )
 /** One `name=value` auth parameter: an escaped-quoted, quoted or bare value. */
-const AUTH_PARAM = String.raw`[A-Za-z0-9_-]+=(?:\\"(?:[^"\\\r\n]|\\[^"])*\\"|"[^"\r\n]*"|'[^'\r\n]*'|[^\s,"'\\]*)`
+const AUTH_PARAM = String.raw`[A-Za-z0-9_-]+=(?:\\"(?:[^"\\\r\n]|\\[^"])*\\"|"(?:[^"\\\r\n]|\\.)*"|'[^'\r\n]*'|[^\s,"'\\]*)`
 /**
  * The credential of an `Authorization:` header, after an optional scheme word (`Bearer`, `ApiKey`, `AWS4-HMAC-SHA256`, ...).
  * A parameterized credential (`Digest username="bob", response="..."`, `Credential=..., Signature=...`) is masked whole.
@@ -111,7 +111,7 @@ function isCredentialKey(key: string): boolean {
  * consumes a value only for those, so a non-credential key never swallows the text after it. The identifier is capped
  * so the scan stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_-])(-{0,2})([A-Za-z][A-Za-z0-9_-]{0,127})((?:\\?["'])?\s*\+?[=:]\s*|\s+)`, 'g')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z][A-Za-z0-9_.[\]-]{0,127})((?:\\?["'])?\s*\+?[=:]\s*|\s+)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `-uuser:secret` / `--user user:secret`; a quoted pair or quoted secret is masked through its closing quote. */
 const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-u[ \t]*|--user[ \t]+)(?=\S)/g

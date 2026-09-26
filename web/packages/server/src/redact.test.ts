@@ -94,6 +94,8 @@ describe('redactSensitive', () => {
     expect(redactSensitive('PASSWORD+=hunter2 token+=abc next')).toBe('PASSWORD+=*** token+=*** next')
     expect(redactSensitive(String.raw`curl -H $'Cookie: session=foo\'; auth=hunter2' x`)).toBe(String.raw`curl -H $'Cookie: ***' x`)
     expect(redactSensitive('login --companyProdEuAwsSecretAccessKey=hunter2 a_b_c_d_e_f_password: x2 next')).toBe('login --companyProdEuAwsSecretAccessKey=*** a_b_c_d_e_f_password: *** next')
+    expect(redactSensitive('login --auth.password=hunter2 --auth[password]=hunter3 --db.user=bob next')).toBe('login --auth.password=*** --auth[password]=*** --db.user=bob next')
+    expect(redactSensitive(String.raw`curl -H 'Authorization: Digest username="bo\"b", response="cafebabe"' x`)).toBe(String.raw`curl -H 'Authorization: Digest ***' x`)
     // Ordinary words and non-credential parameters stay readable.
     expect(redactSensitive('keep the secret sauce --secret-file ./s.txt')).toBe('keep the secret sauce --secret-file ./s.txt')
     expect(redactSensitive('apiKeyId: 12 max_tokens=100 --user-agent curl')).toBe('apiKeyId: 12 max_tokens=100 --user-agent curl')
