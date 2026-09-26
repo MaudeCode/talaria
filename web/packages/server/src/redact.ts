@@ -162,8 +162,9 @@ export function redactSensitive(text: string): string {
     if (!inner.trim() || inner === '***') return whole
     // A bare space only separates a CLI flag from its value; `secret sauce` is prose.
     if (!/[=:]/.test(sep) && !dash) return whole
-    // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers, when the value has a letter or digit.
-    if (!quoted && sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner)) return whole
+    // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers when the value is one plain token (a letter or digit, no
+    // backslash escape: `ENV_RE` would stop at an escaped space).
+    if (!quoted && sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && !inner.includes('\\')) return whole
     // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s.
     if (!quoted && /authorization$/i.test(key) && /^\s*:\s*$/.test(sep)) return whole
     // Fully masked: a partial mask would leak part of a password or passphrase.

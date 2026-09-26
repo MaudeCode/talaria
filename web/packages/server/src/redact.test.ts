@@ -52,6 +52,7 @@ describe('redactSensitive', () => {
     expect(redactSensitive('deploy --secretAccessKey=opaque123 --awsSessionToken opaque456 AWS_SECRET_ACCESS_KEY: opaque789 {"sessionToken": "x"}')).toBe('deploy --secretAccessKey=*** --awsSessionToken *** AWS_SECRET_ACCESS_KEY: *** {"sessionToken": "***"}')
     // A backslash-escaped shell word is one value.
     expect(redactSensitive(String.raw`login --password=correct\ horse\ battery -u bob:pw\ word https://x`)).toBe(String.raw`login --password=*** -u bob:*** https://x`)
+    expect(redactSensitive(String.raw`PASSWORD=correct\ horse\ battery GITHUB_TOKEN=syntheticGithubToken0123456789 x`)).toBe(String.raw`PASSWORD=*** GITHUB_TOKEN=synthe...6789 x`)
     // A credential-named value is masked whatever characters it holds; empty and already-masked values stay.
     expect(redactSensitive(`login --password='!@#$' --token=%%% -u bob:'!!' {"secret": ""} password=*** PASSWORD=!@#%`)).toBe(`login --password='***' --token=*** -u bob:'***' {"secret": ""} password=*** PASSWORD=***`)
     // Ordinary words and non-credential parameters stay readable.
