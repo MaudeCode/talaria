@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toolDisplay, toolKind } from './tool-display.js'
+import { toolArgs, toolDisplay, toolKind } from './tool-display.js'
 
 describe('toolKind', () => {
   it.each([
@@ -28,6 +28,15 @@ describe('toolDisplay', () => {
     // A non-string argument is shown as the sidecar's Python str() of it.
     expect(toolDisplay('delegate_task', { task: ['one', "it's", 2, true, null, { a: 1.5 }] }).target).toBe(`['one', "it's", 2, True, None, {'a': 1.5}]`)
     expect(toolDisplay('delegate_task', { task: 42 }).target).toBe('42')
+    // The sidecar renders a live non-string argument by this same rule for the parsed JSON (test_chat_turn.py pins the
+    // same cases), so a persisted `1.0` and the live frame both show `1`.
+    const cases: [string, string][] = [
+      ['1.0', '1'], ['3', '3'], ['1.5', '1.5'], ['-0.0', '0'], ['1e21', '1e+21'], ['1e20', '100000000000000000000'], ['1e-7', '1e-7'],
+      ['0.000001', '0.000001'], ['1152921504606846976', '1152921504606847000'], ['1.5e-10', '1.5e-10'], ['true', 'True'], ['null', 'None'],
+      [`[1.0, "it's", null, {"a": 1.5, "b": true}]`, `[1, "it's", None, {'a': 1.5, 'b': True}]`],
+      [String.raw`["tab\there", "q\"uote"]`, String.raw`['tab\there', 'q"uote']`],
+    ]
+    for (const [json, shown] of cases) expect(toolDisplay('delegate_task', toolArgs({ function: { arguments: `{"task": ${json}}` } })).target).toBe(shown)
     // Only the first four arguments reach the live frame.
     expect(toolDisplay('delegate_task', { a: 1, b: 2, c: 3, d: 4, task: 'x' }).target).toBe('')
   })

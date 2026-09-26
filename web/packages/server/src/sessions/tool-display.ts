@@ -49,7 +49,10 @@ function pythonRepr(value: unknown): string {
   return pythonStr(value)
 }
 
-/** Python's `str()` of a JSON value, as the sidecar's `_args_snapshot` renders a non-string argument. */
+/**
+ * A JSON value in Python's `str()` shape with JavaScript number text (a persisted `1.0` parses to `1`). The sidecar's
+ * `_display_str` renders a live non-string argument by this same rule, so a call shows one target live and after reload.
+ */
 function pythonStr(value: unknown): string {
   if (typeof value === 'string') return value
   if (value === null) return 'None'
