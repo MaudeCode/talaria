@@ -161,6 +161,25 @@ describe('round 44 shapes', () => {
     expect(redactText(`Authorization: *** next`, true)).toBe(`Authorization: *** next`)
   })
 
+  it('masks a URL password the shell assembles from quoted or escaped pieces', () => {
+    expect(redactText(`curl https://bob:hun'ter2'@example.com`, true)).toBe(`curl https://bob:***@example.com`)
+    expect(redactText(String.raw`curl https://b'o'b:hun\ter2@example.com`, true)).toBe(String.raw`curl https://b'o'b:***@example.com`)
+    expect(redactText(`curl https://bob:hunter2@example.com`, true)).toBe(`curl https://bob:***@example.com`)
+  })
+
+  it('masks the scheme and credential of an Authorization header the dedicated rule cannot read', () => {
+    expect(redactText(`curl -H 'Authoriz'ation': Basic hunter2' x`, true)).not.toContain('hunter2')
+    expect(redactText(`Authorization : Basic hunter2 next`, true)).toBe(`Authorization : *** next`)
+    expect(redactText(`Authorization: Basic 'hunter2' next`, true)).toBe(`Authorization: Basic '***' next`)
+    expect(redactText(`curl -H 'Authorization: Basic hunter2' x`, true)).toBe(`curl -H 'Authorization: Basic ***' x`)
+  })
+
+  it('fails closed on a key built from substitutions or variables', () => {
+    expect(redactText(`login --pass$(printf word)=hunter2 next`, true)).toBe(`login --pass$(printf word)=*** next`)
+    expect(redactText('login --pass`printf word`=hunter2 next', true)).toBe('login --pass`printf word`=*** next')
+    expect(redactText(`login --pass$W=hunter2 --pass\${W}x=hunter3 next`, true)).toBe(`login --pass$W=*** --pass\${W}x=*** next`)
+  })
+
   it('reads quoted bracket segments of a text credential key', () => {
     expect(redactText(`login --auth["password"]=hunter2 next`, true)).toBe(`login --auth["password"]=*** next`)
     expect(redactText(`login --auth['token']=hunter2 next`, true)).toBe(`login --auth['token']=*** next`)
@@ -201,7 +220,7 @@ describe('redactSensitive cost', () => {
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
       // Shell-composed identifiers: unclosed and alternating quote and escape pieces.
-      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`)]) {
+      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`)]) {
       const started = performance.now()
       redactSensitive(text)
       expect(performance.now() - started).toBeLessThan(1000)

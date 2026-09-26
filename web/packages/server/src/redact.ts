@@ -57,7 +57,7 @@ const AUTH_PARAM = String.raw`[A-Za-z0-9_-]+=(?:\\"(?:[^"\\\r\n]|\\[^"])*\\"|"(?
  * all-asterisk word is a mask, not a scheme).
  * A parameterized credential (`Digest username="bob", response="..."`, `Credential=..., Signature=...`) is masked whole.
  */
-const AUTH_HDR_RE = new RegExp(String.raw`(Authorization:\s*(?:(?!\*+\s)[A-Za-z0-9!#$%&*+.^_|~-]+\s+)?)(${AUTH_PARAM}(?:\s*,\s*${AUTH_PARAM})*|[^\s'",\])]+)`, 'gi')
+const AUTH_HDR_RE = new RegExp(String.raw`(Authorization:\s*(?:(?!\*+\s)[A-Za-z0-9!#$%&*+.^_|~-]+\s+(?=[^\s,\])]))?)(${AUTH_PARAM}(?:\s*,\s*${AUTH_PARAM})*|[^\s,\])][^\s'",\])]*)`, 'gi')
 /** A JSON Web Token anywhere (`eyJ<header>.<payload>.<signature>`). */
 const JWT_RE = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g
 /** A bearer credential in any header or text (`X-Auth: Bearer ...`); `AUTH_HDR_RE` owns the `Authorization:` header. */
@@ -87,8 +87,12 @@ const COOKIE_DQ_RE = /("(?:Set-)?Cookie:\s*)((?:[^"\\\r\n]|\\.)*)/gi
 const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?:${QUOTED}|[^'"\\\r\n]|\\(?!"))+)`, 'gi')
 const EMBEDDED_AWS_RE = /AKIA[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
-/** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The scheme starts at a run boundary, so the scan stays linear however long it is. */
-const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s:@/'"]*:)([^\s@/'"]+)(?=@)/g
+/**
+ * `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The user
+ * and password may be assembled from quoted and escaped shell pieces (`bob:hun'ter2'@`). The scheme starts at a run
+ * boundary, so the scan stays linear however long it is.
+ */
+const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*:\/\/(?:[^\s:@/'"\\]|'[^'\n:@/]*'|"[^"\n:@/]*"|\\\S)*:)((?:[^\s@/'"\\]|'[^'\n@/]*'|"[^"\n@/]*"|\\\S)+)(?=@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
 const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
 /** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
@@ -113,12 +117,18 @@ function isCredentialKey(key: string): boolean {
 /**
  * A `key=value`, `key: value` or `--flag value` in text. Any identifier matches; the loop keeps only those
  * `isCredentialKey` accepts (`access_token`, `"clientSecret"`, `X-Api-Key`, `--companyProdEuAwsSecretAccessKey`,
- * `--auth["password"]`, the shell-composed `--pass'word'` / `--pass\word`), and
- * consumes a value only for those, so a non-credential key never swallows the text after it. The whole identifier is
+ * `--auth["password"]`, the shell-composed `--pass'word'` / `--pass\word`), fails closed on a key the shell computes
+ * (`--pass$(printf word)`, `--pass$W`), and consumes a value only for those, so a non-credential key never swallows the
+ * text after it. The whole identifier is
  * read, however long, and matched whole even without a separator: the scan never restarts inside an identifier, so it
  * stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z](?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-]|\$?'[A-Za-z0-9_.-]*'|\$?"[A-Za-z0-9_.-]*"|\\[A-Za-z0-9_.-])*)((?:\\?["'])?\s*\+?[=:]\s*|\s+|)`, 'g')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z](?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-]|\$?'[A-Za-z0-9_.-]*'|\$?"[A-Za-z0-9_.-]*"|\\[A-Za-z0-9_.-]|\$\([^()\n]*\)|\x60[^\x60\n]*\x60|\$\{[^{}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*)*)((?:\\?["'])?\s*\+?[=:]\s*|\s+|)`, 'g')
+/** A substitution or variable piece of a key (`$(…)`, `` `…` ``, `${…}`, `$NAME`) right after an identifier character. */
+const DYNAMIC_KEY_PIECE_RE = /[A-Za-z0-9_](?:\$[({A-Za-z_]|`)/
+/** An `Authorization` value's first word when it is a scheme token (`Basic`), and the gap to the credential after it. */
+const AUTH_SCHEME_WORD_RE = /^(?!\*+$)[A-Za-z0-9!#$%&*+.^_|~-]+$/
+const AUTH_SCHEME_GAP_RE = /[ \t]+(?=\S)/y
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /**
  * `curl -u user:secret` / `-uuser:secret` / `--user user:secret`, and the proxy forms `-U` / `--proxy-user`; a quoted
@@ -341,21 +351,28 @@ function redactCredentialParams(text: string): string {
     if (!sep) continue
     // Prose (`secret sauce`): a bare space only separates a CLI flag from its value.
     if (!/[=:]/.test(sep) && !dash) continue
-    if (!isCredentialKey(key)) continue
+    // A key with a substitution or variable piece may name a credential once the shell expands it: fail closed.
+    if (!DYNAMIC_KEY_PIECE_RE.test(key) && !isCredentialKey(key)) continue
     const valueStart = m.index + head.length
     // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s (decided before scanning the value).
-    if (/authorization$/i.test(key) && /^\s*:\s*$/.test(sep) && !/^\$?["']/.test(text.slice(valueStart, valueStart + 2))) continue
+    if (/authorization$/i.test(key) && /^:\s*$/.test(sep) && !/^\$?["']/.test(text.slice(valueStart, valueStart + 2))) continue
     // A URL query parameter's value ends at the next `&`, `#`, space or quote.
     const query = /[?&]/.test(text[m.index - 1] ?? '') && sep === '='
     const queryEnd = query ? text.slice(valueStart).search(/[&#\s"'<>]/) : -1
-    const valueEnd = query ? (queryEnd === -1 ? text.length : valueStart + queryEnd) : shellWordEnd(text, valueStart, quoteAt(valueStart), closeOf)
+    let valueEnd = query ? (queryEnd === -1 ? text.length : valueStart + queryEnd) : shellWordEnd(text, valueStart, quoteAt(valueStart), closeOf)
+    // An `Authorization` header `AUTH_HDR_RE` cannot read (`Authorization : Basic x`, `'Authoriz'ation': Basic x`): its
+    // scheme word and the credential after it are masked together.
+    if (!query && sep.includes(':') && /authorization$/i.test(dequote(key)) && AUTH_SCHEME_WORD_RE.test(text.slice(valueStart, valueEnd))) {
+      AUTH_SCHEME_GAP_RE.lastIndex = valueEnd
+      if (AUTH_SCHEME_GAP_RE.exec(text)) valueEnd = shellWordEnd(text, AUTH_SCHEME_GAP_RE.lastIndex, quoteAt(AUTH_SCHEME_GAP_RE.lastIndex), closeOf)
+    }
     const value = text.slice(valueStart, valueEnd)
     const inner = shellWordInner(value)
     const quoted = /["']/.test(value)
     // Nothing to mask: empty or already masked.
     if (!inner.trim() || inner === '***') continue
     // `ENV_RE` masks an unquoted upper-case `KEY=value` it covers when the whole value is one plain `\S+` token.
-    if (!quoted && sep.includes('=') && !sep.includes('+') && key === key.toUpperCase() && !/["'\\]/.test(key) && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && /^[^\s\\]+$/.test(value)) continue
+    if (!quoted && sep.includes('=') && !sep.includes('+') && key === key.toUpperCase() && !/["'\\$`]/.test(key) && ENV_KEY_NAME_RE.test(key) && /[A-Za-z0-9]/.test(inner) && /^[^\s\\]+$/.test(value)) continue
     // Fully masked: a partial mask would leak part of a password or passphrase.
     out += text.slice(last, valueStart) + (/^[[{(]/.test(value) ? '***' : maskShellWord(value))
     last = valueEnd
@@ -414,7 +431,7 @@ function redactAuthHeaders(text: string): string {
     if (/^[A-Za-z0-9_-]+=/.test(token)) masked = '***'
     else {
       end = Math.max(matchEnd, shellWordEnd(text, start, quoteAt(start), closeOf))
-      masked = end === matchEnd ? mask(token) : maskShellWord(text.slice(start, end))
+      masked = end === matchEnd && !/["'\\]/.test(token) ? mask(token) : maskShellWord(text.slice(start, end))
     }
     out += text.slice(last, start) + masked
     last = end
@@ -433,7 +450,7 @@ export function redactSensitive(text: string): string {
   for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = redactCredentialParams(out)
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
-  out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
+  out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + (/['"\\]/.test(secret) ? '***' : mask(secret)))
   out = redactUserFlags(out)
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
   out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]')
@@ -462,6 +479,7 @@ export function mightContainSensitiveText(text: string): boolean {
   if (CRED_KEY_NAME_RE.test(text)) return true
   // A key the shell assembles from pieces (`--pass'word'`) names a credential only once dequoted.
   if (/["'\\]/.test(text) && CRED_KEY_NAME_RE.test(dequote(text))) return true
+  if (DYNAMIC_KEY_PIECE_RE.test(text)) return true
   if (USER_FLAG_TEST_RE.test(text)) return true
   if (text.includes(':') && TELEGRAM_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true
