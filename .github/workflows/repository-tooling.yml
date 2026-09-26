@@ -47,10 +47,7 @@ jobs:
 
       - name: Prepare tooling runtime
         if: inputs.full
-        run: |
-          sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends zsh python3-venv
+        run: sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
 
       - name: Set up Ruby
         if: inputs.full
