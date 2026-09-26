@@ -97,10 +97,10 @@ const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENT
 /**
  * `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The user
  * and password may be assembled from quoted and escaped shell pieces (`bob:hun'ter2'@`), and every delimiter may be
- * shell-escaped (`https\:\/\/`, `bob\:hunter2`, `hunter2\@`), and the scheme may be an expansion (`${SCHEME}://`). The
- * scheme starts at a run boundary, so the scan stays linear however long it is.
+ * shell-escaped (`https\:\/\/`, `bob\:hunter2`, `hunter2\@`). Any scheme is accepted, a computed one included
+ * (`${SCHEME}://`, `$(printf https)://`), since `://` then `user:password@` is userinfo whatever precedes it.
  */
-const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])(?:[A-Za-z][A-Za-z0-9+.-]*|\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*)\\?:\\?\/\\?\/(?:[^\s:@/'"\\]|'[^'\n:@/]*'|"[^"\n:@/]*"|\\[^\s:@/])*\\?:)((?:[^\s@/'"\\]|'[^'\n@/]*'|"[^"\n@/]*"|\\[^\s@/])+)(?=\\?@)/g
+const URL_USERINFO_RE = /(\\?:\\?\/\\?\/(?:[^\s:@/'"\\]|'[^'\n:@/]*'|"[^"\n:@/]*"|\\[^\s:@/])*\\?:)((?:[^\s@/'"\\]|'[^'\n@/]*'|"[^"\n@/]*"|\\[^\s@/])+)(?=\\?@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
 const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|access[_-]?key[_-]?id|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
 /** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
@@ -591,7 +591,7 @@ function redactExpansionWord(word: string, at: number): string | null {
   const before = shellDequote(word.slice(0, at)).replaceAll(WORD_SPACE, ' ')
   const key = /(?:^|[^A-Za-z0-9_.[\]-])-{0,2}([A-Za-z0-9_][A-Za-z0-9_.[\]-]*)[=:]?$/.exec(before)
   if (key && /["']/.test(word.slice(0, at)) && isCredentialKey(key[1]!)) return `${word.slice(0, at)}***`
-  const url = /[A-Za-z][A-Za-z0-9+.-]*:\/\/([^\s/]*)/.exec(word)
+  const url = /:\/\/([^\s/]*)/.exec(word)
   if (!url) return null
   const authEnd = url.index + url[0].length
   const authStart = authEnd - url[1]!.length
