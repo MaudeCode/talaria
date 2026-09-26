@@ -54,16 +54,14 @@ const EMBEDDED_AWS_RE = /AKIA[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
 /** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. */
 const URL_USERINFO_RE = /([A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s:@/'"]+:)([^\s@/'"]+)(?=@)/g
+/** Lowercase credential parameters (`access_token=`, `--password=`, `"token": "..."`, `?key=`); uppercase env keys are `ENV_RE`'s. */
+const CRED_PARAM_RE = /((?<![A-Za-z0-9_])(?:access_token|refresh_token|id_token|auth_token|api_key|apikey|client_secret|secret|token|password|passwd)["']?\s*[=:]\s*["']?|[?&]key=)([^\s"'&,;)}\]]+)/g
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
 const ENV_KEY_PREFIX_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)/g
 const REDACTED_ENV_VALUE_RE = /(?:\*{3,}|[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,32}\.\.\.[A-Za-z0-9_.:/+-]{1,16})/y
 
-/** `mask`'s own long-token output: re-redacting a redacted frame (journal replay) leaves it unchanged. */
-const MASKED_RE = /^\S{6}\.\.\.\S{4}$/
-
 function mask(token: string): string {
-  if (MASKED_RE.test(token)) return token
   return token.length >= 18 ? `${token.slice(0, 6)}...${token.slice(-4)}` : '***'
 }
 
@@ -107,6 +105,7 @@ export function redactSensitive(text: string): string {
   out = out.replace(AUTH_HDR_RE, (_, head: string, token: string) => head + mask(token))
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
+  out = out.replace(CRED_PARAM_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
   out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]')
   return restoreCodeEnvKeyLiterals(text, out)
 }
@@ -119,7 +118,7 @@ const CASE_MARKERS = [
 const LOWER_MARKERS = [
   'authorization: bearer ', 'authorization: bot ', 'private key', 'postgres://', 'postgresql://', 'mysql://', 'mongodb://', 'redis://', 'amqp://', '://',
   'access_token', 'refresh_token', 'id_token', 'api_key', 'apikey', 'client_secret', 'auth_token', 'raw_secret', 'secret_input', 'key_material',
-  'x-amz-signature', 'token=', 'secret=', 'password=', 'authorization=', 'key=', '"token"', '"secret"', '"password"', '"bearer"',
+  'x-amz-signature', 'token=', 'secret=', 'password=', 'passwd=', 'token:', 'secret:', 'password:', 'passwd:', 'authorization=', 'key=', '"token"', '"secret"', '"password"', '"bearer"',
 ]
 const TELEGRAM_RE = /(?:bot)?\d{8,}:[-A-Za-z0-9_]{30,}/
 const DISCORD_RE = /<@!?\d{17,20}>/
@@ -269,42 +268,51 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
   const scrubbed = (scrubInternalReplayFields([message], { messageRecords: true }) as unknown[])[0]
   if (!scrubbed || typeof scrubbed !== 'object' || Array.isArray(scrubbed)) return redactValue(scrubbed, enabled)
   const item: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(withMessageToolDisplay(scrubbed as Record<string, unknown>, enabled))) {
+  for (const [key, value] of Object.entries(scrubbed as Record<string, unknown>)) {
     if (PUBLIC_MESSAGE_INTERNAL_FIELDS.has(key)) continue
     item[key] = redactValue(value, enabled)
   }
   if (isActive) item._active_turn_user = true
-  return item
+  return withMessageToolDisplay(scrubbed as Record<string, unknown>, item, enabled)
 }
 
 /**
- * A call with its server `kind` and `target`. The target comes from the redacted parsed args (never a redacted JSON
- * string, which masks a different span), so a call shows one target live, after replay and after reload.
+ * A redacted call with its server `kind` and `target`, taken from the raw call's parsed args redacted once (never a
+ * redacted JSON string, which masks a different span), so a call shows one target live, after replay and after reload.
  */
-function withToolDisplay<T>(call: T, enabled: boolean): T {
-  if (!call || typeof call !== 'object' || Array.isArray(call)) return call
-  const record = call as Record<string, unknown>
-  return { ...record, ...toolDisplay(toolName(record), redactValue(toolArgs(record), enabled)) } as T
+function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean): T {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !redacted || typeof redacted !== 'object' || Array.isArray(redacted)) return redacted
+  const record = raw as Record<string, unknown>
+  return { ...redacted, ...toolDisplay(toolName(record), redactValue(toolArgs(record), enabled)) }
 }
 
-/** Every tool call a message carries (OpenAI `tool_calls`, `tool_use` blocks, scene rows), stamped before the message is redacted. */
-function withMessageToolDisplay(message: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
-  const item = { ...message }
-  if (Array.isArray(item.tool_calls)) item.tool_calls = item.tool_calls.map((call: unknown) => withToolDisplay(call, enabled))
-  if (Array.isArray(item.content)) item.content = item.content.map((part: unknown) => (part && typeof part === 'object' && (part as Record<string, unknown>).type === 'tool_use' ? withToolDisplay(part, enabled) : part))
+const isToolUse = (part: unknown): boolean => Boolean(part && typeof part === 'object' && (part as Record<string, unknown>).type === 'tool_use')
+
+/** Every tool call a redacted message carries (OpenAI `tool_calls`, `tool_use` blocks, scene rows), stamped from its raw twin. */
+function withMessageToolDisplay(raw: Record<string, unknown>, item: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
+  if (Array.isArray(raw.tool_calls) && Array.isArray(item.tool_calls)) {
+    const calls = raw.tool_calls as unknown[]
+    item.tool_calls = item.tool_calls.map((call: unknown, i) => withToolDisplay(calls[i], call, enabled))
+  }
+  if (Array.isArray(raw.content) && Array.isArray(item.content)) {
+    const parts = raw.content as unknown[]
+    item.content = item.content.map((part: unknown, i) => (isToolUse(parts[i]) ? withToolDisplay(parts[i], part, enabled) : part))
+  }
+  const rawScene = raw._anchor_activity_scene
   const scene = item._anchor_activity_scene
-  if (scene && typeof scene === 'object' && !Array.isArray(scene) && Array.isArray((scene as Record<string, unknown>).activity_rows)) {
-    item._anchor_activity_scene = { ...scene, activity_rows: withSceneToolDisplay((scene as Record<string, unknown>).activity_rows as unknown[], enabled) }
+  if (rawScene && typeof rawScene === 'object' && scene && typeof scene === 'object' && Array.isArray((scene as Record<string, unknown>).activity_rows)) {
+    item._anchor_activity_scene = { ...scene, activity_rows: withSceneToolDisplay((rawScene as Record<string, unknown>).activity_rows, (scene as Record<string, unknown>).activity_rows as unknown[], enabled) }
   }
   return item
 }
 
-/** Scene rows (the detail preview and the paged rows) stamp their tool the same way. */
-export function withSceneToolDisplay(rows: unknown[], enabled: boolean): unknown[] {
-  return rows.map((row) => {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) return row
-    const tool = (row as Record<string, unknown>).tool
-    return tool && typeof tool === 'object' ? { ...row, tool: withToolDisplay(tool, enabled) } : row
+/** Redacted scene rows (the detail preview and the paged rows) stamped from their raw twins the same way. */
+export function withSceneToolDisplay(rawRows: unknown, rows: unknown[], enabled: boolean): unknown[] {
+  const raws = Array.isArray(rawRows) ? rawRows : []
+  return rows.map((row, i) => {
+    const rawTool = (raws[i] as Record<string, unknown> | undefined)?.tool
+    if (!row || typeof row !== 'object' || Array.isArray(row) || !rawTool) return row
+    return { ...row, tool: withToolDisplay(rawTool, (row as Record<string, unknown>).tool, enabled) }
   })
 }
 
@@ -315,12 +323,13 @@ function redactMessages(messages: unknown, enabled: boolean, activeTurnToken: st
 
 function redactToolCalls(toolCalls: unknown, enabled: boolean): unknown {
   const scrubbed = scrubInternalReplayFields(toolCalls, { messageRecords: false })
-  return redactValue(Array.isArray(scrubbed) ? scrubbed.map((call: unknown) => withToolDisplay(call, enabled)) : scrubbed, enabled)
+  const redacted = redactValue(scrubbed, enabled)
+  return Array.isArray(scrubbed) && Array.isArray(redacted) ? redacted.map((call: unknown, i) => withToolDisplay(scrubbed[i], call, enabled)) : redacted
 }
 
-/** A live `tool` / `tool_complete` frame as it leaves the server (SSE, journal, replay): redacted like session detail, then stamped. */
+/** A live `tool` / `tool_complete` frame as it leaves the server (SSE, journal, legacy replay): redacted like session detail, then stamped. */
 export function publicToolFrame(data: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
-  return redactValue(withToolDisplay(data, enabled), enabled) as Record<string, unknown>
+  return withToolDisplay(data, redactValue(data, enabled) as Record<string, unknown>, enabled)
 }
 
 function redactNestedMessageContainers(value: unknown, enabled: boolean): unknown {

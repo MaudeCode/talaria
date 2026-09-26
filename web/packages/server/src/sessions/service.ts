@@ -1075,7 +1075,8 @@ export class SessionService {
     if (!result) throw new HttpFailure(404, 'Anchor activity scene not found')
     // Paged rows come from the raw transcript, so they take the same credential redaction as the detail's preview.
     const enabled = this.deps.redactEnabled()
-    return redactValue({ ...result, rows: withSceneToolDisplay(result.rows as unknown[], enabled) }, enabled) as typeof result
+    const redacted = redactValue(result, enabled) as typeof result
+    return { ...redacted, rows: withSceneToolDisplay(result.rows, redacted.rows as unknown[], enabled) }
   }
 
   // ── shares ───────────────────────────────────────────────────────────────

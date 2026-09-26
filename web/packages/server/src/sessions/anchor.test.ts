@@ -247,7 +247,8 @@ describe('anchor scenes over HTTP', () => {
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     const scene = (detail.messages as Json[])[1]?._anchor_activity_scene as Json
     // Both the preview and the paged rows carry each tool's server kind and target.
-    const all = withSceneToolDisplay(normalizeSceneRows([...rows, ...legacyRows]), true)
+    const normalized = normalizeSceneRows([...rows, ...legacyRows])
+    const all = withSceneToolDisplay(normalized, normalized, true)
     expect(scene).toMatchObject({ activity_rows_total: all.length, activity_rows_offset: all.length - 80, activity_rows_complete: false })
     expect(scene.activity_rows).toEqual(all.slice(-80))
 

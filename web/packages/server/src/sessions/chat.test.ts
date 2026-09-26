@@ -212,7 +212,11 @@ describe('chat turns through the sidecar', () => {
     // A journal written before redaction existed is redacted and stamped on read.
     const legacy = readFileSync(journalPath, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Json).map((row) => {
       if (row.event !== 'tool' && row.event !== 'tool_complete') return row
-      return { ...row, payload: { event_type: 'tool.started', name: 'terminal', preview: command, args: { command }, tid: 'call_1' } }
+      // New rows record that the server redacted them; a legacy row has no such flag and carries the raw args.
+      expect(row.redacted).toBe(true)
+      const legacyRow: Json = { ...row, payload: { event_type: 'tool.started', name: 'terminal', preview: command, args: { command }, tid: 'call_1' } }
+      delete legacyRow.redacted
+      return legacyRow
     })
     writeFileSync(journalPath, `${legacy.map((row) => JSON.stringify(row)).join('\n')}\n`)
     const replayed = (await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
@@ -230,13 +234,19 @@ describe('chat turns through the sidecar', () => {
 
     // With redaction off, live frames match session detail: both show the command as written.
     s.deps.settings.save({ api_redact_enabled: false })
+    let offStream = ''
     try {
       const off = await run()
+      offStream = off.streamId
       expect(off.frames.map((f) => (f.data as Json).target)).toEqual([command, command].map((c) => c.slice(0, 200)))
       expect((off.detail.tool_calls as Json[])[0]).toMatchObject({ kind: 'shell', target: command.slice(0, 200) })
     } finally {
       s.deps.settings.save({ api_redact_enabled: true })
     }
+    // Frames journaled while redaction was off are redacted when replayed after it is turned back on.
+    const reopened = (await s.sse(`/api/chat/stream?stream_id=${offStream}&after_event_id=${offStream}:0`, (f) => f.event === 'stream_end')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
+    expect(reopened).toHaveLength(2)
+    expect(leaks(reopened.map((f) => f.data))).toEqual([])
   })
 
   it('builds the settled turn\'s scene with Codex commentary as prose under Worked, leaving the stored rows as the Agent wrote them', async () => {

@@ -296,7 +296,7 @@ export class TurnRunner {
     } catch (error) {
       deps.log(`[webui] WARNING: run journal degraded for stream ${streamId}: ${(error as Error).message}`)
     }
-    const put = (event: string, data: Record<string, unknown>): void => {
+    const put = (event: string, data: Record<string, unknown>, meta: { redacted?: boolean } = {}): void => {
       for (const steerEvent of this.takeSteerEventsBefore(streamId, event)) put(steerEvent[0], steerEvent[1])
       if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'pending_steer_leftover'].includes(event)) return
       // `cancel()` already wrote the terminal row and closed the stream: the worker's unwind adds no second one.
@@ -307,7 +307,7 @@ export class TurnRunner {
       let eventId: string | null = null
       if (writer) {
         try {
-          eventId = writer.appendSseEvent(event, data).event_id
+          eventId = writer.appendSseEvent(event, data, meta).event_id
         } catch (error) {
           deps.log(`[webui] WARNING: run journal append failed for ${streamId}/${event}: ${(error as Error).message}`)
         }
@@ -409,19 +409,23 @@ export class TurnRunner {
               for (const record of this.takeConsumedSteers(streamId, str(data.text), { keepLeftovers: true })) put('steer_consumed', record)
               this.saveConsumedSteers(sessionId, streamId)
               return
-            case 'tool':
+            case 'tool': {
               liveToolCalls.push({ name: data.name, args: data.args ?? {}, tid: str(data.tid), done: false })
-              put('tool', publicToolFrame(data, deps.redactEnabled()))
+              const redacted = deps.redactEnabled()
+              put('tool', publicToolFrame(data, redacted), { redacted })
               return
-            case 'tool_complete':
+            }
+            case 'tool_complete': {
               for (let i = liveToolCalls.length - 1; i >= 0; i -= 1) {
                 const tc = liveToolCalls[i]!
                 if (tc.done) continue
                 if ((str(data.tid) && tc.tid === str(data.tid)) || (!tc.tid && tc.name === data.name)) { tc.done = true; tc.snippet = data.preview; break }
               }
               if (str(data.tid)) this.lastCompletedTool.set(streamId, str(data.tid))
-              put('tool_complete', publicToolFrame(data, deps.redactEnabled()))
+              const redacted = deps.redactEnabled()
+              put('tool_complete', publicToolFrame(data, redacted), { redacted })
               return
+            }
             // Python: the live chat frame carries the queue head plus depth, not the entry that just arrived.
             case 'approval': {
               deps.pending.submitApproval(sessionId, { ...data, session_id: sessionId })
