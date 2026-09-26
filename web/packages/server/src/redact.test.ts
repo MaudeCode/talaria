@@ -379,6 +379,8 @@ describe('publicToolFrame', () => {
     expect(redactText('curl bob:hunter2@%C3%A9xample.com && curl amy:pw2@éxample.com', true)).toBe('curl bob:***@%C3%A9xample.com && curl amy:***@éxample.com')
     expect(redactText('curl $(printf https)://bob:hunter2@example.com && curl {http,https}://amy:pw2@x', true)).toBe('curl $(printf https)://bob:***@example.com && curl {http,https}://amy:***@x')
     expect(redactText("SCHEME='https://'; curl ${SCHEME}bob:hunter2@example.com", true)).toBe("SCHEME='https://'; curl ${SCHEME}bob:***@example.com")
+    expect(redactText('curl "${SCHEME}${USER}hunter2@example.com" x', true)).toBe('curl "${SCHEME}${USER}***@example.com" x')
+    expect(redactText('curl "${U}:${P}@host" && cp $HOME/a@b .', true)).toBe('curl "${U}:${P}@host" && cp $HOME/a@b .')
     expect(redactText('ssh git@github.com && git clone git@github.com:org/repo.git && echo 10:30', true)).toBe('ssh git@github.com && git clone git@github.com:org/repo.git && echo 10:30')
   })
 

@@ -581,9 +581,9 @@ function revealsMore(plain: string, got: string, wanted: string): boolean {
 }
 
 /** The index of a shell word's first parameter or command expansion outside single and ANSI-C quotes (`-1` if none). */
-function firstExpansion(word: string): number {
+function firstExpansion(word: string, from = 0): number {
   let quote = ''
-  for (let i = 0; i < word.length; i += 1) {
+  for (let i = from; i < word.length; i += 1) {
     const c = word[i]!
     if (quote === "'") { if (c === "'") quote = ''; continue }
     if (c === '\\') { i += 1; continue }
@@ -609,11 +609,11 @@ function redactExpansionWord(word: string, at: number): string | null {
   const key = /(?:^|[^A-Za-z0-9_.[\]-])-{0,2}([A-Za-z0-9_][A-Za-z0-9_.[\]-]*)[=:]?$/.exec(before)
   if (key && /["']/.test(word.slice(0, at)) && isCredentialKey(key[1]!)) return `${word.slice(0, at)}***`
   const url = /:\/\/([^\s/]*)/.exec(word)
-  if (!url) return null
+  if (!url) return expansionBeforeAt(word)
   const authEnd = url.index + url[0].length
   const authStart = authEnd - url[1]!.length
   const inAuthority = firstExpansion(word.slice(authStart, authEnd))
-  if (inAuthority < 0) return null
+  if (inAuthority < 0) return expansionBeforeAt(word)
   const expansion = authStart + inAuthority
   const colon = word.lastIndexOf(':', expansion - 1)
   if (colon >= authStart && /[^0-9]/.test(word.slice(colon + 1, expansion))) return `${word.slice(0, colon + 1)}***${word.slice(authEnd)}`
@@ -621,8 +621,27 @@ function redactExpansionWord(word: string, at: number): string | null {
   // `@` or expansion may be a password (`$HOST:8080`, `$SUB.example.com` and `${U}:${P}@` hold none).
   const after = expansionEnd(word, expansion)
   const stop = word.slice(after, authEnd).search(/\\?@|\$[({A-Za-z_0-9@*#?$!-]|`/)
-  if (stop <= 0 || !/[^:]/.test(word.slice(after, after + stop))) return null
+  if (stop <= 0 || !/[^:]/.test(word.slice(after, after + stop))) return expansionBeforeAt(word)
   return word[after + stop] === '$' || word[after + stop] === '`' ? `${word.slice(0, expansion)}***${word.slice(authEnd)}` : `${word.slice(0, expansion)}***${word.slice(after + stop)}`
+}
+
+/**
+ * Literal text between a word's last expansion before its `@` and that `@` (`${SCHEME}${USER}hunter2@host`): the
+ * expansions may supply the scheme and the user/password `:`, so it may be a password (`${U}:${P}@`, `$HOME/a@b` hold
+ * none).
+ */
+function expansionBeforeAt(word: string): string | null {
+  const atSign = word.search(/\\?@/)
+  if (atSign <= 0) return null
+  let last = -1
+  for (let k = firstExpansion(word); k >= 0 && k < atSign; k = firstExpansion(word, expansionEnd(word, k))) last = k
+  if (last < 0) return null
+  const end = expansionEnd(word, last)
+  const segment = word.slice(end, atSign)
+  if (!segment || !/[^:]/.test(segment) || /[\s/]/.test(segment)) return null
+  // A literal `:` in it separates a visible user from the password (`${SCHEME}bob:hunter2@`).
+  const keep = end + segment.indexOf(':') + 1
+  return `${word.slice(0, keep)}***${word.slice(atSign)}`
 }
 
 /** The end (exclusive) of the parameter or command expansion starting at `i`. */
