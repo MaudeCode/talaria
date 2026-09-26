@@ -71,6 +71,7 @@ describe('redactSensitive', () => {
     // A command substitution cannot be bounded without a shell parser (`case` patterns have unmatched `)`): it is masked to the line end.
     expect(redactSensitive('login --secret=${S:-x y} --password=$(printf hunter2) next\nls')).toBe('login --secret=*** --password=***\nls')
     expect(redactSensitive('login --password=`printf foo\\` hunter2` next\nls')).toBe('login --password=***\nls')
+    expect(redactSensitive('login --password=${X:-$(echo } hunter2)} next\nls')).toBe('login --password=***\nls')
     expect(redactSensitive('login --password=$(case x in x) echo hunter2;; esac) next')).toBe('login --password=***')
     expect(redactSensitive(`login --password=$(printf '%s)' "a)b" \\) hunter2) next`)).toBe('login --password=***')
     // Every prefiltered key alias, and Python tuple containers.

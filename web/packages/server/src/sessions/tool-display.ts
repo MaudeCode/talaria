@@ -40,14 +40,33 @@ const TARGET_KEYS: Partial<Record<ToolKind, string[]>> = {
 const FALLBACK_KEYS = ['cmd', 'command', 'path', 'file_path', 'file', 'uri', 'url', 'query', 'pattern', 'dir', 'task', 'name']
 const TOOL_TARGET_MAX = 200
 
+/** Python's `repr` of a JSON value (what `str()` shows for items inside a list or dict). */
+function pythonRepr(value: unknown): string {
+  if (typeof value === 'string') {
+    const quote = value.includes("'") && !value.includes('"') ? '"' : "'"
+    return quote + value.replace(/[\\\n\r\t]/g, (c) => ({ '\\': '\\\\', '\n': '\\n', '\r': '\\r', '\t': '\\t' })[c]!).replaceAll(quote, `\\${quote}`) + quote
+  }
+  return pythonStr(value)
+}
+
+/** Python's `str()` of a JSON value, as the sidecar's `_args_snapshot` renders a non-string argument. */
+function pythonStr(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value === null) return 'None'
+  if (typeof value === 'boolean') return value ? 'True' : 'False'
+  if (Array.isArray(value)) return `[${value.map(pythonRepr).join(', ')}]`
+  if (isDict(value)) return `{${Object.entries(value).map(([k, v]) => `${pythonRepr(k)}: ${pythonRepr(v)}`).join(', ')}}`
+  return typeof value === 'number' ? String(value) : ''
+}
+
 /**
  * An argument as the live frame carries it (the sidecar's `_args_snapshot`): only the first four arguments, and a
  * non-content value capped at 120 code points plus `...`. Targets come from this view, so a call shows the same target
  * live and after reload.
  */
 function snapshotArg(args: Record<string, unknown>, key: string): string | null {
-  const value = args[key]
-  if (typeof value !== 'string' || !Object.keys(args).slice(0, 4).includes(key)) return null
+  if (!Object.keys(args).slice(0, 4).includes(key) || args[key] === undefined) return null
+  const value = pythonStr(args[key])
   const cap = TOOL_ARG_CONTENT_KEYS.has(key.toLowerCase()) ? TOOL_ARG_CONTENT_CAP : 120
   const chars = Array.from(value)
   return chars.length > cap ? `${chars.slice(0, cap).join('')}...` : value

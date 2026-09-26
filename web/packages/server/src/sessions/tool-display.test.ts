@@ -25,6 +25,9 @@ describe('toolDisplay', () => {
     const live = { query: `${'q'.repeat(120)}...` }
     expect(toolDisplay('web_search', { query: long }).target).toBe(`${'q'.repeat(120)}...`)
     expect(toolDisplay('web_search', live).target).toBe(toolDisplay('web_search', { query: long }).target)
+    // A non-string argument is shown as the sidecar's Python str() of it.
+    expect(toolDisplay('delegate_task', { task: ['one', "it's", 2, true, null, { a: 1.5 }] }).target).toBe(`['one', "it's", 2, True, None, {'a': 1.5}]`)
+    expect(toolDisplay('delegate_task', { task: 42 }).target).toBe('42')
     // Only the first four arguments reach the live frame.
     expect(toolDisplay('delegate_task', { a: 1, b: 2, c: 3, d: 4, task: 'x' }).target).toBe('')
   })
@@ -37,6 +40,6 @@ describe('toolDisplay', () => {
     expect(toolDisplay('delegate_task', { task: 'Summarize' })).toEqual({ kind: 'delegate', target: 'Summarize' })
     expect(toolDisplay('terminal', { command: 'x'.repeat(300) }).target).toHaveLength(200)
     expect(toolDisplay('terminal', null)).toEqual({ kind: 'shell', target: '' })
-    expect(toolDisplay('terminal', { command: 42 })).toEqual({ kind: 'shell', target: '' })
+    expect(toolDisplay('terminal', { command: 42 })).toEqual({ kind: 'shell', target: '42' })
   })
 })

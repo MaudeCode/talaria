@@ -237,6 +237,8 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
         if (ch === '\\') k += 2
         else if (ch === "'") { const q = text.indexOf("'", k + 1); k = q === -1 ? text.length : q + 1 }
         else if (ch === '"') { k += 1; while (k < text.length && text[k] !== '"') k += text[k] === '\\' ? 2 : 1; k += 1 }
+        // A command substitution inside the expansion can hold a literal `}`: mask to the line end.
+        else if ((ch === '$' && text[k + 1] === '(') || ch === '`') return lineEnd(i)
         else { if (ch === '{') d += 1; else if (ch === '}') d -= 1; k += 1 }
       }
       if (d > 0) return lineEnd(i)
