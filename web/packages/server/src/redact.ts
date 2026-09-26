@@ -91,10 +91,20 @@ const anyCase = (pattern: string): string => pattern.replace(/[a-z]/g, (c) => `[
 const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]|[A-Z]?[a-z0-9]+(?=[A-Z])|[A-Z]+(?=[A-Z][a-z])){0,4}${anyCase(CRED_KEY_NAME)}`
 /** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
 const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
-/** An argument or JSON key naming a credential; its scalar value is masked whatever it contains. */
-const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`)
-/** A structured key names a credential when any of its path segments does (`auth.token`, `database.password`, `auth[password]`). */
-const isCredentialKey = (key: string): boolean => key.split(/[.:/[\]]/).some((segment) => CRED_KEY_RE.test(segment))
+/** A credential name matched against a whole `_`-joined word run (`secret_access_key`, `session_token`). */
+const CRED_KEY_NAME_WORDS_RE = new RegExp(String.raw`^${CRED_KEY_NAME}$`, 'i')
+/**
+ * A structured key names a credential when any of its path segments (`auth.token`, `database.password`,
+ * `auth[password]`) ends in a credential name at a word boundary, however deep its namespace
+ * (`COMPANY_PROD_EU_AWS_SECRET_ACCESS_KEY`, `companyProdEuAwsSessionToken`).
+ */
+function isCredentialKey(key: string): boolean {
+  return key.split(/[.:/[\]]/).some((segment) => {
+    const words = segment.replace(/^-+/, '').split(/[_-]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/).filter(Boolean).slice(-8)
+    for (let i = 0; i < words.length; i += 1) if (CRED_KEY_NAME_WORDS_RE.test(words.slice(i).join('_'))) return true
+    return false
+  })
+}
 /**
  * Credential parameters in text (`access_token=`, `"clientSecret": "..."`, `X-Api-Key:`) and CLI flags with a
  * space-separated value (`--password hunter2`); a quoted value (including bash `$'...'`) is masked through its closing quote. An unquoted upper-case
@@ -231,6 +241,8 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
     // A command substitution (`$(…)`, backticks) cannot be bounded without a shell parser (`case` patterns carry unmatched
     // `)`, backticks nest by escaping): mask to the line end. `${…}` is balanced, quote- and escape-aware.
     else if (c === '$' && text[i + 1] === '(') return lineEnd(i)
+    // Process substitution (`<(…)`, `>(…)`) likewise.
+    else if ((c === '<' || c === '>') && text[i + 1] === '(') return lineEnd(i)
     else if (c === '$' && text[i + 1] === '{') {
       let k = i + 2
       let d = 1
