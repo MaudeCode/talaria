@@ -45,7 +45,8 @@ export function toolDisplay(name: unknown, args: unknown): { kind: ToolKind; tar
   const a = isDict(args) ? args : {}
   const raw = (TARGET_KEYS[kind] ?? FALLBACK_KEYS).map((k) => a[k]).find((v): v is string => typeof v === 'string' && Boolean(v.trim())) ?? ''
   const first = raw.trim().split('\n')[0] ?? ''
-  return { kind, target: first.replace(/\s+/g, ' ').trim().slice(0, TOOL_TARGET_MAX) }
+  // Capped by code point, so the cap never splits a surrogate pair into invalid JSON.
+  return { kind, target: Array.from(first.replace(/\s+/g, ' ').trim()).slice(0, TOOL_TARGET_MAX).join('') }
 }
 
 /** A persisted call's arguments: live `args`, a `tool_use` block's `input`, or OpenAI `function.arguments` JSON. */

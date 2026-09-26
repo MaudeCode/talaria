@@ -28,6 +28,9 @@ describe('redactSensitive', () => {
     const aws = redactSensitive('Authorization: AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/x, SignedHeaders=host, Signature=abcdef0123')
     expect(aws).not.toContain('AKIDEXAMPLE')
     expect(aws).not.toContain('abcdef0123')
+    expect(redactSensitive(`curl -H 'Authorization: Digest username="bob", realm="api", response="cafebabe"' https://x`)).toBe(`curl -H 'Authorization: Digest ***' https://x`)
+    // A bare JWT is masked wherever it appears.
+    expect(redactSensitive('curl "https://x/cb?jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"')).not.toContain('dozjgNryP4J3jVmNHl0w5N')
     // A parameterized scheme's whole value is masked, through escaped quotes, up to the closing quote.
     expect(redactSensitive(`curl -H "Authorization: Digest username=\\"bob\\", realm=\\"api\\", response=\\"cafebabe\\"" https://x`)).toBe(`curl -H "Authorization: Digest ***" https://x`)
     // A quoted value is masked through its closing quote, spaces included.
@@ -58,6 +61,15 @@ describe('redactText', () => {
   })
 })
 
+describe('surrogate pairs', () => {
+  it('never splits a surrogate pair when truncating a target or masking a token', () => {
+    const target = String(publicToolFrame({ name: 'terminal', args: { command: `${'a'.repeat(199)}😀tail` } }, true).target)
+    expect(target).toBe(`${'a'.repeat(199)}😀`)
+    expect(JSON.stringify(target)).not.toMatch(/\\ud83d(?!\\ude00)/)
+    expect(redactSensitive('Authorization: Bearer 😀abcdefghijklmnopqrs😀')).toBe('Authorization: Bearer 😀abcde...qrs😀')
+  })
+})
+
 describe('redactSensitive cost', () => {
   it('stays linear on long runs of scheme and identifier characters', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
@@ -75,6 +87,9 @@ describe('publicToolFrame', () => {
     const frame = publicToolFrame({ name: 'login', args: { user: 'bob', password: 'hunter2', auth: { apiKey: 'opaque', token: 12345 } } }, true)
     expect(frame.args).toEqual({ user: 'bob', password: '***', auth: { apiKey: '***', token: '***' } })
     expect(publicToolFrame({ name: 'login', args: { password: 'hunter2' } }, false).args).toEqual({ password: 'hunter2' })
+    // Cookie keys, header tuples and name/value pairs are credentials too.
+    expect(publicToolFrame({ name: 'http', args: { headers: { Cookie: 'session=abc123', 'Set-Cookie': ['sid=x'] }, pairs: [['X-Token', 'abc'], ['Accept', 'json']], har: [{ name: 'Authorization', value: 'opaque' }, { name: 'Accept', value: 'json' }] } }, true).args)
+      .toEqual({ headers: { Cookie: '***', 'Set-Cookie': ['***'] }, pairs: [['X-Token', '***'], ['Accept', 'json']], har: [{ name: 'Authorization', value: '***' }, { name: 'Accept', value: 'json' }] })
     // Everything under a credential key is masked, however deeply nested.
     expect(publicToolFrame({ name: 'login', args: { password: ['hunter2'], authorization: { value: 'Bearer opaque', ttl: 3 }, empty: { token: '' } } }, true).args)
       .toEqual({ password: ['***'], authorization: { value: '***', ttl: '***' }, empty: { token: '' } })

@@ -49,11 +49,15 @@ const CRED_RE = new RegExp(
     ')(?![A-Za-z0-9_-])',
   'g',
 )
+/** One `name=value` auth parameter: an escaped-quoted, quoted or bare value. */
+const AUTH_PARAM = String.raw`[A-Za-z0-9_-]+=(?:\\"(?:[^"\\\r\n]|\\[^"])*\\"|"[^"\r\n]*"|'[^'\r\n]*'|[^\s,"'\\]*)`
 /**
  * The credential of an `Authorization:` header, after an optional scheme word (`Bearer`, `ApiKey`, `AWS4-HMAC-SHA256`, ...).
- * A parameterized credential (`Digest username="bob", response="..."`) is masked whole, up to an unescaped quote or the line end.
+ * A parameterized credential (`Digest username="bob", response="..."`, `Credential=..., Signature=...`) is masked whole.
  */
-const AUTH_HDR_RE = /(Authorization:\s*(?:[A-Za-z][A-Za-z0-9-]{0,31}\s+)?)((?=[A-Za-z0-9_-]+=)(?:\\["']|[^\r\n"'\\])+|[^\s'",\])]+)/gi
+const AUTH_HDR_RE = new RegExp(String.raw`(Authorization:\s*(?:[A-Za-z][A-Za-z0-9-]{0,31}\s+)?)(${AUTH_PARAM}(?:\s*,\s*${AUTH_PARAM})*|[^\s'",\])]+)`, 'gi')
+/** A JSON Web Token anywhere (`eyJ<header>.<payload>.<signature>`). */
+const JWT_RE = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g
 /** A bearer credential in any header or text (`X-Auth: Bearer ...`); `AUTH_HDR_RE` owns the `Authorization:` header. */
 const BEARER_RE = /((?<!Authorization:\s{0,8})\bBearer\s+)([^\s'",\])]+)/gi
 /** A `Cookie:` / `Set-Cookie:` header's whole value (session cookies are credentials). */
@@ -63,7 +67,7 @@ const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENT
 /** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The scheme starts at a run boundary and is capped so the scan stays linear. */
 const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s:@/'"]+:)([^\s@/'"]+)(?=@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
-const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|secret|token|password|passwd)`
+const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|secret|token|password|passwd)`
 const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]){0,4}${CRED_KEY_NAME}`
 /** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
 const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
@@ -86,7 +90,9 @@ const ENV_KEY_PREFIX_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PAS
 const REDACTED_ENV_VALUE_RE = /(?:\*{3,}|[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,32}\.\.\.[A-Za-z0-9_.:/+-]{1,16})/y
 
 function mask(token: string): string {
-  return token.length >= 18 ? `${token.slice(0, 6)}...${token.slice(-4)}` : '***'
+  // By code point, so a partial mask never splits a surrogate pair into invalid JSON.
+  const chars = Array.from(token)
+  return chars.length >= 18 ? `${chars.slice(0, 6).join('')}...${chars.slice(-4).join('')}` : '***'
 }
 
 /** Restore `KEY=)` style code literals the env regex would otherwise mangle. */
@@ -127,6 +133,7 @@ export function redactSensitive(text: string): string {
   let out = text.replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = out.replace(AUTH_HDR_RE, (_, head: string, token: string) => head + (/^[A-Za-z0-9_-]+=/.test(token) ? '***' : mask(token)))
+  out = out.replace(JWT_RE, (t) => mask(t))
   out = out.replace(BEARER_RE, (_, head: string, token: string) => head + mask(token))
   out = out.replace(COOKIE_HDR_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = out.replace(CRED_PARAM_RE, (whole, dash: string, key: string, sep: string, value: string) => {
@@ -347,9 +354,17 @@ function maskLeaves(value: unknown): unknown {
 /** Tool arguments redacted like any value, plus every scalar under a credential-named key (`{ password: 'x' }`). */
 function redactArgs(value: unknown, enabled: boolean): unknown {
   if (!enabled) return value
-  if (Array.isArray(value)) return value.map((item) => redactArgs(item, enabled))
+  if (Array.isArray(value)) {
+    // A `[name, value]` header tuple naming a credential.
+    if (value.length === 2 && typeof value[0] === 'string' && CRED_KEY_RE.test(value[0])) return [value[0], maskLeaves(value[1])]
+    return value.map((item) => redactArgs(item, enabled))
+  }
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, CRED_KEY_RE.test(key) ? maskLeaves(item) : redactArgs(item, enabled)]))
+    const record = value as Record<string, unknown>
+    // A `{ name: 'Authorization', value: ... }` pair (HAR and similar header lists).
+    const label = [record.name, record.key, record.header].find((v): v is string => typeof v === 'string')
+    const labelled = label !== undefined && CRED_KEY_RE.test(label)
+    return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, CRED_KEY_RE.test(key) || (labelled && key === 'value') ? maskLeaves(item) : redactArgs(item, enabled)]))
   }
   return redactValue(value, enabled)
 }
