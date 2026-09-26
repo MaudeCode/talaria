@@ -632,7 +632,8 @@
     "can_branch": true,
     "can_pin": true,
     "can_archive": true,
-    "can_duplicate": true
+    "can_duplicate": true,
+    "transcript_seq": null
   },
   "stale_stream_session": {
     "session_id": "contract-stale",
@@ -644,7 +645,8 @@
     "can_pin": true,
     "can_archive": true,
     "can_duplicate": true,
-    "messages": []
+    "messages": [],
+    "transcript_seq": null
   },
   "subagent_session": {
     "session_id": "contract-subagent",
@@ -658,6 +660,42 @@
     "can_pin": false,
     "can_archive": false,
     "can_duplicate": false,
-    "messages": []
+    "messages": [],
+    "transcript_seq": null
+  },
+  "journaled_session": {
+    "session_id": "contract-running",
+    "title": "Contract running",
+    "active_stream_id": "contract-run-h",
+    "is_streaming": true,
+    "read_only": false,
+    "can_branch": true,
+    "can_pin": true,
+    "can_archive": true,
+    "can_duplicate": true,
+    "transcript_seq": {
+      "stream_id": "contract-run-h",
+      "seq": 0
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "Earlier question",
+        "message_id": "contract-user-g0",
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "assistant",
+        "content": "Earlier answer.",
+        "message_id": "contract-run-g0-1",
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "user",
+        "content": "Read the file",
+        "message_id": "contract-user-h",
+        "_turn_id": "contract-run-h"
+      }
+    ]
   }
 }

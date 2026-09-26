@@ -99,6 +99,12 @@ export const SessionSchema = z.looseObject({
   worktree_branch: NullableString.optional(), worktree_repo_root: NullableString.optional(), share_token: NullableString.optional(), share_created_at: NullableNumber.optional(), manual_title: z.boolean().optional(),
   compression_anchor_summary: NullableString.optional(), compression_recovery: z.record(z.string(), Json).optional(), recommended_recovery_action: NullableString.optional(), compression_recovery_action: NullableString.optional(),
   compression_recovery_source_session_id: NullableString.optional(), gateway_routing: Json.optional(), _messages_offset: z.number().optional(), _messages_truncated: z.boolean().optional(), _msg_limit_max: z.number().optional(), _load_revision: z.string().optional(),
+  /**
+   * Where `messages` end in the run journal of `stream_id`: they hold nothing that journal delivers after `seq`, so a client
+   * resumes that stream with `after_seq = seq` and renders the replay as-is. Null (no active run, or no journal to replay):
+   * `messages` are the whole persisted transcript and a client attaches live without replay.
+   */
+  transcript_seq: z.object({ stream_id: z.string(), seq: z.number().int().nonnegative() }).nullable().optional(),
 })
 export type Session = z.infer<typeof SessionSchema>
 export const SessionEnvelopeSchema = z.looseObject({ session: SessionSchema })

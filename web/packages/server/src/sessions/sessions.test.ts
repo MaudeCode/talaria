@@ -56,12 +56,23 @@ import { tmpdir } from 'node:os'
 import { readMetadataJsonPrefixWithSignature, statSignature } from './store.js'
 import type { Session } from './session.js'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { DatabaseSync } from 'node:sqlite'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, type TestServer } from '../test/harness.js'
+import { FakeSidecar } from '../sidecar/fake.js'
+import { str } from '../util.js'
+import { withoutRunningTurnOutput } from './merge.js'
+import { RunJournalWriter } from './journal.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
+const completedTurn = (messages: Json[]): SidecarResult<'chat.start'> => ({
+  status: 'completed', messages, final_response: str(messages[messages.length - 1]?.content), error: null, result_status: 'completed', tool_limit_reached: false,
+  usage: { prompt_tokens: 10, completion_tokens: 5, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'test-model', provider: 'test', compressed: false,
+  agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
+})
 
 async function newSession(s: TestServer, body: Json = {}): Promise<Json> {
   const res = await post(s, '/api/session/new', body)
@@ -601,5 +612,130 @@ describe('projects, workspaces, and files over HTTP', () => {
     rmSync(stray, { recursive: true, force: true })
     strayed.workspace = ws
     s.deps.sessionStore.save(strayed)
+  })
+})
+
+describe('session detail transcript cursor (TAL-316)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+  })
+  afterAll(() => s.close())
+
+  const detail = async (sid: string, query = ''): Promise<Json> => (await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json
+  const contents = (session: Json): unknown[] => (session.messages as Json[]).map((m) => m.content)
+
+  /** A session with one settled turn whose next run is held mid-turn (prose, tool, prose) with its rows partly in state.db. */
+  async function runningTurn(): Promise<{ sid: string; streamId: string; release: () => void }> {
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, [{ role: 'user', content: 'earlier', timestamp: 1000 }, { role: 'assistant', content: 'earlier reply', timestamp: 1001 }])
+    let release: () => void = () => undefined
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'Reading.' } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', args: {}, tid: 't1' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', tid: 't1', preview: 'A' } })
+      emit({ event: 'token', data: { text: 'Done' } })
+      release = () => { resolve(completedTurn([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Reading.', tool_calls: [{ id: 't1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }, { role: 'tool', tool_call_id: 't1', content: 'A' }, { role: 'assistant', content: 'Done' }])) }
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'read it' }))
+    const streamId = String(start.stream_id)
+    const startedAt = Number(start.pending_started_at)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token' && (f.data as Json).text === 'Done')
+    // The Agent has already written the prompt, the first prose segment and the tool round to state.db.
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
+    const rows: [string, string, number][] = [['user', 'earlier', 1000], ['assistant', 'earlier reply', 1001], ['user', 'read it', startedAt + 0.5], ['assistant', 'Reading.', startedAt + 1], ['tool', 'A', startedAt + 2]]
+    for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+    db.close()
+    return { sid, streamId, release }
+  }
+
+  it('omits a journaled running turn\'s output, keeps its prompt, and resuming from the cursor renders each segment once', async () => {
+    const { sid, streamId, release } = await runningTurn()
+    const session = await detail(sid)
+    expect(contents(session)).toEqual(['earlier', 'earlier reply', 'read it'])
+    expect(session.transcript_seq).toEqual({ stream_id: streamId, seq: 0 })
+    expect(session.message_count).toBe(3)
+    // Every window agrees: the omission applies before windowing.
+    const window = await detail(sid, '&msg_limit=2')
+    expect(window.transcript_seq).toEqual({ stream_id: streamId, seq: 0 })
+    expect(contents(window)).toEqual(['earlier reply', 'read it'])
+    expect(window.message_count).toBe(3)
+    const older = await detail(sid, '&msg_limit=2&msg_before=1')
+    expect(contents(older)).toEqual(['earlier'])
+    // Resuming from the stated cursor delivers the running turn once, in order.
+    const seq = (session.transcript_seq as { seq: number }).seq
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_seq=${String(seq)}`, (f) => f.event === 'token' && (f.data as Json).text === 'Done')
+    expect(frames.filter((f) => ['token', 'tool', 'tool_complete'].includes(f.event)).map((f) => `${f.event}:${String((f.data as Json).text ?? (f.data as Json).name)}`))
+      .toEqual(['token:Reading.', 'tool:read_file', 'tool_complete:read_file', 'token:Done'])
+    const ids = frames.map((f) => f.id).filter(Boolean)
+    expect(new Set(ids).size).toBe(ids.length)
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+    // A settled session states no cursor and returns its whole transcript.
+    const settled = await detail(sid)
+    expect(settled.transcript_seq).toBeNull()
+    expect(contents(settled)).toContain('Done')
+  })
+
+  it('returns the persisted transcript unchanged and no cursor when the running turn has no journal', async () => {
+    const { sid, release } = await runningTurn()
+    const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockReturnValue(null)
+    try {
+      const session = await detail(sid)
+      expect(session.transcript_seq).toBeNull()
+      expect(contents(session)).toEqual(['earlier', 'earlier reply', 'read it', 'Reading.', 'A'])
+    } finally {
+      findRunSummary.mockRestore()
+      release()
+    }
+  })
+
+  it('states no cursor and keeps the persisted turn when its journal missed a frame', async () => {
+    const append = Object.getOwnPropertyDescriptor(RunJournalWriter.prototype, 'appendSseEvent')?.value as (this: RunJournalWriter, event: string, data: unknown) => ReturnType<RunJournalWriter['appendSseEvent']>
+    const failing = vi.spyOn(RunJournalWriter.prototype, 'appendSseEvent').mockImplementation(function (this: RunJournalWriter, event: string, data: unknown) {
+      if (event === 'tool') throw new Error('disk full')
+      return append.call(this, event, data)
+    })
+    let turn: Awaited<ReturnType<typeof runningTurn>> | null = null
+    try {
+      turn = await runningTurn()
+    } finally {
+      failing.mockRestore()
+    }
+    try {
+      const session = await detail(turn.sid)
+      expect(session.transcript_seq).toBeNull()
+      expect(contents(session)).toEqual(['earlier', 'earlier reply', 'read it', 'Reading.', 'A'])
+    } finally {
+      turn.release()
+    }
+  })
+
+  it('an idle session states no cursor', async () => {
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, [{ role: 'user', content: 'hi', timestamp: 10 }, { role: 'assistant', content: 'hello', timestamp: 11 }])
+    const session = await detail(sid)
+    expect(session.transcript_seq).toBeNull()
+    expect(contents(session)).toEqual(['hi', 'hello'])
+  })
+
+  it('keeps a checkpointed prompt and the server\'s steer rows, and drops the rest of the turn', () => {
+    const turn = { localCount: 4, turnId: 'run1', startedAt: 100, activeTurnToken: 'run1:100' }
+    const rows = [
+      { role: 'user', content: 'earlier', timestamp: 1 }, { role: 'assistant', content: 'earlier reply', timestamp: 2 },
+      { role: 'user', content: 'prompt', timestamp: 100, _turn_id: 'run1', _active_turn_token: 'run1:100' },
+      { role: 'user', content: 'steer', timestamp: 103, _turn_id: 'run1', _steer: { steer_id: 's1' } },
+      { role: 'user', content: 'prompt', timestamp: 101 }, { role: 'assistant', content: 'partial', timestamp: 102 },
+    ]
+    expect(withoutRunningTurnOutput(rows, turn).map((m) => m.content)).toEqual(['earlier', 'earlier reply', 'prompt', 'steer'])
+    // Deferred save: no checkpointed prompt, so the turn starts at its first state.db row past the sidecar.
+    const deferred = [rows[0]!, rows[1]!, rows[4]!, rows[5]!]
+    expect(withoutRunningTurnOutput(deferred, { ...turn, localCount: 2 }).map((m) => m.content)).toEqual(['earlier', 'earlier reply', 'prompt'])
+    // Nothing of the turn persisted yet: the transcript is unchanged.
+    expect(withoutRunningTurnOutput([rows[0]!, rows[1]!], { ...turn, localCount: 2 })).toHaveLength(2)
   })
 })

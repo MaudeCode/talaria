@@ -3,12 +3,12 @@ import XCTest
 
 /// Streaming catch-up budget (TAL-75).
 ///
-/// A reconnect replays the whole in-flight response as many small tokens, and
-/// every replayed token runs through `ChatViewModel.appendAssistantToken` →
-/// `deduplicatedReplayToken` on the main actor. That path is the one place in
-/// the app where per-event work grows with the response already received, so it
-/// is measured directly rather than through a UI test: the scaling curve is the
-/// signal, and a simulator UI run is too noisy to read it.
+/// A reconnect can receive the whole in-flight response again as many small
+/// tokens. Every replayed token at or below the resume cursor must be dropped by
+/// `ChatStreamCoordinator` in constant time (TAL-316), so per-event work never
+/// grows with the response already received. It is measured directly rather than
+/// through a UI test: the scaling curve is the signal, and a simulator UI run is
+/// too noisy to read it.
 ///
 /// `testReplayCatchUpStaysWithinLinearScaling` reports the curve and fails on a
 /// superlinear regression; `testReplayCatchUpLargeBacklog` carries the absolute
@@ -156,8 +156,7 @@ private struct ReplayCatchUpHarness {
             replayEvents
         ])
         // Flushing on every event would measure transcript rebuilds instead of
-        // the dedup path; the real client coalesces, and dedup reads flushed +
-        // pending text either way.
+        // the replay path; the real client coalesces.
         viewModel = try test.makeScriptedChatViewModel(
             streamClient: streamClient,
             flushesEachEvent: false
@@ -200,7 +199,7 @@ private struct ReplayCatchUpHarness {
         streamClient.playArmedConnectionScript()
     }
 
-    /// A dedup that silently dropped or duplicated text would make the timing
+    /// A replay that silently dropped or duplicated text would make the timing
     /// meaningless, so every run checks the transcript it produced.
     func verify() throws {
         viewModel.flushPendingStreamingContent()

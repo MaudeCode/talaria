@@ -800,6 +800,10 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
     let compressionAnchorVisibleIdx: Int?
     let compressionAnchorMessageKey: CompressionAnchorMessageKey?
     let compressionAnchorSummary: String?
+    /// Where `messages` end in the active run's journal (TAL-316); nil means attach live without replay.
+    let transcriptSeq: TranscriptSeq?
+    /// False for a server that predates `transcript_seq` (the key is absent, not null).
+    let statesTranscriptSeq: Bool
 
     enum CodingKeys: String, CodingKey {
         case sessionId
@@ -850,6 +854,7 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
         case snakeCasedCompressionAnchorVisibleIdx = "compression_anchor_visible_idx"
         case snakeCasedCompressionAnchorMessageKey = "compression_anchor_message_key"
         case snakeCasedCompressionAnchorSummary = "compression_anchor_summary"
+        case transcriptSeq
     }
 
     init(from decoder: Decoder) throws {
@@ -908,6 +913,8 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
             )) ?? nil)
         compressionAnchorSummary = container.decodeLossyStringIfPresent(forKey: .compressionAnchorSummary)
             ?? container.decodeLossyStringIfPresent(forKey: .snakeCasedCompressionAnchorSummary)
+        transcriptSeq = try? container.decodeIfPresent(TranscriptSeq.self, forKey: .transcriptSeq)
+        statesTranscriptSeq = container.contains(.transcriptSeq)
     }
 
     private static func decodeMessagesTolerantly(
@@ -954,6 +961,13 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
 /// Anchor key the server builds in `_anchor_message_key` (`api/routes.py`):
 /// role, optional timestamp, first 160 chars of whitespace-normalized text,
 /// and attachment count of the last visible message after compaction.
+/// The server's statement that a session detail's `messages` hold nothing the journal of `streamId` delivers after `seq`,
+/// so resuming that stream with `after_seq = seq` renders the replay as-is.
+struct TranscriptSeq: Decodable, Equatable {
+    let streamId: String
+    let seq: Int
+}
+
 struct CompressionAnchorMessageKey: Decodable, Equatable {
     let role: String?
     let ts: Double?

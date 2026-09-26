@@ -70,6 +70,8 @@ export interface LiveTurn {
   streamEnded: boolean
   goal: unknown
   replayed: boolean
+  /** The turn renders the stream's whole output (started here, or attached with replay), so it stands in for rows the server persisted for it. */
+  claimsPersistedRows: boolean
 }
 
 export type StreamAction =
@@ -105,7 +107,7 @@ function newTurn(sessionId: string, streamId: string, now: number): LiveTurn {
     sessionId, streamId, turnId: null, userMessageId: null, userText: '', startedAt: now, status: 'starting',
     segments: [], tools: {}, toolOrder: [], reasoningText: '', reasoningTitles: [], lastEventId: '', lastSeq: 0,
     usage: null, tps: null, contextStatus: null, warning: null, error: null, cancelledMessage: null, approval: null, clarify: null,
-    pendingSteerLeftover: null, compression: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false,
+    pendingSteerLeftover: null, compression: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
   }
 }
 
@@ -295,7 +297,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
       if (existing?.streamId === action.streamId && existing && !isTerminal(existing.status)) {
         return { turns: { ...state.turns, [action.sessionId]: { ...existing, status: 'reconnecting', replayed: action.replay } } }
       }
-      return { turns: { ...state.turns, [action.sessionId]: { ...newTurn(action.sessionId, action.streamId, action.now), status: 'connecting', replayed: action.replay } } }
+      return { turns: { ...state.turns, [action.sessionId]: { ...newTurn(action.sessionId, action.streamId, action.now), status: 'connecting', replayed: action.replay, claimsPersistedRows: action.replay } } }
     }
     case 'connection': {
       const turn = state.turns[action.sessionId]

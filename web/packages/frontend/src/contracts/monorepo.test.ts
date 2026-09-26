@@ -34,6 +34,14 @@ describe('shared monorepo contracts', () => {
     expect(view('contract-run-g')).toMatchObject({ kinds: ['text', 'tool', 'steering', 'text', 'tool', 'steering'], final: 'Both files read.' })
   })
 
+  it('states where a running session\'s transcript ends in its run journal', () => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { session: unknown; journaled_session: unknown }
+    expect(SessionSchema.parse(fixture.session).transcript_seq).toBeNull()
+    const journaled = SessionSchema.parse(fixture.journaled_session)
+    expect(journaled.transcript_seq).toEqual({ stream_id: journaled.active_stream_id, seq: 0 })
+    expect(journaled.messages?.at(-1)?.role).toBe('user')
+  })
+
   it('carries the server streaming and read-only flags on every session example (TAL-312)', () => {
     const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Record<string, unknown>
     expect(SessionSchema.parse(fixture.session)).toMatchObject({ is_streaming: true, active_stream_id: 'contract-run-f', read_only: false })

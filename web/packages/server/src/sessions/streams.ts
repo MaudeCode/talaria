@@ -112,6 +112,8 @@ export class StreamRegistry {
   readonly reasoningText = new Map<string, string[]>()
   readonly liveToolCalls = new Map<string, Record<string, unknown>[]>()
   readonly goalRelated = new Set<string>()
+  /** Runs whose journal missed a frame (an append failed), so it cannot replay the run's whole output. */
+  readonly degradedJournals = new Set<string>()
   readonly writebackOwners = new Map<string, string>()
   lastRunFinishedAt: number | null = null
   /** Live view used by the session service overlay (`STREAMS` keys). */
@@ -171,6 +173,7 @@ export class StreamRegistry {
     this.reasoningText.delete(streamId)
     this.liveToolCalls.delete(streamId)
     this.goalRelated.delete(streamId)
+    this.degradedJournals.delete(streamId)
     return run
   }
 
