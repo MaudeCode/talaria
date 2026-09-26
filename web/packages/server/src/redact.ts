@@ -82,37 +82,29 @@ const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENT
 const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s:@/'"]*:)([^\s@/'"]+)(?=@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
 const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
-/** A lower-case pattern matched in any case, letter by letter, so the camelCase lookahead below stays case-exact. */
-const anyCase = (pattern: string): string => pattern.replace(/[a-z]/g, (c) => `[${c}${c.toUpperCase()}]`)
-/**
- * A credential key: up to four snake/kebab (`aws_`, `X-`), camelCase (`aws`, `Secret` in `awsSecretAccessKey`) or
- * acronym (`X` in `XApiKey`, `AWS` in `AWSSecretAccessKey`) name segments, then a credential name. Each segment has one
- * possible end, so the scan stays linear.
- */
-const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]|[A-Z]?[a-z0-9]+(?=[A-Z])|[A-Z]+(?=[A-Z][a-z])){0,4}${anyCase(CRED_KEY_NAME)}`
 /** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
 const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
 /** A credential name matched against a whole `_`-joined word run (`secret_access_key`, `session_token`). */
 const CRED_KEY_NAME_WORDS_RE = new RegExp(String.raw`^${CRED_KEY_NAME}$`, 'i')
 /**
- * A structured key names a credential when any of its path segments (`auth.token`, `database.password`,
- * `auth[password]`) ends in a credential name at a word boundary, however deep its namespace
+ * A key names a credential when any of its path segments (`auth.token`, `database.password`, `auth[password]`,
+ * `auth["password"]`) ends in a credential name at a word boundary, however deep its namespace
  * (`COMPANY_PROD_EU_AWS_SECRET_ACCESS_KEY`, `companyProdEuAwsSessionToken`).
  */
 function isCredentialKey(key: string): boolean {
   return key.split(/[.:/[\]]/).some((segment) => {
-    const words = segment.replace(/^-+/, '').split(/[_-]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/).filter(Boolean).slice(-8)
+    const words = segment.replace(/^[-"']+|["']+$/g, '').split(/[_-]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/).filter(Boolean).slice(-8)
     for (let i = 0; i < words.length; i += 1) if (CRED_KEY_NAME_WORDS_RE.test(words.slice(i).join('_'))) return true
     return false
   })
 }
 /**
- * Credential parameters in text (`access_token=`, `"clientSecret": "..."`, `X-Api-Key:`) and CLI flags with a
- * space-separated value (`--password hunter2`); a quoted value (including bash `$'...'`) is masked through its closing quote. An unquoted upper-case
- * `KEY=value` whose name `ENV_RE` covers is left to it.
- * The name prefix is capped at four segments so the scan stays linear.
+ * A `key=value`, `key: value` or `--flag value` in text. Any identifier matches; the loop keeps only those
+ * `isCredentialKey` accepts (`access_token`, `"clientSecret"`, `X-Api-Key`, `--companyProdEuAwsSecretAccessKey`), and
+ * consumes a value only for those, so a non-credential key never swallows the text after it. The identifier is capped
+ * so the scan stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})((?:\\?["'])?\s*\+?[=:]\s*|\s+)`, 'g')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_-])(-{0,2})([A-Za-z][A-Za-z0-9_-]{0,127})((?:\\?["'])?\s*\+?[=:]\s*|\s+)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `-uuser:secret` / `--user user:secret`; a quoted pair or quoted secret is masked through its closing quote. */
 const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-u[ \t]*|--user[ \t]+)(?=\$?["']?[^\s:"']*:)/g
@@ -324,6 +316,7 @@ function redactCredentialParams(text: string): string {
     const [head, dash = '', key = '', sep = ''] = m
     // Prose (`secret sauce`): a bare space only separates a CLI flag from its value.
     if (!/[=:]/.test(sep) && !dash) continue
+    if (!isCredentialKey(key)) continue
     const valueStart = m.index + head.length
     // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s (decided before scanning the value).
     if (/authorization$/i.test(key) && /^\s*:\s*$/.test(sep) && !/^\$?["']/.test(text.slice(valueStart, valueStart + 2))) continue

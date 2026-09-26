@@ -92,6 +92,7 @@ describe('redactSensitive', () => {
     expect(redactSensitive(String.raw`curl -d "{\"password\":\"foo\\\"bar baz\",\"user\":\"bob\"}" x`)).toBe(String.raw`curl -d "{\"password\":\"***\",\"user\":\"bob\"}" x`)
     expect(redactSensitive('PASSWORD+=hunter2 token+=abc next')).toBe('PASSWORD+=*** token+=*** next')
     expect(redactSensitive(String.raw`curl -H $'Cookie: session=foo\'; auth=hunter2' x`)).toBe(String.raw`curl -H $'Cookie: ***' x`)
+    expect(redactSensitive('login --companyProdEuAwsSecretAccessKey=hunter2 a_b_c_d_e_f_password: x2 next')).toBe('login --companyProdEuAwsSecretAccessKey=*** a_b_c_d_e_f_password: *** next')
     // Ordinary words and non-credential parameters stay readable.
     expect(redactSensitive('keep the secret sauce --secret-file ./s.txt')).toBe('keep the secret sauce --secret-file ./s.txt')
     expect(redactSensitive('apiKeyId: 12 max_tokens=100 --user-agent curl')).toBe('apiKeyId: 12 max_tokens=100 --user-agent curl')
@@ -152,7 +153,7 @@ describe('publicToolFrame', () => {
     expect(publicToolFrame({ name: 'vault', args: {}, result: { token: 'opaque', ttl: 60 }, output: [{ password: 'x' }] }, true)).toMatchObject({ result: { token: '***', ttl: 60 }, output: [{ password: '***' }] })
     expect(publicToolFrame({ name: 'cfg', args: { COMPANY_PROD_EU_AWS_SECRET_ACCESS_KEY: 'a', companyProdEuAwsSessionToken: 'b', company_prod_eu_region_name: 'eu' } }, true).args).toEqual({ COMPANY_PROD_EU_AWS_SECRET_ACCESS_KEY: '***', companyProdEuAwsSessionToken: '***', company_prod_eu_region_name: 'eu' })
     // A namespaced key is a credential when any of its path segments names one.
-    expect(publicToolFrame({ name: 'cfg', args: { 'auth.token': 'a', 'database.password': 'b', 'db/user': 'bob', 'x:api_key': 'c', 'auth[password]': 'd', 'user[name]': 'e' } }, true).args).toEqual({ 'auth.token': '***', 'database.password': '***', 'db/user': 'bob', 'x:api_key': '***', 'auth[password]': '***', 'user[name]': 'e' })
+    expect(publicToolFrame({ name: 'cfg', args: { 'auth.token': 'a', 'database.password': 'b', 'db/user': 'bob', 'x:api_key': 'c', 'auth[password]': 'd', 'user[name]': 'e', 'auth["token"]': 'f', "auth['secret']": 'g' } }, true).args).toEqual({ 'auth["token"]': '***', "auth['secret']": '***', 'auth.token': '***', 'database.password': '***', 'db/user': 'bob', 'x:api_key': '***', 'auth[password]': '***', 'user[name]': 'e' })
     // Cookie keys, header tuples and name/value pairs are credentials too.
     expect(publicToolFrame({ name: 'http', args: { headers: { Cookie: 'session=abc123', 'Set-Cookie': ['sid=x'] }, pairs: [['X-Token', 'abc'], ['Accept', 'json']], har: [{ name: 'Authorization', value: 'opaque' }, { name: 'Accept', value: 'json' }] } }, true).args)
       .toEqual({ headers: { Cookie: '***', 'Set-Cookie': ['***'] }, pairs: [['X-Token', '***'], ['Accept', 'json']], har: [{ name: 'Authorization', value: '***' }, { name: 'Accept', value: 'json' }] })
