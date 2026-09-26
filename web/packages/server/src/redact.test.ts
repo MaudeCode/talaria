@@ -70,10 +70,11 @@ describe('redactSensitive', () => {
     expect(redactSensitive(`login --password=correct]horse --token=a,b}c|next {"secret": 123}, {'token': 'x'}`)).toBe(`login --password=*** --token=***|next {"secret": ***}, {'token': '***'}`)
     // Command substitution, backticks and parameter expansion are part of the word.
     // A command substitution cannot be bounded without a shell parser (`case` patterns have unmatched `)`): it is masked to the line end.
-    expect(redactSensitive('login --secret=${S:-x y} --password=$(printf hunter2) next\nls')).toBe('login --secret=*** --password=***\nls')
-    expect(redactSensitive('login --password=`printf foo\\` hunter2` next\nls')).toBe('login --password=***\nls')
-    expect(redactSensitive('login --password=${X:-$(echo } hunter2)} next\nls')).toBe('login --password=***\nls')
-    expect(redactSensitive('login --password=<(printf hunter2) --token >(tee t) next\nls')).toBe('login --password=***\nls')
+    expect(redactSensitive('login --secret=${S:-x y} --password=$(printf hunter2) next\nls')).toBe('login --secret=*** --password=***')
+    expect(redactSensitive("PASSWORD=$(printf 'x\nhunter2') next")).toBe('PASSWORD=***')
+    expect(redactSensitive('login --password=`printf foo\\` hunter2` next\nls')).toBe('login --password=***')
+    expect(redactSensitive('login --password=${X:-$(echo } hunter2)} next\nls')).toBe('login --password=***')
+    expect(redactSensitive('login --password=<(printf hunter2) --token >(tee t) next\nls')).toBe('login --password=***')
     expect(redactSensitive('login --password=$(case x in x) echo hunter2;; esac) next')).toBe('login --password=***')
     expect(redactSensitive(`login --password=$(printf '%s)' "a)b" \\) hunter2) next`)).toBe('login --password=***')
     // Every prefiltered key alias, and Python tuple containers.
@@ -127,6 +128,7 @@ describe('curl -u', () => {
     expect(redactText('curl -u\tbob:pw example.com', true)).toBe('curl -u\tbob:*** example.com')
     expect(redactSensitive(String.raw`curl -u "bob:pw\"word" https://x`)).toBe(String.raw`curl -u "bob:***" https://x`)
     expect(redactSensitive('ls -u /tmp && curl --user carol:pw1 x')).toBe('ls -u /tmp && curl --user carol:*** x')
+    expect(redactSensitive(`curl -u 'bob':'hunter2' https://x`)).toBe(`curl -u 'bob':'***' https://x`)
   })
 })
 

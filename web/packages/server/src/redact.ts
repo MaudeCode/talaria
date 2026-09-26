@@ -62,11 +62,18 @@ const JWT_RE = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g
 const BEARER_RE = /((?<!Authorization:\s{0,8})\bBearer\s+)([^\s'",\])]+)/gi
 /** One shell-quoted piece, which may span lines: `'...'`, `"..."` (with backslash escapes), bash `$'...'` / `$"..."`, or JSON escaped inside a shell string (`\"...\"`). */
 const QUOTED = String.raw`\$?'[^']*'|\$?"(?:[^"\\]|\\[\s\S])*"|\\"(?:[^"\\]|\\[^"])*\\"`
+/** A `"` / `'` not escaped by an odd run of backslashes. */
+const UNESCAPED_QUOTE_RE = [/(?:^|[^\\])(?:\\\\)*"/, /(?:^|[^\\])(?:\\\\)*'/] as const
 /** A quoted value's delimiters and content, or null for a bare value. */
 function splitQuoted(value: string): { open: string; inner: string; close: string } | null {
   const m = /^(\$?(?:\\"|"|'))([\s\S]*?)(\\"|"|')$/.exec(value)
   if (!m || m[1]!.replace('$', '') !== m[3]) return null
-  return { open: m[1]!, inner: m[2]!, close: m[3] }
+  const [, open = '', inner = '', close = ''] = m
+  // One piece only: its own delimiter never appears unescaped inside (`'bob':'pw'` is two pieces). A plain `'…'` has no
+  // escapes; `"…"` and `$'…'` escape with a backslash; escaped JSON (`\"…\"`) is left to its scanner.
+  if (open === "'" && inner.includes("'")) return null
+  if ((open === '"' || open === '$"' || open === "$'") && UNESCAPED_QUOTE_RE[close === "'" ? 1 : 0].test(inner)) return null
+  return { open, inner, close }
 }
 /**
  * A `Cookie:` / `Set-Cookie:` header's whole value (session cookies are credentials), up to the quote that encloses the
@@ -107,7 +114,7 @@ function isCredentialKey(key: string): boolean {
 const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_-])(-{0,2})([A-Za-z][A-Za-z0-9_-]{0,127})((?:\\?["'])?\s*\+?[=:]\s*|\s+)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `-uuser:secret` / `--user user:secret`; a quoted pair or quoted secret is masked through its closing quote. */
-const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-u[ \t]*|--user[ \t]+)(?=\$?["']?[^\s:"']*:)/g
+const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-u[ \t]*|--user[ \t]+)(?=\S)/g
 /** The prefilter's view of `USER_FLAG_RE`. */
 const USER_FLAG_TEST_RE = new RegExp(USER_FLAG_RE.source)
 const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
@@ -232,10 +239,11 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
       i = k + 1
     } else if (c === '$' && text[i + 1] === '"') i += 1
     // A command substitution (`$(…)`, backticks) cannot be bounded without a shell parser (`case` patterns carry unmatched
-    // `)`, backticks nest by escaping): mask to the line end. `${…}` is balanced, quote- and escape-aware.
-    else if (c === '$' && text[i + 1] === '(') return lineEnd(i)
+    // `)`, backticks nest by escaping, and either may span lines): mask to the end of the text. `${…}` is balanced, quote-
+    // and escape-aware.
+    else if (c === '$' && text[i + 1] === '(') return text.length
     // Process substitution (`<(…)`, `>(…)`) likewise.
-    else if ((c === '<' || c === '>') && text[i + 1] === '(') return lineEnd(i)
+    else if ((c === '<' || c === '>') && text[i + 1] === '(') return text.length
     else if (c === '$' && text[i + 1] === '{') {
       let k = i + 2
       let d = 1
@@ -245,12 +253,12 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
         else if (ch === "'") { const q = text.indexOf("'", k + 1); k = q === -1 ? text.length : q + 1 }
         else if (ch === '"') { k += 1; while (k < text.length && text[k] !== '"') k += text[k] === '\\' ? 2 : 1; k += 1 }
         // A command substitution inside the expansion can hold a literal `}`: mask to the line end.
-        else if ((ch === '$' && text[k + 1] === '(') || ch === '`') return lineEnd(i)
+        else if ((ch === '$' && text[k + 1] === '(') || ch === '`') return text.length
         else { if (ch === '{') d += 1; else if (ch === '}') d -= 1; k += 1 }
       }
       if (d > 0) return lineEnd(i)
       i = k
-    } else if (c === '`') return lineEnd(i)
+    } else if (c === '`') return text.length
     else if (c === "'") {
       const close = text.indexOf("'", i + 1)
       if (close === -1) return i === start ? lineEnd(i) : i
@@ -353,6 +361,8 @@ function redactUserFlags(text: string): string {
     const wordStart = m.index + m[0].length
     const wordEnd = shellWordEnd(text, wordStart, quoteAt(wordStart), closeOf)
     const word = text.slice(wordStart, wordEnd)
+    // One quoted pair (`"bob:pw"`) is split inside its quotes; otherwise the word's first `:` separates user and secret
+    // (`'bob':'pw'`, `bob:'pw'`).
     const quoted = splitQuoted(word)
     const body = quoted ? quoted.inner : word
     const colon = body.indexOf(':')
