@@ -219,6 +219,8 @@ describe('round 44 shapes', () => {
     expect(redactText(`KEY=password; SEP='='; login --\${KEY}\${SEP}hunter2 next`, true)).toBe(`KEY=password; SEP='='; login --*** next`)
     expect(redactText(`login --pass\${TAIL}\${SEP}hunter2 next`, true)).toBe(`login --pass*** next`)
     expect(redactText(`ls -$OPTS dir && tar --out-$(date +%F) x && login --pass$X`, true)).toBe(`ls -$OPTS dir && tar --out-$(date +%F) x && login --pass$X`)
+    expect(redactText(`login --{password,user}=hunter2 --{pass,pass}word=hunter3 --{p{a,b},x}=hunter4 next`, true)).toBe(`login --{password,user}=*** --*** --***`)
+    expect(redactText(`echo --{a,b} {x,y}=1`, true)).toBe(`echo --{a,b} {x,y}=1`)
     expect(redactText(`SEP='='; login --password\${SEP}hunter2 --api_key$(printf =)hunter3 --token\${S}x=hunter4 next`, true)).toBe(`SEP='='; login --password*** --api_key*** --token*** next`)
     // Markdown code spans are prose, not substitutions.
     expect(redactText('answer with **markdown** and `code` about the token', true)).toBe('answer with **markdown** and `code` about the token')

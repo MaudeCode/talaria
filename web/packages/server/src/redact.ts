@@ -130,7 +130,7 @@ function isCredentialKey(key: string): boolean {
  * ANSI-C `$'…'` with a backslash escape (`$'\x77ord'`; like any key piece, without spaces, `=` or `:`).
  */
 const SUBST_PIECE = String.raw`\$'(?=[^'\s=:]*\\)(?:[^'\\\s=:]|\\\S)*'|\$\([^()\n'"\x60\\]*\)|\x60(?![\s\x60])(?:[^\x60\n\\]|\\.)*(?<![\s\\])\x60|\$\{[^{}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\$[0-9@*#?$!-]`
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})((?:[A-Za-z0-9_]|${SUBST_PIECE}|(?<=-)(?=\$[({]|\x60))(?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-]|\$?'[A-Za-z0-9_.-]*'|\$?"[A-Za-z0-9_.-]*"|\\[A-Za-z0-9_.-]|${SUBST_PIECE}|\{(?=[^{}\s]*(?:,|\.\.))[^{}\s]*\})*)((?:\\?["'])?\s*\+?\\?[=:]\s*|\s+|)`, 'g')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})((?:[A-Za-z0-9_]|${SUBST_PIECE}|(?<=-)\{(?=[^{}\s]*(?:,|\.\.))[^{}\s]*\}|(?<=-)(?=\$[({]|\x60|\{))(?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-]|\$?'[A-Za-z0-9_.-]*'|\$?"[A-Za-z0-9_.-]*"|\\[A-Za-z0-9_.-]|${SUBST_PIECE}|\{(?=[^{}\s]*(?:,|\.\.))[^{}\s]*\})*)((?:\\?["'])?\s*\+?\\?[=:]\s*|\s+|)`, 'g')
 /**
  * A substitution, variable or brace-expansion piece of a key (`$(…)`, `` `…` ``, `${…}`, `$NAME`, `{a,b}`, `{1..3}`) right
  * after an identifier character.
@@ -378,7 +378,7 @@ function redactCredentialParams(text: string): string {
     }
     // A key the shell computes from its first piece (`--$(printf password)=`, `--${KEY}=`) is one only with `=`: `$HOST:$PORT`,
     // `-$OPTS dir` and a Markdown `` `code`: `` are not assignments. A leading backtick needs a flag besides.
-    const computedStart = /^(?:\$[({A-Za-z_0-9@*#?$!-]|\$'(?=[^'\s=:]*\\)|\x60)/.test(key)
+    const computedStart = /^(?:\$[({A-Za-z_0-9@*#?$!-]|\$'(?=[^'\s=:]*\\)|\x60|\{)/.test(key)
     if (computedStart && (!sep.includes('=') || (key.startsWith('\x60') && !dash)) && sep) continue
     // A substitution the key grammar cannot parse (`$(` nested or quoted, `${` nested) may still build a credential name:
     // fail closed to the end of the text, as `shellWordEnd` does for a substitution in a value. An unclosed backtick or a
