@@ -173,12 +173,17 @@ function shellWordEnd(text: string, start: number, enclosing: string): number {
     else if (c === '$' && (text[i + 1] === '(' || text[i + 1] === '{')) {
       const open = text[i + 1]!
       const close = open === '(' ? ')' : '}'
+      // Quoted and escaped delimiters inside the substitution do not count.
       let k = i + 2
-      for (let d = 1; k < text.length && d > 0; k += 1) {
-        if (text[k] === open) d += 1
-        else if (text[k] === close) d -= 1
+      let d = 1
+      while (k < text.length && d > 0) {
+        const ch = text[k]!
+        if (ch === '\\') k += 2
+        else if (ch === "'") { const q = text.indexOf("'", k + 1); k = q === -1 ? text.length : q + 1 }
+        else if (ch === '"') { k += 1; while (k < text.length && text[k] !== '"') k += text[k] === '\\' ? 2 : 1; k += 1 }
+        else { if (ch === open) d += 1; else if (ch === close) d -= 1; k += 1 }
       }
-      if (text[k - 1] !== close) return lineEnd(i)
+      if (d > 0) return lineEnd(i)
       i = k
     } else if (c === '`') {
       const close = text.indexOf('`', i + 1)
