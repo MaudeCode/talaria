@@ -254,6 +254,33 @@ describe('chat turns through the sidecar', () => {
     expect(perSession).toHaveLength(2)
     expect(leaks(perSession.map((f) => f.data))).toEqual([])
     expect(perSession.map((f) => (f.data as Json).kind)).toEqual(['shell', 'shell'])
+
+    // Frames buffered for a late subscriber while redaction was off are redacted on delivery once it is back on.
+    const bufferedSid = await newSession(s)
+    let release: () => void = () => undefined
+    let bufferedStream = ''
+    s.deps.settings.save({ api_redact_enabled: false })
+    try {
+      sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+        emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: command, args: { command }, tid: 'call_1' } })
+        emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: command, args: { command }, tid: 'call_1', is_error: false } })
+        release = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Done.' }])) }
+      }))
+      bufferedStream = String((await json(await post(s, '/api/chat/start', { session_id: bufferedSid, message: 'run it' }))).stream_id)
+      const bufferedJournal = join(realpathSync(s.state), 'sessions', '_run_journal', bufferedSid, `${bufferedStream}.jsonl`)
+      const deadline = Date.now() + 3000
+      while (!(existsSync(bufferedJournal) && readFileSync(bufferedJournal, 'utf8').includes('"tool_complete"')) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
+    } finally {
+      s.deps.settings.save({ api_redact_enabled: true })
+    }
+    try {
+      const delivered = (await s.sse(`/api/chat/stream?stream_id=${bufferedStream}`, (f) => f.event === 'tool_complete')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
+      expect(delivered).toHaveLength(2)
+      expect(leaks(delivered.map((f) => f.data))).toEqual([])
+      expect(delivered.map((f) => (f.data as Json).kind)).toEqual(['shell', 'shell'])
+    } finally {
+      release()
+    }
   })
 
   it('builds the settled turn\'s scene with Codex commentary as prose under Worked, leaving the stored rows as the Agent wrote them', async () => {

@@ -313,7 +313,7 @@ export class TurnRunner {
           deps.log(`[webui] WARNING: run journal append failed for ${streamId}/${event}: ${(error as Error).message}`)
         }
       }
-      channel.put([event, data, eventId])
+      channel.put([event, data, eventId, meta.redacted])
       if (event === 'done' || event === 'cancel' || event === 'apperror' || event === 'error') {
         try { deps.onTerminal?.(streamId, event === 'done' ? 'completed' : event === 'cancel' ? 'cancelled' : 'failed') } catch { /* best effort */ }
       }

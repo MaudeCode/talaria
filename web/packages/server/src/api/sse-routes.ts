@@ -137,10 +137,18 @@ function resumeCursor(ctx: RequestContext, streamId: string): { afterSeq: number
   return { afterSeq: null, requested: true }
 }
 
-/** A journal row's payload as it may cross the SSE boundary: a tool frame journaled unredacted (before this server redacted them, or with redaction off) is redacted and stamped on read. */
+/**
+ * A frame's payload as it may cross the SSE boundary: a tool frame produced unredacted (before this server redacted them,
+ * or while redaction was off, then journaled or buffered for a late subscriber) is redacted under the current policy and
+ * stamped on the way out.
+ */
+function publicFramePayload(ctx: RequestContext, event: string, payload: unknown, redacted: boolean | undefined): unknown {
+  const tool = (event === 'tool' || event === 'tool_complete') && redacted !== true && payload && typeof payload === 'object' && !Array.isArray(payload)
+  return tool ? publicToolFrame(payload as Record<string, unknown>, ctx.deps.sessions.deps.redactEnabled()) : payload
+}
+
 function publicJournalPayload(ctx: RequestContext, entry: JournalEvent): unknown {
-  const tool = (entry.event === 'tool' || entry.event === 'tool_complete') && entry.redacted !== true && entry.payload && typeof entry.payload === 'object' && !Array.isArray(entry.payload)
-  return tool ? publicToolFrame(entry.payload as Record<string, unknown>, ctx.deps.sessions.deps.redactEnabled()) : entry.payload
+  return publicFramePayload(ctx, entry.event, entry.payload, entry.redacted)
 }
 
 function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: string, afterSeq: number | null, opts: { maxSeq?: number | null; includeStale?: boolean } = {}): { found: boolean; terminal: boolean } {
@@ -176,13 +184,13 @@ async function drainStream(ctx: RequestContext, sse: SseWriter, sub: StreamSubsc
     const item = await nextItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
     if (sse.isClosed) return
     if (!item) { sse.comment('heartbeat'); continue }
-    const [event, data, eventId] = item
+    const [event, data, eventId, redacted] = item
     const seq = sameRunSeq(eventId, streamId)
     if (replayCutoffSeq !== null && seq !== null && seq <= replayCutoffSeq) {
       if (SSE_RELAY_CLOSE_EVENTS.has(event)) return
       continue
     }
-    sse.event(event, data, eventId)
+    sse.event(event, publicFramePayload(ctx, event, data, redacted), eventId)
     if (SSE_RELAY_CLOSE_EVENTS.has(event)) return
   }
 }
@@ -436,12 +444,12 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
       const item = await nextItem(sub, SSE_HEARTBEAT_INTERVAL_MS)
       if (sse.isClosed) return
       if (!item) { sse.comment('keepalive'); continue }
-      const [event, data, eventId] = item
+      const [event, data, eventId, redacted] = item
       const seq = sameRunSeq(eventId, streamId)
       const terminal = SSE_RELAY_CLOSE_EVENTS.has(event)
       const alreadySent = (cutoff !== null && seq !== null && seq <= cutoff) || (eventId !== null && sent.has(eventId))
       if (alreadySent) { if (terminal) return; continue }
-      sse.event(event, data, eventId)
+      sse.event(event, publicFramePayload(ctx, event, data, redacted), eventId)
       if (eventId) note(eventId)
       if (terminal) return
     }

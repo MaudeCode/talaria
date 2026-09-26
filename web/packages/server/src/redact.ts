@@ -123,9 +123,12 @@ function isCredentialKey(key: string): boolean {
  * read, however long, and matched whole even without a separator: the scan never restarts inside an identifier, so it
  * stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z0-9_](?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-]|\$?'[A-Za-z0-9_.-]*'|\$?"[A-Za-z0-9_.-]*"|\\[A-Za-z0-9_.-]|\$\([^()\n'"\x60\\]*\)|\x60(?![\s\x60])(?:[^\x60\n\\]|\\.)*(?<![\s\\])\x60|\$\{[^{}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*)*)((?:\\?["'])?\s*\+?[=:]\s*|\s+|)`, 'g')
-/** A substitution or variable piece of a key (`$(…)`, `` `…` ``, `${…}`, `$NAME`) right after an identifier character. */
-const DYNAMIC_KEY_PIECE_RE = /[A-Za-z0-9_](?:\$[({A-Za-z_]|`)/
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z0-9_](?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-]|\$?'[A-Za-z0-9_.-]*'|\$?"[A-Za-z0-9_.-]*"|\\[A-Za-z0-9_.-]|\$\([^()\n'"\x60\\]*\)|\x60(?![\s\x60])(?:[^\x60\n\\]|\\.)*(?<![\s\\])\x60|\$\{[^{}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\{(?=[^{}\s]*(?:,|\.\.))[^{}\s]*\})*)((?:\\?["'])?\s*\+?[=:]\s*|\s+|)`, 'g')
+/**
+ * A substitution, variable or brace-expansion piece of a key (`$(…)`, `` `…` ``, `${…}`, `$NAME`, `{a,b}`, `{1..3}`) right
+ * after an identifier character.
+ */
+const DYNAMIC_KEY_PIECE_RE = /[A-Za-z0-9_](?:\$[({A-Za-z_]|`|\{(?=[^{}\s]*(?:,|\.\.)[^{}\s]*\}))/
 /** An `Authorization` value's first word when it is a scheme token (`Basic`), and the gap to the credential after it. */
 const AUTH_SCHEME_WORD_RE = /^(?!\*+$)[A-Za-z0-9!#$%&*+.^_|~-]+$/
 const AUTH_SCHEME_GAP_RE = /[ \t]+(?=\S)/y
@@ -351,11 +354,11 @@ function redactCredentialParams(text: string): string {
   for (let m = CRED_PARAM_RE.exec(text); m; m = CRED_PARAM_RE.exec(text)) {
     const [head, dash = '', key = '', sep = ''] = m
     // A substitution the key grammar cannot parse (`$(` nested or quoted, `${` nested) may still build a credential name:
-    // fail closed to the end of the text, as `shellWordEnd` does for a substitution in a value. An unclosed backtick does so
-    // only after a flag: in prose it is a Markdown code span's close (`` `code` ``). A backtick piece inside a key has no
+    // fail closed to the end of the text, as `shellWordEnd` does for a substitution in a value. An unclosed backtick or a
+    // nested brace expansion does so only after a flag: in prose a backtick is a Markdown code span's close (`` `code` ``). A backtick piece inside a key has no
     // outer spaces, so the prose between two code spans (`` ` and ` ``) is never read as one.
     const keyEnd = m.index + head.length
-    if (!sep && (/^\$[({]/.test(text.slice(keyEnd, keyEnd + 2)) || (dash && text[keyEnd] === '\x60'))) {
+    if (!sep && (/^\$[({]/.test(text.slice(keyEnd, keyEnd + 2)) || (dash && /^[\x60{]/.test(text[keyEnd] ?? '')))) {
       out += `${text.slice(last, keyEnd)}***`
       last = text.length
       break
