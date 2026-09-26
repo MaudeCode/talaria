@@ -50,3 +50,37 @@ test('reloading a running session renders its turn once from the transcript curs
     await new Promise<void>((resolve) => server.close(() => { resolve() }))
   }
 })
+
+/** A run whose journal cannot replay it keeps its persisted rows: the live turn attached without replay does not hide them. */
+test('a running session without a transcript cursor keeps its persisted output visible', async ({ page }) => {
+  const sid = 'resume-degraded'
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
+    session_id: sid, title: 'Read the file', active_stream_id: 'degraded-run', transcript_seq: null,
+    messages: [
+      { role: 'user', id: 1, content: 'Read the file', _turn_id: 'degraded-run' },
+      { role: 'assistant', id: 2, content: 'Persisted before the journal failed.', _turn_id: 'degraded-run' },
+    ],
+  } } }))
+  await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'degraded-run', replay_available: false } }))
+  const requests: string[] = []
+  const open: ServerResponse[] = []
+  const server = createServer((request, response) => {
+    requests.push(request.url ?? '')
+    open.push(response)
+    response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+    response.write(': connected\n\n')
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}${new URL(route.request().url()).search}` }))
+  try {
+    await page.goto(`/session/${sid}`)
+    await expect.poll(() => requests.length).toBeGreaterThan(0)
+    expect(new URL(requests[0]!, 'http://x').searchParams.get('after_seq')).toBeNull()
+    await expect(page.getByText('Persisted before the journal failed.')).toBeVisible()
+  } finally {
+    for (const response of open) response.end()
+    await new Promise<void>((resolve) => server.close(() => { resolve() }))
+  }
+})

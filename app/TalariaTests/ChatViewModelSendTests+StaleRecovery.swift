@@ -1195,6 +1195,7 @@ extension ChatViewModelSendTests {
     func testColdRelaunchAgainstServerWithoutCursorFieldRendersEachSegmentOnce() async throws {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, transcriptJSON: """
+        "pending_started_at": 1770000100,
         "messages": [
           { "role": "user", "content": "Earlier question", "timestamp": 1770000000, "message_id": "user-0" },
           { "role": "assistant", "content": "Earlier answer.", "timestamp": 1770000001, "message_id": "assistant-0" },
@@ -1243,6 +1244,7 @@ extension ChatViewModelSendTests {
                     "session_id": "session-abc",
                     "title": "Planning",
                     "active_stream_id": "stream-123",
+                    "pending_started_at": 1770000100,
                     "messages": [
                       { "role": "user", "content": "Initial request", "timestamp": 1770000100, "message_id": "user-1" },
                       { "role": "assistant", "content": "Before hint. ", "timestamp": 1770000101, "message_id": "assistant-1" }
@@ -1279,6 +1281,28 @@ extension ChatViewModelSendTests {
 
         streamClient.emit(.token("Before hint. "), lastEventID: "stream-123:1")
         XCTAssertEqual(viewModel.messages.filter { $0.role == "assistant" }.compactMap(\.content), ["Before hint. "])
+    }
+
+    // Early in a run the old server may not hold the running prompt yet: the latest
+    // loaded prompt belongs to the previous turn, whose settled answer must stay.
+    @MainActor
+    func testOldServerFallbackKeepsThePreviousTurnWhenTheRunningPromptIsNotLoaded() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeColdRelaunchViewModel(streamClient: streamClient, transcriptJSON: """
+        "pending_started_at": 1770000200,
+        "messages": [
+          { "role": "user", "content": "Earlier question", "timestamp": 1770000000, "message_id": "user-0" },
+          { "role": "assistant", "content": "Earlier answer.", "timestamp": 1770000001, "message_id": "assistant-0" }
+        ]
+        """)
+
+        await viewModel.loadMessages()
+        await viewModel.reconnectStreamIfNeeded()
+
+        let url = try XCTUnwrap(streamClient.startedURLs.last)
+        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertNil(queryItems.first(where: { $0.name == "after_seq" }))
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Earlier question", "Earlier answer."])
     }
 
     @MainActor

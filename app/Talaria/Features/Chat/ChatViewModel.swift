@@ -361,6 +361,8 @@ final class ChatViewModel {
     @ObservationIgnored private var backgroundPollTask: Task<Void, Never>?
     private var isRefreshingCompletedResponseTitle = false
     private var latestServerLoadHadAssistantResponseAfterLatestUser = false
+    // The latest applied load's `pending_started_at`: when its running turn began.
+    private var loadedPendingStartedAt: Double?
     private var needsComposerConfigurationReload = false
     private var pendingExplicitModelPick = false
     private(set) var composerConfigurationInteractionGeneration = 0
@@ -1358,6 +1360,7 @@ final class ChatViewModel {
             toolCallAnchorMessageID = nil
             reasoningAnchorMessageID = nil
             attachmentCoordinator.removeAllLocalPreviews()
+            loadedPendingStartedAt = session?.pendingStartedAt
             streamCoordinator.reconcileSessionLoad(
                 loadedActiveStreamID: loadedActiveStreamID,
                 preparation: streamLoadPreparation,
@@ -5427,7 +5430,13 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     func streamCoordinatorOmitLoadedRunningTurn() -> Bool {
-        guard let prompt = messages.lastIndex(where: Self.isOrdinaryUserTurnBoundary) else { return false }
+        // Only the running turn's own prompt (sent at or after its start) marks where to trim; an
+        // earlier prompt means the load does not hold this turn yet, and its settled answer stays.
+        guard let prompt = messages.lastIndex(where: Self.isOrdinaryUserTurnBoundary),
+              let startedAt = loadedPendingStartedAt,
+              let promptSentAt = messages[prompt].timestamp,
+              promptSentAt >= startedAt - 1
+        else { return false }
 
         // Steers are the user's own rows; replayed `steer_consumed` frames only update them.
         let steers = messages[messages.index(after: prompt)...].filter { $0.isLocalSteeringHint || $0.steer != nil }
