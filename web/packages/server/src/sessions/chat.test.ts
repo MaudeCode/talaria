@@ -747,6 +747,8 @@ describe('chat turns through the sidecar', () => {
       await new Promise<void>((resolve) => { release = resolve })
       emit({ event: 'clarify', data: { clarify_id: 'single-1', question: 'Which env?', choices_offered: ['dev', 'prod'], session_id: sid } })
       await new Promise<void>((resolve) => { release = resolve })
+      emit({ event: 'clarify', data: { clarify_id: 'batch-6', question: '', choices_offered: [], session_id: sid, questions: Array.from({ length: 6 }, (_, i) => ({ qid: `q${String(i)}`, question: `Question ${String(i)}?`, choices: null, choices_offered: null, multi_select: false })) } })
+      await new Promise<void>((resolve) => { release = resolve })
       return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'ok' }])
     })
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'plan my evening' }))
@@ -771,6 +773,13 @@ describe('chat turns through the sidecar', () => {
     expect((single[single.length - 1]?.data as Json).steps).toEqual([{ qid: 'q0', question: 'Which env?', choices: ['dev', 'prod'], multi_select: false }])
     expect((await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'single-1', answers: { q0: 'prod' } })).status).toBe(200)
     expect(relayed[1]).toBe('prod')
+
+    // A batch longer than today's Agent limit stays a batch: every question is a step and the reply is the envelope.
+    const six = Array.from({ length: 6 }, (_, i) => ({ qid: `q${String(i)}`, question: `Question ${String(i)}?`, choices: null, choices_offered: null, multi_select: false }))
+    const long = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'clarify' && (f.data as Json).clarify_id === 'batch-6')
+    expect(((long[long.length - 1]?.data as Json).steps as Json[]).map((step) => step.question)).toEqual(six.map((q) => q.question))
+    expect((await post(s, '/api/clarify/respond', { session_id: sid, clarify_id: 'batch-6', answers: Object.fromEntries(six.map((q) => [q.qid, 'yes'])) })).status).toBe(200)
+    expect(JSON.parse(relayed[2] ?? '')).toEqual({ answers: Object.fromEntries(six.map((q) => [q.qid, 'yes'])) })
     await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
   })
 

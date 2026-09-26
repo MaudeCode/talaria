@@ -12,7 +12,6 @@ import type { ClarifyAnswers, ClarifyStep } from '@maudecode/talaria-web-contrac
 export interface PendingSubscriber { queue: Record<string, unknown>[]; wake: (() => void) | null; closed: boolean }
 
 export const CLARIFY_DEFAULT_TIMEOUT_SECONDS = 3600
-export const CLARIFY_MAX_QUESTIONS = 5
 export const CLARIFY_MAX_CHOICES = 4
 
 function choiceText(choice: unknown): string {
@@ -33,9 +32,12 @@ function normalizedChoices(raw: unknown): string[] | null {
   return choices.length ? choices : null
 }
 
-/** Python `clarify.normalize_questions`. */
+/**
+ * Python `clarify.normalize_questions`, without its question cap: the Agent enforces its own batch limit before it
+ * parks, so any non-empty list it sends stays a batch (dropping the shape would leave it waiting on an envelope).
+ */
 export function normalizeQuestions(questions: unknown): Record<string, unknown>[] | null {
-  if (!Array.isArray(questions) || !questions.length || questions.length > CLARIFY_MAX_QUESTIONS) return null
+  if (!Array.isArray(questions) || !questions.length) return null
   return questions.map((raw, index) => {
     let item: Record<string, unknown>
     if (typeof raw === 'string') item = { question: raw }
