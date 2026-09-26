@@ -284,6 +284,11 @@ describe('shell-composed words', () => {
   it('removes a line continuation as the shell does', () => {
     expect(redactText('login --pass\\\nword=hunter2 next', true)).toBe('login --password=*** next')
     expect(redactText('login --api\\\n_key "hunter2" next', true)).not.toContain('hunter2')
+    for (const text of ["curl '--user' \\\n  bob:hunter2 https://x", 'curl --user \\\n  bob:hunter2 x', 'login --password \\\n  hunter2 next']) {
+      expect(redactText(text, true)).not.toContain('hunter2')
+    }
+    // Nothing to mask: the command keeps its lines.
+    expect(redactText('ls \\\n  -la --token-file=x', true)).toBe('ls \\\n  -la --token-file=x')
   })
 
   it('reads a quoted flag with the value word after it', () => {

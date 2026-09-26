@@ -682,7 +682,11 @@ function redactComposedWords(text: string): string {
 
 export function redactSensitive(text: string): string {
   if (!text) return text
-  return redactRules(redactComposedWords(text))
+  // Line continuations join their lines as the shell runs them (`--user \⏎ bob:pw`, `--pass\⏎word=x`): that view is
+  // redacted, and a text with nothing to mask keeps its lines as written.
+  const joined = text.replace(/\\\r?\n/g, '')
+  const out = redactRules(redactComposedWords(joined))
+  return joined !== text && out === joined ? text : out
 }
 
 function redactRules(text: string): string {
