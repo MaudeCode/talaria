@@ -430,9 +430,10 @@ export function withPendingUserTurn(rows: Message[], turn: { localCount: number;
   if (persisted >= 0) {
     const row = rows[persisted]!
     if (row._active_turn_token === turn.activeTurnToken) return rows
-    // A state.db prompt has neither the turn's identity nor its attachments: take them from the pending turn.
-    const { _turn_id, _active_turn_token, _source, attachments } = turn.prompt
-    const stamped: Message = { ...row, _turn_id, _active_turn_token }
+    // A state.db prompt has neither the turn's identity nor its attachments, and its text is the Agent's (workspace
+    // prefix and all): take them from the pending turn, as settlement will.
+    const { content, _turn_id, _active_turn_token, _source, attachments } = turn.prompt
+    const stamped: Message = { ...row, content, _turn_id, _active_turn_token }
     if (_source !== undefined) stamped._source = _source
     if (!row.attachments && attachments) stamped.attachments = attachments
     return rows.map((m, i) => (i === persisted ? stamped : m))

@@ -67,6 +67,8 @@ export const MessageSchema = z.looseObject({
   provider_details: Json.optional(), provider_details_label: z.string().optional(), recovery_control: Json.optional(), _anchor_activity_scene: ActivitySceneSchema.optional(),
   /** The turn this row belongs to; the server stamps every row it sends, so clients group turns by equality alone. */
   _turn_id: z.string().optional(),
+  /** The running turn's prompt, which the turn's settlement replaces with its persisted row. */
+  _active_turn_user: z.boolean().optional(),
   /** A consumed steer at its causal place in the turn: display-only, never model history. A steer only the Agent recorded has no timing. */
   _steer: z.looseObject({ steer_id: z.string(), submitted_at: z.number().nullable().optional(), consumed_at: z.number().optional(), phase_duration: z.number().optional() }).optional(),
   /** On a steered turn's last reply: seconds from the last consumed steer to the turn's end. */
