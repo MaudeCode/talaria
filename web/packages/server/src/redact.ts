@@ -386,9 +386,12 @@ function redactCredentialParams(text: string): string {
     // (`--${KEY}${SEP}hunter2`): from the key's first computed piece, the rest of the key is masked (and the value after a
     // real `=`/`:`) when the static part before it names a credential, or when a flag's name goes on after it.
     const computedAt = key.search(COMPUTED_PIECE_RE)
-    if (computedAt >= 0 && ((computedAt > 0 && isCredentialKey(key.slice(0, computedAt))) || (dash && key.slice(computedAt).replace(COMPUTED_PIECES_RE, '') !== ''))) {
-      const end = /[=:]/.test(sep) ? shellWordEnd(text, keyEnd, quoteAt(keyEnd), closeOf) : m.index + dash.length + key.length
-      out += `${text.slice(last, m.index + dash.length + computedAt)}***`
+    const staticTail = computedAt >= 0 && key.slice(computedAt).replace(COMPUTED_PIECES_RE, '') !== ''
+    if (computedAt >= 0 && ((computedAt > 0 && isCredentialKey(key.slice(0, computedAt))) || (dash && staticTail))) {
+      // A flag whose name ends in the computed piece (`--password${X} hunter2`) takes its value from the next word.
+      const nextWord = dash && !staticTail && /^\s+$/.test(sep)
+      const end = /[=:]/.test(sep) || nextWord ? shellWordEnd(text, keyEnd, quoteAt(keyEnd), closeOf) : m.index + dash.length + key.length
+      out += `${text.slice(last, m.index + dash.length + computedAt)}***${nextWord ? `${sep}***` : ''}`
       last = end
       CRED_PARAM_RE.lastIndex = Math.max(last, CRED_PARAM_RE.lastIndex)
       continue
