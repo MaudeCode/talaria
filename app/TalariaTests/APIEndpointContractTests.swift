@@ -442,6 +442,24 @@ final class SharedContractTests: XCTestCase {
         XCTAssertNil(AssistantActivityTimeline.authoritativeScene(message: running))
     }
 
+    func testSharedWebSessionFlagsDriveStreamingAndReadOnly() throws {
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("web-session")) as? [String: Any])
+        // A Web from before server-validated flags (TAL-312) ships neither example; its session keeps the older shape.
+        guard let stale = root["stale_stream_session"], let child = root["subagent_session"], let live = root["session"] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        func summary(_ object: Any) throws -> SessionSummary {
+            SessionSummary(from: try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: object)))
+        }
+
+        let running = try summary(live)
+        XCTAssertEqual(running.isStreaming, true)
+        XCTAssertTrue(SessionRowView.isActiveStreaming(running))
+        XCTAssertFalse(running.isSessionReadOnly)
+        XCTAssertFalse(SessionRowView.isActiveStreaming(try summary(stale)))
+        XCTAssertTrue(try summary(child).isSessionReadOnly)
+    }
+
     func testSharedRelaySnapshotAndRegistration() async throws {
         let snapshot = try fixture("relay-snapshot")
         let registration = try JSONSerialization.jsonObject(with: fixture("app-registration")) as! NSDictionary

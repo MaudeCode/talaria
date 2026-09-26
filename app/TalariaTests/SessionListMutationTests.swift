@@ -15,16 +15,9 @@ final class SessionListMutationTests: XCTestCase {
 
     func testReadOnlyRowsOfferExportButNoMutationActions() {
         let currentShape = SessionSummary(sessionId: "current", readOnly: true)
-        let legacyShape = SessionSummary(sessionId: "legacy", isReadOnly: true)
         let normal = SessionSummary(sessionId: "normal")
 
         XCTAssertFalse(SessionRowActionPolicy.offersMutationActions(for: currentShape))
-        XCTAssertFalse(SessionRowActionPolicy.offersMutationActions(for: legacyShape))
-        XCTAssertFalse(
-            SessionRowActionPolicy.offersMutationActions(
-                for: SessionSummary(sessionId: "subagent", sourceTag: "subagent")
-            )
-        )
         XCTAssertTrue(SessionRowActionPolicy.offersMutationActions(for: normal))
 
         XCTAssertTrue(SessionRowActionPolicy.canExport(currentShape, isViewingCachedData: false))
@@ -192,11 +185,9 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertTrue(opened.isSessionReadOnly)
     }
 
-    /// The list row and the import payload can use different historical read-only
-    /// spellings. An authoritative answer must clear the stale alias, or the
-    /// `isSessionReadOnly` OR keeps a writable import view-only.
+    /// An authoritative writable answer replaces a stale read-only flag on the row.
     @MainActor
-    func testWritableImportClearsStaleReadOnlyAliasFromTheRow() async throws {
+    func testWritableImportClearsStaleReadOnlyFromTheRow() async throws {
         let viewModel = try makeViewModel { request in
             apiTestJSONResponse("""
             {
@@ -205,13 +196,12 @@ final class SessionListMutationTests: XCTestCase {
             }
             """, for: request)
         }
-        let row = SessionSummary(sessionId: "cli-1", isCliSession: true, isReadOnly: true)
+        let row = SessionSummary(sessionId: "cli-1", isCliSession: true, readOnly: true)
 
         let resolved = await viewModel.sessionToOpen(for: row)
         let opened = try XCTUnwrap(resolved)
 
         XCTAssertEqual(opened.readOnly, false)
-        XCTAssertNil(opened.isReadOnly)
         XCTAssertFalse(opened.isSessionReadOnly)
     }
 

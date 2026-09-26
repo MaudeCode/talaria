@@ -172,14 +172,11 @@ final class ChatViewModel {
         compressionAnchorMetadata = CompressionAnchorMetadata(from: session)
         recomputeCompressionReferenceCard()
     }
-    /// Mirrors the list-row merge rule: an explicit server value (or subagent
-    /// classification) replaces the seeded flag; a detail that omits both keeps it.
+    /// Mirrors the list-row merge rule: the server's `read_only` replaces the
+    /// seeded flag; a detail that omits it keeps it.
     private func applyReadOnlyState(from session: SessionDetail?) {
-        guard let session else { return }
-        let detail = SessionSummary(from: session)
-        if detail.readOnly != nil || detail.isReadOnly != nil || detail.isDelegatedSubagentSession {
-            isSessionReadOnly = detail.isSessionReadOnly
-        }
+        guard let readOnly = session?.readOnly else { return }
+        isSessionReadOnly = readOnly
     }
     private func clearCompressionAnchorMetadata() {
         compressionAnchorMetadata = nil

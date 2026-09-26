@@ -134,8 +134,8 @@ final class APIClientSessionListTests: APIClientTestCase {
                   "read_only": true
                 },
                 {
-                  "session_id": "legacy-read-only",
-                  "is_read_only": true
+                  "session_id": "subagent-without-flag",
+                  "source_tag": "subagent"
                 },
                 {
                   "session_id": "older-server-row"
@@ -156,11 +156,12 @@ final class APIClientSessionListTests: APIClientTestCase {
         XCTAssertEqual(child.parentSessionId, "parent-1")
         XCTAssertEqual(child.relationshipType, "child_session")
         XCTAssertEqual(child.readOnly, true)
-        XCTAssertNil(child.isReadOnly)
         XCTAssertTrue(child.isDelegatedSubagentSession)
         XCTAssertTrue(child.isSessionReadOnly)
 
-        XCTAssertTrue(sessions[1].isSessionReadOnly)
+        // TAL-312: read-only comes from the server's `read_only` alone, never from source markers.
+        XCTAssertTrue(sessions[1].isDelegatedSubagentSession)
+        XCTAssertFalse(sessions[1].isSessionReadOnly)
         XCTAssertNil(sessions[2].sourceTag)
         XCTAssertNil(sessions[2].parentSessionId)
         XCTAssertNil(sessions[2].readOnly)

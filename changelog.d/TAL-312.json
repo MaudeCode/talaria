@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A chat whose response crashed or already finished no longer keeps showing as streaming.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Read-only chats, such as delegated subagent chats and chats owned by a messaging app, open read-only on the web instead of failing when you send.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

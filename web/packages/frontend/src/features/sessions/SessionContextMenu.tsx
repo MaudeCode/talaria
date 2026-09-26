@@ -71,8 +71,8 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
           </IconButton>
         }
       >
-        <MenuItem onClick={() => { setTitle(row.title); setDialog({ kind: 'rename' }) }}>{m.session_rename()}</MenuItem>
-        <MenuItem onClick={() => regen.mutate()}>{m.session_title_regenerate()}</MenuItem>
+        {!row.read_only && <MenuItem onClick={() => { setTitle(row.title); setDialog({ kind: 'rename' }) }}>{m.session_rename()}</MenuItem>}
+        {!row.read_only && <MenuItem onClick={() => regen.mutate()}>{m.session_title_regenerate()}</MenuItem>}
         <MenuItem onClick={() => pin.mutate()}>{row.pinned ? m.session_unpin() : m.session_pin()}</MenuItem>
         <MenuItem onClick={() => { setProjectId(row.project_id ?? ''); setDialog({ kind: 'move' }) }}>{m.session_move_project()}</MenuItem>
         <MenuSeparator />
@@ -83,7 +83,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
         <MenuItem onClick={() => exportAs('html')}>{m.session_export_html()}</MenuItem>
         <MenuSeparator />
         <MenuItem onClick={() => archive.mutate()}>{row.archived ? m.session_unarchive() : m.session_archive()}</MenuItem>
-        <MenuItem className="text-error" onClick={() => setDialog({ kind: 'delete' })}>{m.session_delete()}</MenuItem>
+        {!row.read_only && <MenuItem className="text-error" onClick={() => setDialog({ kind: 'delete' })}>{m.session_delete()}</MenuItem>}
       </Menu>
       {dialog?.kind === 'rename' && (
         <Dialog open onOpenChange={(o) => { if (!o) setDialog(null) }} title={m.session_rename()} description={m.session_rename_desc()}>

@@ -626,6 +626,26 @@
       }
     ],
     "title": "Contract fixture",
-    "active_stream_id": "contract-run-f"
+    "active_stream_id": "contract-run-f",
+    "is_streaming": true,
+    "read_only": false
+  },
+  "stale_stream_session": {
+    "session_id": "contract-stale",
+    "title": "Crashed run",
+    "active_stream_id": null,
+    "is_streaming": false,
+    "read_only": false,
+    "messages": []
+  },
+  "subagent_session": {
+    "session_id": "contract-subagent",
+    "title": "Delegated child",
+    "source_tag": "subagent",
+    "is_cli_session": false,
+    "active_stream_id": null,
+    "is_streaming": false,
+    "read_only": true,
+    "messages": []
   }
 }

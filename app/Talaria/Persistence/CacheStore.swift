@@ -321,7 +321,6 @@ private extension SessionSummary {
         parentSessionId = cachedSession.parentSessionId
         relationshipType = cachedSession.relationshipType
         readOnly = cachedSession.readOnly
-        isReadOnly = cachedSession.isReadOnly
         matchType = nil
         matchPreview = nil
     }

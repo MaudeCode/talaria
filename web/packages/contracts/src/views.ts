@@ -76,16 +76,21 @@ export type Message = z.infer<typeof MessageSchema>
 
 export const ComposerDraftSchema = z.looseObject({ text: z.string().optional(), files: z.array(Json).optional() })
 
+// TAL-312: the server validates both flags on every session payload; clients render them and never re-derive them.
+const IsStreamingSchema = z.boolean().describe('True only while the session\'s run is a live stream on this server.')
+const ActiveStreamIdSchema = NullableString.optional().describe('The live stream id; non-null only while `is_streaming` is true.')
+const ReadOnlySchema = z.boolean().describe('The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming.')
+
 /** Full session record from `GET /api/session` and mutations returning `session`. */
 export const SessionSchema = z.looseObject({
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), created_workspace: z.string().nullable().optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
   messages: z.array(MessageSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(), created_at: UnixSeconds.optional(), updated_at: UnixSeconds.optional(), last_message_at: NullableNumber.optional(),
   message_count: z.number().optional(), user_message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(),
   personality: NullableString.optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), cache_read_tokens: z.number().optional(), cache_write_tokens: z.number().optional(),
-  cache_hit_percent: NullableNumber.optional(), estimated_cost: NullableNumber.optional(), active_stream_id: NullableString.optional(), is_streaming: z.boolean().optional(), has_pending_user_message: z.boolean().optional(),
+  cache_hit_percent: NullableNumber.optional(), estimated_cost: NullableNumber.optional(), active_stream_id: ActiveStreamIdSchema, is_streaming: IsStreamingSchema, has_pending_user_message: z.boolean().optional(),
   pending_user_message: NullableString.optional(), pending_attachments: z.array(AttachmentSchema).optional(), pending_started_at: NullableNumber.optional(), pending_user_source: NullableString.optional(),
   context_length: NullableNumber.optional(), threshold_tokens: NullableNumber.optional(), last_prompt_tokens: NullableNumber.optional(), post_compression_context_tokens_estimate: NullableNumber.optional(),
-  enabled_toolsets: z.array(z.string()).nullable().optional(), composer_draft: ComposerDraftSchema.optional(), is_cli_session: z.boolean().optional(), read_only: z.boolean().optional(), source_tag: NullableString.optional(),
+  enabled_toolsets: z.array(z.string()).nullable().optional(), composer_draft: ComposerDraftSchema.optional(), is_cli_session: z.boolean().optional(), read_only: ReadOnlySchema, source_tag: NullableString.optional(),
   source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(), worktree_path: NullableString.optional(),
   worktree_branch: NullableString.optional(), worktree_repo_root: NullableString.optional(), share_token: NullableString.optional(), share_created_at: NullableNumber.optional(), manual_title: z.boolean().optional(),
   compression_anchor_summary: NullableString.optional(), compression_recovery: z.record(z.string(), Json).optional(), recommended_recovery_action: NullableString.optional(), compression_recovery_action: NullableString.optional(),
@@ -97,10 +102,10 @@ export const SessionEnvelopeSchema = z.looseObject({ session: SessionSchema })
 /** Sidebar row from `GET /api/sessions`. */
 export const SessionRowSchema = z.looseObject({
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), model: NullableString.optional(), created_at: UnixSeconds.optional(), updated_at: UnixSeconds.optional(), last_message_at: NullableNumber.optional(),
-  message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(), is_streaming: z.boolean().optional(),
-  is_cli_session: z.boolean().optional(), cron_running: z.boolean().optional(), read_only: z.boolean().optional(), attention: z.looseObject({ kind: z.string().optional(), count: z.number().optional() }).nullable().optional(),
+  message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(), is_streaming: IsStreamingSchema,
+  is_cli_session: z.boolean().optional(), cron_running: z.boolean().optional(), read_only: ReadOnlySchema, attention: z.looseObject({ kind: z.string().optional(), count: z.number().optional() }).nullable().optional(),
   source_tag: NullableString.optional(), source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(),
-  active_stream_id: NullableString.optional(), share_token: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.string().optional(), match_preview: NullableString.optional(),
+  active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.string().optional(), match_preview: NullableString.optional(),
 })
 export type SessionRow = z.infer<typeof SessionRowSchema>
 
@@ -112,7 +117,7 @@ export const SessionsListSchema = z.looseObject({
 export type SessionsList = z.infer<typeof SessionsListSchema>
 
 export const SessionStatusSchema = z.looseObject({
-  session_id: SessionIdSchema, title: z.string().optional(), active_stream_id: NullableString.optional(), agent_running: z.boolean().optional(), message_count: z.number().optional(), model: NullableString.optional(),
+  session_id: SessionIdSchema, title: z.string().optional(), active_stream_id: ActiveStreamIdSchema, agent_running: IsStreamingSchema, is_streaming: IsStreamingSchema, read_only: ReadOnlySchema, message_count: z.number().optional(), model: NullableString.optional(),
   profile: NullableString.optional(), workspace: z.string().optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), total_tokens: z.number().optional(), estimated_cost: NullableNumber.optional(), updated_at: UnixSeconds.optional(),
 })
 export type SessionStatus = z.infer<typeof SessionStatusSchema>

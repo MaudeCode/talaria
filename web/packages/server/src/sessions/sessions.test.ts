@@ -276,6 +276,52 @@ describe('session lifecycle over HTTP', () => {
     expect((await s.get('/api/session/status')).status).toBe(400)
   })
 
+  it('reports streaming only for a live runtime stream on detail, list, search, status and mutation replies (TAL-312)', async () => {
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, [{ role: 'user', content: 'streamprobe question' }, { role: 'assistant', content: 'ok' }])
+    // A dead run: the persisted id is not a live stream, and a fresh pending prompt keeps the stale sweep from clearing it.
+    const stored = s.deps.sessionStore.get(sid)
+    stored.title = 'Streamprobe'
+    stored.active_stream_id = 'streamprobe1'
+    stored.pending_user_message = 'still pending'
+    stored.pending_started_at = Date.now() / 1000
+    s.deps.sessionStore.save(stored)
+    const payloads = async (): Promise<Json[]> => {
+      const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+      const row = ((await json(await s.get('/api/sessions'))).sessions as Json[]).find((r) => r.session_id === sid)!
+      const hit = ((await json(await s.get('/api/sessions/search?q=streamprobe'))).sessions as Json[]).find((r) => r.session_id === sid)!
+      const status = await json(await s.get(`/api/session/status?session_id=${sid}`))
+      const pinned = (await json(await post(s, '/api/session/pin', { session_id: sid, pinned: false }))).session as Json
+      return [detail, row, hit, status, pinned]
+    }
+    for (const payload of await payloads()) expect(payload).toMatchObject({ is_streaming: false, active_stream_id: null, read_only: false })
+    expect((await payloads())[3]?.agent_running).toBe(false)
+    s.deps.registry.liveIds.add('streamprobe1')
+    try {
+      for (const payload of await payloads()) expect(payload).toMatchObject({ is_streaming: true, active_stream_id: 'streamprobe1' })
+      expect((await payloads())[3]?.agent_running).toBe(true)
+    } finally {
+      s.deps.registry.liveIds.delete('streamprobe1')
+    }
+  })
+
+  it('marks persisted read-only and subagent sessions read_only on every payload (TAL-312)', async () => {
+    const readOnly = String((await newSession(s)).session_id)
+    const subagent = String((await newSession(s)).session_id)
+    for (const [sid, apply] of [[readOnly, (x: { read_only: boolean }) => { x.read_only = true }], [subagent, (x: { source_tag: string | null }) => { x.source_tag = 'subagent' }]] as const) {
+      const stored = s.deps.sessionStore.get(sid)
+      apply(stored)
+      stored.title = 'Roprobe'
+      stored.messages = [{ role: 'user', content: 'roprobe' }, { role: 'assistant', content: 'ok' }]
+      s.deps.sessionStore.save(stored)
+      const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+      const hit = ((await json(await s.get('/api/sessions/search?q=roprobe'))).sessions as Json[]).find((r) => r.session_id === sid)!
+      const status = await json(await s.get(`/api/session/status?session_id=${sid}`))
+      for (const payload of [detail, hit, status]) expect(payload, sid).toMatchObject({ read_only: true, is_streaming: false })
+      expect(detail).not.toHaveProperty('is_read_only')
+    }
+  })
+
   it('stores composer drafts with monotonic versions and 409 on stale writes', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)

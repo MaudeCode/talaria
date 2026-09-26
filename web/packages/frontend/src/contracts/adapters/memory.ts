@@ -43,6 +43,8 @@ export function makeSession(over: Partial<Session> = {}): Session {
     message_count: 0,
     pinned: false,
     archived: false,
+    is_streaming: false,
+    read_only: false,
     ...over,
   })
 }

@@ -8,6 +8,8 @@ import { projectMessages } from './useTranscript'
 const persisted = {
   session_id: '8950a2bb404c',
   title: 'Real shape',
+  is_streaming: false,
+  read_only: false,
   messages: [
     { role: 'user', content: 'list the theme dir', timestamp: 1787791500, id: 7 },
     { role: 'assistant', content: 'Sure.', reasoning: 'Run ls.', finish_reason: 'tool_calls', id: 8,
@@ -116,7 +118,7 @@ describe('canonical scene boundaries', () => {
     { name: 'emptyRows', kinds: ['tool'], final: 'Done.' },
   ])('preserves $name', async ({ name, kinds, final }) => {
     const { persistedActivity } = await import('./turnActivity')
-    const session = SessionSchema.parse({ session_id: 'fixture', title: 'Scene', messages: [sceneCases[name as keyof typeof sceneCases]] })
+    const session = SessionSchema.parse({ session_id: 'fixture', title: 'Scene', is_streaming: false, read_only: false, messages: [sceneCases[name as keyof typeof sceneCases]] })
     const activity = persistedActivity(projectMessages(session.messages ?? [])[0]!)
     expect(activity.items.map((item) => item.kind)).toEqual(kinds)
     expect(activity.finalAnswer).toBe(final)

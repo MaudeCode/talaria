@@ -254,7 +254,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             renderUserMarkdown={!!settings.data?.render_user_markdown}
             autoFollow={settings.data?.auto_scroll_follow !== false}
             sessionId={sessionId ?? undefined}
-            actions={{ onEdit: (row, text) => { void onEdit(row, text) }, onBranch: (row) => { void onBranch(row) }, onRegenerate: () => { void onRegenerate() } }}
+            actions={session?.read_only ? { onBranch: (row) => { void onBranch(row) } } : { onEdit: (row, text) => { void onEdit(row, text) }, onBranch: (row) => { void onBranch(row) }, onRegenerate: () => { void onRegenerate() } }}
             tts={!!(settings.data as Record<string, unknown> | undefined)?.tts_enabled}
             truncated={truncated}
             onLoadOlder={() => { void loadOlder() }}

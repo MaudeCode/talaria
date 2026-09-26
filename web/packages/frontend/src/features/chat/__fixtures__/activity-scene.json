@@ -1,6 +1,8 @@
 {
   "session": {
     "session_id": "abc123",
+    "is_streaming": false,
+    "read_only": false,
     "messages": [
       {
         "role": "assistant",
