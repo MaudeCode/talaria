@@ -5,7 +5,7 @@
  */
 import type { ToolKind } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
-import { isDict } from './merge.js'
+import { isDict, TOOL_ARG_CONTENT_CAP, TOOL_ARG_CONTENT_KEYS } from './merge.js'
 
 /** Ordered rules over whole `_`-separated name tokens (a substring match would read `merge` as `rg`). */
 const RULES: [ToolKind, (tokens: Set<string>, name: string) => boolean][] = [
@@ -40,11 +40,24 @@ const TARGET_KEYS: Partial<Record<ToolKind, string[]>> = {
 const FALLBACK_KEYS = ['cmd', 'command', 'path', 'file_path', 'file', 'uri', 'url', 'query', 'pattern', 'dir', 'task', 'name']
 const TOOL_TARGET_MAX = 200
 
+/**
+ * An argument as the live frame carries it (the sidecar's `_args_snapshot`): only the first four arguments, and a
+ * non-content value capped at 120 code points plus `...`. Targets come from this view, so a call shows the same target
+ * live and after reload.
+ */
+function snapshotArg(args: Record<string, unknown>, key: string): string | null {
+  const value = args[key]
+  if (typeof value !== 'string' || !Object.keys(args).slice(0, 4).includes(key)) return null
+  const cap = TOOL_ARG_CONTENT_KEYS.has(key.toLowerCase()) ? TOOL_ARG_CONTENT_CAP : 120
+  const chars = Array.from(value)
+  return chars.length > cap ? `${chars.slice(0, cap).join('')}...` : value
+}
+
 /** A call's display class and label: the first line of its kind's argument, whitespace-collapsed and capped. */
 export function toolDisplay(name: unknown, args: unknown): { kind: ToolKind; target: string } {
   const kind = toolKind(name)
   const a = isDict(args) ? args : {}
-  const raw = (TARGET_KEYS[kind] ?? FALLBACK_KEYS).map((k) => a[k]).find((v): v is string => typeof v === 'string' && Boolean(v.trim())) ?? ''
+  const raw = (TARGET_KEYS[kind] ?? FALLBACK_KEYS).map((k) => snapshotArg(a, k)).find((v): v is string => typeof v === 'string' && Boolean(v.trim())) ?? ''
   const first = raw.trim().split('\n')[0] ?? ''
   // Capped by code point, so the cap never splits a surrogate pair into invalid JSON.
   return { kind, target: Array.from(first.replace(/\s+/g, ' ').trim()).slice(0, TOOL_TARGET_MAX).join('') }

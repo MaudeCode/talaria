@@ -80,7 +80,7 @@ const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENT
 /** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The scheme starts at a run boundary and is capped so the scan stays linear. */
 const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s:@/'"]+:)([^\s@/'"]+)(?=@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
-const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|secret|token|password|passwd)`
+const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|bearer|secret[_-]?input|key[_-]?material|pass[_-]?phrase|pass(?:in|out)|secret|token|password|passwd)`
 /** A lower-case pattern matched in any case, letter by letter, so the camelCase lookahead below stays case-exact. */
 const anyCase = (pattern: string): string => pattern.replace(/[a-z]/g, (c) => `[${c}${c.toUpperCase()}]`)
 /**

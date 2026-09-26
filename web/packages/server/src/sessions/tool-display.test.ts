@@ -20,6 +20,15 @@ describe('toolKind', () => {
 })
 
 describe('toolDisplay', () => {
+  it('derives the target from the sidecar snapshot rule, so a live and a persisted call agree', () => {
+    const long = 'q'.repeat(250)
+    const live = { query: `${'q'.repeat(120)}...` }
+    expect(toolDisplay('web_search', { query: long }).target).toBe(`${'q'.repeat(120)}...`)
+    expect(toolDisplay('web_search', live).target).toBe(toolDisplay('web_search', { query: long }).target)
+    // Only the first four arguments reach the live frame.
+    expect(toolDisplay('delegate_task', { a: 1, b: 2, c: 3, d: 4, task: 'x' }).target).toBe('')
+  })
+
   it('takes the first line of the kind\'s argument, whitespace-collapsed and capped', () => {
     expect(toolDisplay('terminal', { command: '  ls   -la\n  rm x', path: 'p' })).toEqual({ kind: 'shell', target: 'ls -la' })
     expect(toolDisplay('read_file', { command: 'c', path: 'src/a.ts' })).toEqual({ kind: 'read', target: 'src/a.ts' })
