@@ -15,6 +15,9 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
   ...(await importOriginal()), saveDraft: vi.fn(), fetchClarifyPending: vi.fn(() => Promise.resolve({ pending: head, pending_count: head ? 1 : 0 })),
   respondClarify: vi.fn(() => Promise.resolve({ ok: true })), steerChat: vi.fn(() => Promise.resolve({ accepted: true })),
 }))
+// A controllable Web Speech stand-in.
+const recognizer = { lang: '', interimResults: false, continuous: false, onresult: null as unknown, onerror: null, onend: null as (() => void) | null, start: vi.fn(), stop: vi.fn() }
+vi.mock(import('../voice/dictation'), async (importOriginal) => ({ ...(await importOriginal()), dictationSupported: () => true, createRecognition: vi.fn(() => recognizer as never) }))
 vi.mock(import('../../stream/connection'), async (importOriginal) => ({ ...(await importOriginal()), startTurn: vi.fn(), cancelTurn: vi.fn(() => Promise.resolve(true)) }))
 import * as api from '../../api/endpoints'
 import * as connection from '../../stream/connection'
@@ -131,6 +134,24 @@ describe('clarification through the composer (TAL-362)', () => {
     await push(null)
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(api.respondClarify).not.toHaveBeenCalled()
+  })
+
+  it('answers with Enter on a phone-width viewport, where chat messages need the send button', async () => {
+    window.matchMedia = vi.fn(() => ({ matches: true, addEventListener: noop, removeEventListener: noop })) as unknown as typeof window.matchMedia
+    head = single
+    renderChat()
+    await screen.findByRole('dialog')
+    await userEvent.type(screen.getByRole('textbox'), 'prod{Enter}')
+    await waitFor(() => expect(api.respondClarify).toHaveBeenCalledWith({ session_id: 's1', clarify_id: 'single-1', answers: { q0: 'prod' } }))
+  })
+
+  it('stops dictation into the parked draft when a clarification takes over', async () => {
+    renderChat()
+    await userEvent.click(screen.getByRole('button', { name: 'Dictate' }))
+    expect(recognizer.start).toHaveBeenCalled()
+    await push(single)
+    await waitFor(() => expect(recognizer.stop).toHaveBeenCalled())
+    expect(recognizer.onresult).toBeNull()
   })
 
   it('drops the prompt once the turn is no longer running', async () => {

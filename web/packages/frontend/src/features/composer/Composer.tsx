@@ -134,6 +134,15 @@ export function Composer(props: ComposerProps) {
   }, [configOpen])
   const textarea = useRef<HTMLTextAreaElement>(null)
   const recognition = useRef<ReturnType<typeof createRecognition>>(null)
+  // When a clarification takes the box over, dictation into the parked draft stops: its control is hidden, and
+  // later results must not land in the draft. `onend` then clears the dictating state.
+  const answering = !!clarify
+  useEffect(() => {
+    const r = recognition.current
+    if (!answering || !r) return
+    r.onresult = null
+    r.stop()
+  }, [answering])
   const busy = !!live && !isTerminal(live.status)
   const busyMode: BusyMode = (settings?.default_message_mode as BusyMode | undefined) ?? 'steer'
   const sendKey = settings?.send_key ?? 'enter'
@@ -263,17 +272,18 @@ export function Composer(props: ComposerProps) {
   }, [text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc])
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
-  const submit = () => { if (clarify) clarify.send(); else void send() }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (palette.handleKey(e, applySuggestion)) return
     if (e.key !== 'Enter') return
+    // A clarification answer is short: Enter answers on every width, whatever the chat send-key rule.
+    if (clarify) { if (!e.shiftKey) { e.preventDefault(); clarify.send() } return }
     const isNumpad = e.code === 'NumpadEnter'
     const mobile = window.matchMedia('(max-width: 640px)').matches
     if (sendKey === 'ctrl+enter' || mobile) {
-      if (isNumpad || e.ctrlKey || e.metaKey) { e.preventDefault(); submit() }
+      if (isNumpad || e.ctrlKey || e.metaKey) { e.preventDefault(); void send() }
       return
     }
-    if (!e.shiftKey) { e.preventDefault(); submit() }
+    if (!e.shiftKey) { e.preventDefault(); void send() }
   }
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     // A clarification answer is text only: pasted files and long text stay out of the parked message.
@@ -296,12 +306,11 @@ export function Composer(props: ComposerProps) {
     const r = createRecognition(document.documentElement.lang || 'en-US')
     if (!r) return
     recognition.current = r
-    const base = value
-    const setTarget = setValue
+    const base = text
     r.onresult = (ev) => {
       let transcript = ''
       for (const result of Array.from(ev.results)) transcript += result[0]?.transcript ?? ''
-      setTarget(settings?.dictation_append === false ? transcript : `${base}${base && !base.endsWith(' ') ? ' ' : ''}${transcript}`)
+      setText(settings?.dictation_append === false ? transcript : `${base}${base && !base.endsWith(' ') ? ' ' : ''}${transcript}`)
     }
     r.onerror = (ev) => { const kind = classifyDictationError(ev.error); showToast(kind === 'denied' ? m.mic_denied() : kind === 'no_speech' ? m.mic_no_speech() : kind === 'network' ? m.mic_network() : m.mic_error() + ev.error, 3000, 'error'); setDictating(false) }
     r.onend = () => { setDictating(false); recognition.current = null }
