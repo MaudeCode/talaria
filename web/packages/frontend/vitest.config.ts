@@ -11,5 +11,8 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
     css: false,
+    // The shared CI pool can freeze a worker for seconds (TAL-320); one retry
+    // absorbs that without masking tests that fail locally.
+    retry: process.env.CI ? 1 : 0,
   },
 })
