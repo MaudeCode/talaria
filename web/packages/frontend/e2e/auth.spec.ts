@@ -2,6 +2,8 @@ import { expect, settle, test } from './fixtures'
 import { E2E_PASSWORD } from './global-setup'
 
 const AUTH = () => process.env.HERMES_E2E_AUTH_BASE_URL!
+/** Anchored at the auth origin: the login URL itself (`/login?next=/settings/appearance`) must not match. */
+const authUrl = (path: string) => new RegExp(`^${AUTH().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${path}$`)
 
 test.describe('password auth', () => {
   test('protected routes redirect to login and back', async ({ page }) => {
@@ -13,7 +15,7 @@ test.describe('password auth', () => {
     await expect(page.getByRole('alert')).toBeVisible()
     await page.locator('#pw').fill(E2E_PASSWORD)
     await page.getByRole('button', { name: /sign in/i }).click()
-    await expect(page).toHaveURL(/\/settings\/appearance$/)
+    await expect(page).toHaveURL(authUrl('/settings/appearance'))
     await settle(page)
   })
 
@@ -22,7 +24,7 @@ test.describe('password auth', () => {
     await settle(page)
     await page.locator('#pw').fill(E2E_PASSWORD)
     await page.getByRole('button', { name: /sign in/i }).click()
-    await expect(page).toHaveURL(new RegExp(`^${AUTH().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?$`))
+    await expect(page).toHaveURL(authUrl('/?'))
   })
 
   test('API requests without a session are refused', async ({ request }) => {
