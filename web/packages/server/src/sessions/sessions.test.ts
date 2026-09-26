@@ -829,6 +829,27 @@ describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
     }
   })
 
+  it('keeps the prompt in a limited window of a long running turn without a journal', async () => {
+    const { sid, streamId, startedAt, release } = await heldTurn('long degraded run', history)
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
+    for (const [role, content, ts] of [['user', 'continue', 1000], ['assistant', 'earlier reply', 1001], ['user', 'long degraded run', startedAt + 0.1], ['assistant', 'step one', startedAt + 1], ['assistant', 'step two', startedAt + 2], ['assistant', 'step three', startedAt + 3]] as const) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+    db.close()
+    const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockReturnValue(null)
+    try {
+      const window = await detail(sid, '&msg_limit=1')
+      expect((window.messages as Json[]).map((m) => m.content)).toEqual(['long degraded run', 'step one', 'step two', 'step three'])
+      expect((window.messages as Json[])[0]).toMatchObject({ _turn_id: streamId, _active_turn_user: true })
+      expect(window._messages_offset).toBe(2)
+      // The older page ends before the prompt, so the prompt is never delivered twice.
+      expect((await detail(sid, '&msg_limit=10&msg_before=2')).messages as Json[]).toHaveLength(2)
+    } finally {
+      findRunSummary.mockRestore()
+      release()
+    }
+  })
+
   it('projects the prompt without a journal, and a cancelled turn settles to one row with its attachments', async () => {
     const { sid, streamId } = await heldTurn('cancel me', history, [{ name: 'cat.png', path: '/tmp/cat.png', mime: 'image/png' }])
     const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockReturnValue(null)

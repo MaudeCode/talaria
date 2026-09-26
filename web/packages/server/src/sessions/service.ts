@@ -307,6 +307,14 @@ export class SessionService {
     let summaryLast: number | null = null
     if (loadMessages) {
       ;[truncated, offset] = messageWindowForDisplay(all, msgLimit, msgBefore)
+      // TAL-368: a tail window starts no later than the running turn's prompt, so a turn whose output stays in the
+      // transcript (no journal to replay it) keeps its prompt; older pages end before it, so it is never sent twice.
+      // ponytail: the window grows with that turn's persisted rows; clip the turn instead if degraded runs get long.
+      const prompt = pending && msgBefore === null ? all.findIndex((m) => isDict(m) && m.role === 'user' && m._active_turn_token === pending.activeTurnToken) : -1
+      if (prompt >= 0 && prompt < offset) {
+        truncated = all.slice(prompt, offset + truncated.length)
+        offset = prompt
+      }
       if (msgLimit !== null) truncated = messagesForLimitedPayload(truncated)
     } else {
       summaryCount = s.metadataMessageCount ?? s.messages.length
