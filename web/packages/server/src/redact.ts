@@ -900,6 +900,9 @@ function maskLeaves(value: unknown): unknown {
   return (typeof value === 'string' || typeof value === 'number') && String(value) !== '' ? '***' : value
 }
 
+/** The fields that name a header in a `{ name: 'Authorization', value }` record. */
+const HEADER_LABEL_FIELDS = new Set(['name', 'key', 'header'])
+
 /** Tool arguments redacted like any value, plus every scalar under a credential-named key (`{ password: 'x' }`). */
 function redactArgs(value: unknown, enabled: boolean): unknown {
   if (!enabled) return value
@@ -912,8 +915,9 @@ function redactArgs(value: unknown, enabled: boolean): unknown {
     const record = value as Record<string, unknown>
     // A `{ name: 'Authorization', value: ... }` pair (HAR and similar header lists).
     // Any label field naming a credential labels the value (`{ name: 'metadata', header: 'Authorization', value }`).
-    const labelled = [record.name, record.key, record.header].some((v) => typeof v === 'string' && isCredentialKey(v))
-    return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, isCredentialKey(key) || (labelled && key === 'value') ? maskLeaves(item) : redactArgs(item, enabled)]))
+    const labelled = [...HEADER_LABEL_FIELDS].some((field) => typeof record[field] === 'string' && isCredentialKey(record[field]))
+    // A labelled credential header masks every payload field (`value`, `values`, ...); its label fields stay.
+    return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, isCredentialKey(key) || (labelled && !HEADER_LABEL_FIELDS.has(key)) ? maskLeaves(item) : redactArgs(item, enabled)]))
   }
   return redactValue(value, enabled)
 }

@@ -348,6 +348,8 @@ describe('publicToolFrame', () => {
   it('masks a header object\'s value when any of its label fields names a credential', () => {
     const frame = publicToolFrame({ name: 'http', args: { item: { name: 'metadata', header: 'Authorization', value: 'hunter2' }, other: { name: 'Accept', value: 'json' } } }, true)
     expect(frame.args).toEqual({ item: { name: 'metadata', header: 'Authorization', value: '***' }, other: { name: 'Accept', value: 'json' } })
+    const plural = publicToolFrame({ name: 'http', args: { h: { name: 'Authorization', values: ['hunter2'], data: { v: 'opaque' } } } }, true)
+    expect(plural.args).toEqual({ h: { name: 'Authorization', values: ['***'], data: { v: '***' } } })
   })
 
   it('omits the target of a frame without args, so a completion keeps the target its start frame set', () => {
