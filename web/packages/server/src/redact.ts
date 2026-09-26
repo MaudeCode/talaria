@@ -49,8 +49,11 @@ const CRED_RE = new RegExp(
     ')(?![A-Za-z0-9_-])',
   'g',
 )
-/** The credential of an `Authorization:` header, after an optional scheme word (`Bearer`, `ApiKey`, `AWS4-HMAC-SHA256`, ...). */
-const AUTH_HDR_RE = /(Authorization:\s*(?:[A-Za-z][A-Za-z0-9-]{0,31}\s+)?)([^\s'",\])]+)/gi
+/**
+ * The credential of an `Authorization:` header, after an optional scheme word (`Bearer`, `ApiKey`, `AWS4-HMAC-SHA256`, ...).
+ * A parameterized credential (`Digest username="bob", response="..."`) is masked whole, up to an unescaped quote or the line end.
+ */
+const AUTH_HDR_RE = /(Authorization:\s*(?:[A-Za-z][A-Za-z0-9-]{0,31}\s+)?)((?=[A-Za-z0-9_-]+=)(?:\\["']|[^\r\n"'\\])+|[^\s'",\])]+)/gi
 /** A bearer credential in any header or text (`X-Auth: Bearer ...`); `AUTH_HDR_RE` owns the `Authorization:` header. */
 const BEARER_RE = /((?<!Authorization:\s{0,8})\bBearer\s+)([^\s'",\])]+)/gi
 /** A `Cookie:` / `Set-Cookie:` header's whole value (session cookies are credentials). */
@@ -60,7 +63,10 @@ const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENT
 /** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The scheme starts at a run boundary and is capped so the scan stays linear. */
 const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s:@/'"]+:)([^\s@/'"]+)(?=@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
-const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]){0,4}(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|secret|token|password|passwd)`
+const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|secret|token|password|passwd)`
+const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]){0,4}${CRED_KEY_NAME}`
+/** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
+const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
 /** An argument or JSON key naming a credential; its scalar value is masked whatever it contains. */
 const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`, 'i')
 /**
@@ -120,7 +126,7 @@ export function redactSensitive(text: string): string {
   if (!text) return text
   let out = text.replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
-  out = out.replace(AUTH_HDR_RE, (_, head: string, token: string) => head + mask(token))
+  out = out.replace(AUTH_HDR_RE, (_, head: string, token: string) => head + (/^[A-Za-z0-9_-]+=/.test(token) ? '***' : mask(token)))
   out = out.replace(BEARER_RE, (_, head: string, token: string) => head + mask(token))
   out = out.replace(COOKIE_HDR_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = out.replace(CRED_PARAM_RE, (whole, dash: string, key: string, sep: string, value: string) => {
@@ -166,6 +172,7 @@ export function mightContainSensitiveText(text: string): boolean {
   if (CASE_MARKERS.some((m) => text.includes(m))) return true
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
+  if (CRED_KEY_NAME_RE.test(text)) return true
   if (text.includes(':') && TELEGRAM_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true
   if (text.includes('+') && PHONE_RE.test(text)) return true

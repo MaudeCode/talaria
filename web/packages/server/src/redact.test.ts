@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { publicToolFrame, redactSensitive, redactSessionData } from './redact.js'
+import { publicToolFrame, redactSensitive, redactSessionData, redactText } from './redact.js'
 
 describe('redactSensitive', () => {
   it('masks the password of a URL with userinfo and keeps the user and host', () => {
@@ -27,7 +27,9 @@ describe('redactSensitive', () => {
     expect(redactSensitive('-H "Authorization: ApiKey opaque123" -H "Authorization: opaque456"')).toBe('-H "Authorization: ApiKey ***" -H "Authorization: ***"')
     const aws = redactSensitive('Authorization: AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/x, SignedHeaders=host, Signature=abcdef0123')
     expect(aws).not.toContain('AKIDEXAMPLE')
-    expect(aws).toContain('Signature=***')
+    expect(aws).not.toContain('abcdef0123')
+    // A parameterized scheme's whole value is masked, through escaped quotes, up to the closing quote.
+    expect(redactSensitive(`curl -H "Authorization: Digest username=\\"bob\\", realm=\\"api\\", response=\\"cafebabe\\"" https://x`)).toBe(`curl -H "Authorization: Digest ***" https://x`)
     // A quoted value is masked through its closing quote, spaces included.
     expect(redactSensitive(`login --password 'correct horse battery staple' --token="a b c"`)).toBe(`login --password '***' --token="***"`)
     expect(redactSensitive('{"Authorization": "Bearer opaque123", "password": "two words"}')).toBe('{"Authorization": "***", "password": "***"}')
@@ -46,6 +48,13 @@ describe('redactSensitive', () => {
 
   it('never trusts a secret that looks like a masked value', () => {
     expect(redactSensitive('Authorization: Bearer abcdef...wxyz')).toBe('Authorization: Bearer ***')
+  })
+})
+
+describe('redactText', () => {
+  it('runs the redactor for every credential key the matcher accepts', () => {
+    for (const key of ['access_key', 'session-key', 'private-key', 'secretKey', 'refresh_token', 'client-secret', 'credentials', 'signature', 'passwd'])
+      expect(redactText(`login --${key} opaque99`, true)).toBe(`login --${key} ***`)
   })
 })
 
