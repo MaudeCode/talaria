@@ -1384,6 +1384,18 @@
                             "type": "boolean",
                             "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                           },
+                          "can_pin": {
+                            "type": "boolean",
+                            "description": "Web may pin or unpin this session: never a subagent child."
+                          },
+                          "can_archive": {
+                            "type": "boolean",
+                            "description": "Web may archive or unarchive this session: never a subagent child."
+                          },
+                          "can_duplicate": {
+                            "type": "boolean",
+                            "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          },
                           "attention": {
                             "anyOf": [
                               {
@@ -1503,7 +1515,10 @@
                           "title",
                           "is_streaming",
                           "read_only",
-                          "can_branch"
+                          "can_branch",
+                          "can_pin",
+                          "can_archive",
+                          "can_duplicate"
                         ],
                         "additionalProperties": {}
                       }
@@ -1596,6 +1611,18 @@
                             "type": "boolean",
                             "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                           },
+                          "can_pin": {
+                            "type": "boolean",
+                            "description": "Web may pin or unpin this session: never a subagent child."
+                          },
+                          "can_archive": {
+                            "type": "boolean",
+                            "description": "Web may archive or unarchive this session: never a subagent child."
+                          },
+                          "can_duplicate": {
+                            "type": "boolean",
+                            "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          },
                           "attention": {
                             "anyOf": [
                               {
@@ -1715,7 +1742,10 @@
                           "title",
                           "is_streaming",
                           "read_only",
-                          "can_branch"
+                          "can_branch",
+                          "can_pin",
+                          "can_archive",
+                          "can_duplicate"
                         ],
                         "additionalProperties": {}
                       }
@@ -1952,6 +1982,18 @@
                             "type": "boolean",
                             "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                           },
+                          "can_pin": {
+                            "type": "boolean",
+                            "description": "Web may pin or unpin this session: never a subagent child."
+                          },
+                          "can_archive": {
+                            "type": "boolean",
+                            "description": "Web may archive or unarchive this session: never a subagent child."
+                          },
+                          "can_duplicate": {
+                            "type": "boolean",
+                            "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                          },
                           "attention": {
                             "anyOf": [
                               {
@@ -2071,7 +2113,10 @@
                           "title",
                           "is_streaming",
                           "read_only",
-                          "can_branch"
+                          "can_branch",
+                          "can_pin",
+                          "can_archive",
+                          "can_duplicate"
                         ],
                         "additionalProperties": {}
                       }
@@ -3098,6 +3143,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -3267,7 +3324,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -4434,6 +4494,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -4603,7 +4675,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     },
@@ -5531,6 +5606,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -5700,7 +5787,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -5891,6 +5981,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -6010,7 +6112,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -6152,6 +6257,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -6271,7 +6388,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -6420,6 +6540,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -6539,7 +6671,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -7460,6 +7595,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -7629,7 +7776,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -7845,6 +7995,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -7964,7 +8126,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -8103,6 +8268,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -8222,7 +8399,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -9311,6 +9491,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -9480,7 +9672,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -9792,6 +9987,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -9911,7 +10118,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -10051,6 +10261,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -10170,7 +10392,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     },
@@ -10343,6 +10568,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -10462,7 +10699,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     },
@@ -10618,6 +10858,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -10737,7 +10989,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     },
@@ -11738,6 +11993,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -11857,7 +12124,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -11996,6 +12266,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "attention": {
                           "anyOf": [
                             {
@@ -12115,7 +12397,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }
@@ -18096,6 +18381,18 @@
                           "type": "boolean",
                           "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
                         },
+                        "can_pin": {
+                          "type": "boolean",
+                          "description": "Web may pin or unpin this session: never a subagent child."
+                        },
+                        "can_archive": {
+                          "type": "boolean",
+                          "description": "Web may archive or unarchive this session: never a subagent child."
+                        },
+                        "can_duplicate": {
+                          "type": "boolean",
+                          "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                        },
                         "source_tag": {
                           "anyOf": [
                             {
@@ -18265,7 +18562,10 @@
                         "title",
                         "is_streaming",
                         "read_only",
-                        "can_branch"
+                        "can_branch",
+                        "can_pin",
+                        "can_archive",
+                        "can_duplicate"
                       ],
                       "additionalProperties": {}
                     }

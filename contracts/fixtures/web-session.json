@@ -629,7 +629,10 @@
     "active_stream_id": "contract-run-f",
     "is_streaming": true,
     "read_only": false,
-    "can_branch": true
+    "can_branch": true,
+    "can_pin": true,
+    "can_archive": true,
+    "can_duplicate": true
   },
   "stale_stream_session": {
     "session_id": "contract-stale",
@@ -638,6 +641,9 @@
     "is_streaming": false,
     "read_only": false,
     "can_branch": true,
+    "can_pin": true,
+    "can_archive": true,
+    "can_duplicate": true,
     "messages": []
   },
   "subagent_session": {
@@ -649,6 +655,9 @@
     "is_streaming": false,
     "read_only": true,
     "can_branch": false,
+    "can_pin": false,
+    "can_archive": false,
+    "can_duplicate": false,
     "messages": []
   }
 }

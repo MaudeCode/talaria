@@ -302,7 +302,7 @@ export const SIDEBAR_SESSION_RESPONSE_FIELDS = new Set([
   'is_cli_session', 'is_messaging_session', 'is_streaming', 'cron_running', 'active_stream_id', 'has_pending_user_message', 'pending_started_at', 'default_hidden',
   'worktree_path', 'worktree_branch', 'parent_session_id', 'parent_title', 'parent_source', 'relationship_type', 'pre_compression_snapshot', '_lineage_root_id',
   '_lineage_tip_id', '_compression_segment_count', '_lineage_collapsed_count', '_parent_lineage_root_id', '_parent_lineage_tip_id', '_cross_surface_child_session',
-  'match_type', 'match_preview', 'read_only', 'can_branch', 'gateway_routing',
+  'match_type', 'match_preview', 'read_only', 'can_branch', 'can_pin', 'can_archive', 'can_duplicate', 'gateway_routing',
 ])
 
 export function isCliSessionRow(row: Row): boolean {
@@ -422,17 +422,23 @@ export function isSubagentRow(row: Row): boolean {
 /**
  * TAL-312: the streaming and read-only flags every session payload ships. `is_streaming` holds only while the row's
  * `active_stream_id` is a live runtime stream, and a stale id goes out as `null`; `read_only` folds the persisted flag
- * with the view-only subagent rule (a not-claimable foreign row arrives already marked); `can_branch` mirrors the branch
- * gate. Clients render these as-is.
+ * with the view-only subagent rule (a not-claimable foreign row arrives already marked); the `can_*` flags mirror the
+ * branch, pin, archive and duplicate gates. Clients render these as-is.
  */
 export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: ReadonlySet<string>): T {
   const r: Row = row
   const streamId = str(r.active_stream_id)
   r.is_streaming = Boolean(streamId && activeStreamIds.has(streamId))
   if (!r.is_streaming) r.active_stream_id = null
-  if (isSubagentRow(r)) { r.read_only = true; r.is_cli_session = false } else r.read_only = Boolean(r.read_only)
+  const subagent = isSubagentRow(r)
+  if (subagent) { r.read_only = true; r.is_cli_session = false } else r.read_only = Boolean(r.read_only)
   // The branch gate (`SessionService.branch`): never a subagent child, and a read-only source only when it is a cron run.
-  r.can_branch = !isSubagentRow(r) && (!r.read_only || str(r.source_tag || r.raw_source).trim().toLowerCase() === 'cron')
+  r.can_branch = !subagent && (!r.read_only || str(r.source_tag || r.raw_source).trim().toLowerCase() === 'cron')
+  // Pin and archive refuse only subagent children; duplicate also needs the WebUI sidecar it copies, so a sidecar-less
+  // foreign row arrives with `can_duplicate: false`. Rename, move and delete follow `read_only` (the mutation gate).
+  r.can_pin = !subagent
+  r.can_archive = !subagent
+  r.can_duplicate = !subagent && r.can_duplicate !== false
   return row
 }
 
@@ -604,7 +610,7 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
     for (const s of webuiSessions) for (const id of sessionLineageIds(s)) represented.add(id)
     dedupedCli = dedupeCliSidebarSessions(params.cliRows, represented, { showCli: params.showCliSessions, showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions, sourceFilter: params.sourceFilter ?? null, requestVisibilityOverrides: params.requestVisibilityOverrides })
       // A sidecar-less foreign row whose owner refuses claiming is read-only, as its detail and mutations are.
-      .map((r) => ({ ...r, read_only: !isClaimableCliSource(r, str(r.source)) }))
+      .map((r) => ({ ...r, read_only: !isClaimableCliSource(r, str(r.source)), can_duplicate: false }))
   } else {
     webuiSessions = webuiSessions.filter((r) => !isCliSessionForSettings(r))
   }

@@ -322,6 +322,9 @@ private extension SessionSummary {
         relationshipType = cachedSession.relationshipType
         readOnly = cachedSession.readOnly
         canBranch = nil
+        canPin = nil
+        canArchive = nil
+        canDuplicate = nil
         matchType = nil
         matchPreview = nil
     }

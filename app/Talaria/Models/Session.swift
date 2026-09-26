@@ -263,6 +263,10 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     let readOnly: Bool?
     /// The server's branch gate (TAL-312): absent on older servers, which offered branching everywhere.
     let canBranch: Bool?
+    /// The server's pin, archive and duplicate gates (TAL-312); absent on older servers.
+    let canPin: Bool?
+    let canArchive: Bool?
+    let canDuplicate: Bool?
     let matchType: String?
     /// Server-redacted excerpt around the content hit; only `/api/sessions/search`
     /// rows with `match_type == "content"` carry it, and older servers omit it.
@@ -300,6 +304,9 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         relationshipType: String? = nil,
         readOnly: Bool? = nil,
         canBranch: Bool? = nil,
+        canPin: Bool? = nil,
+        canArchive: Bool? = nil,
+        canDuplicate: Bool? = nil,
         matchType: String? = nil,
         matchPreview: String? = nil
     ) {
@@ -334,6 +341,9 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         self.relationshipType = relationshipType
         self.readOnly = readOnly
         self.canBranch = canBranch
+        self.canPin = canPin
+        self.canArchive = canArchive
+        self.canDuplicate = canDuplicate
         self.matchType = matchType
         self.matchPreview = matchPreview
     }
@@ -346,7 +356,7 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         case activeStreamId, isStreaming, isCliSession
         case userMessageCount, hasPendingUserMessage, pendingStartedAt, worktreePath
         case sourceTag, rawSource, sessionSource, sourceLabel
-        case parentSessionId, relationshipType, readOnly, canBranch, matchType, matchPreview
+        case parentSessionId, relationshipType, readOnly, canBranch, canPin, canArchive, canDuplicate, matchType, matchPreview
     }
 
     /// Lossy field by field, like `SessionDetail` and `ProjectSummary` already
@@ -392,6 +402,9 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         relationshipType = container.decodeLossyStringIfPresent(forKey: .relationshipType)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)
         canBranch = container.decodeLossyBoolIfPresent(forKey: .canBranch)
+        canPin = container.decodeLossyBoolIfPresent(forKey: .canPin)
+        canArchive = container.decodeLossyBoolIfPresent(forKey: .canArchive)
+        canDuplicate = container.decodeLossyBoolIfPresent(forKey: .canDuplicate)
         matchType = container.decodeLossyStringIfPresent(forKey: .matchType)
         matchPreview = container.decodeLossyStringIfPresent(forKey: .matchPreview)
     }
@@ -455,6 +468,9 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         relationshipType = detail.relationshipType
         readOnly = detail.readOnly
         canBranch = detail.canBranch
+        canPin = nil
+        canArchive = nil
+        canDuplicate = nil
         matchType = nil
         matchPreview = nil
     }
@@ -494,6 +510,9 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
             relationshipType: relationshipType,
             readOnly: readOnly,
             canBranch: canBranch,
+            canPin: canPin,
+            canArchive: canArchive,
+            canDuplicate: canDuplicate,
             matchType: matchType,
             matchPreview: matchPreview
         )
@@ -592,6 +611,9 @@ extension SessionSummary {
             relationshipType: relationshipType ?? row.relationshipType,
             readOnly: readOnly ?? row.readOnly,
             canBranch: canBranch ?? row.canBranch,
+            canPin: canPin ?? row.canPin,
+            canArchive: canArchive ?? row.canArchive,
+            canDuplicate: canDuplicate ?? row.canDuplicate,
             matchType: matchType ?? row.matchType,
             matchPreview: matchPreview ?? row.matchPreview
         )

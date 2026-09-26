@@ -73,16 +73,16 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
       >
         {!row.read_only && <MenuItem onClick={() => { setTitle(row.title); setDialog({ kind: 'rename' }) }}>{m.session_rename()}</MenuItem>}
         {!row.read_only && <MenuItem onClick={() => regen.mutate()}>{m.session_title_regenerate()}</MenuItem>}
-        <MenuItem onClick={() => pin.mutate()}>{row.pinned ? m.session_unpin() : m.session_pin()}</MenuItem>
+        {row.can_pin && <MenuItem onClick={() => pin.mutate()}>{row.pinned ? m.session_unpin() : m.session_pin()}</MenuItem>}
         {!row.read_only && <MenuItem onClick={() => { setProjectId(row.project_id ?? ''); setDialog({ kind: 'move' }) }}>{m.session_move_project()}</MenuItem>}
         <MenuSeparator />
         <MenuItem onClick={copyLink}>{m.session_copy_link()}</MenuItem>
         <MenuItem onClick={() => share.mutate()}>{row.share_token ? m.session_share_revoke() : m.session_share()}</MenuItem>
-        <MenuItem onClick={() => duplicate.mutate()}>{m.session_duplicate()}</MenuItem>
+        {row.can_duplicate && <MenuItem onClick={() => duplicate.mutate()}>{m.session_duplicate()}</MenuItem>}
         <MenuItem onClick={() => exportAs('json')}>{m.session_export_json()}</MenuItem>
         <MenuItem onClick={() => exportAs('html')}>{m.session_export_html()}</MenuItem>
         <MenuSeparator />
-        <MenuItem onClick={() => archive.mutate()}>{row.archived ? m.session_unarchive() : m.session_archive()}</MenuItem>
+        {row.can_archive && <MenuItem onClick={() => archive.mutate()}>{row.archived ? m.session_unarchive() : m.session_archive()}</MenuItem>}
         {!row.read_only && <MenuItem className="text-error" onClick={() => setDialog({ kind: 'delete' })}>{m.session_delete()}</MenuItem>}
       </Menu>
       {dialog?.kind === 'rename' && (

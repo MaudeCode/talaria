@@ -323,6 +323,12 @@ describe('session lifecycle over HTTP', () => {
       // The server refuses to branch either, and says so up front.
       for (const payload of [detail, hit]) expect(payload.can_branch, sid).toBe(false)
       expect((await post(s, '/api/session/branch', { session_id: sid })).status, sid).toBeGreaterThanOrEqual(400)
+      // Pin, archive and duplicate refuse only the subagent child; each flag matches its endpoint's outcome.
+      const allowed = sid === readOnly
+      for (const payload of [detail, hit]) expect(payload, sid).toMatchObject({ can_pin: allowed, can_archive: allowed, can_duplicate: allowed })
+      for (const [path, body] of [['/api/session/pin', { session_id: sid, pinned: false }], ['/api/session/archive', { session_id: sid, archived: false }], ['/api/session/duplicate', { session_id: sid }]] as const) {
+        expect((await post(s, path, body)).status === 200, `${sid} ${path}`).toBe(allowed)
+      }
     }
   })
 

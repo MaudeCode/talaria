@@ -112,6 +112,8 @@ describe('state.db projection', () => {
     // TAL-312: the row says whether Web may continue it, as the detail and the mutation gate do.
     expect(tg?.read_only).toBe(true)
     expect(cli?.read_only).toBe(false)
+    // Duplicate copies a WebUI sidecar, which neither state.db-only row has.
+    expect([tg?.can_duplicate, cli?.can_duplicate]).toEqual([false, false])
     expect(rows.map((r) => r.session_id)).not.toContain('cron_job1_1')
     expect(body.cli_session_count).toBeGreaterThan(0)
     await s.deps.settings.save({ show_cli_sessions: false })
@@ -243,6 +245,8 @@ describe('state.db projection', () => {
     // Python `_merge_cli_sidebar_metadata` re-derives `is_cli_session` from the row: a messaging row is not CLI.
     expect(body.session).toMatchObject({ read_only: true, is_cli_session: false, source_tag: 'telegram' })
     expect(await (await s.get('/api/session/status?session_id=tg-owned')).json()).toMatchObject({ read_only: true, is_streaming: false, agent_running: false })
+    expect(body.session.can_duplicate).toBe(false)
+    expect((await post('/api/session/duplicate', { session_id: 'tg-owned' })).status).toBe(404)
     res = await post('/api/session/rename', { session_id: 'tg-owned', title: 'nope' })
     expect(res.status).toBe(403)
     expect(s.deps.sessionStore.loadMetadataOnly('tg-owned')).toBeNull()

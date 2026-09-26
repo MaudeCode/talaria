@@ -81,6 +81,9 @@ const IsStreamingSchema = z.boolean().describe('True only while the session\'s r
 const ActiveStreamIdSchema = NullableString.optional().describe('The live stream id; non-null only while `is_streaming` is true.')
 const ReadOnlySchema = z.boolean().describe('The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming.')
 const CanBranchSchema = z.boolean().describe('Web may branch this session: never a subagent child, and a read-only session only when it is a cron run.')
+const CanPinSchema = z.boolean().describe('Web may pin or unpin this session: never a subagent child.')
+const CanArchiveSchema = z.boolean().describe('Web may archive or unarchive this session: never a subagent child.')
+const CanDuplicateSchema = z.boolean().describe('Web may duplicate this session: it has a WebUI copy and is not a subagent child.')
 
 /** Full session record from `GET /api/session` and mutations returning `session`. */
 export const SessionSchema = z.looseObject({
@@ -91,7 +94,7 @@ export const SessionSchema = z.looseObject({
   cache_hit_percent: NullableNumber.optional(), estimated_cost: NullableNumber.optional(), active_stream_id: ActiveStreamIdSchema, is_streaming: IsStreamingSchema, has_pending_user_message: z.boolean().optional(),
   pending_user_message: NullableString.optional(), pending_attachments: z.array(AttachmentSchema).optional(), pending_started_at: NullableNumber.optional(), pending_user_source: NullableString.optional(),
   context_length: NullableNumber.optional(), threshold_tokens: NullableNumber.optional(), last_prompt_tokens: NullableNumber.optional(), post_compression_context_tokens_estimate: NullableNumber.optional(),
-  enabled_toolsets: z.array(z.string()).nullable().optional(), composer_draft: ComposerDraftSchema.optional(), is_cli_session: z.boolean().optional(), read_only: ReadOnlySchema, can_branch: CanBranchSchema, source_tag: NullableString.optional(),
+  enabled_toolsets: z.array(z.string()).nullable().optional(), composer_draft: ComposerDraftSchema.optional(), is_cli_session: z.boolean().optional(), read_only: ReadOnlySchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_duplicate: CanDuplicateSchema, source_tag: NullableString.optional(),
   source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(), worktree_path: NullableString.optional(),
   worktree_branch: NullableString.optional(), worktree_repo_root: NullableString.optional(), share_token: NullableString.optional(), share_created_at: NullableNumber.optional(), manual_title: z.boolean().optional(),
   compression_anchor_summary: NullableString.optional(), compression_recovery: z.record(z.string(), Json).optional(), recommended_recovery_action: NullableString.optional(), compression_recovery_action: NullableString.optional(),
@@ -104,7 +107,7 @@ export const SessionEnvelopeSchema = z.looseObject({ session: SessionSchema })
 export const SessionRowSchema = z.looseObject({
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), model: NullableString.optional(), created_at: UnixSeconds.optional(), updated_at: UnixSeconds.optional(), last_message_at: NullableNumber.optional(),
   message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(), is_streaming: IsStreamingSchema,
-  is_cli_session: z.boolean().optional(), cron_running: z.boolean().optional(), read_only: ReadOnlySchema, can_branch: CanBranchSchema, attention: z.looseObject({ kind: z.string().optional(), count: z.number().optional() }).nullable().optional(),
+  is_cli_session: z.boolean().optional(), cron_running: z.boolean().optional(), read_only: ReadOnlySchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_duplicate: CanDuplicateSchema, attention: z.looseObject({ kind: z.string().optional(), count: z.number().optional() }).nullable().optional(),
   source_tag: NullableString.optional(), source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(),
   active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.string().optional(), match_preview: NullableString.optional(),
 })

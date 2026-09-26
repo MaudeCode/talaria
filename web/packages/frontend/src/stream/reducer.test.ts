@@ -224,7 +224,7 @@ describe('stream reducer: every lifecycle exit', () => {
     s = ev(s, 'token', { text: 'x' })
     s = ev(s, 'stream_end', { session_id: SID })
     expect(s.turns[SID]!.status).toBe('streaming')
-    s = streamReducer(s, { type: 'settle', sessionId: SID, streamId: STREAM, session: { session_id: SID, title: 'settled', is_streaming: false, read_only: false, can_branch: true } })
+    s = streamReducer(s, { type: 'settle', sessionId: SID, streamId: STREAM, session: { session_id: SID, title: 'settled', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true } })
     expect(s.turns[SID]).toMatchObject({ status: 'done', streamEnded: true })
     expect(s.turns[SID]!.doneSession?.title).toBe('settled')
   })

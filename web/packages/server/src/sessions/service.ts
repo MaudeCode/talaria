@@ -367,7 +367,7 @@ export class SessionService {
       created_at: synth.created_at, updated_at: synth.updated_at, last_message_at: meta?.last_message_at || meta?.updated_at || lastTs,
       pinned: synth.pinned, archived: synth.archived, project_id: synth.project_id ?? null, profile: synth.profile,
       is_cli_session: synth.is_cli_session, source_tag: synth.source_tag, raw_source: synth.raw_source, session_source: synth.session_source,
-      source_label: synth.source_label, read_only: synth.read_only, messages: msgs, tool_calls: [],
+      source_label: synth.source_label, read_only: synth.read_only, can_duplicate: false, messages: msgs, tool_calls: [],
     }
     attachTodoState(sess, msgs)
     const merged = withSessionWireFlags(meta ? mergeCliSidebarMetadata(sess, meta) : sess, this.deps.runtime.activeStreamIds)

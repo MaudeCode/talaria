@@ -32,14 +32,14 @@ describe('Composer', () => {
   })
 
   it('offers no send, command or session controls for a session the server marks read-only (TAL-312)', () => {
-    renderComposer({ session_id: 'child', title: 'Delegated child', is_streaming: false, read_only: true, can_branch: false, source_tag: 'subagent' })
+    renderComposer({ session_id: 'child', title: 'Delegated child', is_streaming: false, read_only: true, can_branch: false, can_pin: false, can_archive: false, can_duplicate: false, source_tag: 'subagent' })
     expect(screen.getByRole('note')).toHaveTextContent('read-only')
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Send' })).toBeNull()
   })
 
   it('keeps the composer for a writable session', () => {
-    renderComposer({ session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true })
+    renderComposer({ session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true })
     expect(screen.getByRole('textbox')).toBeInTheDocument()
     expect(screen.queryByRole('note')).toBeNull()
   })

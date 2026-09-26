@@ -13,6 +13,27 @@ final class SessionListMutationTests: XCTestCase {
         super.tearDown()
     }
 
+    /// TAL-312: the server's per-action gates win; a read-only import can still be
+    /// organised, a subagent child cannot, and an older server keeps the earlier rules.
+    func testRowActionsFollowTheServerCapabilityFields() {
+        let subagent = SessionSummary(sessionId: "child", readOnly: true, canPin: false, canArchive: false, canDuplicate: false)
+        let readOnlyImport = SessionSummary(sessionId: "import", readOnly: true, canPin: true, canArchive: true, canDuplicate: true)
+        let foreignRow = SessionSummary(sessionId: "cli", isCliSession: true, canPin: true, canArchive: true, canDuplicate: false)
+
+        XCTAssertFalse(SessionRowActionPolicy.canPin(subagent))
+        XCTAssertFalse(SessionRowActionPolicy.canArchive(subagent))
+        XCTAssertFalse(SessionRowActionPolicy.canDuplicate(subagent))
+        XCTAssertTrue(SessionRowActionPolicy.canPin(readOnlyImport))
+        XCTAssertTrue(SessionRowActionPolicy.canArchive(readOnlyImport))
+        XCTAssertTrue(SessionRowActionPolicy.canDuplicate(readOnlyImport))
+        XCTAssertFalse(SessionRowActionPolicy.offersMutationActions(for: readOnlyImport))
+        XCTAssertFalse(SessionRowActionPolicy.canDuplicate(foreignRow))
+
+        let olderServerReadOnly = SessionSummary(sessionId: "legacy", readOnly: true)
+        XCTAssertFalse(SessionRowActionPolicy.canPin(olderServerReadOnly))
+        XCTAssertTrue(SessionRowActionPolicy.canPin(SessionSummary(sessionId: "legacy-writable")))
+    }
+
     func testReadOnlyRowsOfferExportButNoMutationActions() {
         let currentShape = SessionSummary(sessionId: "current", readOnly: true)
         let normal = SessionSummary(sessionId: "normal")
