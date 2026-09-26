@@ -372,6 +372,7 @@ describe('publicToolFrame', () => {
     expect(redactText('SCHEME=https; curl ${SCHEME}://bob:hunter2@example.com && curl $S://amy:pw2@x', true)).toBe('SCHEME=https; curl ${SCHEME}://bob:***@example.com && curl $S://amy:***@x')
     expect(redactText('curl bob:hunter2@example.com/x', true)).toBe('curl bob:***@example.com/x')
     expect(redactText('curl $(printf https)://bob:hunter2@example.com && curl {http,https}://amy:pw2@x', true)).toBe('curl $(printf https)://bob:***@example.com && curl {http,https}://amy:***@x')
+    expect(redactText("SCHEME='https://'; curl ${SCHEME}bob:hunter2@example.com", true)).toBe("SCHEME='https://'; curl ${SCHEME}bob:***@example.com")
     expect(redactText('ssh git@github.com && git clone git@github.com:org/repo.git && echo 10:30', true)).toBe('ssh git@github.com && git clone git@github.com:org/repo.git && echo 10:30')
   })
 
@@ -382,6 +383,11 @@ describe('publicToolFrame', () => {
     const live = publicToolFrame({ name: 'terminal', args: { command: `['login', '--password', 'hunter2', '-u', 'amy:pw2']` } }, true)
     expect(JSON.stringify(live)).not.toMatch(/hunter2|pw2/)
     expect(redactText(`["login", "--api-key", "opaque", "--name", "x"]`, true)).toBe(`["login", "--api-key", "***", "--name", "x"]`)
+  })
+
+  it('decodes JSON unicode escapes in a key name', () => {
+    expect(redactText(String.raw`{"pass\u0077ord":"hunter2","user":"bob"}`, true)).not.toContain('hunter2')
+    expect(JSON.stringify(publicToolFrame({ name: 'http', args: { body: String.raw`{"api\u005fkey": "opaque"}` } }, true))).not.toContain('opaque')
   })
 
   it('omits the target of a frame without args, so a completion keeps the target its start frame set', () => {

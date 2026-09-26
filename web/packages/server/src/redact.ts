@@ -85,8 +85,11 @@ const COOKIE_ANSI_RE = /(\$'(?:Set-)?Cookie:\s*)((?:[^'\\\r\n]|\\.)*)/gi
 const COOKIE_SQ_RE = /((?<!\$)'(?:Set-)?Cookie:\s*)([^'\r\n]*)/gi
 const COOKIE_DQ_RE = /("(?:Set-)?Cookie:\s*)((?:[^"\\\r\n]|\\.)*)/gi
 const COOKIE_BARE_RE = new RegExp(String.raw`((?<!['"])\b(?:Set-)?Cookie:\s*)((?:${QUOTED}|[^'"\\\r\n]|\\(?!"))+)`, 'gi')
-/** `user:password@host` with no scheme (curl reads it as a URL); `git@host:org/repo` has no password before its `@`. */
-const BARE_USERINFO_RE = /(?<![^\s'"=(<,])([A-Za-z0-9._%+-]+:)([^\s@/'"\\:]+)(?=@[A-Za-z0-9[])/g
+/**
+ * `user:password@host` with no scheme (curl reads it as a URL), or after an expansion that may supply one
+ * (`${SCHEME}bob:pw@host`); `git@host:org/repo` has no password before its `@`.
+ */
+const BARE_USERINFO_RE = /(?<![^\s'"=(<,})\x60])([A-Za-z0-9._%+-]+:)([^\s@/'"\\:]+)(?=@[A-Za-z0-9[])/g
 /** A `key=value` whose key is percent-encoded (`api%5Fkey=`): the destination decodes the key once, so it is checked decoded. */
 const PERCENT_KEY_RE = /(?<![A-Za-z0-9_.%-])((?=[A-Za-z0-9_.%-]*%[0-9A-Fa-f]{2})[A-Za-z0-9_.%-]+=)([^&#\s"'<>]*)/g
 const percentDecode = (text: string): string => text.replace(/%([0-9A-Fa-f]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
@@ -107,8 +110,11 @@ const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]
 const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
 /** A credential name matched against a whole `_`-joined word run (`secret_access_key`, `session_token`). */
 const CRED_KEY_NAME_WORDS_RE = new RegExp(String.raw`^${CRED_KEY_NAME}$`, 'i')
-/** A shell word with its quote and escape characters removed, as the shell passes it (`--pass'word'` → `--password`). */
-const dequote = (text: string): string => text.replace(/\\\r?\n/g, '').replace(/\$(?=['"])|['"\\]/g, '')
+/**
+ * A shell word with its quote and escape characters removed, as the shell passes it (`--pass'word'` → `--password`),
+ * and a JSON `\uXXXX` escape decoded as a JSON parser does (`"pass\u0077ord"` → `password`).
+ */
+const dequote = (text: string): string => text.replace(/\\\r?\n/g, '').replace(/\\u([0-9A-Fa-f]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16))).replace(/\$(?=['"])|['"\\]/g, '')
 /**
  * A key names a credential when any of its path segments (`auth.token`, `database.password`, `auth[password]`,
  * `auth["password"]`) ends in a credential name at a word boundary, however deep its namespace, once dequoted
