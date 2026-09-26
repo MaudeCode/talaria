@@ -219,6 +219,16 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(s.commands.some((c) => c[0] === 'fetch' && c.includes('--tags'))).toBe(false)
   })
 
+  it('refuses every Agent mutation while a Web restart is pending', async () => {
+    const webInstall = sourceInstall()
+    const { svc } = service(webInstall, { agentDir: join(tmp(), 'agent') })
+    expect(await svc.apply('webui')).toMatchObject({ ok: true, restart_scheduled: true })
+
+    for (const result of [await svc.apply('agent'), await svc.force('agent'), await svc.clearLock('agent')]) {
+      expect(result).toMatchObject({ ok: false, status: 'already_in_progress', target: 'agent' })
+    }
+  })
+
   it('main retries one transient fetch failure and fetches Web release tags', async () => {
     const s = sourceInstall()
     git(s.upstream, 'tag', '-a', 'web-v1.0.0', '-m', 'synthetic installed release', s.old)

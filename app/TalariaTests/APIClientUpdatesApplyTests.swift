@@ -201,6 +201,38 @@ final class APIClientUpdatesApplyTests: APIClientTestCase {
         XCTAssertNil(UpdateNotificationTimestamp.date(from: "not-a-date"))
     }
 
+    @MainActor
+    func testMissingUpdateNotificationCapabilityStopsPollingUntilViewModelReplacement() async throws {
+        for statusCode in [404, 405] {
+            var requestCount = 0
+            let client = makeClient { request in
+                requestCount += 1
+                return (
+                    try XCTUnwrap(HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: statusCode, httpVersion: nil, headerFields: nil)),
+                    Data()
+                )
+            }
+            let viewModel = UpdateNotificationCenterViewModel(server: try XCTUnwrap(URL(string: "https://example.test")), client: client)
+
+            await viewModel.refresh()
+            await viewModel.refresh()
+
+            XCTAssertEqual(requestCount, 1)
+            XCTAssertNil(viewModel.lastError)
+            XCTAssertFalse(viewModel.supportsNotifications)
+        }
+
+        var replacementRequests = 0
+        let replacement = UpdateNotificationCenterViewModel(server: try XCTUnwrap(URL(string: "https://new.example.test")), client: makeClient { request in
+            replacementRequests += 1
+            return apiTestJSONResponse(#"{"scope_id":"replacement","notifications":[],"unread_count":0,"clearable_count":0,"can_clear":false}"#, for: request)
+        })
+        await replacement.refresh()
+        XCTAssertEqual(replacementRequests, 1)
+        XCTAssertNil(replacement.lastError)
+        XCTAssertTrue(replacement.supportsNotifications)
+    }
+
     private func decodeApply(_ json: String) throws -> UpdatesApplyResponse {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

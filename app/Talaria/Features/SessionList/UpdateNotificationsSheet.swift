@@ -55,6 +55,7 @@ final class UpdateNotificationCenterViewModel {
     private(set) var lastError: Error?
     private(set) var performingActionIDs: Set<String> = []
     private(set) var isClearing = false
+    private(set) var supportsNotifications = true
 
     private let client: APIClient
 
@@ -62,16 +63,30 @@ final class UpdateNotificationCenterViewModel {
         self.client = client ?? APIClient(baseURL: server)
     }
 
-    func refresh() async {
+    @discardableResult
+    func refresh() async -> Bool {
+        guard supportsNotifications else { return false }
         do {
             let response = try await client.updateNotifications()
             apply(response)
             errorMessage = nil
             lastError = nil
+            return true
         } catch {
-            guard !APIError.isCancellation(error) else { return }
+            if Self.isMissingCapability(error) {
+                supportsNotifications = false
+                notifications = []
+                unreadCount = 0
+                clearableCount = 0
+                canClear = false
+                errorMessage = nil
+                lastError = nil
+                return false
+            }
+            guard !APIError.isCancellation(error) else { return false }
             errorMessage = error.localizedDescription
             lastError = error
+            return true
         }
     }
 
@@ -160,6 +175,11 @@ final class UpdateNotificationCenterViewModel {
         unreadCount = response.unreadCount
         clearableCount = response.clearableCount
         canClear = response.canClear
+    }
+
+    private static func isMissingCapability(_ error: Error) -> Bool {
+        guard case let APIError.http(statusCode, _) = error else { return false }
+        return statusCode == 404 || statusCode == 405
     }
 }
 
@@ -250,6 +270,7 @@ struct UpdateNotificationsSheet: View {
         .task {
             await viewModel.load()
             handleError()
+            guard viewModel.supportsNotifications else { dismiss(); return }
             await viewModel.markAllRead()
             handleError()
         }

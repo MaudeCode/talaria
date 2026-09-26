@@ -1052,6 +1052,12 @@ export class UpdateService {
   /** Shared turn admission stays closed from update start through the supervisor restart. */
   blocksNewWork(): boolean { return this.applying || this.autoRestartScheduled }
 
+  private pendingRestartResponse(target: string): Dict | null {
+    if (!this.autoRestartScheduled) return null
+    if (target === 'webui') return { ok: true, target, restart_scheduled: true, message: 'A Web restart is already scheduled.' }
+    return { ok: false, status: 'already_in_progress', target, message: 'A Talaria Web restart is already scheduled. Wait for the server to restart before updating Hermes Agent.' }
+  }
+
   async autoApplyOnce(): Promise<Dict | null> {
     if (this.autoRunning || this.applying || this.autoRestartScheduled || !(this.deps.checkEnabled?.() ?? this.deps.autoApply?.())) return null
     this.autoRunning = true
@@ -1103,7 +1109,8 @@ export class UpdateService {
   /** Python `apply_update`. */
   async apply(target: string, channel?: Channel | null, canApply: () => boolean = () => true, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
     if (this.checking) await this.checking
-    if (this.autoRestartScheduled) return { ok: true, restart_scheduled: true, message: 'A Web restart is already scheduled.' }
+    const pendingRestart = this.pendingRestartResponse(target)
+    if (pendingRestart) return pendingRestart
     if (!canApply()) return { ok: false, message: 'Web update settings changed; update deferred.' }
     const blocked = this.blockedResponse(target)
     if (blocked) return blocked
@@ -1153,6 +1160,8 @@ export class UpdateService {
   async force(target: string, channel?: Channel | null, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
     if (this.checking) await this.checking
     if (target === 'webui') return this.apply(target, channel)
+    const pendingRestart = this.pendingRestartResponse(target)
+    if (pendingRestart) return pendingRestart
     const blocked = this.blockedResponse(target)
     if (blocked) return Promise.resolve(blocked)
     return this.locked(async () => {
@@ -1165,6 +1174,8 @@ export class UpdateService {
   /** Python `apply_clear_lock`: never removes a lock; Web retries the clean path, the Agent gets the manual command. */
   clearLock(target: string, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
     if (target === 'webui') return this.apply(target).then((r) => ({ ...r, lock_recovery: { action: 'retry-only' } }))
+    const pendingRestart = this.pendingRestartResponse(target)
+    if (pendingRestart) return Promise.resolve(pendingRestart)
     const blocked = this.blockedResponse(target)
     if (blocked) return Promise.resolve(blocked)
     return this.locked(async () => {

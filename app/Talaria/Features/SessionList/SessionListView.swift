@@ -472,8 +472,10 @@ struct SessionListView: View {
                 sidebarButton
             }
 
-            ToolbarItem(placement: .topBarTrailing) {
-                updateNotificationsButton
+            if updateNotificationViewModel.supportsNotifications {
+                ToolbarItem(placement: .topBarTrailing) {
+                    updateNotificationsButton
+                }
             }
 
             ToolbarItem(placement: .topBarTrailing) {
@@ -781,8 +783,12 @@ struct SessionListView: View {
     private func refreshUpdateNotificationsWhileActive() async {
         guard scenePhase == .active else { return }
         while !Task.isCancelled {
-            await updateNotificationViewModel.refresh()
+            let continuePolling = await updateNotificationViewModel.refresh()
             handleUpdateNotificationError()
+            guard continuePolling else {
+                isPresentingUpdateNotifications = false
+                return
+            }
             try? await Task.sleep(for: .seconds(5))
         }
     }
