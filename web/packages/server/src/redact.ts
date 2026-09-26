@@ -123,7 +123,9 @@ function isCredentialKey(key: string): boolean {
  * read, however long, and matched whole even without a separator: the scan never restarts inside an identifier, so it
  * stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z0-9_](?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-]|\$?'[A-Za-z0-9_.-]*'|\$?"[A-Za-z0-9_.-]*"|\\[A-Za-z0-9_.-]|\$\([^()\n'"\x60\\]*\)|\x60(?![\s\x60])(?:[^\x60\n\\]|\\.)*(?<![\s\\])\x60|\$\{[^{}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\{(?=[^{}\s]*(?:,|\.\.))[^{}\s]*\})*)((?:\\?["'])?\s*\+?[=:]\s*|\s+|)`, 'g')
+/** A substitution or variable piece of a key: `$(…)` (flat, unquoted), `` `…` `` (no outer spaces), `${…}`, `$NAME`. */
+const SUBST_PIECE = String.raw`\$\([^()\n'"\x60\\]*\)|\x60(?![\s\x60])(?:[^\x60\n\\]|\\.)*(?<![\s\\])\x60|\$\{[^{}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*`
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})((?:[A-Za-z0-9_]|${SUBST_PIECE}|(?<=-)(?=\$[({]|\x60))(?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-]|\$?'[A-Za-z0-9_.-]*'|\$?"[A-Za-z0-9_.-]*"|\\[A-Za-z0-9_.-]|${SUBST_PIECE}|\{(?=[^{}\s]*(?:,|\.\.))[^{}\s]*\})*)((?:\\?["'])?\s*\+?[=:]\s*|\s+|)`, 'g')
 /**
  * A substitution, variable or brace-expansion piece of a key (`$(…)`, `` `…` ``, `${…}`, `$NAME`, `{a,b}`, `{1..3}`) right
  * after an identifier character.
@@ -353,12 +355,16 @@ function redactCredentialParams(text: string): string {
   CRED_PARAM_RE.lastIndex = 0
   for (let m = CRED_PARAM_RE.exec(text); m; m = CRED_PARAM_RE.exec(text)) {
     const [head, dash = '', key = '', sep = ''] = m
+    // A key the shell computes from its first piece (`--$(printf password)=`, `--${KEY}=`) is one only with `=`: `$HOST:$PORT`,
+    // `-$OPTS dir` and a Markdown `` `code`: `` are not assignments. A leading backtick needs a flag besides.
+    const computedStart = /^(?:\$[({A-Za-z_]|\x60)/.test(key)
+    if (computedStart && (!sep.includes('=') || (key.startsWith('\x60') && !dash)) && sep) continue
     // A substitution the key grammar cannot parse (`$(` nested or quoted, `${` nested) may still build a credential name:
     // fail closed to the end of the text, as `shellWordEnd` does for a substitution in a value. An unclosed backtick or a
     // nested brace expansion does so only after a flag: in prose a backtick is a Markdown code span's close (`` `code` ``). A backtick piece inside a key has no
     // outer spaces, so the prose between two code spans (`` ` and ` ``) is never read as one.
     const keyEnd = m.index + head.length
-    if (!sep && (/^\$[({]/.test(text.slice(keyEnd, keyEnd + 2)) || (dash && /^[\x60{]/.test(text[keyEnd] ?? '')))) {
+    if (!sep && ((/^\$[({]/.test(text.slice(keyEnd, keyEnd + 2)) && (dash || !computedStart)) || (dash && /^[\x60{]/.test(text[keyEnd] ?? '')))) {
       out += `${text.slice(last, keyEnd)}***`
       last = text.length
       break
@@ -368,7 +374,7 @@ function redactCredentialParams(text: string): string {
     // Prose (`secret sauce`): a bare space only separates a CLI flag from its value.
     if (!/[=:]/.test(sep) && !dash) continue
     // A key with a substitution or variable piece may name a credential once the shell expands it: fail closed.
-    if (!DYNAMIC_KEY_PIECE_RE.test(key) && !isCredentialKey(key)) continue
+    if (!computedStart && !DYNAMIC_KEY_PIECE_RE.test(key) && !isCredentialKey(key)) continue
     const valueStart = m.index + head.length
     // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s (decided before scanning the value).
     if (/authorization$/i.test(key) && /^:\s*$/.test(sep) && !/^\$?["']/.test(text.slice(valueStart, valueStart + 2))) continue
@@ -498,7 +504,7 @@ export function mightContainSensitiveText(text: string): boolean {
   if (CRED_KEY_NAME_RE.test(text)) return true
   // A key the shell assembles from pieces (`--pass'word'`) names a credential only once dequoted.
   if (/["'\\]/.test(text) && CRED_KEY_NAME_RE.test(dequote(text))) return true
-  if (DYNAMIC_KEY_PIECE_RE.test(text)) return true
+  if (DYNAMIC_KEY_PIECE_RE.test(text) || /\$[({A-Za-z_]|`/.test(text)) return true
   if (USER_FLAG_TEST_RE.test(text)) return true
   if (text.includes(':') && TELEGRAM_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true
@@ -659,9 +665,11 @@ function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean): T {
   if (record.input !== undefined) out.input = redactArgs(record.input, enabled)
   // Structured results are redacted by key too (`{ result: { token } }`); text results keep the text redaction.
   for (const key of ['result', 'output'] as const) if (record[key] && typeof record[key] === 'object') out[key] = redactArgs(record[key], enabled)
-  const fn = record.function
-  if (enabled && fn && typeof fn === 'object' && typeof (fn as Record<string, unknown>).arguments === 'string' && out.function && typeof out.function === 'object') {
-    try { out.function = { ...out.function, arguments: JSON.stringify(redactArgs(JSON.parse((fn as Record<string, unknown>).arguments as string), enabled)) } } catch { /* unparseable: the text redaction stands */ }
+  const fnArgs = record.function && typeof record.function === 'object' ? (record.function as Record<string, unknown>).arguments : undefined
+  if (enabled && fnArgs !== undefined && out.function && typeof out.function === 'object') {
+    // A JSON-string `arguments` is redacted as parsed args; an object-valued one (`ToolCallSchema` accepts any JSON) directly.
+    if (typeof fnArgs !== 'string') out.function = { ...out.function, arguments: redactArgs(fnArgs, enabled) }
+    else try { out.function = { ...out.function, arguments: JSON.stringify(redactArgs(JSON.parse(fnArgs), enabled)) } } catch { /* unparseable: the text redaction stands */ }
   }
   return { ...out, ...toolDisplay(toolName(record), redactArgs(toolArgs(record), enabled)) } as T
 }

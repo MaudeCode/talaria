@@ -202,6 +202,12 @@ describe('round 44 shapes', () => {
     expect(redactText(`login --pass{word,word}=hunter2 next`, true)).toBe(`login --pass{word,word}=*** next`)
     expect(redactText(`login --pass{w{o,x}rd,}=hunter2 next`, true)).toBe(`login --pass***`)
     expect(redactText(`cp a.{txt,bak} && echo file{1..3}.txt`, true)).toBe(`cp a.{txt,bak} && echo file{1..3}.txt`)
+    expect(redactText(`login --$(printf password)=hunter2 --\${KEY}=hunter3 -$K=hunter4 next`, true)).toBe(`login --$(printf password)=*** --\${KEY}=*** -$K=*** next`)
+    expect(redactText('login --`printf password`=hunter2 next', true)).toBe('login --`printf password`=*** next')
+    expect(redactText(`login --$(echo $(printf password))=hunter2 next`, true)).toBe(`login --***`)
+    // A computed key needs `=`: `$HOST:$PORT`, `-$OPTS dir` and `` `code`: `` prose stay as written.
+    expect(redactText('curl "$HOST:$PORT/token" && ls -$OPTS dir', true)).toBe('curl "$HOST:$PORT/token" && ls -$OPTS dir')
+    expect(redactText('`password`: the login secret', true)).toBe('`password`: the login secret')
     // Markdown code spans are prose, not substitutions.
     expect(redactText('answer with **markdown** and `code` about the token', true)).toBe('answer with **markdown** and `code` about the token')
     expect(redactText('check the `token` field; use `${base}/api` and `a=$(date)`.', true)).toBe('check the `token` field; use `${base}/api` and `a=$(date)`.')
@@ -292,5 +298,12 @@ describe('redactSessionData', () => {
     const message = (out.messages as Record<string, unknown>[])[0]!
     const call = (message.tool_calls as { function: { arguments: string } }[])[0]!
     expect(JSON.parse(call.function.arguments)).toEqual({ command: 'login', password: '***' })
+  })
+
+  it('masks object-valued function arguments by key', () => {
+    const out = redactSessionData({ messages: [{ role: 'assistant', tool_calls: [{ id: 'a', type: 'function', function: { name: 'login', arguments: { user: 'bob', password: 'hunter2' } } }] }] }, true)
+    expect(JSON.stringify(out)).not.toContain('hunter2')
+    const call = ((out.messages as Record<string, unknown>[])[0]!.tool_calls as { function: { arguments: unknown } }[])[0]!
+    expect(call.function.arguments).toEqual({ user: 'bob', password: '***' })
   })
 })
