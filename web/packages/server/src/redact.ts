@@ -469,7 +469,83 @@ function redactHeaderCredentials(text: string, re: RegExp): string {
   return out + text.slice(last)
 }
 
+/** Stands in for a quoted or escaped space in a dequoted word, so the rules read it as part of one token. */
+const WORD_SPACE = '\u2423'
+
+/**
+ * A shell word as the program receives it: quotes and `$` quote prefixes removed, escapes resolved (ANSI-C escapes are
+ * not decoded; `SUBST_PIECE` fails those closed), and a quoted or escaped space kept inside the token as `WORD_SPACE`.
+ */
+function shellDequote(word: string): string {
+  let out = ''
+  let quote = ''
+  for (let i = 0; i < word.length; i += 1) {
+    const c = word[i]!
+    if (!quote && c === '$' && (word[i + 1] === "'" || word[i + 1] === '"')) continue
+    if (!quote && (c === "'" || c === '"')) quote = c
+    else if (quote && c === quote) quote = ''
+    else if (c === '\\' && quote !== "'" && i + 1 < word.length) {
+      i += 1
+      const escaped = word[i]!
+      out += /\s/.test(escaped) ? WORD_SPACE : escaped
+    } else out += quote && /\s/.test(c) ? WORD_SPACE : c
+  }
+  return out
+}
+
+/** A text's word tokens, counted. */
+function tokenCounts(text: string): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const token of text.split(/[^\p{L}\p{N}_]+/u)) if (token) counts.set(token, (counts.get(token) ?? 0) + 1)
+  return counts
+}
+
+/** Whether `got` shows a whole token of `plain` more often than `wanted` does: a credential the rules masked in `wanted` survives. */
+function revealsMore(plain: string, got: string, wanted: string): boolean {
+  const source = tokenCounts(plain)
+  const allowed = tokenCounts(wanted)
+  for (const [token, count] of tokenCounts(got)) if (source.has(token) && count > (allowed.get(token) ?? 0)) return true
+  return false
+}
+
+/**
+ * Shell words whose quoting or escapes compose a delimiter, key or credential (`--password'='x`, `bob:pw'@'host`): each
+ * is redacted as the program receives it. When the word as written, once redacted, still shows a token the dequoted
+ * redaction masks, the redacted dequoted form replaces it, so no quoting variant hides a credential from the rules. A
+ * single quoted argument and a data container (JSON, a Python repr) are not composed words and keep their quoting; a
+ * word with a substitution is the computed-key rules' (its dequoted form is not what the program receives).
+ */
+function redactComposedWords(text: string): string {
+  if (!/["'\\]/.test(text)) return text
+  const closeOf = enclosingClose(text)
+  let out = ''
+  let last = 0
+  for (let i = 0; i < text.length; ) {
+    if (/\s/.test(text[i]!)) { i += 1; continue }
+    const end = Math.max(i + 1, shellWordEnd(text, i, '', closeOf))
+    const word = text.slice(i, end)
+    if (/["'\\]/.test(word.slice(1)) && !/^[[{(]/.test(word) && !/\$[({]|`/.test(word) && !splitQuoted(word)) {
+      // The leak check reads quoted spaces as spaces (prose apostrophes pair up across words); the replacement keeps them
+      // inside the token, so a quoted value is masked whole.
+      const glued = shellDequote(word)
+      const plain = glued.replaceAll(WORD_SPACE, ' ')
+      const wanted = redactRules(plain)
+      if (wanted !== plain && revealsMore(plain, shellDequote(redactRules(word)).replaceAll(WORD_SPACE, ' '), wanted)) {
+        out += text.slice(last, i) + redactRules(glued).replaceAll(WORD_SPACE, ' ')
+        last = end
+      }
+    }
+    i = end
+  }
+  return out + text.slice(last)
+}
+
 export function redactSensitive(text: string): string {
+  if (!text) return text
+  return redactRules(redactComposedWords(text))
+}
+
+function redactRules(text: string): string {
   if (!text) return text
   let out = text.replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))

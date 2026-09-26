@@ -241,6 +241,23 @@ describe('round 44 shapes', () => {
   })
 })
 
+describe('shell-composed words', () => {
+  it('redacts a word as the program receives it when its quoting hides a delimiter', () => {
+    for (const quoted of [`login --password'='hunter2 next`, `login --password"="hunter2 next`, `login --password$'='hunter2 next`]) {
+      expect(redactText(quoted, true)).toMatch(/^login --password\S*\*\*\*/)
+      expect(redactText(quoted, true)).not.toContain('hunter2')
+    }
+    expect(redactText(`curl https://bob:hunter2'@'example.com next`, true)).toBe(`curl https://bob:***@example.com next`)
+    expect(redactText(`curl https://bob':'hunter2@example.com next`, true)).toBe(`curl https://bob:***@example.com next`)
+  })
+
+  it('keeps words the rules already read as written', () => {
+    expect(redactText(`curl -H "Authorization: Bearer opaque" -d '{"a": 1}' x`, true)).toBe(`curl -H "Authorization: Bearer ***" -d '{"a": 1}' x`)
+    expect(redactText(`login "--password=two words" next`, true)).toBe(`login "--password=***" next`)
+    expect(redactText(`echo it's fine and "quoted" too`, true)).toBe(`echo it's fine and "quoted" too`)
+  })
+})
+
 describe('credential key length', () => {
   it('masks a credential option whose identifier is longer than any fixed cap, through the public prefilter', () => {
     const namespace = 'company'.repeat(40)
@@ -259,7 +276,7 @@ describe('redactSensitive cost', () => {
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
       // Shell-composed identifiers: unclosed and alternating quote and escape pieces.
-      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`, `a{b,`, `a{b`, `a{,}`, `a$'\\`, `--$'\\x`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`)]) {
+      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`, `a{b,`, `a{b`, `a{,}`, `a$'\\`, `--$'\\x`, `a'='`, `a'b `, `x:'@'`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`)]) {
       const started = performance.now()
       redactSensitive(text)
       expect(performance.now() - started).toBeLessThan(1000)
