@@ -123,14 +123,17 @@ function isCredentialKey(key: string): boolean {
  * read, however long, and matched whole even without a separator: the scan never restarts inside an identifier, so it
  * stays linear.
  */
-/** A substitution or variable piece of a key: `$(…)` (flat, unquoted), `` `…` `` (no outer spaces), `${…}`, `$NAME`. */
-const SUBST_PIECE = String.raw`\$\([^()\n'"\x60\\]*\)|\x60(?![\s\x60])(?:[^\x60\n\\]|\\.)*(?<![\s\\])\x60|\$\{[^{}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*`
+/**
+ * A piece of a key the shell computes: `$(…)` (flat, unquoted), `` `…` `` (no outer spaces), `${…}`, `$NAME`, or an
+ * ANSI-C `$'…'` with a backslash escape (`$'\x77ord'`; like any key piece, without spaces, `=` or `:`).
+ */
+const SUBST_PIECE = String.raw`\$'(?=[^'\s=:]*\\)(?:[^'\\\s=:]|\\\S)*'|\$\([^()\n'"\x60\\]*\)|\x60(?![\s\x60])(?:[^\x60\n\\]|\\.)*(?<![\s\\])\x60|\$\{[^{}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*`
 const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})((?:[A-Za-z0-9_]|${SUBST_PIECE}|(?<=-)(?=\$[({]|\x60))(?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-]|\$?'[A-Za-z0-9_.-]*'|\$?"[A-Za-z0-9_.-]*"|\\[A-Za-z0-9_.-]|${SUBST_PIECE}|\{(?=[^{}\s]*(?:,|\.\.))[^{}\s]*\})*)((?:\\?["'])?\s*\+?[=:]\s*|\s+|)`, 'g')
 /**
  * A substitution, variable or brace-expansion piece of a key (`$(…)`, `` `…` ``, `${…}`, `$NAME`, `{a,b}`, `{1..3}`) right
  * after an identifier character.
  */
-const DYNAMIC_KEY_PIECE_RE = /[A-Za-z0-9_](?:\$[({A-Za-z_]|`|\{(?=[^{}\s]*(?:,|\.\.)[^{}\s]*\}))/
+const DYNAMIC_KEY_PIECE_RE = /[A-Za-z0-9_](?:\$[({A-Za-z_]|\$'(?=[^'\s=:]*\\)|`|\{(?=[^{}\s]*(?:,|\.\.)[^{}\s]*\}))/
 /** An `Authorization` value's first word when it is a scheme token (`Basic`), and the gap to the credential after it. */
 const AUTH_SCHEME_WORD_RE = /^(?!\*+$)[A-Za-z0-9!#$%&*+.^_|~-]+$/
 const AUTH_SCHEME_GAP_RE = /[ \t]+(?=\S)/y
@@ -357,7 +360,7 @@ function redactCredentialParams(text: string): string {
     const [head, dash = '', key = '', sep = ''] = m
     // A key the shell computes from its first piece (`--$(printf password)=`, `--${KEY}=`) is one only with `=`: `$HOST:$PORT`,
     // `-$OPTS dir` and a Markdown `` `code`: `` are not assignments. A leading backtick needs a flag besides.
-    const computedStart = /^(?:\$[({A-Za-z_]|\x60)/.test(key)
+    const computedStart = /^(?:\$[({A-Za-z_]|\$'(?=[^'\s=:]*\\)|\x60)/.test(key)
     if (computedStart && (!sep.includes('=') || (key.startsWith('\x60') && !dash)) && sep) continue
     // A substitution the key grammar cannot parse (`$(` nested or quoted, `${` nested) may still build a credential name:
     // fail closed to the end of the text, as `shellWordEnd` does for a substitution in a value. An unclosed backtick or a
@@ -504,7 +507,7 @@ export function mightContainSensitiveText(text: string): boolean {
   if (CRED_KEY_NAME_RE.test(text)) return true
   // A key the shell assembles from pieces (`--pass'word'`) names a credential only once dequoted.
   if (/["'\\]/.test(text) && CRED_KEY_NAME_RE.test(dequote(text))) return true
-  if (DYNAMIC_KEY_PIECE_RE.test(text) || /\$[({A-Za-z_]|`/.test(text)) return true
+  if (DYNAMIC_KEY_PIECE_RE.test(text) || /\$[({A-Za-z_']|`/.test(text)) return true
   if (USER_FLAG_TEST_RE.test(text)) return true
   if (text.includes(':') && TELEGRAM_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true

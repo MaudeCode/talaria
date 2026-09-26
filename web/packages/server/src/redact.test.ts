@@ -208,6 +208,8 @@ describe('round 44 shapes', () => {
     // A computed key needs `=`: `$HOST:$PORT`, `-$OPTS dir` and `` `code`: `` prose stay as written.
     expect(redactText('curl "$HOST:$PORT/token" && ls -$OPTS dir', true)).toBe('curl "$HOST:$PORT/token" && ls -$OPTS dir')
     expect(redactText('`password`: the login secret', true)).toBe('`password`: the login secret')
+    expect(redactText(String.raw`login --pass$'\x77ord'=hunter2 --$'\x70assword'=hunter3 next`, true)).toBe(String.raw`login --pass$'\x77ord'=*** --$'\x70assword'=*** next`)
+    expect(redactText(String.raw`printf $'a\tb' --width=4`, true)).toBe(String.raw`printf $'a\tb' --width=4`)
     // Markdown code spans are prose, not substitutions.
     expect(redactText('answer with **markdown** and `code` about the token', true)).toBe('answer with **markdown** and `code` about the token')
     expect(redactText('check the `token` field; use `${base}/api` and `a=$(date)`.', true)).toBe('check the `token` field; use `${base}/api` and `a=$(date)`.')
@@ -253,7 +255,7 @@ describe('redactSensitive cost', () => {
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
       // Shell-composed identifiers: unclosed and alternating quote and escape pieces.
-      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`, `a{b,`, `a{b`, `a{,}`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`)]) {
+      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`, `a{b,`, `a{b`, `a{,}`, `a$'\\`, `--$'\\x`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`)]) {
       const started = performance.now()
       redactSensitive(text)
       expect(performance.now() - started).toBeLessThan(1000)
