@@ -592,7 +592,31 @@ function redactExpansionWord(word: string, at: number): string | null {
   if (inAuthority < 0) return null
   const expansion = authStart + inAuthority
   const colon = word.lastIndexOf(':', expansion - 1)
-  return colon >= authStart && /[^0-9]/.test(word.slice(colon + 1, expansion)) ? `${word.slice(0, colon + 1)}***${word.slice(authEnd)}` : null
+  if (colon >= authStart && /[^0-9]/.test(word.slice(colon + 1, expansion))) return `${word.slice(0, colon + 1)}***${word.slice(authEnd)}`
+  // The expansion may supply the user/password `:` itself (`bob${SEP}hunter2@host`): static text between it and a later
+  // `@` or expansion may be a password (`$HOST:8080`, `$SUB.example.com` and `${U}:${P}@` hold none).
+  const after = expansionEnd(word, expansion)
+  const stop = word.slice(after, authEnd).search(/\\?@|\$[({A-Za-z_0-9@*#?$!-]|`/)
+  if (stop <= 0 || !/[^:]/.test(word.slice(after, after + stop))) return null
+  return word[after + stop] === '$' || word[after + stop] === '`' ? `${word.slice(0, expansion)}***${word.slice(authEnd)}` : `${word.slice(0, expansion)}***${word.slice(after + stop)}`
+}
+
+/** The end (exclusive) of the parameter or command expansion starting at `i`. */
+function expansionEnd(word: string, i: number): number {
+  const next = word[i + 1] ?? ''
+  const close = (c: string, from: number): number => { const k = word.indexOf(c, from); return k === -1 ? word.length : k + 1 }
+  if (word[i] === '`') return close('`', i + 1)
+  if (next === '{') return close('}', i + 2)
+  if (next === '(') {
+    let depth = 0
+    for (let k = i + 1; k < word.length; k += 1) {
+      if (word[k] === '(') depth += 1
+      else if (word[k] === ')' && --depth === 0) return k + 1
+    }
+    return word.length
+  }
+  if (/[A-Za-z_]/.test(next)) return i + 1 + (/^[A-Za-z0-9_]*/.exec(word.slice(i + 1))?.[0].length ?? 0)
+  return i + 2
 }
 
 /**
@@ -887,8 +911,8 @@ function redactArgs(value: unknown, enabled: boolean): unknown {
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>
     // A `{ name: 'Authorization', value: ... }` pair (HAR and similar header lists).
-    const label = [record.name, record.key, record.header].find((v): v is string => typeof v === 'string')
-    const labelled = label !== undefined && isCredentialKey(label)
+    // Any label field naming a credential labels the value (`{ name: 'metadata', header: 'Authorization', value }`).
+    const labelled = [record.name, record.key, record.header].some((v) => typeof v === 'string' && isCredentialKey(v))
     return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, isCredentialKey(key) || (labelled && key === 'value') ? maskLeaves(item) : redactArgs(item, enabled)]))
   }
   return redactValue(value, enabled)

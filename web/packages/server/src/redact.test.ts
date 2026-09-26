@@ -263,7 +263,8 @@ describe('shell-composed words', () => {
     expect(redactText('AT=@; curl https://bob:hunter2${AT}example.com next', true)).toBe('AT=@; curl https://bob:*** next')
     expect(redactText(`SEP='='; login --password"\${SEP}"hunter2 next`, true)).not.toContain('hunter2')
     expect(redactText(`SEP='='; login --password"\${SEP}"hunter2 next`, true)).toContain(' next')
-    for (const kept of ['curl https://api.github.com/repos/$OWNER/x', 'curl https://$HOST:8080/x', "echo '$HOME' --token-file=$HOME/.tok"]) {
+    expect(redactText('SEP=:; curl https://bob${SEP}hunter2@example.com https://bob${C}pw2${A}host next', true)).toBe('SEP=:; curl https://bob***@example.com https://bob*** next')
+    for (const kept of ['curl https://api.github.com/repos/$OWNER/x', 'curl https://$HOST:8080/x', 'curl https://$SUB.example.com/x', "echo '$HOME' --token-file=$HOME/.tok"]) {
       expect(redactText(kept, true)).toBe(kept)
     }
   })
@@ -342,6 +343,11 @@ describe('publicToolFrame', () => {
     // Everything under a credential key is masked, however deeply nested.
     expect(publicToolFrame({ name: 'login', args: { password: ['hunter2'], authorization: { value: 'Bearer opaque', ttl: 3 }, empty: { token: '' } } }, true).args)
       .toEqual({ password: ['***'], authorization: { value: '***', ttl: '***' }, empty: { token: '' } })
+  })
+
+  it('masks a header object\'s value when any of its label fields names a credential', () => {
+    const frame = publicToolFrame({ name: 'http', args: { item: { name: 'metadata', header: 'Authorization', value: 'hunter2' }, other: { name: 'Accept', value: 'json' } } }, true)
+    expect(frame.args).toEqual({ item: { name: 'metadata', header: 'Authorization', value: '***' }, other: { name: 'Accept', value: 'json' } })
   })
 
   it('omits the target of a frame without args, so a completion keeps the target its start frame set', () => {
