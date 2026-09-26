@@ -113,8 +113,11 @@ function isCredentialKey(key: string): boolean {
  */
 const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z][A-Za-z0-9_.[\]-]{0,127})((?:\\?["'])?\s*\+?[=:]\s*|\s+)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
-/** `curl -u user:secret` / `-uuser:secret` / `--user user:secret`; a quoted pair or quoted secret is masked through its closing quote. */
-const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-u[ \t]*|--user[ \t]+)(?=\S)/g
+/**
+ * `curl -u user:secret` / `-uuser:secret` / `--user user:secret`, and the proxy forms `-U` / `--proxy-user`; a quoted
+ * pair or quoted secret is masked through its closing quote.
+ */
+const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-[uU][ \t]*|--(?:proxy-)?user[ \t]+)(?=\S)/g
 /** The prefilter's view of `USER_FLAG_RE`. */
 const USER_FLAG_TEST_RE = new RegExp(USER_FLAG_RE.source)
 const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
@@ -348,7 +351,7 @@ function redactCredentialParams(text: string): string {
 }
 
 /**
- * `curl -u user:secret` (also `-uuser:secret`, `--user user:secret`): the whole argument is read with the shell-word
+ * `curl -u user:secret` (also `-uuser:secret`, `--user user:secret`, `-U` / `--proxy-user`): the whole argument is read with the shell-word
  * scanner, and everything after its first `:` is masked. A single quoted pair keeps its quotes (`"bob:***"`).
  */
 function redactUserFlags(text: string): string {

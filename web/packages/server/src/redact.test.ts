@@ -132,6 +132,12 @@ describe('curl -u', () => {
     expect(redactSensitive('ls -u /tmp && curl --user carol:pw1 x')).toBe('ls -u /tmp && curl --user carol:*** x')
     expect(redactSensitive(`curl -u 'bob':'hunter2' https://x`)).toBe(`curl -u 'bob':'***' https://x`)
   })
+
+  it('masks curl proxy credentials (-U, --proxy-user), through the public prefilter', () => {
+    expect(redactText('curl --proxy-user bob:hunter2 https://x', true)).toBe('curl --proxy-user bob:*** https://x')
+    expect(redactText('curl -U bob:hunter2 https://x', true)).toBe('curl -U bob:*** https://x')
+    expect(redactText(`curl -U'bob:two words' https://x`, true)).toBe(`curl -U'bob:***' https://x`)
+  })
 })
 
 describe('redactSensitive cost', () => {
