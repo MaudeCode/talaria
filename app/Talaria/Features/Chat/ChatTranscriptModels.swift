@@ -289,16 +289,6 @@ struct AssistantActivityTimeline: Equatable {
         rows.removeAll(keepingCapacity: true)
     }
 
-    /// The same rows reopened as a live timeline: the answer is still streaming,
-    /// so no prose is final yet and later rows may follow it.
-    var resumedForStreaming: AssistantActivityTimeline {
-        var timeline = self
-        for index in timeline.rows.indices {
-            timeline.rows[index].isFinalAnswer = false
-        }
-        return timeline
-    }
-
     mutating func appendProse(_ text: String, id: String? = nil) {
         appendText(text, kind: "prose", id: id) { .prose($0) }
     }

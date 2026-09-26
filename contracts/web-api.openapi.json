@@ -3371,6 +3371,30 @@
                         },
                         "_load_revision": {
                           "type": "string"
+                        },
+                        "transcript_seq": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "stream_id": {
+                                  "type": "string"
+                                },
+                                "seq": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "stream_id",
+                                "seq"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -4776,6 +4800,30 @@
                         },
                         "_load_revision": {
                           "type": "string"
+                        },
+                        "transcript_seq": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "stream_id": {
+                                  "type": "string"
+                                },
+                                "seq": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "stream_id",
+                                "seq"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -5942,6 +5990,30 @@
                         },
                         "_load_revision": {
                           "type": "string"
+                        },
+                        "transcript_seq": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "stream_id": {
+                                  "type": "string"
+                                },
+                                "seq": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "stream_id",
+                                "seq"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -7985,6 +8057,30 @@
                         },
                         "_load_revision": {
                           "type": "string"
+                        },
+                        "transcript_seq": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "stream_id": {
+                                  "type": "string"
+                                },
+                                "seq": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "stream_id",
+                                "seq"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -9935,6 +10031,30 @@
                         },
                         "_load_revision": {
                           "type": "string"
+                        },
+                        "transcript_seq": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "stream_id": {
+                                  "type": "string"
+                                },
+                                "seq": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "stream_id",
+                                "seq"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -18897,6 +19017,30 @@
                         },
                         "_load_revision": {
                           "type": "string"
+                        },
+                        "transcript_seq": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "stream_id": {
+                                  "type": "string"
+                                },
+                                "seq": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "stream_id",
+                                "seq"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -19298,6 +19442,36 @@
                         {
                           "type": "object",
                           "properties": {
+                            "steps": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "qid": {
+                                    "type": "string"
+                                  },
+                                  "question": {
+                                    "type": "string"
+                                  },
+                                  "choices": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "multi_select": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "qid",
+                                  "question",
+                                  "choices",
+                                  "multi_select"
+                                ],
+                                "additionalProperties": {}
+                              }
+                            },
                             "clarify_id": {
                               "type": "string"
                             },
@@ -19412,6 +19586,25 @@
                 "properties": {
                   "session_id": {
                     "type": "string"
+                  },
+                  "answers": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
                   },
                   "response": {
                     "type": "string"

@@ -286,6 +286,50 @@ def test_clarify_prompts_advertise_the_agent_timeout(monkeypatch) -> None:
     entry.event.set()
 
 
+def test_batch_clarify_relays_questions_and_returns_the_answers_envelope(monkeypatch) -> None:
+    """TAL-362: the Agent's batch callback frame has no top-level question; the keyed envelope reply reaches it unchanged."""
+    _patch(monkeypatch)
+    questions = [
+        {"qid": "q0", "id": None, "question": "What sounds best for a quiet evening?", "choices": ["A book (Recommended)", "A movie"], "choices_offered": ["A book", "A movie"], "multi_select": False},
+        {"qid": "q1", "id": "snacks", "question": "Which snacks?", "choices": ["Popcorn (Recommended)", "Tea"], "choices_offered": ["Popcorn", "Tea"], "multi_select": True},
+    ]
+    replies: list = []
+
+    class BatchAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            # Mirrors ``clarify_tool._run_batch`` then a single multi-select question.
+            replies.append(self.kwargs["clarify_callback"]("", None, questions=questions))
+            replies.append(self.kwargs["clarify_callback"]("Which env?", ["dev", "prod"], multi_select=True))
+            return {"final_response": "ok", "messages": []}
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: BatchAgent)
+    ctx = Ctx()
+    threading.Thread(target=lambda: chat.start(ctx, _params("st-batch")), daemon=True).start()
+
+    def answer(n: int, response: str) -> dict:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and sum(e == "clarify" for e, _ in ctx.frames) < n:
+            time.sleep(0.02)
+        frame = [data for e, data in ctx.frames if e == "clarify"][n - 1]
+        run = chat._run_for({"stream_id": "st-batch"})
+        assert run is not None
+        with run.lock:
+            entry = run.clarify_entries[frame["clarify_id"]]
+        entry.result = response
+        entry.event.set()
+        return frame
+
+    envelope = '{"answers": {"q0": "A movie", "q1": ["Popcorn (Recommended)", "Tea"]}}'
+    batch = answer(1, envelope)
+    assert batch["question"] == "" and batch["questions"] == questions and "multi_select" not in batch
+    single = answer(2, '["prod"]')
+    assert single["multi_select"] is True and single["choices_offered"] == ["dev", "prod"]
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and len(replies) < 2:
+        time.sleep(0.02)
+    assert replies == [envelope, '["prod"]']
+
+
 def test_tool_frames_keep_content_args_long_and_extract_result_previews(monkeypatch) -> None:
     """Predecessor caps: content/diff args keep 4000 chars, incidental args 120; previews come from output/result/error."""
     snap = chat._args_snapshot({"path": "/very/long/" + "x" * 300, "note": "n" * 300, "old_string": "o" * 5000})

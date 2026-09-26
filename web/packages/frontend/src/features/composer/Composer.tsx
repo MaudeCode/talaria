@@ -20,6 +20,7 @@ import { createRecognition, dictationSupported, classifyDictationError } from '.
 import { ProfileMenu } from '../../shell/ProfileMenu'
 import { setTheme } from '../../app/appearance'
 import { ThemeSchema } from '../../contracts/persisted'
+import type { Clarify } from '../chat/useClarify'
 
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
 /** A message waiting for the live turn to settle: it owns its text, upload receipts and the request it was composed against. */
@@ -50,9 +51,12 @@ export interface ComposerProps {
   onQueue: (entry: QueuedTurn) => void
   /** Sending is disabled (e.g. while a manual compression job runs). */
   locked?: boolean | undefined
+  /** A pending clarification: the box becomes its answer input and the chat draft and attachments wait untouched. */
+  clarify?: Clarify | null | undefined
 }
 
 const PHONE = '(max-width: 640px)'
+const MESSAGE_ONLY_CONTROLS = new Set(['hide_composer_attach', 'hide_composer_mic', 'hide_composer_profile', 'hide_composer_workspace', 'hide_composer_model', 'hide_composer_reasoning'])
 /** Phone-width viewport: the footer runs the icon/burger stage and collapses when idle (legacy _isPhoneWidthViewport). */
 function usePhone(): boolean {
   const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia(PHONE).matches)
@@ -78,7 +82,7 @@ function fileKey(f: File): string {
 let handoff: { text: string; files: File[] } | null = null
 
 export function Composer(props: ComposerProps) {
-  const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onToolsetsChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue } = props
+  const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onToolsetsChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, clarify } = props
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
   const [text, setText] = useState(() => (sessionId ? readLocalDraft(sessionId) : ''))
@@ -130,10 +134,22 @@ export function Composer(props: ComposerProps) {
   }, [configOpen])
   const textarea = useRef<HTMLTextAreaElement>(null)
   const recognition = useRef<ReturnType<typeof createRecognition>>(null)
+  // When a clarification takes the box over, dictation into the parked draft stops: its control is hidden, and
+  // later results must not land in the draft. `onend` then clears the dictating state.
+  const answering = !!clarify
+  useEffect(() => {
+    const r = recognition.current
+    if (!answering || !r) return
+    r.onresult = null
+    r.stop()
+  }, [answering])
   const busy = !!live && !isTerminal(live.status)
   const busyMode: BusyMode = (settings?.default_message_mode as BusyMode | undefined) ?? 'steer'
   const sendKey = settings?.send_key ?? 'enter'
-  const palette = useCommandPalette(text)
+  // While a clarification is pending the box edits its answer; the chat draft keeps its own state.
+  const value = clarify ? clarify.text : text
+  const setValue = clarify ? clarify.setText : setText
+  const palette = useCommandPalette(clarify ? '' : text)
   useDraftPersistence(sessionId, text)
 
   // Session change resets the draft and tray, unless this session's composer just adopted a hand-off (below); the
@@ -151,10 +167,10 @@ export function Composer(props: ComposerProps) {
     if (!el) return
     // Native sizing where supported (upstream #6760); otherwise measure. An empty composer keeps its resting
     // height rather than the placeholder's wrapped height.
-    if (!text || (typeof CSS !== 'undefined' && CSS.supports('field-sizing', 'content'))) { el.style.height = ''; return }
+    if (!value || (typeof CSS !== 'undefined' && CSS.supports('field-sizing', 'content'))) { el.style.height = ''; return }
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 320)}px`
-  }, [text])
+  }, [value])
 
   const maxBytes = bootstrap.max_upload_bytes
   const addFiles = useCallback((incoming: FileList | File[]) => {
@@ -259,6 +275,8 @@ export function Composer(props: ComposerProps) {
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (palette.handleKey(e, applySuggestion)) return
     if (e.key !== 'Enter') return
+    // A clarification answer is short: Enter answers on every width, whatever the chat send-key rule.
+    if (clarify) { if (!e.shiftKey) { e.preventDefault(); clarify.send() } return }
     const isNumpad = e.code === 'NumpadEnter'
     const mobile = window.matchMedia('(max-width: 640px)').matches
     if (sendKey === 'ctrl+enter' || mobile) {
@@ -268,6 +286,8 @@ export function Composer(props: ComposerProps) {
     if (!e.shiftKey) { e.preventDefault(); void send() }
   }
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    // A clarification answer is text only: pasted files and long text stay out of the parked message.
+    if (clarify) return
     const items = Array.from(e.clipboardData.items)
     const images = items.filter((i) => i.kind === 'file').map((i) => i.getAsFile()).filter((f): f is File => !!f)
     if (images.length) { e.preventDefault(); addFiles(images); return }
@@ -278,7 +298,7 @@ export function Composer(props: ComposerProps) {
       showToast(m.text_pasted() + `pasted-${Date.now()}.txt`, 2500)
     }
   }
-  const onDrop = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }
+  const onDrop = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setDragOver(false); if (!clarify) addFiles(e.dataTransfer.files) }
 
   const toggleDictation = () => {
     if (!dictationSupported()) { showToast(m.composer_dictation_unsupported(), 3000, 'error'); return }
@@ -298,8 +318,9 @@ export function Composer(props: ComposerProps) {
     setDictating(true)
   }
 
-  const hide = (k: string) => !!(settings as Record<string, unknown> | undefined)?.[k]
-  const placeholder = busy ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
+  // While a clarification owns the box, the message-only controls leave the footer (docs/ui-ux clarify-card).
+  const hide = (k: string) => (!!clarify && MESSAGE_ONLY_CONTROLS.has(k)) || !!(settings as Record<string, unknown> | undefined)?.[k]
+  const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
   const compressedEstimate = session?.post_compression_context_tokens_estimate
   const contextUsed = compressedEstimate && compressedEstimate > 0 ? compressedEstimate : (session?.last_prompt_tokens ?? null)
   const contextTotal = session?.context_length ?? null
@@ -317,29 +338,29 @@ export function Composer(props: ComposerProps) {
         </div>
       )}
       <div
-        className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) bg-(--composer-bg) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-[12px]', dragOver && 'drag-over')}
+        className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) bg-(--composer-bg) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-[12px]', dragOver && 'drag-over', clarify && 'clarify-active')}
         id="composerBox"
         ref={box}
         onFocus={() => setFocusWithin(true)}
         onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setFocusWithin(false) }}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+        onDragOver={(e) => { e.preventDefault(); if (!clarify) setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
       >
         {palette.open && <CommandPaletteList items={palette.items} active={palette.active} listId={palette.listId} onPick={applySuggestion} onHover={palette.setActive} />}
         {dragOver && <div className="drop-hint active" id="dropHint" aria-hidden="true">{m.drop_files_to_attach()}</div>}
-        <AttachmentTray files={files} onRemove={removeFile} />
+        {!clarify && <AttachmentTray files={files} onRemove={removeFile} />}
         {dictating && <div className="mic-status active" id="micStatus" role="status"><span className="mic-dot" aria-hidden="true" /> {m.voice_listening()}</div>}
         <textarea
           ref={textarea}
           id="msg"
           rows={1}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           placeholder={placeholder}
-          aria-label={m.composer_placeholder()}
+          aria-label={clarify ? clarify.step.question : m.composer_placeholder()}
           aria-autocomplete={palette.open ? 'list' : undefined}
           aria-controls={palette.open ? palette.listId : undefined}
           aria-activedescendant={palette.activeId}
@@ -368,11 +389,16 @@ export function Composer(props: ComposerProps) {
           </div>
           <div className="composer-right flex gap-2 items-center shrink-0 max-[641px]:flex-none max-[641px]:w-auto max-[641px]:justify-end max-[641px]:gap-1.5 max-[641px]:min-w-0">
             {!hide('hide_composer_context') && <ContextRing used={contextUsed} total={contextTotal} threshold={session?.threshold_tokens} />}
+            {clarify && (
+              <button type="button" onClick={clarify.send} disabled={!clarify.canSend} className="send-btn has-tooltip has-tooltip--left" id="btnClarifySend" data-tooltip={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()} aria-label={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()}>
+                <ArrowUp size={16} aria-hidden="true" />
+              </button>
+            )}
             {busy ? (
               <button type="button" onClick={() => { if (sessionId) void cancelTurn(sessionId) }} className="send-btn stop has-tooltip has-tooltip--left" id="btnStop" data-tooltip={m.composer_stop()} aria-label={m.composer_stop()} title={m.composer_stop()}>
                 <Square size={14} aria-hidden="true" />
               </button>
-            ) : (
+            ) : !clarify && (
               <button type="button" onClick={() => { void send() }} disabled={!canSend} className="send-btn has-tooltip has-tooltip--left" id="btnSend" data-tooltip={m.composer_send()} aria-label={m.composer_send()} title={m.composer_send()}>
                 <ArrowUp size={16} aria-hidden="true" />
               </button>

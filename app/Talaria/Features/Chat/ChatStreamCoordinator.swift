@@ -43,10 +43,9 @@ protocol ChatStreamCoordinatorDelegate: AnyObject {
 
     func streamCoordinatorLoadMessages(modelContext: ModelContext?) async
     func streamCoordinatorLatestAssistantMessageID() -> String?
-    /// TAL-148: before a cold replay from sequence zero, extend the live timeline
-    /// with the streaming turn's already-loaded scene so replayed rows append to
-    /// the rendered prefix instead of replacing it.
-    func streamCoordinatorSeedLiveActivityForColdReplay() async throws
+    /// Old-server fallback (TAL-316): drop the loaded running turn after its prompt
+    /// so a replay from 0 renders it once. False when the load has no turn start.
+    func streamCoordinatorOmitLoadedRunningTurn() -> Bool
     func streamCoordinatorStartAuxiliaryMonitoring()
     func streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: Bool)
     func streamCoordinatorSaveSnapshotIfNeeded()
@@ -61,8 +60,6 @@ protocol ChatStreamCoordinatorDelegate: AnyObject {
     func streamCoordinatorDidReceiveErrorMessage(_ message: String)
     func streamCoordinatorDidReceiveRecoveryError(_ error: Error)
     func streamCoordinatorDidConfirmRecovery()
-    func streamCoordinatorDidStartConnection(isReplay: Bool)
-    func streamCoordinatorDidResetRecoveryState()
 
     @discardableResult
     func streamCoordinatorAppendToken(_ text: String) -> Bool
@@ -124,6 +121,12 @@ final class ChatStreamCoordinator {
     private(set) var liveTokensPerSecond: Double?
     private var lastRecoveryStatusCheckDate: Date?
     private(set) var isReplayConnection = false
+    // The `after_seq` the current connection resumed from: its journal events at
+    // or below it are already on screen, so they are never applied again.
+    private var replayCursor: Int?
+    // SSE ids are sticky: a frame without an `id` repeats the previous frame's, so
+    // only a changed id identifies a journal frame of its own.
+    private var previousFrameEventID: String?
     // Bumped whenever the active run starts or finalizes. Captured before async
     // finalization work so stale tasks cannot finalize a newer run.
     private var runGeneration = 0
@@ -135,9 +138,11 @@ final class ChatStreamCoordinator {
     // competing terminal events arriving on the dead connection can neither mutate
     // nor re-finalize the run. Only the next run start or a session load clears it.
     private var hasFinishedCurrentRun = false
-    // True when a session load adopted a run this process never held, so no
-    // snapshot or event cursor for it can have survived here.
-    private var isColdAdoptedRun = false
+    // The latest applied session load's `transcript_seq` (TAL-316): its messages
+    // hold nothing that stream's journal delivers after this cursor.
+    private var loadedTranscriptSeq: TranscriptSeq?
+    // The latest applied load came from a server that predates `transcript_seq`.
+    private var loadedTranscriptPredatesCursor = false
     private var sharedReconnect: SharedReconnect?
 
     /// Whether the current run already reached `.done` or finished teardown.
@@ -206,7 +211,6 @@ final class ChatStreamCoordinator {
         self.publishesLiveActivity = publishesLiveActivity
         hasCompletedCurrentResponse = false
         hasFinishedCurrentRun = false
-        isColdAdoptedRun = false
         liveTokensPerSecond = nil
         runGeneration &+= 1
         responseGeneration &+= 1
@@ -217,6 +221,8 @@ final class ChatStreamCoordinator {
         if replayAfterSeq == nil {
             lastEventID = nil
         }
+        replayCursor = replayAfterSeq
+        previousFrameEventID = nil
 
         markConnectionStarted(
             isReplay: replayAfterSeq != nil,
@@ -285,19 +291,24 @@ final class ChatStreamCoordinator {
     /// `runStartedAt` is when the loaded session says its in-flight turn started
     /// (`pending_started_at`, else the latest user turn's timestamp), so adopting
     /// a running stream counts from there instead of from this load.
+    /// `transcriptSeq` is the load's `transcript_seq`, where its messages end in
+    /// the active run's journal.
     func reconcileSessionLoad(
         loadedActiveStreamID rawLoadedActiveStreamID: String?,
         preparation: ChatStreamLoadPreparation,
         usedCacheFallback: Bool,
-        runStartedAt: Date? = nil
+        runStartedAt: Date? = nil,
+        transcriptSeq: TranscriptSeq? = nil,
+        statesTranscriptSeq: Bool = true
     ) {
         hasCompletedCurrentResponse = false
         hasFinishedCurrentRun = false
         liveTokensPerSecond = nil
+        loadedTranscriptSeq = usedCacheFallback ? nil : transcriptSeq
+        loadedTranscriptPredatesCursor = !usedCacheFallback && !statesTranscriptSeq
 
         if usedCacheFallback {
             activeStreamID = nil
-            isColdAdoptedRun = false
             isConnectionSuspended = false
             delegate?.streamCoordinatorStreamingAssistantMessageID = nil
             resetRecoveryState()
@@ -310,17 +321,11 @@ final class ChatStreamCoordinator {
             if let streamID = loadedActiveStreamID, !streamID.isEmpty {
                 activeStreamID = streamID
                 seedActiveRunStart(runStartedAt)
-                delegate?.streamCoordinatorStreamingAssistantMessageID = delegate?.streamCoordinatorLatestAssistantMessageID()
+                adoptLoadedStreamingAssistantMessage(streamID: streamID)
                 isConnectionSuspended = true
-                // Adopting a run this process was not already holding is the cold
-                // relaunch case: nothing local can carry its streamed prefix. Latch
-                // it until the run actually restarts — recovery reloads the session
-                // again with the run already adopted, and that must not look warm.
-                isColdAdoptedRun = isColdAdoptedRun || preparation.activeStreamIDBeforeLoad != streamID
                 restoreSnapshotIfAvailable(streamID: streamID)
             } else {
                 activeStreamID = nil
-                isColdAdoptedRun = false
                 isConnectionSuspended = false
                 resetRecoveryState()
             }
@@ -331,14 +336,12 @@ final class ChatStreamCoordinator {
             if let streamID {
                 activeStreamID = streamID
                 seedActiveRunStart(runStartedAt)
-                delegate?.streamCoordinatorStreamingAssistantMessageID = delegate?.streamCoordinatorLatestAssistantMessageID()
+                adoptLoadedStreamingAssistantMessage(streamID: streamID)
                 restoreSnapshotIfAvailable(streamID: streamID)
                 if delegate?.streamCoordinatorStreamingAssistantMessageID == nil {
-                    delegate?.streamCoordinatorStreamingAssistantMessageID = delegate?.streamCoordinatorLatestAssistantMessageID()
+                    adoptLoadedStreamingAssistantMessage(streamID: streamID)
                 }
             }
-            // A live, unsuspended connection is holding this run locally.
-            isColdAdoptedRun = false
             isConnectionSuspended = false
         }
     }
@@ -407,26 +410,18 @@ final class ChatStreamCoordinator {
                     restoreSnapshotIfAvailable(streamID: streamIDToResume)
                 }
                 if delegate?.streamCoordinatorStreamingAssistantMessageID == nil {
-                    delegate?.streamCoordinatorStreamingAssistantMessageID = delegate?.streamCoordinatorLatestAssistantMessageID()
+                    adoptLoadedStreamingAssistantMessage(streamID: streamIDToResume)
                 }
-                // Cold relaunch: this process adopted the run without a snapshot,
-                // and no event cursor survived either, so the prefix the server
-                // already streamed would never arrive. Replay it from the start
-                // when the run journal is still available; replay dedup drops
-                // whatever the transcript load above already rendered.
-                let needsColdReplay = isColdAdoptedRun
-                    && lastEventID == nil
-                    && response.replayAvailable == true
-                if needsColdReplay {
-                    try await delegate?.streamCoordinatorSeedLiveActivityForColdReplay()
-                    guard !Task.isCancelled, self.activeStreamID == activeStreamID,
-                          isConnectionSuspended, runGeneration == generation else { return }
+                var replayAfterSeq = resumeAfterSeq(streamID: streamIDToResume)
+                // ponytail: old-server fallback — delete once every supported Web ships `transcript_seq`.
+                if replayAfterSeq == nil, loadedTranscriptPredatesCursor, response.replayAvailable == true,
+                   delegate?.streamCoordinatorOmitLoadedRunningTurn() == true {
+                    replayAfterSeq = 0
                 }
                 isConnectionSuspended = false
-                let coldReplayAfterSeq: Int? = needsColdReplay ? 0 : nil
-                start(streamID: streamIDToResume, replayAfterSeq: coldReplayAfterSeq)
+                start(streamID: streamIDToResume, replayAfterSeq: replayAfterSeq)
             } else if response.replayAvailable == true {
-                let replayAfterSeq = Self.runJournalReplayAfterSeq(from: lastEventID) ?? 0
+                let replayAfterSeq = Self.runJournalReplayAfterSeq(from: lastEventID, streamID: activeStreamID) ?? 0
                 // Replaying a finished journal restores the transcript, not a running card.
                 if response.active == false {
                     let outcome = LiveActivityReconciler.reconciledOutcome(forTerminalState: response.journal?.terminalState)
@@ -582,29 +577,51 @@ final class ChatStreamCoordinator {
         delegate?.streamCoordinatorDidConfirmRecovery()
     }
 
-    func clearReplayConnection() {
-        isReplayConnection = false
-    }
-
-    nonisolated static func runJournalReplayAfterSeq(from eventID: String?) -> Int? {
+    /// The sequence of a `stream_id:seq` run-journal event id, or nil unless the
+    /// id belongs to `streamID`: another stream's cursor never resumes this one.
+    nonisolated static func runJournalReplayAfterSeq(from eventID: String?, streamID: String) -> Int? {
         guard let eventID = eventID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !eventID.isEmpty
+              let delimiterIndex = eventID.lastIndex(of: ":"),
+              eventID[..<delimiterIndex] == streamID,
+              let sequence = Int(eventID[eventID.index(after: delimiterIndex)...])
         else {
             return nil
         }
 
-        let sequenceText: Substring
-        if let delimiterIndex = eventID.lastIndex(of: ":") {
-            sequenceText = eventID[eventID.index(after: delimiterIndex)...]
-        } else {
-            sequenceText = Substring(eventID)
-        }
-
-        guard let sequence = Int(sequenceText) else {
-            return nil
-        }
-
         return max(0, sequence)
+    }
+
+    private func isCoveredByReplayCursor(_ event: SSEEvent) -> Bool {
+        switch event {
+        case .token, .interimAssistant, .reasoning, .toolStarted, .toolCompleted, .steerConsumed:
+            guard let replayCursor, let activeStreamID,
+                  streamClient.lastEventID != previousFrameEventID,
+                  let seq = Self.runJournalReplayAfterSeq(from: streamClient.lastEventID, streamID: activeStreamID)
+            else { return false }
+            return seq <= replayCursor
+        default:
+            return false
+        }
+    }
+
+    /// Where to resume `streamID` (TAL-316): after this process's own cursor for
+    /// that stream, else after the loaded transcript's cursor for it, else live
+    /// without replay. Replay idempotence comes only from these cursors.
+    private func resumeAfterSeq(streamID: String) -> Int? {
+        if let ownSeq = Self.runJournalReplayAfterSeq(from: lastEventID, streamID: streamID) {
+            return ownSeq
+        }
+        guard let loadedTranscriptSeq, loadedTranscriptSeq.streamId == streamID else { return nil }
+        return loadedTranscriptSeq.seq
+    }
+
+    /// A load that states its transcript cursor for `streamID` holds none of that
+    /// run's output, so the replay creates the streaming message; otherwise the
+    /// run continues the latest loaded assistant message.
+    private func adoptLoadedStreamingAssistantMessage(streamID: String) {
+        delegate?.streamCoordinatorStreamingAssistantMessageID = loadedTranscriptSeq?.streamId == streamID
+            ? nil
+            : delegate?.streamCoordinatorLatestAssistantMessageID()
     }
 
     private func handle(_ event: SSEEvent) {
@@ -623,6 +640,11 @@ final class ChatStreamCoordinator {
 
         lastEventID = streamClient.lastEventID ?? lastEventID
         lastTransportActivityDate = Date()
+        let isCovered = isCoveredByReplayCursor(event)
+        previousFrameEventID = streamClient.lastEventID
+        if isCovered {
+            return
+        }
 
         switch event {
         case .token(let text):
@@ -823,7 +845,7 @@ final class ChatStreamCoordinator {
         guard activeStreamID == streamID, !isConnectionSuspended else { return }
 
         lastEventID = streamClient.lastEventID ?? lastEventID
-        let replayAfterSeq = usesReplay ? Self.runJournalReplayAfterSeq(from: lastEventID) ?? 0 : nil
+        let replayAfterSeq = usesReplay ? Self.runJournalReplayAfterSeq(from: lastEventID, streamID: streamID) ?? 0 : nil
         delegate?.streamCoordinatorSaveSnapshotIfNeeded()
         liveActivityManager?.markStale()
         recoveryState = .reconnecting
@@ -928,7 +950,6 @@ final class ChatStreamCoordinator {
         lastRecoveryStatusCheckDate = nil
         self.recoveryState = recoveryState
         isReplayConnection = isReplay
-        delegate?.streamCoordinatorDidStartConnection(isReplay: isReplay)
     }
 
     private func resetRecoveryState() {
@@ -937,7 +958,6 @@ final class ChatStreamCoordinator {
         lastTransportActivityDate = nil
         lastRecoveryStatusCheckDate = nil
         isReplayConnection = false
-        delegate?.streamCoordinatorDidResetRecoveryState()
     }
 
     private func startLiveActivity(

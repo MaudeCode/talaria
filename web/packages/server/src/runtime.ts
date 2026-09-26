@@ -253,6 +253,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
         return null
       },
       activeRunStream: (sid) => registry.activeRunStreamForSession(sid),
+      journalDegraded: (streamId) => registry.degradedJournals.has(streamId),
       evictAgent: (sid) => { if (sidecar) sidecar.call('chat.evict_agent', { session_id: sid }).catch(() => undefined) },
       closeTerminal: (sid) => { deps.terminals.close(sid) },
       deleteCliSession: async (profile, sid) => {

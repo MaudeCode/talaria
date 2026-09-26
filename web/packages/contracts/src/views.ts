@@ -106,6 +106,12 @@ export const SessionSchema = z.looseObject({
   worktree_branch: NullableString.optional(), worktree_repo_root: NullableString.optional(), share_token: NullableString.optional(), share_created_at: NullableNumber.optional(), manual_title: z.boolean().optional(),
   compression_anchor_summary: NullableString.optional(), compression_recovery: z.record(z.string(), Json).optional(), recommended_recovery_action: NullableString.optional(), compression_recovery_action: NullableString.optional(),
   compression_recovery_source_session_id: NullableString.optional(), gateway_routing: Json.optional(), _messages_offset: z.number().optional(), _messages_truncated: z.boolean().optional(), _msg_limit_max: z.number().optional(), _load_revision: z.string().optional(),
+  /**
+   * Where `messages` end in the run journal of `stream_id`: they hold nothing that journal delivers after `seq`, so a client
+   * resumes that stream with `after_seq = seq` and renders the replay as-is. Null (no active run, or no journal to replay):
+   * `messages` are the whole persisted transcript and a client attaches live without replay.
+   */
+  transcript_seq: z.object({ stream_id: z.string(), seq: z.number().int().nonnegative() }).nullable().optional(),
 })
 export type Session = z.infer<typeof SessionSchema>
 export const SessionEnvelopeSchema = z.looseObject({ session: SessionSchema })
@@ -170,14 +176,21 @@ export const ApprovalRespondRequestSchema = z.looseObject({ session_id: SessionI
 export const ApprovalRespondResponseSchema = z.looseObject({ ok: z.boolean(), choice: z.string().optional(), yolo_enabled: z.boolean().optional(), stale_cleared: z.boolean().optional(), error: z.string().optional(), pending_count: z.number().optional() })
 
 export const ClarifyChoiceSchema = z.union([z.string(), z.looseObject({ label: z.string().optional(), value: z.string().optional(), text: z.string().optional() })])
+/** One question the client asks, in server order; answers are keyed by `qid`. A single-question prompt is one `q0` step. */
+export const ClarifyStepSchema = z.looseObject({ qid: z.string(), question: z.string(), choices: z.array(z.string()), multi_select: z.boolean() })
+export type ClarifyStep = z.infer<typeof ClarifyStepSchema>
+/** Keyed step answers; a multi-select step takes a list. The server shapes them into the Agent's reply. */
+export const ClarifyAnswersSchema = z.record(z.string(), z.union([z.string(), z.array(z.string())]))
+export type ClarifyAnswers = z.infer<typeof ClarifyAnswersSchema>
 export const ClarifyPendingSchema = z.looseObject({
+  steps: z.array(ClarifyStepSchema).optional(),
   clarify_id: z.string().optional(), session_id: z.string().optional(), question: z.string().optional(), description: z.string().optional(), choices: z.array(ClarifyChoiceSchema).optional(), title: z.string().optional(),
   name: z.string().optional(), kind: z.string().optional(), reason: z.string().optional(), action: z.string().optional(), status: z.string().optional(), raw_preview: z.string().optional(), timeout_at: z.number().optional(),
   timeout_seconds: z.number().optional(), pending_count: z.number().optional(), index: z.number().optional(), total: z.number().optional(),
 })
 export type ClarifyPending = z.infer<typeof ClarifyPendingSchema>
 export const ClarifyPendingEnvelopeSchema = z.looseObject({ pending: ClarifyPendingSchema.nullable(), pending_count: z.number().int() })
-export const ClarifyRespondRequestSchema = z.looseObject({ session_id: SessionIdSchema, response: z.string().optional(), answer: z.string().optional(), choice: z.string().optional(), clarify_id: z.string().optional() })
+export const ClarifyRespondRequestSchema = z.looseObject({ session_id: SessionIdSchema, answers: ClarifyAnswersSchema.optional(), response: z.string().optional(), answer: z.string().optional(), choice: z.string().optional(), clarify_id: z.string().optional() })
 export const ClarifyRespondResponseSchema = z.looseObject({ ok: z.boolean(), response: z.string().optional(), error: z.string().optional(), stale: z.boolean().optional() })
 
 export const DraftSchema = z.looseObject({ text: z.string(), files: z.array(Json) })

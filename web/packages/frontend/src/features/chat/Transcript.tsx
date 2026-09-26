@@ -50,7 +50,8 @@ export function Transcript(props: TranscriptProps) {
   const showLive = !!live && (!isTerminal(live.status) || live.doneSession === null)
   const grouped = useMemo(() => groupAssistantTurns(rawRows), [rawRows])
   const rows = useMemo(() => {
-    if (!showLive || !live) return grouped
+    // A live turn attached without replay cannot restore the rows the server already persisted, so it leaves them visible.
+    if (!showLive || !live?.claimsPersistedRows) return grouped
     // The live turn owns rows the server already stamped with its turn id.
     return grouped.filter((row) => row.message.role !== 'assistant' || (row.turnKey !== live.streamId && row.turnKey !== live.turnId))
   }, [grouped, live, showLive])

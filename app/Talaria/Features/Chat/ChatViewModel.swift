@@ -360,22 +360,9 @@ final class ChatViewModel {
     private var backgroundPromptsByTaskID: [String: String] = [:]
     @ObservationIgnored private var backgroundPollTask: Task<Void, Never>?
     private var isRefreshingCompletedResponseTitle = false
-    private var activeStreamReplayChannels = ActiveStreamReplayChannels()
-    private var pendingColdReplayProsePrefix: String?
-    private var activeColdReplayProseRemainder: Substring?
-    private var activeStreamReplayMatchedPrefixLength = 0
-    /// Unmatched tail of the assistant text already received, cached while an armed
-    /// replay keeps matching in order (TAL-75). While every replayed token dedups to
-    /// nothing the received text cannot change, so the tail stays valid and each token
-    /// costs its own length instead of a rebuild and full traversal of the response so
-    /// far. `receivedUTF8Count` is the size the tail was built for; any other mismatch
-    /// means something rewrote the message, and the exact comparison runs instead.
-    private var activeStreamReplayTokenRemainder: (unmatched: Substring, receivedUTF8Count: Int)?
-    private var activeStreamReplayMatchedInterimLength = 0
-    private var activeStreamReplayMatchedReasoningLength = 0
-    private var activeStreamReplayToolMatchIndex = 0
-    private var activeStreamReplayPendingToolMatchIndex: Int?
     private var latestServerLoadHadAssistantResponseAfterLatestUser = false
+    // The latest applied load's `pending_started_at`: when its running turn began.
+    private var loadedPendingStartedAt: Double?
     private var needsComposerConfigurationReload = false
     private var pendingExplicitModelPick = false
     private(set) var composerConfigurationInteractionGeneration = 0
@@ -611,48 +598,11 @@ final class ChatViewModel {
         pendingStreamingContentFlushTask = nil
     }
 
-    /// Replay dedup is armed per event channel. A token, interim, reasoning or
-    /// tool event that turns out to be genuinely new only proves *its* channel has
-    /// caught up with the run journal. One shared flag let the first new reasoning
-    /// or tool event disarm token dedup, so the rest of a replayed answer appended
-    /// on top of the copy the transcript load had already rendered.
-    private struct ActiveStreamReplayChannels {
-        var token = false
-        var interim = false
-        var reasoning = false
-        var tool = false
-
-        var isAnyArmed: Bool { token || interim || reasoning || tool }
-
-        mutating func arm(_ armed: Bool) {
-            token = armed
-            interim = armed
-            reasoning = armed
-            tool = armed
-        }
-    }
-
-    private func disarmReplayChannel(_ channel: WritableKeyPath<ActiveStreamReplayChannels, Bool>) {
-        guard activeStreamReplayChannels[keyPath: channel] else { return }
-
-        activeStreamReplayChannels[keyPath: channel] = false
-        guard !activeStreamReplayChannels.isAnyArmed else { return }
-
-        streamCoordinator.clearReplayConnection()
-    }
-
     private func resetPendingStreamingContentBuffers() {
         cancelPendingStreamingContentFlush()
         pendingAssistantTokenText = ""
         pendingReasoningText = ""
         pendingReasoningTitles = []
-        // Text is deduplicated at append time, so the replay matched-prefix
-        // counters can reference unflushed content; dropping the buffers makes them
-        // stale. Reset only the counters — the replay connection may still be live,
-        // so dedup must stay armed.
-        activeStreamReplayMatchedPrefixLength = 0
-        activeStreamReplayTokenRemainder = nil
-        activeStreamReplayMatchedReasoningLength = 0
     }
 
     func flushPendingStreamingContent() {
@@ -1410,11 +1360,14 @@ final class ChatViewModel {
             toolCallAnchorMessageID = nil
             reasoningAnchorMessageID = nil
             attachmentCoordinator.removeAllLocalPreviews()
+            loadedPendingStartedAt = session?.pendingStartedAt
             streamCoordinator.reconcileSessionLoad(
                 loadedActiveStreamID: loadedActiveStreamID,
                 preparation: streamLoadPreparation,
                 usedCacheFallback: false,
-                runStartedAt: Self.activeRunStartDate(pendingStartedAt: session?.pendingStartedAt, messages: messages)
+                runStartedAt: Self.activeRunStartDate(pendingStartedAt: session?.pendingStartedAt, messages: messages),
+                transcriptSeq: session?.transcriptSeq,
+                statesTranscriptSeq: session?.statesTranscriptSeq ?? true
             )
             latestAppliedSessionLoadRequestGeneration = loadRequestGeneration
         } catch {
@@ -4361,7 +4314,11 @@ final class ChatViewModel {
         setCompletedToolCallGroups(snapshot.completedToolCallGroups)
         completedReasoningGroups = snapshot.completedReasoningGroups
         liveAssistantActivity = snapshot.liveAssistantActivity
-        streamingAssistantMessageID = merge.streamingAssistantMessageID ?? snapshot.streamingAssistantMessageID
+        // A snapshot taken before the run streamed anything names no live message; the
+        // caller then picks the target from the load (TAL-316), not the merge's guess.
+        streamingAssistantMessageID = snapshot.streamingAssistantMessageID == nil
+            ? nil
+            : merge.streamingAssistantMessageID ?? snapshot.streamingAssistantMessageID
         toolCallAnchorMessageID = Self.remappedAnchorMessageID(
             snapshot.toolCallAnchorMessageID,
             from: snapshot.streamingAssistantMessageID,
@@ -4554,23 +4511,11 @@ final class ChatViewModel {
            let index = messages.firstIndex(where: { $0.messageId == streamingAssistantMessageID }) {
             let existing = messages[index]
             let currentContent = existing.content ?? ""
-            let coldReplayText = activeStreamReplayChannels.interim ? deduplicatedColdReplayProse(text) : nil
-            let textToAppend = coldReplayText ?? deduplicatedReplayText(
-                text,
-                existingContent: currentContent,
-                isArmed: activeStreamReplayChannels.interim,
-                matchedPrefixLength: &activeStreamReplayMatchedInterimLength
-            )
-            guard !textToAppend.isEmpty else { return false }
-
-            let shouldAppendReplaySuffixDirectly = activeStreamReplayChannels.interim && textToAppend != text
-            disarmReplayChannel(\.interim)
             let shouldUseSeparator = currentContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-                && !shouldAppendReplaySuffixDirectly
             let separator = shouldUseSeparator ? "\n\n" : ""
             messages[index] = ChatMessage(
                 role: existing.role,
-                content: currentContent + separator + textToAppend,
+                content: currentContent + separator + text,
                 timestamp: existing.timestamp,
                 messageId: existing.messageId,
                 name: existing.name,
@@ -4587,7 +4532,7 @@ final class ChatViewModel {
                 turnId: existing.turnId,
                 steer: existing.steer
             )
-            liveAssistantActivity.appendProse(separator + textToAppend)
+            liveAssistantActivity.appendProse(separator + text)
             scheduleStreamingScrollTrigger()
             return true
         }
@@ -4809,24 +4754,9 @@ final class ChatViewModel {
             flushPendingStreamingContent()
         }
 
-        // Same append-time dedup contract as appendAssistantToken: return true iff
-        // the event contributed new content, mutate only via the coalesced flush.
+        // Mutate only via the coalesced flush.
         _ = ensureStreamingAssistantMessage()
-        let remainder: String
-        if activeStreamReplayChannels.reasoning {
-            remainder = deduplicatedReplayText(
-                text,
-                existingContent: liveReasoningText + pendingReasoningText,
-                isArmed: true,
-                matchedPrefixLength: &activeStreamReplayMatchedReasoningLength
-            )
-        } else {
-            remainder = text
-        }
-        guard !remainder.isEmpty else { return false }
-
-        disarmReplayChannel(\.reasoning)
-        pendingReasoningText.append(contentsOf: remainder)
+        pendingReasoningText.append(contentsOf: text)
         scheduleStreamingContentFlush()
         return true
     }
@@ -4850,7 +4780,6 @@ final class ChatViewModel {
     private func flushReasoningChunks() -> Bool {
         guard !pendingReasoningText.isEmpty else { return false }
 
-        // Text was deduplicated at append time, so flushing is pure concatenation.
         let appendedText = pendingReasoningText
         pendingReasoningText = ""
 
@@ -4873,12 +4802,6 @@ final class ChatViewModel {
             toolCallAnchorMessageID = messageID
         }
 
-        if let duplicateReplayIndex = duplicateReplayToolStartIndex(for: payload) {
-            activeStreamReplayPendingToolMatchIndex = duplicateReplayIndex
-            return false
-        }
-
-        disarmReplayChannel(\.tool)
         liveAssistantActivity.appendTool(
             ToolCall(
                 id: payload.stableID ?? "live-tool-\(UUID().uuidString)",
@@ -4899,23 +4822,6 @@ final class ChatViewModel {
         if toolCallAnchorMessageID == nil {
             toolCallAnchorMessageID = messageID
         }
-
-        if let duplicateReplayIndex = duplicateReplayToolCompletionIndex(for: payload) {
-            let wasAlreadyCompleted = liveAssistantActivity.tool(at: duplicateReplayIndex)?.isCompleted == true
-            activeStreamReplayToolMatchIndex = duplicateReplayIndex + 1
-            activeStreamReplayPendingToolMatchIndex = nil
-
-            guard !wasAlreadyCompleted else { return false }
-
-            _ = liveAssistantActivity.updateTool(at: duplicateReplayIndex) {
-                $0.applyingCompletionPayload(payload)
-            }
-            scheduleStreamingScrollTrigger()
-            return true
-        }
-
-        activeStreamReplayPendingToolMatchIndex = nil
-        disarmReplayChannel(\.tool)
 
         guard let index = liveToolCallCompletionIndex(for: payload) else {
             flushPendingStreamingContent()
@@ -4943,52 +4849,6 @@ final class ChatViewModel {
         return true
     }
 
-    private func duplicateReplayToolStartIndex(for payload: ToolStreamEvent) -> Int? {
-        guard activeStreamReplayChannels.tool else { return nil }
-
-        if let stableIndex = stableReplayToolIndex(for: payload) {
-            return stableIndex
-        }
-
-        guard activeStreamReplayToolMatchIndex < liveToolCalls.count else { return nil }
-
-        let index = activeStreamReplayToolMatchIndex
-        return liveToolCalls[index].matchesReplayToolStart(payload) ? index : nil
-    }
-
-    private func duplicateReplayToolCompletionIndex(for payload: ToolStreamEvent) -> Int? {
-        guard activeStreamReplayChannels.tool else { return nil }
-
-        if let stableIndex = stableReplayToolIndex(for: payload) {
-            return stableIndex
-        }
-
-        if let pendingIndex = activeStreamReplayPendingToolMatchIndex,
-           pendingIndex < liveToolCalls.count,
-           liveToolCalls[pendingIndex].matchesReplayToolCompletion(payload) {
-            return pendingIndex
-        }
-
-        guard activeStreamReplayToolMatchIndex < liveToolCalls.count else { return nil }
-
-        let index = activeStreamReplayToolMatchIndex
-        guard liveToolCalls[index].isCompleted,
-              liveToolCalls[index].matchesReplayToolCompletion(payload)
-        else {
-            return nil
-        }
-
-        return index
-    }
-
-    private func stableReplayToolIndex(for payload: ToolStreamEvent) -> Int? {
-        guard let stableID = payload.stableID?.nonEmptyReplayMatchText else { return nil }
-
-        return liveToolCalls.firstIndex { toolCall in
-            toolCall.matchesStableToolID(stableID)
-        }
-    }
-
     private func liveToolCallCompletionIndex(for payload: ToolStreamEvent) -> Int? {
         if let stableID = payload.stableID?.nonEmptyReplayMatchText,
            let stableIndex = liveToolCalls.lastIndex(where: { toolCall in
@@ -5011,39 +4871,8 @@ final class ChatViewModel {
             pendingReasoningTitles = []
         }
 
-        // Replay dedup needs the effective content (flushed + pending), which the
-        // cached tail avoids rebuilding while a replay keeps matching in order.
-        // Ordinary streaming skips both and appends directly.
-        let messageID = ensureStreamingAssistantMessage()
-        let remainder: String
-        if activeStreamReplayChannels.token, let coldReplayText = deduplicatedColdReplayProse(token) {
-            remainder = coldReplayText
-        } else if activeStreamReplayChannels.token {
-            let flushedContent = messages.first(where: { $0.messageId == messageID })?.content ?? ""
-            let receivedUTF8Count = flushedContent.utf8.count + pendingAssistantTokenText.utf8.count
-            if let cached = activeStreamReplayTokenRemainder,
-               cached.receivedUTF8Count == receivedUTF8Count,
-               cached.unmatched.hasPrefix(token) {
-                activeStreamReplayMatchedPrefixLength += token.count
-                activeStreamReplayTokenRemainder = (
-                    cached.unmatched.dropFirst(token.count),
-                    receivedUTF8Count
-                )
-                return false
-            }
-
-            activeStreamReplayTokenRemainder = nil
-            remainder = deduplicatedReplayToken(
-                token,
-                existingContent: flushedContent + pendingAssistantTokenText
-            )
-        } else {
-            remainder = token
-        }
-        guard !remainder.isEmpty else { return false }
-
-        disarmReplayChannel(\.token)
-        pendingAssistantTokenText.append(contentsOf: remainder)
+        _ = ensureStreamingAssistantMessage()
+        pendingAssistantTokenText.append(contentsOf: token)
         scheduleStreamingContentFlush()
         return true
     }
@@ -5052,10 +4881,8 @@ final class ChatViewModel {
     private func flushAssistantTokens(maxWordUnits: Int? = nil) -> Bool {
         guard !pendingAssistantTokenText.isEmpty else { return false }
 
-        // Text was deduplicated at append time, so flushing is pure concatenation.
         // A word-unit limit moves only the head of the buffer into the visible
-        // message; the tail stays pending, keeping the replay-dedup invariant that
-        // flushed + pending text is the full received content.
+        // message; the tail stays pending.
         let pendingText = pendingAssistantTokenText
         let appendedContent: String
         if let maxWordUnits {
@@ -5143,134 +4970,6 @@ final class ChatViewModel {
             message: lastSegment.message,
             assistantSegments: updatedSegments
         )
-    }
-
-    private func deduplicatedColdReplayProse(_ text: String) -> String? {
-        guard let remaining = activeColdReplayProseRemainder else { return nil }
-
-        // Token and interim events share journal order, even when each segment
-        // uses a different channel. Consume the persisted prefix only once.
-        if remaining.hasPrefix(text) {
-            activeColdReplayProseRemainder = remaining.dropFirst(text.count)
-            return ""
-        }
-        if text.hasPrefix(remaining) {
-            activeColdReplayProseRemainder = remaining.dropFirst(remaining.count)
-            return String(text.dropFirst(remaining.count))
-        }
-
-        // A non-prefix replay still gets the existing overlap matching behavior.
-        activeColdReplayProseRemainder = nil
-        return nil
-    }
-
-    private func deduplicatedReplayToken(_ token: String, existingContent: String) -> String {
-        guard activeStreamReplayChannels.token, !existingContent.isEmpty else {
-            resetActiveStreamReplayTokenState()
-            return token
-        }
-
-        let matchedPrefixLength = min(activeStreamReplayMatchedPrefixLength, existingContent.count)
-        let expectedReplayRemainder = String(existingContent.dropFirst(matchedPrefixLength))
-        if expectedReplayRemainder.hasPrefix(token) {
-            activeStreamReplayMatchedPrefixLength = matchedPrefixLength + token.count
-            activeStreamReplayTokenRemainder = (
-                expectedReplayRemainder.dropFirst(token.count),
-                existingContent.utf8.count
-            )
-            return ""
-        }
-
-        if token.hasPrefix(expectedReplayRemainder) {
-            resetActiveStreamReplayTokenState()
-            return String(token.dropFirst(expectedReplayRemainder.count))
-        }
-
-        if existingContent.hasSuffix(token) || existingContent.hasPrefix(token) {
-            resetActiveStreamReplayTokenState()
-            return ""
-        }
-
-        if token.hasPrefix(existingContent) {
-            resetActiveStreamReplayTokenState()
-            return String(token.dropFirst(existingContent.count))
-        }
-
-        let maximumOverlap = min(existingContent.count, token.count)
-        guard maximumOverlap > 0 else {
-            resetActiveStreamReplayTokenState()
-            return token
-        }
-
-        for overlapLength in stride(from: maximumOverlap, through: 1, by: -1) {
-            let contentSuffix = existingContent.suffix(overlapLength)
-            let tokenPrefix = token.prefix(overlapLength)
-            if contentSuffix == tokenPrefix {
-                resetActiveStreamReplayTokenState()
-                return String(token.dropFirst(overlapLength))
-            }
-        }
-
-        resetActiveStreamReplayTokenState()
-        return token
-    }
-
-    private func deduplicatedReplayText(
-        _ text: String,
-        existingContent: String,
-        isArmed: Bool,
-        matchedPrefixLength: inout Int
-    ) -> String {
-        guard isArmed, !existingContent.isEmpty else {
-            matchedPrefixLength = 0
-            return text
-        }
-
-        let matchedLength = min(matchedPrefixLength, existingContent.count)
-        let expectedReplayRemainder = String(existingContent.dropFirst(matchedLength))
-        if expectedReplayRemainder.hasPrefix(text) {
-            matchedPrefixLength = matchedLength + text.count
-            return ""
-        }
-
-        if text.hasPrefix(expectedReplayRemainder) {
-            matchedPrefixLength = 0
-            return String(text.dropFirst(expectedReplayRemainder.count))
-        }
-
-        if existingContent.hasSuffix(text) || existingContent.hasPrefix(text) {
-            matchedPrefixLength = 0
-            return ""
-        }
-
-        if text.hasPrefix(existingContent) {
-            matchedPrefixLength = 0
-            return String(text.dropFirst(existingContent.count))
-        }
-
-        let maximumOverlap = min(existingContent.count, text.count)
-        guard maximumOverlap > 0 else {
-            matchedPrefixLength = 0
-            return text
-        }
-
-        for overlapLength in stride(from: maximumOverlap, through: 1, by: -1) {
-            let contentSuffix = existingContent.suffix(overlapLength)
-            let textPrefix = text.prefix(overlapLength)
-            if contentSuffix == textPrefix {
-                matchedPrefixLength = 0
-                return String(text.dropFirst(overlapLength))
-            }
-        }
-
-        matchedPrefixLength = 0
-        return text
-    }
-
-    private func resetActiveStreamReplayTokenState() {
-        disarmReplayChannel(\.token)
-        activeStreamReplayMatchedPrefixLength = 0
-        activeStreamReplayTokenRemainder = nil
     }
 
     private func flushPinnedLocalNoticesToTranscript() {
@@ -5734,71 +5433,23 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
         Self.latestAssistantMessageIDAfterLatestSteeringHint(in: messages)
     }
 
-    func streamCoordinatorSeedLiveActivityForColdReplay() async throws {
-        // `loadMessages` emptied the live timeline, and live rows win over the
-        // persisted scene of every segment in the rendered turn, so the first
-        // replayed reasoning or tool event would hide the answer prefix (and any
-        // earlier tool segments) already on screen until `.done` reloads them.
-        guard liveActivityRows.isEmpty,
-              let streamingAssistantMessageID,
-              let turn = Self.transcriptMessages(from: messages, messageOffset: messagesOffset).last(where: {
-                  $0.assistantSegments.contains { $0.message.messageId == streamingAssistantMessageID }
-              })
-        else { return }
+    func streamCoordinatorOmitLoadedRunningTurn() -> Bool {
+        // Only the running turn's own prompt (sent at or after its start) marks where to trim; an
+        // earlier prompt means the load does not hold this turn yet, and its settled answer stays.
+        guard let prompt = messages.lastIndex(where: Self.isOrdinaryUserTurnBoundary),
+              let startedAt = loadedPendingStartedAt,
+              let promptSentAt = messages[prompt].timestamp,
+              promptSentAt >= startedAt - 1
+        else { return false }
 
-        // A paginated window can start inside the active turn. Fetch only the
-        // missing prefix, without expanding the visible transcript or its seed.
-        let loadedMessages = messages
-        let loadedOffset = messagesOffset
-        let loadGeneration = sessionLoadRequestGeneration
-        let expectedStreamID = activeStreamID
-        var olderPages: [[ChatMessage]] = []
-        var before = loadedOffset
-        var hasTurnStart = loadedMessages.contains(where: TranscriptTurnClassifier.isUserTurnBoundary)
-        while before > 0 && !hasTurnStart {
-            guard let sessionID else { throw URLError(.badServerResponse) }
-            let response = try await client.session(
-                id: sessionID,
-                includeMessages: true,
-                messageLimit: Self.messagePageLimit,
-                messageBefore: before
-            )
-            try Task.checkCancellation()
-            guard activeStreamID == expectedStreamID,
-                  sessionLoadRequestGeneration == loadGeneration,
-                  messagesOffset == loadedOffset
-            else { throw CancellationError() }
-            guard let page = response.session,
-                  page.sessionId == nil || page.sessionId == sessionID,
-                  let older = page.messages, !older.isEmpty
-            else { throw URLError(.badServerResponse) }
-            // This history page ends at the requested cursor, not the session's total count.
-            let offset = max(0, page.messagesOffset ?? (before - older.count))
-            guard offset < before else { throw URLError(.badServerResponse) }
-            olderPages.append(older)
-            before = offset
-            hasTurnStart = older.contains(where: TranscriptTurnClassifier.isUserTurnBoundary)
-        }
-        let replayMessages = Self.prependingOlderMessages(olderPages.reversed().flatMap { $0 }, to: loadedMessages)
-        guard let replayTurn = Self.transcriptMessages(from: replayMessages, messageOffset: before).last(where: {
-            $0.assistantSegments.contains { $0.message.messageId == streamingAssistantMessageID }
-        }) else { throw URLError(.badServerResponse) }
-        pendingColdReplayProsePrefix = replayTurn.assistantSegments.compactMap(\.message.content).joined()
-
-        let timeline = AssistantActivityTimeline.persisted(
-            assistantSegments: turn.assistantSegments,
-            reasoningGroups: displayedReasoningGroups,
-            toolCallGroups: turn.assistantSegments.map(\.anchorID).flatMap(completedToolCallGroupsForAnchor)
-        ).resumedForStreaming
-        guard !timeline.rows.isEmpty else { return }
-
-        liveAssistantActivity = timeline
-        if reasoningAnchorMessageID == nil, !liveReasoningText.isEmpty {
-            reasoningAnchorMessageID = streamingAssistantMessageID
-        }
-        if toolCallAnchorMessageID == nil, !liveToolCalls.isEmpty {
-            toolCallAnchorMessageID = streamingAssistantMessageID
-        }
+        // Steers are the user's own rows; replayed `steer_consumed` frames only update them.
+        let steers = messages[messages.index(after: prompt)...].filter { $0.isLocalSteeringHint || $0.steer != nil }
+        messages.replaceSubrange(messages.index(after: prompt)..., with: steers)
+        liveAssistantActivity.removeAll()
+        streamingAssistantMessageID = nil
+        toolCallAnchorMessageID = nil
+        reasoningAnchorMessageID = nil
+        return true
     }
 
     func streamCoordinatorStartAuxiliaryMonitoring() {
@@ -5863,30 +5514,6 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
         sendErrorMessage = nil
         lastError = nil
-    }
-
-    func streamCoordinatorDidStartConnection(isReplay: Bool) {
-        activeColdReplayProseRemainder = isReplay ? pendingColdReplayProsePrefix.map { $0[...] } : nil
-        pendingColdReplayProsePrefix = nil
-        activeStreamReplayChannels.arm(isReplay)
-        activeStreamReplayMatchedPrefixLength = 0
-        activeStreamReplayTokenRemainder = nil
-        activeStreamReplayMatchedInterimLength = 0
-        activeStreamReplayMatchedReasoningLength = 0
-        activeStreamReplayToolMatchIndex = 0
-        activeStreamReplayPendingToolMatchIndex = nil
-    }
-
-    func streamCoordinatorDidResetRecoveryState() {
-        pendingColdReplayProsePrefix = nil
-        activeColdReplayProseRemainder = nil
-        activeStreamReplayChannels.arm(false)
-        activeStreamReplayMatchedPrefixLength = 0
-        activeStreamReplayTokenRemainder = nil
-        activeStreamReplayMatchedInterimLength = 0
-        activeStreamReplayMatchedReasoningLength = 0
-        activeStreamReplayToolMatchIndex = 0
-        activeStreamReplayPendingToolMatchIndex = nil
     }
 
     @discardableResult

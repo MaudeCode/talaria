@@ -180,8 +180,6 @@ jobs:
         fetch-depth: 0
     - uses: ./.github/actions/release-python
     - uses: ./.github/actions/release-node
-    - name: Native module toolchain (node-pty)
-      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends make g++ python3
     - name: Restore release-plan
       env:
         TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
@@ -297,8 +295,6 @@ jobs:
     - uses: ./.github/actions/docker-plugins
       with:
         multi-platform: "true"
-    - name: Native module toolchain (node-pty)
-      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends make g++ python3
     - name: Restore release-plan
       env:
         TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
@@ -601,10 +597,6 @@ jobs:
       uses: actions/setup-node@v7
       with:
         node-version-file: web/.nvmrc
-    - name: Install OCI transfer tool
-      run: |
-        sudo apt-get update
-        sudo apt-get install --yes skopeo
     - name: Confirm the npm readback, publish the OCI bytes and verify their readback
       env:
         GH_TOKEN: ${{ github.token }}

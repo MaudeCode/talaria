@@ -21,6 +21,7 @@ import { TranscriptSkeleton } from './TranscriptSkeleton'
 import { Composer, type QueuedTurn } from '../composer/Composer'
 import { ApprovalCard } from './ApprovalCard'
 import { ClarifyCard } from './ClarifyCard'
+import { useClarify } from './useClarify'
 import { TerminalPanel } from '../terminal/TerminalPanel'
 import { WorkspacePanel } from '../workspace/WorkspacePanel'
 import { workspaceLabel } from '../workspaces/label'
@@ -39,6 +40,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const navigate = useNavigate()
   const settings = useSettingsQuery()
   const { query, session, rows, live, truncated, loadOlder, loadingOlder, refresh } = useTranscript(sessionId)
+  const clarify = useClarify(sessionId, live)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [workspaceOpen, setWorkspaceOpen] = useState(() => readPersisted('hermes-webui-workspace-panel') === 'open')
   const [queued, setQueued] = useState<QueuedTurn[]>([])
@@ -266,7 +268,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         )}
         <div className="composer-flyout">
           {sessionId && live?.approval && <ApprovalCard sessionId={sessionId} pending={live.approval} onResolved={() => dispatch({ type: 'clear_approval', sessionId })} />}
-          {sessionId && live?.clarify && <ClarifyCard sessionId={sessionId} pending={live.clarify} onResolved={() => dispatch({ type: 'clear_clarify', sessionId })} />}
+          {clarify && <ClarifyCard key={clarify.pending.clarify_id} clarify={clarify} />}
           {terminalOpen && sessionId && <TerminalPanel sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} />}
         </div>
         <Composer
@@ -291,6 +293,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           queued={queued}
           locked={compressing}
           onQueue={(entry) => setQueued((q) => [...q, entry])}
+          clarify={clarify}
         />
         <span className="sr-only" aria-live="polite" id="a11yAnnouncer">{live?.status === 'done' ? m.done() : ''}</span>
       </div>
