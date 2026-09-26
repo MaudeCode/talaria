@@ -101,6 +101,15 @@ describe('surrogate pairs', () => {
   })
 })
 
+describe('curl -u', () => {
+  it('masks every attached, tab-separated and escaped-quote form, through the public prefilter', () => {
+    expect(redactText('curl -ualice:hunter2 example.com', true)).toBe('curl -ualice:*** example.com')
+    expect(redactText('curl -u\tbob:pw example.com', true)).toBe('curl -u\tbob:*** example.com')
+    expect(redactSensitive(String.raw`curl -u "bob:pw\"word" https://x`)).toBe(String.raw`curl -u "bob:***" https://x`)
+    expect(redactSensitive('ls -u /tmp && curl --user carol:pw1 x')).toBe('ls -u /tmp && curl --user carol:*** x')
+  })
+})
+
 describe('redactSensitive cost', () => {
   it('stays linear on long runs of scheme and identifier characters', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.

@@ -102,7 +102,9 @@ const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`)
 const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})((?:\\?["'])?\s*[=:]\s*|\s+)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `-uuser:secret` / `--user user:secret`; a quoted pair or quoted secret is masked through its closing quote. */
-const USER_FLAG_RE = /((?<![A-Za-z0-9-])(?:-u\s*|--user\s+)\$?)(?:(["'])([^\n:'"]*:)([^'"]*)\2|([^\s:"'$]+:))/g
+const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-u[ \t]*|--user[ \t]+)(?=\$?["']?[^\s:"']*:)/g
+/** The prefilter's view of `USER_FLAG_RE`. */
+const USER_FLAG_TEST_RE = new RegExp(USER_FLAG_RE.source)
 const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
@@ -270,28 +272,28 @@ function redactCredentialParams(text: string): string {
   return out + text.slice(last)
 }
 
-/** `curl -u user:secret`: a quoted pair is masked inside its quotes, a bare `user:` keeps the user and masks the whole shell word after it. */
+/**
+ * `curl -u user:secret` (also `-uuser:secret`, `--user user:secret`): the whole argument is read with the shell-word
+ * scanner, and everything after its first `:` is masked. A single quoted pair keeps its quotes (`"bob:***"`).
+ */
 function redactUserFlags(text: string): string {
   let out = ''
   let last = 0
   const quoteAt = quoteTracker(text)
   USER_FLAG_RE.lastIndex = 0
   for (let m = USER_FLAG_RE.exec(text); m; m = USER_FLAG_RE.exec(text)) {
-    const [whole, head = '', quote, quotedUser = '', quotedSecret = '', user = ''] = m
-    if (quote) {
-      if (!quotedSecret || quotedSecret === '***') continue
-      out += text.slice(last, m.index) + `${head}${quote}${quotedUser}***${quote}`
-      last = m.index + whole.length
-      continue
-    }
-    const secretStart = m.index + whole.length
-    const secretEnd = shellWordEnd(text, secretStart, quoteAt(secretStart))
-    const secret = text.slice(secretStart, secretEnd)
-    const inner = shellWordInner(secret)
-    if (!inner || inner === '***') continue
-    out += text.slice(last, m.index) + head + user + maskShellWord(secret)
-    last = secretEnd
-    USER_FLAG_RE.lastIndex = Math.max(secretEnd, USER_FLAG_RE.lastIndex)
+    const wordStart = m.index + m[0].length
+    const wordEnd = shellWordEnd(text, wordStart, quoteAt(wordStart))
+    const word = text.slice(wordStart, wordEnd)
+    const quoted = splitQuoted(word)
+    const body = quoted ? quoted.inner : word
+    const colon = body.indexOf(':')
+    const secret = colon === -1 ? '' : body.slice(colon + 1)
+    if (!secret || secret === '***' || shellWordInner(secret) === '***') continue
+    const masked = quoted ? `${quoted.open}${body.slice(0, colon + 1)}***${quoted.close}` : `${body.slice(0, colon + 1)}${maskShellWord(secret)}`
+    out += text.slice(last, wordStart) + masked
+    last = wordEnd
+    USER_FLAG_RE.lastIndex = Math.max(wordEnd, USER_FLAG_RE.lastIndex)
   }
   return out + text.slice(last)
 }
@@ -333,6 +335,7 @@ export function mightContainSensitiveText(text: string): boolean {
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
   if (CRED_KEY_NAME_RE.test(text)) return true
+  if (text.includes('-u') && USER_FLAG_TEST_RE.test(text)) return true
   if (text.includes(':') && TELEGRAM_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true
   if (text.includes('+') && PHONE_RE.test(text)) return true
