@@ -55,6 +55,8 @@ describe('redactSensitive', () => {
     expect(redactSensitive(String.raw`PASSWORD=correct\ horse\ battery GITHUB_TOKEN=syntheticGithubToken0123456789 x`)).toBe(String.raw`PASSWORD=*** GITHUB_TOKEN=synthe...6789 x`)
     // A credential-named value is masked whatever characters it holds; empty and already-masked values stay.
     expect(redactSensitive(`login --password='!@#$' --token=%%% -u bob:'!!' {"secret": ""} password=*** PASSWORD=!@#%`)).toBe(`login --password='***' --token=*** -u bob:'***' {"secret": ""} password=*** PASSWORD=***`)
+    // A quoted value spanning lines is masked through its closing quote.
+    expect(redactSensitive("login --password 'correct\nhorse' -u 'bob:pw\nword' --token=\"a\nb\" x")).toBe("login --password '***' -u 'bob:***' --token=\"***\" x")
     // Ordinary words and non-credential parameters stay readable.
     expect(redactSensitive('keep the secret sauce --secret-file ./s.txt')).toBe('keep the secret sauce --secret-file ./s.txt')
     expect(redactSensitive('apiKeyId: 12 max_tokens=100 --user-agent curl')).toBe('apiKeyId: 12 max_tokens=100 --user-agent curl')

@@ -60,8 +60,8 @@ const AUTH_HDR_RE = new RegExp(String.raw`(Authorization:\s*(?:[A-Za-z][A-Za-z0-
 const JWT_RE = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g
 /** A bearer credential in any header or text (`X-Auth: Bearer ...`); `AUTH_HDR_RE` owns the `Authorization:` header. */
 const BEARER_RE = /((?<!Authorization:\s{0,8})\bBearer\s+)([^\s'",\])]+)/gi
-/** One shell-quoted piece: `'...'`, `"..."` (with backslash escapes), bash `$'...'` / `$"..."`, or JSON escaped inside a shell string (`\"...\"`). */
-const QUOTED = String.raw`\$?'[^'\n]*'|\$?"(?:[^"\\\n]|\\.)*"|\\"(?:[^"\\\n]|\\[^"])*\\"`
+/** One shell-quoted piece, which may span lines: `'...'`, `"..."` (with backslash escapes), bash `$'...'` / `$"..."`, or JSON escaped inside a shell string (`\"...\"`). */
+const QUOTED = String.raw`\$?'[^']*'|\$?"(?:[^"\\]|\\[\s\S])*"|\\"(?:[^"\\]|\\[^"])*\\"`
 /** A quoted value's delimiters and content, or null for a bare value. */
 function splitQuoted(value: string): { open: string; inner: string; close: string } | null {
   const m = /^(\$?(?:\\"|"|'))([\s\S]*?)(\\"|"|')$/.exec(value)
@@ -101,7 +101,7 @@ const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`)
 const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})((?:\\?["'])?\s*[=:]\s*|\s+)(${QUOTED}|(?:[^\s"'\\&,;)}\]$]|\\[^"\n])+)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `-uuser:secret` / `--user user:secret`; a quoted pair or quoted secret is masked through its closing quote. */
-const USER_FLAG_RE = new RegExp(String.raw`((?<![A-Za-z0-9-])(?:-u\s*|--user\s+)\$?)(?:(["'])([^\n:'"]*:)([^\n'"]*)\2|([^\s:"'$]+:)((?:${QUOTED}|[^\s"'@\\]|\\[^"\n])+))`, 'g')
+const USER_FLAG_RE = new RegExp(String.raw`((?<![A-Za-z0-9-])(?:-u\s*|--user\s+)\$?)(?:(["'])([^\n:'"]*:)([^'"]*)\2|([^\s:"'$]+:)((?:${QUOTED}|[^\s"'@\\]|\\[^"\n])+))`, 'g')
 const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
