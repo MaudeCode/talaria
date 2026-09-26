@@ -17,6 +17,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     let listeningMessageID: String?
     let isViewingCachedData: Bool
     let isSessionReadOnly: Bool
+    let canBranch: Bool
     let hasActiveStream: Bool
     let isRegeneratingMessage: Bool
     let isEditingMessage: Bool
@@ -57,6 +58,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             lhs.listeningMessageID == rhs.listeningMessageID &&
             lhs.isViewingCachedData == rhs.isViewingCachedData &&
             lhs.isSessionReadOnly == rhs.isSessionReadOnly &&
+            lhs.canBranch == rhs.canBranch &&
             lhs.hasActiveStream == rhs.hasActiveStream &&
             lhs.isRegeneratingMessage == rhs.isRegeneratingMessage &&
             lhs.isEditingMessage == rhs.isEditingMessage &&
@@ -448,6 +450,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                 listeningMessageID: listeningMessageID,
                 isViewingCachedData: isViewingCachedData,
                 isSessionReadOnly: isSessionReadOnly,
+                canBranch: canBranch,
                 hasActiveStream: hasActiveStream,
                 isStreaming: isStreaming ?? ChatTranscriptDisplaySettings.shouldUseStreamingBubbleRendering(
                     hasActiveStream: hasActiveStream,

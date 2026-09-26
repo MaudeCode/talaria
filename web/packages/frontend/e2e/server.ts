@@ -14,13 +14,18 @@ function ensureServerBuilt(): void {
   execFileSync('npm', ['run', 'build', '-w', 'packages/server'], { cwd: REPO_ROOT, stdio: 'inherit' })
 }
 const STATE_FILE = join(tmpdir(), `hermes-e2e-${process.env.HERMES_E2E_PORT ?? '8797'}.json`)
+/**
+ * Server state lives on tmpfs where the OS has one. The login and session stores fsync on the request path, and on a
+ * shared CI disk a neighbouring `npm ci` or browser install can stall each fsync for seconds, blocking the server.
+ */
+const STATE_ROOT = existsSync('/dev/shm') ? '/dev/shm' : tmpdir()
 
 export interface ServerHandle { pid: number; state: string; log: string }
 
 /** Boot one isolated Talaria Web server (the Node bin) and wait for `/health`. */
 export async function bootServer(baseUrl: string, extraEnv: Record<string, string> = {}): Promise<ServerHandle> {
   const port = new URL(baseUrl).port
-  const state = mkdtempSync(join(tmpdir(), 'hermes-e2e-'))
+  const state = mkdtempSync(join(STATE_ROOT, 'hermes-e2e-'))
   mkdirSync(join(state, 'workspace'))
   mkdirSync(join(state, 'claude-projects'))
   mkdirSync(join(state, 'sessions'))

@@ -32,9 +32,6 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Native module toolchain (node-pty)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends make g++ python3
-
       - name: Clean install (workspace lockfile is authoritative)
         run: npm ci --no-audit --no-fund
 
@@ -77,8 +74,9 @@ jobs:
           HERMES_WEBUI_TEST_PYTHON: python3.13
         run: python3 scripts/check-agent-compatibility.py --skip-docker
 
-  frontend:
+  frontend-checks:
     if: inputs.frontend
+    name: frontend / checks
     runs-on: ["ghar-set-maudecode"]
     timeout-minutes: 30
     defaults:
@@ -93,9 +91,6 @@ jobs:
           node-version-file: web/.nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
-
-      - name: Native module toolchain (node-pty)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends make g++ python3
 
       - name: Clean install (workspace lockfile is authoritative)
         run: npm ci --no-audit --no-fund
@@ -125,8 +120,34 @@ jobs:
           git diff --exit-code -- ../../static/dist
           test -z "$(git status --porcelain --untracked-files=all -- ../../static/dist)"
 
-      - name: Install Playwright Chromium
-        run: npx playwright install chromium
+  # The e2e suite serves the committed static/dist, which frontend / checks verifies,
+  # so this job only needs the built contracts and server.
+  frontend-e2e:
+    if: inputs.frontend
+    name: frontend / e2e
+    runs-on: ["ghar-set-maudecode"]
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: web/packages/frontend
+    steps:
+      - uses: actions/checkout@v7
 
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Clean install (workspace lockfile is authoritative)
+        run: npm ci --no-audit --no-fund
+        working-directory: web
+
+      - name: Build contracts and server
+        run: npm run build -w packages/contracts && npm run build -w packages/server
+        working-directory: web
+
+      # check-web-browser installs Chromium itself; the runner image already bakes it.
       - name: Playwright end-to-end on the Node server with the fixture replay sidecar (desktop + mobile)
         run: ../../../scripts/check-web-browser

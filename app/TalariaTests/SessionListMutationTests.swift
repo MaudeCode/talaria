@@ -13,18 +13,32 @@ final class SessionListMutationTests: XCTestCase {
         super.tearDown()
     }
 
+    /// TAL-312: the server's per-action gates win; a read-only import can still be
+    /// organised, a subagent child cannot, and an older server keeps the earlier rules.
+    func testRowActionsFollowTheServerCapabilityFields() {
+        let subagent = SessionSummary(sessionId: "child", readOnly: true, canPin: false, canArchive: false, canDuplicate: false)
+        let readOnlyImport = SessionSummary(sessionId: "import", readOnly: true, canPin: true, canArchive: true, canDuplicate: true)
+        let foreignRow = SessionSummary(sessionId: "cli", isCliSession: true, canPin: true, canArchive: true, canDuplicate: false)
+
+        XCTAssertFalse(SessionRowActionPolicy.canPin(subagent))
+        XCTAssertFalse(SessionRowActionPolicy.canArchive(subagent))
+        XCTAssertFalse(SessionRowActionPolicy.canDuplicate(subagent))
+        XCTAssertTrue(SessionRowActionPolicy.canPin(readOnlyImport))
+        XCTAssertTrue(SessionRowActionPolicy.canArchive(readOnlyImport))
+        XCTAssertTrue(SessionRowActionPolicy.canDuplicate(readOnlyImport))
+        XCTAssertFalse(SessionRowActionPolicy.offersMutationActions(for: readOnlyImport))
+        XCTAssertFalse(SessionRowActionPolicy.canDuplicate(foreignRow))
+
+        let olderServerReadOnly = SessionSummary(sessionId: "legacy", readOnly: true)
+        XCTAssertFalse(SessionRowActionPolicy.canPin(olderServerReadOnly))
+        XCTAssertTrue(SessionRowActionPolicy.canPin(SessionSummary(sessionId: "legacy-writable")))
+    }
+
     func testReadOnlyRowsOfferExportButNoMutationActions() {
         let currentShape = SessionSummary(sessionId: "current", readOnly: true)
-        let legacyShape = SessionSummary(sessionId: "legacy", isReadOnly: true)
         let normal = SessionSummary(sessionId: "normal")
 
         XCTAssertFalse(SessionRowActionPolicy.offersMutationActions(for: currentShape))
-        XCTAssertFalse(SessionRowActionPolicy.offersMutationActions(for: legacyShape))
-        XCTAssertFalse(
-            SessionRowActionPolicy.offersMutationActions(
-                for: SessionSummary(sessionId: "subagent", sourceTag: "subagent")
-            )
-        )
         XCTAssertTrue(SessionRowActionPolicy.offersMutationActions(for: normal))
 
         XCTAssertTrue(SessionRowActionPolicy.canExport(currentShape, isViewingCachedData: false))
@@ -192,11 +206,9 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertTrue(opened.isSessionReadOnly)
     }
 
-    /// The list row and the import payload can use different historical read-only
-    /// spellings. An authoritative answer must clear the stale alias, or the
-    /// `isSessionReadOnly` OR keeps a writable import view-only.
+    /// An authoritative writable answer replaces a stale read-only flag on the row.
     @MainActor
-    func testWritableImportClearsStaleReadOnlyAliasFromTheRow() async throws {
+    func testWritableImportClearsStaleReadOnlyFromTheRow() async throws {
         let viewModel = try makeViewModel { request in
             apiTestJSONResponse("""
             {
@@ -205,13 +217,12 @@ final class SessionListMutationTests: XCTestCase {
             }
             """, for: request)
         }
-        let row = SessionSummary(sessionId: "cli-1", isCliSession: true, isReadOnly: true)
+        let row = SessionSummary(sessionId: "cli-1", isCliSession: true, readOnly: true)
 
         let resolved = await viewModel.sessionToOpen(for: row)
         let opened = try XCTUnwrap(resolved)
 
         XCTAssertEqual(opened.readOnly, false)
-        XCTAssertNil(opened.isReadOnly)
         XCTAssertFalse(opened.isSessionReadOnly)
     }
 

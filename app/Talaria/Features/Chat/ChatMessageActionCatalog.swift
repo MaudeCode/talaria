@@ -24,6 +24,8 @@ struct ChatMessageActionState: Equatable {
     let isEditingMessage: Bool
     let isForkingMessage: Bool
     let disablesHistoryActions: Bool
+    /// The server's branch gate (TAL-312): it refuses subagents and read-only non-cron sessions.
+    var canBranch = true
 
     /// True for actions that rewrite history: they need a live, writable
     /// transcript that is not already mid-mutation.
@@ -107,7 +109,7 @@ enum ChatMessageActionCatalog {
                 id: "fork",
                 title: String(localized: "Fork From Here"),
                 systemImage: "arrow.triangle.branch",
-                isEnabled: state.allowsHistoryAction(whileBusy: state.isForkingMessage),
+                isEnabled: state.allowsHistoryAction(whileBusy: state.isForkingMessage) && state.canBranch,
                 handler: { handlers.onFork(context) }
             )
         )

@@ -24,6 +24,7 @@ import { dict, type Config } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
 import { attachTodoState } from './todo.js'
+import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
@@ -725,7 +726,7 @@ export class TurnRunner {
    * msg_limit=` (renderable rows, limited payload shape, windowed tool calls, todo state) with the full count.
    */
   private terminalSessionPayload(s: Session): Record<string, unknown> {
-    const payload = s.compact({ includeRuntime: true, activeStreamIds: this.registry.liveIds })
+    const payload = withSessionWireFlags(s.compact(), this.registry.liveIds)
     const scened = hydrateAnchorActivityScenes(withTurnIds(s.messages), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true })
     const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
     const limited = messagesForLimitedPayload(window)
