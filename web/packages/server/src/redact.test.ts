@@ -177,7 +177,7 @@ describe('round 44 shapes', () => {
   it('fails closed on a key built from substitutions or variables', () => {
     expect(redactText(`login --pass$(printf word)=hunter2 next`, true)).toBe(`login --pass$(printf word)=*** next`)
     expect(redactText('login --pass`printf word`=hunter2 next', true)).toBe('login --pass`printf word`=*** next')
-    expect(redactText(`login --pass$W=hunter2 --pass\${W}x=hunter3 next`, true)).toBe(`login --pass$W=*** --pass\${W}x=*** next`)
+    expect(redactText(`login --pass$W=hunter2 --pass\${W}x=hunter3 next`, true)).toBe(`login --pass$W=*** --pass*** next`)
   })
 
   it('reads a Bearer or query credential to the end of its shell word', () => {
@@ -216,6 +216,9 @@ describe('round 44 shapes', () => {
     expect(redactText(String.raw`curl https\:\/\/amy:pw2@x next`, true)).toBe(String.raw`curl https\:\/\/amy:***@x next`)
     expect(redactText(`set -- word; login --pass$1=hunter2 --pass$@=hunter3 -$#=x next`, true)).toBe(`set -- word; login --pass$1=*** --pass$@=*** -$#=*** next`)
     expect(redactText(`echo "costs $5 or $10" && ls $1`, true)).toBe(`echo "costs $5 or $10" && ls $1`)
+    expect(redactText(`KEY=password; SEP='='; login --\${KEY}\${SEP}hunter2 next`, true)).toBe(`KEY=password; SEP='='; login --*** next`)
+    expect(redactText(`login --pass\${TAIL}\${SEP}hunter2 next`, true)).toBe(`login --pass*** next`)
+    expect(redactText(`ls -$OPTS dir && tar --out-$(date +%F) x && login --pass$X`, true)).toBe(`ls -$OPTS dir && tar --out-$(date +%F) x && login --pass$X`)
     expect(redactText(`SEP='='; login --password\${SEP}hunter2 --api_key$(printf =)hunter3 --token\${S}x=hunter4 next`, true)).toBe(`SEP='='; login --password*** --api_key*** --token*** next`)
     // Markdown code spans are prose, not substitutions.
     expect(redactText('answer with **markdown** and `code` about the token', true)).toBe('answer with **markdown** and `code` about the token')

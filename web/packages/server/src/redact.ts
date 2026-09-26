@@ -137,6 +137,8 @@ const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})((?:[A
  */
 /** Where a key's first computed piece starts (`$…`, an escaped ANSI-C `$'…'`, a backtick, a brace expansion). */
 const COMPUTED_PIECE_RE = /\$(?:[({A-Za-z_0-9@*#?$!-]|'(?=[^'\s=:]*\\))|\x60|\{(?=[^{}\s]*(?:,|\.\.))/
+/** Every computed piece of a key, to tell whether static text follows its first one. */
+const COMPUTED_PIECES_RE = new RegExp(String.raw`${SUBST_PIECE}|\{(?=[^{}\s]*(?:,|\.\.))[^{}\s]*\}`, 'g')
 const DYNAMIC_KEY_PIECE_RE = /[A-Za-z0-9_](?:\$[({A-Za-z_0-9@*#?$!-]|\$'(?=[^'\s=:]*\\)|`|\{(?=[^{}\s]*(?:,|\.\.)[^{}\s]*\}))/
 /** An `Authorization` value's first word when it is a scheme token (`Basic`), and the gap to the credential after it. */
 const AUTH_SCHEME_WORD_RE = /^(?!\*+$)[A-Za-z0-9!#$%&*+.^_|~-]+$/
@@ -362,6 +364,18 @@ function redactCredentialParams(text: string): string {
   CRED_PARAM_RE.lastIndex = 0
   for (let m = CRED_PARAM_RE.exec(text); m; m = CRED_PARAM_RE.exec(text)) {
     const [head, dash = '', key = '', sep = ''] = m
+    const keyEnd = m.index + head.length
+    // A computed piece may supply the separator itself (`--password${SEP}hunter2` with `SEP='='`) or the name
+    // (`--${KEY}${SEP}hunter2`): from the key's first computed piece, the rest of the key is masked (and the value after a
+    // real `=`/`:`) when the static part before it names a credential, or when a flag's name goes on after it.
+    const computedAt = key.search(COMPUTED_PIECE_RE)
+    if (computedAt >= 0 && ((computedAt > 0 && isCredentialKey(key.slice(0, computedAt))) || (dash && key.slice(computedAt).replace(COMPUTED_PIECES_RE, '') !== ''))) {
+      const end = /[=:]/.test(sep) ? shellWordEnd(text, keyEnd, quoteAt(keyEnd), closeOf) : m.index + dash.length + key.length
+      out += `${text.slice(last, m.index + dash.length + computedAt)}***`
+      last = end
+      CRED_PARAM_RE.lastIndex = Math.max(last, CRED_PARAM_RE.lastIndex)
+      continue
+    }
     // A key the shell computes from its first piece (`--$(printf password)=`, `--${KEY}=`) is one only with `=`: `$HOST:$PORT`,
     // `-$OPTS dir` and a Markdown `` `code`: `` are not assignments. A leading backtick needs a flag besides.
     const computedStart = /^(?:\$[({A-Za-z_0-9@*#?$!-]|\$'(?=[^'\s=:]*\\)|\x60)/.test(key)
@@ -371,21 +385,10 @@ function redactCredentialParams(text: string): string {
     // nested brace expansion does so only after a flag: in prose a backtick is a Markdown code span's close
     // (`` `code` ``). A backtick piece inside a key has no outer spaces, so the prose between two code spans
     // (`` ` and ` ``) is never read as one.
-    const keyEnd = m.index + head.length
     if (!sep && ((/^\$[({]/.test(text.slice(keyEnd, keyEnd + 2)) && (dash || !computedStart)) || (dash && /^[\x60{]/.test(text[keyEnd] ?? '')))) {
       out += `${text.slice(last, keyEnd)}***`
       last = text.length
       break
-    }
-    // A credential key continued by a computed piece (`--password${SEP}hunter2` with `SEP='='`): the piece may be the
-    // separator itself, so everything from it to the end of the key is masked, and through the value after a real `=`/`:`.
-    const computedAt = key.search(COMPUTED_PIECE_RE)
-    if (computedAt > 0 && isCredentialKey(key.slice(0, computedAt))) {
-      const end = /[=:]/.test(sep) ? shellWordEnd(text, keyEnd, quoteAt(keyEnd), closeOf) : m.index + dash.length + key.length
-      out += `${text.slice(last, m.index + dash.length + computedAt)}***`
-      last = end
-      CRED_PARAM_RE.lastIndex = Math.max(last, CRED_PARAM_RE.lastIndex)
-      continue
     }
     // No separator: the identifier is matched whole anyway, so the scan never restarts inside it (`a'a'a'…` stays linear).
     if (!sep) continue
