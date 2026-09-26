@@ -122,31 +122,35 @@ describe('OIDC browser login', () => {
   }, 15_000)
 
   it('isolates notification history and mutations between OIDC owners sharing an email and profile', async () => {
-    const originalClaims = idp.claimsFor
-    const origin = `http://127.0.0.1:${String(s.running.port)}`
+    const isolated = await bootTestServer({
+      env: { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins', HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example', HERMES_WEBUI_OIDC_OWNER_CLAIM: 'groups', HERMES_WEBUI_OIDC_OWNER_VALUES: 'owners' },
+    })
+    const isolatedIdp = fakeIdp(now)
+    isolated.deps.fetch = isolatedIdp.fetch
+    const origin = `http://127.0.0.1:${String(isolated.running.port)}`
     const login = async (subject: string): Promise<{ cookie: string; headers: Record<string, string> }> => {
-      idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: subject, email: 'shared@example.com', groups: ['admins', 'owners'], exp: now() + 300, nonce })
-      const start = await s.get('/api/auth/oidc/start')
+      isolatedIdp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: subject, email: 'shared@example.com', groups: ['admins', 'owners'], exp: now() + 300, nonce })
+      const start = await isolated.get('/api/auth/oidc/start')
       const { state, code } = providerCode(start.headers.get('location') ?? '')
-      const callback = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
-      const value = cookieOf(callback, s.deps.auth.cookieName()) ?? ''
-      const cookie = `${s.deps.auth.cookieName()}=${value}`
-      return { cookie, headers: { cookie, origin, 'x-csrf-token': s.deps.auth.csrfTokenForSession(value) ?? '' } }
+      const callback = await isolated.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
+      const value = cookieOf(callback, isolated.deps.auth.cookieName()) ?? ''
+      const cookie = `${isolated.deps.auth.cookieName()}=${value}`
+      return { cookie, headers: { cookie, origin, 'x-csrf-token': isolated.deps.auth.csrfTokenForSession(value) ?? '' } }
     }
     try {
       const first = await login('principal-a')
-      const applied = await json(await post(s, '/api/updates/apply', { target: 'webui' }, first.headers))
+      const applied = await json(await post(isolated, '/api/updates/apply', { target: 'webui' }, first.headers))
       const notificationID = String(applied.notification_id)
       expect(notificationID).toMatch(/^[0-9a-f-]{36}$/)
-      const firstList = await json(await s.get('/api/update-notifications', { headers: { cookie: first.cookie } }))
+      const firstList = await json(await isolated.get('/api/update-notifications', { headers: { cookie: first.cookie } }))
       expect((firstList.notifications as Json[]).some((row) => row.id === notificationID)).toBe(true)
 
       const second = await login('principal-b')
-      expect((await post(s, `/api/update-notifications/${notificationID}/read`, { read: true }, second.headers)).status).toBe(404)
-      const secondList = await json(await s.get('/api/update-notifications', { headers: { cookie: second.cookie } }))
+      expect((await post(isolated, `/api/update-notifications/${notificationID}/read`, { read: true }, second.headers)).status).toBe(404)
+      const secondList = await json(await isolated.get('/api/update-notifications', { headers: { cookie: second.cookie } }))
       expect((secondList.notifications as Json[]).some((row) => row.id === notificationID)).toBe(false)
     } finally {
-      idp.claimsFor = originalClaims
+      await isolated.close()
     }
   })
 
