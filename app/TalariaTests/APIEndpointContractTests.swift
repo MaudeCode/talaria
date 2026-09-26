@@ -458,6 +458,8 @@ final class SharedContractTests: XCTestCase {
         XCTAssertFalse(running.isSessionReadOnly)
         XCTAssertFalse(SessionRowView.isActiveStreaming(try summary(stale)))
         XCTAssertTrue(try summary(child).isSessionReadOnly)
+        XCTAssertEqual(running.canBranch, true)
+        XCTAssertEqual(try summary(child).canBranch, false)
     }
 
     func testSharedRelaySnapshotAndRegistration() async throws {

@@ -50,6 +50,7 @@ struct ChatTranscriptView: View {
     let listeningMessageID: String?
     let isViewingCachedData: Bool
     let isSessionReadOnly: Bool
+    let canBranch: Bool
     let hasOlderMessages: Bool
     let isLoadingOlderMessages: Bool
     let isRegeneratingMessage: Bool
@@ -285,6 +286,7 @@ struct ChatTranscriptView: View {
                     listeningMessageID: listeningMessageID,
                     isViewingCachedData: isViewingCachedData,
                     isSessionReadOnly: isSessionReadOnly,
+                    canBranch: canBranch,
                     hasActiveStream: activeStreamID != nil,
                     isRegeneratingMessage: isRegeneratingMessage,
                     isEditingMessage: isEditingMessage,

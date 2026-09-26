@@ -74,7 +74,7 @@ export function SessionContextMenu({ row, active }: { row: SessionRow; active: b
         {!row.read_only && <MenuItem onClick={() => { setTitle(row.title); setDialog({ kind: 'rename' }) }}>{m.session_rename()}</MenuItem>}
         {!row.read_only && <MenuItem onClick={() => regen.mutate()}>{m.session_title_regenerate()}</MenuItem>}
         <MenuItem onClick={() => pin.mutate()}>{row.pinned ? m.session_unpin() : m.session_pin()}</MenuItem>
-        <MenuItem onClick={() => { setProjectId(row.project_id ?? ''); setDialog({ kind: 'move' }) }}>{m.session_move_project()}</MenuItem>
+        {!row.read_only && <MenuItem onClick={() => { setProjectId(row.project_id ?? ''); setDialog({ kind: 'move' }) }}>{m.session_move_project()}</MenuItem>}
         <MenuSeparator />
         <MenuItem onClick={copyLink}>{m.session_copy_link()}</MenuItem>
         <MenuItem onClick={() => share.mutate()}>{row.share_token ? m.session_share_revoke() : m.session_share()}</MenuItem>

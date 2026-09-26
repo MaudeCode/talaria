@@ -261,6 +261,8 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     let parentSessionId: String?
     let relationshipType: String?
     let readOnly: Bool?
+    /// The server's branch gate (TAL-312): absent on older servers, which offered branching everywhere.
+    let canBranch: Bool?
     let matchType: String?
     /// Server-redacted excerpt around the content hit; only `/api/sessions/search`
     /// rows with `match_type == "content"` carry it, and older servers omit it.
@@ -297,6 +299,7 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         parentSessionId: String? = nil,
         relationshipType: String? = nil,
         readOnly: Bool? = nil,
+        canBranch: Bool? = nil,
         matchType: String? = nil,
         matchPreview: String? = nil
     ) {
@@ -330,6 +333,7 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         self.parentSessionId = parentSessionId
         self.relationshipType = relationshipType
         self.readOnly = readOnly
+        self.canBranch = canBranch
         self.matchType = matchType
         self.matchPreview = matchPreview
     }
@@ -342,7 +346,7 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         case activeStreamId, isStreaming, isCliSession
         case userMessageCount, hasPendingUserMessage, pendingStartedAt, worktreePath
         case sourceTag, rawSource, sessionSource, sourceLabel
-        case parentSessionId, relationshipType, readOnly, matchType, matchPreview
+        case parentSessionId, relationshipType, readOnly, canBranch, matchType, matchPreview
     }
 
     /// Lossy field by field, like `SessionDetail` and `ProjectSummary` already
@@ -387,6 +391,7 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         parentSessionId = container.decodeLossyStringIfPresent(forKey: .parentSessionId)
         relationshipType = container.decodeLossyStringIfPresent(forKey: .relationshipType)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)
+        canBranch = container.decodeLossyBoolIfPresent(forKey: .canBranch)
         matchType = container.decodeLossyStringIfPresent(forKey: .matchType)
         matchPreview = container.decodeLossyStringIfPresent(forKey: .matchPreview)
     }
@@ -449,6 +454,7 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         parentSessionId = detail.parentSessionId
         relationshipType = detail.relationshipType
         readOnly = detail.readOnly
+        canBranch = detail.canBranch
         matchType = nil
         matchPreview = nil
     }
@@ -487,6 +493,7 @@ struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
             parentSessionId: parentSessionId,
             relationshipType: relationshipType,
             readOnly: readOnly,
+            canBranch: canBranch,
             matchType: matchType,
             matchPreview: matchPreview
         )
@@ -584,6 +591,7 @@ extension SessionSummary {
             parentSessionId: parentSessionId ?? row.parentSessionId,
             relationshipType: relationshipType ?? row.relationshipType,
             readOnly: readOnly ?? row.readOnly,
+            canBranch: canBranch ?? row.canBranch,
             matchType: matchType ?? row.matchType,
             matchPreview: matchPreview ?? row.matchPreview
         )
@@ -762,6 +770,7 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
     let parentSessionId: String?
     let relationshipType: String?
     let readOnly: Bool?
+    let canBranch: Bool?
     let messages: [ChatMessage]?
     let toolCalls: [PersistedToolCall]?
     let messagesTruncated: Bool?
@@ -804,6 +813,7 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
         case parentSessionId
         case relationshipType
         case readOnly
+        case canBranch
         case messages
         case toolCalls
         case messagesTruncated
@@ -855,6 +865,7 @@ struct SessionDetail: Decodable, Equatable, Identifiable {
         parentSessionId = container.decodeLossyStringIfPresent(forKey: .parentSessionId)
         relationshipType = container.decodeLossyStringIfPresent(forKey: .relationshipType)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)
+        canBranch = container.decodeLossyBoolIfPresent(forKey: .canBranch)
         messages = Self.decodeMessagesTolerantly(from: container)
         toolCalls = Self.decodeToolCallsTolerantly(from: container)
         messagesTruncated = container.decodeLossyBoolIfPresent(forKey: .underscoredMessagesTruncated)

@@ -8,6 +8,7 @@ struct ChatTranscriptMessageRow: View {
     let listeningMessageID: String?
     let isViewingCachedData: Bool
     let isSessionReadOnly: Bool
+    let canBranch: Bool
     let hasActiveStream: Bool
     let isStreaming: Bool
     let liveTokensPerSecond: Double?
@@ -99,7 +100,8 @@ struct ChatTranscriptMessageRow: View {
                 isRegeneratingMessage: isRegeneratingMessage,
                 isEditingMessage: isEditingMessage,
                 isForkingMessage: isForkingMessage,
-                disablesHistoryActions: disablesHistoryActions
+                disablesHistoryActions: disablesHistoryActions,
+                canBranch: canBranch
             ),
             handlers: ChatMessageActionHandlers(
                 onToggleListening: onToggleListening,

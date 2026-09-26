@@ -175,8 +175,8 @@ final class ChatViewModel {
     /// Mirrors the list-row merge rule: the server's `read_only` replaces the
     /// seeded flag; a detail that omits it keeps it.
     private func applyReadOnlyState(from session: SessionDetail?) {
-        guard let readOnly = session?.readOnly else { return }
-        isSessionReadOnly = readOnly
+        if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
+        if let canBranch = session?.canBranch { self.canBranch = canBranch }
     }
     private func clearCompressionAnchorMetadata() {
         compressionAnchorMetadata = nil
@@ -285,6 +285,9 @@ final class ChatViewModel {
     /// Server-owned view-only state (TAL-152). Seeded from the list row and
     /// refreshed from every applied `SessionDetail`, which is authoritative.
     private(set) var isSessionReadOnly: Bool
+    /// The server's branch gate (TAL-312), seeded and refreshed like `isSessionReadOnly`;
+    /// an older server that omits it allowed branching.
+    private(set) var canBranch: Bool
     private let server: URL
     let client: APIClient
     private let streamCoordinator: ChatStreamCoordinator
@@ -405,6 +408,7 @@ final class ChatViewModel {
         currentProfile = session.profile
         isCLISession = session.isCliSession == true
         isSessionReadOnly = session.isSessionReadOnly
+        canBranch = session.canBranch != false
         self.server = server
         let resolvedClient = client ?? APIClient(baseURL: server)
         let resolvedStreamClient = streamClient ?? SSEClient()
@@ -3280,6 +3284,10 @@ final class ChatViewModel {
             return .unsupported(friendlyMessage: String(localized: "Reconnect to the server to fork a conversation."))
         }
 
+        guard canBranch else {
+            return .unsupported(friendlyMessage: String(localized: "This conversation can't be forked."))
+        }
+
         guard activeStreamID == nil else {
             return .unsupported(friendlyMessage: String(localized: "Wait for the current response to finish before forking."))
         }
@@ -3829,6 +3837,11 @@ final class ChatViewModel {
     func forkFromMessage(_ context: MessageActionContext, modelContext: ModelContext? = nil) async -> SessionSummary? {
         guard !isViewingCachedData else {
             messageActionErrorMessage = String(localized: "Reconnect to the server to fork a conversation.")
+            return nil
+        }
+
+        guard canBranch else {
+            messageActionErrorMessage = String(localized: "This conversation can't be forked.")
             return nil
         }
 
