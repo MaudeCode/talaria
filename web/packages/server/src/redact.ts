@@ -51,6 +51,10 @@ const CRED_RE = new RegExp(
 )
 /** The credential of an `Authorization:` header, after an optional scheme word (`Bearer`, `ApiKey`, `AWS4-HMAC-SHA256`, ...). */
 const AUTH_HDR_RE = /(Authorization:\s*(?:[A-Za-z][A-Za-z0-9-]{0,31}\s+)?)([^\s'",\])]+)/gi
+/** A bearer credential in any header or text (`X-Auth: Bearer ...`); `AUTH_HDR_RE` owns the `Authorization:` header. */
+const BEARER_RE = /((?<!Authorization:\s{0,8})\bBearer\s+)([^\s'",\])]+)/gi
+/** A `Cookie:` / `Set-Cookie:` header's whole value (session cookies are credentials). */
+const COOKIE_HDR_RE = /(\b(?:Set-)?Cookie:\s*)([^'"\r\n]+)/gi
 const EMBEDDED_AWS_RE = /AKIA[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
 /** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The scheme starts at a run boundary and is capped so the scan stays linear. */
@@ -117,6 +121,8 @@ export function redactSensitive(text: string): string {
   let out = text.replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = out.replace(AUTH_HDR_RE, (_, head: string, token: string) => head + mask(token))
+  out = out.replace(BEARER_RE, (_, head: string, token: string) => head + mask(token))
+  out = out.replace(COOKIE_HDR_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = out.replace(CRED_PARAM_RE, (whole, dash: string, key: string, sep: string, value: string) => {
     const quote = /^["']/.test(value) ? value[0]! : ''
     const inner = quote ? value.slice(1, -1) : value
@@ -145,7 +151,7 @@ const CASE_MARKERS = [
 const LOWER_MARKERS = [
   'authorization: bearer ', 'authorization: bot ', 'private key', 'postgres://', 'postgresql://', 'mysql://', 'mongodb://', 'redis://', 'amqp://', '://',
   'access_token', 'refresh_token', 'id_token', 'api_key', 'apikey', 'client_secret', 'auth_token', 'raw_secret', 'secret_input', 'key_material',
-  'x-amz-signature', 'token=', 'secret=', 'password=', 'passwd', 'password', 'secret', 'token', 'api-key', 'apikey', 'clientsecret', 'private_key', 'credential', ' -u ', '--user ', 'authorization', 'signature', 'authorization=', 'key=', '"token"', '"secret"', '"password"', '"bearer"',
+  'x-amz-signature', 'token=', 'secret=', 'password=', 'passwd', 'password', 'secret', 'token', 'api-key', 'apikey', 'clientsecret', 'private_key', 'credential', ' -u ', '--user ', 'authorization', 'signature', 'bearer ', 'cookie:', 'authorization=', 'key=', '"token"', '"secret"', '"password"', '"bearer"',
 ]
 const TELEGRAM_RE = /(?:bot)?\d{8,}:[-A-Za-z0-9_]{30,}/
 const DISCORD_RE = /<@!?\d{17,20}>/
@@ -320,12 +326,19 @@ function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean): T {
   return { ...out, ...toolDisplay(toolName(record), redactArgs(toolArgs(record), enabled)) } as T
 }
 
+/** Every non-empty scalar of a credential value masked, keeping its shape (`{ password: ['x'] }` → `['***']`). */
+function maskLeaves(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(maskLeaves)
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, maskLeaves(item)]))
+  return (typeof value === 'string' || typeof value === 'number') && String(value) !== '' ? '***' : value
+}
+
 /** Tool arguments redacted like any value, plus every scalar under a credential-named key (`{ password: 'x' }`). */
 function redactArgs(value: unknown, enabled: boolean): unknown {
   if (!enabled) return value
   if (Array.isArray(value)) return value.map((item) => redactArgs(item, enabled))
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, CRED_KEY_RE.test(key) && (typeof item === 'string' || typeof item === 'number') && String(item) !== '' ? '***' : redactArgs(item, enabled)]))
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, CRED_KEY_RE.test(key) ? maskLeaves(item) : redactArgs(item, enabled)]))
   }
   return redactValue(value, enabled)
 }
