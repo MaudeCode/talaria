@@ -61,7 +61,7 @@ const AUTH_HDR_RE = new RegExp(String.raw`(Authorization:\s*(?:(?!\*+\s)[A-Za-z0
 /** A JSON Web Token anywhere (`eyJ<header>.<payload>.<signature>`). */
 const JWT_RE = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g
 /** A bearer credential in any header or text (`X-Auth: Bearer ...`); `AUTH_HDR_RE` owns the `Authorization:` header. */
-const BEARER_RE = /((?<!Authorization:\s{0,8})\bBearer\s+)([^\s'",\])]+)/gi
+const BEARER_RE = /((?<!Authorization:\s{0,8})\bBearer\s+)([^\s,\])][^\s'",\])]*)/gi
 /** One shell-quoted piece, which may span lines: `'...'`, `"..."` (with backslash escapes), bash `$'...'` / `$"..."`, or JSON escaped inside a shell string (`\"...\"`). */
 const QUOTED = String.raw`\$?'[^']*'|\$?"(?:[^"\\]|\\[\s\S])*"|\\"(?:[^"\\]|\\[^"])*\\"`
 /** A `"` / `'` not escaped by an odd run of backslashes. */
@@ -123,7 +123,7 @@ function isCredentialKey(key: string): boolean {
  * read, however long, and matched whole even without a separator: the scan never restarts inside an identifier, so it
  * stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z](?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-]|\$?'[A-Za-z0-9_.-]*'|\$?"[A-Za-z0-9_.-]*"|\\[A-Za-z0-9_.-]|\$\([^()\n]*\)|\x60[^\x60\n]*\x60|\$\{[^{}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*)*)((?:\\?["'])?\s*\+?[=:]\s*|\s+|)`, 'g')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9_.[\]-])(-{0,2})([A-Za-z0-9_](?:\[\\?["'][A-Za-z0-9_.-]*\\?["']\]|[A-Za-z0-9_.[\]-]|\$?'[A-Za-z0-9_.-]*'|\$?"[A-Za-z0-9_.-]*"|\\[A-Za-z0-9_.-]|\$\([^()\n'"\x60\\]*\)|\x60(?![\s\x60])(?:[^\x60\n\\]|\\.)*(?<![\s\\])\x60|\$\{[^{}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*)*)((?:\\?["'])?\s*\+?[=:]\s*|\s+|)`, 'g')
 /** A substitution or variable piece of a key (`$(…)`, `` `…` ``, `${…}`, `$NAME`) right after an identifier character. */
 const DYNAMIC_KEY_PIECE_RE = /[A-Za-z0-9_](?:\$[({A-Za-z_]|`)/
 /** An `Authorization` value's first word when it is a scheme token (`Basic`), and the gap to the credential after it. */
@@ -237,8 +237,10 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
     const close = closeOf(start, enclosing)
     if (close === -1) return lineEnd(start)
     // The word goes on past the enclosing quote when an adjacent piece follows (`'--password=foo'bar`).
+    // An empty continuation (`"…", "x"`: JSON structure) leaves the word, and the enclosing quote, at the close.
     const next = text[close + 1] ?? ''
-    return next && !/[\s&;|<>()]/.test(next) ? shellWordEnd(text, close + 1, '', closeOf) : close
+    const after = next && !/[\s&;|<>()]/.test(next) ? shellWordEnd(text, close + 1, '', closeOf) : close
+    return after === close + 1 ? close : after
   }
   let depth = 0
   let i = start
@@ -344,9 +346,20 @@ function redactCredentialParams(text: string): string {
   let last = 0
   const quoteAt = quoteTracker(text)
   const closeOf = enclosingClose(text)
+  let queryWordEnd = -1
   CRED_PARAM_RE.lastIndex = 0
   for (let m = CRED_PARAM_RE.exec(text); m; m = CRED_PARAM_RE.exec(text)) {
     const [head, dash = '', key = '', sep = ''] = m
+    // A substitution the key grammar cannot parse (`$(` nested or quoted, `${` nested) may still build a credential name:
+    // fail closed to the end of the text, as `shellWordEnd` does for a substitution in a value. An unclosed backtick does so
+    // only after a flag: in prose it is a Markdown code span's close (`` `code` ``). A backtick piece inside a key has no
+    // outer spaces, so the prose between two code spans (`` ` and ` ``) is never read as one.
+    const keyEnd = m.index + head.length
+    if (!sep && (/^\$[({]/.test(text.slice(keyEnd, keyEnd + 2)) || (dash && text[keyEnd] === '\x60'))) {
+      out += `${text.slice(last, keyEnd)}***`
+      last = text.length
+      break
+    }
     // No separator: the identifier is matched whole anyway, so the scan never restarts inside it (`a'a'a'…` stays linear).
     if (!sep) continue
     // Prose (`secret sauce`): a bare space only separates a CLI flag from its value.
@@ -356,10 +369,13 @@ function redactCredentialParams(text: string): string {
     const valueStart = m.index + head.length
     // A bare `Authorization: <scheme> <credential>` header is `AUTH_HDR_RE`'s (decided before scanning the value).
     if (/authorization$/i.test(key) && /^:\s*$/.test(sep) && !/^\$?["']/.test(text.slice(valueStart, valueStart + 2))) continue
-    // A URL query parameter's value ends at the next `&`, `#`, space or quote.
     const query = /[?&]/.test(text[m.index - 1] ?? '') && sep === '='
-    const queryEnd = query ? text.slice(valueStart).search(/[&#\s"'<>]/) : -1
-    let valueEnd = query ? (queryEnd === -1 ? text.length : valueStart + queryEnd) : shellWordEnd(text, valueStart, quoteAt(valueStart), closeOf)
+    // A URL query parameter's value ends at the next `&` or `#` inside its shell word (`?token=foo'bar&x=1` passes
+    // `foobar`). The URL's word end is shared by its parameters, so many parameters still scan it once.
+    const wordEnd = query && valueStart < queryWordEnd ? queryWordEnd : shellWordEnd(text, valueStart, quoteAt(valueStart), closeOf)
+    if (query) queryWordEnd = wordEnd
+    const queryCut = query ? text.slice(valueStart, wordEnd).search(/[&#]/) : -1
+    let valueEnd = queryCut === -1 ? wordEnd : valueStart + queryCut
     // An `Authorization` header `AUTH_HDR_RE` cannot read (`Authorization : Basic x`, `'Authoriz'ation': Basic x`): its
     // scheme word and the credential after it are masked together.
     if (!query && sep.includes(':') && /authorization$/i.test(dequote(key)) && AUTH_SCHEME_WORD_RE.test(text.slice(valueStart, valueEnd))) {
@@ -412,17 +428,17 @@ function redactUserFlags(text: string): string {
 }
 
 /**
- * `Authorization:` credentials (`AUTH_HDR_RE`). A parameterized credential is masked whole; a single credential is read
- * to the end of its shell word, so an adjacent quoted piece (`Bearer foo'bar`, which the shell passes as `foobar`) is
- * masked with it.
+ * Header credentials (`AUTH_HDR_RE`, `BEARER_RE`: a head group, then the credential). A parameterized credential is masked
+ * whole; a single credential is read to the end of its shell word, so an adjacent quoted piece (`Bearer foo'bar`, which
+ * the shell passes as `foobar`) is masked with it.
  */
-function redactAuthHeaders(text: string): string {
+function redactHeaderCredentials(text: string, re: RegExp): string {
   let out = ''
   let last = 0
   const quoteAt = quoteTracker(text)
   const closeOf = enclosingClose(text)
-  AUTH_HDR_RE.lastIndex = 0
-  for (let m = AUTH_HDR_RE.exec(text); m; m = AUTH_HDR_RE.exec(text)) {
+  re.lastIndex = 0
+  for (let m = re.exec(text); m; m = re.exec(text)) {
     const [whole, head = '', token = ''] = m
     const start = m.index + head.length
     const matchEnd = m.index + whole.length
@@ -435,7 +451,7 @@ function redactAuthHeaders(text: string): string {
     }
     out += text.slice(last, start) + masked
     last = end
-    AUTH_HDR_RE.lastIndex = Math.max(end, AUTH_HDR_RE.lastIndex)
+    re.lastIndex = Math.max(end, re.lastIndex)
   }
   return out + text.slice(last)
 }
@@ -444,9 +460,9 @@ export function redactSensitive(text: string): string {
   if (!text) return text
   let out = text.replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
-  out = redactAuthHeaders(out)
+  out = redactHeaderCredentials(out, AUTH_HDR_RE)
   out = out.replace(JWT_RE, (t) => mask(t))
-  out = out.replace(BEARER_RE, (_, head: string, token: string) => head + mask(token))
+  out = redactHeaderCredentials(out, BEARER_RE)
   for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = redactCredentialParams(out)
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))

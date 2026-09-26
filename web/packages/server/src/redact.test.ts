@@ -180,6 +180,30 @@ describe('round 44 shapes', () => {
     expect(redactText(`login --pass$W=hunter2 --pass\${W}x=hunter3 next`, true)).toBe(`login --pass$W=*** --pass\${W}x=*** next`)
   })
 
+  it('reads a Bearer or query credential to the end of its shell word', () => {
+    expect(redactText(`curl -H 'X-Auth: Bearer foo'bar https://x`, true)).toBe(`curl -H 'X-Auth: Bearer *** https://x`)
+    expect(redactText(`X-Auth: Bearer 'hunter2' next`, true)).toBe(`X-Auth: Bearer '***' next`)
+    expect(redactText(`curl 'https://x?access_token=foo'bar next`, true)).toBe(`curl 'https://x?access_token=*** next`)
+    expect(redactText(`curl 'https://x?access_token=foo&y=1' next`, true)).toBe(`curl 'https://x?access_token=***&y=1' next`)
+    expect(redactText(`curl https://x?access_token=a&token=b#frag next`, true)).toBe(`curl https://x?access_token=***&token=***#frag next`)
+  })
+
+  it('reads keys that start with an underscore or a digit', () => {
+    expect(redactText(`login --_password=hunter2 next`, true)).toBe(`login --_password=*** next`)
+    expect(redactText(`login --2fa_token=hunter2 next`, true)).toBe(`login --2fa_token=*** next`)
+  })
+
+  it('fails closed to the end of the text on a key substitution it cannot parse', () => {
+    expect(redactText(`login --pass$(echo $(printf word))=hunter2 next`, true)).toBe(`login --pass***`)
+    expect(redactText(`login --pass$(echo "a)b")=hunter2 next`, true)).toBe(`login --pass***`)
+    expect(redactText(`cp file-$(date +%F).log backup/`, true)).toBe(`cp file-$(date +%F).log backup/`)
+    expect(redactText('login --pass`echo \\`printf word\\``=hunter2 next', true)).toBe('login --pass`echo \\`printf word\\``=*** next')
+    expect(redactText('login --pass`echo x=hunter2 next', true)).toBe('login --pass***')
+    // Markdown code spans are prose, not substitutions.
+    expect(redactText('answer with **markdown** and `code` about the token', true)).toBe('answer with **markdown** and `code` about the token')
+    expect(redactText('check the `token` field; use `${base}/api` and `a=$(date)`.', true)).toBe('check the `token` field; use `${base}/api` and `a=$(date)`.')
+  })
+
   it('reads quoted bracket segments of a text credential key', () => {
     expect(redactText(`login --auth["password"]=hunter2 next`, true)).toBe(`login --auth["password"]=*** next`)
     expect(redactText(`login --auth['token']=hunter2 next`, true)).toBe(`login --auth['token']=*** next`)
@@ -220,7 +244,7 @@ describe('redactSensitive cost', () => {
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
       // Shell-composed identifiers: unclosed and alternating quote and escape pieces.
-      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`)]) {
+      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`)]) {
       const started = performance.now()
       redactSensitive(text)
       expect(performance.now() - started).toBeLessThan(1000)
