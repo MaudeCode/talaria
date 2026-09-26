@@ -50,6 +50,8 @@ export interface SessionServiceDeps {
   runtime: RuntimeOverlay & {
     /** A live worker stream that must block deletion / duplicate turns for this session. */
     activeRunStream: (sid: string) => string | null
+    /** A live run whose journal missed a frame, so a replay cannot restore its whole output. */
+    journalDegraded: (streamId: string) => boolean
     evictAgent: (sid: string) => void
     closeTerminal: (sid: string) => void
     /** Python `delete_cli_session`: remove the session's rows from the profile's state.db; resolves false on failure. */
@@ -360,12 +362,12 @@ export class SessionService {
 
   /**
    * TAL-316: the active run whose journal can replay its output from the start. The detail then leaves that output to the
-   * replay; with no active run, no identifiable prompt, or no journal, it returns the persisted transcript unchanged.
+   * replay; with no active run, no identifiable prompt, or no complete journal, it returns the persisted transcript unchanged.
    */
   private journaledActiveTurn(s: Session): { turnId: string; startedAt: number; activeTurnToken: string } | null {
     const turnId = str(s.active_stream_id).trim()
     const activeTurnToken = buildActiveTurnToken(turnId, s.pending_started_at)
-    if (!turnId || !activeTurnToken) return null
+    if (!turnId || !activeTurnToken || this.deps.runtime.journalDegraded(turnId)) return null
     const summary = this.deps.journal?.findRunSummary(turnId)
     if (summary?.session_id !== s.session_id || summary.journal_pruned) return null
     return { turnId, startedAt: Number(s.pending_started_at), activeTurnToken }

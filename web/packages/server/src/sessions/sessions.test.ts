@@ -62,6 +62,7 @@ import { bootTestServer, type TestServer } from '../test/harness.js'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { str } from '../util.js'
 import { withoutRunningTurnOutput } from './merge.js'
+import { RunJournalWriter } from './journal.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -619,6 +620,27 @@ describe('session detail transcript cursor (TAL-316)', () => {
     } finally {
       findRunSummary.mockRestore()
       release()
+    }
+  })
+
+  it('states no cursor and keeps the persisted turn when its journal missed a frame', async () => {
+    const append = Object.getOwnPropertyDescriptor(RunJournalWriter.prototype, 'appendSseEvent')?.value as (this: RunJournalWriter, event: string, data: unknown) => ReturnType<RunJournalWriter['appendSseEvent']>
+    const failing = vi.spyOn(RunJournalWriter.prototype, 'appendSseEvent').mockImplementation(function (this: RunJournalWriter, event: string, data: unknown) {
+      if (event === 'tool') throw new Error('disk full')
+      return append.call(this, event, data)
+    })
+    let turn: Awaited<ReturnType<typeof runningTurn>> | null = null
+    try {
+      turn = await runningTurn()
+    } finally {
+      failing.mockRestore()
+    }
+    try {
+      const session = await detail(turn.sid)
+      expect(session.transcript_seq).toBeNull()
+      expect(contents(session)).toEqual(['earlier', 'earlier reply', 'read it', 'Reading.', 'A'])
+    } finally {
+      turn.release()
     }
   })
 

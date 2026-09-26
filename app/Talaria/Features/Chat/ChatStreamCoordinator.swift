@@ -124,6 +124,9 @@ final class ChatStreamCoordinator {
     // The `after_seq` the current connection resumed from: its journal events at
     // or below it are already on screen, so they are never applied again.
     private var replayCursor: Int?
+    // SSE ids are sticky: a frame without an `id` repeats the previous frame's, so
+    // only a changed id identifies a journal frame of its own.
+    private var previousFrameEventID: String?
     // Bumped whenever the active run starts or finalizes. Captured before async
     // finalization work so stale tasks cannot finalize a newer run.
     private var runGeneration = 0
@@ -219,6 +222,7 @@ final class ChatStreamCoordinator {
             lastEventID = nil
         }
         replayCursor = replayAfterSeq
+        previousFrameEventID = nil
 
         markConnectionStarted(
             isReplay: replayAfterSeq != nil,
@@ -591,6 +595,7 @@ final class ChatStreamCoordinator {
         switch event {
         case .token, .interimAssistant, .reasoning, .toolStarted, .toolCompleted, .steerConsumed:
             guard let replayCursor, let activeStreamID,
+                  streamClient.lastEventID != previousFrameEventID,
                   let seq = Self.runJournalReplayAfterSeq(from: streamClient.lastEventID, streamID: activeStreamID)
             else { return false }
             return seq <= replayCursor
@@ -635,7 +640,9 @@ final class ChatStreamCoordinator {
 
         lastEventID = streamClient.lastEventID ?? lastEventID
         lastTransportActivityDate = Date()
-        if isCoveredByReplayCursor(event) {
+        let isCovered = isCoveredByReplayCursor(event)
+        previousFrameEventID = streamClient.lastEventID
+        if isCovered {
             return
         }
 

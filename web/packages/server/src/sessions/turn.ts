@@ -309,6 +309,7 @@ export class TurnRunner {
         try {
           eventId = writer.appendSseEvent(event, data).event_id
         } catch (error) {
+          this.registry.degradedJournals.add(streamId)
           deps.log(`[webui] WARNING: run journal append failed for ${streamId}/${event}: ${(error as Error).message}`)
         }
       }

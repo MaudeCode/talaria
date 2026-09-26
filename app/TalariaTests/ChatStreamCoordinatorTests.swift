@@ -1256,8 +1256,10 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "5")
         // An overlapping frame at or below the cursor is already on screen.
         streamClient.emit(.token("Partial answer."), lastEventID: "stream-warm:5")
+        // A frame without its own id (the journal missed it) keeps the sticky id and is new.
+        streamClient.emit(.token(" Unjournaled."), lastEventID: "stream-warm:5")
         streamClient.emit(.token(" More."), lastEventID: "stream-warm:6")
-        XCTAssertEqual(delegate.tokens, ["Partial answer.", " More."])
+        XCTAssertEqual(delegate.tokens, ["Partial answer.", " Unjournaled.", " More."])
     }
 
     @MainActor
