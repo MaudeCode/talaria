@@ -21,8 +21,8 @@ const RULES: [ToolKind, (tokens: Set<string>, name: string) => boolean][] = [
 ]
 
 export function toolKind(name: unknown): ToolKind {
-  // camelCase words split like snake_case ones (`readFile` is `read`, `file`).
-  const n = str(name).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  // camelCase and acronym words split like snake_case ones (`readFile` is `read`, `file`; `HTTPFetch` is `http`, `fetch`).
+  const n = str(name).replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
   if (!n) return 'unknown'
   const tokens = new Set(n.split('_'))
   return RULES.find(([, match]) => match(tokens, n))?.[0] ?? 'unknown'

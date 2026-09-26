@@ -67,6 +67,8 @@ describe('redactSensitive', () => {
     expect(redactSensitive(`login --password "unterminated secret\nnext line`)).toBe(`login --password ***\nnext line`)
     // Punctuation inside a bare word is part of it; after a value it is structure.
     expect(redactSensitive(`login --password=correct]horse --token=a,b}c|next {"secret": 123}, {'token': 'x'}`)).toBe(`login --password=*** --token=***|next {"secret": ***}, {'token': '***'}`)
+    // Command substitution, backticks and parameter expansion are part of the word.
+    expect(redactSensitive('login --password=$(printf hunter2) --token=`cat t` --secret=${S:-x y} next')).toBe('login --password=*** --token=*** --secret=*** next')
     // Ordinary words and non-credential parameters stay readable.
     expect(redactSensitive('keep the secret sauce --secret-file ./s.txt')).toBe('keep the secret sauce --secret-file ./s.txt')
     expect(redactSensitive('apiKeyId: 12 max_tokens=100 --user-agent curl')).toBe('apiKeyId: 12 max_tokens=100 --user-agent curl')

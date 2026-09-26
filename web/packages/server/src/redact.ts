@@ -169,6 +169,22 @@ function shellWordEnd(text: string, start: number, enclosing: string): number {
       i = close + 2
     } else if (c === '\\') i += 2
     else if (c === '$' && (text[i + 1] === "'" || text[i + 1] === '"')) i += 1
+    // `$(…)`, `${…}` and backticks are part of the word, balanced.
+    else if (c === '$' && (text[i + 1] === '(' || text[i + 1] === '{')) {
+      const open = text[i + 1]!
+      const close = open === '(' ? ')' : '}'
+      let k = i + 2
+      for (let d = 1; k < text.length && d > 0; k += 1) {
+        if (text[k] === open) d += 1
+        else if (text[k] === close) d -= 1
+      }
+      if (text[k - 1] !== close) return lineEnd(i)
+      i = k
+    } else if (c === '`') {
+      const close = text.indexOf('`', i + 1)
+      if (close === -1) return lineEnd(i)
+      i = close + 1
+    }
     else if (c === "'") {
       const close = text.indexOf("'", i + 1)
       if (close === -1) return i === start ? lineEnd(i) : i

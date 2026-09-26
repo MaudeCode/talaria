@@ -12,7 +12,7 @@ describe('toolKind', () => {
     ['web_search', 'web'], ['web_extract', 'web'], ['browser_navigate', 'web'],
     ['search_files', 'search'], ['grep', 'search'], ['rg', 'search'], ['ripgrep', 'search'], ['glob', 'search'],
     ['write_file', 'write'], ['patch', 'write'], ['mcp_filesystem_edit_file', 'write'],
-    ['readFile', 'read'], ['webSearch', 'web'], ['shellCommand', 'shell'], ['mergePullRequest', 'unknown'],
+    ['HTTPFetch', 'web'], ['URLRead', 'read'], ['readFile', 'read'], ['webSearch', 'web'], ['shellCommand', 'shell'], ['mergePullRequest', 'unknown'],
     ['merge_pull_request', 'unknown'], ['image_generate', 'unknown'], ['', 'unknown'], [undefined, 'unknown'],
   ])('%s is %s', (name, kind) => {
     expect(toolKind(name)).toBe(kind)
