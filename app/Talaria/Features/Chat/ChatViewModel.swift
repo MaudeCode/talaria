@@ -4874,7 +4874,9 @@ final class ChatViewModel {
                 id: payload.stableID ?? "live-tool-\(UUID().uuidString)",
                 name: payload.name,
                 preview: payload.preview,
-                args: payload.args
+                args: payload.args,
+                kind: payload.kind,
+                target: payload.target
             )
         )
         scheduleStreamingScrollTrigger()
@@ -4913,6 +4915,8 @@ final class ChatViewModel {
                     name: payload.name,
                     preview: payload.preview,
                     args: payload.args,
+                    kind: payload.kind,
+                    target: payload.target,
                     duration: payload.duration,
                     isError: payload.isError,
                     isCompleted: true

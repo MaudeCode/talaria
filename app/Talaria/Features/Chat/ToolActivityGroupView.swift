@@ -71,19 +71,6 @@ enum AssistantActivityGroupPolicy {
 }
 
 enum AssistantActivitySummary {
-    private enum CollapsedAction: Equatable {
-        case shell
-        case read
-        case list
-        case search
-        case web
-        case write
-        case skill
-        case memory
-        case delegate
-        case generic
-    }
-
     enum Category: Hashable {
         case command
         case read
@@ -127,12 +114,12 @@ enum AssistantActivitySummary {
     }
 
     private static func specificLabel(for toolCall: ToolCall) -> String? {
-        let action = collapsedAction(for: toolCall)
-        guard action != .generic, let target = collapsedTarget(for: toolCall, action: action) else {
+        let kind = toolCall.kind ?? .unknown
+        guard kind != .unknown, let target = collapsedTarget(for: toolCall, kind: kind) else {
             return nil
         }
         if toolCall.isError == true {
-            switch action {
+            switch kind {
             case .shell: return String(localized: "Failed to run \(target)")
             case .read: return String(localized: "Failed to read \(target)")
             case .list: return String(localized: "Failed to list \(target)")
@@ -142,10 +129,10 @@ enum AssistantActivitySummary {
             case .skill: return String(localized: "Failed to load \(target)")
             case .memory: return String(localized: "Failed to save \(target)")
             case .delegate: return String(localized: "Failed to delegate \(target)")
-            case .generic: return nil
+            case .unknown: return nil
             }
         }
-        switch (action, toolCall.isCompleted) {
+        switch (kind, toolCall.isCompleted) {
         case (.shell, true): return String(localized: "Ran \(target)")
         case (.shell, false): return String(localized: "Running \(target)")
         case (.read, true): return String(localized: "Read \(target)")
@@ -164,75 +151,19 @@ enum AssistantActivitySummary {
         case (.memory, false): return String(localized: "Saving \(target)")
         case (.delegate, true): return String(localized: "Delegated \(target)")
         case (.delegate, false): return String(localized: "Delegating \(target)")
-        case (.generic, _): return nil
+        case (.unknown, _): return nil
         }
     }
 
-    private static func collapsedAction(for toolCall: ToolCall) -> CollapsedAction {
-        let name = (toolCall.name ?? "").lowercased()
-            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "_", options: .regularExpression)
-        if name == "subagent_progress" || name == "delegate_task" { return .delegate }
-        if name.contains("skill") { return .skill }
-        if name.contains("memory") { return .memory }
-        if name.contains("terminal") || name.contains("shell") || name.contains("command")
-            || name.contains("process") || name == "execute_code" { return .shell }
-        if name.contains("read") || name.contains("view") || name.contains("open")
-            || name == "vision_analyze" { return .read }
-        if name.contains("list") || name == "todo" { return .list }
-        if name.contains("web") || name.contains("fetch") || name.contains("curl")
-            || name.contains("extract") || name.contains("browse") || name.contains("navigate") { return .web }
-        if name.contains("search") || name.contains("grep") || name.contains("find") { return .search }
-        if name.contains("write") || name.contains("patch") || name.contains("edit") { return .write }
-        return .generic
-    }
-
-    private static func collapsedTarget(for toolCall: ToolCall, action: CollapsedAction) -> String? {
-        let keys: [String]
-        switch action {
-        case .shell: keys = ["cmd", "command"]
-        case .read, .write: keys = ["path", "file_path", "file", "target", "name"]
-        case .list: keys = ["path", "dir", "target", "name"]
-        case .search, .web: keys = ["query", "pattern", "url", "uri"]
-        case .skill: keys = ["name", "skill"]
-        case .memory: keys = ["target", "name", "action"]
-        case .delegate: keys = ["task", "name"]
-        case .generic: return nil
+    /// The server's redacted target as sent; only the localized skill suffix and layout truncation are the app's.
+    private static func collapsedTarget(for toolCall: ToolCall, kind: ToolDisplayKind) -> String? {
+        guard var target = toolCall.target?.trimmingCharacters(in: .whitespacesAndNewlines), !target.isEmpty else {
+            return nil
         }
-        guard var target = firstStringArgument(keys, in: toolCall.args) else { return nil }
-        target = target.components(separatedBy: .newlines).first ?? target
-        target = target.components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-        guard !target.isEmpty, isSafeCollapsedTarget(target) else { return nil }
-        if action == .read || action == .write || action == .list {
-            let normalized = target.replacingOccurrences(of: "\\", with: "/")
-                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            target = normalized.split(separator: "/").last.map(String.init) ?? normalized
-        } else if action == .skill, !target.lowercased().hasSuffix(" skill") {
+        if kind == .skill, !target.lowercased().hasSuffix(" skill") {
             target += " " + String(localized: "skill")
         }
         return shortened(target, limit: 112)
-    }
-
-    private static func firstStringArgument(_ keys: [String], in args: [String: JSONValue]?) -> String? {
-        guard let args else { return nil }
-        for key in keys {
-            guard case .string(let value)? = args[key] else { continue }
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { return trimmed }
-        }
-        return nil
-    }
-
-    private static func isSafeCollapsedTarget(_ target: String) -> Bool {
-        let lowercased = target.lowercased()
-        let sensitiveFragments = [
-            "token", "api_key", "apikey", "secret", "password", "passwd", "credential",
-            "authorization", "bearer", "private_key", "access_key", "session_key", "client_secret",
-            "?key=", "&key="
-        ]
-        // ponytail: sensitive-looking targets use the generic label; add value-level redaction only if benign false positives become common.
-        return !sensitiveFragments.contains { lowercased.contains($0) }
     }
 
     private static func shortened(_ value: String, limit: Int) -> String {
@@ -253,21 +184,14 @@ enum AssistantActivitySummary {
     }
 
     private static func category(for toolCall: ToolCall) -> Category {
-        let name = (toolCall.name ?? "").lowercased()
-        if name.contains("web") || name.contains("browse") || name.contains("fetch") || name.contains("url") {
-            return .web
-        }
-        if name.contains("write") || name.contains("edit") || name.contains("patch") || name.contains("replace") {
-            return .edit
-        }
-        if name.contains("skill") || name.contains("load") {
-            return .load
-        }
-        switch AgentRunActivitySanitizer.toolKind(name: toolCall.name) {
-        case .command: return .command
-        case .search: return .search
-        case .files: return .read
-        case .generic: return .generic
+        switch toolCall.kind ?? .unknown {
+        case .shell: .command
+        case .read, .list: .read
+        case .write: .edit
+        case .search: .search
+        case .web: .web
+        case .skill: .load
+        case .memory, .delegate, .unknown: .generic
         }
     }
 

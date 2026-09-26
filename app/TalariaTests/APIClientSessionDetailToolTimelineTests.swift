@@ -698,7 +698,7 @@ func testToolCallStatusDisplayShowsFailedCollapsedText() {
 func testToolCallDisplayFormatterParsesTerminalJSONOutput() {
     let display = ToolCallDisplayFormatter.resultDisplay(
         preview: #"{"output":"line one\nline two\n","exit_code":0,"error":null}"#,
-        toolName: "terminal"
+        kind: .shell
     )
 
     XCTAssertEqual(display?.title, "Result")
@@ -709,7 +709,7 @@ func testToolCallDisplayFormatterParsesTerminalJSONOutput() {
 func testToolCallDisplayFormatterParsesEscapedTerminalJSONOutput() {
     let display = ToolCallDisplayFormatter.resultDisplay(
         preview: #"{\"output\":\"pwd\n\",\"exit_code\":0,\"error\":null}"#,
-        toolName: "terminal"
+        kind: .shell
     )
 
     XCTAssertEqual(display?.text, "pwd")
@@ -720,7 +720,7 @@ func testToolCallDisplayFormatterToleratesOutOfRangeExitCode() {
     // used to trap while rendering the card (#62).
     let display = ToolCallDisplayFormatter.resultDisplay(
         preview: #"{"output":"done\n","exit_code":1e300,"error":null}"#,
-        toolName: "terminal"
+        kind: .shell
     )
 
     XCTAssertEqual(display?.text, "done")
@@ -731,7 +731,7 @@ func testToolCallDisplayFormatterFallsBackToOriginalPreviewWhenParsingFails() {
 
     let display = ToolCallDisplayFormatter.resultDisplay(
         preview: preview,
-        toolName: "web_search"
+        kind: .web
     )
 
     XCTAssertEqual(display?.text, preview)
@@ -766,7 +766,7 @@ func testToolCallDisplayFormatterShowsNestedArgumentsReadably() {
 func testToolCallDisplayFormatterFormatsStructuredNonTerminalResults() {
     let display = ToolCallDisplayFormatter.resultDisplay(
         preview: #"{"results":[{"title":"Hermes WebUI","url":"https://example.com","snippet":"Agent UI"}]}"#,
-        toolName: "web_search"
+        kind: .web
     )
 
     let text = display?.text ?? ""
@@ -779,7 +779,7 @@ func testToolCallDisplayFormatterFormatsStructuredNonTerminalResults() {
 func testToolCallDisplayFormatterPrefersStructuredResultOverTerminalKeysForNonTerminalTools() {
     let display = ToolCallDisplayFormatter.resultDisplay(
         preview: #"{"results":[{"title":"Hermes WebUI","url":"https://example.com","snippet":"Agent UI"}],"exit_code":0,"error":null}"#,
-        toolName: "web_search"
+        kind: .web
     )
 
     let text = display?.text ?? ""

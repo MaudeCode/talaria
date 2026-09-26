@@ -50,6 +50,8 @@ extension ToolCall {
             name: payload.name ?? name,
             preview: payload.preview ?? preview,
             args: payload.args ?? args,
+            kind: payload.kind ?? kind,
+            target: payload.target ?? target,
             duration: payload.duration,
             isError: payload.isError,
             isCompleted: true,
