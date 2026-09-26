@@ -164,8 +164,10 @@ function shellWordEnd(text: string, start: number, enclosing: string): number {
   while (i < text.length) {
     const c = text[i]!
     if (i !== start && c === enclosing) return i
-    if (c === '\\' && text[i + 1] === '"') {
-      if (i !== start && depth === 0) return i
+    // `\"…\"` is a piece (JSON escaped inside a shell string) at the value's start or in a container; mid-word, `\"` is
+    // an escaped quote like any other escape.
+    if (c === '\\' && text[i + 1] === '"' && i !== start && depth === 0) i += 2
+    else if (c === '\\' && text[i + 1] === '"') {
       const close = text.indexOf('\\"', i + 2)
       if (close === -1) return lineEnd(i)
       i = close + 2
