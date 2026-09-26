@@ -69,10 +69,23 @@ function pythonStr(value: unknown): string {
  */
 function snapshotArg(args: Record<string, unknown>, key: string): string | null {
   if (!Object.keys(args).slice(0, 4).includes(key) || args[key] === undefined) return null
-  const value = pythonStr(args[key])
+  return snapshotValue(key, args[key])
+}
+
+function snapshotValue(key: string, raw: unknown): string {
+  const value = pythonStr(raw)
   const cap = TOOL_ARG_CONTENT_KEYS.has(key.toLowerCase()) ? TOOL_ARG_CONTENT_CAP : 120
   const chars = Array.from(value)
   return chars.length > cap ? `${chars.slice(0, cap).join('')}...` : value
+}
+
+/**
+ * A persisted call's arguments as the live frame carries them (the sidecar's `_args_snapshot`), so its target is
+ * redacted after the same cap the live one was (a credential straddling the cap masks alike). Idempotent on a snapshot.
+ */
+export function snapshotArgs(args: unknown): unknown {
+  if (!isDict(args)) return args
+  return Object.fromEntries(Object.entries(args).slice(0, 4).filter(([, v]) => v !== undefined).map(([k, v]) => [k, snapshotValue(k, v)]))
 }
 
 /** A call's display class and label: the first line of its kind's argument, whitespace-collapsed and capped. */

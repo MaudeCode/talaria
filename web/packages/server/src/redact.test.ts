@@ -214,6 +214,8 @@ describe('round 44 shapes', () => {
     expect(redactText(String.raw`curl https://bob\:hunter2@example.com next`, true)).toBe(String.raw`curl https://bob\:***@example.com next`)
     expect(redactText(String.raw`curl https://bob:hunter2\@example.com next`, true)).toBe(String.raw`curl https://bob:***\@example.com next`)
     expect(redactText(String.raw`curl https\:\/\/amy:pw2@x next`, true)).toBe(String.raw`curl https\:\/\/amy:***@x next`)
+    expect(redactText(`set -- word; login --pass$1=hunter2 --pass$@=hunter3 -$#=x next`, true)).toBe(`set -- word; login --pass$1=*** --pass$@=*** -$#=*** next`)
+    expect(redactText(`echo "costs $5 or $10" && ls $1`, true)).toBe(`echo "costs $5 or $10" && ls $1`)
     // Markdown code spans are prose, not substitutions.
     expect(redactText('answer with **markdown** and `code` about the token', true)).toBe('answer with **markdown** and `code` about the token')
     expect(redactText('check the `token` field; use `${base}/api` and `a=$(date)`.', true)).toBe('check the `token` field; use `${base}/api` and `a=$(date)`.')
@@ -315,6 +317,18 @@ describe('publicToolFrame', () => {
     expect(publicToolFrame({ name: 'terminal', tid: 't1', args: { command: 'ls' } }, true)).toMatchObject({ kind: 'shell', target: 'ls' })
     // Empty or non-displayable args (the sidecar sends `{}` for non-dict callback args) carry no target either.
     expect(publicToolFrame({ name: 'terminal', tid: 't1', args: {} }, true)).not.toHaveProperty('target')
+  })
+})
+
+describe('target order', () => {
+  it('derives a persisted target in the live order, capped before it is redacted', () => {
+    const query = `token=${'c'.repeat(150)} find docs`
+    // Live: the sidecar's snapshot capped the raw value at 120 before the server redacted it.
+    const live = publicToolFrame({ name: 'web_search', args: { query: `${query.slice(0, 120)}...` } }, true)
+    const persisted = redactSessionData({ messages: [{ role: 'assistant', tool_calls: [{ id: 'a', function: { name: 'web_search', arguments: JSON.stringify({ query }) } }] }] }, true)
+    const call = ((persisted.messages as Record<string, unknown>[])[0]!.tool_calls as Record<string, unknown>[])[0]!
+    expect(call.target).toBe(live.target)
+    expect(String(live.target)).not.toContain('ccc')
   })
 })
 
