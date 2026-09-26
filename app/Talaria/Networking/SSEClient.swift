@@ -232,12 +232,16 @@ struct ToolStreamEvent: Decodable, Equatable {
     let duration: Double?
     let isError: Bool?
     let stableID: String?
+    let kind: ToolDisplayKind?
+    let target: String?
 
     enum CodingKeys: String, CodingKey {
         case eventType = "event_type"
         case name
         case preview
         case args
+        case kind
+        case target
         case duration
         case isError = "is_error"
         case tid
@@ -254,7 +258,9 @@ struct ToolStreamEvent: Decodable, Equatable {
         args: [String: JSONValue]?,
         duration: Double?,
         isError: Bool?,
-        stableID: String? = nil
+        stableID: String? = nil,
+        kind: ToolDisplayKind? = nil,
+        target: String? = nil
     ) {
         self.eventType = eventType
         self.name = name
@@ -263,6 +269,8 @@ struct ToolStreamEvent: Decodable, Equatable {
         self.duration = duration
         self.isError = isError
         self.stableID = stableID?.nonEmptyToolStreamID
+        self.kind = kind
+        self.target = target
     }
 
     init(from decoder: Decoder) throws {
@@ -273,6 +281,8 @@ struct ToolStreamEvent: Decodable, Equatable {
         args = try? container.decodeIfPresent([String: JSONValue].self, forKey: .args)
         duration = container.decodeLossyDoubleIfPresent(forKey: .duration)
         isError = container.decodeLossyBoolIfPresent(forKey: .isError)
+        kind = ToolDisplayKind(serverValue: container.decodeLossyStringIfPresent(forKey: .kind))
+        target = container.decodeLossyStringIfPresent(forKey: .target)
         stableID = [
             container.decodeLossyStringIfPresent(forKey: .tid),
             container.decodeLossyStringIfPresent(forKey: .id),
@@ -503,6 +513,8 @@ private extension ToolStreamEvent {
         duration = nil
         isError = nil
         stableID = nil
+        kind = nil
+        target = nil
     }
 }
 

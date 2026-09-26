@@ -89,6 +89,16 @@ registration, aggregate responses, and Activity Scene decoding.
 
 ## Clarification batches
 
+Current Web servers provide ordered `steps` containing `qid`, `question`, `choices`,
+and `multi_select`. The app renders these fields directly and posts `answers`
+keyed by `qid`, with arrays for multi-select steps. The server shapes the Agent's
+reply. The live probe captures a single-question multi-select prompt from the
+replay sidecar through Web's pending endpoint and SSE stream, submits keyed answers,
+and passes the pending response to the Swift decoder check.
+
+The following compatibility path applies only when `steps` is absent. Delete it
+once all supported Web servers ship `steps`.
+
 Talaria also accepts the additive `questions` payload introduced by WebUI commit
 `f190f680d0d04b0decc416ae7f7cb86e4465eb81` without changing the legacy single-question
 contract or advancing `UPSTREAM_TESTED_SHA`. Each question carries its wire `qid`,

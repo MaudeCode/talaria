@@ -314,14 +314,19 @@ final class ChatPendingActionCoordinator {
         defer { isRespondingToClarification = false }
 
         do {
-            // The endpoint still takes a string; the Agent parses batch answers
-            // from JSON inside that string. Plain text becomes an empty answer map.
-            let wireResponse = prompt.questionID == nil ? response
-                : String(decoding: try JSONEncoder().encode(["answers": answers]), as: UTF8.self)
+            // Old-server fallback. Delete response shaping once supported servers all ship steps.
+            let wireResponse: String?
+            if prompt.pending.steps != nil {
+                wireResponse = nil
+            } else {
+                wireResponse = prompt.questionID == nil ? response
+                    : String(decoding: try JSONEncoder().encode(["answers": answers]), as: UTF8.self)
+            }
             _ = try await client.respondClarification(
                 sessionID: prompt.sessionID,
                 response: wireResponse,
-                clarifyID: prompt.pending.clarifyId
+                clarifyID: prompt.pending.clarifyId,
+                answers: prompt.pending.steps != nil ? answers : nil
             )
             guard clarificationPrompt?.id == prompt.id,
                   delegate?.pendingActionSessionID == prompt.sessionID else { return true }

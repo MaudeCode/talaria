@@ -990,7 +990,7 @@ final class LiveActivityTests: XCTestCase {
         )
     }
 
-    func testMapsToolNamesToSafeStatuses() {
+    func testMapsServerToolKindsToSafeStatuses() {
         let startedAt = Date(timeIntervalSince1970: 100)
         let state = AgentRunActivityStateReducer.initialState(
             sessionID: "session-abc",
@@ -998,17 +998,26 @@ final class LiveActivityTests: XCTestCase {
             startedAt: startedAt
         )
 
-        let command = AgentRunActivityStateReducer.toolStarted(name: "shell_command", state: state)
+        let command = AgentRunActivityStateReducer.toolStarted(kind: .shell, name: "shell_command", state: state)
         XCTAssertEqual(command.status, .runningCommand)
         XCTAssertEqual(command.currentActivity, "Running command")
 
-        let search = AgentRunActivityStateReducer.toolStarted(name: "ripgrep_search", state: state)
+        let search = AgentRunActivityStateReducer.toolStarted(kind: .search, name: "ripgrep_search", state: state)
         XCTAssertEqual(search.status, .searchingFiles)
         XCTAssertEqual(search.currentActivity, "Searching files")
 
-        let generic = AgentRunActivityStateReducer.toolStarted(name: "apply_patch", state: state)
+        let files = AgentRunActivityStateReducer.toolStarted(kind: .list, name: "list_directory", state: state)
+        XCTAssertEqual(files.status, .readingFiles)
+
+        let generic = AgentRunActivityStateReducer.toolStarted(kind: .write, name: "apply_patch", state: state)
         XCTAssertEqual(generic.status, .usingTool)
         XCTAssertEqual(generic.currentActivity, "Using apply patch")
+
+        // The server's kind decides: `merge` is not a search, and an older server's missing kind is a generic tool.
+        let merge = AgentRunActivityStateReducer.toolStarted(kind: .unknown, name: "merge_pull_request", state: state)
+        XCTAssertEqual(merge.status, .usingTool)
+        let legacy = AgentRunActivityStateReducer.toolStarted(kind: nil, name: "shell_command", state: state)
+        XCTAssertEqual(legacy.status, .usingTool)
     }
 
     func testElapsedTimeFormatterUsesStableClockLabels() {
@@ -1153,7 +1162,7 @@ final class LiveActivityTests: XCTestCase {
         let states = [
             initial,
             AgentRunActivityStateReducer.reasoning("Thinking through the plan", state: initial, now: later),
-            AgentRunActivityStateReducer.toolStarted(name: "ripgrep_search", state: initial, now: later),
+            AgentRunActivityStateReducer.toolStarted(kind: .search, name: "ripgrep_search", state: initial, now: later),
             AgentRunActivityStateReducer.toolCompleted(state: initial, now: later),
             AgentRunActivityStateReducer.waitingForApproval(state: initial, now: later),
             AgentRunActivityStateReducer.waitingForClarification(state: initial, now: later),
@@ -1274,7 +1283,8 @@ final class LiveActivityTests: XCTestCase {
             preview: nil,
             args: nil,
             duration: nil,
-            isError: nil
+            isError: nil,
+            kind: .shell
         )))
         streamClient.emit(.token("Done."))
         streamClient.emit(.toolCompleted(ToolStreamEvent(
@@ -1289,7 +1299,7 @@ final class LiveActivityTests: XCTestCase {
 
         XCTAssertEqual(manager.updates, [
             .reasoning("I should inspect failures."),
-            .toolStarted(name: "shell_command"),
+            .toolStarted(kind: .shell, name: "shell_command"),
             .toolCompleted
         ])
         XCTAssertEqual(manager.ends.last, SpyAgentLiveActivityManager.End(

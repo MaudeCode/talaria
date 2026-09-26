@@ -395,13 +395,38 @@ class Probe:
                 f"SSE approval event: unexpected event {event!r} {payload!r}"
             )
         print("PASS [SSE boundary] initial and approval events decoded")
-        # Answer the staged approval so the fixture turn finishes before cleanup deletes the session.
+        clarify_stream = self.opener.open(
+            self.base_url + f"/api/clarify/stream?{stream_query}", timeout=15
+        )
+        event, payload = self.read_sse_event(clarify_stream, "clarification initial event")
+        if event != "initial":
+            raise ContractFailure(f"clarification initial event: unexpected {event!r}")
+        # Answer the approval, then capture the server-shaped clarification before resolving it.
         self.request(
             "approval response",
             "/api/approval/respond",
             method="POST",
             body={"session_id": session_id, "choice": "deny", "approval_id": str(pending.get("approval_id") or "")},
         )
+        for _ in range(10):
+            event, payload = self.read_sse_event(clarify_stream, "clarification event")
+            if payload.get("pending"):
+                break
+        clarify_stream.close()
+        expected_steps = [{"qid": "q0", "question": "Which checks?", "choices": ["unit", "ui"], "multi_select": True}]
+        if event != "clarify" or (payload.get("pending") or {}).get("steps") != expected_steps:
+            raise ContractFailure(f"clarification steps: unexpected {event!r} {payload!r}")
+        clarification = self.request(
+            "clarification pending", f"/api/clarify/pending?{stream_query}", fixture="clarification_pending"
+        )
+        if (clarification.get("pending") or {}).get("steps") != expected_steps:
+            raise ContractFailure(f"clarification pending steps: unexpected {clarification!r}")
+        answered = self.request(
+            "clarification response", "/api/clarify/respond", method="POST",
+            body={"session_id": session_id, "clarify_id": clarification["pending"]["clarify_id"], "answers": {"q0": ["unit", "ui"]}},
+        )
+        if answered.get("ok") is not True or json.loads(answered.get("response", "null")) != ["unit", "ui"]:
+            raise ContractFailure(f"clarification keyed answers: unexpected {answered!r}")
         for _ in range(100):
             active = self.request(
                 "stream drain",

@@ -17,6 +17,8 @@
           "tool": {
             "id": "call-1",
             "name": "terminal",
+            "kind": "shell",
+            "target": "",
             "args": null,
             "preview": null,
             "result": null,
@@ -60,6 +62,8 @@
           "tool": {
             "id": "call-1",
             "name": "terminal",
+            "kind": "shell",
+            "target": "",
             "args": null,
             "preview": null,
             "result": null,
@@ -90,6 +94,8 @@
           "tool": {
             "id": "call-2",
             "name": "terminal",
+            "kind": "shell",
+            "target": "",
             "args": null,
             "preview": null,
             "result": null,
@@ -184,6 +190,8 @@
           "tool": {
             "id": "call-1",
             "name": "terminal",
+            "kind": "shell",
+            "target": "",
             "args": null,
             "preview": null,
             "result": null,
@@ -225,6 +233,8 @@
           "tool": {
             "id": "call-1",
             "name": "terminal",
+            "kind": "shell",
+            "target": "",
             "args": null,
             "preview": null,
             "result": null,
@@ -259,6 +269,8 @@
           "tool": {
             "id": "call-1",
             "name": "terminal",
+            "kind": "shell",
+            "target": "",
             "args": null,
             "preview": null,
             "result": null,

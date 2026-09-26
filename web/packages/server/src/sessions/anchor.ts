@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto'
 import { agentSteerText, isContextCompressionMarker, isReasoningBlock, messageText, reasoningBlockText, splitThinkingFromContent } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
+import { toolArgs } from './tool-display.js'
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
@@ -295,13 +296,6 @@ function terminalStateOf(last: Record<string, unknown>, finalAnswer: string): st
   const label = str(last.provider_details_label)
   const errorState = last._error === true ? (label === 'Cancellation details' ? 'cancelled' : label === 'Interruption details' ? 'interrupted' : 'error') : ''
   return str(last.terminal_state) || str(last._terminal_state) || (last._max_iteration_summary_fallback === true ? 'tool_limit_reached' : '') || errorState || (finalAnswer.trim() ? 'completed' : 'no_response')
-}
-
-function toolArgs(call: Record<string, unknown>): unknown {
-  if (call.args !== undefined) return call.args
-  const raw = isDict(call.function) ? call.function.arguments : undefined
-  if (typeof raw !== 'string') return raw ?? null
-  try { return JSON.parse(raw) as unknown } catch { return raw }
 }
 
 /**

@@ -2415,6 +2415,24 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "shell",
+                                        "read",
+                                        "list",
+                                        "search",
+                                        "web",
+                                        "write",
+                                        "skill",
+                                        "memory",
+                                        "delegate",
+                                        "unknown"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "target": {
+                                      "type": "string"
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -2605,6 +2623,24 @@
                                               "type": "string"
                                             },
                                             "name": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "shell",
+                                                "read",
+                                                "list",
+                                                "search",
+                                                "web",
+                                                "write",
+                                                "skill",
+                                                "memory",
+                                                "delegate",
+                                                "unknown"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "target": {
                                               "type": "string"
                                             },
                                             "args": {},
@@ -2816,6 +2852,24 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "kind": {
+                                "enum": [
+                                  "shell",
+                                  "read",
+                                  "list",
+                                  "search",
+                                  "web",
+                                  "write",
+                                  "skill",
+                                  "memory",
+                                  "delegate",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              },
+                              "target": {
+                                "type": "string"
+                              },
                               "name": {
                                 "type": "string"
                               },
@@ -3793,6 +3847,24 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "shell",
+                                        "read",
+                                        "list",
+                                        "search",
+                                        "web",
+                                        "write",
+                                        "skill",
+                                        "memory",
+                                        "delegate",
+                                        "unknown"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "target": {
+                                      "type": "string"
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -3983,6 +4055,24 @@
                                               "type": "string"
                                             },
                                             "name": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "shell",
+                                                "read",
+                                                "list",
+                                                "search",
+                                                "web",
+                                                "write",
+                                                "skill",
+                                                "memory",
+                                                "delegate",
+                                                "unknown"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "target": {
                                               "type": "string"
                                             },
                                             "args": {},
@@ -4194,6 +4284,24 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "kind": {
+                                "enum": [
+                                  "shell",
+                                  "read",
+                                  "list",
+                                  "search",
+                                  "web",
+                                  "write",
+                                  "skill",
+                                  "memory",
+                                  "delegate",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              },
+                              "target": {
+                                "type": "string"
+                              },
                               "name": {
                                 "type": "string"
                               },
@@ -4932,6 +5040,24 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "shell",
+                                        "read",
+                                        "list",
+                                        "search",
+                                        "web",
+                                        "write",
+                                        "skill",
+                                        "memory",
+                                        "delegate",
+                                        "unknown"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "target": {
+                                      "type": "string"
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -5122,6 +5248,24 @@
                                               "type": "string"
                                             },
                                             "name": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "shell",
+                                                "read",
+                                                "list",
+                                                "search",
+                                                "web",
+                                                "write",
+                                                "skill",
+                                                "memory",
+                                                "delegate",
+                                                "unknown"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "target": {
                                               "type": "string"
                                             },
                                             "args": {},
@@ -5333,6 +5477,24 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "kind": {
+                                "enum": [
+                                  "shell",
+                                  "read",
+                                  "list",
+                                  "search",
+                                  "web",
+                                  "write",
+                                  "skill",
+                                  "memory",
+                                  "delegate",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              },
+                              "target": {
+                                "type": "string"
+                              },
                               "name": {
                                 "type": "string"
                               },
@@ -6948,6 +7110,24 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "shell",
+                                        "read",
+                                        "list",
+                                        "search",
+                                        "web",
+                                        "write",
+                                        "skill",
+                                        "memory",
+                                        "delegate",
+                                        "unknown"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "target": {
+                                      "type": "string"
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -7138,6 +7318,24 @@
                                               "type": "string"
                                             },
                                             "name": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "shell",
+                                                "read",
+                                                "list",
+                                                "search",
+                                                "web",
+                                                "write",
+                                                "skill",
+                                                "memory",
+                                                "delegate",
+                                                "unknown"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "target": {
                                               "type": "string"
                                             },
                                             "args": {},
@@ -7349,6 +7547,24 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "kind": {
+                                "enum": [
+                                  "shell",
+                                  "read",
+                                  "list",
+                                  "search",
+                                  "web",
+                                  "write",
+                                  "skill",
+                                  "memory",
+                                  "delegate",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              },
+                              "target": {
+                                "type": "string"
+                              },
                               "name": {
                                 "type": "string"
                               },
@@ -8871,6 +9087,24 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "shell",
+                                        "read",
+                                        "list",
+                                        "search",
+                                        "web",
+                                        "write",
+                                        "skill",
+                                        "memory",
+                                        "delegate",
+                                        "unknown"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "target": {
+                                      "type": "string"
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -9061,6 +9295,24 @@
                                               "type": "string"
                                             },
                                             "name": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "shell",
+                                                "read",
+                                                "list",
+                                                "search",
+                                                "web",
+                                                "write",
+                                                "skill",
+                                                "memory",
+                                                "delegate",
+                                                "unknown"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "target": {
                                               "type": "string"
                                             },
                                             "args": {},
@@ -9272,6 +9524,24 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "kind": {
+                                "enum": [
+                                  "shell",
+                                  "read",
+                                  "list",
+                                  "search",
+                                  "web",
+                                  "write",
+                                  "skill",
+                                  "memory",
+                                  "delegate",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              },
+                              "target": {
+                                "type": "string"
+                              },
                               "name": {
                                 "type": "string"
                               },
@@ -11421,6 +11691,24 @@
                                 "type": "string"
                               },
                               "name": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "shell",
+                                  "read",
+                                  "list",
+                                  "search",
+                                  "web",
+                                  "write",
+                                  "skill",
+                                  "memory",
+                                  "delegate",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              },
+                              "target": {
                                 "type": "string"
                               },
                               "args": {},
@@ -17788,6 +18076,24 @@
                                 "items": {
                                   "type": "object",
                                   "properties": {
+                                    "kind": {
+                                      "enum": [
+                                        "shell",
+                                        "read",
+                                        "list",
+                                        "search",
+                                        "web",
+                                        "write",
+                                        "skill",
+                                        "memory",
+                                        "delegate",
+                                        "unknown"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "target": {
+                                      "type": "string"
+                                    },
                                     "name": {
                                       "type": "string"
                                     },
@@ -17978,6 +18284,24 @@
                                               "type": "string"
                                             },
                                             "name": {
+                                              "type": "string"
+                                            },
+                                            "kind": {
+                                              "enum": [
+                                                "shell",
+                                                "read",
+                                                "list",
+                                                "search",
+                                                "web",
+                                                "write",
+                                                "skill",
+                                                "memory",
+                                                "delegate",
+                                                "unknown"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "target": {
                                               "type": "string"
                                             },
                                             "args": {},
@@ -18189,6 +18513,24 @@
                           "items": {
                             "type": "object",
                             "properties": {
+                              "kind": {
+                                "enum": [
+                                  "shell",
+                                  "read",
+                                  "list",
+                                  "search",
+                                  "web",
+                                  "write",
+                                  "skill",
+                                  "memory",
+                                  "delegate",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              },
+                              "target": {
+                                "type": "string"
+                              },
                               "name": {
                                 "type": "string"
                               },

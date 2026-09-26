@@ -9,6 +9,9 @@ disposable home); ``chat.start`` emits one ``approval`` frame for
 ``pattern_key`` ``talaria_contract_fixture`` so the approval SSE stream can be
 exercised end to end, then completes with a synthetic response. Nothing here
 touches ``~/.hermes``, a model provider, or the network.
+
+The App probe's ``talaria contract fixture`` message also stages a single-question
+multi-select clarification after the approval is answered.
 """
 
 from __future__ import annotations
@@ -27,7 +30,9 @@ from talaria_sidecar.rpc import RpcServer  # noqa: E402
 FIXTURES = SIDECAR_ROOT.parent / "packages" / "contracts" / "fixtures" / "sidecar"
 APPROVAL_PATTERN_KEY = "talaria_contract_fixture"
 APPROVAL_COMMAND = "printf talaria-contract"
+# ponytail: one fixture turn at a time; use per-session events for concurrent probe turns.
 _APPROVAL_ANSWERED = threading.Event()
+_CLARIFICATION_ANSWERED = threading.Event()
 
 
 def _substitutions() -> list[tuple[str, str]]:
@@ -63,6 +68,12 @@ def _chat_start(ctx, params: dict) -> dict:
     for _ in range(200):
         if _APPROVAL_ANSWERED.wait(0.1) or ctx.cancelled:
             break
+    if str(params.get("user_message", "")).endswith("talaria contract fixture") and not ctx.cancelled:
+        _CLARIFICATION_ANSWERED.clear()
+        ctx.emit("clarify", {"clarify_id": "talaria-contract-clarification", "question": "Which checks?", "choices_offered": ["unit", "ui"], "multi_select": True})
+        for _ in range(200):
+            if _CLARIFICATION_ANSWERED.wait(0.1) or ctx.cancelled:
+                break
     ctx.emit("token", {"text": "talaria-contract"})
     history = [*params.get("conversation_history", []), {"role": "user", "content": params.get("user_message", "")}, {"role": "assistant", "content": "talaria-contract"}]
     return {
@@ -76,6 +87,11 @@ def _chat_start(ctx, params: dict) -> dict:
 def _approval_respond(ctx, params: dict) -> dict:
     _APPROVAL_ANSWERED.set()
     return {"ok": True, "resolved": 1, "choice": str(params.get("choice") or "once")}
+
+
+def _clarify_respond(ctx, params: dict) -> dict:
+    _CLARIFICATION_ANSWERED.set()
+    return {"ok": True}
 
 
 def _shutdown(ctx, params: dict) -> dict:
@@ -97,6 +113,7 @@ def build_methods() -> dict:
     methods["chat.steer"] = lambda ctx, params: {"accepted": True, "fallback": None}
     methods["chat.evict_agent"] = lambda ctx, params: {"evicted": False}
     methods["approval.respond"] = _approval_respond
+    methods["clarify.respond"] = _clarify_respond
     methods["approval.pending"] = lambda ctx, params: {"pending": []}
     methods["approval.set_yolo"] = lambda ctx, params: {"yolo_enabled": bool(params.get("enabled")), "released": 0}
     methods["runtime.shutdown"] = _shutdown

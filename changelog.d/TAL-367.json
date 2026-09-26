@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Select multiple answers when a chat asks a single clarification question.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

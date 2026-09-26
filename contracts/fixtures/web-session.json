@@ -23,6 +23,8 @@
               "tool": {
                 "id": "contract-call",
                 "name": "read_file",
+                "kind": "read",
+                "target": "fixture.txt",
                 "args": {
                   "path": "fixture.txt"
                 },
@@ -76,6 +78,8 @@
               "tool": {
                 "id": "legacy-failed",
                 "name": "terminal",
+                "kind": "shell",
+                "target": "false",
                 "args": {
                   "command": "false"
                 },
@@ -94,6 +98,8 @@
               "tool": {
                 "id": "legacy-nostatus",
                 "name": "read_file",
+                "kind": "read",
+                "target": "a.txt",
                 "args": {
                   "path": "a.txt"
                 },
@@ -224,7 +230,9 @@
             "function": {
               "name": "read_file",
               "arguments": "{\"path\":\"a.toml\"}"
-            }
+            },
+            "kind": "read",
+            "target": "a.toml"
           }
         ],
         "timestamp": 100,
@@ -273,6 +281,8 @@
               "tool": {
                 "id": "contract-port",
                 "name": "read_file",
+                "kind": "read",
+                "target": "a.toml",
                 "args": {
                   "path": "a.toml"
                 },
@@ -308,6 +318,8 @@
           {
             "id": "contract-loop",
             "name": "read_file",
+            "kind": "read",
+            "target": "b.txt",
             "args": {
               "path": "b.txt"
             }
@@ -348,6 +360,8 @@
               "tool": {
                 "id": "contract-loop",
                 "name": "read_file",
+                "kind": "read",
+                "target": "b.txt",
                 "args": {
                   "path": "b.txt"
                 },
@@ -383,6 +397,8 @@
           {
             "id": "contract-only",
             "name": "terminal",
+            "kind": "shell",
+            "target": "ls",
             "args": {
               "command": "ls"
             }
@@ -408,6 +424,8 @@
               "tool": {
                 "id": "contract-only",
                 "name": "terminal",
+                "kind": "shell",
+                "target": "ls",
                 "args": {
                   "command": "ls"
                 },
@@ -450,6 +468,8 @@
           {
             "id": "contract-ga",
             "name": "read_file",
+            "kind": "read",
+            "target": "a.txt",
             "args": {
               "path": "a.txt"
             }
@@ -485,6 +505,8 @@
           {
             "id": "contract-gb",
             "name": "read_file",
+            "kind": "read",
+            "target": "b.txt",
             "args": {
               "path": "b.txt"
             }
@@ -539,6 +561,8 @@
               "tool": {
                 "id": "contract-ga",
                 "name": "read_file",
+                "kind": "read",
+                "target": "a.txt",
                 "args": {
                   "path": "a.txt"
                 },
@@ -577,6 +601,8 @@
               "tool": {
                 "id": "contract-gb",
                 "name": "read_file",
+                "kind": "read",
+                "target": "b.txt",
                 "args": {
                   "path": "b.txt"
                 },
