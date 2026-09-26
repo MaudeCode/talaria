@@ -1,7 +1,8 @@
 import { useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
-import { ToolKindIcon, toolKind, toolTarget } from '../toolKind'
+import { ToolKindIcon } from '../toolKind'
+import type { ToolKind } from '@maudecode/talaria-web-contracts'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
 import { m } from '../../../paraglide/messages.js'
@@ -9,6 +10,8 @@ import { m } from '../../../paraglide/messages.js'
 export interface ToolCardData {
   id: string
   name: string
+  kind: ToolKind
+  target: string
   args: unknown
   preview: string | null
   done: boolean
@@ -19,8 +22,7 @@ export interface ToolCardData {
 }
 
 export function toolCardLabel(call: ToolCardData, locale: string): string {
-  const kind = toolKind(call.name)
-  return toolText(locale).actionLabel(kind, call.done ? 'done' : 'running', toolTarget(call.name, call.args), call.name, call.isError)
+  return toolText(locale).actionLabel(call.kind, call.done ? 'done' : 'running', call.target, call.name, call.isError)
 }
 
 function pretty(value: unknown): string {
@@ -37,7 +39,7 @@ function pretty(value: unknown): string {
 export function ToolCard({ call, timestamp }: { call: ToolCardData; timestamp?: string | undefined }) {
   const locale = useLocale()
   const [open, toggle] = useDisclosure(`tool:${call.id}`, false)
-  const kind = toolKind(call.name)
+  const kind = call.kind
   const label = toolCardLabel(call, locale)
   const args = pretty(call.args)
   const result = call.result !== null && call.result !== undefined ? pretty(call.result) : call.preview ?? ''

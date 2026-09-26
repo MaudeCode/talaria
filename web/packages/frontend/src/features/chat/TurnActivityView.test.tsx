@@ -26,19 +26,34 @@ function View({ activity, mode = 'compact_worklog', scope = 'profile/s' }: { act
   return <WorklogDisclosureProvider key={scope} scope={scope}><TurnActivityView activity={activity} mode={mode} /></WorklogDisclosureProvider>
 }
 
-function tool(id: string) { return { event: 'tool', data: { id, name: 'read_file', args: { path: `${id}.txt` } } } as const }
+/** Live frames as the server ships them: its kind and redacted target ride along with the args. */
+function tool(id: string) { return { event: 'tool', data: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, args: { path: `${id}.txt` } } } as const }
 /** A settled turn as the server ships it: its scene decides the answer, the outcome and what folds. */
 function settled(scene: Record<string, unknown>): TurnActivity {
   const message = { role: 'assistant', id: 'settled', content: '', _turn_id: 'turn', _anchor_activity_scene: { version: 'activity_scene_v1', terminal_state: 'completed', final_answer: '', ...scene } } as Message
   return persistedActivity(groupAssistantTurns(projectMessages([message]))[0]!)
 }
 const proseRow = (id: string, text: string) => ({ row_id: id, role: 'prose', text })
-const toolRow = (id: string) => ({ row_id: `tool:${id}`, role: 'tool', tool: { id, name: 'read_file', preview: null, result: `Contents of ${id}`, done: true, is_error: false, duration: null, cost_usd: null } })
+const toolRow = (id: string) => ({ row_id: `tool:${id}`, role: 'tool', tool: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, preview: null, result: `Contents of ${id}`, done: true, is_error: false, duration: null, cost_usd: null } })
 type SceneRows = NonNullable<Message['_anchor_activity_scene']>['activity_rows']
 const rows = (...list: Record<string, unknown>[]): SceneRows => list.map((row, order_index) => ({ ...row, order_index })) as SceneRows
-function completed(id: string) { return { event: 'tool_complete', data: { id, name: 'read_file', result: `Contents of ${id}` } } as const }
+function completed(id: string) { return { event: 'tool_complete', data: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, result: `Contents of ${id}` } } as const }
 
 describe('turn worklog presentation', () => {
+  it('labels a tool from the server kind and target, never from its name or args', () => {
+    const run = liveRun()
+    run.emit({ event: 'tool', data: { id: 'x', name: 'merge_pull_request', kind: 'shell', target: 'git status', args: { command: 'rm -rf /', path: 'secret.txt' } } })
+    run.emit({ event: 'tool', data: { id: 'y', name: 'read_file', args: { path: 'a.txt' } } })
+    const view = render(<View activity={liveActivity(run.turn)} />)
+    const x = view.container.querySelector('[data-tool-id="x"]')!
+    expect(x).toHaveAttribute('data-tool-kind', 'shell')
+    expect(x.querySelector('.tool-card-name')).toHaveTextContent('Running git status')
+    // An older server sends neither field: the card is an unknown tool with no target, not a client guess.
+    const y = view.container.querySelector('[data-tool-id="y"]')!
+    expect(y).toHaveAttribute('data-tool-kind', 'unknown')
+    expect(y.querySelector('.tool-card-name')).not.toHaveTextContent('a.txt')
+  })
+
   it('shows live work inline without a turn-level disclosure and preserves settled choices through remount', () => {
     // A stored collapse for this turn must not hide live work.
     localStorage.setItem('hermes-worklog:v1:profile/s', JSON.stringify({ [JSON.stringify(['user:u', 'turn'])]: false }))

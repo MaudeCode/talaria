@@ -276,6 +276,19 @@ enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable {
     }
 }
 
+/// The server's display class for a tool call, sent as `kind` on live frames and persisted calls.
+/// The app maps it to an icon and localized verb; it never classifies tool names itself.
+/// Declared here because this file is shared with the Live Activity widget.
+enum ToolDisplayKind: String, Equatable, Sendable {
+    case shell, read, list, search, web, write, skill, memory, delegate, unknown
+
+    /// An older server sends no kind; an unrecognized one decodes as `.unknown`.
+    init?(serverValue: String?) {
+        guard let serverValue else { return nil }
+        self = ToolDisplayKind(rawValue: serverValue) ?? .unknown
+    }
+}
+
 enum AgentRunActivityToolKind: Equatable {
     case generic(String)
     case search
@@ -303,39 +316,14 @@ enum AgentRunActivitySanitizer {
         return trimmed(normalized, limit: maximumExcerptCharacters)
     }
 
-    static func toolKind(name: String?) -> AgentRunActivityToolKind {
-        let label = toolLabel(name)
-        let lowercasedName = (name ?? "").lowercased()
-        let lowercasedLabel = label.lowercased()
-        let haystack = "\(lowercasedName) \(lowercasedLabel)"
-
-        if haystack.contains("shell")
-            || haystack.contains("bash")
-            || haystack.contains("terminal")
-            || haystack.contains("exec")
-            || haystack.contains("command")
-            || haystack.contains("xcodebuild")
-            || haystack.contains("simctl") {
-            return .command
+    /// The Live Activity phase for the server's tool kind; other kinds show the tool's name.
+    static func toolKind(_ kind: ToolDisplayKind?, name: String?) -> AgentRunActivityToolKind {
+        switch kind {
+        case .shell: .command
+        case .search: .search
+        case .read, .list: .files
+        default: .generic(toolLabel(name))
         }
-
-        if haystack.contains("search")
-            || haystack.contains("grep")
-            || haystack.contains("ripgrep")
-            || haystack.contains("rg")
-            || haystack.contains("find") {
-            return .search
-        }
-
-        if haystack.contains("read")
-            || haystack.contains("file")
-            || haystack.contains("list")
-            || haystack.contains("glob")
-            || haystack.contains("workspace") {
-            return .files
-        }
-
-        return .generic(label)
     }
 
     static func toolLabel(_ rawValue: String?) -> String {
@@ -521,11 +509,12 @@ enum AgentRunActivityStateReducer {
     }
 
     static func toolStarted(
+        kind: ToolDisplayKind?,
         name: String?,
         state: AgentRunActivityAttributes.ContentState,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        switch AgentRunActivitySanitizer.toolKind(name: name) {
+        switch AgentRunActivitySanitizer.toolKind(kind, name: name) {
         case .command:
             return statusState(.runningCommand, activity: String(localized: "Running command"), state: state, now: now)
         case .search:

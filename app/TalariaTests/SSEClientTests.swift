@@ -274,6 +274,8 @@ final class SSEClientTests: XCTestCase {
             {
               "event_type": "tool.started",
               "name": "read_file",
+              "kind": "read",
+              "target": "/tmp/example.swift",
               "preview": "Reading file",
               "args": {
                 "path": "/tmp/example.swift",
@@ -291,6 +293,8 @@ final class SSEClientTests: XCTestCase {
 
         XCTAssertEqual(payload.eventType, "tool.started")
         XCTAssertEqual(payload.name, "read_file")
+        XCTAssertEqual(payload.kind, .read)
+        XCTAssertEqual(payload.target, "/tmp/example.swift")
         XCTAssertEqual(payload.preview, "Reading file")
         XCTAssertEqual(payload.args?["path"], .string("/tmp/example.swift"))
         XCTAssertEqual(payload.args?["limit"], .number(120))
@@ -324,6 +328,9 @@ final class SSEClientTests: XCTestCase {
 
         XCTAssertEqual(payload.eventType, "tool.completed")
         XCTAssertEqual(payload.name, "shell")
+        // An older server sends no display fields; the app does not derive them from the name.
+        XCTAssertNil(payload.kind)
+        XCTAssertNil(payload.target)
         XCTAssertEqual(payload.preview, "Done")
         XCTAssertEqual(payload.args?["cmd"], .string("swift test"))
         XCTAssertEqual(payload.duration, 1.25)

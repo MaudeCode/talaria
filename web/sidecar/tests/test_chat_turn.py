@@ -336,6 +336,17 @@ def test_tool_frames_keep_content_args_long_and_extract_result_previews(monkeypa
     assert len(snap["path"]) == 311 and not snap["path"].endswith("...")
     assert snap["note"].endswith("...") and len(snap["note"]) == 123
     assert len(snap["old_string"]) == 4003
+    # A non-string argument is rendered by the server's rule for the parsed JSON a persisted call carries (Python
+    # str() shapes, JavaScript number text), so a call shows one target live and after reload. The same cases are
+    # pinned in the server's tool-display.test.ts.
+    cases = [
+        (1.0, "1"), (3, "3"), (1.5, "1.5"), (-0.0, "0"), (1e21, "1e+21"), (1e20, "100000000000000000000"), (1e-7, "1e-7"),
+        (0.000001, "0.000001"), (2**60, "1152921504606847000"), (1.5e-10, "1.5e-10"), (True, "True"), (None, "None"),
+        ([1.0, "it's", None, {"a": 1.5, "b": True}], "[1, \"it's\", None, {'a': 1.5, 'b': True}]"),
+        (["tab\there", 'q"uote'], "['tab\\there', 'q\"uote']"),
+    ]
+    for value, shown in cases:
+        assert chat._args_snapshot({"task": value}) == {"task": shown}, value
     assert chat._snippet('{"output": "hello", "extra": "x"}') == "hello"
     assert chat._snippet({"error": "boom"}) == "boom"
     assert chat._snippet("a" * 5000) == "a" * 4000

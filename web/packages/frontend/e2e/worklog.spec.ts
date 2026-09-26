@@ -3,9 +3,10 @@ import canonicalScene from '../src/features/chat/__fixtures__/activity-scene.jso
 import { createServer, type ServerResponse } from 'node:http'
 import { expect, test } from './fixtures'
 import { hydrateAnchorActivityScenes, withTurnIds } from '../../server/dist/sessions/anchor.js'
+import { publicToolFrame, redactSessionData } from '../../server/dist/redact.js'
 
-/** Mocked transcripts pass through the server's own turn projection, so the page sees exactly what the server sends. */
-const asServer = (messages: unknown[]): unknown[] => hydrateAnchorActivityScenes(withTurnIds(messages), {})
+/** Mocked transcripts pass through the server's own turn and public projection, so the page sees exactly what the server sends. */
+const asServer = (messages: unknown[]): unknown[] => redactSessionData({ messages: hydrateAnchorActivityScenes(withTurnIds(messages), {}) }, true).messages as unknown[]
 
 test.use({ serviceWorkers: 'block' })
 
@@ -179,6 +180,60 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
 })
 
 }
+
+test('a credential in a tool command never reaches the page, live or settled', async ({ page }) => {
+  const sid = 'tool-secret'
+  const token = 'synthetic-bearer-0123456789abcdef'
+  const command = `curl -H "Authorization: Bearer ${token}" https://example.test`
+  let finished = false
+  const messages = [
+    { role: 'user', id: 1, content: 'Call the API' },
+    { role: 'assistant', id: 2, content: '', tool_calls: [{ id: 'curl', type: 'function', function: { name: 'terminal', arguments: JSON.stringify({ command }) } }] },
+    { role: 'tool', id: 3, tool_call_id: 'curl', content: 'ok' },
+    { role: 'assistant', id: 4, content: 'Called it.' },
+  ].map((m) => ({ ...m, _turn_id: 'secret-run' }))
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Secret', messages: finished ? asServer(messages) : messages.slice(0, 1), active_stream_id: finished ? null : 'secret-run' } } }))
+  await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'secret-run', replay_available: true } }))
+  // Live frames as the server sends them: the sidecar's raw args through the server's public tool frame.
+  const events: [string, Record<string, unknown>][] = [
+    ['server_turn_started', { session_id: sid, stream_id: 'secret-run', user_message_id: 1 }],
+    ['tool', publicToolFrame({ tid: 'curl', name: 'terminal', args: { command } }, true)],
+    ['tool_complete', publicToolFrame({ tid: 'curl', name: 'terminal', args: { command }, preview: 'ok' }, true)],
+  ]
+  let stream: ServerResponse | undefined
+  const server = createServer((_request, response) => {
+    stream = response
+    response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+    response.write(events.map(([event, data], i) => `id: secret-run:${i + 1}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(''))
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}/stream` }))
+  try {
+    await page.goto(`/session/${sid}`)
+    const card = page.locator('[data-tool-id="curl"]')
+    await expect(card).toHaveAttribute('data-tool-kind', 'shell')
+    await expect(card.locator('.tool-card-name')).toContainText('Ran curl -H "Authorization: Bearer synthe...cdef"')
+    await card.locator('> button').click()
+    await expect(card.locator('.tool-card-args')).toContainText('synthe...cdef')
+    expect(await page.content()).not.toContain(token)
+    finished = true
+    stream?.write(`id: secret-run:${events.length + 1}\nevent: done\ndata: ${JSON.stringify({ session: { session_id: sid, title: 'Secret', messages: asServer(messages) }, terminal_state: 'completed' })}\n\n`)
+    await expect(page.locator('.live-turn')).toHaveCount(0)
+    await page.locator('.assistant-turn > .assistant-turn-blocks > .activity > button').click()
+    const settled = page.locator('[data-tool-id="curl"]')
+    await expect(settled.locator('.tool-card-name')).toContainText('Ran curl -H "Authorization: Bearer synthe...cdef"')
+    // The card keeps the disclosure opened while live, so its settled arguments are on screen.
+    await expect(settled.locator('> button')).toHaveAttribute('aria-expanded', 'true')
+    await expect(settled.locator('.tool-card-args')).toContainText('synthe...cdef')
+    expect(await page.content()).not.toContain(token)
+  } finally {
+    await page.close()
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
 
 test('recovered worklog can fetch its omitted history', async ({ page }) => {
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {

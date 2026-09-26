@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Passwords, bearer tokens and database credentials in a running tool's command are hidden in the live tool card and its details, not only after the chat reloads.",
+      "highlight": true,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "The iPhone app and the web app show every tool call with the same icon and the same description.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

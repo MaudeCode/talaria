@@ -6,7 +6,6 @@ import { m } from '../../../paraglide/messages.js'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
 import { readPersistedJson, writePersistedJson } from '../../../lib/persisted'
-import { toolKind } from '../toolKind'
 import type { ToolCardData } from './ToolCard'
 
 export type ActivityMode = 'compact_worklog' | 'transparent_stream' | 'hide_all_activity'
@@ -62,7 +61,7 @@ export function Worklog({ calls, status, children, sequenceKey, active = false, 
   const bodyId = useId()
   const text = toolText(locale)
   const byKind = new Map<string, number>()
-  for (const c of calls) byKind.set(toolKind(c.name), (byKind.get(toolKind(c.name)) ?? 0) + 1)
+  for (const c of calls) byKind.set(c.kind, (byKind.get(c.kind) ?? 0) + 1)
   const failed = calls.filter((call) => call.isError).length
   const summary = activeLabel || (nested || (!running && status !== 'completed')
     ? text.summaryJoin([...byKind.entries()].map(([kind, n]) => text.worklogSummary(kind, calls.some((c) => !c.done) ? 'running' : 'done', n))) || m.thinking_label()

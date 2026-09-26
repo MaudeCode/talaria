@@ -640,6 +640,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                             "tool": [
                                 "id": "ui-fixture-tool",
                                 "name": "fixture_tool",
+                                "kind": "unknown",
+                                "target": "",
                                 "preview": "fixture result",
                                 "result": "fixture result",
                                 "done": true,

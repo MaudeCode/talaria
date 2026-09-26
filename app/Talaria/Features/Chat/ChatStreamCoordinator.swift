@@ -671,7 +671,7 @@ final class ChatStreamCoordinator {
                 markProgress()
             }
         case .toolStarted(let payload):
-            liveActivityManager?.update(.toolStarted(name: payload.name))
+            liveActivityManager?.update(.toolStarted(kind: payload.kind, name: payload.name))
             if delegate?.streamCoordinatorAppendToolCall(payload) == true {
                 markProgress()
             }

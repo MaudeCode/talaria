@@ -5,6 +5,9 @@ struct ToolCall: Identifiable, Equatable {
     var name: String?
     var preview: String?
     var args: [String: JSONValue]?
+    /// Server-derived display fields; nil from an older server (shown as an unknown tool with no target).
+    var kind: ToolDisplayKind?
+    var target: String?
     var duration: Double?
     var isError: Bool?
     var isCompleted: Bool
@@ -15,6 +18,8 @@ struct ToolCall: Identifiable, Equatable {
         name: String?,
         preview: String?,
         args: [String: JSONValue]?,
+        kind: ToolDisplayKind? = nil,
+        target: String? = nil,
         duration: Double? = nil,
         isError: Bool? = nil,
         isCompleted: Bool = false,
@@ -24,6 +29,8 @@ struct ToolCall: Identifiable, Equatable {
         self.name = name
         self.preview = preview
         self.args = args
+        self.kind = kind
+        self.target = target
         self.duration = duration
         self.isError = isError
         self.isCompleted = isCompleted
@@ -45,6 +52,8 @@ struct PersistedToolCall: Decodable, Equatable {
     let tid: String?
     let assistantMsgIdx: Int?
     let args: [String: JSONValue]?
+    let kind: ToolDisplayKind?
+    let target: String?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -53,6 +62,8 @@ struct PersistedToolCall: Decodable, Equatable {
         case assistantMsgIdx
         case assistantMsgIdxSnake = "assistant_msg_idx"
         case args
+        case kind
+        case target
     }
 
     init(
@@ -60,13 +71,17 @@ struct PersistedToolCall: Decodable, Equatable {
         snippet: String?,
         tid: String?,
         assistantMsgIdx: Int?,
-        args: [String: JSONValue]?
+        args: [String: JSONValue]?,
+        kind: ToolDisplayKind? = nil,
+        target: String? = nil
     ) {
         self.name = name
         self.snippet = snippet
         self.tid = tid
         self.assistantMsgIdx = assistantMsgIdx
         self.args = args
+        self.kind = kind
+        self.target = target
     }
 
     init(from decoder: Decoder) throws {
@@ -77,6 +92,8 @@ struct PersistedToolCall: Decodable, Equatable {
         assistantMsgIdx = container.decodeLossyIntIfPresent(forKey: .assistantMsgIdx)
             ?? container.decodeLossyIntIfPresent(forKey: .assistantMsgIdxSnake)
         args = try? container.decodeIfPresent([String: JSONValue].self, forKey: .args)
+        kind = ToolDisplayKind(serverValue: container.decodeLossyStringIfPresent(forKey: .kind))
+        target = container.decodeLossyStringIfPresent(forKey: .target)
     }
 
     func toolCall(fallbackIndex: Int) -> ToolCall {
@@ -93,6 +110,8 @@ struct PersistedToolCall: Decodable, Equatable {
             name: name,
             preview: snippet,
             args: args,
+            kind: kind,
+            target: target,
             isCompleted: true
         )
     }
@@ -297,6 +316,8 @@ struct ToolCallGroup: Identifiable, Equatable {
             name: name,
             preview: preview,
             args: arguments(from: argumentValue),
+            kind: ToolDisplayKind(serverValue: object["kind"]?.stringValue),
+            target: object["target"]?.stringValue,
             isCompleted: true
         )
     }
@@ -324,6 +345,8 @@ struct ToolCallGroup: Identifiable, Equatable {
                     ?? nonEmpty(object["snippet"]?.stringValue)
                     ?? nonEmpty(object["preview"]?.stringValue),
                 args: arguments(from: argumentValue),
+                kind: ToolDisplayKind(serverValue: object["kind"]?.stringValue),
+                target: object["target"]?.stringValue,
                 isCompleted: true
             )
         }
@@ -578,6 +601,8 @@ struct ToolCallGroup: Identifiable, Equatable {
             name: existing.name ?? fallback.name,
             preview: existing.preview ?? fallback.preview,
             args: existing.args ?? fallback.args,
+            kind: existing.kind ?? fallback.kind,
+            target: existing.target ?? fallback.target,
             duration: existing.duration ?? fallback.duration,
             isError: mergedErrorState(existing.isError, fallback.isError),
             isCompleted: existing.isCompleted || fallback.isCompleted,

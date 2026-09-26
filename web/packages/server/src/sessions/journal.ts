@@ -34,6 +34,8 @@ export interface JournalEvent {
   terminal_state: string | null
   payload: unknown
   synthetic?: boolean
+  /** A tool frame the server redacted before journaling it (with `api_redact_enabled` on); replay sends it as written. */
+  redacted?: boolean
 }
 
 export interface RunSummary {
@@ -433,7 +435,7 @@ export class RunJournalWriter {
     } catch { this.seq = 0 }
   }
 
-  appendSseEvent(eventName: string, payload: unknown): JournalEvent {
+  appendSseEvent(eventName: string, payload: unknown, meta: { redacted?: boolean } = {}): JournalEvent {
     if (this.closed) throw new Error('run journal writer is closed')
     const name = eventName.trim()
     if (!name) throw new Error('event_name is required')
@@ -442,6 +444,7 @@ export class RunJournalWriter {
     const event: JournalEvent = {
       version: 1, event_id: `${this.runId}:${String(this.seq)}`, seq: this.seq, run_id: this.runId, session_id: this.sessionId, event: name, type: name,
       created_at: this.now(), terminal: Boolean(terminalState), terminal_state: terminalState, payload: payload ?? {},
+      ...(meta.redacted === undefined ? {} : { redacted: meta.redacted }),
     }
     mkdirSync(join(this.path, '..'), { recursive: true })
     this.fd ??= openSync(this.path, fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_WRONLY, 0o600)

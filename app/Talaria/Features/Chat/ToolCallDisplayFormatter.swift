@@ -22,7 +22,7 @@ enum ToolCallDisplayFormatter {
     static func content(for toolCall: ToolCall) -> ToolCallDisplayContent {
         ToolCallDisplayContent(
             argumentRows: argumentRows(from: toolCall.args),
-            result: resultDisplay(preview: toolCall.preview, toolName: toolCall.name)
+            result: resultDisplay(preview: toolCall.preview, kind: toolCall.kind)
         )
     }
 
@@ -34,42 +34,42 @@ enum ToolCallDisplayFormatter {
             }
     }
 
-    static func resultDisplay(preview: String?, toolName: String?) -> ToolCallResultDisplay? {
+    static func resultDisplay(preview: String?, kind: ToolDisplayKind?) -> ToolCallResultDisplay? {
         guard let preview = nonEmpty(preview) else { return nil }
 
         let parsedValue = parsedJSONValue(from: preview)
-        let parsedText = parsedValue.flatMap { readableResultText(from: $0, toolName: toolName) }
+        let parsedText = parsedValue.flatMap { readableResultText(from: $0, kind: kind) }
         let resultText = nonEmpty(parsedText) ?? preview
 
         return ToolCallResultDisplay(
             title: String(localized: "Result"),
             text: resultText,
-            isMonospaced: isTerminalTool(toolName) || resultText.contains("\n") || parsedText != nil
+            isMonospaced: kind == .shell || resultText.contains("\n") || parsedText != nil
         )
     }
 
-    private static func readableResultText(from value: JSONValue, toolName: String?) -> String? {
+    private static func readableResultText(from value: JSONValue, kind: ToolDisplayKind?) -> String? {
         switch value {
         case .string(let value):
             return nonEmpty(normalizedDisplayString(value))
         case .number, .bool:
             return value.inlineDisplayText
         case .object(let object):
-            if isTerminalTool(toolName),
-               let terminalText = terminalEnvelopeText(from: object, toolName: toolName) {
+            if kind == .shell,
+               let terminalText = terminalEnvelopeText(from: object, kind: kind) {
                 return terminalText
             }
 
             if let commonText = commonEnvelopeText(
                 from: object,
-                toolName: toolName,
+                kind: kind,
                 includeObjectFallback: false
             ) {
                 return commonText
             }
 
-            return terminalEnvelopeText(from: object, toolName: toolName)
-                ?? commonEnvelopeText(from: object, toolName: toolName)
+            return terminalEnvelopeText(from: object, kind: kind)
+                ?? commonEnvelopeText(from: object, kind: kind)
         case .array:
             return value.toolDisplayText
         case .null:
@@ -77,9 +77,9 @@ enum ToolCallDisplayFormatter {
         }
     }
 
-    private static func terminalEnvelopeText(from object: [String: JSONValue], toolName: String?) -> String? {
+    private static func terminalEnvelopeText(from object: [String: JSONValue], kind: ToolDisplayKind?) -> String? {
         let terminalKeys: Set<String> = ["output", "stdout", "stderr", "exit_code", "exitCode", "error"]
-        guard isTerminalTool(toolName) || object.keys.contains(where: terminalKeys.contains) else {
+        guard kind == .shell || object.keys.contains(where: terminalKeys.contains) else {
             return nil
         }
 
@@ -107,7 +107,7 @@ enum ToolCallDisplayFormatter {
 
     private static func commonEnvelopeText(
         from object: [String: JSONValue],
-        toolName: String?,
+        kind: ToolDisplayKind?,
         includeObjectFallback: Bool = true
     ) -> String? {
         let preferredKeys = [
@@ -124,7 +124,7 @@ enum ToolCallDisplayFormatter {
 
         for key in preferredKeys {
             guard let value = object[key],
-                  let text = readableEnvelopeValue(value, toolName: toolName)
+                  let text = readableEnvelopeValue(value, kind: kind)
             else {
                 continue
             }
@@ -140,19 +140,19 @@ enum ToolCallDisplayFormatter {
         return object.isEmpty ? nil : JSONValue.object(object).toolDisplayText
     }
 
-    private static func readableEnvelopeValue(_ value: JSONValue, toolName: String?) -> String? {
+    private static func readableEnvelopeValue(_ value: JSONValue, kind: ToolDisplayKind?) -> String? {
         switch value {
         case .string(let string):
             let normalized = normalizedDisplayString(string)
             if let parsed = parsedJSONValue(from: normalized),
-               let text = readableResultText(from: parsed, toolName: toolName) {
+               let text = readableResultText(from: parsed, kind: kind) {
                 return text
             }
             return nonEmpty(normalized)
         case .number, .bool:
             return value.inlineDisplayText
         case .object:
-            return readableResultText(from: value, toolName: toolName) ?? value.toolDisplayText
+            return readableResultText(from: value, kind: kind) ?? value.toolDisplayText
         case .array:
             return readableTextArrayValue(value) ?? value.toolDisplayText
         case .null:
@@ -276,11 +276,6 @@ enum ToolCallDisplayFormatter {
         }
 
         return current
-    }
-
-    private static func isTerminalTool(_ toolName: String?) -> Bool {
-        let name = toolName?.lowercased() ?? ""
-        return ["terminal", "shell", "bash", "zsh", "command", "exec"].contains { name.contains($0) }
     }
 
     private static func nonEmpty(_ value: String?) -> String? {

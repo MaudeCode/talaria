@@ -4,7 +4,8 @@
  * `/api/session/stream` (`api/background_process.py::SessionChannel`).
  */
 
-export type StreamItem = [event: string, data: unknown, eventId: string | null]
+/** A live frame; `redacted` records whether a tool frame was redacted when produced, so delivery can apply the current policy. */
+export type StreamItem = [event: string, data: unknown, eventId: string | null, redacted?: boolean | undefined]
 
 export interface StreamSubscriber {
   /** Bounded queue; on overflow the oldest frame is dropped (older frames stay recoverable through the journal). */

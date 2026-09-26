@@ -109,11 +109,66 @@ def _delegation_cost_usd(name: Any, raw: Any):
     return round(total, 6) if total > 0 else None
 
 
+def _js_number(value: int | float) -> str:
+    """A number as JavaScript's `String()` shows it once the persisted JSON is parsed (`1.0` -> `1`, `1e21` -> `1e+21`)."""
+    try:
+        number = float(value)
+    except OverflowError:
+        return "Infinity" if value > 0 else "-Infinity"
+    if number != number:
+        return "NaN"
+    if number in (float("inf"), float("-inf")):
+        return "Infinity" if number > 0 else "-Infinity"
+    if number == 0:
+        return "0"
+    sign = "-" if number < 0 else ""
+    # repr() gives the shortest round-trip digits, as JavaScript does; only the notation differs.
+    mantissa, _, exp = repr(abs(number)).partition("e")
+    whole, _, frac = mantissa.partition(".")
+    digits = (whole + frac).lstrip("0")
+    point = len(whole) + int(exp or 0) - (len(whole + frac) - len((whole + frac).lstrip("0")))
+    digits = digits.rstrip("0") or "0"
+    k, n = len(digits), point
+    if k <= n <= 21:
+        return sign + digits + "0" * (n - k)
+    if 0 < n <= 21:
+        return sign + digits[:n] + "." + digits[n:]
+    if -6 < n <= 0:
+        return sign + "0." + "0" * -n + digits
+    e = n - 1
+    return sign + digits[0] + ("." + digits[1:] if k > 1 else "") + "e" + ("+" if e >= 0 else "-") + str(abs(e))
+
+
+def _display_repr(text: str) -> str:
+    quote = '"' if "'" in text and '"' not in text else "'"
+    escaped = text.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+    return quote + escaped.replace(quote, "\\" + quote) + quote
+
+
+def _display_str(value: Any, nested: bool = False) -> str:
+    """A non-string argument as the server renders the parsed JSON of a persisted call (`pythonStr` in
+    `sessions/tool-display.ts`): Python `str()` shapes with JavaScript number text, so a live and a persisted call
+    show one target."""
+    if isinstance(value, str):
+        return _display_repr(value) if nested else value
+    if value is None:
+        return "None"
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    if isinstance(value, (int, float)):
+        return _js_number(value)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_display_str(item, True) for item in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{_display_repr(str(k))}: {_display_str(item, True)}" for k, item in value.items()) + "}"
+    return str(value)
+
+
 def _args_snapshot(args: Any) -> dict:
     snap: dict = {}
     if isinstance(args, dict):
         for k, v in list(args.items())[:4]:
-            s2 = str(v)
+            s2 = _display_str(v)
             cap = _TOOL_RESULT_SNIPPET_MAX if str(k).lower() in _TOOL_ARG_CONTENT_KEYS else 120
             snap[k] = s2[:cap] + ("..." if len(s2) > cap else "")
     return snap

@@ -7,7 +7,7 @@ enum AgentLiveActivityEvent: Equatable {
     case interimAssistant(String)
     case clearResponseExcerpt
     case reasoning(String)
-    case toolStarted(name: String?)
+    case toolStarted(kind: ToolDisplayKind?, name: String?)
     case toolCompleted
     case waitingForApproval
     case waitingForClarification
@@ -240,9 +240,9 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             updateCurrentState { state in
                 AgentRunActivityStateReducer.reasoning(text, state: state)
             }
-        case .toolStarted(let name):
+        case .toolStarted(let kind, let name):
             updateCurrentState { state in
-                AgentRunActivityStateReducer.toolStarted(name: name, state: state)
+                AgentRunActivityStateReducer.toolStarted(kind: kind, name: name, state: state)
             }
         case .toolCompleted:
             updateCurrentState { state in
