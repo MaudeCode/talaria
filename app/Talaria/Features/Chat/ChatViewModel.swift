@@ -5419,7 +5419,9 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     func streamCoordinatorOmitLoadedRunningTurn() -> Bool {
         guard let prompt = messages.lastIndex(where: Self.isOrdinaryUserTurnBoundary) else { return false }
 
-        messages.removeSubrange(messages.index(after: prompt)...)
+        // Steers are the user's own rows; replayed `steer_consumed` frames only update them.
+        let steers = messages[messages.index(after: prompt)...].filter { $0.isLocalSteeringHint || $0.steer != nil }
+        messages.replaceSubrange(messages.index(after: prompt)..., with: steers)
         liveAssistantActivity.removeAll()
         streamingAssistantMessageID = nil
         toolCallAnchorMessageID = nil
