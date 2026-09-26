@@ -151,7 +151,7 @@ function restoreCodeEnvKeyLiterals(original: string, redacted: string): string {
 /**
  * The end (exclusive) of the shell word starting at `start`: adjacent quoted (`'…'`, `"…"` with escapes, `$'…'`), escaped
  * (`\ `) and bare pieces, a leading `[…]`/`{…}` container (balanced), or JSON escaped inside a shell string (`\"…\"`).
- * It stops at whitespace or `& , ; ) ] }` outside a container, and at the quote that encloses the whole argument
+ * It stops at shell metacharacters outside a container, at `, ] }` that follow the word, and at the quote that encloses the argument
  * (`-H "X-Api-Key: value"`). An unterminated quote at the word's start runs to the line end; one mid-word ends the word.
  * One pass, so redaction stays linear.
  */
@@ -179,11 +179,15 @@ function shellWordEnd(text: string, start: number, enclosing: string): number {
       if (k >= text.length) return i === start ? lineEnd(i) : i
       i = k + 1
     } else if ((c === '[' || c === '{') && (i === start || depth > 0)) { depth += 1; i += 1 }
-    else if (c === ']' || c === '}') {
-      if (depth === 0) return i
+    else if ((c === ']' || c === '}') && depth > 0) {
       depth -= 1; i += 1
+      // A leading container is the whole value.
+      if (depth === 0) return i
     } else if (c === '\n') return i
-    else if (depth === 0 && /[\s&,;)]/.test(c)) return i
+    // Shell metacharacters end a word outside a container.
+    else if (depth === 0 && /[\s&;|<>()]/.test(c)) return i
+    // `,` `]` `}` inside a bare word are part of it (`correct]horse`); before a space, quote or the end they are structure.
+    else if (depth === 0 && /[,\]}]/.test(c) && !/^[^\s,\]})"'\\]/.test(text[i + 1] ?? '')) return i
     else i += 1
   }
   return Math.min(i, text.length)
