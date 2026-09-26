@@ -35,4 +35,3 @@ describe('ApprovalCard', () => {
     expect(api.respondApproval).not.toHaveBeenCalled()
   })
 })
-

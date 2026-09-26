@@ -56,6 +56,7 @@ export interface ComposerProps {
 }
 
 const PHONE = '(max-width: 640px)'
+const MESSAGE_ONLY_CONTROLS = new Set(['hide_composer_attach', 'hide_composer_mic', 'hide_composer_profile', 'hide_composer_workspace', 'hide_composer_model', 'hide_composer_reasoning'])
 /** Phone-width viewport: the footer runs the icon/burger stage and collapses when idle (legacy _isPhoneWidthViewport). */
 function usePhone(): boolean {
   const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia(PHONE).matches)
@@ -275,17 +276,19 @@ export function Composer(props: ComposerProps) {
     if (!e.shiftKey) { e.preventDefault(); submit() }
   }
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    // A clarification answer is text only: pasted files and long text stay out of the parked message.
+    if (clarify) return
     const items = Array.from(e.clipboardData.items)
     const images = items.filter((i) => i.kind === 'file').map((i) => i.getAsFile()).filter((f): f is File => !!f)
     if (images.length) { e.preventDefault(); addFiles(images); return }
     const pasted = e.clipboardData.getData('text/plain')
-    if (!clarify && settings?.large_text_paste_as_attachment !== false && pasted.length > 8000) {
+    if (settings?.large_text_paste_as_attachment !== false && pasted.length > 8000) {
       e.preventDefault()
       addFiles([new File([pasted], `pasted-${Date.now()}.txt`, { type: 'text/plain' })])
       showToast(m.text_pasted() + `pasted-${Date.now()}.txt`, 2500)
     }
   }
-  const onDrop = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }
+  const onDrop = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setDragOver(false); if (!clarify) addFiles(e.dataTransfer.files) }
 
   const toggleDictation = () => {
     if (!dictationSupported()) { showToast(m.composer_dictation_unsupported(), 3000, 'error'); return }
@@ -306,7 +309,8 @@ export function Composer(props: ComposerProps) {
     setDictating(true)
   }
 
-  const hide = (k: string) => !!(settings as Record<string, unknown> | undefined)?.[k]
+  // While a clarification owns the box, the message-only controls leave the footer (docs/ui-ux clarify-card).
+  const hide = (k: string) => (!!clarify && MESSAGE_ONLY_CONTROLS.has(k)) || !!(settings as Record<string, unknown> | undefined)?.[k]
   const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
   const compressedEstimate = session?.post_compression_context_tokens_estimate
   const contextUsed = compressedEstimate && compressedEstimate > 0 ? compressedEstimate : (session?.last_prompt_tokens ?? null)
@@ -325,18 +329,18 @@ export function Composer(props: ComposerProps) {
         </div>
       )}
       <div
-        className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) bg-(--composer-bg) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-[12px]', dragOver && 'drag-over')}
+        className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) bg-(--composer-bg) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-[12px]', dragOver && 'drag-over', clarify && 'clarify-active')}
         id="composerBox"
         ref={box}
         onFocus={() => setFocusWithin(true)}
         onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setFocusWithin(false) }}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+        onDragOver={(e) => { e.preventDefault(); if (!clarify) setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
       >
         {palette.open && <CommandPaletteList items={palette.items} active={palette.active} listId={palette.listId} onPick={applySuggestion} onHover={palette.setActive} />}
         {dragOver && <div className="drop-hint active" id="dropHint" aria-hidden="true">{m.drop_files_to_attach()}</div>}
-        <AttachmentTray files={files} onRemove={removeFile} />
+        {!clarify && <AttachmentTray files={files} onRemove={removeFile} />}
         {dictating && <div className="mic-status active" id="micStatus" role="status"><span className="mic-dot" aria-hidden="true" /> {m.voice_listening()}</div>}
         <textarea
           ref={textarea}
@@ -347,7 +351,7 @@ export function Composer(props: ComposerProps) {
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           placeholder={placeholder}
-          aria-label={m.composer_placeholder()}
+          aria-label={clarify ? clarify.step.question : m.composer_placeholder()}
           aria-autocomplete={palette.open ? 'list' : undefined}
           aria-controls={palette.open ? palette.listId : undefined}
           aria-activedescendant={palette.activeId}

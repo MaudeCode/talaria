@@ -23,7 +23,7 @@ export interface Clarify {
   canSend: boolean
   /** A choice button: answers a single-select step, toggles a multi-select one. */
   choose: (choice: string) => void
-  /** The composer's send: answers the current step with the typed text (plus any selected choices). */
+  /** The composer's send: answers the current step with the typed text, else the pressed choices. */
   send: () => void
 }
 
@@ -76,15 +76,17 @@ export function useClarify(sessionId: string | null, live: LiveTurn | null): Cla
     }
   }
 
-  const answer = (value: Answer) => {
+  /** `picked`: a single-select choice, which clears typed text and stays pressed so a failed last submit can be retried. */
+  const answer = (value: Answer, picked = false) => {
     if (!step || busy) return
     const answers = { ...current.answers, [step.qid]: value }
     if (current.index < steps.length - 1) setProgress({ id, index: current.index + 1, answers, text: '', selected: [] })
-    else { setProgress({ ...current, answers }); void submit(answers) }
+    else { setProgress({ ...current, answers, ...(picked ? { text: '', selected: [value as string] } : {}) }); void submit(answers) }
   }
 
+  // Typed text wins over pressed choices (docs/ui-ux clarify-progress): what is submitted is what is on screen.
   const typed = current.text.trim()
-  const value: Answer = step?.multi_select ? [...current.selected, ...(typed ? [typed] : [])] : typed
+  const value: Answer = step?.multi_select && !typed ? current.selected : typed
   const canSend = !busy && value.length > 0
 
   if (!pending || !step || resolved === id) return null
@@ -94,14 +96,14 @@ export function useClarify(sessionId: string | null, live: LiveTurn | null): Cla
     index: current.index,
     total: steps.length,
     text: current.text,
-    setText: (text) => setProgress({ ...current, text }),
+    setText: (text) => setProgress({ ...current, text, selected: text.trim() ? [] : current.selected }),
     selected: current.selected,
     busy,
     canSend,
     choose: (choice) => {
-      if (!step.multi_select) { answer(choice); return }
+      if (!step.multi_select) { answer(choice, true); return }
       const selected = current.selected.includes(choice) ? current.selected.filter((c) => c !== choice) : [...current.selected, choice]
-      setProgress({ ...current, selected })
+      setProgress({ ...current, selected, text: '' })
     },
     send: () => { if (canSend) answer(value) },
   }
