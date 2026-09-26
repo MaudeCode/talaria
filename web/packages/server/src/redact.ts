@@ -162,14 +162,17 @@ const AUTH_SCHEME_WORD_RE = /^(?!\*+$)[A-Za-z0-9!#$%&*+.^_|~-]+$/
 const AUTH_SCHEME_GAP_RE = /[ \t]+(?=\S)/y
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /**
- * `curl -u user:secret` / `-uuser:secret` / `--user user:secret`, and the proxy forms `-U` / `--proxy-user`; a quoted
+ * `curl -u user:secret` / `-uuser:secret` / `--user user:secret`, and the proxy forms `-U` / `--proxy-user` (and the
+ * unique abbreviations curl accepts, `--proxy-u` / `--proxy-us` / `--proxy-use`); a quoted
  * pair or quoted secret is masked through its closing quote.
  */
-const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-[uU][ \t]*|--(?:proxy-)?user[ \t]+)(?=\S)/g
+const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-[uU][ \t]*|--(?:user|proxy-u(?:s(?:e(?:r)?)?)?)[ \t]+)(?=\S)/g
 /** The prefilter's view of `USER_FLAG_RE`. */
 const USER_FLAG_TEST_RE = new RegExp(USER_FLAG_RE.source)
 const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
+/** A private key whose end marker is missing (a display cap cut it off): masked to the end of the text. */
+const PRIVKEY_OPEN_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*$/
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
 const ENV_KEY_PREFIX_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)/g
 const REDACTED_ENV_VALUE_RE = /(?:\*{3,}|[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,32}\.\.\.[A-Za-z0-9_.:/+-]{1,16})/y
@@ -759,7 +762,7 @@ function redactRules(text: string): string {
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + (/['"\\]/.test(secret) ? '***' : mask(secret)))
   out = redactUserFlags(out)
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
-  out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]')
+  out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]').replace(PRIVKEY_OPEN_RE, '[REDACTED PRIVATE KEY]')
   return restoreCodeEnvKeyLiterals(text, out)
 }
 
@@ -970,7 +973,7 @@ function maskLeaves(value: unknown): unknown {
 
 /** An argv element that is a flag (`--password`), and one that takes `user:password` (`-u`, `--user`, `--proxy-user`). */
 const ARGV_FLAG_RE = /^-{1,2}([A-Za-z0-9_][A-Za-z0-9_.-]*)$/
-const ARGV_USER_FLAG_RE = /^(?:-[uU]|--user|--proxy-user)$/
+const ARGV_USER_FLAG_RE = /^(?:-[uU]|--user|--proxy-u(?:s(?:e(?:r)?)?)?)$/
 
 /** The fields that name a header in a `{ name: 'Authorization', value }` record. */
 const HEADER_LABEL_FIELDS = new Set(['name', 'key', 'header'])

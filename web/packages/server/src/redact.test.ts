@@ -138,6 +138,18 @@ describe('curl -u', () => {
     expect(redactText('curl -u $USER https://x', true)).toBe('curl -u $USER https://x')
   })
 
+  it('masks curl\'s accepted --proxy-user abbreviations', () => {
+    expect(redactText('curl --proxy-u bob:hunter2 --proxy-use amy:pw2 --proxy-us cy:pw3 x', true)).toBe('curl --proxy-u bob:*** --proxy-use amy:*** --proxy-us cy:*** x')
+  })
+
+  it('masks a private key whose end marker a display cap cut off', () => {
+    const key = 'K'.repeat(64)
+    const query = `inspect -----BEGIN PRIVATE KEY-----${key}-----END PRIVATE KEY-----`
+    const frame = publicToolFrame({ name: 'web_search', args: { query } }, true)
+    expect(JSON.stringify(frame)).not.toContain(key.slice(0, 16))
+    expect(redactText(`x -----BEGIN RSA PRIVATE KEY-----${key}`, true)).not.toContain(key.slice(0, 16))
+  })
+
   it('masks curl proxy credentials (-U, --proxy-user), through the public prefilter', () => {
     expect(redactText('curl --proxy-user bob:hunter2 https://x', true)).toBe('curl --proxy-user bob:*** https://x')
     expect(redactText('curl -U bob:hunter2 https://x', true)).toBe('curl -U bob:*** https://x')
