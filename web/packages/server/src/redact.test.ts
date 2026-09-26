@@ -383,6 +383,10 @@ describe('publicToolFrame', () => {
     const live = publicToolFrame({ name: 'terminal', args: { command: `['login', '--password', 'hunter2', '-u', 'amy:pw2']` } }, true)
     expect(JSON.stringify(live)).not.toMatch(/hunter2|pw2/)
     expect(redactText(`["login", "--api-key", "opaque", "--name", "x"]`, true)).toBe(`["login", "--api-key", "***", "--name", "x"]`)
+    const numeric = publicToolFrame({ name: 'terminal', args: { command: ['login', '--password', 123456, '--token', ['abc'], '--port', 8080] } }, true)
+    expect((numeric.args as { command: unknown[] }).command).toEqual(['login', '--password', '***', '--token', ['***'], '--port', 8080])
+    expect(JSON.stringify(numeric)).not.toMatch(/123456|abc/)
+    expect(redactText(`['login', '--password', 123456, '--secret', ['x1y2'], '--port', 8080]`, true)).toBe(`['login', '--password', ***, '--secret', ***, '--port', 8080]`)
   })
 
   it('decodes JSON unicode escapes in a key name', () => {
