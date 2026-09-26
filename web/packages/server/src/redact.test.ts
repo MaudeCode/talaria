@@ -79,6 +79,8 @@ describe('redactSensitive', () => {
     expect(redactSensitive(String.raw`login --password=$'correct\' horse' next -u $'bob:a\' b' x`)).toBe(String.raw`login --password=*** next -u $'bob:***' x`)
     // Inside an enclosing quote a bare value runs to its closing quote, newlines and spaces included.
     expect(redactSensitive('login "--password=correct\nhorse" next \'--token=a b\' x')).toBe('login "--password=***" next \'--token=***\' x')
+    // The shell word continues past the enclosing quote into adjacent pieces.
+    expect(redactSensitive(`login '--password=foo'bar"baz" next`)).toBe(`login '--password=*** next`)
     // An apostrophe inside a word is prose, not a quote.
     expect(redactSensitive("don't share it: password: hunter2 and it's fine")).toBe("don't share it: password: *** and it's fine")
     // Ordinary words and non-credential parameters stay readable.

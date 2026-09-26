@@ -182,7 +182,10 @@ function shellWordEnd(text: string, start: number, enclosing: string, closeOf: (
   // container or escaped-JSON value keeps its own piece structure.
   if (enclosing && !/^(?:\$?["'`]|[[{(]|\\")/.test(text.slice(start, start + 2))) {
     const close = closeOf(start, enclosing)
-    return close === -1 ? lineEnd(start) : close
+    if (close === -1) return lineEnd(start)
+    // The word goes on past the enclosing quote when an adjacent piece follows (`'--password=foo'bar`).
+    const next = text[close + 1] ?? ''
+    return next && !/[\s&;|<>()]/.test(next) ? shellWordEnd(text, close + 1, '', closeOf) : close
   }
   let depth = 0
   let i = start
