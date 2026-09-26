@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { publicToolFrame, redactSensitive } from './redact.js'
+import { publicToolFrame, redactSensitive, redactSessionData } from './redact.js'
 
 describe('redactSensitive', () => {
   it('masks the password of a URL with userinfo and keeps the user and host', () => {
@@ -23,6 +23,11 @@ describe('redactSensitive', () => {
     expect(redactSensitive('curl -H "Authorization: Basic dXNlcjpwYXNz" -H "X-Api-Key: opaqueI" -u user:hunter2 https://x')).toBe('curl -H "Authorization: Basic ***" -H "X-Api-Key: ***" -u user:*** https://x')
     expect(redactSensitive('login --authorization=opaque123 --Authorization opaque456 authorization: opaque789')).toBe('login --authorization=*** --Authorization *** authorization: ***')
     expect(redactSensitive('curl -H "Authorization: Bearer synthetic-bearer-0123456789abcdef"')).toBe('curl -H "Authorization: Bearer synthe...cdef"')
+    // The credential of an Authorization header is masked whatever its scheme.
+    expect(redactSensitive('-H "Authorization: ApiKey opaque123" -H "Authorization: opaque456"')).toBe('-H "Authorization: ApiKey ***" -H "Authorization: ***"')
+    const aws = redactSensitive('Authorization: AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/x, SignedHeaders=host, Signature=abcdef0123')
+    expect(aws).not.toContain('AKIDEXAMPLE')
+    expect(aws).toContain('Signature=***')
     // Ordinary words and non-credential parameters stay readable.
     expect(redactSensitive('keep the secret sauce --secret-file ./s.txt')).toBe('keep the secret sauce --secret-file ./s.txt')
     expect(redactSensitive('apiKeyId: 12 max_tokens=100 --user-agent curl')).toBe('apiKeyId: 12 max_tokens=100 --user-agent curl')
@@ -47,8 +52,27 @@ describe('redactSensitive cost', () => {
 })
 
 describe('publicToolFrame', () => {
+  it('masks argument values whose key names a credential', () => {
+    const frame = publicToolFrame({ name: 'login', args: { user: 'bob', password: 'hunter2', auth: { apiKey: 'opaque', token: 12345 } } }, true)
+    expect(frame.args).toEqual({ user: 'bob', password: '***', auth: { apiKey: '***', token: '***' } })
+    expect(publicToolFrame({ name: 'login', args: { password: 'hunter2' } }, false).args).toEqual({ password: 'hunter2' })
+  })
+
   it('omits the target of a frame without args, so a completion keeps the target its start frame set', () => {
     expect(publicToolFrame({ name: 'terminal', tid: 't1', preview: 'ok' }, true)).toEqual({ name: 'terminal', tid: 't1', preview: 'ok', kind: 'shell' })
     expect(publicToolFrame({ name: 'terminal', tid: 't1', args: { command: 'ls' } }, true)).toMatchObject({ kind: 'shell', target: 'ls' })
+  })
+})
+
+describe('redactSessionData', () => {
+  it('masks credential-keyed arguments of persisted calls in every shape', () => {
+    const args = { command: 'login', password: 'hunter2' }
+    const out = redactSessionData({ tool_calls: [{ name: 'login', args }], messages: [
+      { role: 'assistant', tool_calls: [{ id: 'a', function: { name: 'login', arguments: JSON.stringify(args) } }], content: [{ type: 'tool_use', id: 'b', name: 'login', input: args }] },
+    ] }, true)
+    expect(JSON.stringify(out)).not.toContain('hunter2')
+    const message = (out.messages as Record<string, unknown>[])[0]!
+    const call = (message.tool_calls as { function: { arguments: string } }[])[0]!
+    expect(JSON.parse(call.function.arguments)).toEqual({ command: 'login', password: '***' })
   })
 })

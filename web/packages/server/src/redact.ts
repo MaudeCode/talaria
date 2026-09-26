@@ -49,17 +49,22 @@ const CRED_RE = new RegExp(
     ')(?![A-Za-z0-9_-])',
   'g',
 )
-const AUTH_HDR_RE = /(Authorization:\s*(?:Bearer|Bot|Basic|Token)\s+)([^\s'",\])]+)/gi
+/** The credential of an `Authorization:` header, after an optional scheme word (`Bearer`, `ApiKey`, `AWS4-HMAC-SHA256`, ...). */
+const AUTH_HDR_RE = /(Authorization:\s*(?:[A-Za-z][A-Za-z0-9-]{0,31}\s+)?)([^\s'",\])]+)/gi
 const EMBEDDED_AWS_RE = /AKIA[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
 /** `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The scheme starts at a run boundary and is capped so the scan stays linear. */
 const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s:@/'"]+:)([^\s@/'"]+)(?=@)/g
+/** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
+const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]){0,4}(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|secret|token|password|passwd)`
+/** An argument or JSON key naming a credential; its scalar value is masked whatever it contains. */
+const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`, 'i')
 /**
- * Credential parameters in any case and naming style (`access_token=`, `"clientSecret": "..."`, `aws_secret_access_key =`,
- * `X-Api-Key:`), and CLI flags with a space-separated value (`--password hunter2`). `ENV_RE` already masked an upper-case
- * `KEY=value` whose name it covers. The name prefix is capped at four segments so the scan stays linear.
+ * Credential parameters in text (`access_token=`, `"clientSecret": "..."`, `X-Api-Key:`) and CLI flags with a
+ * space-separated value (`--password hunter2`). `ENV_RE` already masked an upper-case `KEY=value` whose name it covers.
+ * The name prefix is capped at four segments so the scan stays linear.
  */
-const CRED_PARAM_RE = /(?<![A-Za-z0-9])(-{0,2})((?:[A-Za-z0-9]+[_-]){0,4}(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|secret|token|password|passwd))(["']?\s*[=:]\s*["']?|\s+["']?)([^\s"'&,;)}\]]+)/gi
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})(["']?\s*[=:]\s*["']?|\s+["']?)([^\s"'&,;)}\]]+)`, 'gi')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `--user user:secret`. */
 const USER_FLAG_RE = /((?<![A-Za-z0-9-])(?:-u|--user)\s+["']?[^\s:"']+:)([^\s"'@]+)/g
@@ -118,8 +123,8 @@ export function redactSensitive(text: string): string {
     // A bare space only separates a CLI flag from its value; `secret sauce` is prose.
     if (!/[=:]/.test(sep) && !dash) return whole
     if (sep.includes('=') && key === key.toUpperCase() && ENV_KEY_NAME_RE.test(key)) return whole
-    // `Authorization: Bearer <token>` names its scheme; `AUTH_HDR_RE` already masked the token after it.
-    if (/authorization$/i.test(key) && /^(?:Bearer|Bot|Basic|Token|Digest)$/i.test(value)) return whole
+    // A bare `Authorization:` header is `AUTH_HDR_RE`'s: it already masked the credential after the scheme word.
+    if (/authorization$/i.test(key) && /^\s*:\s*$/.test(sep)) return whole
     return dash + key + sep + mask(value)
   })
   out = out.replace(USER_FLAG_RE, (_, head: string, secret: string) => head + mask(secret))
@@ -136,7 +141,7 @@ const CASE_MARKERS = [
 const LOWER_MARKERS = [
   'authorization: bearer ', 'authorization: bot ', 'private key', 'postgres://', 'postgresql://', 'mysql://', 'mongodb://', 'redis://', 'amqp://', '://',
   'access_token', 'refresh_token', 'id_token', 'api_key', 'apikey', 'client_secret', 'auth_token', 'raw_secret', 'secret_input', 'key_material',
-  'x-amz-signature', 'token=', 'secret=', 'password=', 'passwd', 'password', 'secret', 'token', 'api-key', 'apikey', 'clientsecret', 'private_key', 'credential', ' -u ', '--user ', 'authorization: basic', 'authorization: token', 'authorization=', 'key=', '"token"', '"secret"', '"password"', '"bearer"',
+  'x-amz-signature', 'token=', 'secret=', 'password=', 'passwd', 'password', 'secret', 'token', 'api-key', 'apikey', 'clientsecret', 'private_key', 'credential', ' -u ', '--user ', 'authorization', 'signature', 'authorization=', 'key=', '"token"', '"secret"', '"password"', '"bearer"',
 ]
 const TELEGRAM_RE = /(?:bot)?\d{8,}:[-A-Za-z0-9_]{30,}/
 const DISCORD_RE = /<@!?\d{17,20}>/
@@ -301,7 +306,24 @@ function publicMessageProjection(message: unknown, enabled: boolean, activeTurnT
 function withToolDisplay<T>(raw: unknown, redacted: T, enabled: boolean): T {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !redacted || typeof redacted !== 'object' || Array.isArray(redacted)) return redacted
   const record = raw as Record<string, unknown>
-  return { ...redacted, ...toolDisplay(toolName(record), redactValue(toolArgs(record), enabled)) }
+  const out = { ...redacted } as Record<string, unknown>
+  if (record.args !== undefined) out.args = redactArgs(record.args, enabled)
+  if (record.input !== undefined) out.input = redactArgs(record.input, enabled)
+  const fn = record.function
+  if (enabled && fn && typeof fn === 'object' && typeof (fn as Record<string, unknown>).arguments === 'string' && out.function && typeof out.function === 'object') {
+    try { out.function = { ...out.function, arguments: JSON.stringify(redactArgs(JSON.parse((fn as Record<string, unknown>).arguments as string), enabled)) } } catch { /* unparseable: the text redaction stands */ }
+  }
+  return { ...out, ...toolDisplay(toolName(record), redactArgs(toolArgs(record), enabled)) } as T
+}
+
+/** Tool arguments redacted like any value, plus every scalar under a credential-named key (`{ password: 'x' }`). */
+function redactArgs(value: unknown, enabled: boolean): unknown {
+  if (!enabled) return value
+  if (Array.isArray(value)) return value.map((item) => redactArgs(item, enabled))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, CRED_KEY_RE.test(key) && (typeof item === 'string' || typeof item === 'number') && String(item) !== '' ? mask(String(item)) : redactArgs(item, enabled)]))
+  }
+  return redactValue(value, enabled)
 }
 
 const isToolUse = (part: unknown): boolean => Boolean(part && typeof part === 'object' && (part as Record<string, unknown>).type === 'tool_use')
