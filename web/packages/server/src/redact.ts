@@ -90,6 +90,8 @@ const BARE_USERINFO_RE = /(?<![^\s'"=(<,])([A-Za-z0-9._%+-]+:)([^\s@/'"\\:]+)(?=
 /** A `key=value` whose key is percent-encoded (`api%5Fkey=`): the destination decodes the key once, so it is checked decoded. */
 const PERCENT_KEY_RE = /(?<![A-Za-z0-9_.%-])((?=[A-Za-z0-9_.%-]*%[0-9A-Fa-f]{2})[A-Za-z0-9_.%-]+=)([^&#\s"'<>]*)/g
 const percentDecode = (text: string): string => text.replace(/%([0-9A-Fa-f]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+/** A listed argv (`['login', '--password', 'hunter2']`, JSON or a Python repr): a quoted flag, then its quoted value. */
+const LISTED_FLAG_RE = /(["'])(-{1,2})([A-Za-z0-9_][A-Za-z0-9_.-]*)\1(\s*,\s*)(["'])((?:\\.|(?!\5)[^\\])*)\5/g
 const EMBEDDED_AWS_RE = /(?:AKIA|ASIA)[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
 /**
@@ -699,6 +701,11 @@ function redactRules(text: string): string {
   for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = redactCredentialParams(out)
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
+  out = out.replace(LISTED_FLAG_RE, (whole, q: string, dash: string, key: string, gap: string, vq: string, value: string) => {
+    if (!value || value === '***') return whole
+    if (ARGV_USER_FLAG_RE.test(dash + key)) return value.includes(':') ? `${q}${dash}${key}${q}${gap}${vq}${value.replace(/:.*/s, ':***')}${vq}` : whole
+    return isCredentialKey(key) ? `${q}${dash}${key}${q}${gap}${vq}***${vq}` : whole
+  })
   out = out.replace(PERCENT_KEY_RE, (whole, head: string, value: string) => (value && value !== '***' && isCredentialKey(percentDecode(head.slice(0, -1))) ? `${head}***` : whole))
   out = out.replace(BARE_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + (/['"\\]/.test(secret) ? '***' : mask(secret)))
@@ -913,6 +920,10 @@ function maskLeaves(value: unknown): unknown {
   return (typeof value === 'string' || typeof value === 'number') && String(value) !== '' ? '***' : value
 }
 
+/** An argv element that is a flag (`--password`), and one that takes `user:password` (`-u`, `--user`, `--proxy-user`). */
+const ARGV_FLAG_RE = /^-{1,2}([A-Za-z0-9_][A-Za-z0-9_.-]*)$/
+const ARGV_USER_FLAG_RE = /^(?:-[uU]|--user|--proxy-user)$/
+
 /** The fields that name a header in a `{ name: 'Authorization', value }` record. */
 const HEADER_LABEL_FIELDS = new Set(['name', 'key', 'header'])
 
@@ -922,7 +933,16 @@ function redactArgs(value: unknown, enabled: boolean): unknown {
   if (Array.isArray(value)) {
     // A `[name, value]` header tuple naming a credential.
     if (value.length === 2 && typeof value[0] === 'string' && isCredentialKey(value[0])) return [value[0], maskLeaves(value[1])]
-    return value.map((item) => redactArgs(item, enabled))
+    // An argv array (`['login', '--password', 'hunter2']`): a credential flag's value is the next element.
+    return value.map((item, i) => {
+      const flag: unknown = value[i - 1]
+      if (typeof flag === 'string' && typeof item === 'string' && item) {
+        if (ARGV_USER_FLAG_RE.test(flag)) return item.replace(/:.*/s, ':***')
+        const key = ARGV_FLAG_RE.exec(flag)?.[1]
+        if (key !== undefined && isCredentialKey(key)) return '***'
+      }
+      return redactArgs(item, enabled)
+    })
   }
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>
