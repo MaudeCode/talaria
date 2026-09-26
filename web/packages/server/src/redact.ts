@@ -81,18 +81,24 @@ const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENT
 const URL_USERINFO_RE = /((?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s:@/'"]+:)([^\s@/'"]+)(?=@)/g
 /** Credential key names in any case and naming style (`access_token`, `clientSecret`, `aws_secret_access_key`, `X-Api-Key`). */
 const CRED_KEY_NAME = String.raw`(?:(?:access|refresh|id|auth)[_-]?token|api[_-]?key|client[_-]?secret|(?:private|access|secret|session)[_-]?key|credentials?|authorization|signature|cookie|secret|token|password|passwd)`
-const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]){0,4}${CRED_KEY_NAME}`
+/** A lower-case pattern matched in any case, letter by letter, so the camelCase lookahead below stays case-exact. */
+const anyCase = (pattern: string): string => pattern.replace(/[a-z]/g, (c) => `[${c}${c.toUpperCase()}]`)
+/**
+ * A credential key: up to four snake/kebab (`aws_`, `X-`) or camelCase (`aws`, `Secret` in `awsSecretAccessKey`) name
+ * segments, then a credential name. Each segment has one possible end, so the scan stays linear.
+ */
+const CRED_KEY = String.raw`(?:[A-Za-z0-9]+[_-]|[A-Z]?[a-z0-9]+(?=[A-Z])){0,4}${anyCase(CRED_KEY_NAME)}`
 /** The prefilter's view of the same key names, so it never skips text the credential rule would mask. */
 const CRED_KEY_NAME_RE = new RegExp(CRED_KEY_NAME, 'i')
 /** An argument or JSON key naming a credential; its scalar value is masked whatever it contains. */
-const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`, 'i')
+const CRED_KEY_RE = new RegExp(String.raw`^-{0,2}${CRED_KEY}$`)
 /**
  * Credential parameters in text (`access_token=`, `"clientSecret": "..."`, `X-Api-Key:`) and CLI flags with a
  * space-separated value (`--password hunter2`); a quoted value (including bash `$'...'`) is masked through its closing quote. An unquoted upper-case
  * `KEY=value` whose name `ENV_RE` covers is left to it.
  * The name prefix is capped at four segments so the scan stays linear.
  */
-const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})((?:\\?["'])?\s*[=:]\s*|\s+)(${QUOTED}|[^\s"'\\&,;)}\]$]+)`, 'gi')
+const CRED_PARAM_RE = new RegExp(String.raw`(?<![A-Za-z0-9])(-{0,2})(${CRED_KEY})((?:\\?["'])?\s*[=:]\s*|\s+)(${QUOTED}|[^\s"'\\&,;)}\]$]+)`, 'g')
 const ENV_KEY_NAME_RE = /API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH/
 /** `curl -u user:secret` / `-uuser:secret` / `--user user:secret`; a quoted pair or quoted secret is masked through its closing quote. */
 const USER_FLAG_RE = new RegExp(String.raw`((?<![A-Za-z0-9-])(?:-u\s*|--user\s+)\$?)(?:(["'])([^\n:'"]*:)([^\n'"]*)\2|([^\s:"'$]+:)((?:${QUOTED}|[^\s"'@\\])+))`, 'g')

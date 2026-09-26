@@ -48,9 +48,12 @@ describe('redactSensitive', () => {
     expect(redactSensitive(String.raw`curl -H "Cookie: session=\"abc def\"; theme=x" https://x`)).toBe(String.raw`curl -H "Cookie: ***" https://x`)
     expect(redactSensitive(String.raw`curl -d "{\"password\":\"hunter2\",\"token\":\"a b\",\"user\":\"bob\"}" https://x`)).toBe(String.raw`curl -d "{\"password\":\"***\",\"token\":\"***\",\"user\":\"bob\"}" https://x`)
     expect(redactSensitive(`curl -u user:'correct horse' -u bob:"pw word" -ualice:pw3 https://x`)).toBe(`curl -u user:'***' -u bob:"***" -ualice:*** https://x`)
+    // Compound camelCase and upper snake credential names.
+    expect(redactSensitive('deploy --secretAccessKey=opaque123 --awsSessionToken opaque456 AWS_SECRET_ACCESS_KEY: opaque789 {"sessionToken": "x"}')).toBe('deploy --secretAccessKey=*** --awsSessionToken *** AWS_SECRET_ACCESS_KEY: *** {"sessionToken": "***"}')
     // Ordinary words and non-credential parameters stay readable.
     expect(redactSensitive('keep the secret sauce --secret-file ./s.txt')).toBe('keep the secret sauce --secret-file ./s.txt')
     expect(redactSensitive('apiKeyId: 12 max_tokens=100 --user-agent curl')).toBe('apiKeyId: 12 max_tokens=100 --user-agent curl')
+    expect(redactSensitive('maxTokens=100 mytoken=abc tokenizer=bpe tokenCount=3')).toBe('maxTokens=100 mytoken=abc tokenizer=bpe tokenCount=3')
     expect(redactSensitive('max_tokens=100 tokenizer=bpe keyboard=us')).toBe('max_tokens=100 tokenizer=bpe keyboard=us')
   })
 
@@ -78,7 +81,7 @@ describe('surrogate pairs', () => {
 describe('redactSensitive cost', () => {
   it('stays linear on long runs of scheme and identifier characters', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
-    for (const seg of ['abcdefghij-', 'a.b+c-', 'token_', '--password ']) {
+    for (const seg of ['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_']) {
       const text = seg.repeat(Math.ceil(200_000 / seg.length))
       const started = performance.now()
       redactSensitive(text)
@@ -92,6 +95,7 @@ describe('publicToolFrame', () => {
     const frame = publicToolFrame({ name: 'login', args: { user: 'bob', password: 'hunter2', auth: { apiKey: 'opaque', token: 12345 } } }, true)
     expect(frame.args).toEqual({ user: 'bob', password: '***', auth: { apiKey: '***', token: '***' } })
     expect(publicToolFrame({ name: 'login', args: { password: 'hunter2' } }, false).args).toEqual({ password: 'hunter2' })
+    expect(publicToolFrame({ name: 'aws', args: { secretAccessKey: 'a', awsSessionToken: 'b', region: 'us' } }, true).args).toEqual({ secretAccessKey: '***', awsSessionToken: '***', region: 'us' })
     // Cookie keys, header tuples and name/value pairs are credentials too.
     expect(publicToolFrame({ name: 'http', args: { headers: { Cookie: 'session=abc123', 'Set-Cookie': ['sid=x'] }, pairs: [['X-Token', 'abc'], ['Accept', 'json']], har: [{ name: 'Authorization', value: 'opaque' }, { name: 'Accept', value: 'json' }] } }, true).args)
       .toEqual({ headers: { Cookie: '***', 'Set-Cookie': ['***'] }, pairs: [['X-Token', '***'], ['Accept', 'json']], har: [{ name: 'Authorization', value: '***' }, { name: 'Accept', value: 'json' }] })
