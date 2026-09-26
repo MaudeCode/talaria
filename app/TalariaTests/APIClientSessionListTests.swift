@@ -75,6 +75,16 @@ final class APIClientSessionListTests: APIClientTestCase {
         try decode(SessionMutationResponse.self, fixture: "session_mutation")
         try decode(SessionBranchResponse.self, fixture: "session_branch")
         try decode(ChatStreamStatusResponse.self, fixture: "stream_status")
+
+        let clarificationData = try JSONSerialization.data(withJSONObject: XCTUnwrap(manifest["clarification_pending"]))
+        let clarification = try decoder.decode(ClarificationPendingResponse.self, from: clarificationData)
+        let steps = try XCTUnwrap(clarification.pending?.steps)
+        XCTAssertEqual(steps.count, 1)
+        let step = try XCTUnwrap(steps.first)
+        XCTAssertEqual(step.qid, "q0")
+        XCTAssertEqual(step.question, "Which checks?")
+        XCTAssertEqual(step.choices, ["unit", "ui"])
+        XCTAssertTrue(step.multiSelect)
     }
 
     func testSessionsDecodesSnakeCaseResponse() async throws {
