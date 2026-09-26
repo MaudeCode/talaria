@@ -384,6 +384,21 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(CompletedAssistantTurn(rows: timeline.rows)?.finalAnswer, "Contract answer.")
     }
 
+    func testSharedWebSessionStatesItsTranscriptCursor() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        func session(_ key: String) throws -> SessionDetail {
+            try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: try XCTUnwrap(object[key])))
+        }
+        // A run without a journal: the transcript holds its persisted rows and states no cursor.
+        XCTAssertNil(try session("session").transcriptSeq)
+        // A journaled run: the transcript ends at the running turn's prompt, and replay resumes after the cursor.
+        let journaled = try session("journaled_session")
+        XCTAssertEqual(journaled.transcriptSeq, TranscriptSeq(streamId: "contract-run-h", seq: 0))
+        XCTAssertEqual(journaled.messages?.last?.role, "user")
+    }
+
     func testSharedWebSessionRendersServerBuiltTurnScenes() async throws {
         let data = try fixture("web-session")
         let session = session { request in

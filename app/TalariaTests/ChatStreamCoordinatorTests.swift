@@ -108,10 +108,10 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         )
 
         coordinator.start(streamID: "stream-123")
-        streamClient.emit(.token("Partial answer."), lastEventID: "session-abc:7")
+        streamClient.emit(.token("Partial answer."), lastEventID: "stream-123:7")
         coordinator.suspendActiveStreamConnection()
 
-        XCTAssertEqual(coordinator.lastEventID, "session-abc:7")
+        XCTAssertEqual(coordinator.lastEventID, "stream-123:7")
         XCTAssertTrue(coordinator.isConnectionSuspended)
         XCTAssertEqual(streamClient.stopCount, 1)
         XCTAssertEqual(delegate.saveSnapshotCount, 1)
@@ -178,7 +178,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         }
 
         coordinator.start(streamID: "stream-123")
-        streamClient.emit(.token("Partial answer."), lastEventID: "session-abc:9")
+        streamClient.emit(.token("Partial answer."), lastEventID: "stream-123:9")
         coordinator.suspendActiveStreamConnection()
 
         await coordinator.reconnectIfNeeded()
@@ -722,8 +722,8 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         }
 
         coordinator.start(streamID: "stream-123")
-        streamClient.emit(.token("Partial answer."), lastEventID: "session-abc:4")
-        streamClient.emit(.transportError("lost connection"), lastEventID: "session-abc:4")
+        streamClient.emit(.token("Partial answer."), lastEventID: "stream-123:4")
+        streamClient.emit(.transportError("lost connection"), lastEventID: "stream-123:4")
 
         try await waitUntil { streamClient.startedURLs.count == 2 }
 
@@ -1078,10 +1078,54 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
-    func testColdRelaunchWithoutSnapshotOrCursorReplaysFromZero() async throws {
+    func testColdRelaunchResumesFromTheLoadedTranscriptCursor() async throws {
+        let (streamClient, delegate, coordinator) = try await coldRelaunch(
+            transcriptSeq: TranscriptSeq(streamId: "stream-cold", seq: 0)
+        )
+
+        let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
+        let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(queryItems.first(where: { $0.name == "replay" })?.value, "1")
+        XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "0")
+        XCTAssertTrue(coordinator.isReplayConnection)
+        // The load holds none of the run's output, so the replay opens a new streaming message
+        // instead of continuing the previous turn's answer.
+        XCTAssertNil(delegate.streamCoordinatorStreamingAssistantMessageID)
+    }
+
+    @MainActor
+    func testColdRelaunchWithoutTranscriptCursorAttachesLiveWithoutReplay() async throws {
+        // No journal (or an older server): the transcript already holds the persisted segments.
+        let (streamClient, delegate, coordinator) = try await coldRelaunch(transcriptSeq: nil)
+
+        let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
+        let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertNil(queryItems.first(where: { $0.name == "replay" }))
+        XCTAssertNil(queryItems.first(where: { $0.name == "after_seq" }))
+        XCTAssertFalse(coordinator.isReplayConnection)
+        XCTAssertEqual(delegate.streamCoordinatorStreamingAssistantMessageID, "assistant-latest")
+    }
+
+    @MainActor
+    func testColdRelaunchIgnoresATranscriptCursorForAnotherStream() async throws {
+        let (streamClient, _, _) = try await coldRelaunch(
+            transcriptSeq: TranscriptSeq(streamId: "stream-other", seq: 3)
+        )
+
+        let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
+        let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertNil(queryItems.first(where: { $0.name == "after_seq" }))
+    }
+
+    /// A relaunched process adopts `stream-cold` without a snapshot or cursor; the
+    /// recovery reload runs the same prepare/reconcile pair a second time with the
+    /// run already adopted, exactly as `ChatViewModel.loadMessages` does.
+    @MainActor
+    private func coldRelaunch(
+        transcriptSeq: TranscriptSeq?
+    ) async throws -> (CoordinatorSpySSEStreamingClient, CoordinatorDelegateSpy, ChatStreamCoordinator) {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let delegate = CoordinatorDelegateSpy()
-        // A relaunched process has no snapshot for the stream it adopts.
         delegate.restoredSnapshotEventID = nil
         let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate) { request in
             XCTAssertEqual(request.url?.path, "/api/chat/stream/status")
@@ -1090,15 +1134,13 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
                 for: request
             )
         }
-
-        // The recovery reload runs the same prepare/reconcile pair a second time
-        // with the run already adopted, exactly as `ChatViewModel.loadMessages` does.
         delegate.onLoadMessages = { @MainActor in
             let reloadPreparation = coordinator.prepareForSessionLoad()
             coordinator.reconcileSessionLoad(
                 loadedActiveStreamID: "stream-cold",
                 preparation: reloadPreparation,
-                usedCacheFallback: false
+                usedCacheFallback: false,
+                transcriptSeq: transcriptSeq
             )
         }
 
@@ -1106,49 +1148,14 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         coordinator.reconcileSessionLoad(
             loadedActiveStreamID: "stream-cold",
             preparation: preparation,
-            usedCacheFallback: false
+            usedCacheFallback: false,
+            transcriptSeq: transcriptSeq
         )
         XCTAssertTrue(coordinator.isConnectionSuspended)
         XCTAssertNil(coordinator.lastEventID)
 
         await coordinator.reconnectIfNeeded()
-
-        let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
-        let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        XCTAssertEqual(queryItems.first(where: { $0.name == "replay" })?.value, "1")
-        XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "0")
-        XCTAssertTrue(coordinator.isReplayConnection)
-        // TAL-148: the loaded scene seeds the live timeline before the replay starts.
-        XCTAssertEqual(delegate.seedLiveActivityCount, 1)
-    }
-
-    @MainActor
-    func testColdReplayPreparationCannotRestartAReplacedRun() async throws {
-        let streamClient = CoordinatorSpySSEStreamingClient()
-        let delegate = CoordinatorDelegateSpy()
-        delegate.restoredSnapshotEventID = nil
-        let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate) { request in
-            return apiTestJSONResponse(
-                #"{"active":true,"stream_id":"stream-cold","replay_available":true}"#,
-                for: request
-            )
-        }
-        let preparation = coordinator.prepareForSessionLoad()
-        coordinator.reconcileSessionLoad(
-            loadedActiveStreamID: "stream-cold", preparation: preparation, usedCacheFallback: false
-        )
-        delegate.onSeedLiveActivity = {
-            coordinator.start(streamID: "replacement-run")
-        }
-
-        await coordinator.reconnectIfNeeded()
-
-        XCTAssertEqual(coordinator.activeStreamID, "replacement-run")
-        XCTAssertEqual(streamClient.startedURLs.count, 1)
-        let url = try XCTUnwrap(streamClient.startedURLs.first)
-        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        XCTAssertEqual(query.first { $0.name == "stream_id" }?.value, "replacement-run")
-        XCTAssertNil(query.first { $0.name == "after_seq" })
+        return (streamClient, delegate, coordinator)
     }
 
     @MainActor
@@ -1182,7 +1189,6 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
         XCTAssertNil(queryItems.first(where: { $0.name == "replay" }))
         XCTAssertFalse(coordinator.isReplayConnection)
-        XCTAssertEqual(delegate.seedLiveActivityCount, 0)
     }
 
     @MainActor
@@ -1202,7 +1208,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
-    func testActiveReconnectWithSurvivingCursorStillResumesWithoutReplay() async throws {
+    func testActiveReconnectResumesAfterItsOwnCursorAndNeverReappliesIt() async throws {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let delegate = CoordinatorDelegateSpy()
         let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate) { request in
@@ -1213,16 +1219,69 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         }
 
         coordinator.start(streamID: "stream-warm")
-        streamClient.emit(.token("Partial answer."), lastEventID: "session-abc:5")
+        streamClient.emit(.token("Partial answer."), lastEventID: "stream-warm:5")
         coordinator.suspendActiveStreamConnection()
 
         await coordinator.reconnectIfNeeded()
 
-        // The cursor survived, so the live connection is simply resumed as before.
         let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
         let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        XCTAssertNil(queryItems.first(where: { $0.name == "replay" }))
-        XCTAssertFalse(coordinator.isReplayConnection)
+        XCTAssertEqual(queryItems.first(where: { $0.name == "replay" })?.value, "1")
+        XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "5")
+        // An overlapping frame at or below the cursor is already on screen.
+        streamClient.emit(.token("Partial answer."), lastEventID: "stream-warm:5")
+        streamClient.emit(.token(" More."), lastEventID: "stream-warm:6")
+        XCTAssertEqual(delegate.tokens, ["Partial answer.", " More."])
+    }
+
+    @MainActor
+    func testFinishedJournalReplayNeverResumesFromAnotherStreamsCursor() async throws {
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate) { request in
+            apiTestJSONResponse(
+                #"{"active": false, "stream_id": "stream-123", "replay_available": true}"#,
+                for: request
+            )
+        }
+
+        coordinator.start(streamID: "stream-123")
+        // A stale Last-Event-ID left by an earlier run.
+        streamClient.emit(.token("Partial answer."), lastEventID: "stream-old:9")
+        coordinator.suspendActiveStreamConnection()
+
+        await coordinator.reconnectIfNeeded()
+
+        let replayURL = try XCTUnwrap(streamClient.startedURLs.last)
+        let queryItems = URLComponents(url: replayURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(queryItems.first(where: { $0.name == "stream_id" })?.value, "stream-123")
+        XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "0")
+    }
+
+    @MainActor
+    func testActiveReconnectNeverResumesFromAnotherStreamsCursor() async throws {
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate) { request in
+            apiTestJSONResponse(
+                #"{"active": true, "stream_id": "stream-warm", "replay_available": true}"#,
+                for: request
+            )
+        }
+
+        coordinator.start(streamID: "stream-warm")
+        // A stale Last-Event-ID left by an earlier run.
+        streamClient.emit(.token("Partial answer."), lastEventID: "stream-old:9")
+        coordinator.suspendActiveStreamConnection()
+
+        await coordinator.reconnectIfNeeded()
+
+        let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
+        let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertNil(queryItems.first(where: { $0.name == "after_seq" }))
+        XCTAssertNil(ChatStreamCoordinator.runJournalReplayAfterSeq(from: "stream-old:9", streamID: "stream-warm"))
+        XCTAssertNil(ChatStreamCoordinator.runJournalReplayAfterSeq(from: "9", streamID: "stream-warm"))
+        XCTAssertEqual(ChatStreamCoordinator.runJournalReplayAfterSeq(from: "stream:warm:9", streamID: "stream:warm"), 9)
     }
 
     // MARK: - Run start seeding (TAL-163)
@@ -1435,7 +1494,6 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
     var streamCoordinatorStreamingAssistantMessageID: String?
 
     private(set) var loadMessagesCount = 0
-    private(set) var seedLiveActivityCount = 0
     private(set) var startMonitoringCount = 0
     private(set) var stopMonitoringClearPromptValues: [Bool] = []
     private(set) var saveSnapshotCount = 0
@@ -1451,8 +1509,6 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
     private(set) var confirmedRecoveryCount = 0
     private(set) var titles: [String] = []
     private(set) var loadMessagesHadModelContext: [Bool] = []
-    private(set) var startConnectionReplayValues: [Bool] = []
-    private(set) var resetRecoveryCount = 0
     private(set) var tokens: [String] = []
     private(set) var donePayloads: [DoneStreamEvent] = []
     private(set) var pendingSteerLeftovers: [String] = []
@@ -1467,13 +1523,6 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
         loadMessagesCount += 1
         loadMessagesHadModelContext.append(modelContext != nil)
         await onLoadMessages?()
-    }
-
-    var onSeedLiveActivity: (() async throws -> Void)?
-
-    func streamCoordinatorSeedLiveActivityForColdReplay() async throws {
-        seedLiveActivityCount += 1
-        try await onSeedLiveActivity?()
     }
 
     func streamCoordinatorLatestAssistantMessageID() -> String? {
@@ -1531,14 +1580,6 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
 
     func streamCoordinatorDidReceiveRecoveryError(_ error: Error) {
         recoveryErrors.append(error.localizedDescription)
-    }
-
-    func streamCoordinatorDidStartConnection(isReplay: Bool) {
-        startConnectionReplayValues.append(isReplay)
-    }
-
-    func streamCoordinatorDidResetRecoveryState() {
-        resetRecoveryCount += 1
     }
 
     func streamCoordinatorAppendToken(_ text: String) -> Bool {

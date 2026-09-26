@@ -3,8 +3,8 @@ import XCTest
 
 /// Contract tests for the riskiest streaming paths: disconnect → reconnect
 /// with replayed tokens, server restart mid-stream, and replay of content the
-/// client already rendered. Each test drives a real `ChatViewModel` (which
-/// owns the replay dedup from PR #211) and a real `ChatStreamCoordinator`
+/// client already rendered. Each test drives a real `ChatViewModel` and a real
+/// `ChatStreamCoordinator` (whose resume cursor keeps replay idempotent)
 /// through a full scripted wire sequence via `ScriptedSSEStreamingClient`.
 final class StreamReconnectContractTests: APIClientTestCase {
     // MARK: - Scenario 1: reconnect with overlapping replayed tokens (#201 regression guard)

@@ -403,8 +403,8 @@ extension ChatViewModelSendTests {
         let didStart = await viewModel.sendMessage("Keep working")
         XCTAssertTrue(didStart)
 
-        streamClient.emit(.token("Partial live answer."), lastEventID: "session-abc:4")
-        streamClient.emit(.transportError("lost connection"), lastEventID: "session-abc:4")
+        streamClient.emit(.token("Partial live answer."), lastEventID: "stream-123:4")
+        streamClient.emit(.transportError("lost connection"), lastEventID: "stream-123:4")
 
         try await waitUntil {
             streamClient.startedURLs.count == 2
@@ -435,7 +435,7 @@ extension ChatViewModelSendTests {
 
             let didStart = await originalViewModel.sendMessage("Keep working")
             XCTAssertTrue(didStart)
-            originalStreamClient.emit(.token("Partial live answer."), lastEventID: "session-abc:9")
+            originalStreamClient.emit(.token("Partial live answer."), lastEventID: "stream-123:9")
             originalViewModel.suspendStreamForNavigation()
 
             let reopenedStreamClient = SpySSEStreamingClient()
