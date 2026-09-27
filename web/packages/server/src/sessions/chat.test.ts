@@ -428,7 +428,7 @@ describe('chat turns through the sidecar', () => {
       ['no_response', (params, emit) => {
         emit({ event: 'token', data: { text: ' ' } })
         return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: '', tool_calls: [{ id: 'nr1', name: 'read_file' }] }, { role: 'tool', tool_call_id: 'nr1', content: 'x' }])
-      }, 'done', 'no_response', 'completed', 'failed'],
+      }, 'done', 'no_response', 'errored', 'failed'],
       ['cancelled', () => { throw new Error('Task cancelled by user') }, 'apperror', 'cancelled', 'interrupted-by-user', 'cancelled'],
       ['interrupted', () => { throw new Error('Response interrupted') }, 'apperror', 'interrupted', 'interrupted-by-crash', 'failed'],
       ['compression_exhausted', () => { throw new Error('compression_exhausted: context length exceeded and cannot compress further') }, 'apperror', 'compression_exhausted', 'errored', 'failed'],

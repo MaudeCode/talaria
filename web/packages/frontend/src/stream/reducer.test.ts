@@ -155,7 +155,8 @@ describe('stream reducer: every lifecycle exit', () => {
     let s = started()
     s = ev(s, 'done', { session: { session_id: SID, title: 'A' }, usage: { input_tokens: 1 } })
     s = ev(s, 'stream_end', { session_id: SID })
-    expect(s.turns[SID]).toMatchObject({ status: 'done', streamEnded: true })
+    // A done frame journaled before terminal_state shipped still reads as a completed turn.
+    expect(s.turns[SID]).toMatchObject({ status: 'done', streamEnded: true, terminalState: 'completed' })
     expect(isTerminal(s.turns[SID]!.status)).toBe(true)
   })
   it('terminal error: apperror carries type, message and continuation', () => {

@@ -75,7 +75,8 @@ export function terminalStateForEvent(eventName: string, payload: unknown): stri
   const name = eventName || ''
   const p = payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : null
   const state = str(p?.terminal_state)
-  if (name === 'done' || name === 'stream_end') return state === 'tool_limit_reached' ? state : 'completed'
+  // A turn that settled without an answer is not a success: it ends as `errored`, like the app and Relay show it.
+  if (name === 'done' || name === 'stream_end') return state === 'tool_limit_reached' ? state : state === 'no_response' ? 'errored' : 'completed'
   if (name === 'cancel') return 'interrupted-by-user'
   if (name === 'apperror' || name === 'error') return state === 'cancelled' ? 'interrupted-by-user' : state === 'interrupted' ? 'interrupted-by-crash' : 'errored'
   return null
