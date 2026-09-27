@@ -218,6 +218,8 @@ export class TurnRunner {
    * TAL-364: what a Stop needs to write the turn's model context: its starting context, the prompt the Agent got, and
    * whether a settlement already used a canonical checkpoint (which marks the stop boundary; later work never replaces it).
    */
+  /** TAL-364: a Stop's in-flight `chat.interrupt` reply (null when it failed), so a worker that settles first can use its checkpoint. */
+  private readonly interrupts = new Map<string, Promise<{ pending_steer?: string | undefined; checkpoint?: Record<string, unknown>[] | undefined } | null>>()
   private readonly stopContexts = new Map<string, { previousContext: Message[]; prompt: string | Record<string, unknown>[]; msgText: string; checkpointed: boolean }>()
 
   constructor(readonly deps: TurnRunnerDeps) {}
@@ -457,8 +459,10 @@ export class TurnRunner {
       })
       settledAt.value = true
       if (this.registry.cancelled.has(streamId) || result.status === 'cancelled') {
-        // The Agent's own interrupted result is its canonical transcript for the turn.
-        this.finalizeCancelled(s, streamId, opts.ephemeral, result.messages)
+        // The Stop's pre-interrupt snapshot is the boundary, even when its reply lands after this result (the sidecar
+        // answers each request on its own thread); without one, the Agent's interrupted result is its canonical transcript.
+        const interrupted = await this.interrupts.get(streamId)
+        this.finalizeCancelled(s, streamId, opts.ephemeral, interrupted?.checkpoint ?? result.messages)
         put('cancel', this.cancelFrame(sessionId))
         return
       }
@@ -881,6 +885,7 @@ export class TurnRunner {
     const writer = this.writers.get(streamId)
     if (writer) { try { writer.close() } catch { /* ignore */ } this.writers.delete(streamId) }
     this.abortControllers.delete(streamId)
+    this.interrupts.delete(streamId)
     this.stopContexts.delete(streamId)
     this.steers.delete(streamId)
     this.consumedSteers.delete(streamId)
@@ -1013,16 +1018,12 @@ export class TurnRunner {
     if (run) { run.phase = 'cancelling'; run.cancelled_at = this.deps.now() }
     // Python `_finalize_webui_steers` drained the Agent's pending steer text at cancel time: the interrupt reply
     // carries it so queued steers settle as consumed / leftover before the terminal row.
-    let leftover = ''
-    let checkpoint: unknown[] | null = null
     const sidecar = this.deps.sidecar()
-    if (sidecar) {
-      try {
-        const reply = await sidecar.call('chat.interrupt', { stream_id: streamId }, { timeoutMs: 5_000 })
-        leftover = str(reply.pending_steer)
-        checkpoint = reply.checkpoint ?? null
-      } catch { leftover = '' }
-    }
+    const interrupt = sidecar ? sidecar.call('chat.interrupt', { stream_id: streamId }, { timeoutMs: 5_000 }).catch(() => null) : Promise.resolve(null)
+    this.interrupts.set(streamId, interrupt)
+    const reply = await interrupt
+    const leftover = str(reply?.pending_steer)
+    const checkpoint = reply?.checkpoint ?? null
     // Settle the steers first so the persisted cancel carries every consumed one.
     const steerEvents = (this.steers.get(streamId) ?? []).length ? this.finalizeSteerEvents(streamId, leftover) : []
     if (sessionId) {

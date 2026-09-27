@@ -542,15 +542,19 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, { role: 'assistant', content: 'The chart shows' }])
   })
 
-  it('a worker result that settles the cancel before the interrupt reply writes one marker and one checkpoint (TAL-364)', async () => {
+  it('a worker result that settles the cancel before the interrupt reply writes one marker and keeps the pre-Stop checkpoint (TAL-364)', async () => {
     const sid = await newSession(s)
     const earlier = await earlierTurn(sid)
     let prompt = ''
     let finish: () => void = () => undefined
+    // The worker's result lands first and carries a tool the Agent finished while unwinding; the interrupt's snapshot
+    // (taken before the Stop was signalled) arrives after it and is still the boundary.
+    const lateCall: Json = { role: 'assistant', content: '', tool_calls: [{ id: 'call-unwind', type: 'function', function: { name: 'terminal', arguments: '{}' } }] }
+    const lateResult: Json = { role: 'tool', name: 'terminal', tool_call_id: 'call-unwind', content: 'finished while unwinding' }
     sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
       prompt = str(params.user_message)
       for (const e of toolFrames) emit(e)
-      finish = () => { resolve({ ...completed([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'assistant', content: 'Operation interrupted.' }]), status: 'cancelled' }) }
+      finish = () => { resolve({ ...completed([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, lateCall, lateResult, { role: 'assistant', content: 'Operation interrupted.' }]), status: 'cancelled' }) }
     }))
     let interrupts = 0
     sidecar.respond('chat.interrupt', async () => {
