@@ -80,6 +80,20 @@ test('a message deep link loads older rows until it finds its message', async ({
   await expect(target).toBeInViewport()
 })
 
+test('a message deep link finds a later message inside a grouped turn', async ({ page }) => {
+  // Each turn is a prompt and two assistant rows the server stamped with one turn id; the grouped row is keyed by the first.
+  const messages = Array.from({ length: 20 }, (_, i) => [
+    { role: 'user', id: i * 3 + 1, content: `entry-turn question ${i + 1}` },
+    { role: 'assistant', id: i * 3 + 2, content: `entry-turn first part ${i + 1}. `.repeat(4), _turn_id: `turn-${i}` },
+    { role: 'assistant', id: i * 3 + 3, content: `entry-turn second part ${i + 1}. `.repeat(4), _turn_id: `turn-${i}` },
+  ]).flat()
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'entry-turn', title: 'Turns', messages } } }))
+  await page.goto('/session/entry-turn?msg=6')
+  const turn = page.locator('[data-message-key="5"]')
+  await expect(turn).toBeInViewport()
+  await expect.poll(() => distance(page)).toBeGreaterThan(200)
+})
+
 test('loading older rows keeps the reader where they are', async ({ page }) => {
   const turns = 20
   await page.route('**/api/session?**', paged('entry-older', turns))

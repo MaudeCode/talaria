@@ -127,14 +127,15 @@ export function Transcript(props: TranscriptProps) {
   useLayoutEffect(() => {
     const entry = entryRef.current
     if (!entry || rows.length === 0) return
-    const index = entry.focus ? rows.findIndex((row) => row.key === entry.focus) : -1
+    // A grouped turn is keyed by its first assistant message but answers for every message it holds.
+    const index = entry.focus ? rows.findIndex((row) => row.key === entry.focus || !!row.assistantRows?.some((part) => part.key === entry.focus)) : -1
     // A linked message older than the loaded window pages older rows in until it appears; a failed page falls back to the bottom.
     if (index < 0 && entry.focus && truncated && (entry.pagedAt !== rows.length || loadingOlder)) {
       if (entry.pagedAt !== rows.length && !loadingOlder) { entry.pagedAt = rows.length; onLoadOlder() }
       return
     }
     entryRef.current = null
-    const target = index < 0 || virtualize ? null : scrollRef.current?.querySelector(`[data-message-key="${CSS.escape(entry.focus ?? '')}"]`)
+    const target = index < 0 || virtualize ? null : scrollRef.current?.querySelector(`[data-message-key="${CSS.escape(rows[index]?.key ?? '')}"]`)
     if (index < 0 || (!virtualize && !target)) { scrollToBottom(false); return }
     pin(false)
     settlingRef.current = false
