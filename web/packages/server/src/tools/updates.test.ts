@@ -9,7 +9,7 @@
  * and the Agent branches of `tests/test_updates*.py` onto synthetic repositories and manifests.
  */
 import { execFileSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -23,8 +23,8 @@ import { detectWebuiVersion, developmentInfo } from '../release.js'
 import { WEB_ROOT } from '../test/harness.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
-  applyAgentUpdate, applyWebUpdate, CACHE_TTL_S, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
-  REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, WEB_BUILD_STEPS, WEB_SERVER_ENTRY, type BuildRun, type GetJson, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
+  applyAgentUpdate, applyWebUpdate, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
+  REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type BuildRun, type GetJson, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
 } from './updates.js'
 
 const GIT_ENV = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'Synthetic', GIT_COMMITTER_NAME: 'Synthetic', GIT_AUTHOR_EMAIL: 'synthetic@example.invalid', GIT_COMMITTER_EMAIL: 'synthetic@example.invalid' }
@@ -43,7 +43,7 @@ const PIN = { 'x-talaria': { version: '0.0.1', sourceRevision: 'd'.repeat(40) },
 const VERSIONS = { appWeb: { fixtureVersion: 1 }, webRelay: { protocolVersion: 2 } }
 const DEV = developmentInfo(WEB_ROOT)
 
-interface Install { client: string; upstream: string; old: string; latest: string; release: PublishedRelease; identity: ReleaseIdentity; id: { release: Dict; stamped: Dict; running: string | null }; run: GitRun; commands: string[][]; getJson: GetJson; requests: string[]; build: BuildRun; builds: string[][]; failBuild: { step: number | null } }
+interface Install { client: string; upstream: string; old: string; latest: string; release: PublishedRelease; identity: ReleaseIdentity; id: { release: Dict; stamped: Dict; running: string | null }; run: GitRun; commands: string[][]; getJson: GetJson; requests: string[] }
 
 /** Python `source_install`: an upstream with an old and a published commit, and a clean client on the old one whose GitHub origin resolves to the upstream. */
 function sourceInstall(): Install {
@@ -84,103 +84,17 @@ function sourceInstall(): Install {
     if (asset) return Promise.resolve({ schemaVersion: 1, releaseSet: release.sourceRevision, status: 'complete', contracts: { appWeb: { web: [1] }, webRelay: { web: [2] } }, agent: release.runtime.compatibleAgent, components: { web: { tag: release.tag, version: release.version, sourceRevision: release.sourceRevision, releaseSet: release.sourceRevision, image: release.image, ...(release.npm ? { npm: release.npm } : {}) } } })
     return Promise.resolve([{ tag_name: set, published_at: '2026-09-19T00:00:00Z', assets: [{ name: 'release-set.json', id: 123 }] }])
   }
-  const builds: string[][] = []
-  const failBuild = { step: null as number | null }
-  // The synthetic checkout has no real packages: the build runner records each step and materialises the entry point.
-  const build: BuildRun = (args, cwd) => {
-    builds.push(args)
-    if (failBuild.step === builds.length - 1) return Promise.resolve({ ok: false, out: 'synthetic build failure' })
-    if (args[1] === 'build' && args.includes('packages/server')) write(join(cwd, WEB_SERVER_ENTRY), '// built\n')
-    return Promise.resolve({ ok: true, out: '' })
-  }
-  return { client, upstream, old, latest, release, identity, id, run, commands, getJson, requests, build, builds, failBuild }
+  return { client, upstream, old, latest, release, identity, id, run, commands, getJson, requests }
 }
 
 const noReleases: GetJson = () => { throw new Error('Main must not query releases') }
 const web = (client: string): string => join(client, 'web')
 
 describe('Web source updates (test_tal203_source_update.py)', () => {
-  it.each([false, true])('fast-forwards the published source and stamps the runtime (worktree=%s)', async (worktree) => {
-    const s = sourceInstall()
-    let client = s.client
-    if (worktree) {
-      client = join(s.client, '..', 'worktree')
-      git(s.client, 'worktree', 'add', '--detach', client, 'HEAD')
-      expect(readFileSync(join(client, '.git'), 'utf8')).toContain('gitdir')
-    }
-    const result = await applyWebUpdate(web(client), 'stable', s.run, s.getJson, s.identity, s.build)
-    expect(result.ok).toBe(true)
-    expect(git(client, 'rev-parse', 'HEAD')).toBe(s.latest)
-    expect(readFileSync(join(client, 'web/package.json'), 'utf8')).toBe('{"version":"2.0.0"}\n')
-    expect(readStamp(client)).toEqual(s.release.runtime)
-    s.id.release = s.release.runtime
-    expect((await applyWebUpdate(web(client), 'stable', s.run, s.getJson, s.identity, s.build)).up_to_date).toBe(true)
-  })
-
-  it('installs and builds the checkout before stamping, and a failed build leaves the stamp and restart untouched', async () => {
-    const s = sourceInstall()
-    const result = await applyWebUpdate(web(s.client), 'stable', s.run, s.getJson, s.identity, s.build)
-    expect(result.ok).toBe(true)
-    expect(s.builds).toEqual(WEB_BUILD_STEPS)
-    expect(existsSync(join(s.client, 'web', WEB_SERVER_ENTRY))).toBe(true)
-    const failing = sourceInstall()
-    failing.failBuild.step = 0
-    const { svc, restarts } = service(failing)
-    const failed = await svc.apply('webui')
-    expect(failed).toMatchObject({ ok: false, build_failed: true })
-    expect(String(failed.message)).toContain('npm ci')
-    expect(git(failing.client, 'rev-parse', 'HEAD')).toBe(failing.latest)
-    expect(existsSync(join(failing.client, 'web/_release.json'))).toBe(false)
-    expect(restarts).toEqual([])
-    // Once the build succeeds the same source is stamped and the restart is scheduled.
-    failing.failBuild.step = null
-    expect(await svc.apply('webui')).toMatchObject({ ok: true, restart_scheduled: true })
-    expect(readStamp(failing.client)).toEqual(failing.release.runtime)
-    expect(restarts).toEqual([1])
-  })
-
-  it.each(['web/package.json', 'untracked.txt', 'web/cache.txt'])('never discards local files (%s)', async (file) => {
-    const s = sourceInstall()
-    writeFileSync(join(s.client, file), 'local work must survive\n')
-    const result = await applyWebUpdate(web(s.client), 'stable', s.run, s.getJson, s.identity, s.build)
-    expect(result.ok).toBe(false)
-    expect(readFileSync(join(s.client, file), 'utf8')).toBe('local work must survive\n')
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.old)
-    if (file !== 'web/cache.txt') expect(s.commands.some((c) => c[0] === 'fetch')).toBe(false)
-  })
-
-  it('refuses divergence and a manifest/tag mismatch', async () => {
-    const s = sourceInstall()
-    writeFileSync(join(s.client, 'local.txt'), 'committed local work')
-    git(s.client, 'add', '.')
-    git(s.client, 'commit', '-m', 'synthetic divergent work')
-    const head = git(s.client, 'rev-parse', 'HEAD')
-    const status = await checkWebUpdate(web(s.client), 'web-v1.0.0', 'stable', s.run, s.getJson, s.identity)
-    expect(status.installed_sha).toBe(head)
-    expect(status.current_sha).toBe(s.old)
-    expect(String(status.compare_url)).not.toContain(head)
-    expect(status.manual_update).toBe(true)
-    expect((await applyWebUpdate(web(s.client), 'stable', s.run, s.getJson, s.identity, s.build)).ok).toBe(false)
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(head)
-    git(s.client, 'reset', '--hard', s.old)
-    s.release.sourceRevision = 'b'.repeat(40)
-    expect((await applyWebUpdate(web(s.client), 'stable', s.run, s.getJson, s.identity, s.build)).ok).toBe(false)
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.old)
-  })
-
-  it('legacy or unrelated checkouts require manual migration', async () => {
-    const s = sourceInstall()
-    expect((await applyWebUpdate(s.client, 'stable', s.run, s.getJson, s.identity, s.build)).manual_update).toBe(true)
-    git(s.client, 'remote', 'set-url', 'origin', 'https://github.com/other/project.git')
-    expect((await applyWebUpdate(web(s.client), 'stable', s.run, s.getJson, s.identity, s.build)).manual_update).toBe(true)
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.old)
-    expect(s.commands.some((c) => c[0] === 'fetch')).toBe(false)
-  })
-
   function service(s: Install, opts: { channel?: 'stable' | 'experimental'; getJson?: GetJson; agentDir?: string | null; blockers?: () => RestartBlockers; gateway?: () => Promise<Dict>; llm?: (system: string, user: string) => Promise<string>; autoApply?: () => boolean; checkEnabled?: () => boolean; npm?: BuildRun; autoNotification?: UpdateServiceDeps['autoNotification'] } = {}): { svc: UpdateService; restarts: number[] } {
     const restarts: number[] = []
     const svc = new UpdateService({
-      webRoot: web(s.client), git: s.run, build: s.build, getJson: opts.getJson ?? s.getJson, identity: s.identity, webuiVersion: 'development',
+      webRoot: web(s.client), git: s.run, getJson: opts.getJson ?? s.getJson, identity: s.identity, webuiVersion: 'development',
       agentDir: () => opts.agentDir ?? null, channel: () => opts.channel ?? 'stable', includeAgent: () => true,
       ...(opts.autoApply ? { autoApply: opts.autoApply } : {}), ...(opts.npm ? { npm: opts.npm } : {}),
       ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
@@ -191,37 +105,27 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     return { svc, restarts }
   }
 
-  it('main tracks the branch without a release lookup and waits for the restart', async () => {
+  it('a source checkout reports a contributor manual update on both channels and is never mutated', async () => {
     const s = sourceInstall()
-    writeFileSync(join(s.upstream, 'web/package.json'), '{"version":"unreleased main"}\n')
-    git(s.upstream, 'add', '.')
-    git(s.upstream, 'commit', '-m', 'synthetic unreleased main')
-    const latest = git(s.upstream, 'rev-parse', 'HEAD')
-    s.id.running = s.old
-    const { svc, restarts } = service(s, { channel: 'experimental', getJson: noReleases })
-    const status = (await svc.check(true)).webui as Dict
-    expect(status.channel).toBe('experimental')
-    expect(status.branch).toBe('origin/main')
-    expect(status.latest_sha).toBe(latest)
-    expect(status.behind).toBe(2)
-    expect(status.release_based).toBe(false)
-    const summary = await svc.summarize({ webui: status }, null)
-    expect(((summary.targets as Dict[])[0]?.commits as string[])).toContain('synthetic unreleased main')
-    expect((await svc.apply('webui')).restart_scheduled).toBe(true)
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(latest)
-    expect(readFileSync(join(s.client, 'web/package.json'), 'utf8')).toBe('{"version":"unreleased main"}\n')
+    const { svc, restarts } = service(s)
+    for (const channel of ['stable', 'experimental'] as const) {
+      const status = await checkWebUpdate(web(s.client), 'development', channel, s.run, s.getJson, s.identity)
+      expect(status).toMatchObject({ manual_update: true, no_git: false })
+      expect(String(status.message)).toContain('contributor source checkout')
+      const applied = await applyWebUpdate(web(s.client), channel, s.run, s.getJson, s.identity)
+      expect(applied).toMatchObject({ ok: false, manual_update: true })
+      expect(String(applied.message)).toContain('contributor source checkout')
+    }
+    expect((await svc.apply('webui', 'stable')).ok).toBe(false)
+    expect((await svc.force('webui', 'experimental')).ok).toBe(false)
+    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.old)
     expect(readStamp(s.client)).toBeNull()
-    expect(((await svc.check(true)).webui as Dict).metadata_repair).toBe(true)
-    expect((await svc.clearLock('webui')).restart_scheduled).toBe(true)
-    s.id.running = latest
-    expect((await svc.apply('webui')).restart_scheduled).toBe(true)
-    expect(restarts).toHaveLength(1)
-    expect(s.commands.some((c) => c[0] === 'fetch' && c.includes('--tags'))).toBe(false)
+    expect(s.commands.filter((args) => ['fetch', 'merge', 'reset', 'checkout'].includes(args[0]!))).toEqual([])
+    expect(restarts).toEqual([])
   })
 
   it('refuses every Agent mutation while a Web restart is pending', async () => {
-    const webInstall = sourceInstall()
-    const { svc } = service(webInstall, { agentDir: join(tmp(), 'agent') })
+    const { svc } = npmService({ agentDir: join(tmp(), 'agent') })
     expect(await svc.apply('webui')).toMatchObject({ ok: true, restart_scheduled: true })
 
     for (const result of [await svc.apply('agent'), await svc.force('agent'), await svc.clearLock('agent')]) {
@@ -229,52 +133,12 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     }
   })
 
-  it('main retries one transient fetch failure and fetches Web release tags', async () => {
-    const s = sourceInstall()
-    git(s.upstream, 'tag', '-a', 'web-v1.0.0', '-m', 'synthetic installed release', s.old)
-    let failures = 1
-    const flaky: GitRun = (args, cwd, t) => args[0] === 'fetch' && failures-- > 0 ? Promise.resolve({ ok: false, out: 'fatal: unable to access: Could not resolve host: github.com' }) : s.run(args, cwd, t)
-    const status = await checkWebUpdate(web(s.client), 'development', 'experimental', flaky, noReleases, s.identity)
-    expect(status).toMatchObject({ behind: 1, latest_sha: s.latest })
-    expect(status.error).toBeUndefined()
-    expect(git(s.client, 'tag', '--list', 'web-v*')).toBe('web-v1.0.0\nweb-v2.0.0')
-    expect(detectWebuiVersion(DEV, web(s.client))).toBe('web-v1.0.0')
-  })
-
-  it('a failed main fetch keeps the channel\'s last good status until the cache expires, then names the git error', async () => {
-    const s = sourceInstall()
-    let down = false
-    let now = 1000
-    const run: GitRun = (args, cwd, t) => down && args[0] === 'fetch' ? Promise.resolve({ ok: false, out: 'fatal: unable to access https://token@github.com/MaudeCode/talaria.git/: Could not resolve host: github.com' }) : s.run(args, cwd, t)
-    const logs: string[] = []
-    const svc = new UpdateService({
-      webRoot: web(s.client), git: run, getJson: s.getJson, identity: s.identity, webuiVersion: 'test', refreshWebuiVersion: () => 'web-v1.0.0', now: () => now,
-      agentDir: () => null, channel: () => 'experimental', includeAgent: () => false,
-      blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
-      scheduleRestart: () => undefined, gatewayRestart: () => Promise.resolve({ status: 'completed' }), log: (line) => logs.push(line),
-    })
-    expect((await svc.check(true)).webui).toMatchObject({ behind: 1, current_version: 'web-v1.0.0' })
-    // A good Stable result must not evict the Experimental snapshot.
-    expect((await svc.check(true, false, 'stable')).webui).toMatchObject({ release_based: true })
-    down = true
-    now += 60
-    const kept = (await svc.check(true)).webui as Dict
-    expect(kept).toMatchObject({ behind: 1, stale_check: true, channel: 'experimental', release_based: false })
-    expect(kept.error).toBeUndefined()
-    expect(logs.some((l) => l.includes('webui fetch failed') && l.includes('Could not resolve host'))).toBe(true)
-    now += CACHE_TTL_S
-    const failed = (await svc.check(true)).webui as Dict
-    expect(failed).toMatchObject({ behind: null, stale_check: true })
-    expect(failed.error).toContain('Could not fetch origin/main: fatal: unable to access https://<redacted>@github.com')
-  })
-
-  it('automatically applies relevant Experimental main changes and retries active-chat blockers', async () => {
-    const s = sourceInstall()
+  it('automatically applies a Stable npm update and retries active-chat blockers', async () => {
     let enabled = false
     let blocked = true
     const notificationEvents: string[] = []
-    const { svc, restarts } = service(s, {
-      channel: 'experimental', getJson: noReleases, autoApply: () => enabled,
+    const { svc, restarts, installs, version } = npmService({
+      autoApply: () => enabled,
       blockers: () => ({ active_streams: blocked ? 1 : 0, active_runs: 0, blocking_stream_ids: blocked ? ['s'] : [], blocking_run_ids: [], restart_blocked: blocked }),
       autoNotification: { begin: () => { notificationEvents.push('begin'); return `notice-${String(notificationEvents.length)}` }, transition: (_id, phase) => { notificationEvents.push(phase) } },
     })
@@ -282,24 +146,23 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     enabled = true
     expect(await svc.autoApplyOnce()).toMatchObject({ ok: false, restart_blocked: true })
     expect(notificationEvents).toEqual(['begin', 'blocked'])
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.old)
+    expect(installs()).toBe(0)
     expect(restarts).toEqual([])
     blocked = false
     expect(await svc.autoApplyOnce()).toMatchObject({ ok: true, restart_scheduled: true })
     expect(notificationEvents).toEqual(['begin', 'blocked', 'begin', 'restarting'])
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.latest)
+    expect(version()).toBe('2.0.0')
     expect(restarts).toEqual([1])
   })
 
   it('checks without applying until opted in, and stops checking when updates are disabled', async () => {
-    const s = sourceInstall()
     let enabled = true
-    const { svc, restarts } = service(s, { channel: 'experimental', autoApply: () => false, checkEnabled: () => enabled })
+    const { svc, restarts, installs, version } = npmService({ autoApply: () => false, checkEnabled: () => enabled })
     const check = vi.spyOn(svc, 'check')
     expect(await svc.autoApplyOnce()).toMatchObject({ behind: 1 })
-    expect(s.builds).toEqual([])
+    expect(installs()).toBe(0)
     expect(restarts).toEqual([])
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.old)
+    expect(version()).toBe('1.0.0')
     enabled = false
     expect(await svc.autoApplyOnce()).toBeNull()
     expect(check).toHaveBeenCalledTimes(1)
@@ -323,22 +186,21 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   })
 
   it.each(['disabled', 'channel', 'shutdown'])('cancels an automatic apply after %s changes during its check', async (change) => {
-    const s = sourceInstall()
     let enabled = true
-    const opts = { channel: 'experimental' as 'stable' | 'experimental', autoApply: () => enabled }
-    const { svc, restarts } = service(s, opts)
+    let channel: 'stable' | 'experimental' = 'stable'
+    const { svc, restarts, installs, version } = npmService({ autoApply: () => enabled, channel: () => channel })
     let finish!: (result: Dict) => void
     vi.spyOn(svc, 'check').mockImplementation(() => new Promise((resolve) => { finish = resolve }))
     const checking = svc.autoApplyOnce()
     expect(await svc.autoApplyOnce()).toBeNull()
     if (change === 'disabled') enabled = false
-    else if (change === 'channel') opts.channel = 'stable'
+    else if (change === 'channel') channel = 'experimental'
     else svc.stopAutoApply()
     finish({ webui: { behind: 1 } })
     await checking
-    expect(s.builds).toEqual([])
+    expect(installs()).toBe(0)
     expect(restarts).toEqual([])
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.old)
+    expect(version()).toBe('1.0.0')
   })
 
   it('does not resurrect a timer when stopped during an in-flight tick', async () => {
@@ -357,38 +219,42 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     } finally { vi.useRealTimers() }
   })
 
-  it.each(['disabled', 'checks-disabled', 'channel', 'shutdown'])('finishes a mutated source update when %s changes during its build', async (change) => {
-    const s = sourceInstall()
+  it.each(['disabled', 'checks-disabled', 'channel', 'shutdown'])('defers a staged npm update when %s changes during its install, leaving the installed package untouched', async (change) => {
     let enabled = true
     let checks = true
-    const opts = { channel: 'experimental' as 'stable' | 'experimental', autoApply: () => enabled, checkEnabled: () => checks }
-    const build = s.build
-    s.build = async (...args) => {
-      expect(svc.blocksNewWork()).toBe(true)
-      if (change === 'disabled') enabled = false
-      else if (change === 'checks-disabled') checks = false
-      else if (change === 'channel') opts.channel = 'stable'
-      else svc.stopAutoApply()
-      return build(...args)
-    }
-    const { svc, restarts } = service(s, opts)
+    let channel: 'stable' | 'experimental' = 'stable'
+    const service: { svc?: UpdateService } = {}
+    const { svc, restarts, version } = npmService({
+      autoApply: () => enabled, checkEnabled: () => checks, channel: () => channel,
+      npm: (inner) => async (args, cwd, t) => {
+        if (args[0] === 'install') {
+          expect(service.svc?.blocksNewWork()).toBe(true)
+          if (change === 'disabled') enabled = false
+          else if (change === 'checks-disabled') checks = false
+          else if (change === 'channel') channel = 'experimental'
+          else service.svc?.stopAutoApply()
+        }
+        return inner(args, cwd, t)
+      },
+    })
+    service.svc = svc
     const result = await svc.autoApplyOnce()
-    expect(result?.ok).toBe(true)
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.latest)
-    expect(restarts).toEqual(change === 'shutdown' ? [] : [1])
-    expect(svc.blocksNewWork()).toBe(change !== 'shutdown')
-    if (change !== 'shutdown') expect(svc.cachedStatus().checked_at).toBe(0)
+    // The replacement is staged beside the installed package and swapped only after this re-check (TAL-379).
+    expect(result).toMatchObject({ ok: false })
+    expect(version()).toBe('1.0.0')
+    expect(restarts).toEqual([])
+    expect(svc.blocksNewWork()).toBe(false)
   })
 
-  it('retries failed checks and builds, and stops after scheduling a restart', async () => {
-    const s = sourceInstall()
-    const { svc, restarts } = service(s, { channel: 'experimental', getJson: noReleases, autoApply: () => true })
+  it('retries failed checks and installs, and stops after scheduling a restart', async () => {
+    const { n, svc, restarts, version } = npmService({ autoApply: () => true })
     const check = vi.spyOn(svc, 'check').mockRejectedValueOnce(new Error('synthetic fetch failure'))
     expect(await svc.autoApplyOnce()).toMatchObject({ ok: false })
-    s.failBuild.step = 0
-    expect(await svc.autoApplyOnce()).toMatchObject({ build_failed: true })
+    n.mode.outcome = 'failure'
+    expect(await svc.autoApplyOnce()).toMatchObject({ install_failed: true })
     expect(restarts).toEqual([])
-    s.failBuild.step = null
+    expect(version()).toBe('1.0.0')
+    n.mode.outcome = 'success'
     expect(await svc.autoApplyOnce()).toMatchObject({ restart_scheduled: true })
     const checks = check.mock.calls.length
     expect(await svc.autoApplyOnce()).toBeNull()
@@ -396,46 +262,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(restarts).toEqual([1])
   })
 
-  it.each(['dirty', 'untracked', 'diverged', 'ahead', 'operation', 'fetch_failed'])('main preserves unsafe checkout states (%s)', async (state) => {
-    const s = sourceInstall()
-    if (state === 'dirty') writeFileSync(join(s.client, 'web/package.json'), 'keep edits')
-    else if (state === 'untracked') writeFileSync(join(s.client, 'personal.txt'), 'keep untracked')
-    else if (state === 'diverged' || state === 'ahead') {
-      if (state === 'ahead') git(s.client, 'reset', '--hard', 'origin/main')
-      writeFileSync(join(s.client, 'web/package.json'), 'keep local commit')
-      git(s.client, 'add', '.')
-      git(s.client, 'commit', '-m', 'synthetic local work')
-    } else if (state === 'operation') writeFileSync(join(s.client, '.git/MERGE_HEAD'), 'a'.repeat(40))
-    const head = git(s.client, 'rev-parse', 'HEAD')
-    const before = readFileSync(join(s.client, 'web/package.json'))
-    const runner: GitRun = state === 'fetch_failed' ? (args, cwd, t) => (args[0] === 'fetch' ? Promise.resolve({ out: 'fetch unavailable', ok: false }) : s.run(args, cwd, t)) : s.run
-    expect((await applyWebUpdate(web(s.client), 'experimental', runner, noReleases, s.identity, s.build)).ok).toBe(false)
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(head)
-    expect(readFileSync(join(s.client, 'web/package.json'))).toEqual(before)
-    if (state === 'untracked') expect(readFileSync(join(s.client, 'personal.txt'), 'utf8')).toBe('keep untracked')
-  })
-
-  it('main removes only its unchanged release stamp', async () => {
-    const s = sourceInstall()
-    expect((await applyWebUpdate(web(s.client), 'stable', s.run, s.getJson, s.identity, s.build)).ok).toBe(true)
-    const stamp = join(s.client, 'web/_release.json')
-    s.id.stamped = s.release.runtime
-    s.id.release = s.release.runtime
-    s.id.running = s.latest
-    writeFileSync(join(s.upstream, 'web/package.json'), '{"version":"next main"}\n')
-    git(s.upstream, 'add', '.')
-    git(s.upstream, 'commit', '-m', 'synthetic main')
-    const original = readFileSync(stamp)
-    writeFileSync(stamp, '{"custom":"preserve"}')
-    expect((await applyWebUpdate(web(s.client), 'experimental', s.run, noReleases, s.identity, s.build)).ok).toBe(false)
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.latest)
-    expect(readFileSync(stamp, 'utf8')).toBe('{"custom":"preserve"}')
-    writeFileSync(stamp, original)
-    expect((await applyWebUpdate(web(s.client), 'experimental', s.run, noReleases, s.identity, s.build)).ok).toBe(true)
-    expect(existsSync(stamp)).toBe(false)
-  })
-
-  it('the main setting round-trips and keeps the Agent channel independent', async () => {
+  it('the Experimental setting round-trips and keeps the Agent channel independent', async () => {
     const s = sourceInstall()
     const agentCalls: string[][] = []
     const run: GitRun = (args, cwd, t) => { if (cwd !== s.client && cwd !== web(s.client)) agentCalls.push(args); return s.run(args, cwd, t) }
@@ -449,92 +276,10 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(svc.cachedStatus().stale_channel).toBe(true)
     const status = await svc.check(true)
     expect(status.channel).toBe('experimental')
-    expect((status.webui as Dict).branch).toBe('origin/main')
+    expect((status.webui as Dict).manual_update).toBe(true)
     // The Agent checkout is inspected with its own `v*` tags regardless of the Web channel.
     expect(agentCalls.some((c) => c[0] === 'tag' && c.includes('v*'))).toBe(true)
     expect(svc.cachedStatus(false).agent).toEqual({ name: 'agent', behind: 0, ignored: true })
-  })
-
-  it.each(['app/client.swift', 'relay/backend.ts', 'README.md', 'changelog.d/example.json', '.github/workflows/example.yml'])('main ignores unrelated changes without updating or restarting (%s)', async (path) => {
-    const s = sourceInstall()
-    git(s.client, 'reset', '--hard', s.latest)
-    write(join(s.upstream, path), 'synthetic unrelated change\n')
-    git(s.upstream, 'add', '.')
-    git(s.upstream, 'commit', '-m', 'synthetic unrelated update')
-    s.id.running = s.latest
-    const { svc, restarts } = service(s, { channel: 'experimental', getJson: noReleases })
-    const status = (await svc.check(true)).webui as Dict
-    expect(status.behind).toBe(0)
-    expect(status.metadata_repair).toBe(false)
-    expect((await svc.summarize({ webui: status }, null)).targets).toEqual([])
-    expect((await svc.apply('webui', 'experimental')).up_to_date).toBe(true)
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.latest)
-    expect(restarts).toEqual([])
-  })
-
-  it('main counts Web and contract changes and excludes unrelated commits from the summary', async () => {
-    const s = sourceInstall()
-    git(s.client, 'reset', '--hard', s.latest)
-    write(join(s.upstream, 'README.md'), 'unrelated root documentation')
-    git(s.upstream, 'add', '.')
-    git(s.upstream, 'commit', '-m', 'synthetic unrelated update')
-    write(join(s.upstream, 'contracts/versions.json'), '{"synthetic":"updated"}')
-    git(s.upstream, 'add', '.')
-    git(s.upstream, 'commit', '-m', 'synthetic shared contract update')
-    const latest = git(s.upstream, 'rev-parse', 'HEAD')
-    s.id.running = s.latest
-    const { svc } = service(s, { channel: 'experimental', getJson: noReleases })
-    let status = await checkWebUpdate(web(s.client), 'development', 'experimental', s.run, noReleases, s.identity)
-    expect(status.behind).toBe(1)
-    expect(((await svc.summarize({ webui: status }, null)).targets as Dict[])[0]?.commits).toEqual(['synthetic shared contract update'])
-    expect((await applyWebUpdate(web(s.client), 'experimental', s.run, noReleases, s.identity, s.build)).ok).toBe(true)
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(latest)
-    // A later excluded commit cannot hide the pending restart for changed contracts.
-    write(join(s.upstream, 'README.md'), 'next unrelated change')
-    git(s.upstream, 'commit', '-am', 'synthetic next unrelated update')
-    status = await checkWebUpdate(web(s.client), 'development', 'experimental', s.run, noReleases, s.identity)
-    expect(status.behind).toBe(0)
-    expect(status.metadata_repair).toBe(true)
-    const result = await applyWebUpdate(web(s.client), 'experimental', s.run, noReleases, s.identity, s.build)
-    expect(result.ok).toBe(true)
-    expect(result.up_to_date).toBeUndefined()
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(latest)
-    s.id.running = latest
-    expect((await checkWebUpdate(web(s.client), 'development', 'experimental', s.run, noReleases, s.identity)).metadata_repair).toBe(false)
-  })
-
-  it('main does not offer reverted Web changes', async () => {
-    const s = sourceInstall()
-    git(s.client, 'reset', '--hard', s.latest)
-    const original = readFileSync(join(s.upstream, 'web/package.json'))
-    writeFileSync(join(s.upstream, 'web/package.json'), 'temporary change')
-    git(s.upstream, 'commit', '-am', 'synthetic temporary change')
-    writeFileSync(join(s.upstream, 'web/package.json'), original)
-    git(s.upstream, 'commit', '-am', 'synthetic revert')
-    s.id.running = s.latest
-    expect((await checkWebUpdate(web(s.client), 'development', 'experimental', s.run, noReleases, s.identity)).behind).toBe(0)
-    expect((await applyWebUpdate(web(s.client), 'experimental', s.run, noReleases, s.identity, s.build)).up_to_date).toBe(true)
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.latest)
-  })
-
-  it('public update entrypoints use the safe monorepo path (force never discards work)', async () => {
-    const s = sourceInstall()
-    const { svc, restarts } = service(s)
-    const status = (await svc.check(true)).webui as Dict
-    expect(status.behind).toBe(1)
-    expect(status.repo_url).toBe(REPOSITORY_URL)
-    expect(String(status.compare_url).endsWith(`${s.old}...${s.latest}`)).toBe(true)
-    const local = join(s.client, 'unrelated-app-work.txt')
-    writeFileSync(local, 'preserve this')
-    expect((await svc.force('webui', 'stable')).ok).toBe(false)
-    expect(readFileSync(local, 'utf8')).toBe('preserve this')
-    expect(restarts).toEqual([])
-    rmSync(local)
-    const result = await svc.apply('webui', 'stable')
-    expect(result.ok).toBe(true)
-    expect(result.restart_scheduled).toBe(true)
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.latest)
-    expect(restarts).toEqual([1])
   })
 
   it('the Web version ignores App and Relay tags', () => {
@@ -547,7 +292,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const s = sourceInstall()
     git(s.client, 'remote', 'set-url', 'origin', 'https://x-access-token:synthetic-secret@github.com/MaudeCode/talaria.git')
     const result = await checkWebUpdate(web(s.client), 'web-v1.0.0', 'stable', s.run, s.getJson, s.identity)
-    expect(result.behind).toBe(1)
+    expect(result.manual_update).toBe(true)
     expect(JSON.stringify(result)).not.toContain('synthetic-secret')
     expect(sanitizeGitDiagnostic('fatal: https://x-access-token:ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ@github.com/x?token=abc')).toBe('fatal: https://<redacted>@github.com/x?token=<redacted>')
   })
@@ -562,7 +307,8 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect((await checkWebUpdate(null, 'web-v3.0.0', 'stable', s.run, s.getJson, s.identity)).behind).toBe(0)
   })
 
-  function npmPackageInstall(s: Install, outcome: 'success' | 'failure' | 'bad-stamp' = 'success') {
+  function npmPackageInstall(s: Install, initial: 'success' | 'failure' | 'bad-stamp' = 'success') {
+    const mode = { outcome: initial }
     const globalRoot = join(tmp(), 'lib/node_modules')
     const packageRoot = join(globalRoot, '@maudecode/talaria-web')
     write(join(packageRoot, 'package.json'), JSON.stringify({ name: '@maudecode/talaria-web', version: '1.0.0' }))
@@ -575,19 +321,37 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
       calls.push(args)
       if (args[0] === 'root') return Promise.resolve({ ok: true, out: globalRoot })
       if (args[0] === 'install') {
-        if (outcome === 'failure') return Promise.resolve({ ok: false, out: 'synthetic npm failure' })
+        if (mode.outcome === 'failure') return Promise.resolve({ ok: false, out: 'synthetic npm failure' })
         const candidate = join(args[args.indexOf('--prefix') + 1]!, 'lib/node_modules/@maudecode/talaria-web')
         write(join(candidate, 'package.json'), JSON.stringify({ name: '@maudecode/talaria-web', version: '2.0.0', bin: { 'talaria-web': 'dist/bin/talaria-web.js', 'talaria-web-mcp': 'dist/bin/talaria-web-mcp.js' } }))
         write(join(candidate, 'sidecar/agent_dependency.json'), JSON.stringify(PIN))
         write(join(candidate, 'contract_versions.json'), JSON.stringify(VERSIONS))
         write(join(candidate, 'dist/bin/talaria-web.js'), '// fixture')
         write(join(candidate, 'dist/bin/talaria-web-mcp.js'), '// fixture')
-        if (outcome === 'success') writeFileSync(join(candidate, '_release.json'), JSON.stringify(s.release.runtime))
+        if (mode.outcome === 'success') writeFileSync(join(candidate, '_release.json'), JSON.stringify(s.release.runtime))
         return Promise.resolve({ ok: true, out: '' })
       }
       return Promise.resolve({ ok: false, out: 'unexpected npm command' })
     }
-    return { packageRoot, globalRoot, npm, calls }
+    return { packageRoot, globalRoot, npm, calls, mode }
+  }
+
+  /** An UpdateService over a global npm install one Stable release behind, the only kind that updates itself (TAL-379). */
+  function npmService(opts: { channel?: () => 'stable' | 'experimental'; agentDir?: string | null; blockers?: () => RestartBlockers; autoApply?: () => boolean; checkEnabled?: () => boolean; autoNotification?: UpdateServiceDeps['autoNotification']; npm?: (inner: BuildRun) => BuildRun } = {}) {
+    const s = sourceInstall()
+    const n = npmPackageInstall(s)
+    const restarts: number[] = []
+    const svc = new UpdateService({
+      webRoot: n.packageRoot, git: s.run, npm: opts.npm ? opts.npm(n.npm) : n.npm, getJson: s.getJson, identity: s.identity, webuiVersion: 'web-v1.0.0',
+      agentDir: () => opts.agentDir ?? null, channel: opts.channel ?? (() => 'stable'), includeAgent: () => true,
+      ...(opts.autoApply ? { autoApply: opts.autoApply } : {}), ...(opts.checkEnabled ? { checkEnabled: opts.checkEnabled } : {}),
+      ...(opts.autoNotification ? { autoNotification: opts.autoNotification } : {}),
+      blockers: opts.blockers ?? (() => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false })),
+      scheduleRestart: () => restarts.push(1), gatewayRestart: () => Promise.resolve({ status: 'completed' }), llm: null, sleep: () => Promise.resolve(), log: () => undefined,
+    })
+    const installs = (): number => n.calls.filter((call) => call[0] === 'install').length
+    const version = (): string => (JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version
+    return { s, n, svc, restarts, installs, version }
   }
 
   it('automatically installs the exact completed Stable npm release and schedules restart', async () => {
@@ -611,7 +375,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   it.each(['failure', 'bad-stamp'] as const)('fails closed when the npm replacement is %s', async (outcome) => {
     const s = sourceInstall()
     const n = npmPackageInstall(s, outcome)
-    const result = await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, s.build, n.npm)
+    const result = await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, n.npm)
     expect(result.ok).toBe(false)
     expect(result[outcome === 'failure' ? 'install_failed' : 'verification_failed']).toBe(true)
     expect((JSON.parse(readFileSync(join(n.packageRoot, 'package.json'), 'utf8')) as { version: string }).version).toBe('1.0.0')
@@ -622,8 +386,8 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     const n = npmPackageInstall(s)
     expect(await npmInstallInfo(n.packageRoot, n.npm, true)).toBeNull()
     const wrongRoot: BuildRun = (args) => Promise.resolve(args[0] === 'root' ? { ok: true, out: join(tmp(), 'other') } : { ok: false, out: 'must not install' })
-    expect((await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, s.build, wrongRoot)).manual_update).toBe(true)
-    expect((await applyWebUpdate(n.packageRoot, 'experimental', s.run, s.getJson, s.identity, s.build, n.npm)).manual_update).toBe(true)
+    expect((await applyWebUpdate(n.packageRoot, 'stable', s.run, s.getJson, s.identity, wrongRoot)).manual_update).toBe(true)
+    expect((await applyWebUpdate(n.packageRoot, 'experimental', s.run, s.getJson, s.identity, n.npm)).manual_update).toBe(true)
     expect(n.calls.some((c) => c[0] === 'install')).toBe(false)
   })
 
@@ -659,91 +423,6 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(result.release_url).toBe(s.release.release_url)
   })
 
-  it('the Web lock retry preserves the git lock and then updates', async () => {
-    const s = sourceInstall()
-    const { svc } = service(s)
-    const lock = join(s.client, '.git/index.lock')
-    writeFileSync(lock, 'synthetic active Git operation')
-    const blocked = await svc.clearLock('webui')
-    expect(blocked.ok).toBe(false)
-    expect(blocked.lock_conflict).toBe(true)
-    expect(blocked.lock_recovery).toEqual({ action: 'retry-only' })
-    expect(readFileSync(lock, 'utf8')).toBe('synthetic active Git operation')
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.old)
-    rmSync(lock) // The fixture owns the lock, exactly as a completed Git process does.
-    expect((await svc.clearLock('webui')).ok).toBe(true)
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.latest)
-  })
-
-  it.each([[false, false], [false, true], [true, false], [true, true]])('a retry repairs the stamp after the source advanced and schedules a restart (existing stamp=%s, restarted=%s)', async (existingStamp, restarted) => {
-    const s = sourceInstall()
-    const stamp = join(s.client, 'web/_release.json')
-    const oldRuntime = { sourceRevision: s.old, version: '1.0.0' }
-    if (existingStamp) writeFileSync(stamp, JSON.stringify(oldRuntime))
-    s.id.release = oldRuntime
-    const { svc, restarts } = service(s)
-    // Python monkeypatched NamedTemporaryFile; here the stamp directory turns read-only right after the build lands.
-    const unwritableAfterBuild: BuildRun = async (args, cwd, t) => { const r = await s.build(args, cwd, t); if (args[1] === 'build' && args.includes('packages/server')) chmodSync(join(s.client, 'web'), 0o555); return r }
-    try {
-      expect((await applyWebUpdate(web(s.client), 'stable', s.run, s.getJson, s.identity, unwritableAfterBuild)).ok).toBe(false)
-    } finally {
-      chmodSync(join(s.client, 'web'), 0o755)
-    }
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.latest)
-    expect(readStamp(s.client)).toEqual(existingStamp ? oldRuntime : null)
-    if (restarted) { s.id.stamped = oldRuntime; s.id.release = { sourceRevision: null, version: 'development' } }
-    let refreshed = (await svc.check(true)).webui as Dict
-    expect(refreshed.behind).toBe(0)
-    expect(refreshed.metadata_repair).toBe(true)
-    expect(refreshed.manual_update).toBeUndefined()
-    expect(refreshed.error).toBeUndefined()
-    const repaired = await svc.apply('webui', 'stable')
-    expect(repaired.ok).toBe(true)
-    expect(repaired.restart_scheduled).toBe(true)
-    expect(readStamp(s.client)).toEqual(s.release.runtime)
-    expect(restarts).toEqual([1])
-    s.id.release = s.release.runtime
-    expect((await applyWebUpdate(web(s.client), 'stable', s.run, s.getJson, s.identity, s.build)).up_to_date).toBe(true)
-    refreshed = (await svc.check(true)).webui as Dict
-    expect(refreshed.behind).toBe(0)
-    expect(refreshed.metadata_repair).toBe(false)
-  })
-
-  it('a current source does not hide a modified stamp', async () => {
-    const s = sourceInstall()
-    git(s.client, 'reset', '--hard', s.latest)
-    const stamp = join(s.client, 'web/_release.json')
-    writeFileSync(stamp, '{"version":"unreviewed local metadata"}')
-    expect((await applyWebUpdate(web(s.client), 'stable', s.run, s.getJson, s.identity, s.build)).ok).toBe(false)
-    const status = await checkWebUpdate(web(s.client), 'web-v2.0.0', 'stable', s.run, s.getJson, s.identity)
-    expect(status.behind).toBeNull()
-    expect(status.manual_update).toBe(true)
-    expect(status.error).toBeTruthy()
-    expect(readFileSync(stamp, 'utf8')).toBe('{"version":"unreviewed local metadata"}')
-  })
-
-  it('an ahead checkout is manual, not a successful update', async () => {
-    const s = sourceInstall()
-    git(s.client, 'reset', '--hard', s.latest)
-    const stamp = join(s.client, 'web/_release.json')
-    const original = JSON.stringify(s.release.runtime)
-    writeFileSync(stamp, original)
-    s.id.release = s.release.runtime
-    writeFileSync(join(s.client, 'web/package.json'), '{"version":"unpublished local change"}\n')
-    git(s.client, 'add', '.')
-    git(s.client, 'commit', '-m', 'synthetic ahead checkout')
-    const head = git(s.client, 'rev-parse', 'HEAD')
-    const status = await checkWebUpdate(web(s.client), s.release.tag, 'stable', s.run, s.getJson, s.identity)
-    expect(status.manual_update).toBe(true)
-    expect(status.behind).toBeNull()
-    const result = await applyWebUpdate(web(s.client), 'stable', s.run, s.getJson, s.identity, s.build)
-    expect(result.ok).toBe(false)
-    expect(result.manual_update).toBe(true)
-    expect(result.up_to_date).toBeUndefined()
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(head)
-    expect(readFileSync(stamp, 'utf8')).toBe(original)
-  })
-
   it('the summary cache separates filtered experimental commits and reuses exact ranges', async () => {
     const s = sourceInstall()
     write(join(s.upstream, 'app/client.swift'), '// unrelated App change\n')
@@ -773,13 +452,13 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
   })
 
   it('refuses to apply while chat work is active and reports the blockers', async () => {
-    const s = sourceInstall()
-    const { svc, restarts } = service(s, { blockers: () => ({ active_streams: 1, active_runs: 2, blocking_stream_ids: ['st_1'], blocking_run_ids: ['r1', 'r2'], restart_blocked: true }) })
+    const { svc, restarts, installs, version } = npmService({ blockers: () => ({ active_streams: 1, active_runs: 2, blocking_stream_ids: ['st_1'], blocking_run_ids: ['r1', 'r2'], restart_blocked: true }) })
     const blocked = await svc.apply('webui')
     expect(blocked).toMatchObject({ ok: false, restart_blocked: true, active_streams: 1, active_runs: 2, blocking_stream_ids: ['st_1'] })
     expect(String(blocked.message)).toContain('1 active chat stream and 2 active agent runs')
     expect(restarts).toEqual([])
-    expect(git(s.client, 'rev-parse', 'HEAD')).toBe(s.old)
+    expect(installs()).toBe(0)
+    expect(version()).toBe('1.0.0')
   })
 })
 
@@ -871,9 +550,9 @@ describe('published release sets (test_tal203_published_releases.py)', () => {
     expect(await transient(answer(404))).toBe(false)
     const s = sourceInstall()
     const down: GetJson = () => Promise.reject(new ReleaseUnavailable('GitHub answered 503', true))
-    expect(await checkWebUpdate(web(s.client), 'development', 'stable', s.run, down, s.identity)).toMatchObject({ stale_check: true, error: 'GitHub answered 503' })
+    expect(await checkWebUpdate(null, 'development', 'stable', s.run, down, s.identity)).toMatchObject({ stale_check: true, error: 'GitHub answered 503' })
     const missing: GetJson = () => Promise.reject(new ReleaseUnavailable('GitHub answered 404'))
-    expect((await checkWebUpdate(web(s.client), 'development', 'stable', s.run, missing, s.identity)).stale_check).toBeUndefined()
+    expect((await checkWebUpdate(null, 'development', 'stable', s.run, missing, s.identity)).stale_check).toBeUndefined()
   })
 
   it('selects by publication order, not response array order', async () => {

@@ -69,7 +69,7 @@ it('uses real npm to stage a global replacement with its dependencies while pres
       contracts: { appWeb: { web: [1] }, webRelay: { web: [2] } }, agent: release.compatibleAgent,
     } : [{ tag_name: `release-set-${release.sourceRevision}`, published_at: '2026-01-01', assets: [{ name: 'release-set.json', id: 1 }] }])
     const id = { release: () => ({}), stamped: () => ({}), runningSourceRevision: () => null }
-    expect(await applyWebUpdate(packageRoot, 'stable', runGit, getJson, id, undefined, npm)).toMatchObject({ ok: true })
+    expect(await applyWebUpdate(packageRoot, 'stable', runGit, getJson, id, npm)).toMatchObject({ ok: true })
     for (const bin of ['talaria-web', 'talaria-web-mcp']) {
       expect(execFileSync(process.execPath, [join(prefix, 'bin', bin)], { encoding: 'utf8' }).trim()).toBe('2.0.0 dependency-loaded')
     }
