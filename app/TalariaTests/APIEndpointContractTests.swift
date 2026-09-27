@@ -411,6 +411,8 @@ final class SharedContractTests: XCTestCase {
         }
         // A run without a journal: the transcript holds its persisted rows and states no cursor.
         XCTAssertNil(try session("session").transcriptSeq)
+        // A release checks this App against every retained Web; one from before TAL-316 has no such example.
+        guard object["journaled_session"] != nil else { return }
         // A journaled run: the transcript ends at the running turn's prompt, and replay resumes after the cursor.
         let journaled = try session("journaled_session")
         XCTAssertEqual(journaled.transcriptSeq, TranscriptSeq(streamId: "contract-run-h", seq: 0))
