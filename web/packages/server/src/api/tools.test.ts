@@ -488,6 +488,51 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(body.can_clear).toBe(false)
   })
 
+  it('compares a Web tab build and keeps its refresh notice tab-scoped until the reloaded build is verified', async () => {
+    const oldBuild = 'a'.repeat(64)
+    const newBuild = 'b'.repeat(64)
+    const originalBuildId = s.deps.spa.buildId.bind(s.deps.spa)
+    let current: string | null = newBuild
+    s.deps.spa.buildId = () => current
+    try {
+      const list = async (query: string) => json(await s.get(`/api/update-notifications${query}`))
+      const res = await s.get('/api/update-notifications?tab_id=tab-aaaaaaaa&loaded_build=' + oldBuild)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('cache-control')).toBe('no-store')
+      let body = await json(res)
+      const id = String((body.frontend_build as Json).notification_id)
+      expect(body.frontend_build).toEqual({ current_build: newBuild, loaded_build: oldBuild, refresh_required: true, notification_id: id })
+      expect((body.notifications as Json[]).filter((row) => row.kind === 'web_refresh')).toMatchObject([{ id, requires_interaction: true, can_dismiss: false, actions: [{ id: 'reload', acknowledges: false }] }])
+
+      body = await list('')
+      expect(body.frontend_build).toEqual({ current_build: newBuild, loaded_build: null, refresh_required: false, notification_id: null })
+      expect((body.notifications as Json[]).some((row) => row.id === id)).toBe(false)
+      body = await list('?tab_id=tab-bbbbbbbb&loaded_build=' + newBuild)
+      expect((body.notifications as Json[]).some((row) => row.id === id)).toBe(false)
+      expect((await s.get(`/api/update-notifications?tab_id=x&loaded_build=${oldBuild}`)).status).toBe(400)
+
+      expect((await post(s, `/api/update-notifications/${id}/read`, { read: true })).status).toBe(404)
+      expect(await json(await post(s, `/api/update-notifications/${id}/read`, { read: true, tab_id: 'tab-aaaaaaaa' }))).toMatchObject({ unread: false, requires_interaction: true })
+      expect((await post(s, `/api/update-notifications/${id}/dismiss`, { dismiss: true, tab_id: 'tab-aaaaaaaa' })).status).toBe(409)
+      body = await json(await post(s, '/api/update-notifications/clear', { clear: true, tab_id: 'tab-aaaaaaaa', loaded_build: oldBuild }))
+      expect((body.notifications as Json[]).map((row) => row.id)).toContain(id)
+      expect(body.frontend_build).toMatchObject({ refresh_required: true, notification_id: id })
+      expect(await json(await post(s, `/api/update-notifications/${id}/actions/reload`, { perform: true, tab_id: 'tab-aaaaaaaa' }))).toMatchObject({ requires_interaction: true })
+
+      current = null
+      body = await list('?tab_id=tab-aaaaaaaa&loaded_build=' + newBuild)
+      expect(body.frontend_build).toMatchObject({ current_build: null, refresh_required: false })
+      expect((body.notifications as Json[]).map((row) => row.id)).toContain(id)
+
+      current = newBuild
+      body = await list('?tab_id=tab-aaaaaaaa&loaded_build=' + newBuild)
+      expect(body.frontend_build).toEqual({ current_build: newBuild, loaded_build: newBuild, refresh_required: false, notification_id: null })
+      expect((body.notifications as Json[]).some((row) => row.id === id)).toBe(false)
+    } finally {
+      s.deps.spa.buildId = originalBuildId
+    }
+  })
+
   it('deduplicates concurrent update requests onto one server lifecycle record', async () => {
     const originalApply = s.deps.updates.apply.bind(s.deps.updates)
     let finish!: () => void

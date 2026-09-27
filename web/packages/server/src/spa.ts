@@ -127,6 +127,15 @@ export class SpaShell {
     return text
   }
 
+  /** The exact frontend build this shell loads, stamped by `finalize-dist` from the shipped assets; null when unreadable. */
+  buildId(): string | null {
+    try {
+      return /<meta name="talaria-build" content="([a-f0-9]{64})"/.exec(this.readTemplate())?.[1] ?? null
+    } catch {
+      return null
+    }
+  }
+
   renderShell(path: string, opts: { lang?: string; version: string }): string {
     const lang = opts.lang ?? 'en'
     const safeLang = lang && /^[A-Za-z0-9-]+$/.test(lang) && /[A-Za-z0-9]/.test(lang) && lang.length <= 16 ? lang : 'en'

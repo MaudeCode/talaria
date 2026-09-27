@@ -1,5 +1,11 @@
 {
   "scope_id": "fixture-owner-default",
+  "frontend_build": {
+    "current_build": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "loaded_build": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "refresh_required": true,
+    "notification_id": null
+  },
   "notifications": [
     {
       "id": "00000000-0000-4000-8000-000000000001",
