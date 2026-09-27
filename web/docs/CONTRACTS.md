@@ -13,8 +13,6 @@ contributor guidance; it does not change runtime behavior or CI gates.
 
 - [`AGENTS.md`](../AGENTS.md): repository entry point for AI assistants,
   public-safety rules, and the short redline checklist.
-- [`CONTRIBUTING.md`](../CONTRIBUTING.md): contribution style, verification,
-  PR description expectations, UI evidence, and project-specific constraints.
 - [`README.md`](../README.md): product overview, quick start, architecture map,
   feature inventory, and docs index.
 - [`CHANGELOG.md`](../CHANGELOG.md): release history maintained by the release
@@ -167,7 +165,6 @@ Task type:
 Touched areas:
 Relevant public docs:
 - `AGENTS.md`
-- `CONTRIBUTING.md`
 - `docs/CONTRACTS.md`
 - <subsystem-specific documents>
 Scope boundaries:
@@ -206,17 +203,14 @@ project's product or runtime guardrails.
 
 ## PR preparation checklist
 
-Before opening or updating a PR, verify `CONTRIBUTING.md` against the actual PR
-body. This checklist applies even when code and tests are already done.
+Before opening or updating a PR, verify the actual PR body against the PR
+template (`.github/PULL_REQUEST_TEMPLATE.md` at the repository root) and this
+checklist. It applies even when code and tests are already done.
 
 Required checks:
 
 - The PR solves one logical problem.
-- The PR body contains all required sections from `CONTRIBUTING.md`:
-  `Thinking Path`, `What Changed`, `Why It Matters`, `Verification`,
-  `Risks / Follow-ups`, and `Model Used`.
-- `Model Used` discloses provider/model and notable agent/tool use, or says
-  `None -- human-authored`.
+- The PR body contains every section of the root PR template.
 - UI/UX changes include before/after evidence and responsive-state coverage.
 - Runtime/streaming changes name the state layer or invariant being changed and
   list the regression or manual invariant check.

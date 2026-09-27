@@ -110,8 +110,8 @@ Two ways to ship it:
 
 1. **In the repo (built-in):** add the block to `frontend/src/theme/tokens.css`,
    register it in `frontend/src/contracts/persisted.ts` (`SkinSchema`) and the
-   skin list in `frontend/src/features/settings/AppearanceSection.tsx`, rebuild
-   `static/dist`, then open a PR.
+   skin list in `frontend/src/features/settings/AppearanceSection.tsx`, and rebuild
+   `static/dist`.
 
 2. **Self-hosted (no fork):** declare a `theme` block in your extension manifest
    (see `docs/architecture/extension-protocol-v1.md`). The host applies the
@@ -209,10 +209,10 @@ expresses the intent.
 
 ---
 
-## Contributing a Skin
+## Adding a Built-in Skin
 
 Skins are the easiest extension point — pure CSS, no Python, no JS logic. To
-contribute one upstream:
+add one to the built-in list:
 
 1. Add your `:root[data-skin="name"]` and `:root.dark[data-skin="name"]`
    blocks to `frontend/src/theme/tokens.css`.
@@ -220,7 +220,6 @@ contribute one upstream:
    the Settings skin picker (`frontend/src/features/settings/AppearanceSection.tsx`);
    the `/theme` command reads the same list.
 3. Test on desktop and mobile across both Light and Dark themes.
-4. Open a PR — skins are pure CSS additions with no backend changes needed.
 
-For a custom *theme* (overriding the base palette), prefer opening an issue
-first to discuss scope, since it touches many selectors.
+A custom *theme* (overriding the base palette) touches many selectors; plan its
+scope before starting.

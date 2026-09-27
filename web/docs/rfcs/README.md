@@ -18,12 +18,9 @@ cutting infrastructure.
   questions, Rollout plan. Skip what doesn't apply.
 - An RFC is a starting point for review. Comments and revisions land via PR
   edits, not separate discussion threads.
-- An RFC documents a design direction. It is **not** an invitation to file
-  implementation PRs against fragments of it. Before opening any PR that
-  implements an accepted RFC, confirm with a maintainer in the tracking
-  issue that the implementation slice is wanted and that no other
-  contributor is already building it. Speculative implementations of RFC
-  fragments without a confirmed integration site will be held.
+- An RFC documents a design direction, not an implementation plan.
+  Implementation slices are tracked separately, and each needs a confirmed
+  integration site before work starts.
 
 ## When to file an RFC
 
@@ -34,7 +31,6 @@ cutting infrastructure.
 - A reviewer asks for one during code review.
 
 When in doubt, just ship the code — small features don't need RFCs.
-First-time contributor RFCs should be discussed in an issue before opening a PR.
 
 ## Current RFCs
 

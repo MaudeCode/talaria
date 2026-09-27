@@ -54,6 +54,9 @@ explicitly adopted it.
 
 - For API requests, JSON decoding, SSE or streaming, and server-version
   compatibility, use `$talaria-upstream-contract`.
+- Never invent API endpoints or JSON shapes; verify them against the Web
+  contracts or a running server. Every `Codable` model decodes tolerantly and
+  never crashes on unknown fields.
 - Follow root server-owned state (`../AGENTS.md`): views and view models render
   decoded contract fields; derivation from server data goes on the server
   through `$talaria-upstream-contract`.
