@@ -52,6 +52,10 @@ export const ActivitySceneRowSchema = z.looseObject({
 })
 export type ActivitySceneRow = z.infer<typeof ActivitySceneRowSchema>
 
+/** One file a turn changed: its normalized path as the tool reported it, and the strongest action taken on it (`added` / `deleted` / `renamed` outrank a plain `edited`). */
+export const TurnFileChangeSchema = z.looseObject({ path: z.string(), action: z.enum(['added', 'edited', 'deleted', 'renamed']) })
+export type TurnFileChange = z.infer<typeof TurnFileChangeSchema>
+
 /** `_anchor_activity_scene`: a completed turn's server-owned presentation: the rows under "Worked" (a tail preview plus paging fields), the visible final answer, the outcome, and the default disclosure. */
 export const ActivitySceneSchema = z.looseObject({
   version: z.literal('activity_scene_v1'), activity_rows: z.array(ActivitySceneRowSchema), final_answer: z.string().optional(), turn_duration: z.number().nullable().optional(),
@@ -63,6 +67,8 @@ export const ActivitySceneSchema = z.looseObject({
   final_phase_duration: z.number().optional(),
   /** Whether any row of the whole scene (not only this preview) is a consumed steer. */
   has_consumed_steering: z.boolean().optional(),
+  /** The files the whole turn's file-mutating calls changed, in first-touch order; clients join them to `git/status` for line counts. */
+  file_changes: z.array(TurnFileChangeSchema).optional(),
   activity_rows_total: z.number().int().optional(), activity_rows_offset: z.number().int().optional(), activity_rows_complete: z.boolean().optional(), activity_rows_omitted: z.number().int().optional(), activity_scene_ref: z.string().optional(),
 })
 export type ActivityScene = z.infer<typeof ActivitySceneSchema>

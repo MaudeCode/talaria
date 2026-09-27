@@ -2775,6 +2775,31 @@
                                   "has_consumed_steering": {
                                     "type": "boolean"
                                   },
+                                  "file_changes": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "path": {
+                                          "type": "string"
+                                        },
+                                        "action": {
+                                          "enum": [
+                                            "added",
+                                            "edited",
+                                            "deleted",
+                                            "renamed"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "path",
+                                        "action"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -4207,6 +4232,31 @@
                                   "has_consumed_steering": {
                                     "type": "boolean"
                                   },
+                                  "file_changes": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "path": {
+                                          "type": "string"
+                                        },
+                                        "action": {
+                                          "enum": [
+                                            "added",
+                                            "edited",
+                                            "deleted",
+                                            "renamed"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "path",
+                                        "action"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -5399,6 +5449,31 @@
                                   },
                                   "has_consumed_steering": {
                                     "type": "boolean"
+                                  },
+                                  "file_changes": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "path": {
+                                          "type": "string"
+                                        },
+                                        "action": {
+                                          "enum": [
+                                            "added",
+                                            "edited",
+                                            "deleted",
+                                            "renamed"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "path",
+                                        "action"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
                                   },
                                   "activity_rows_total": {
                                     "type": "integer",
@@ -7470,6 +7545,31 @@
                                   "has_consumed_steering": {
                                     "type": "boolean"
                                   },
+                                  "file_changes": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "path": {
+                                          "type": "string"
+                                        },
+                                        "action": {
+                                          "enum": [
+                                            "added",
+                                            "edited",
+                                            "deleted",
+                                            "renamed"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "path",
+                                        "action"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
+                                  },
                                   "activity_rows_total": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -9446,6 +9546,31 @@
                                   },
                                   "has_consumed_steering": {
                                     "type": "boolean"
+                                  },
+                                  "file_changes": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "path": {
+                                          "type": "string"
+                                        },
+                                        "action": {
+                                          "enum": [
+                                            "added",
+                                            "edited",
+                                            "deleted",
+                                            "renamed"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "path",
+                                        "action"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
                                   },
                                   "activity_rows_total": {
                                     "type": "integer",
@@ -18435,6 +18560,31 @@
                                   },
                                   "has_consumed_steering": {
                                     "type": "boolean"
+                                  },
+                                  "file_changes": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "path": {
+                                          "type": "string"
+                                        },
+                                        "action": {
+                                          "enum": [
+                                            "added",
+                                            "edited",
+                                            "deleted",
+                                            "renamed"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "path",
+                                        "action"
+                                      ],
+                                      "additionalProperties": {}
+                                    }
                                   },
                                   "activity_rows_total": {
                                     "type": "integer",
