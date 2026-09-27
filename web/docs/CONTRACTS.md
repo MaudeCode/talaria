@@ -203,9 +203,9 @@ project's product or runtime guardrails.
 
 ## PR preparation checklist
 
-Before opening or updating a PR, verify the actual PR body against the root PR
-template (`../.github/PULL_REQUEST_TEMPLATE.md`) and this checklist. It applies
-even when code and tests are already done.
+Before opening or updating a PR, verify the actual PR body against the PR
+template (`.github/PULL_REQUEST_TEMPLATE.md` at the repository root) and this
+checklist. It applies even when code and tests are already done.
 
 Required checks:
 
