@@ -96,6 +96,14 @@ struct ChatTranscriptView: View {
         if isLoading && messages.isEmpty && clarificationPrompt == nil {
             ChatTranscriptLoadingSkeletonView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .bottomLeading) {
+                    // A cold open has nothing to paint yet; the check still says the run state is unconfirmed.
+                    if showsRunStateCheck {
+                        StreamRecoveryStatusView(state: .checking)
+                            .padding()
+                            .padding(.bottom, transcriptBottomInsetHeight)
+                    }
+                }
         } else if let errorMessage, messages.isEmpty, clarificationPrompt == nil {
             ContentUnavailableView {
                 Label("Could Not Load Messages", systemImage: "exclamationmark.triangle")

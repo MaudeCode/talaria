@@ -313,8 +313,17 @@ final class ChatRecoveryUITests: ChatUITestCase {
     func testReopeningRunningChatKeepsItsWorkVisibleWhileTheSessionLoads() throws {
         launchChatFixture(
             argument: "--ui-test-chat-reopen",
-            trace: "start -> token + tool -> leave -> list streaming -> reopen (detail held 4s) -> active detail -> reconnect -> token -> done"
+            trace: "cold open (detail held 6s) -> start -> token + tool -> leave -> list streaming -> reopen (detail held 6s) -> active detail -> reconnect -> token -> done"
         )
+        // Cold open: no cache and a row without a run state, so the loading skeleton carries the check.
+        XCTAssertTrue(fixtureSessionButton.waitForExistence(timeout: 15), "Missing deterministic session fixture")
+        tapFixtureSession(fixtureSessionButton)
+        XCTAssertTrue(
+            element(label: "Checking stream").waitForExistence(timeout: 2.5),
+            "The cold-open loading skeleton showed no run-state check"
+        )
+        XCTAssertTrue(element(label: "Checking stream").waitForNonExistence(timeout: 10))
+
         try sendFixtureMessage("Run the deterministic fixture")
         XCTAssertTrue(element(labelContaining: "Reopen fixture progress.").waitForExistence(timeout: 5))
 
@@ -322,13 +331,14 @@ final class ChatRecoveryUITests: ChatUITestCase {
         XCTAssertTrue(element(labelContaining: "Streaming").waitForExistence(timeout: 10), "The list never reported the run")
         tapCenter(of: fixtureSessionButton)
 
+        // Both paint at once, well inside the 6 s hold; the check goes first because adopting the run replaces it.
+        XCTAssertTrue(element(label: "Checking stream").waitForExistence(timeout: 2.5))
         XCTAssertTrue(
-            element(labelContaining: "Reopen fixture progress.").waitForExistence(timeout: 2.5),
+            element(labelContaining: "Reopen fixture progress.").exists,
             "The running turn's work vanished while the session detail was held"
         )
-        XCTAssertTrue(element(label: "Checking stream").waitForExistence(timeout: 1))
 
-        XCTAssertTrue(element(labelContaining: "Reopen fixture done.").waitForExistence(timeout: 20))
+        XCTAssertTrue(element(labelContaining: "Reopen fixture done.").waitForExistence(timeout: 30))
         XCTAssertTrue(element(label: "Checking stream").waitForNonExistence(timeout: 5))
         XCTAssertEqual(countElements(containing: "Reopen fixture progress."), 1)
     }

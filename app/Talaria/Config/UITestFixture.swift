@@ -586,9 +586,12 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         return UITestChatScenario.current == .reopen && state.started && !state.settled
     }
 
-    /// TAL-250: the reopen scenario holds the running session's detail, so a test sees what the chat paints first.
+    /// TAL-250: the reopen scenario holds the cold first open and the running session's detail, so a test sees
+    /// what the chat paints before each answers.
     private static func chatResponseDelay(for url: URL) -> TimeInterval? {
-        url.path == "/api/session" && isReopenRunActive ? 4 : nil
+        guard UITestChatScenario.current == .reopen, url.path == "/api/session" else { return nil }
+        let state = chatState.snapshot()
+        return state.started && state.settled ? nil : 6
     }
 
     private static func sessionResponse() -> Data {
