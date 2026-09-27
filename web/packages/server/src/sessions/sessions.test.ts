@@ -877,3 +877,102 @@ describe('session detail keeps the running turn\'s prompt (TAL-368)', () => {
     expect(withPendingUserTurn(withOutput, turn).map((m) => m.content)).toEqual(['earlier', 'reply', '', 'partial'])
   })
 })
+
+describe('session detail resolves each tool call\'s outcome (TAL-313)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  const RUN = 'tool-run-live'
+  const call = (id: string, name: string, args: Json): Json => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } })
+  /** One turn per persisted shape: OpenAI calls (one failing), an Anthropic `tool_use` call, a call only the session-level list holds, and a running turn. */
+  const transcript: Json[] = [
+    { role: 'user', content: 'Read a.txt and run the tests', message_id: 'tool-user-openai', timestamp: 2000, _turn_id: 'tool-run-openai' },
+    { role: 'assistant', content: '', message_id: 'tool-openai-calls', timestamp: 2001, _turn_id: 'tool-run-openai', tool_calls: [call('call-read', 'read_file', { path: 'a.txt' }), call('call-exit', 'terminal', { command: 'make test' })] },
+    { role: 'tool', tool_call_id: 'call-read', content: 'A contents', timestamp: 2002, _turn_id: 'tool-run-openai' },
+    { role: 'tool', tool_call_id: 'call-exit', content: '{"exit_code": 2, "output": "1 failed"}', timestamp: 2003, _turn_id: 'tool-run-openai' },
+    { role: 'assistant', content: 'a.txt is read; one test fails.', message_id: 'tool-openai-answer', timestamp: 2004, _turn_id: 'tool-run-openai' },
+    { role: 'user', content: 'Search for TODOs', message_id: 'tool-user-anthropic', timestamp: 2010, _turn_id: 'tool-run-anthropic' },
+    { role: 'assistant', content: [{ type: 'text', text: 'Searching.' }, { type: 'tool_use', id: 'toolu-search', name: 'search_files', input: { pattern: 'TODO' } }], message_id: 'tool-anthropic-calls', timestamp: 2011, _turn_id: 'tool-run-anthropic' },
+    { role: 'tool', tool_use_id: 'toolu-search', content: '{"error": "permission denied"}', timestamp: 2012, _turn_id: 'tool-run-anthropic' },
+    { role: 'assistant', content: 'The search failed.', message_id: 'tool-anthropic-answer', timestamp: 2013, _turn_id: 'tool-run-anthropic' },
+    { role: 'user', content: 'What day is it?', message_id: 'tool-user-session', timestamp: 2020, _turn_id: 'tool-run-session' },
+    { role: 'assistant', content: 'Checking.', message_id: 'tool-session-calls', timestamp: 2021, _turn_id: 'tool-run-session' },
+    { role: 'tool', content: 'Sat Sep 27', timestamp: 2022, _turn_id: 'tool-run-session' },
+    { role: 'assistant', content: 'It is Saturday.', message_id: 'tool-session-answer', timestamp: 2023, _turn_id: 'tool-run-session' },
+    { role: 'user', content: 'Run the build', message_id: 'tool-user-live', timestamp: 2030, _turn_id: RUN },
+    { role: 'assistant', content: 'Building.', message_id: 'tool-live-calls', timestamp: 2031, _turn_id: RUN, tool_calls: [call('call-build', 'terminal', { command: 'make' })] },
+  ]
+  /** The live stream recorded these at settlement; the Anthropic call predates durations. */
+  const sessionToolCalls: Json[] = [
+    { name: 'read_file', snippet: 'A contents', tid: 'call-read', assistant_msg_idx: 1, args: { path: 'a.txt' }, is_error: false, duration: 1.25 },
+    { name: 'terminal', snippet: '{"exit_code": 2, "output": "1 failed"}', tid: 'call-exit', assistant_msg_idx: 1, args: { command: 'make test' }, is_error: true, duration: 3.5 },
+    { name: 'search_files', snippet: '{"error": "permission denied"}', tid: 'toolu-search', assistant_msg_idx: 6, args: { pattern: 'TODO' } },
+    { name: 'terminal', snippet: 'Sat Sep 27', tid: 'call-date', assistant_msg_idx: 10, args: { command: 'date' }, is_error: false, duration: 0.42 },
+  ]
+
+  async function seeded(): Promise<string> {
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = structuredClone(transcript)
+    session.tool_calls = structuredClone(sessionToolCalls)
+    session.title = 'Tool outcomes'
+    session.active_stream_id = RUN
+    s.deps.sessionStore.save(session)
+    s.deps.registry.liveIds.add(RUN)
+    return sid
+  }
+  const detail = async (sid: string, query = ''): Promise<Json> => (await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json
+  const callsById = (session: Json): Map<string, Json[]> => new Map((session.messages as Json[]).filter((m) => m.role === 'assistant').map((m) => [str(m.message_id), (m.tool_calls as Json[] | undefined) ?? []]))
+  const outcomes = (calls: Json[] | undefined) => (calls ?? []).map((c) => ({ id: c.id, name: (c.function as Json).name, done: c.done, is_error: c.is_error, duration: c.duration, result: c.result }))
+
+  it('ships done, is_error, duration and result on every call in every persisted shape, the same in every window', async () => {
+    const sid = await seeded()
+    try {
+      const full = await detail(sid)
+      const calls = callsById(full)
+      expect(outcomes(calls.get('tool-openai-calls'))).toEqual([
+        { id: 'call-read', name: 'read_file', done: true, is_error: false, duration: 1.25, result: 'A contents' },
+        { id: 'call-exit', name: 'terminal', done: true, is_error: true, duration: 3.5, result: '{"exit_code": 2, "output": "1 failed"}' },
+      ])
+      // The Anthropic call joins tool_calls in the OpenAI shape; its content blocks stay as written. It predates durations.
+      expect(outcomes(calls.get('tool-anthropic-calls'))).toEqual([{ id: 'toolu-search', name: 'search_files', done: true, is_error: true, duration: null, result: '{"error": "permission denied"}' }])
+      expect((full.messages as Json[]).find((m) => m.message_id === 'tool-anthropic-calls')?.content).toMatchObject(transcript[6]?.content as Json[])
+      // A call only the session-level list recorded joins its owning assistant row.
+      expect(outcomes(calls.get('tool-session-calls'))).toEqual([{ id: 'call-date', name: 'terminal', done: true, is_error: false, duration: 0.42, result: 'Sat Sep 27' }])
+      // The running turn's unanswered call is not done.
+      expect(outcomes(calls.get('tool-live-calls'))).toEqual([{ id: 'call-build', name: 'terminal', done: false, is_error: false, duration: null, result: null }])
+      // Answers carry no tool calls.
+      expect(calls.get('tool-openai-answer')).toEqual([])
+      // Each completed turn's scene shows the same outcomes.
+      const sceneTools = (id: string) => (((full.messages as Json[]).find((m) => m.message_id === id)?._anchor_activity_scene as Json).activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => { const t = r.tool as Json; return [t.id, t.done, t.is_error, t.duration] })
+      expect(sceneTools('tool-openai-answer')).toEqual([['call-read', true, false, 1.25], ['call-exit', true, true, 3.5]])
+      expect(sceneTools('tool-anthropic-answer')).toEqual([['toolu-search', true, true, null]])
+      expect(sceneTools('tool-session-answer')).toEqual([['call-date', true, false, 0.42]])
+      // Every window resolves the same values as the full detail.
+      for (const query of ['&msg_limit=2', '&msg_limit=3&msg_before=8', '&msg_limit=1&msg_before=2', '&msg_limit=2&msg_before=11']) {
+        const window = callsById(await detail(sid, query))
+        expect(window.size).toBeGreaterThan(0)
+        for (const [id, windowCalls] of window) expect(windowCalls, `${query} ${id}`).toEqual(calls.get(id))
+      }
+      // The projection writes nothing back: stored rows keep their persisted shape.
+      const stored = JSON.parse(readFileSync(s.deps.sessionStore.pathFor(sid), 'utf8')) as Json
+      expect(stored.messages).toEqual(transcript)
+      expect(stored.tool_calls).toEqual(sessionToolCalls)
+    } finally {
+      s.deps.registry.liveIds.delete(RUN)
+    }
+  })
+
+  it('matches the shared contract fixture', async () => {
+    const sid = await seeded()
+    try {
+      const full = await detail(sid)
+      const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).tool_outcomes_session as Json
+      const actual = Object.fromEntries(Object.keys(fixture).map((key) => [key, full[key]]))
+      expect({ ...actual, session_id: fixture.session_id }).toEqual(fixture)
+    } finally {
+      s.deps.registry.liveIds.delete(RUN)
+    }
+  })
+})

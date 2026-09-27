@@ -28,7 +28,13 @@ export type ToolKind = z.infer<typeof ToolKindSchema>
 /** Server-derived display fields every tool call carries: the kind, and the redacted first-line label of its main argument (`''` when none; omitted on a live frame with none, which keeps its start frame's target). */
 export const ToolDisplayFields = { kind: ToolKindSchema.optional(), target: z.string().optional() }
 
-/** Stored transcripts carry the OpenAI shape (`function.name` / `function.arguments` JSON string); live events carry `name` / `args`. */
+/**
+ * Stored transcripts carry the OpenAI shape (`function.name` / `function.arguments` JSON string); live events carry `name` / `args`.
+ * On an assistant row the server resolves every call (TAL-313, `session-sse-contract-v1.md`): Anthropic `tool_use` parts and
+ * session-level-only calls join `tool_calls`; `done` is answered or outside the running turn; `is_error` is the server's
+ * outcome rule over the result; `duration` is the seconds the live stream measured, else `null`; `result` is the redacted
+ * result snippet, else `null`. Clients render these and pair nothing themselves.
+ */
 export const ToolCallSchema = z.looseObject({
   ...ToolDisplayFields,
   name: z.string().optional(), args: Json.optional(), function: z.looseObject({ name: z.string().optional(), arguments: Json.optional() }).optional(), id: z.string().optional(), call_id: z.string().optional(), tool_call_id: z.string().optional(),

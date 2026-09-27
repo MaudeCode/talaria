@@ -261,13 +261,43 @@ export function truncateToolArgs(args: unknown, limit = 6): Record<string, strin
   return out
 }
 
+/** An `error` that says something: non-blank text, `true`, or a non-empty object or list. */
+function presentError(v: unknown): boolean {
+  if (typeof v === 'string') return v.trim() !== ''
+  if (Array.isArray(v)) return v.length > 0
+  return isDict(v) ? Object.keys(v).length > 0 : v === true
+}
+
+/**
+ * The server's one tool outcome rule (TAL-313), for a live `raw_result` and a persisted tool-role content alike: a result
+ * is an error when it parses to an object with a non-empty `error`, a non-zero numeric `exit_code` / `exitCode`, or
+ * `success: false`. `result_text` is the result's display snippet.
+ */
+export function toolOutcome(raw: unknown): { is_error: boolean; result_text: string } {
+  const value = Array.isArray(raw) ? messageText(raw) : raw
+  let data: unknown = value
+  if (typeof value === 'string') { try { data = JSON.parse(value) } catch { data = null } }
+  const exit = isDict(data) ? data.exit_code ?? data.exitCode : undefined
+  const isError = isDict(data) && (presentError(data.error) || (typeof exit === 'number' && exit !== 0) || data.success === false)
+  return { is_error: isError, result_text: toolResultSnippet(value) }
+}
+
+const finiteOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
 function nearestAssistantIdx(messages: unknown[], msgIdx: number): number {
   for (let i = msgIdx; i >= 0; i -= 1) if (isDict(messages[i]) && (messages[i] as Record<string, unknown>).role === 'assistant') return i
   return -1
 }
 
-/** Python `_extract_tool_calls_from_messages`. */
-export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls: Record<string, unknown>[] = []): Record<string, unknown>[] {
+/**
+ * Python `_extract_tool_calls_from_messages`, plus each call's outcome (TAL-313): `is_error` by `toolOutcome` of its
+ * result, and the `duration` the live stream recorded for its id (this turn's `liveToolCalls`, else an earlier turn's
+ * entry in `recorded`, the session's previous list), `null` when none did.
+ */
+export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls: Record<string, unknown>[] = [], recorded: unknown[] = []): Record<string, unknown>[] {
+  const durations = new Map<string, number | null>()
+  for (const tc of [...recorded, ...liveToolCalls]) if (isDict(tc) && str(tc.tid) && finiteOrNull(tc.duration) !== null) durations.set(str(tc.tid), finiteOrNull(tc.duration))
+  const outcome = (tid: string, raw: unknown) => ({ is_error: toolOutcome(raw).is_error, duration: durations.get(tid) ?? null })
   const toolCalls: Record<string, unknown>[] = []
   const pendingNames = new Map<string, string>()
   const pendingArgs = new Map<string, unknown>()
@@ -304,7 +334,7 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
       if (tid) {
         const name = pendingNames.get(tid) ?? ''
         if (name && name !== 'tool') {
-          toolCalls.push({ name, snippet: toolResultSnippet(m.content), tid, assistant_msg_idx: pendingAsst.get(tid) ?? -1, args: truncateToolArgs(pendingArgs.get(tid) ?? {}) })
+          toolCalls.push({ name, snippet: toolResultSnippet(m.content), tid, assistant_msg_idx: pendingAsst.get(tid) ?? -1, args: truncateToolArgs(pendingArgs.get(tid) ?? {}), ...outcome(tid, m.content) })
           seq.resolved = true
         }
       }
@@ -316,10 +346,76 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
     toolSeq.forEach((seq, i) => {
       if (seq.resolved || i >= live.length) return
       const tc = live[i]!
-      toolCalls.push({ name: str(tc.name) || 'tool', snippet: toolResultSnippet(seq.raw), tid: str(tc.tid), assistant_msg_idx: nearestAssistantIdx(messages, seq.msgIdx), args: truncateToolArgs(tc.args ?? {}, 4) })
+      toolCalls.push({ name: str(tc.name) || 'tool', snippet: toolResultSnippet(seq.raw), tid: str(tc.tid), assistant_msg_idx: nearestAssistantIdx(messages, seq.msgIdx), args: truncateToolArgs(tc.args ?? {}, 4), ...outcome(str(tc.tid), seq.raw) })
     })
   }
   return toolCalls
+}
+
+/**
+ * TAL-313: every assistant row's tool calls as they leave the server, over the full `_turn_id`-stamped transcript (before
+ * any window, so every window agrees). Anthropic `tool_use` parts join `tool_calls` in the OpenAI shape (content stays),
+ * a call only the session-level list recorded joins the row at its `assistant_msg_idx`, and every call carries `done`
+ * (answered, or outside the running turn), `is_error` (`toolOutcome` of its result, else the recorded value), `duration`
+ * (recorded live, else `null`) and `result` (the result snippet, else `null`). Returns copies; stored rows are untouched.
+ */
+export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown[], activeTurnId: string | null): T[] {
+  const replies = new Map<string, { content: unknown; is_error: boolean }>()
+  const called = new Set<string>()
+  for (const m of messages) {
+    if (!isDict(m)) continue
+    if (m.role === 'tool') {
+      const id = str(m.tool_call_id) || str(m.tool_use_id)
+      if (id) replies.set(id, { content: m.content, is_error: false })
+    } else if (m.role === 'user' && Array.isArray(m.content)) {
+      // Anthropic-style results: `tool_result` blocks in a user row, each naming its call.
+      for (const part of m.content) if (isDict(part) && part.type === 'tool_result' && str(part.tool_use_id)) replies.set(str(part.tool_use_id), { content: part.content ?? '', is_error: part.is_error === true })
+    } else if (m.role === 'assistant') {
+      for (const tc of Array.isArray(m.tool_calls) ? m.tool_calls : []) if (toolCallId(tc)) called.add(toolCallId(tc))
+      for (const part of Array.isArray(m.content) ? m.content : []) if (isDict(part) && part.type === 'tool_use' && str(part.id)) called.add(str(part.id))
+    }
+  }
+  const recorded = new Map<string, Record<string, unknown>>()
+  const sessionOnly = new Map<number, Record<string, unknown>[]>()
+  for (const tc of sessionToolCalls) {
+    if (!isDict(tc)) continue
+    const tid = str(tc.tid)
+    if (tid) recorded.set(tid, tc)
+    const idx = tc.assistant_msg_idx
+    if ((tid && called.has(tid)) || typeof idx !== 'number' || !isDict(messages[idx]) || (messages[idx] as Record<string, unknown>).role !== 'assistant') continue
+    sessionOnly.set(idx, [...(sessionOnly.get(idx) ?? []), tc])
+  }
+  return messages.map((m, index) => {
+    if (!isDict(m) || m.role !== 'assistant') return m
+    const calls: unknown[] = Array.isArray(m.tool_calls) ? Array.from(m.tool_calls as unknown[]) : []
+    const ids = new Set(calls.map(toolCallId).filter(Boolean))
+    for (const part of Array.isArray(m.content) ? m.content : []) {
+      if (!isDict(part) || part.type !== 'tool_use' || !str(part.id) || ids.has(str(part.id))) continue
+      ids.add(str(part.id))
+      calls.push({ id: str(part.id), type: 'function', function: { name: str(part.name), arguments: JSON.stringify(part.input ?? {}) } })
+    }
+    const only = sessionOnly.get(index) ?? []
+    if (!calls.length && !only.length) return m
+    const running = Boolean(activeTurnId) && m._turn_id === activeTurnId
+    const projected = calls.map((call) => {
+      if (!isDict(call)) return call
+      const id = toolCallId(call)
+      const reply = id ? replies.get(id) : undefined
+      const rec = id ? recorded.get(id) : undefined
+      const outcome = reply ? { ...toolOutcome(reply.content), flagged: reply.is_error } : null
+      return {
+        ...call, done: Boolean(reply) || !running, is_error: outcome ? outcome.flagged || outcome.is_error : rec?.is_error === true,
+        duration: finiteOrNull(rec?.duration), result: outcome ? outcome.result_text : rec ? str(rec.snippet) : null,
+      }
+    })
+    for (const tc of only) {
+      projected.push({
+        ...(str(tc.tid) ? { id: str(tc.tid) } : {}), type: 'function', function: { name: str(tc.name), arguments: JSON.stringify(tc.args ?? {}) },
+        done: true, is_error: tc.is_error === true, duration: finiteOrNull(tc.duration), result: str(tc.snippet),
+      })
+    }
+    return { ...m, tool_calls: projected }
+  })
 }
 
 /** Python `_build_partial_message`. */

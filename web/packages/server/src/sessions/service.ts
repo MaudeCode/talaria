@@ -17,7 +17,7 @@ import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
-import { mergeSessionMessagesAppendOnly, pendingUserRow, withPendingUserTurn, withoutRunningTurnOutput } from './merge.js'
+import { mergeSessionMessagesAppendOnly, pendingUserRow, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
@@ -265,7 +265,7 @@ export class SessionService {
   publicSession(s: Session, withMessages = true): Record<string, unknown> {
     const payload = this.wireRow(s)
     // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
-    if (withMessages) payload.messages = hydrateAnchorActivityScenes(withTurnIds(s.messages), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id })
+    if (withMessages) payload.messages = hydrateAnchorActivityScenes(withToolCallOutcomes(withTurnIds(s.messages), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id })
     return redactSessionData(payload, this.deps.redactEnabled())
   }
 
@@ -309,8 +309,8 @@ export class SessionService {
     const pending = loadMessages ? this.pendingTurn(s) : null
     if (pending) transcript = withPendingUserTurn(transcript, pending)
     if (journaled)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
-    // Turn ids and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages ? hydrateAnchorActivityScenes(withTurnIds(transcript), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null }) : []
+    // Turn ids, tool outcomes and scenes are computed over the full transcript, so every window reports the same values.
+    const all: unknown[] = loadMessages ? hydrateAnchorActivityScenes(withToolCallOutcomes(withTurnIds(transcript), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null }) : []
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null
@@ -409,8 +409,8 @@ export class SessionService {
   /** Python `_handle_session_get` without a sidecar: the state.db transcript as a (read-only or claimable) foreign stub. */
   private foreignSessionDetail(sid: string): Record<string, unknown> {
     const { synth, meta } = this.foreignSession(sid)
-    // The same turn projection as a WebUI session: turn ids, then each completed turn's scene.
-    const msgs = hydrateAnchorActivityScenes(withTurnIds(synth.messages), {}) as Message[]
+    // The same turn projection as a WebUI session: turn ids, tool outcomes, then each completed turn's scene.
+    const msgs = hydrateAnchorActivityScenes(withToolCallOutcomes(withTurnIds(synth.messages), [], null), {}) as Message[]
     const lastTs = Number(msgs[msgs.length - 1]?.timestamp ?? 0) || 0
     const sess: Record<string, unknown> = {
       session_id: synth.session_id, title: synth.title, workspace: synth.workspace, model: synth.model, message_count: msgs.length,
@@ -1111,7 +1111,7 @@ export class SessionService {
       session = this.foreignSession(sid).synth
       transcript = session.messages
     }
-    const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) }, withTurnIds(transcript))
+    const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) }, withToolCallOutcomes(withTurnIds(transcript), session.tool_calls, session.active_stream_id))
     if (!result) throw new HttpFailure(404, 'Anchor activity scene not found')
     // Paged rows come from the raw transcript, so they take the same credential redaction as the detail's preview.
     const enabled = this.deps.redactEnabled()

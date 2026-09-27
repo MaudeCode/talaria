@@ -29,7 +29,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, toolOutcome, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
@@ -348,6 +348,8 @@ export class TurnRunner {
     const toolIds = new WeakMap<Record<string, unknown>, string>()
     let mintedToolIds = 0
     const mintToolId = (): string => `tool-${streamId}-${String(++mintedToolIds)}`
+    // When the server received each call's start frame: its completion's `duration` is measured from it.
+    const toolStartedAt = new WeakMap<Record<string, unknown>, number>()
     let tokenSent = false
     let firstTokenAt: number | null = null
     const titles = new ReasoningTitleTracker()
@@ -422,17 +424,25 @@ export class TurnRunner {
               const call = { name: data.name, args: data.args ?? {}, tid: str(data.tid), done: false }
               liveToolCalls.push(call)
               toolIds.set(call, call.tid || mintToolId())
+              toolStartedAt.set(call, deps.now())
               const redacted = deps.redactEnabled()
               put('tool', publicToolFrame(withToolId(data, toolIds.get(call)!), redacted), { redacted })
               return
             }
             case 'tool_complete': {
+              // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server.
+              const { raw_result: rawResult, ...complete } = data
+              complete.is_error = toolOutcome(rawResult).is_error
               const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
-              if (tc) { tc.done = true; tc.snippet = data.preview }
+              if (tc) {
+                const startedAt = toolStartedAt.get(tc)
+                if (startedAt !== undefined) complete.duration = Math.round(Math.max(0, deps.now() - startedAt) * 1000) / 1000
+                Object.assign(tc, { done: true, snippet: data.preview, is_error: complete.is_error, duration: complete.duration ?? null })
+              }
               const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
               this.lastCompletedTool.set(streamId, id)
               const redacted = deps.redactEnabled()
-              put('tool_complete', publicToolFrame(withToolId(data, id), redacted), { redacted })
+              put('tool_complete', publicToolFrame(withToolId(complete, id), redacted), { redacted })
               return
             }
             // Python: the live chat frame carries the queue head plus depth, not the entry that just arrived.
@@ -545,7 +555,7 @@ export class TurnRunner {
       if (typeof result.context.context_length === 'number') s.context_length = result.context.context_length
       if (typeof result.context.threshold_tokens === 'number') s.threshold_tokens = result.context.threshold_tokens
       if (typeof result.context.last_prompt_tokens === 'number') s.last_prompt_tokens = result.context.last_prompt_tokens
-      s.tool_calls = extractToolCallsFromMessages(s.messages, liveToolCalls)
+      s.tool_calls = extractToolCallsFromMessages(s.messages, liveToolCalls, s.tool_calls)
       s.active_stream_id = null
       s.pending_user_message = null
       s.pending_attachments = []
@@ -737,7 +747,7 @@ export class TurnRunner {
    */
   private terminalSessionPayload(s: Session): Record<string, unknown> {
     const payload = withSessionWireFlags(s.compact(), this.registry.liveIds)
-    const scened = hydrateAnchorActivityScenes(withTurnIds(s.messages), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true })
+    const scened = hydrateAnchorActivityScenes(withToolCallOutcomes(withTurnIds(s.messages), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true })
     const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
     const limited = messagesForLimitedPayload(window)
     payload.messages = limited

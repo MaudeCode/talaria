@@ -416,3 +416,27 @@ def test_tool_frames_keep_content_args_long_and_extract_result_previews(monkeypa
     assert chat._delegation_cost_usd("delegate_task", {"results": [{"cost_usd": 0.5}, {"cost_usd": 0.25}]}) == 0.75
     assert chat._delegation_cost_usd("delegate_task", {"results": [{"cost_usd": 0.5}, {"cost_status": "unknown"}]}) is None
     assert chat._delegation_cost_usd("read_file", {"results": [{"cost_usd": 1}]}) is None
+
+
+def test_tool_complete_ships_the_raw_result_and_no_error_decision(monkeypatch) -> None:
+    """The server decides failure from ``raw_result``: a parsed dict (strings capped), else the capped text."""
+    _patch(monkeypatch)
+    results = [{"exit_code": 2, "output": "o" * 5000}, '{"error": "boom", "nested": {"text": "' + "n" * 5000 + '"}}', "plain " + "p" * 5000, None]
+
+    class ToolAgent(FakeAgent):
+        def run_conversation(self, **kwargs):
+            for i, result in enumerate(results):
+                self.kwargs["tool_start_callback"](f"t{i}", "terminal", {"command": "x"})
+                self.kwargs["tool_complete_callback"](f"t{i}", "terminal", {"command": "x"}, result)
+            return super().run_conversation(**kwargs)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: ToolAgent)
+    ctx = Ctx()
+    assert chat.start(ctx, _params("st-raw"))["status"] == "completed"
+    frames = [data for event, data in ctx.frames if event == "tool_complete"]
+    assert [frame["tid"] for frame in frames] == ["t0", "t1", "t2", "t3"]
+    assert all("is_error" not in frame for frame in frames)
+    assert frames[0]["raw_result"] == {"exit_code": 2, "output": "o" * 4000}
+    assert frames[1]["raw_result"] == {"error": "boom", "nested": {"text": "n" * 4000}}
+    assert frames[2]["raw_result"] == ("plain " + "p" * 5000)[:4000]
+    assert frames[3]["raw_result"] == ""

@@ -151,7 +151,7 @@ describe('chat turns through the sidecar', () => {
     // Reasoning streamed before the first tool call belongs to that first assistant row (Python per-segment attribution).
     expect((detail.messages as Json[])[1]).toMatchObject({ role: 'assistant', reasoning: 'thinking' })
     expect((detail.messages as Json[])[3]).toMatchObject({ content: 'Hi back', _usedModel: 'test-model' })
-    expect(detail.tool_calls).toEqual([{ name: 'read_file', snippet: 'contents', tid: 'call_1', assistant_msg_idx: 1, args: { path: 'a' }, kind: 'read', target: 'a' }])
+    expect(detail.tool_calls).toEqual([{ name: 'read_file', snippet: 'contents', tid: 'call_1', assistant_msg_idx: 1, args: { path: 'a' }, kind: 'read', target: 'a', is_error: false, duration: expect.any(Number) as number }])
     expect(detail.input_tokens).toBe(120)
     expect(detail.output_tokens).toBe(30)
     expect(detail.context_length).toBe(200000)
@@ -1466,4 +1466,66 @@ describe('model-facing history (Python `_sanitize_messages_for_api`)', () => {
     expect((history[2]?.tool_calls as { id: string }[]).map((t) => t.id)).toEqual(['t1'])
   })
 
+})
+
+describe('live tool outcomes (TAL-313)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  let clock = 1_800_000_000
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar, now: () => clock })
+  })
+  afterAll(() => s.close())
+
+  it('decides failure from the raw result, measures each duration, never forwards the raw result, and reloads the same values', async () => {
+    const sid = await newSession(s)
+    const marker = 'raw-result-marker'
+    const bearer = 'synthetic-bearer-0123456789abcdef'
+    const tools: [string, number, unknown, string][] = [
+      ['call-ok', 1.25, { exit_code: 0, output: `fine ${marker}` }, `{"exit_code": 0, "output": "Authorization: Bearer ${bearer}"}`],
+      ['call-exit', 0.5, { exit_code: 2, output: `1 failed ${marker}` }, '{"exit_code": 2, "output": "1 failed"}'],
+      ['call-error', 2, `{"error": "boom ${marker}"}`, '{"error": "boom"}'],
+    ]
+    sidecar.respond('chat.start', (params, emit) => {
+      for (const [tid, seconds, raw] of tools) {
+        emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', args: { command: tid }, tid } })
+        clock += seconds
+        emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'out', args: { command: tid }, tid, raw_result: raw } })
+      }
+      return completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: '', tool_calls: tools.map(([tid]) => ({ id: tid, type: 'function', function: { name: 'terminal', arguments: JSON.stringify({ command: tid }) } })) },
+        ...tools.map(([tid, , , content]) => ({ role: 'tool', tool_call_id: tid, content })),
+        { role: 'assistant', content: 'Done.' },
+      ])
+    })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Tools"', usage: null }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'run them' }))).stream_id)
+    const completes = (frames: SseFrame[]) => frames.filter((f) => f.event === 'tool_complete').map((f) => f.data as Json)
+    const expected = [['call-ok', false, 1.25], ['call-exit', true, 0.5], ['call-error', true, 2]]
+    const live = completes(await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end'))
+    expect(live.map((d) => [d.tid, d.is_error, d.duration])).toEqual(expected)
+    expect(JSON.stringify(live)).not.toContain('raw_result')
+    const journal = readFileSync(join(realpathSync(s.state), 'sessions', '_run_journal', sid, `${streamId}.jsonl`), 'utf8')
+    expect(journal).not.toContain(marker)
+    expect(journal).not.toContain('raw_result')
+    const replayed = completes(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end'))
+    expect(replayed.map((d) => [d.tid, d.is_error, d.duration])).toEqual(expected)
+
+    // A later turn keeps the durations the first one recorded.
+    sidecar.respond('chat.start', (params) => completed([...s.deps.sessionStore.get(sid).context_messages, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Again.' }]))
+    const next = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'again' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${next}`, (f) => f.event === 'stream_end')
+
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    expect((detail.tool_calls as Json[]).map((c) => [c.tid, c.is_error, c.duration])).toEqual(expected)
+    const calls = (detail.messages as Json[]).find((m) => Array.isArray(m.tool_calls))?.tool_calls as Json[]
+    expect(calls.map((c) => [c.id, c.is_error, c.duration])).toEqual(expected)
+    // The resolved result is redacted like the transcript it comes from.
+    expect(String(calls[0]?.result)).toContain('Authorization: Bearer')
+    expect(JSON.stringify(detail)).not.toContain(bearer)
+    const scene = (detail.messages as Json[]).find((m) => m.content === 'Done.')?._anchor_activity_scene as Json
+    expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => { const t = r.tool as Json; return [t.id, t.is_error, t.duration] })).toEqual(expected)
+  })
 })
