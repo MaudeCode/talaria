@@ -738,6 +738,8 @@ const ASSIGNMENT_RE = /(?<![^\s;&|(){}!\x60])([A-Za-z_][A-Za-z0-9_]*)(\+?)=/g
 /** `$NAME` or `${NAME}`; a parameter operator (`${NAME:-x}`, `${#NAME}`) is not a plain reference. */
 const VAR_REF_RE = /\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/y
 const VAR_REFS_RE = new RegExp(VAR_REF_RE.source, 'g')
+/** Blanks before the next word. */
+const BLANK_RUN_RE = /[ \t]+(?=\S)/y
 /** A builtin that takes `NAME=value` operands, quoted ones included (`export "KEY=x"`). */
 const ASSIGNMENT_BUILTIN_RE = /(?<![^\s;&|(){}!\x60])(?:export|declare|typeset|readonly|local)(?=[ \t])/g
 
@@ -840,7 +842,9 @@ function inlineAssignments(text: string): Assignment[] {
     if (escapes % 2) continue
     const { end, literal, template } = assignedWord(text, start)
     const word = text.slice(start, end)
-    if (m[2] || (!literal && !template)) found.push({ name: m[1]!, start, end, at: start, value: undefined })
+    // An append (`OPT+=u`) is a template of the previous value and the word.
+    if (!literal && !template) found.push({ name: m[1]!, start, end, at: start, value: undefined })
+    else if (m[2]) found.push({ name: m[1]!, start, end, at: end, value: undefined, template: `\${${m[1]!}}${word}` })
     else found.push({ name: m[1]!, start, end, at: end, value: literal ? shellDequote(word).replaceAll(WORD_SPACE, ' ') : undefined, ...(template ? { template: word } : {}) })
   }
   // A quoted operand of an assignment builtin (`export "KEY=--password"`) is an assignment too; the whole operand is its
@@ -857,15 +861,34 @@ function inlineAssignments(text: string): Assignment[] {
       const end = Math.max(i + 1, shellWordEnd(text, i, '', closeOf))
       const word = text.slice(i, end)
       const operand = /^\$?["']/.test(word) ? /^([A-Za-z_][A-Za-z0-9_]*)(\+?)=([\s\S]*)$/.exec(shellDequote(word).replaceAll(WORD_SPACE, ' ')) : null
-      if (operand) {
-        const known = !operand[2] && firstExpansion(word) < 0
-        found.push({ name: operand[1]!, start: i, end, at: known ? end : i, value: known ? operand[3] : undefined })
-      }
+      if (operand && firstExpansion(word) >= 0) found.push({ name: operand[1]!, start: i, end, at: i, value: undefined })
+      else if (operand?.[2]) found.push({ name: operand[1]!, start: i, end, at: end, value: undefined, template: `\${${operand[1]!}}${substitutedWord(operand[3]!, '')}` })
+      else if (operand) found.push({ name: operand[1]!, start: i, end, at: end, value: operand[3] })
       i = end
     }
     ASSIGNMENT_BUILTIN_RE.lastIndex = Math.max(i, ASSIGNMENT_BUILTIN_RE.lastIndex)
   }
   return found.sort((a, b) => a.start - b.start)
+}
+
+/** The text with each shell comment (`#` at a word start, outside quotes, to the line end) replaced by spaces. */
+function blankComments(text: string): string {
+  let out = ''
+  let last = 0
+  let quote = ''
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i]!
+    if (c === '\\' && quote !== "'") i += 1
+    else if (quote) { if (c === quote.slice(-1)) quote = '' }
+    else if (c === "'" || c === '"') quote = text[i - 1] === '$' && c === "'" ? "$'" : c
+    else if (c === '#' && /^[\s;&|()]?$/.test(text[i - 1] ?? '')) {
+      const end = text.indexOf('\n', i)
+      const stop = end === -1 ? text.length : end
+      out += text.slice(last, i) + ' '.repeat(stop - i)
+      last = i = stop
+    }
+  }
+  return last ? out + text.slice(last) : text
 }
 
 /** A substituted value as one shell word: escaped inside `"…"`, single-quoted outside unless it is plain. */
@@ -973,7 +996,9 @@ export function redactSensitive(text: string): string {
   // The views with the text's own assignments resolved only add masks to the redaction above, which keeps its own
   // fail-closed masks (an assignment the shell never runs, `false && KEY=x`, can unmask nothing): the whole value of an
   // assignment whose substitution a view masks, and every word and unit a view masks, wherever it appears.
-  const assignments = inlineAssignments(joined)
+  // Comments are blanked, keeping every position, so a quote in one (`# don't`) cannot hide what follows.
+  const code = blankComments(joined)
+  const assignments = inlineAssignments(code)
   const secretAssignments = new Set<number>()
   const secrets = new Set<string>()
   const delimiterSecrets = new Set<string>()
@@ -1009,25 +1034,25 @@ export function redactSensitive(text: string): string {
   // Ranges of the text masked before redaction: secret assignment values, and words that fail closed.
   const masks: [start: number, end: number][] = []
   for (const [v, pick] of views.entries()) {
-    const { expanded, spans, overflow, watched } = expandAssignments(joined, assignments, pick, v === 0 && failClosed ? watchedNames : undefined)
+    const { expanded, spans, overflow, watched } = expandAssignments(code, assignments, pick, v === 0 && failClosed ? watchedNames : undefined)
     // A reference to a reassigned name is masked to the end of its word, and a whole-word one with the next word
     // (`$OPT bob:hunter2`, `-H "${H}: x"`).
     if (watched.length) {
-      const quoteAt = quoteTracker(joined)
-      const closeOf = enclosingClose(joined)
-      let reached = 0
+      const quoteAt = quoteTracker(code)
+      const closeOf = enclosingClose(code)
       for (const at of watched) {
-        if (at < reached) continue
         const quote = quoteAt(at)
-        let end = shellWordEnd(joined, at, quote, closeOf)
-        if (quote && joined[end] === quote.slice(-1)) end += 1
+        let end = shellWordEnd(code, at, quote, closeOf)
+        if (quote && code[end] === quote.slice(-1)) end += 1
         // A whole word, quotes included (`$OPT`, `"$OPT"`), may be an option that takes the next word.
-        if (/(?:^|\s)\$?["']*$/.test(joined.slice(Math.max(0, at - 4), at)) && /^["']*$/.test(joined.slice(VAR_REF_END(joined, at), end))) {
-          const next = /^[ \t]+(?=\S)/.exec(joined.slice(end, end + 64))
-          if (next) end = shellWordEnd(joined, end + next[0].length, '', closeOf)
+        if (/(?:^|\s)\$?["']*$/.test(code.slice(Math.max(0, at - 4), at)) && /^["']*$/.test(code.slice(VAR_REF_END(code, at), end))) {
+          BLANK_RUN_RE.lastIndex = end
+          if (BLANK_RUN_RE.exec(code)) end = shellWordEnd(code, BLANK_RUN_RE.lastIndex, '', closeOf)
         }
-        masks.push([at, end])
-        reached = end
+        // A reference inside the previous mask extends it (`$OPT $OPT2 bob:hunter2`).
+        const previous = masks.at(-1)
+        if (previous && at < previous[1] && previous[0] <= at) previous[1] = Math.max(previous[1], end)
+        else masks.push([at, end])
       }
     }
     // Past the expansion cap, a value is taken as a secret.
