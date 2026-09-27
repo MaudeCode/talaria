@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Exercise Talaria's adopted HTTP and SSE contract against disposable Hermes state."""
+"""Exercise Talaria's adopted HTTP and SSE contract against disposable Hermes state.
+
+TAL-375 validation only: this docstring edit routes a PR to contracts without app tests.
+"""
 
 from __future__ import annotations
 
