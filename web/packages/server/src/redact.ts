@@ -577,6 +577,9 @@ function shellDequote(word: string): string {
   return out
 }
 
+/** A word token, as `tokenCounts` splits them. */
+const TOKEN_RE = /[\p{L}\p{N}_]+/gu
+
 /** A text's word tokens, counted. */
 function tokenCounts(text: string): Map<string, number> {
   const counts = new Map<string, number>()
@@ -781,9 +784,11 @@ function substitutedWord(value: string, quote: string): string {
 
 /**
  * The text with each `$NAME` / `${NAME}` that has a recorded value replaced by it, outside single and ANSI-C quotes, as
- * the shell expands it. Unknown names and parameter operators stay as written. One pass.
+ * the shell expands it, and where each substituted value sits in it. Unknown names and parameter operators stay as
+ * written. One pass.
  */
-function expandAssignments(text: string, assignments: Assignment[]): string {
+function expandAssignments(text: string, assignments: Assignment[]): { expanded: string; spans: [start: number, end: number][] } {
+  const spans: [number, number][] = []
   const known = new Map<string, string>()
   // ponytail: an expansion past this size (a long value referenced many times) keeps the unexpanded view.
   const cap = text.length * 4 + 4096
@@ -811,13 +816,16 @@ function expandAssignments(text: string, assignments: Assignment[]): string {
       const ref = VAR_REF_RE.exec(text)
       const value = ref ? known.get(ref[1] ?? ref[2]!) : undefined
       if (value === undefined) continue
-      out += text.slice(last, i) + substitutedWord(value, quote)
-      if (out.length > cap) return text
+      const word = substitutedWord(value, quote)
+      out += text.slice(last, i)
+      spans.push([out.length, out.length + word.length])
+      out += word
+      if (out.length > cap) return { expanded: text, spans: [] }
       last = VAR_REF_RE.lastIndex
       i = last - 1
     }
   }
-  return last ? out + text.slice(last) : text
+  return { expanded: out + text.slice(last), spans }
 }
 
 /**
@@ -834,15 +842,33 @@ export function redactSensitive(text: string): string {
   const joined = text.replace(/\\\r?\n/g, '')
   const out = redactRules(redactComposedWords(joined))
   const redacted = joined !== text && out === joined ? text : out
-  // The view with the text's own assignments resolved: when it masks something, it is shown, and each secret it
-  // discovered is masked everywhere, the assignment that defined it included.
-  const expanded = joined.includes('=') && joined.includes('$') ? expandAssignments(joined, inlineAssignments(joined)) : joined
-  if (expanded === joined) return redacted
-  const view = redactRules(redactComposedWords(expanded))
-  if (view === expanded) return redacted
-  const shown = tokenCounts(view)
-  const secrets = new Set([...tokenCounts(expanded)].filter(([token, count]) => count > (shown.get(token) ?? 0)).map(([token]) => token))
-  return view.replace(/[\p{L}\p{N}_]+/gu, (token) => (secrets.has(token) ? '***' : token))
+  if (!joined.includes('=') || !joined.includes('$')) return redacted
+  // The view with the text's own assignments resolved only adds masks: every token it masks is masked everywhere in the
+  // redaction above, which keeps its own fail-closed masks (an assignment the shell never runs, `false && KEY=x`, can
+  // unmask nothing), and the assignment that defined a secret is masked with it.
+  const { expanded, spans } = expandAssignments(joined, inlineAssignments(joined))
+  if (!spans.length) return redacted
+  const view = tokenCounts(redactRules(redactComposedWords(expanded)))
+  const secrets = new Set([...tokenCounts(expanded)].filter(([token, count]) => count > (view.get(token) ?? 0)).map(([token]) => token))
+  if (!secrets.size) return redacted
+  // A secret the substitution glued together (`P=hunt; …${P}er2`) is masked by its pieces, each one of the text's tokens.
+  let k = 0
+  for (const m of expanded.matchAll(TOKEN_RE)) {
+    if (!secrets.has(m[0])) continue
+    const end = m.index + m[0].length
+    while (k < spans.length && spans[k]![1] <= m.index) k += 1
+    let cut = m.index
+    for (let j = k; j < spans.length && spans[j]![0] < end; j += 1) {
+      const from = Math.max(spans[j]![0], m.index)
+      const to = Math.min(spans[j]![1], end)
+      secrets.add(expanded.slice(cut, from)).add(expanded.slice(from, to))
+      cut = to
+    }
+    if (cut > m.index) secrets.add(expanded.slice(cut, end))
+  }
+  secrets.delete('')
+  const masked = out.replace(TOKEN_RE, (token) => (secrets.has(token) ? '***' : token))
+  return masked === out ? redacted : masked
 }
 
 function redactRules(text: string): string {
