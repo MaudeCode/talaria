@@ -3,7 +3,7 @@
  * and persistence regression cases (TAL-245). Markers `[py:<file>::<case>]`
  * are verified by scripts/check-regression-port.py.
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -516,6 +516,30 @@ describe('chat streams, cancel, and error settlement', () => {
     await frames(streamId, (f) => f.event === 'cancel')
     // The completed result ends on the Agent's own closing boundary, so the next prompt never follows a tool row.
     expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'assistant', content: 'Operation interrupted.' }])
+  })
+
+  it('Stop keeps a native image prompt when the Agent has no checkpoint yet (TAL-364)', async () => {
+    const sid = await newSession(s)
+    const earlier = await earlierTurn(sid)
+    sidecar.respond('text.image_mode', () => ({ mode: 'native', reason: 'test', supports_vision: true }))
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    const path = join(s.state, 'workspace', 'stop-shot.png')
+    writeFileSync(path, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16, 1)]))
+    const started = new Promise<unknown>((received) => {
+      sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+        emit({ event: 'token', data: { text: 'The chart shows' } })
+        received(params.user_message)
+        opts.signal?.addEventListener('abort', () => { resolve({ ...completed([]), status: 'cancelled' }) })
+      }))
+    })
+    const res = await post(s, '/api/chat/start', { session_id: sid, message: 'Describe this', attachments: [{ path, mime: 'image/png', name: 'stop-shot.png' }] })
+    const streamId = String((await json(res)).stream_id)
+    const prompt = await started
+    expect(prompt).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'image_url' })]))
+    await frames(streamId, (f) => f.event === 'token')
+    expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+    await frames(streamId, (f) => f.event === 'cancel')
+    expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, { role: 'assistant', content: 'The chart shows' }])
   })
 
   it('a worker result that settles the cancel before the interrupt reply writes one marker and one checkpoint (TAL-364)', async () => {

@@ -450,7 +450,7 @@ export function withPendingUserTurn(rows: Message[], turn: { localCount: number;
  * the next prompt never follows a tool row. Reasoning never enters. Null when nothing the model can use was captured:
  * the prompt then stays a recovered row the next request does not replay.
  */
-export function stoppedTurnContext(previousContext: Message[], checkpoint: unknown[] | null, prompt: string, msgText: string, streamedText: string): Message[] | null {
+export function stoppedTurnContext(previousContext: Message[], checkpoint: unknown[] | null, prompt: string | Record<string, unknown>[], msgText: string, streamedText: string): Message[] | null {
   const agentRows = (checkpoint ?? []).filter((m): m is Message => isDict(m))
   const at = findCurrentUserTurn(agentRows, msgText)
   const rows: Message[] = at === null ? [...structuredClone(previousContext), { role: 'user', content: prompt }] : structuredClone(agentRows)

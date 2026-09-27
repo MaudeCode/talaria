@@ -215,7 +215,7 @@ export class TurnRunner {
   /** Streams whose run completed (`done` emitted) and only await title work; a late cancel is a no-op for these. */
   private readonly settledStreams = new Set<string>()
   /** TAL-364: what a Stop needs to write the turn's model context: its starting context and the prompt the Agent got. */
-  private readonly stopContexts = new Map<string, { previousContext: Message[]; prompt: string; msgText: string }>()
+  private readonly stopContexts = new Map<string, { previousContext: Message[]; prompt: string | Record<string, unknown>[]; msgText: string }>()
 
   constructor(readonly deps: TurnRunnerDeps) {}
 
@@ -345,6 +345,9 @@ export class TurnRunner {
     const controller = new AbortController()
     this.abortControllers.set(streamId, controller)
     const userMessage = await this.buildUserMessage(workspaceCtx, msgText, opts.attachments ?? [], opts.workspace, sessionId, s, opts, controller.signal)
+    // The prompt the Agent actually gets, native image parts included.
+    const stop = this.stopContexts.get(streamId)
+    if (stop) stop.prompt = userMessage
     if (activeRun) activeRun.phase = 'running'
     const settledAt = { value: false }
     let failed = false
