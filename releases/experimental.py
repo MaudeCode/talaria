@@ -46,7 +46,7 @@ def current_revision():
     return revision
 
 
-def publish(build):
+def push(build):
     result = load(build / "build-result.json")
     source, version = result["sourceRevision"], result["version"]
     reference = f"{REGISTRY}:sha-{source}"
@@ -55,9 +55,14 @@ def publish(build):
         subprocess.run(["oras", "push", reference, "--artifact-type", ARTIFACT_TYPE,
                         "--annotation", f"{REVISION}={source}", "--annotation", f"org.opencontainers.image.version={version}",
                         f"{result['tarball']}:{LAYER_TYPE}"], cwd=build / "npm", check=True)
+
+
+def advance(source):
+    if not re.fullmatch(r"[a-f0-9]{40}", source):
+        raise ValueError("advance requires the published 40-hex source revision")
     current = current_revision()
     if moves_forward(ROOT, current, source):
-        subprocess.run(["oras", "tag", reference, MOVING], check=True)
+        subprocess.run(["oras", "tag", f"{REGISTRY}:sha-{source}", MOVING], check=True)
     else:
         print(f"{MOVING} stays at {current}; {source} is not its descendant.")
     pages = json.loads(subprocess.check_output(["gh", "api", "--paginate", "--slurp", f"{PACKAGE}/versions?per_page=100"]))
@@ -67,8 +72,15 @@ def publish(build):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("build", type=Path, help="The build.py web --experimental output directory.")
-    publish(parser.parse_args().build)
+    commands = parser.add_subparsers(dest="action", required=True)
+    commands.add_parser("push", help="Push the build as its immutable sha- tag.").add_argument(
+        "build", type=Path, help="The build.py web --experimental output directory.")
+    commands.add_parser("advance", help="Move experimental forward to a pushed source, then prune.").add_argument("source")
+    args = parser.parse_args()
+    if args.action == "push":
+        push(args.build)
+    else:
+        advance(args.source)
 
 
 if __name__ == "__main__":

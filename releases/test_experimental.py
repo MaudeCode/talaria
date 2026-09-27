@@ -10,9 +10,11 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from build import CONTRACTS, experimental_component, require_bundled_contracts
 from experimental import MOVING, moves_forward, pruned
+from plan import git
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 
@@ -53,6 +55,9 @@ class ExperimentalTests(unittest.TestCase):
         for tag in ("web-v1.9.9", "web-v1.10.0", "web-v1.2.0", "web-exp-v2.0.0", "app-v3.0.0"):
             self.git("tag", tag)
         source = self.git("rev-parse", "HEAD")
+        with patch("build.git", side_effect=lambda root, *args: "012345678901" + "c" * 28 if args[0] == "rev-parse" else git(root, *args)), \
+                self.assertRaisesRegex(ValueError, "SemVer"):
+            experimental_component(self.root)
         self.assertEqual(experimental_component(self.root), {
             "version": f"1.10.0-exp.{source[:12]}", "sourceRevision": source, "tag": f"web-exp-v1.10.0-exp.{source[:12]}",
         })

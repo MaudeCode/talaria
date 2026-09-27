@@ -362,7 +362,8 @@ class PublicationTests(unittest.TestCase):
                 else:
                     self.assertIn(runner, (["ghar-set-maudecode"], "ubuntu-latest"), (path.name, name))
                     self.assertEqual(runner == "ubuntu-latest", (path.name, name) in {("release-set.yml", "web-publication"),
-                                                                                       ("web-experimental.yml", "publish")})
+                                                                                       ("web-experimental.yml", "publish"),
+                                                                                       ("web-experimental.yml", "advance")})
         self.assertEqual(set(found), set(native))
         for job, dependency in native.items():
             self.assertIn(dependency, found[job], job)

@@ -15,17 +15,16 @@ permissions:
   contents: read
   packages: write
 
-# Runs never cancel each other: an older run that finishes late still publishes its sha- tag.
-concurrency:
-  group: web-experimental
-  cancel-in-progress: false
-
 jobs:
+  # Pushing sha- tags is not serialized: a concurrency group keeps only one pending run and
+  # replaces it, which would drop a queued commit's immutable artifact.
   publish:
     name: Publish Experimental Web
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      published: ${{ steps.changes.outputs.publish }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -46,9 +45,15 @@ jobs:
             --jq "[.[] | select(.after == \"${HEAD_SHA}\") | .before][0] // \"\"") || base=""
           python3 scripts/changed-components.py --base="$base" --head="$HEAD_SHA" > "$RUNNER_TEMP/changes"
           cat "$RUNNER_TEMP/changes"
-          if grep -qxE '(web_server|web_frontend|contracts)=true' "$RUNNER_TEMP/changes"; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
+          if ! grep -qxE '(web_server|web_frontend|contracts)=true' "$RUNNER_TEMP/changes"; then
+            exit 0
           fi
+          # <stable>-exp.<12-hex> is invalid SemVer when those 12 characters are digits with a leading zero.
+          if [[ "${HEAD_SHA:0:12}" =~ ^0[0-9]{11}$ ]]; then
+            echo "::notice::${HEAD_SHA:0:12} cannot form a SemVer prerelease; the next Web change publishes instead."
+            exit 0
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
 
       - if: steps.changes.outputs.publish == 'true'
         uses: ./.github/actions/release-python
@@ -65,12 +70,42 @@ jobs:
         if: steps.changes.outputs.publish == 'true'
         run: '"$RELEASE_PYTHON" releases/build.py web --experimental --output "$RUNNER_TEMP/web-experimental"'
 
-      - name: Push to GHCR, advance experimental, prune old versions
+      - name: Push the immutable sha- tag
         if: steps.changes.outputs.publish == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
           REGISTRY_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          "$RELEASE_PYTHON" releases/experimental.py "$RUNNER_TEMP/web-experimental"
+          "$RELEASE_PYTHON" releases/experimental.py push "$RUNNER_TEMP/web-experimental"
+
+  # Only moving the tag and pruning are serialized. A replaced pending run loses only its tag move,
+  # which the next publication's forward-only move covers.
+  advance:
+    name: Advance experimental
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: web-experimental
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - uses: ./.github/actions/release-python
+
+      - uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+
+      - name: Move experimental forward and prune old versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          "$RELEASE_PYTHON" releases/experimental.py advance "$HEAD_SHA"

@@ -24,7 +24,9 @@ def experimental_component(root):
     if not stable:
         raise ValueError("Experimental versions need a published Stable web-vX.Y.Z tag")
     latest = max(stable, key=lambda version: tuple(map(int, version.split("."))))
-    # ponytail: an all-digit SHA prefix with a leading zero is invalid semver, so npm rejects that one commit (~0.04%).
+    if re.fullmatch(r"0[0-9]{11}", source[:12]):
+        # A numeric SemVer identifier cannot start with 0 and npm would rewrite it; web-experimental.yml skips these (~0.04%).
+        raise ValueError(f"{source[:12]} is not a valid SemVer prerelease identifier; this commit has no Experimental version")
     version = f"{latest}-exp.{source[:12]}"
     return {"version": version, "sourceRevision": source, "tag": "web-exp-v" + version}
 
