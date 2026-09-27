@@ -83863,108 +83863,108 @@
         }
       }
     },
-    "Response cancelled" : {
+    "Stopped" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "أُلغي الردّ"
+            "value" : "تم الإيقاف"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Antwort abgebrochen"
+            "value" : "Gestoppt"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Respuesta cancelada"
+            "value" : "Detenido"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Réponse annulée"
+            "value" : "Arrêté"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "התשובה בוטלה"
+            "value" : "הופסק"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Risposta annullata"
+            "value" : "Fermato"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "応答をキャンセルしました"
+            "value" : "停止しました"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "응답이 취소됨"
+            "value" : "중지됨"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Antwoord geannuleerd"
+            "value" : "Gestopt"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Odpowiedź anulowana"
+            "value" : "Zatrzymano"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Resposta cancelada"
+            "value" : "Parado"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Ответ отменён"
+            "value" : "Остановлено"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Yanıt iptal edildi"
+            "value" : "Durduruldu"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "جواب منسوخ کر دیا گیا"
+            "value" : "روک دیا گیا"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "已取消回复"
+            "value" : "已停止"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "已取消回覆"
+            "value" : "已停止"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "已取消回應"
+            "value" : "已停止"
           }
         }
       }

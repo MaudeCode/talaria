@@ -45,6 +45,8 @@ class _Run:
         self.finished = threading.Event()
         self.clarify_entries: dict[str, "_ClarifyEntry"] = {}
         self.lock = threading.Lock()
+        # The Agent's transcript list from before this turn: a Stop while the Agent still holds it has no checkpoint.
+        self.prior_messages = None
 
 
 class _ClarifyEntry:
@@ -234,6 +236,21 @@ def _agent_pending_steer_text(agent) -> str:
         return str(getattr(agent, "_pending_steer", "") or "")
     with lock:
         return str(agent.__dict__.get("_pending_steer") or "")
+
+
+def _cancel_checkpoint(run: _Run) -> list | None:
+    """The Agent's canonical transcript at the stop boundary (the turn's prompt, completed tool calls and results),
+    which the live frames only project. The Agent republishes ``_session_messages`` after every tool round; until it
+    does, it still holds the previous turn's list and there is no checkpoint."""
+    agent = run.agent
+    messages = getattr(agent, "_session_messages", None) if agent is not None else None
+    if not isinstance(messages, list) or messages is run.prior_messages:
+        return None
+    try:
+        return json.loads(json.dumps([m for m in list(messages) if isinstance(m, dict)], default=str))
+    except Exception:  # noqa: BLE001 - a row the Agent is still mutating; Stop must not fail on it
+        log.debug("cancel checkpoint snapshot failed", exc_info=True)
+        return None
 
 
 def _resolve_runtime(provider: str | None, model: str) -> dict:
@@ -583,6 +600,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             with _APPROVAL_CB_LOCK:
                 register_gateway_notify(session_id, approval_cb)
                 _APPROVAL_CB_OWNER[session_id] = stream_id
+        run.prior_messages = getattr(agent, "_session_messages", None)
         run.agent = agent
         compressions_before = int(getattr(getattr(agent, "context_compressor", None), "compression_count", 0) or 0)
 
@@ -707,6 +725,8 @@ def register(registry) -> None:
         run = _run_for(params)
         if run is None:
             return {"ok": False, "reason": "not_running"}
+        # Before the interrupt, so the unwinding Agent cannot reshape the transcript first.
+        checkpoint = _cancel_checkpoint(run)
         run.cancel.set()
         # Predecessor ``_finalize_webui_steers``: drain the Agent's not-yet-applied steer text so the server can
         # settle queued steers (consumed vs leftover) before it writes the terminal cancel row.
@@ -718,7 +738,10 @@ def register(registry) -> None:
                 pending = str(drain() or "") if callable(drain) else _agent_pending_steer_text(agent)
             except Exception:  # noqa: BLE001
                 pending = _agent_pending_steer_text(agent)
-        return {"ok": True, "pending_steer": pending}
+        result = {"ok": True, "pending_steer": pending}
+        if checkpoint is not None:
+            result["checkpoint"] = checkpoint
+        return result
 
     @registry.method("chat.steer", requires_agent=False)
     def steer_(ctx: CallContext, params: dict) -> dict:

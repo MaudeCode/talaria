@@ -2222,7 +2222,7 @@ final class LiveActivityTests: XCTestCase {
         )
         XCTAssertEqual(
             LiveActivityReconciler.reconciledOutcome(forTerminalState: "interrupted-by-user").activity,
-            String(localized: "Response cancelled")
+            String(localized: "Stopped")
         )
     }
 

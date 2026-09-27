@@ -47,7 +47,7 @@ enum LiveActivityReconciler {
         case "errored", "interrupted-by-crash", "lost-worker-bookkeeping":
             return ReconciledOutcome(status: .failed, activity: String(localized: "Response failed"))
         case "interrupted-by-user":
-            return ReconciledOutcome(status: .cancelled, activity: String(localized: "Response cancelled"))
+            return ReconciledOutcome(status: .cancelled, activity: String(localized: "Stopped"))
         default:
             return ReconciledOutcome(status: .complete, activity: String(localized: "Response complete"))
         }

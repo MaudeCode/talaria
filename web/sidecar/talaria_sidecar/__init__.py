@@ -7,4 +7,4 @@ stdio (docs/architecture/sidecar-rpc.md). Standard library only.
 
 from __future__ import annotations
 
-SIDECAR_RPC_VERSION = 1
+SIDECAR_RPC_VERSION = 2

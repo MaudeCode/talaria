@@ -151,10 +151,10 @@ test_issue1361_cancel_data_loss.py	test_cancel_with_reasoning_and_partial_tokens
 test_issue1361_cancel_data_loss.py	test_cancel_without_reasoning_dict_works_as_before	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Cancel when no `STREAM_REASONING_TEXT` entry exists: cancel still succeeds and writes the partial/cancel marker.
 test_issue1361_cancel_data_loss.py	test_cancel_with_tool_calls_preserves_tools	asserted	server/src/port/streams.port.test.ts
 test_issue1361_cancel_data_loss.py	test_cancel_with_tools_and_text_preserves_both	asserted	server/src/port/streams.port.test.ts
-test_issue1361_cancel_data_loss.py	test_cancel_preserves_agent_tool_history_for_next_turn_and_browser	dropped	not ported: the next-turn provider history is owned by the Agent sidecar; the server keeps context_messages only from completed results
+test_issue1361_cancel_data_loss.py	test_cancel_preserves_agent_tool_history_for_next_turn_and_browser	asserted	server/src/port/streams.port.test.ts
 test_issue1361_cancel_data_loss.py	test_cancel_uses_stream_owner_while_agent_has_unsettled_compression_id	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Cancel while the agent's `session_id` has rotated mid-turn (compression): the registered stream owner decides the write target, so the OLD s
-test_issue1361_cancel_data_loss.py	test_detached_cancel_preserves_cached_agents_canonical_history	dropped	python-internal: asserts Python-only helpers, threads, locks, module globals, or source text with no TypeScript counterpart — Cancel with no live SSE subscriber (detached): the cached agent's canonical `_session_messages` still land in `context_messages`, not just d
-test_issue1361_cancel_data_loss.py	test_cancel_keeps_unfinished_streamed_prose_in_next_turn_context	dropped	not ported: the next-turn provider history is owned by the Agent sidecar; the server keeps context_messages only from completed results
+test_issue1361_cancel_data_loss.py	test_detached_cancel_preserves_cached_agents_canonical_history	asserted	server/src/port/streams.port.test.ts
+test_issue1361_cancel_data_loss.py	test_cancel_keeps_unfinished_streamed_prose_in_next_turn_context	asserted	server/src/port/streams.port.test.ts
 test_issue1361_cancel_data_loss.py	test_reasoning_only_creates_partial_message	asserted	server/src/port/streams.port.test.ts
 test_issue1361_cancel_data_loss.py	test_tools_only_creates_partial_message	asserted	server/src/port/streams.port.test.ts
 test_issue1361_cancel_data_loss.py	test_cancel_event_payload_includes_partial_session_snapshot	asserted	server/src/port/streams.port.test.ts

@@ -251,7 +251,7 @@ final class ChatStreamCoordinator {
         guard self.activeStreamID == activeStreamID else { return response }
         guard response.ok != false else { return response }
 
-        liveActivityManager?.end(status: .cancelled, activity: String(localized: "Response cancelled"), errorSummary: nil)
+        liveActivityManager?.end(status: .cancelled, activity: String(localized: "Stopped"), errorSummary: nil)
         finishStream()
         return response
     }
@@ -723,7 +723,7 @@ final class ChatStreamCoordinator {
             delegate?.streamCoordinatorApplySettledSession(session)
         case .cancelled:
             if !isCurrentRunTerminated {
-                liveActivityManager?.end(status: .cancelled, activity: String(localized: "Response cancelled"), errorSummary: nil)
+                liveActivityManager?.end(status: .cancelled, activity: String(localized: "Stopped"), errorSummary: nil)
             }
             finishStream()
         case .error(let message, let terminalState):

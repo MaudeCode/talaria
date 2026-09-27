@@ -443,12 +443,48 @@ export function withPendingUserTurn(rows: Message[], turn: { localCount: number;
   return [...rows.slice(0, at), turn.prompt, ...rows.slice(at)]
 }
 
+/**
+ * TAL-364: where a checkpoint's current-turn prompt sits, or null when it has none. The Agent's rows start with the
+ * `historyLength` rows it was sent, so the prompt comes after them; a repeated prompt matching an earlier turn does not
+ * count. A compressed checkpoint is shorter than that history, so there the last matching row stands.
+ */
+export function checkpointTurnStart(checkpoint: unknown[], msgText: string, historyLength: number): number | null {
+  const at = findCurrentUserTurn(checkpoint, msgText)
+  if (at === null) return null
+  return at >= historyLength || checkpoint.some((m) => isContextCompressionMarker(m)) ? at : null
+}
+
+/**
+ * TAL-364: the model context a stopped turn leaves. The Agent's checkpoint (its canonical transcript at the stop
+ * boundary) when it holds this turn's prompt, else the turn's starting context plus that prompt; then the prose that
+ * streamed past the last assistant row the Agent committed. A completed tool result gets the Agent's own closing row, so
+ * the next prompt never follows a tool row. Reasoning never enters. Null when nothing the model can use was captured:
+ * the prompt then stays a recovered row the next request does not replay.
+ */
+export function stoppedTurnContext(previousContext: Message[], checkpoint: unknown[] | null, prompt: string | Record<string, unknown>[], msgText: string, streamedText: string, historyLength: number): Message[] | null {
+  const agentRows = (checkpoint ?? []).filter((m): m is Message => isDict(m))
+  const at = checkpointTurnStart(agentRows, msgText, historyLength)
+  const rows: Message[] = at === null ? [...structuredClone(previousContext), { role: 'user', content: prompt }] : structuredClone(agentRows)
+  let unsettled = messageText(buildPartialMessage(streamedText, '', [])?.content)
+  for (const m of rows.slice((at ?? previousContext.length) + 1)) {
+    const text = m.role === 'assistant' ? messageText(m.content).trim() : ''
+    if (text && unsettled.includes(text)) unsettled = unsettled.replace(text, '').trim()
+  }
+  // A tool result is a `tool` row or an Anthropic-style user row of `tool_result` blocks. A steer the Agent applied is
+  // neither a prompt nor a result: the boundary goes after it, and it never makes the turn look unanswered.
+  const toolResult = (m: Message | undefined): boolean => m?.role === 'tool' || (m?.role === 'user' && Array.isArray(m.content) && m.content.some((part) => isDict(part) && part.type === 'tool_result'))
+  const tail = (): Message | undefined => sanitizeMessagesForApi(rows.filter((m) => agentSteerText(m) === null)).at(-1)
+  if (toolResult(tail())) rows.push({ role: 'assistant', content: unsettled || 'Operation interrupted.' })
+  else if (unsettled) rows.push({ role: 'assistant', content: unsettled })
+  return tail()?.role === 'user' ? null : rows
+}
+
 function toolCallId(tc: unknown): string {
   if (!isDict(tc)) return ''
   return str(tc.id) || str(tc.call_id)
 }
 
-const API_SAFE_MSG_KEYS = new Set(['role', 'content', 'tool_calls', 'tool_call_id', 'name', 'refusal', 'reasoning_content'])
+const API_SAFE_MSG_KEYS = new Set(['role', 'content', 'tool_calls', 'tool_call_id', 'tool_use_id', 'name', 'refusal', 'reasoning_content'])
 const OOB_USER_MESSAGE_BLOCK_RE = /\[OUT-OF-BAND\s+USER\s+MESSAGE(?:\s*(?:—|-)\s*[\s\S]*?)?\]\s*?[\s\S]*?\[\/OUT-OF-BAND\s+USER\s+MESSAGE\]/gi
 const OOB_DELIVERY_RE = /^\s*\[OUT-OF-BAND\s+USER\s+MESSAGE[^\]]*\]\s*([\s\S]*?)\s*\[\/OUT-OF-BAND\s+USER\s+MESSAGE\]\s*$/i
 
@@ -483,10 +519,14 @@ function stripOobBlocks(content: unknown): unknown {
  * otherwise the neighbours fuse cleanly or the prompt is stale, and replaying it would answer it again.
  */
 export function sanitizeMessagesForApi(messages: Message[]): Message[] {
+  // Calls are OpenAI `tool_calls` or Anthropic-style `tool_use` content blocks; results name them by `tool_call_id`,
+  // `tool_use_id`, or a user row's `tool_result` blocks.
+  const toolUseIds = (msg: Message): string[] => (Array.isArray(msg.content) ? msg.content.flatMap((part) => (isDict(part) && part.type === 'tool_use' && str(part.id) ? [str(part.id)] : [])) : [])
   const validToolCallIds = new Set<string>()
   for (const msg of messages) {
-    if (msg.role !== 'assistant' || !Array.isArray(msg.tool_calls)) continue
-    for (const tc of msg.tool_calls) { const id = toolCallId(tc); if (id) validToolCallIds.add(id) }
+    if (msg.role !== 'assistant') continue
+    for (const tc of Array.isArray(msg.tool_calls) ? msg.tool_calls : []) { const id = toolCallId(tc); if (id) validToolCallIds.add(id) }
+    for (const id of toolUseIds(msg)) validToolCallIds.add(id)
   }
   const clean: Message[] = []
   for (const msg of messages) {
@@ -496,16 +536,27 @@ export function sanitizeMessagesForApi(messages: Message[]): Message[] {
     if (msg._error || isDict(msg._steer)) continue
     if (msg._partial && !messageText(msg.content).trim()) continue
     const recovered = Boolean(msg._recovered) && msg.role === 'user'
-    if (msg.role === 'tool') { const tid = str(msg.tool_call_id); if (!tid || !validToolCallIds.has(tid)) continue }
+    if (msg.role === 'tool') { const tid = str(msg.tool_call_id) || str(msg.tool_use_id); if (!tid || !validToolCallIds.has(tid)) continue }
     const sanitized = Object.fromEntries(Object.entries(msg).filter(([k]) => API_SAFE_MSG_KEYS.has(k)))
     if (Array.isArray(sanitized.tool_calls) && !sanitized.tool_calls.length) Reflect.deleteProperty(sanitized, 'tool_calls')
     if (recovered) sanitized._recovered = true
     if ('content' in sanitized) sanitized.content = stripOobBlocks(sanitized.content)
     if (sanitized.role) clean.push(sanitized)
   }
-  const answered = new Set(clean.filter((m) => m.role === 'tool').map((m) => str(m.tool_call_id)).filter(Boolean))
+  const answered = new Set(clean.flatMap((m) => {
+    if (m.role === 'tool') return [str(m.tool_call_id) || str(m.tool_use_id)]
+    if (m.role === 'user' && Array.isArray(m.content)) return m.content.flatMap((part) => (isDict(part) && part.type === 'tool_result' ? [str(part.tool_use_id)] : []))
+    return []
+  }).filter(Boolean))
   const filtered: Message[] = []
   for (let msg of clean) {
+    if (msg.role === 'assistant' && toolUseIds(msg).length && Array.isArray(msg.content)) {
+      const parts = msg.content.filter((part) => !(isDict(part) && part.type === 'tool_use' && !answered.has(str(part.id))))
+      if (!parts.length) continue
+      msg = { ...msg, content: parts }
+      // Reasoning left behind by a dropped call is not an answer either.
+      if (isReasoningOnlyAssistant(msg)) continue
+    }
     if (msg.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
       const kept = msg.tool_calls.filter((tc) => answered.has(toolCallId(tc)))
       if (!kept.length) {
