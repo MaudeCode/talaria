@@ -26,10 +26,10 @@ import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles
 import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
 import { attachTodoState } from './todo.js'
 import { withSessionWireFlags } from './list.js'
-import { hydrateAnchorActivityScenes, withTurnIds } from './anchor.js'
+import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, toolOutcome, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
@@ -129,9 +129,12 @@ export function classifyProviderError(errStr: string, opts: { silentFailure?: bo
   return { label: 'Error', type: 'error', hint: '' }
 }
 
+/** Error classifications that are turn outcomes in their own right; every other one ends the turn as `error`. */
+const CLASSIFIED_OUTCOMES = new Set(['no_response', 'compression_exhausted', 'interrupted', 'cancelled'])
+
 export function providerErrorPayload(message: string, errType: string, hint = '', redact = true): Record<string, unknown> {
   const safe = redact ? redactString(message).trim() : message
-  const payload: Record<string, unknown> = { message: safe || message, type: errType }
+  const payload: Record<string, unknown> = { message: safe || message, type: errType, terminal_state: CLASSIFIED_OUTCOMES.has(errType) ? errType : 'error' }
   if (hint) payload.hint = hint
   if (safe) payload.details = safe.length > 1200 ? `${safe.slice(0, 1197).trimEnd()}…` : safe
   return payload
@@ -199,9 +202,6 @@ export function explicitTextSignal(cfg: Config): boolean {
 }
 
 export const GATEWAY_APPROVAL_RELAY_UNAVAILABLE = 'Gateway approval could not be relayed because the active run is unavailable. Reopen the session or retry after it reconnects.'
-
-/** Error classifications that are turn outcomes in their own right (not a generic failure). */
-const CLASSIFIED_OUTCOMES = new Set(['no_response', 'compression_exhausted', 'interrupted', 'cancelled'])
 
 export class TurnRunner {
   readonly writers = new Map<string, RunJournalWriter>()
@@ -313,7 +313,10 @@ export class TurnRunner {
       }
       channel.put([event, data, eventId, meta.redacted])
       if (event === 'done' || event === 'cancel' || event === 'apperror' || event === 'error') {
-        try { deps.onTerminal?.(streamId, event === 'done' ? 'completed' : event === 'cancel' ? 'cancelled' : 'failed') } catch { /* best effort */ }
+        // Relay's phase follows the turn outcome, so a background Live Activity ends as the app would end it.
+        const state = str(data.terminal_state)
+        const phase = state === 'completed' || state === 'tool_limit_reached' ? 'completed' : event === 'cancel' || state === 'cancelled' ? 'cancelled' : 'failed'
+        try { deps.onTerminal?.(streamId, phase) } catch { /* best effort */ }
       }
     }
     this.sessionPuts.set(sessionId, put)
@@ -322,7 +325,7 @@ export class TurnRunner {
     try {
       s = deps.store.get(sessionId)
     } catch {
-      put('apperror', { type: 'error', message: 'Session not found', session_id: sessionId })
+      put('apperror', { type: 'error', terminal_state: 'error', message: 'Session not found', session_id: sessionId })
       this.teardown(sessionId, streamId)
       return
     }
@@ -348,6 +351,8 @@ export class TurnRunner {
     const toolIds = new WeakMap<Record<string, unknown>, string>()
     let mintedToolIds = 0
     const mintToolId = (): string => `tool-${streamId}-${String(++mintedToolIds)}`
+    // When the server received each call's start frame: its completion's `duration` is measured from it.
+    const toolStartedAt = new WeakMap<Record<string, unknown>, number>()
     let tokenSent = false
     let firstTokenAt: number | null = null
     const titles = new ReasoningTitleTracker()
@@ -422,17 +427,25 @@ export class TurnRunner {
               const call = { name: data.name, args: data.args ?? {}, tid: str(data.tid), done: false }
               liveToolCalls.push(call)
               toolIds.set(call, call.tid || mintToolId())
+              toolStartedAt.set(call, deps.now())
               const redacted = deps.redactEnabled()
               put('tool', publicToolFrame(withToolId(data, toolIds.get(call)!), redacted), { redacted })
               return
             }
             case 'tool_complete': {
+              // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server.
+              const { raw_result: rawResult, ...complete } = data
+              complete.is_error = toolOutcome(rawResult).is_error
               const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
-              if (tc) { tc.done = true; tc.snippet = data.preview }
+              if (tc) {
+                const startedAt = toolStartedAt.get(tc)
+                if (startedAt !== undefined) complete.duration = Math.round(Math.max(0, deps.now() - startedAt) * 1000) / 1000
+                Object.assign(tc, { done: true, snippet: data.preview, is_error: complete.is_error, duration: complete.duration ?? null })
+              }
               const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
               this.lastCompletedTool.set(streamId, id)
               const redacted = deps.redactEnabled()
-              put('tool_complete', publicToolFrame(withToolId(data, id), redacted), { redacted })
+              put('tool_complete', publicToolFrame(withToolId(complete, id), redacted), { redacted })
               return
             }
             // Python: the live chat frame carries the queue head plus depth, not the entry that just arrived.
@@ -478,7 +491,7 @@ export class TurnRunner {
         }
         opts.onDone?.(answer)
         // Python `_ephemeral_session_payload`: only role and content leave the server for a btw turn.
-        put('done', { session: { session_id: sessionId, messages: (result.messages).map((m) => ({ role: m.role, content: m.content })) }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer })
+        put('done', { session: { session_id: sessionId, messages: (result.messages).map((m) => ({ role: m.role, content: m.content })) }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer, terminal_state: answer.trim() ? 'completed' : 'no_response' })
         try { rmSync(deps.store.pathFor(sessionId), { force: true }) } catch { /* ignore */ }
         deps.store.sessions.delete(sessionId)
         return
@@ -545,7 +558,7 @@ export class TurnRunner {
       if (typeof result.context.context_length === 'number') s.context_length = result.context.context_length
       if (typeof result.context.threshold_tokens === 'number') s.threshold_tokens = result.context.threshold_tokens
       if (typeof result.context.last_prompt_tokens === 'number') s.last_prompt_tokens = result.context.last_prompt_tokens
-      s.tool_calls = extractToolCallsFromMessages(s.messages, liveToolCalls)
+      s.tool_calls = extractToolCallsFromMessages(s.messages, liveToolCalls, s.tool_calls)
       s.active_stream_id = null
       s.pending_user_message = null
       s.pending_attachments = []
@@ -622,11 +635,9 @@ export class TurnRunner {
       const donePayload: Record<string, unknown> = {
         session: redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled()),
         usage: doneUsage,
+        terminal_state: turnTerminalState(s.messages, streamId),
       }
-      if (result.tool_limit_reached) {
-        donePayload.terminal_state = 'tool_limit_reached'
-        donePayload.terminal_reason = 'max_iterations'
-      }
+      if (result.tool_limit_reached) donePayload.terminal_reason = 'max_iterations'
       put('done', donePayload)
       for (const [event, payload] of steerEvents) put(event, payload)
       // The turn is over: release admission before the title work so a follow-up message is accepted while the
@@ -737,7 +748,7 @@ export class TurnRunner {
    */
   private terminalSessionPayload(s: Session): Record<string, unknown> {
     const payload = withSessionWireFlags(s.compact(), this.registry.liveIds)
-    const scened = hydrateAnchorActivityScenes(withTurnIds(s.messages), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true })
+    const scened = hydrateAnchorActivityScenes(withToolCallOutcomes(withTurnIds(s.messages), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true })
     const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
     const limited = messagesForLimitedPayload(window)
     payload.messages = limited
@@ -763,8 +774,8 @@ export class TurnRunner {
     const hint = str(payload.hint)
     const errorMessage: Message = { role: 'assistant', content: `**${label}:** ${str(payload.message) || label}${hint ? `\n\n*${hint}*` : ''}`, timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: streamId }
     if (duration !== null) errorMessage._turnDuration = Math.round(duration * 1000) / 1000
-    // The classified outcome the live frame reported stays on the row, so the settled scene says the same.
-    if (CLASSIFIED_OUTCOMES.has(str(payload.type))) errorMessage._terminal_state = str(payload.type)
+    // The outcome the live frame reported stays on the row, so the settled scene says the same.
+    errorMessage._terminal_state = str(payload.terminal_state) || 'error'
     if (payload.type === 'compression_exhausted') {
       // Python `stamp_compression_exhausted_recovery`: durable recovery metadata on the session, the marker, and the frame.
       const recovery = stampCompressionExhaustedRecovery(s, str(payload.message) || label, str(payload.details))
@@ -825,7 +836,7 @@ export class TurnRunner {
   private cancelFrame(sessionId: string | null): Record<string, unknown> {
     let snapshot: Record<string, unknown> | null = null
     if (sessionId) try { snapshot = redactSessionData(this.terminalSessionPayload(this.deps.store.get(sessionId)), this.deps.redactEnabled()) } catch { snapshot = null }
-    return { type: 'cancelled', status: 'cancelled', ...(sessionId ? { session_id: sessionId } : {}), ...(snapshot ? { session: snapshot } : {}) }
+    return { type: 'cancelled', status: 'cancelled', terminal_state: 'cancelled', ...(sessionId ? { session_id: sessionId } : {}), ...(snapshot ? { session: snapshot } : {}) }
   }
 
   /**

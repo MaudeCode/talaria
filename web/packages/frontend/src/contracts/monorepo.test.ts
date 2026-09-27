@@ -15,7 +15,7 @@ describe('shared monorepo contracts', () => {
     expect(session.messages?.[0]?._anchor_activity_scene).toMatchObject({ version: 'activity_scene_v1' })
     // Turns come from the server stamp: two completed replies in one turn stay together; a new id starts a turn.
     const turns = groupAssistantTurns(projectMessages(session.messages ?? [])).filter((row) => row.message.role === 'assistant')
-    expect(turns.map((row) => row.turnKey)).toEqual(['legacy:start', 'legacy:1', 'contract-run-a', 'contract-run-b', 'contract-run-c', 'contract-run-d', 'contract-run-e', 'contract-run-g', 'contract-run-f'])
+    expect(turns.map((row) => row.turnKey)).toEqual(['legacy:start', 'legacy:1', 'contract-run-a', 'contract-run-b', 'contract-run-c', 'contract-run-d', 'contract-run-e', 'contract-run-g', 'contract-run-x', 'contract-run-y', 'contract-run-z', 'contract-run-f'])
     expect(turns[2]?.assistantRows?.map((row) => row.message.message_id)).toEqual(['contract-run-a-1', 'contract-run-a-2'])
   })
 
@@ -30,6 +30,8 @@ describe('shared monorepo contracts', () => {
     expect(view('contract-run-d')).toMatchObject({ final: 'Tool budget exhausted; here is the saved explanation.', status: 'tool_limit_reached' })
     expect(view('contract-run-e')).toMatchObject({ kinds: ['text', 'tool'], final: '', status: 'no_response' })
     expect(view('legacy:start')).toMatchObject({ kinds: ['text', 'tool'], final: 'Contract answer.' })
+    // Stamped and legacy failed turns carry their outcome in the scene; the client never reads the error row itself.
+    expect([view('contract-run-x').status, view('contract-run-y').status, view('contract-run-z').status]).toEqual(['cancelled', 'error', 'cancelled'])
     // Persisted steers sit where the Agent took them: after the tool that had completed.
     expect(view('contract-run-g')).toMatchObject({ kinds: ['text', 'tool', 'steering', 'text', 'tool', 'steering'], final: 'Both files read.' })
   })
@@ -47,6 +49,20 @@ describe('shared monorepo contracts', () => {
     expect(SessionSchema.parse(fixture.session)).toMatchObject({ is_streaming: true, active_stream_id: 'contract-run-f', read_only: false })
     expect(SessionSchema.parse(fixture.stale_stream_session)).toMatchObject({ is_streaming: false, active_stream_id: null, read_only: false })
     expect(SessionSchema.parse(fixture.subagent_session)).toMatchObject({ is_streaming: false, read_only: true, can_branch: false })
+  })
+
+  it('shows each tool call\'s server-resolved outcome in every persisted shape (TAL-313)', () => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Record<string, unknown>
+    const session = SessionSchema.parse(fixture.tool_outcomes_session)
+    const turns = groupAssistantTurns(projectMessages(session.messages ?? [])).filter((row) => row.message.role === 'assistant')
+    const tools = (key: string) => persistedActivity(turns.find((row) => row.turnKey === key)!).items.flatMap((item) => (item.kind === 'tool' ? [[item.call.id, item.call.done, item.call.isError, item.call.duration, item.call.result]] : []))
+    // OpenAI calls (one exits non-zero), an Anthropic tool_use call that failed, and a call only the session-level list held.
+    expect(tools('tool-run-openai')).toEqual([['call-read', true, false, 1.25, 'A contents'], ['call-exit', true, true, 3.5, '{"exit_code": 2, "output": "1 failed"}']])
+    expect(tools('tool-run-anthropic')).toEqual([['toolu-search', true, true, null, '{"error": "permission denied"}']])
+    expect(tools('tool-run-session')).toEqual([['call-date', true, false, 0.42, 'Sat Sep 27']])
+    // The running turn's unanswered call is not done; the live stream renders that turn.
+    const running = session.messages?.find((m) => m._turn_id === 'tool-run-live' && m.role === 'assistant')
+    expect(running?.tool_calls?.map((call) => [call.id, call.done, call.is_error])).toEqual([['call-build', false, false]])
   })
 
   it('keeps an assistant row whose only content is its server scene', () => {

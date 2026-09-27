@@ -170,7 +170,7 @@ when integrating with the live chat SSE relay.
 | `token` | Assistant text delta |
 | `reasoning` | Model reasoning / thinking delta |
 | `tool` | Tool call started; required `id` names the call |
-| `tool_complete` | Tool call finished (result or error); carries the same `id` as its `tool` frame |
+| `tool_complete` | Tool call finished; carries the same `id` as its `tool` frame, the server's `is_error`, and `duration` (seconds between the server receiving the call's start and its completion) |
 | `interim_assistant` | Mid-turn assistant prose (pre-final) |
 | `approval` | Destructive-command approval prompt |
 | `clarify` | Structured clarification prompt |
@@ -257,6 +257,30 @@ without matching replayed text against the transcript.
   omission, so every window agrees on `message_count` and the cursor.
 - Reconnects within one client keep that client's own same-stream cursor. A
   cursor whose stream id differs from the target stream is never used.
+
+## Persisted tool call outcomes
+
+Every assistant row's `tool_calls` leave the server resolved (TAL-313), in
+session detail (every window), mutation replies, and terminal payloads. The
+projection runs over the full transcript before windowing and writes nothing
+back to the session file.
+
+- Anthropic `tool_use` content parts also appear in `tool_calls` in the OpenAI
+  shape (`{ id, type: 'function', function: { name, arguments } }`); the
+  content keeps its parts. A call only the session-level `tool_calls` list
+  recorded joins the assistant row at its `assistant_msg_idx`.
+- `done`: the call has a result, or it belongs to a turn other than the running
+  one. A running turn's unanswered call is `done: false`.
+- `is_error`: the server's one outcome rule over the call's result: an object
+  with a non-empty `error`, a non-zero numeric `exit_code` / `exitCode`, or
+  `success: false`. Live `tool_complete` frames use the same rule over the
+  sidecar's raw result, which never leaves the server.
+- `duration`: the seconds the live stream measured for that call id, else
+  `null` (history written before the server recorded durations).
+- `result`: the redacted result snippet, else `null`.
+
+The session-level `tool_calls` list stays for older clients; its entries also
+carry `is_error` and `duration`.
 
 ## Replay source
 

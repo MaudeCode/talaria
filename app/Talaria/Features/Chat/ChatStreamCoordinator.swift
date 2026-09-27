@@ -38,11 +38,12 @@ protocol ChatStreamCoordinatorDelegate: AnyObject {
     var streamCoordinatorDisplayTitle: String { get }
     var streamCoordinatorHasRunningLiveToolCall: Bool { get }
     var streamCoordinatorHasPendingPrompt: Bool { get }
-    var streamCoordinatorLatestServerLoadHadAssistantResponseAfterLatestUser: Bool { get }
     var streamCoordinatorStreamingAssistantMessageID: String? { get set }
 
     func streamCoordinatorLoadMessages(modelContext: ModelContext?) async
     func streamCoordinatorLatestAssistantMessageID() -> String?
+    /// The loaded transcript's settled outcome for a turn (its scene's `terminal_state`); nil until it settles.
+    func streamCoordinatorServerTerminalState(turnID: String) -> String?
     /// Old-server fallback (TAL-316): drop the loaded running turn after its prompt
     /// so a replay from 0 renders it once. False when the load has no turn start.
     func streamCoordinatorOmitLoadedRunningTurn() -> Bool
@@ -482,7 +483,7 @@ final class ChatStreamCoordinator {
             // this run during the load (see canFinalizeRunAfterLoad).
             guard canFinalizeRunAfterLoad(streamID: expectedStreamID, capturedGeneration: generation) else { return }
 
-            guard delegate?.streamCoordinatorLatestServerLoadHadAssistantResponseAfterLatestUser == true else {
+            guard let terminalState = delegate?.streamCoordinatorServerTerminalState(turnID: expectedStreamID) else {
                 // Foreground safety net: the live SSE is still connected and owns
                 // completion, so a status poll that briefly reports inactive must
                 // not finalize the run — keep waiting for the real `.done`. (This
@@ -493,7 +494,7 @@ final class ChatStreamCoordinator {
                 return
             }
 
-            completeResponseFromRefreshedTranscriptAndFinishStream(streamID: expectedStreamID)
+            completeResponseFromRefreshedTranscriptAndFinishStream(streamID: expectedStreamID, terminalState: terminalState)
         } catch {
             // This is a foreground safety net. The primary SSE path owns visible
             // stream errors; a failed status poll should not interrupt it.
@@ -695,7 +696,7 @@ final class ChatStreamCoordinator {
             liveTokensPerSecond = payload.displayableTokensPerSecond
         case .done(let payload):
             let hasCompletedTranscript = delegate?.streamCoordinatorApplyDone(payload) == true
-            completeCurrentResponse(needsTranscriptRefresh: !hasCompletedTranscript)
+            completeCurrentResponse(needsTranscriptRefresh: !hasCompletedTranscript, terminalState: payload.terminalState)
         case .approvalPending(let update):
             liveActivityManager?.update(.waitingForApproval)
             delegate?.streamCoordinatorApplyApprovalUpdate(update)
@@ -725,10 +726,14 @@ final class ChatStreamCoordinator {
                 liveActivityManager?.end(status: .cancelled, activity: String(localized: "Stopped"), errorSummary: nil)
             }
             finishStream()
-        case .error(let message):
+        case .error(let message, let terminalState):
             if !isCurrentRunTerminated {
-                delegate?.streamCoordinatorDidReceiveErrorMessage(message)
-                liveActivityManager?.end(status: .failed, activity: String(localized: "Response failed"), errorSummary: nil)
+                let outcome = LiveActivityReconciler.outcome(forTurnTerminalState: terminalState ?? "error")
+                // A run the server reports cancelled ends like a cancel, without a failure message.
+                if outcome.status != .cancelled {
+                    delegate?.streamCoordinatorDidReceiveErrorMessage(message)
+                }
+                liveActivityManager?.end(status: outcome.status, activity: outcome.activity, errorSummary: nil)
             }
             finishStream()
         case .transportError(let message):
@@ -859,10 +864,11 @@ final class ChatStreamCoordinator {
         )
     }
 
-    private func completeCurrentResponse(needsTranscriptRefresh: Bool) {
+    private func completeCurrentResponse(needsTranscriptRefresh: Bool, terminalState: String?) {
         runGeneration &+= 1
         responseGeneration &+= 1
-        liveActivityManager?.end(status: .complete, activity: String(localized: "Response complete"), errorSummary: nil)
+        let outcome = LiveActivityReconciler.outcome(forTurnTerminalState: terminalState)
+        liveActivityManager?.end(status: outcome.status, activity: outcome.activity, errorSummary: nil)
         delegate?.streamCoordinatorRemoveSnapshot(streamID: activeStreamID)
         delegate?.streamCoordinatorStopAuxiliaryMonitoring(clearPrompt: true)
         activeStreamID = nil
@@ -870,12 +876,15 @@ final class ChatStreamCoordinator {
         liveTokensPerSecond = nil
         delegate?.streamCoordinatorStreamingAssistantMessageID = nil
         hasCompletedCurrentResponse = true
-        delegate?.streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: needsTranscriptRefresh)
+        // Completion feedback (haptic, "response complete" notification) only for a turn the server reports complete.
+        if outcome.status == .complete {
+            delegate?.streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: needsTranscriptRefresh)
+        }
         resetRecoveryState()
     }
 
-    private func completeResponseFromRefreshedTranscriptAndFinishStream(streamID completedStreamID: String?) {
-        completeCurrentResponse(needsTranscriptRefresh: false)
+    private func completeResponseFromRefreshedTranscriptAndFinishStream(streamID completedStreamID: String?, terminalState: String) {
+        completeCurrentResponse(needsTranscriptRefresh: false, terminalState: terminalState)
         delegate?.streamCoordinatorRemoveSnapshot(streamID: completedStreamID)
         finishStream()
     }
@@ -896,15 +905,15 @@ final class ChatStreamCoordinator {
     }
 
     /// The server reports this stream is no longer active. Complete from the
-    /// just-refreshed transcript when an assistant reply surfaced, otherwise
-    /// finalize as failed. Either branch ends the Live Activity, so it can never
+    /// just-refreshed transcript with the turn's settled outcome when it has one,
+    /// otherwise finalize as failed. Either branch ends the Live Activity, so it can never
     /// dangle on "running" after the run is over (#246). Shared by the two paths
     /// with no live SSE behind them — reconnect-after-suspend and stale recovery.
     /// The foreground transcript-refresh safety net deliberately keeps waiting
     /// instead, because its live SSE still owns completion.
     private func finalizeInactiveStream(streamID: String?) {
-        if delegate?.streamCoordinatorLatestServerLoadHadAssistantResponseAfterLatestUser == true {
-            completeResponseFromRefreshedTranscriptAndFinishStream(streamID: streamID)
+        if let streamID, let terminalState = delegate?.streamCoordinatorServerTerminalState(turnID: streamID) {
+            completeResponseFromRefreshedTranscriptAndFinishStream(streamID: streamID, terminalState: terminalState)
         } else {
             liveActivityManager?.end(status: .failed, activity: String(localized: "Response failed"), errorSummary: nil)
             finishStream()

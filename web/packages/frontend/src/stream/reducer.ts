@@ -69,7 +69,7 @@ export interface LiveTurn {
   compression: { state: 'compressing' | 'compressed'; newSessionId: string | null } | null
   title: string | null
   doneSession: Session | null
-  terminalState?: string
+  terminalState?: string | undefined
   doneAt: number | null
   streamEnded: boolean
   goal: unknown
@@ -237,17 +237,19 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
     case 'done': {
       if (terminal) return stamped
       const session = event.data.session
-      return { ...stamped, status: 'done', terminalState: typeof event.data.terminal_state === 'string' ? event.data.terminal_state : 'completed', doneAt: now, usage: event.data.usage ?? stamped.usage, doneSession: session && typeof session === 'object' ? (session as Session) : null, approval: null, clarify: null }
+      // ponytail: old-journal fallback — a `done` recorded before terminal_state shipped completed its turn.
+      return { ...stamped, status: 'done', terminalState: event.data.terminal_state ?? 'completed', doneAt: now, usage: event.data.usage ?? stamped.usage, doneSession: session && typeof session === 'object' ? (session as Session) : null, approval: null, clarify: null }
     }
     case 'apperror':
     case 'error': {
       if (terminal) return stamped
       const type = event.data.type ?? 'error'
-      const cancelled = type === 'cancelled' || type === 'interrupted'
+      const terminalState = event.data.terminal_state ?? 'error'
+      const cancelled = terminalState === 'cancelled' || terminalState === 'interrupted'
       return {
         ...stamped,
         status: cancelled ? 'cancelled' : 'error',
-        terminalState: type,
+        terminalState,
         doneAt: now,
         error: cancelled ? null : { type, message: event.data.message ?? '', hint: event.data.hint, continuationSessionId: event.data.continuation_session_id ?? event.data.new_session_id },
         cancelledMessage: cancelled ? (event.data.message ?? '') : null,
@@ -259,7 +261,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
     }
     case 'cancel': {
       if (terminal) return { ...stamped, streamEnded: true }
-      return { ...stamped, status: 'cancelled', doneAt: now, cancelledMessage: '', doneSession: sessionOf(event.data), approval: null, clarify: null, streamEnded: true }
+      return { ...stamped, status: 'cancelled', terminalState: event.data.terminal_state, doneAt: now, cancelledMessage: '', doneSession: sessionOf(event.data), approval: null, clarify: null, streamEnded: true }
     }
     case 'stream_end':
       return { ...stamped, streamEnded: true }

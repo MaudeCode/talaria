@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ClarifyStepSchema, ToolDisplayFields } from './views.js'
+import { ClarifyStepSchema, ToolDisplayFields, TurnTerminalStateSchema } from './views.js'
 
 /**
  * Wire events of `GET /api/chat/stream` as emitted by api/streaming.py
@@ -16,8 +16,9 @@ const Clarify = z.looseObject({ steps: z.array(ClarifyStepSchema).optional(), cl
 const Compression = z.looseObject({ session_id: z.string().optional(), old_session_id: z.string().optional(), new_session_id: z.string().optional(), continuation_session_id: z.string().optional(), usage: z.unknown().optional() })
 const Title = z.looseObject({ session_id: z.string().optional(), title: z.string().optional(), status: z.string().optional(), reason: z.string().optional(), message: z.string().optional(), message_key: z.string().optional(), message_args: z.array(z.unknown()).optional(), raw_preview: z.string().optional(), prefill: z.unknown().optional() })
 const Warning = z.looseObject({ type: z.string().optional(), message: z.string().optional() })
-const AppError = z.looseObject({ type: z.string().optional(), message: z.string().optional(), details: z.unknown().optional(), hint: z.string().optional(), session_id: z.string().optional(), old_session_id: z.string().optional(), new_session_id: z.string().optional(), continuation_session_id: z.string().optional(), status: z.union([z.string(), z.number()]).optional(), session: z.unknown().optional(), code: z.string().optional() })
-const Done = z.looseObject({ session: z.unknown().optional(), usage: z.unknown().optional(), status: z.string().optional(), ephemeral: z.boolean().optional(), answer: z.string().optional() })
+const AppError = z.looseObject({ terminal_state: TurnTerminalStateSchema.optional(), type: z.string().optional(), message: z.string().optional(), details: z.unknown().optional(), hint: z.string().optional(), session_id: z.string().optional(), old_session_id: z.string().optional(), new_session_id: z.string().optional(), continuation_session_id: z.string().optional(), status: z.union([z.string(), z.number()]).optional(), session: z.unknown().optional(), code: z.string().optional() })
+const Done = z.looseObject({ terminal_state: TurnTerminalStateSchema.optional(), session: z.unknown().optional(), usage: z.unknown().optional(), status: z.string().optional(), ephemeral: z.boolean().optional(), answer: z.string().optional() })
+const Cancel = z.looseObject({ terminal_state: TurnTerminalStateSchema.optional(), type: z.string().optional(), message: z.string().optional(), hint: z.string().optional(), status: z.string().optional(), session_id: z.string().optional(), session: z.unknown().optional() })
 const StreamEnd = z.looseObject({ session_id: z.string().optional() })
 const Metering = z.looseObject({ session_id: z.string().optional(), usage: z.unknown().optional(), tps: z.number().nullable().optional(), tps_available: z.boolean().optional(), estimated: z.boolean().optional() })
 const ContextStatus = z.looseObject({ session_id: z.string().optional(), state: z.string().optional(), decision: z.string().optional(), message: z.string().optional(), message_key: z.string().optional(), message_args: z.array(z.unknown()).optional(), prefill: z.unknown().optional() })
@@ -53,7 +54,7 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('warning'), data: Warning }),
   z.object({ event: z.literal('apperror'), data: AppError }),
   z.object({ event: z.literal('error'), data: AppError }),
-  z.object({ event: z.literal('cancel'), data: Loose }),
+  z.object({ event: z.literal('cancel'), data: Cancel }),
   z.object({ event: z.literal('done'), data: Done }),
   z.object({ event: z.literal('stream_end'), data: StreamEnd }),
   z.object({ event: z.literal('metering'), data: Metering }),

@@ -417,6 +417,37 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(journaled.messages?.last?.role, "user")
     }
 
+    func testSharedWebSessionResolvesEveryToolCallOutcome() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-313 has no such example.
+        guard let example = object["tool_outcomes_session"] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example))
+        let messages = try XCTUnwrap(session.messages)
+        func outcomes(_ calls: [ToolCall]) -> [String] {
+            calls.map { "\($0.id) done=\($0.isCompleted) error=\($0.isError ?? false) duration=\($0.duration.map { "\($0)" } ?? "nil")" }
+        }
+        let expected: [String: [String]] = [
+            "tool-openai": ["call-read done=true error=false duration=1.25", "call-exit done=true error=true duration=3.5"],
+            "tool-anthropic": ["toolu-search done=true error=true duration=nil"],
+            "tool-session": ["call-date done=true error=false duration=0.42"]
+        ]
+        // Completed turns render their scene; the same calls on the assistant rows carry the same outcomes.
+        let groups = ToolCallGroup.groups(messages: messages, messageOffset: nil)
+        for (turn, calls) in expected {
+            let answer = try XCTUnwrap(messages.first { $0.messageId == "\(turn)-answer" })
+            let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: answer))
+            XCTAssertEqual(outcomes(timeline.toolCalls), calls, turn)
+            XCTAssertEqual(outcomes(groups.first { $0.anchorMessageID == "\(turn)-calls" }?.toolCalls ?? []), calls, turn)
+        }
+        // The running turn's unanswered call is not done.
+        XCTAssertEqual(
+            outcomes(groups.first { $0.anchorMessageID == "tool-live-calls" }?.toolCalls ?? []),
+            ["call-build done=false error=false duration=nil"]
+        )
+    }
+
     func testSharedWebSessionRendersServerBuiltTurnScenes() async throws {
         let data = try fixture("web-session")
         let session = session { request in
@@ -464,6 +495,15 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(outcome("contract-run-d-2"), "Tool limit reached")
         XCTAssertEqual(outcome("contract-run-e-1"), "No answer produced.")
         XCTAssertNil(outcome("contract-run-c-2"))
+        // Stamped and legacy failed turns end their Live Activity by the server's outcome (fixtures from TAL-297 on).
+        for (messageID, status) in [
+            ("contract-run-x-1", AgentRunActivityStatus.cancelled),
+            ("contract-run-y-1", .failed),
+            ("contract-run-z-1", .cancelled),
+        ] {
+            guard let scene = messages.first(where: { $0.messageId == messageID })?.activityScene else { continue }
+            XCTAssertEqual(LiveActivityReconciler.outcome(forTurnTerminalState: scene.terminalState).status, status, messageID)
+        }
         // Persisted steers split the turn into phases whose lengths the server measured.
         let steered = try turn("contract-run-g-3")
         XCTAssertTrue(steered.hasSteering)

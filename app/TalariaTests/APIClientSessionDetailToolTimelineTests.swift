@@ -2,180 +2,6 @@ import XCTest
 @testable import Talaria
 
 extension APIClientSessionDetailTests {
-func testPersistedToolCallsMapToLoadedMessageIDsUsingOffset() {
-    let messages = [
-        ChatMessage(
-            role: "user",
-            content: "Can you inspect this?",
-            timestamp: 1_770_000_000,
-            messageId: nil
-        ),
-        ChatMessage(
-            role: "assistant",
-            content: "I checked the file.",
-            timestamp: 1_770_000_001,
-            messageId: nil
-        )
-    ]
-    let persistedToolCalls = [
-        PersistedToolCall(
-            name: "old_tool",
-            snippet: "Outside the loaded tail",
-            tid: "old",
-            assistantMsgIdx: 8,
-            args: nil
-        ),
-        PersistedToolCall(
-            name: "read_file",
-            snippet: "let value = 42",
-            tid: "call_123",
-            assistantMsgIdx: 11,
-            args: ["path": .string("/tmp/example.swift")]
-        )
-    ]
-
-    let groups = ToolCallGroup.groups(
-        persistedToolCalls: persistedToolCalls,
-        messages: messages,
-        messageOffset: 10
-    )
-
-    XCTAssertEqual(groups.count, 1)
-    XCTAssertEqual(groups.first?.anchorMessageID, "raw:11")
-    XCTAssertEqual(groups.first?.toolCalls.first?.id, "call_123")
-    XCTAssertEqual(groups.first?.toolCalls.first?.name, "read_file")
-    XCTAssertEqual(groups.first?.toolCalls.first?.preview, "let value = 42")
-    XCTAssertEqual(groups.first?.toolCalls.first?.args?["path"], .string("/tmp/example.swift"))
-    XCTAssertEqual(groups.first?.toolCalls.first?.isCompleted, true)
-}
-
-func testPersistedToolCallsGroupPerAssistantTurnAndPreserveToolIDs() {
-    let messages = [
-        ChatMessage(
-            role: "user",
-            content: "Inspect the workspace",
-            timestamp: 1_770_000_000,
-            messageId: "user-a"
-        ),
-        ChatMessage(
-            role: "assistant",
-            content: "First answer",
-            timestamp: 1_770_000_001,
-            messageId: "assistant-a"
-        ),
-        ChatMessage(
-            role: "user",
-            content: "Now build it",
-            timestamp: 1_770_000_001.5,
-            messageId: "user-b"
-        ),
-        ChatMessage(
-            role: "assistant",
-            content: "Second answer",
-            timestamp: 1_770_000_002,
-            messageId: "assistant-b"
-        )
-    ]
-    let persistedToolCalls = [
-        PersistedToolCall(
-            name: "read_file",
-            snippet: "File contents",
-            tid: "tool-a1",
-            assistantMsgIdx: 1,
-            args: nil
-        ),
-        PersistedToolCall(
-            name: "search_files",
-            snippet: "Search results",
-            tid: "tool-a2",
-            assistantMsgIdx: 1,
-            args: nil
-        ),
-        PersistedToolCall(
-            name: "terminal",
-            snippet: "Build output",
-            tid: "tool-b1",
-            assistantMsgIdx: 3,
-            args: nil
-        )
-    ]
-
-    let groups = ToolCallGroup.groups(
-        persistedToolCalls: persistedToolCalls,
-        messages: messages,
-        messageOffset: nil
-    )
-
-    XCTAssertEqual(groups.count, 2)
-    XCTAssertEqual(groups[0].id, "persisted-tools-assistant-a")
-    XCTAssertEqual(groups[0].activityTitle, "Activity: 2 tools")
-    XCTAssertEqual(groups[0].toolCalls.map(\.id), ["tool-a1", "tool-a2"])
-    XCTAssertEqual(groups[0].toolCalls.map(\.name), ["read_file", "search_files"])
-    XCTAssertEqual(groups[0].isComplete, true)
-
-    XCTAssertEqual(groups[1].id, "persisted-tools-assistant-b")
-    XCTAssertEqual(groups[1].activityTitle, "Activity: 1 tool")
-    XCTAssertEqual(groups[1].toolCalls.map(\.id), ["tool-b1"])
-    XCTAssertEqual(groups[1].toolCalls.first?.name, "terminal")
-}
-
-func testPersistedToolCallsStayAnchoredToTheirAssistantSegments() {
-    let messages = [
-        ChatMessage(
-            role: "user",
-            content: "Inspect the workspace",
-            timestamp: 1_770_000_000,
-            messageId: "user-a"
-        ),
-        ChatMessage(
-            role: "assistant",
-            content: "First tool segment",
-            timestamp: 1_770_000_001,
-            messageId: "assistant-a"
-        ),
-        ChatMessage(
-            role: "assistant",
-            content: "Second tool segment",
-            timestamp: 1_770_000_002,
-            messageId: "assistant-b"
-        )
-    ]
-    let persistedToolCalls = [
-        PersistedToolCall(
-            name: "skill_view",
-            snippet: "xurl",
-            tid: "skill-xurl",
-            assistantMsgIdx: 1,
-            args: ["name": .string("xurl")]
-        ),
-        PersistedToolCall(
-            name: "skill_view",
-            snippet: "xitter",
-            tid: "skill-xitter",
-            assistantMsgIdx: 1,
-            args: ["name": .string("xitter")]
-        ),
-        PersistedToolCall(
-            name: "terminal",
-            snippet: "xurl not installed",
-            tid: "terminal-xurl",
-            assistantMsgIdx: 2,
-            args: ["command": .string("which xurl")]
-        )
-    ]
-
-    let groups = ToolCallGroup.groups(
-        persistedToolCalls: persistedToolCalls,
-        messages: messages,
-        messageOffset: nil
-    )
-
-    XCTAssertEqual(groups.count, 2)
-    XCTAssertEqual(groups.map(\.anchorMessageID), ["assistant-a", "assistant-b"])
-    XCTAssertEqual(groups[0].toolCalls.map(\.id), ["skill-xurl", "skill-xitter"])
-    XCTAssertEqual(groups[1].toolCalls.map(\.id), ["terminal-xurl"])
-}
-
 func testToolCallGroupAnchorLookupReturnsGroupsByAnchor() {
     let firstAssistantGroup = ToolCallGroup(
         id: "group-a",
@@ -219,7 +45,7 @@ func testToolCallGroupAnchorLookupReturnsGroupsByAnchor() {
     XCTAssertTrue(lookup.groups(anchorMessageID: "missing").isEmpty)
 }
 
-func testMessageToolCallsGroupWhenSessionToolCallsAreOmitted() {
+func testMessageToolCallsGroupFromTheServerResolvedFields() {
     let messages = [
         ChatMessage(
             role: "assistant",
@@ -231,45 +57,75 @@ func testMessageToolCallsGroupWhenSessionToolCallsAreOmitted() {
                     "id": .string("call-1"),
                     "function": .object([
                         "name": .string("terminal"),
-                        "arguments": .string(#"{"command":"pwd"}"#)
-                    ])
+                        "arguments": .string(#"{"command":"make test"}"#)
+                    ]),
+                    "done": .bool(true),
+                    "is_error": .bool(true),
+                    "duration": .number(3.5),
+                    "result": .string(#"{"exit_code": 2}"#)
                 ]),
                 .object([
                     "id": .string("call-2"),
                     "function": .object([
                         "name": .string("read_file"),
                         "arguments": .string(#"{"path":"README.md"}"#)
-                    ])
+                    ]),
+                    "done": .bool(false),
+                    "is_error": .bool(false),
+                    "duration": .null,
+                    "result": .null
                 ])
             ]
         ),
+        // A tool row is never paired on the client: the server's `result` is the card's preview.
         ChatMessage(
             role: "tool",
-            content: "/Users/uzair/project",
+            content: "unpaired",
             timestamp: 1_770_000_002,
             messageId: "tool-result-1",
-            toolCallId: "call-1"
+            toolCallId: "call-2"
         )
     ]
 
-    let groups = ToolCallGroup.groups(
-        persistedToolCalls: [],
-        messages: messages,
-        messageOffset: nil
-    )
+    let groups = ToolCallGroup.groups(messages: messages, messageOffset: nil)
 
     XCTAssertEqual(groups.count, 1)
     XCTAssertEqual(groups.first?.id, "persisted-tools-assistant-tools")
     XCTAssertEqual(groups.first?.anchorMessageID, "assistant-tools")
-    XCTAssertEqual(groups.first?.activityTitle, "Activity: 2 tools")
     XCTAssertEqual(groups.first?.toolCalls.map(\.id), ["call-1", "call-2"])
     XCTAssertEqual(groups.first?.toolCalls.map(\.name), ["terminal", "read_file"])
-    XCTAssertEqual(groups.first?.toolCalls.first?.preview, "/Users/uzair/project")
-    XCTAssertEqual(groups.first?.toolCalls.first?.args?["command"], .string("pwd"))
-    XCTAssertEqual(groups.first?.toolCalls.last?.args?["path"], .string("README.md"))
-    XCTAssertEqual(groups.first?.isComplete, true)
+    XCTAssertEqual(groups.first?.toolCalls.map(\.preview), [#"{"exit_code": 2}"#, nil])
+    XCTAssertEqual(groups.first?.toolCalls.map(\.isError), [true, false])
+    XCTAssertEqual(groups.first?.toolCalls.map(\.duration), [3.5, nil])
+    XCTAssertEqual(groups.first?.toolCalls.map(\.isCompleted), [true, false])
+    XCTAssertEqual(groups.first?.toolCalls.first?.args?["command"], .string("make test"))
+    XCTAssertEqual(groups.first?.hasFailedTool, true)
+    XCTAssertEqual(groups.first?.isComplete, false)
 }
 
+func testOlderServerToolCallsShowCompletedWithoutOutcome() {
+    let messages = [
+        ChatMessage(
+            role: "assistant",
+            content: "",
+            timestamp: 1_770_000_001,
+            messageId: "assistant-tools",
+            toolCalls: [
+                .object([
+                    "id": .string("call-1"),
+                    "function": .object(["name": .string("terminal"), "arguments": .string(#"{"command":"pwd"}"#)])
+                ])
+            ]
+        )
+    ]
+
+    let call = ToolCallGroup.groups(messages: messages, messageOffset: nil).first?.toolCalls.first
+
+    XCTAssertEqual(call?.isCompleted, true)
+    XCTAssertNil(call?.isError)
+    XCTAssertNil(call?.duration)
+    XCTAssertNil(call?.preview)
+}
 func testContentArrayDisplaysTextAndPreservesToolParts() throws {
     let decoder = JSONDecoder()
     decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -294,360 +150,6 @@ func testContentArrayDisplaysTextAndPreservesToolParts() throws {
 
     XCTAssertEqual(message.content, "File search finished.")
     XCTAssertEqual(message.contentParts?.count, 2)
-}
-
-func testAnthropicToolUseContentArrayBuildsActivityGroup() {
-    let messages = [
-        ChatMessage(
-            role: "assistant",
-            content: nil,
-            timestamp: 1_770_000_001,
-            messageId: "assistant-tools",
-            contentParts: [
-                .object([
-                    "type": .string("tool_use"),
-                    "id": .string("toolu-search-files"),
-                    "name": .string("search_files"),
-                    "input": .object([
-                        "pattern": .string("*.md")
-                    ])
-                ]),
-                .object([
-                    "type": .string("tool_use"),
-                    "id": .string("toolu-web-search"),
-                    "name": .string("web_search"),
-                    "input": .object([
-                        "query": .string("Google AI updates 2026")
-                    ])
-                ])
-            ]
-        ),
-        ChatMessage(
-            role: "user",
-            content: nil,
-            timestamp: 1_770_000_002,
-            messageId: "tool-results",
-            contentParts: [
-                .object([
-                    "type": .string("tool_result"),
-                    "tool_use_id": .string("toolu-search-files"),
-                    "content": .string("Timed out after 60s searching /Users/hermes")
-                ]),
-                .object([
-                    "type": .string("tool_result"),
-                    "tool_use_id": .string("toolu-web-search"),
-                    "content": .array([
-                        .object(["text": .string("Live web result")])
-                    ])
-                ])
-            ]
-        )
-    ]
-
-    let groups = ToolCallGroup.groups(
-        persistedToolCalls: [],
-        messages: messages,
-        messageOffset: nil
-    )
-
-    XCTAssertEqual(groups.count, 1)
-    XCTAssertEqual(groups.first?.anchorMessageID, "assistant-tools")
-    XCTAssertEqual(groups.first?.activityTitle, "Activity: 2 tools")
-    XCTAssertEqual(groups.first?.toolCalls.map(\.id), ["toolu-search-files", "toolu-web-search"])
-    XCTAssertEqual(groups.first?.toolCalls.map(\.name), ["search_files", "web_search"])
-    XCTAssertEqual(groups.first?.toolCalls.first?.preview, "Timed out after 60s searching /Users/hermes")
-    XCTAssertEqual(groups.first?.toolCalls.last?.preview, "Live web result")
-    XCTAssertEqual(groups.first?.toolCalls.first?.args?["pattern"], .string("*.md"))
-    XCTAssertEqual(groups.first?.toolCalls.last?.args?["query"], .string("Google AI updates 2026"))
-}
-
-func testAnthropicToolUseSnapshotsStayAnchoredToTheirAssistantSegments() {
-    let messages = [
-        ChatMessage(
-            role: "user",
-            content: "Check option 2",
-            timestamp: 1_770_000_000,
-            messageId: "user-option"
-        ),
-        ChatMessage(
-            role: "assistant",
-            content: nil,
-            timestamp: 1_770_000_001,
-            messageId: "assistant-skills",
-            contentParts: [
-                .object([
-                    "type": .string("tool_use"),
-                    "id": .string("toolu-skill-xurl"),
-                    "name": .string("skill_view"),
-                    "input": .object(["name": .string("xurl")])
-                ]),
-                .object([
-                    "type": .string("tool_use"),
-                    "id": .string("toolu-skill-xitter"),
-                    "name": .string("skill_view"),
-                    "input": .object(["name": .string("xitter")])
-                ])
-            ]
-        ),
-        ChatMessage(
-            role: "user",
-            content: nil,
-            timestamp: 1_770_000_002,
-            messageId: "tool-results",
-            contentParts: [
-                .object([
-                    "type": .string("tool_result"),
-                    "tool_use_id": .string("toolu-skill-xurl"),
-                    "content": .string("X/Twitter via xurl CLI")
-                ]),
-                .object([
-                    "type": .string("tool_result"),
-                    "tool_use_id": .string("toolu-skill-xitter"),
-                    "content": .string("Interact with X/Twitter via x-cli")
-                ])
-            ]
-        ),
-        ChatMessage(
-            role: "assistant",
-            content: nil,
-            timestamp: 1_770_000_003,
-            messageId: "assistant-snapshot",
-            contentParts: [
-                .object([
-                    "type": .string("tool_use"),
-                    "id": .string("toolu-skill-xurl"),
-                    "name": .string("skill_view"),
-                    "input": .object(["name": .string("xurl")])
-                ]),
-                .object([
-                    "type": .string("tool_use"),
-                    "id": .string("toolu-skill-xitter"),
-                    "name": .string("skill_view"),
-                    "input": .object(["name": .string("xitter")])
-                ]),
-                .object([
-                    "type": .string("tool_use"),
-                    "id": .string("toolu-terminal-xurl"),
-                    "name": .string("terminal"),
-                    "input": .object(["command": .string("which xurl")])
-                ]),
-                .object([
-                    "type": .string("tool_use"),
-                    "id": .string("toolu-terminal-xcli"),
-                    "name": .string("terminal"),
-                    "input": .object(["command": .string("which x-cli")])
-                ]),
-                .object([
-                    "type": .string("tool_use"),
-                    "id": .string("toolu-terminal-version"),
-                    "name": .string("terminal"),
-                    "input": .object(["command": .string("x --version")])
-                ])
-            ]
-        )
-    ]
-
-    let groups = ToolCallGroup.groups(
-        persistedToolCalls: [],
-        messages: messages,
-        messageOffset: nil
-    )
-
-    XCTAssertEqual(groups.count, 2)
-    XCTAssertEqual(groups[0].anchorMessageID, "assistant-skills")
-    XCTAssertEqual(groups[0].activityTitle, "Activity: 2 tools")
-    XCTAssertEqual(groups[0].toolCalls.map(\.id), [
-        "toolu-skill-xurl",
-        "toolu-skill-xitter"
-    ])
-    XCTAssertEqual(groups[0].toolCalls.first?.preview, "X/Twitter via xurl CLI")
-
-    XCTAssertEqual(groups[1].anchorMessageID, "assistant-snapshot")
-    XCTAssertEqual(groups[1].activityTitle, "Activity: 5 tools")
-    XCTAssertEqual(groups[1].toolCalls.map(\.id), [
-        "toolu-skill-xurl",
-        "toolu-skill-xitter",
-        "toolu-terminal-xurl",
-        "toolu-terminal-xcli",
-        "toolu-terminal-version"
-    ])
-    XCTAssertEqual(groups[1].toolCalls.map(\.name), [
-        "skill_view",
-        "skill_view",
-        "terminal",
-        "terminal",
-        "terminal"
-    ])
-    XCTAssertEqual(groups[1].toolCalls.first?.preview, "X/Twitter via xurl CLI")
-}
-
-func testPersistedToolCallsPointingAtToolResultRowsAnchorToAssistantTurn() {
-    let messages = [
-        ChatMessage(
-            role: "user",
-            content: "Use terminal and search files",
-            timestamp: 1_770_000_000,
-            messageId: "user-tools"
-        ),
-        ChatMessage(
-            role: "assistant",
-            content: nil,
-            timestamp: 1_770_000_001,
-            messageId: "assistant-tools",
-            contentParts: [
-                .object([
-                    "type": .string("tool_use"),
-                    "id": .string("toolu-terminal"),
-                    "name": .string("terminal"),
-                    "input": .object(["command": .string("ls -la")])
-                ]),
-                .object([
-                    "type": .string("tool_use"),
-                    "id": .string("toolu-search"),
-                    "name": .string("search_files"),
-                    "input": .object(["pattern": .string("config.yaml")])
-                ])
-            ]
-        ),
-        ChatMessage(
-            role: "user",
-            content: nil,
-            timestamp: 1_770_000_002,
-            messageId: "tool-results",
-            contentParts: [
-                .object([
-                    "type": .string("tool_result"),
-                    "tool_use_id": .string("toolu-terminal"),
-                    "content": .string("81 entries")
-                ]),
-                .object([
-                    "type": .string("tool_result"),
-                    "tool_use_id": .string("toolu-search"),
-                    "content": .string("5 matches")
-                ])
-            ]
-        ),
-        ChatMessage(
-            role: "assistant",
-            content: "Both tools are operational.",
-            timestamp: 1_770_000_003,
-            messageId: "assistant-final"
-        )
-    ]
-    let persistedToolCalls = [
-        PersistedToolCall(
-            name: "terminal",
-            snippet: "81 entries",
-            tid: "toolu-terminal",
-            assistantMsgIdx: 1,
-            args: ["command": .string("ls -la")]
-        ),
-        PersistedToolCall(
-            name: "search_files",
-            snippet: "5 matches",
-            tid: "toolu-search",
-            assistantMsgIdx: 2,
-            args: ["pattern": .string("config.yaml")]
-        )
-    ]
-
-    let groups = ToolCallGroup.groups(
-        persistedToolCalls: persistedToolCalls,
-        messages: messages,
-        messageOffset: nil
-    )
-
-    XCTAssertEqual(groups.count, 1)
-    XCTAssertEqual(groups.first?.anchorMessageID, "assistant-tools")
-    XCTAssertEqual(groups.first?.activityTitle, "Activity: 2 tools")
-    XCTAssertEqual(groups.first?.toolCalls.map(\.id), ["toolu-terminal", "toolu-search"])
-    XCTAssertEqual(groups.first?.toolCalls.map(\.name), ["terminal", "search_files"])
-}
-
-func testGeneratedLiveFallbackMergesWithCompletedTurnActivity() {
-    let completedGroup = ToolCallGroup(
-        id: "persisted-tools-assistant-skills",
-        anchorMessageID: "assistant-skills",
-        toolCalls: [
-            ToolCall(
-                id: "toolu-skill-xurl",
-                name: "skill_view",
-                preview: "X/Twitter via xurl CLI",
-                args: ["name": .string("xurl")],
-                isCompleted: true
-            )
-        ]
-    )
-    let liveFallbackGroup = ToolCallGroup(
-        id: "completed-live-tools-assistant-skills",
-        anchorMessageID: "assistant-skills",
-        toolCalls: [
-            ToolCall(
-                name: "skill_view",
-                preview: "xurl",
-                args: ["name": .string("xurl")],
-                isCompleted: true
-            ),
-            ToolCall(
-                name: "terminal",
-                preview: "xurl not installed",
-                args: ["command": .string("which xurl")],
-                isCompleted: true
-            )
-        ]
-    )
-
-    let groups = ToolCallGroup.merging(
-        primaryGroups: [completedGroup],
-        fallbackGroups: [liveFallbackGroup]
-    )
-
-    XCTAssertEqual(groups.count, 1)
-    XCTAssertEqual(groups.first?.activityTitle, "Activity: 2 tools")
-    XCTAssertEqual(groups.first?.toolCalls.map(\.name), ["skill_view", "terminal"])
-    XCTAssertEqual(groups.first?.toolCalls.first?.id, "toolu-skill-xurl")
-    XCTAssertEqual(groups.first?.toolCalls.first?.preview, "X/Twitter via xurl CLI")
-    XCTAssertEqual(groups.first?.toolCalls.last?.preview, "xurl not installed")
-}
-
-func testMergingToolCallsPreservesErrorState() {
-    let completedGroup = ToolCallGroup(
-        id: "persisted-tools-assistant-tools",
-        anchorMessageID: "assistant-tools",
-        toolCalls: [
-            ToolCall(
-                id: "call-terminal",
-                name: "terminal",
-                preview: "date",
-                args: ["command": .string("date")],
-                isError: false,
-                isCompleted: true
-            )
-        ]
-    )
-    let liveFallbackGroup = ToolCallGroup(
-        id: "completed-live-tools-assistant-tools",
-        anchorMessageID: "assistant-tools",
-        toolCalls: [
-            ToolCall(
-                id: "call-terminal",
-                name: "terminal",
-                preview: "command failed",
-                args: ["command": .string("date")],
-                isError: true,
-                isCompleted: true
-            )
-        ]
-    )
-
-    let groups = ToolCallGroup.merging(
-        primaryGroups: [completedGroup],
-        fallbackGroups: [liveFallbackGroup]
-    )
-
-    XCTAssertEqual(groups.count, 1)
-    XCTAssertEqual(groups.first?.toolCalls.count, 1)
-    XCTAssertEqual(groups.first?.toolCalls.first?.isError, true)
 }
 
 func testToolCallStatusDisplayHidesCompletedCollapsedText() {
@@ -858,11 +360,7 @@ func testOpenAIToolRowsWithNilMessageIDsUseRawIndexAnchors() {
         )
     ]
 
-    let groups = ToolCallGroup.groups(
-        persistedToolCalls: [],
-        messages: messages,
-        messageOffset: 4
-    )
+    let groups = ToolCallGroup.groups(messages: messages, messageOffset: 4)
     let reasoningGroups = ChatViewModel.reasoningDisplayGroups(
         messages: messages,
         messageOffset: 4,
@@ -891,55 +389,6 @@ func testOpenAIToolRowsWithNilMessageIDsUseRawIndexAnchors() {
     XCTAssertEqual(reasoningGroups[1].text, "Terminal works. Now run search_files to show that works too.")
     XCTAssertTrue(reasoningGroups[2].text.contains("Both tools worked. I should give a concise summary."))
     XCTAssertFalse(reasoningGroups[2].text.contains(finalAnswer))
-}
-
-func testPartialPersistedToolCallsMergeMissingMessageToolCalls() {
-    let messages = [
-        ChatMessage(
-            role: "assistant",
-            content: "",
-            timestamp: 1_770_000_001,
-            messageId: "assistant-tools",
-            toolCalls: [
-                .object([
-                    "id": .string("call-terminal"),
-                    "function": .object([
-                        "name": .string("terminal"),
-                        "arguments": .string(#"{"command":"date"}"#)
-                    ])
-                ]),
-                .object([
-                    "id": .string("call-web-search"),
-                    "function": .object([
-                        "name": .string("web_search"),
-                        "arguments": .string(#"{"query":"I/O 2026 search updates"}"#)
-                    ])
-                ])
-            ]
-        )
-    ]
-    let persistedToolCalls = [
-        PersistedToolCall(
-            name: "terminal",
-            snippet: "Mon May 25 13:07:35 EDT 2026",
-            tid: "call-terminal",
-            assistantMsgIdx: 0,
-            args: ["command": .string("date")]
-        )
-    ]
-
-    let groups = ToolCallGroup.groups(
-        persistedToolCalls: persistedToolCalls,
-        messages: messages,
-        messageOffset: nil
-    )
-
-    XCTAssertEqual(groups.count, 1)
-    XCTAssertEqual(groups.first?.activityTitle, "Activity: 2 tools")
-    XCTAssertEqual(groups.first?.toolCalls.map(\.id), ["call-terminal", "call-web-search"])
-    XCTAssertEqual(groups.first?.toolCalls.map(\.name), ["terminal", "web_search"])
-    XCTAssertEqual(groups.first?.toolCalls.first?.preview, "Mon May 25 13:07:35 EDT 2026")
-    XCTAssertEqual(groups.first?.toolCalls.last?.args?["query"], .string("I/O 2026 search updates"))
 }
 
 func testLiveToolCallGroupUsesStableAnchorKeyAndPreservesToolIDs() {

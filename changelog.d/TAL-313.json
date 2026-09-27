@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A tool call that failed now shows as failed while it runs and after the chat reloads, in the iPhone app and the web app.",
+      "highlight": true,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Tool calls show how long they took, the same live and after the chat reloads.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "After a reload, the iPhone app and the web app show the same tool calls, results and states for every past turn.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

@@ -53,6 +53,19 @@ enum LiveActivityReconciler {
         }
     }
 
+    /// The Live Activity end for the turn outcome the server reported (`terminal_state` on a terminal frame or on
+    /// the turn's settled scene). A `done` from an older server carries none and completed the turn.
+    nonisolated static func outcome(forTurnTerminalState terminalState: String?) -> ReconciledOutcome {
+        switch terminalState {
+        case nil, "completed", "tool_limit_reached":
+            return ReconciledOutcome(status: .complete, activity: String(localized: "Response complete"))
+        case "cancelled":
+            return ReconciledOutcome(status: .cancelled, activity: String(localized: "Response cancelled"))
+        default:
+            return ReconciledOutcome(status: .failed, activity: String(localized: "Response failed"))
+        }
+    }
+
     /// Production entry point: reconcile every orphaned activity against the
     /// logged-in server's stream status.
     ///
