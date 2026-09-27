@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { resolve } from 'node:path'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { baseHrefFor, isPublicSpaPath, isSpaPath, quoteAll, SpaShell } from './spa.js'
 import { WEB_ROOT } from './test/harness.js'
 
@@ -44,6 +46,20 @@ describe('shell rendering', () => {
   it('percent-encodes versions like urllib.parse.quote(safe="")', () => {
     expect(quoteAll('web-v1.2.3-dirty/x y')).toBe('web-v1.2.3-dirty%2Fx%20y')
     expect(quoteAll("a'b(c)*d~")).toBe('a%27b%28c%29%2Ad~')
+  })
+
+  it('reads the stamped frontend build and fails closed without one', () => {
+    const root = mkdtempSync(join(tmpdir(), 'talaria-spa-'))
+    try {
+      const dist = new SpaShell(root)
+      expect(dist.buildId()).toBeNull()
+      writeFileSync(join(root, 'index.html'), `<html><head><base href="__BASE_HREF__"><meta name="talaria-build" content="${'e'.repeat(64)}"></head></html>`)
+      expect(dist.buildId()).toBe('e'.repeat(64))
+      writeFileSync(join(root, 'index.html'), '<html><head><meta name="talaria-build" content="web-v1.2.3"></head></html>')
+      expect(dist.buildId()).toBeNull()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('refuses paths that escape the dist root', () => {

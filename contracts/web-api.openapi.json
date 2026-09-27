@@ -26135,9 +26135,31 @@
     "/api/update-notifications": {
       "get": {
         "operationId": "updateNotifications.list",
-        "summary": "Server-owned update operation history for the authenticated owner and active profile.",
+        "summary": "Server-owned update operation history for the authenticated owner and active profile. A Web tab passes its tab_id and loaded_build so the server compares that build and keeps its tab-scoped refresh notice.",
         "tags": [
           "tools"
+        ],
+        "parameters": [
+          {
+            "name": "tab_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,64}$"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "loaded_build",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
         ],
         "responses": {
           "200": {
@@ -26151,6 +26173,53 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 64
+                    },
+                    "frontend_build": {
+                      "type": "object",
+                      "properties": {
+                        "current_build": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "loaded_build": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "refresh_required": {
+                          "type": "boolean"
+                        },
+                        "notification_id": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "current_build",
+                        "loaded_build",
+                        "refresh_required",
+                        "notification_id"
+                      ]
                     },
                     "notifications": {
                       "type": "array",
@@ -26404,6 +26473,7 @@
                   },
                   "required": [
                     "scope_id",
+                    "frontend_build",
                     "notifications",
                     "unread_count",
                     "clearable_count",
@@ -26442,6 +26512,10 @@
                 "properties": {
                   "read": {
                     "const": true
+                  },
+                  "tab_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{8,64}$"
                   }
                 },
                 "required": [
@@ -26721,6 +26795,10 @@
                 "properties": {
                   "dismiss": {
                     "const": true
+                  },
+                  "tab_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{8,64}$"
                   }
                 },
                 "required": [
@@ -26767,6 +26845,14 @@
                 "properties": {
                   "clear": {
                     "const": true
+                  },
+                  "tab_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{8,64}$"
+                  },
+                  "loaded_build": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
                   }
                 },
                 "required": [
@@ -26788,6 +26874,53 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 64
+                    },
+                    "frontend_build": {
+                      "type": "object",
+                      "properties": {
+                        "current_build": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "loaded_build": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "refresh_required": {
+                          "type": "boolean"
+                        },
+                        "notification_id": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "current_build",
+                        "loaded_build",
+                        "refresh_required",
+                        "notification_id"
+                      ]
                     },
                     "notifications": {
                       "type": "array",
@@ -27041,6 +27174,7 @@
                   },
                   "required": [
                     "scope_id",
+                    "frontend_build",
                     "notifications",
                     "unread_count",
                     "clearable_count",
@@ -27368,6 +27502,10 @@
                 "properties": {
                   "perform": {
                     "const": true
+                  },
+                  "tab_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{8,64}$"
                   }
                 },
                 "required": [
