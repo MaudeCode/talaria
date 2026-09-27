@@ -240,7 +240,7 @@ describe('round 44 shapes', () => {
     expect(redactText(`ls -$OPTS dir && tar --out-$(date +%F) x && login --pass$X`, true)).toBe(`ls -$OPTS dir && tar --out-$(date +%F) x && login --pass$X`)
     expect(redactText(`login --{password,user}=hunter2 --{pass,pass}word=hunter3 --{p{a,b},x}=hunter4 next`, true)).toBe(`login --{password,user}=*** --*** --***`)
     expect(redactText(`echo --{a,b} {x,y}=1`, true)).toBe(`echo --{a,b} {x,y}=1`)
-    expect(redactText(`SEP='='; login --password\${SEP}hunter2 --api_key$(printf =)hunter3 --token\${S}x=hunter4 next`, true)).toBe(`SEP='='; login --password*** --api_key*** --token*** next`)
+    expect(redactText(`SEP='='; login --password\${SEP}hunter2 --api_key$(printf =)hunter3 --token\${S}x=hunter4 next`, true)).toBe(`SEP='***'; login --password*** --api_key*** --token*** next`)
     // Markdown code spans are prose, not substitutions.
     expect(redactText('answer with **markdown** and `code` about the token', true)).toBe('answer with **markdown** and `code` about the token')
     expect(redactText('check the `token` field; use `${base}/api` and `a=$(date)`.', true)).toBe('check the `token` field; use `${base}/api` and `a=$(date)`.')
@@ -353,6 +353,22 @@ describe('inline shell assignments', () => {
     expect(redactText('false && KEY=foo; login --${KEY} hunter2; P=pw; curl -u bob:$P x', true)).toBe('false && KEY=foo; login --*** ***; P=***; curl -u bob:*** x')
   })
 
+  it('reads an assignment wherever the shell may, and past an unknown one', () => {
+    for (const text of ['{ OPT=-u; curl $OPT bob:hunter2 x; }', 'if true; then OPT=-u; curl $OPT bob:hunter2 x; fi', 'A=$(printf x); OPT=-u; curl $OPT bob:hunter2 x', 'A="$(date)" OPT=-u; curl $OPT bob:hunter2 x']) {
+      expect(redactText(text, true)).not.toContain('hunter2')
+    }
+  })
+
+  it('masks the whole value of an assignment whose substitution is masked', () => {
+    expect(redactText(`P='@@@'; curl -u "bob:$P" x`, true)).toBe(`P='***'; curl -u "bob:***" x`)
+    expect(redactText(`P='hunter2!!!'; curl -u "bob:$P" x`, true)).toBe(`P='***'; curl -u "bob:***" x`)
+    expect(redactText(`SCHEME='https://'; U=bob; SEP=:; AT=@; curl "\${SCHEME}\${U}\${SEP}hunter2!!!\${AT}example.com"`, true)).not.toMatch(/hunter2|!!!/)
+    expect(redactText(`SCHEME='https://'; U=bob; SEP=:; AT=@; P=hunt; curl "\${SCHEME}\${U}\${SEP}$P!!!\${AT}example.com"`, true)).not.toMatch(/hunt|!!!/)
+    // Past the expansion cap every substituted value is taken as a secret.
+    const long = 'x'.repeat(2_000)
+    expect(redactText(`P=${long}; echo $P $P $P $P $P; curl -u bob:$P x`, true)).not.toContain(long.slice(0, 20))
+  })
+
   it('keeps a command with nothing to mask as written', () => {
     for (const text of ['D=/tmp; cat $D/x.txt', 'N=3; seq $N', 'export D=/tmp && ls "$D"']) expect(redactText(text, true)).toBe(text)
   })
@@ -384,7 +400,7 @@ describe('redactSensitive cost', () => {
       // Shell-composed identifiers: unclosed and alternating quote and escape pieces.
       ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`, `a{b,`, `a{b`, `a{,}`, `a$'\\`, `--$'\\x`, `a'='`, `a'b `, `x:'@'`, `%41`, `a%4`, `a:b`, `'--a', '`, `"-u", "x`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`),
       // Inline assignments: long chains, prefix chains, many substitutions, and a secret substituted many times.
-      ...['A=x; ', 'A=x B=y ', 'export A=x ', '; ', ';A'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+      ...['A=x; ', 'A=x B=y ', 'export A=x ', '; ', ';A', `A='x `, 'A="x ', 'A=${ ', 'A=$( ', `A=n'x `, 'A=@; $A ', 'A=!; $A '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       `A=x; ${'$A ${A} '.repeat(30_000)}`, `P=hunter2; ${'curl -u bob:$P '.repeat(15_000)}`, `A=${'x'.repeat(10_000)}; ${'$A'.repeat(50_000)}`]) {
       const started = performance.now()
       redactSensitive(text)
