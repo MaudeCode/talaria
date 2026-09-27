@@ -1528,4 +1528,21 @@ describe('live tool outcomes (TAL-313)', () => {
     const scene = (detail.messages as Json[]).find((m) => m.content === 'Done.')?._anchor_activity_scene as Json
     expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => { const t = r.tool as Json; return [t.id, t.is_error, t.duration] })).toEqual(expected)
   })
+
+  it('keeps a failed turn\'s completed tools with their outcomes after reload', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (_params, emit) => {
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', args: { command: 'make' }, tid: 'call-make' } })
+      clock += 4
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'failed', args: { command: 'make' }, tid: 'call-make', raw_result: { exit_code: 2 } } })
+      throw new SidecarError('provider exploded', { condition: 'sidecar_error' })
+    })
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'build it' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'apperror')
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    const partial = (detail.messages as Json[]).find((m) => m._partial === true)
+    expect((partial?.tool_calls as Json[]).map((c) => [c.id, c.done, c.is_error, c.duration, c.result])).toEqual([['call-make', true, true, 4, 'failed']])
+    const scene = (detail.messages as Json[]).at(-1)?._anchor_activity_scene as Json
+    expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => { const t = r.tool as Json; return [t.id, t.is_error, t.duration] })).toEqual([['call-make', true, 4]])
+  })
 })

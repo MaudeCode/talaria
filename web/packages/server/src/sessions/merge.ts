@@ -355,11 +355,14 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
 /**
  * TAL-313: every assistant row's tool calls as they leave the server, over the full `_turn_id`-stamped transcript (before
  * any window, so every window agrees). Anthropic `tool_use` parts join `tool_calls` in the OpenAI shape (content stays),
- * a call only the session-level list recorded joins the row at its `assistant_msg_idx`, and every call carries `done`
+ * a call only the session-level list recorded joins the row at its `assistant_msg_idx`, a failed or cancelled turn's
+ * partial snapshot shows the live calls it kept, and every call carries `done`
  * (answered, or outside the running turn), `is_error` (`toolOutcome` of its result, else the recorded value), `duration`
  * (recorded live, else `null`) and `result` (the result snippet, else `null`). Returns copies; stored rows are untouched.
  */
 export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown[], activeTurnId: string | null): T[] {
+  // Every identifier a stored call may carry (`ToolCallSchema`).
+  const callId = (tc: unknown): string => (isDict(tc) ? toolCallId(tc) || str(tc.tool_call_id) : '')
   const replies = new Map<string, { content: unknown; is_error: boolean }>()
   const called = new Set<string>()
   for (const m of messages) {
@@ -371,7 +374,7 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
       // Anthropic-style results: `tool_result` blocks in a user row, each naming its call.
       for (const part of m.content) if (isDict(part) && part.type === 'tool_result' && str(part.tool_use_id)) replies.set(str(part.tool_use_id), { content: part.content ?? '', is_error: part.is_error === true })
     } else if (m.role === 'assistant') {
-      for (const tc of Array.isArray(m.tool_calls) ? m.tool_calls : []) if (toolCallId(tc)) called.add(toolCallId(tc))
+      for (const tc of Array.isArray(m.tool_calls) ? m.tool_calls : []) if (callId(tc)) called.add(callId(tc))
       for (const part of Array.isArray(m.content) ? m.content : []) if (isDict(part) && part.type === 'tool_use' && str(part.id)) called.add(str(part.id))
     }
   }
@@ -388,32 +391,40 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
   return messages.map((m, index) => {
     if (!isDict(m) || m.role !== 'assistant') return m
     const calls: unknown[] = Array.isArray(m.tool_calls) ? Array.from(m.tool_calls as unknown[]) : []
-    const ids = new Set(calls.map(toolCallId).filter(Boolean))
+    const ids = new Set(calls.map(callId).filter(Boolean))
     for (const part of Array.isArray(m.content) ? m.content : []) {
       if (!isDict(part) || part.type !== 'tool_use' || !str(part.id) || ids.has(str(part.id))) continue
       ids.add(str(part.id))
       calls.push({ id: str(part.id), type: 'function', function: { name: str(part.name), arguments: JSON.stringify(part.input ?? {}) } })
     }
-    const only = sessionOnly.get(index) ?? []
-    if (!calls.length && !only.length) return m
+    // Calls known only from a record: the session-level list's, and the live calls a failed or cancelled turn's partial
+    // snapshot kept (`_partial_tool_calls`).
+    const records: Record<string, unknown>[] = []
+    for (const tc of [...(sessionOnly.get(index) ?? []), ...(Array.isArray(m._partial_tool_calls) ? m._partial_tool_calls as unknown[] : [])]) {
+      if (!isDict(tc)) continue
+      const tid = str(tc.tid)
+      if (tid && ids.has(tid)) continue
+      if (tid) ids.add(tid)
+      records.push(tc)
+    }
+    if (!calls.length && !records.length) return m
     const running = Boolean(activeTurnId) && m._turn_id === activeTurnId
-    const projected = calls.map((call) => {
-      if (!isDict(call)) return call
-      const id = toolCallId(call)
+    const resolve = (id: string, rec: Record<string, unknown> | undefined, answered: boolean) => {
       const reply = id ? replies.get(id) : undefined
-      const rec = id ? recorded.get(id) : undefined
       const outcome = reply ? { ...toolOutcome(reply.content), flagged: reply.is_error } : null
       return {
-        ...call, done: Boolean(reply) || !running, is_error: outcome ? outcome.flagged || outcome.is_error : rec?.is_error === true,
-        duration: finiteOrNull(rec?.duration), result: outcome ? outcome.result_text : rec ? str(rec.snippet) : null,
+        done: Boolean(reply) || answered || !running, is_error: outcome ? outcome.flagged || outcome.is_error : rec?.is_error === true,
+        duration: finiteOrNull(rec?.duration), result: outcome ? outcome.result_text : typeof rec?.snippet === 'string' ? rec.snippet : null,
       }
-    })
-    for (const tc of only) {
-      projected.push({
-        ...(str(tc.tid) ? { id: str(tc.tid) } : {}), type: 'function', function: { name: str(tc.name), arguments: JSON.stringify(tc.args ?? {}) },
-        done: true, is_error: tc.is_error === true, duration: finiteOrNull(tc.duration), result: str(tc.snippet),
-      })
     }
+    const projected = [
+      ...calls.map((call) => (isDict(call) ? { ...call, ...resolve(callId(call), recorded.get(callId(call)), false) } : call)),
+      ...records.map((tc) => ({
+        ...(str(tc.tid) ? { id: str(tc.tid) } : {}), type: 'function', function: { name: str(tc.name), arguments: JSON.stringify(tc.args ?? {}) },
+        // A session-level entry was answered; a live call says whether it completed.
+        ...resolve(str(tc.tid), tc, typeof tc.done === 'boolean' ? tc.done : true),
+      })),
+    ]
     return { ...m, tool_calls: projected }
   })
 }

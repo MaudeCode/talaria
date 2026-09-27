@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toolOutcome } from './merge.js'
+import { toolOutcome, withToolCallOutcomes } from './merge.js'
 
 describe('toolOutcome (TAL-313)', () => {
   it('fails a result that reports an error, a non-zero exit code, or success false, in any persisted shape', () => {
@@ -21,5 +21,15 @@ describe('toolOutcome (TAL-313)', () => {
     expect(toolOutcome([{ type: 'text', text: 'part' }]).result_text).toBe('part')
     expect(toolOutcome('a'.repeat(4001)).result_text).toBe(`${'a'.repeat(4000)}...`)
     expect(toolOutcome(undefined).result_text).toBe('')
+  })
+})
+
+describe('withToolCallOutcomes (TAL-313)', () => {
+  it('resolves a call identified only by tool_call_id', () => {
+    const [assistant] = withToolCallOutcomes([
+      { role: 'assistant', content: '', tool_calls: [{ tool_call_id: 'c1', function: { name: 'terminal', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'c1', content: '{"exit_code": 1}' },
+    ], [{ tid: 'c1', duration: 2 }], null)
+    expect((assistant as { tool_calls: unknown[] }).tool_calls).toEqual([expect.objectContaining({ tool_call_id: 'c1', done: true, is_error: true, duration: 2, result: '{"exit_code": 1}' })])
   })
 })
