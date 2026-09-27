@@ -891,10 +891,13 @@ function blankComments(text: string): string {
   return last ? out + text.slice(last) : text
 }
 
-/** A substituted value as one shell word: escaped inside `"…"`, single-quoted outside unless it is plain. */
+/**
+ * A substituted value as the shell passes it: escaped inside `"…"`; outside, split into fields at blanks, each field
+ * single-quoted unless it is plain.
+ */
 function substitutedWord(value: string, quote: string): string {
   if (quote) return value.replace(/["\\$`]/g, '\\$&')
-  return /^[\w.:/@%+,=-]*$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`
+  return value.split(/[ \t\n]+/).filter(Boolean).map((field) => (/^[\w.:/@%+,=-]*$/.test(field) ? field : `'${field.replaceAll("'", `'\\''`)}'`)).join(' ')
 }
 
 /** A substituted value's place in the expanded text, the assignment that defined it, and the value. */
@@ -1029,13 +1032,15 @@ export function redactSensitive(text: string): string {
   if (reassigned.length && !failClosed) for (const chosen of combinations) views.push((name, history) => { const n = chosen.get(name); return n !== undefined && history.at(-1)! >= n ? n : history.at(-1)! })
   // Failing closed watches the reassigned names and, in text order, every name whose template refers to a watched one
   // (`ARG=$OPT`).
-  const watchedNames = new Set(reassigned.map(([name]) => name))
-  if (failClosed) for (const { name, template } of assignments) if (template !== undefined && [...template.matchAll(VAR_REFS_RE)].some((ref) => watchedNames.has(ref[1] ?? ref[2]!))) watchedNames.add(name)
+  // A name the text computes (`OPT=$(printf -- -u)`) is always watched.
+  const watchedNames = new Set(failClosed ? reassigned.map(([name]) => name) : [])
+  for (const { name, value, template } of assignments) if (value === undefined && template === undefined) watchedNames.add(name)
+  if (watchedNames.size) for (const { name, template } of assignments) if (template !== undefined && [...template.matchAll(VAR_REFS_RE)].some((ref) => watchedNames.has(ref[1] ?? ref[2]!))) watchedNames.add(name)
   // Ranges of the text masked before redaction: secret assignment values, and words that fail closed.
   const masks: [start: number, end: number][] = []
   for (const [v, pick] of views.entries()) {
-    const { expanded, spans, overflow, watched } = expandAssignments(code, assignments, pick, v === 0 && failClosed ? watchedNames : undefined)
-    // A reference to a reassigned name is masked to the end of its word, and a whole-word one with the next word
+    const { expanded, spans, overflow, watched } = expandAssignments(code, assignments, pick, v === 0 ? watchedNames : undefined)
+    // A reference to a watched name is masked to the end of its word, and a whole-word one with the next word
     // (`$OPT bob:hunter2`, `-H "${H}: x"`).
     if (watched.length) {
       const quoteAt = quoteTracker(code)
@@ -1044,8 +1049,8 @@ export function redactSensitive(text: string): string {
         const quote = quoteAt(at)
         let end = shellWordEnd(code, at, quote, closeOf)
         if (quote && code[end] === quote.slice(-1)) end += 1
-        // A whole word, quotes included (`$OPT`, `"$OPT"`), may be an option that takes the next word.
-        if (/(?:^|\s)\$?["']*$/.test(code.slice(Math.max(0, at - 4), at)) && /^["']*$/.test(code.slice(VAR_REF_END(code, at), end))) {
+        // A word of references and quotes only (`$OPT`, `"$OPT"`, `$A$B`) may be an option that takes the next word.
+        if (/(?:^|\s)\$?["']*$/.test(code.slice(Math.max(0, at - 4), at)) && /^(?:["']|\$\{[A-Za-z_]\w*\}|\$[A-Za-z_]\w*)*$/.test(code.slice(VAR_REF_END(code, at), end))) {
           BLANK_RUN_RE.lastIndex = end
           if (BLANK_RUN_RE.exec(code)) end = shellWordEnd(code, BLANK_RUN_RE.lastIndex, '', closeOf)
         }

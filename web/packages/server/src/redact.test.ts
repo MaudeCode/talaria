@@ -344,6 +344,8 @@ describe('inline shell assignments', () => {
     expect(redactText('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; curl "$OPT" bob:hunter2 x', true)).not.toContain('hunter2')
     // …through overlapping references and any run of blanks…
     for (const gap of [' ', ' '.repeat(65)]) expect(redactText(`A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=x; false && OPT=echo; OPT2=-u; false && OPT2=echo; curl $OPT $OPT2${gap}bob:hunter2 x`, true)).not.toContain('hunter2')
+    // …through a word of adjacent references…
+    expect(redactText('A=--pass; false && A=x; B=word; false && B=y; C=1; C=2; D=1; D=2; login $A$B hunter2 x', true)).not.toContain('hunter2')
     // …and through a template alias of a reassigned name.
     expect(redactText('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; ARG=$OPT; curl $ARG bob:hunter2 x', true)).not.toContain('hunter2')
     for (const kept of ['D=/a; false && D=/b; cat $D/x.txt', 'A=1; A=2; seq $A']) expect(redactText(kept, true)).toBe(kept)
@@ -358,6 +360,9 @@ describe('inline shell assignments', () => {
     for (const text of ['OPT=-; OPT+=u; curl $OPT bob:hunter2 x', 'export "OPT=-"; export "OPT+=u"; curl $OPT bob:hunter2 x', `H=Authorization; S=: # don't\ncurl -H "\${H}\${S} Basic hunter2"`]) {
       expect(redactText(text, true)).not.toContain('hunter2')
     }
+    // A computed value fails closed; an unquoted value splits into fields as the shell does.
+    expect(redactText('OPT=$(printf -- -u); curl $OPT bob:hunter2 x', true)).toBe('OPT=$(printf -- -u); curl *** x')
+    expect(redactText(`OPT='foo --password'; login $OPT hunter2 x`, true)).not.toContain('hunter2')
     // An escaped separator keeps the rest in the value: `OPT=echo` is part of `A`.
     expect(redactText('OPT=-u; A=foo\\;OPT=echo; curl $OPT bob:hunter2 x', true)).not.toContain('hunter2')
   })
