@@ -111,6 +111,24 @@ test('a message deep link pages through one turn that spans several windows', as
   await expect(page.locator('[data-message-key="2"]')).toBeInViewport()
 })
 
+test('a message deep link pages past a window with no visible rows', async ({ page }) => {
+  // A persisted steer renders inside its turn, so a page holding only steers adds no rows; 20 messages per page.
+  const messages = [
+    { role: 'user', id: 1, content: 'entry-hidden question' },
+    { role: 'assistant', id: 2, content: 'entry-hidden answer.' },
+    ...Array.from({ length: 20 }, (_, i) => ({ role: 'user', id: i + 3, content: `steer ${i + 1}`, _steer: true })),
+    ...transcript('entry-hidden', 20).map((m) => ({ ...m, id: m.id + 22 })),
+  ]
+  const size = 20
+  await page.route('**/api/session?**', (route) => {
+    const end = Number(new URL(route.request().url()).searchParams.get('msg_before') ?? messages.length)
+    const start = Math.max(0, end - size)
+    return route.fulfill({ json: { session: { session_id: 'entry-hidden', title: 'Hidden page', messages: messages.slice(start, end), _messages_truncated: start > 0, _messages_offset: start } } })
+  })
+  await page.goto('/session/entry-hidden?msg=1')
+  await expect(page.locator('[data-message-key="1"]')).toBeInViewport()
+})
+
 test('loading older rows keeps the reader where they are', async ({ page }) => {
   const turns = 20
   await page.route('**/api/session?**', paged('entry-older', turns))

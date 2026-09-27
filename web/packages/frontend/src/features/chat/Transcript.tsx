@@ -29,6 +29,8 @@ export interface TranscriptProps {
   actions: RowActions
   tts: boolean
   truncated: boolean
+  /** Absolute index of the oldest loaded message; it drops with every older page, visible rows or not. */
+  loadedFrom: number
   onLoadOlder: () => void
   loadingOlder: boolean
   emptyState: React.ReactNode
@@ -44,7 +46,7 @@ export interface TranscriptProps {
  * virtualized with TanStack Virtual.
  */
 export function Transcript(props: TranscriptProps) {
-  const { rows: rawRows, live, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, onLoadOlder, loadingOlder, emptyState, showJumpButtons, virtualizeLongTranscripts } = props
+  const { rows: rawRows, live, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, emptyState, showJumpButtons, virtualizeLongTranscripts } = props
   const scrollRef = useRef<HTMLDivElement>(null)
   const [pinned, setPinned] = useState(true)
   const [atTop, setAtTop] = useState(true)
@@ -130,9 +132,9 @@ export function Transcript(props: TranscriptProps) {
     // A grouped turn is keyed by its first assistant message but answers for every message it holds.
     const index = entry.focus ? rows.findIndex((row) => row.key === entry.focus || !!row.assistantRows?.some((part) => part.key === entry.focus)) : -1
     // A linked message older than the loaded window pages older rows in until it appears; a failed page falls back to the bottom.
-    // Progress counts ungrouped rows: a page inside one long turn joins the same grouped row.
-    if (index < 0 && entry.focus && truncated && (entry.pagedAt !== rawRows.length || loadingOlder)) {
-      if (entry.pagedAt !== rawRows.length && !loadingOlder) { entry.pagedAt = rawRows.length; onLoadOlder() }
+    // Progress follows the loaded offset: a page can join an existing grouped row or hold no visible rows at all.
+    if (index < 0 && entry.focus && truncated && (entry.pagedAt !== loadedFrom || loadingOlder)) {
+      if (entry.pagedAt !== loadedFrom && !loadingOlder) { entry.pagedAt = loadedFrom; onLoadOlder() }
       return
     }
     entryRef.current = null
@@ -142,7 +144,7 @@ export function Transcript(props: TranscriptProps) {
     settlingRef.current = false
     if (target) target.scrollIntoView({ block: 'center' })
     else virtualizer.scrollToIndex(index, { align: 'center' })
-  }, [rows, rawRows.length, virtualize, virtualizer, truncated, loadingOlder, onLoadOlder, pin, scrollToBottom])
+  }, [rows, loadedFrom, virtualize, virtualizer, truncated, loadingOlder, onLoadOlder, pin, scrollToBottom])
 
   const renderRow = (row: VisibleMessage, i: number) => (
     row.message.role === 'user'

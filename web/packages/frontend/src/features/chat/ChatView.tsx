@@ -38,7 +38,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const settings = useSettingsQuery()
-  const { query, session, rows, live, truncated, loadOlder, loadingOlder, refresh } = useTranscript(sessionId)
+  const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, refresh } = useTranscript(sessionId)
   const clarify = useClarify(sessionId, live)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [workspaceOpen, setWorkspaceOpen] = useState(() => readPersisted('hermes-webui-workspace-panel') === 'open')
@@ -259,6 +259,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             actions={{ ...(session?.read_only ? {} : { onEdit: (row: VisibleMessage, text: string) => { void onEdit(row, text) }, onRegenerate: () => { void onRegenerate() } }), ...(session?.can_branch ? { onBranch: (row: VisibleMessage) => { void onBranch(row) } } : {}) }}
             tts={!!(settings.data as Record<string, unknown> | undefined)?.tts_enabled}
             truncated={truncated}
+            loadedFrom={base}
             onLoadOlder={() => { void loadOlder() }}
             loadingOlder={loadingOlder}
             emptyState={query.isPending && !knownEmpty ? <TranscriptSkeleton /> : emptyState}
