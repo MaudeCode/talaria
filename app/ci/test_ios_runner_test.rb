@@ -29,6 +29,21 @@ class TestIOSRunnerTest < Minitest::Test
     refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
   end
 
+  def test_pr_ci_erases_the_simulator_before_the_live_contract_relaunch
+    workflow = File.read(
+      File.expand_path("../../.github/workflows/pr-ci.yml", __dir__),
+      encoding: "UTF-8"
+    )
+    live_step = workflow[/- name: Run the live Web contract test.*?(?=\n      - name: )/m]
+
+    # A contract-only run leaves its test host's state on this simulator, and the
+    # next launch fails even after a clean shutdown (TAL-375).
+    erase = live_step.index('xcrun simctl erase "${SIMULATOR_ID}"')
+    refute_nil(erase)
+    assert_operator(live_step.index('xcrun simctl shutdown "${SIMULATOR_ID}"'), :<, erase)
+    assert_operator(erase, :<, live_step.index("xcodebuild test-without-building"))
+  end
+
   def test_pr_ci_runs_pr_smoke_without_clones_and_main_ui_with_two_workers
     workflow = File.read(
       File.expand_path("../../.github/workflows/pr-ci.yml", __dir__),
