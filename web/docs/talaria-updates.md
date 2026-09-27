@@ -205,7 +205,7 @@ only its explicit acknowledging action satisfies that requirement. Semantic dest
 
 Each frontend build stamps an exact identity into its shell (`<meta name="talaria-build">`, a hash of every
 emitted client file, written by `finalize-dist`). An open tab sends that identity and a per-tab id
-(sessionStorage, so a reload keeps it) with every notification check; the check runs with the notification
+(sessionStorage, reused only when the same tab reloads, so a duplicated tab gets its own) with every notification check; the check runs with the notification
 poll and again on focus, reconnect, and a service-worker takeover. The server compares the identity with
 the shell it now serves and returns the result as `frontend_build`. A mismatch keeps one persistent
 `web_refresh` record visible only to that tab: its **Refresh now** action reloads the tab without

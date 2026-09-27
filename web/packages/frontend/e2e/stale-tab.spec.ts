@@ -68,6 +68,24 @@ test.describe('stale Web tab refresh notice', () => {
     await expect(other.locator('.notification-toast').filter({ hasText: TITLE })).toHaveCount(0)
     await other.close()
 
+    // A same-origin window opened from the stale tab inherits a copy of its sessionStorage; it must still get its own tab id.
+    const tabIds = (target: Page) => {
+      const ids = new Set<string>()
+      target.on('request', (request) => { const id = new URL(request.url()).searchParams.get('tab_id'); if (id) ids.add(id) })
+      return ids
+    }
+    const staleIds = tabIds(page)
+    const [opened] = await Promise.all([page.waitForEvent('popup'), page.evaluate(() => { window.open('./', '_blank') })])
+    const openedIds = tabIds(opened)
+    const openedChecks = watchChecks(opened)
+    await settle(opened)
+    await expect.poll(() => openedChecks.length).toBeGreaterThan(1)
+    expect(openedChecks.at(-1)).toMatchObject({ loaded_build: current, refresh_required: false })
+    await expect.poll(() => staleIds.size).toBe(1)
+    expect([...openedIds].some((id) => staleIds.has(id))).toBe(false)
+    await opened.close()
+    await expect.poll(() => checks.at(-1)).toMatchObject({ refresh_required: true, notification_id: id })
+
     // Reading the inbox and Clear all leave the required interaction in place.
     const bell = page.getByRole('button', { name: 'Notifications', exact: true })
     await bell.click()
