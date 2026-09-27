@@ -201,6 +201,7 @@ final class OnboardingFlowTests: XCTestCase {
             "chmod 600",
             "Preserve every existing line in `.env`",
             "only add or update the `HERMES_WEBUI_PASSWORD` entry",
+            "If the running service or shell already sets `HERMES_WEBUI_PASSWORD`, that value wins over `.env`",
             "never truncate or replace the file",
             "Whether `.env` already existed or is new",
             "Do not print the full .env",
