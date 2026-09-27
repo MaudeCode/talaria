@@ -363,6 +363,23 @@ describe('write-behind persistence', () => {
     expect(makeStore().verifySession(cookie)).toBe(false)
   })
 
+  it('flushPersistence also waits for a write that starts while it is waiting', async () => {
+    const attempts = gatedWriter()
+    const sessions = gatedWriter()
+    const store = makeStore({}, { persistWrite: (file, text) => (file === sessionsFile() ? sessions : attempts).write(file, text) })
+    store.recordLoginAttempt('1.2.3.4')
+    let flushed = false
+    const flushing = store.flushPersistence().then(() => { flushed = true })
+    // A request still being served (a restart keeps the listener open) starts a sessions write after the flush began.
+    const cookie = store.createSession()
+    attempts.open()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(flushed).toBe(false)
+    sessions.open()
+    await flushing
+    expect(JSON.parse(readFileSync(sessionsFile(), 'utf8'))).toHaveProperty(AuthStore.tokenFromCookieValue(cookie) ?? '')
+  })
+
   it('flushPersistence resolves only after pending writes land, matching the in-memory tables', async () => {
     const writer = gatedWriter()
     const store = makeStore({}, { persistWrite: writer.write })

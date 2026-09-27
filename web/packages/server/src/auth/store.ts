@@ -99,6 +99,10 @@ class WriteBehind {
     }
   }
 
+  get busy(): boolean {
+    return this.running !== null
+  }
+
   /** Resolves once the in-flight write and any coalesced follow-up have landed. */
   flush(): Promise<void> {
     return this.running ?? Promise.resolve()
@@ -152,9 +156,12 @@ export class AuthStore {
     this.persistWrite = opts.persistWrite ?? writeSecretFile
   }
 
-  /** Awaits every pending session and login-attempt write; orderly shutdown calls it before exiting. */
+  /**
+   * Awaits every pending session and login-attempt write; orderly shutdown and restart call it before exiting. Loops
+   * until both writers are idle, because a request still being served can start a write while this one waits.
+   */
   async flushPersistence(): Promise<void> {
-    await Promise.all([this.sessionsWriter.flush(), this.attemptsWriter.flush()])
+    while (this.sessionsWriter.busy || this.attemptsWriter.busy) await Promise.all([this.sessionsWriter.flush(), this.attemptsWriter.flush()])
   }
 
   private warnPersistence(prefix: string, artifact: string, error: unknown, consequence: string): void {
