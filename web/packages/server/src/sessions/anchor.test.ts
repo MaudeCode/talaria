@@ -343,6 +343,32 @@ describe('anchor scenes over HTTP', () => {
     expect((messages[3]?._anchor_activity_scene as Json).final_answer).toBe('')
   })
 
+  it('ships each settled turn\'s file changes from its own calls, never from a stored scene', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [
+      { role: 'user', content: 'Edit', _turn_id: 'run-edit' },
+      { role: 'assistant', content: '', tool_calls: [
+        { id: 'w', function: { name: 'write_file', arguments: '{"path": "./src/a.swift", "content": "x"}' } },
+        { id: 'm', name: 'mcp_filesystem_move_file', args: { source: 'old.swift', destination: 'new.swift' } },
+        { id: 'r', name: 'read_file', args: { path: 'src/b.swift' } },
+      ], _turn_id: 'run-edit' },
+      { role: 'assistant', content: 'Edited.', _turn_id: 'run-edit' },
+      { role: 'user', content: 'Chat', _turn_id: 'run-chat' },
+      { role: 'assistant', content: 'Hi.', _turn_id: 'run-chat' },
+      { role: 'user', content: 'Delete', _turn_id: 'run-delete' },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'd', name: 'delete_file', args: { path: 'c.swift' } }], _turn_id: 'run-delete' },
+    ]
+    s.deps.sessionStore.save(session)
+    // A client-posted scene cannot claim changes its turn never made.
+    expect((await post(s, '/api/session/anchor-scene', { session_id: sid, message_index: 4, scene: { version: 'activity_scene_v1', activity_rows: [], file_changes: [{ path: 'forged', action: 'added' }] } })).status).toBe(200)
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    const settled = messages.map((m) => (m._anchor_activity_scene as Json | undefined)?.file_changes)
+    expect(settled[2]).toEqual([{ path: 'src/a.swift', action: 'edited' }, { path: 'new.swift', action: 'renamed' }])
+    expect(settled[4]).toEqual([])
+    expect(settled[6]).toEqual([{ path: 'c.swift', action: 'deleted' }])
+  })
+
   it('keeps full tool results in scenes, clipping them only in a limited response like raw tool rows', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const session = s.deps.sessionStore.get(sid)

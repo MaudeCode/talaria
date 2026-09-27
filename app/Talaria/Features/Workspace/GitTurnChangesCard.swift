@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Turn-end "File changes" recap card shown under the latest assistant turn for git
-/// workspaces (issue #316, Slice D, surface B). The per-file list is derived from the
-/// turn's tool-call metadata and joined to `git/status` for counts/chips. The card is
+/// workspaces (issue #316, Slice D, surface B). The per-file list is the server's
+/// `file_changes` for the turn, joined to `git/status` for counts/chips. The card is
 /// collapsible (default expanded); the header "Open diff" opens the per-turn diff sheet
 /// and each file row opens that file's diff. The host owns the actual sheet presentation.
 struct GitTurnChangesCard: View {

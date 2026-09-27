@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The iPhone app's file changes card lists the files the server says each turn created, edited, deleted or renamed.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

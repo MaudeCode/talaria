@@ -11,12 +11,12 @@ import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPu
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, buildSessionListPayload, isClaimableCliSource, isMessagingSessionRecord, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { attachTodoState } from './todo.js'
-import { stateDbSessionMessages, stateDbSessionRow } from './state-db.js'
+import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { mergeSessionMessagesAppendOnly, pendingUserRow, withPendingUserTurn, withoutRunningTurnOutput } from './merge.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
@@ -115,7 +115,7 @@ export class SessionService {
   private isReadOnlyImport(sid: string): boolean {
     try {
       const s = this.store.get(sid, { metadataOnly: true })
-      if (s.read_only) return true
+      if (this.isReadOnly(s)) return true
     } catch {
       // No sidecar: a foreign state.db transcript whose owner refuses claiming is read-only too.
       const { session, reason } = this.claimOrSynthesizeCliSession(sid)
@@ -135,11 +135,21 @@ export class SessionService {
     return meta !== null && str(meta.source_tag || meta.raw_source || meta.source).trim().toLowerCase() === 'subagent'
   }
 
+  /** TAL-358: batched `sessions.source` owners from the active profile's state.db. */
+  readonly stateDbSources = (ids: string[]): Map<string, string> | null => stateDbSessionSources(join(this.deps.profileHome(this.deps.activeProfile()), 'state.db'), ids)
+
+  /** The persisted flag folded with the state.db owner lock (TAL-358): the one read-only rule for mutation gates and the wire. */
+  isReadOnly(s: Session): boolean {
+    if (s.read_only) return true
+    const [row] = withOwnerLocks([{ session_id: s.session_id, source_tag: s.source_tag, raw_source: s.raw_source, session_source: s.session_source }], this.stateDbSources)
+    return Boolean(row?.read_only)
+  }
+
   /** Full session for mutation, refusing read-only imports (Python `_get_or_materialize_session`). */
   getForMutation(sid: string): Session {
     let s = this.get404(sid)
     s = this.store.ensureFull(sid, s)
-    if (s.read_only) throw new HttpFailure(403, 'Read-only imported sessions cannot be modified from WebUI')
+    if (this.isReadOnly(s)) throw new HttpFailure(403, 'Read-only imported sessions cannot be modified from WebUI')
     if (str(s.source_tag || s.raw_source).trim().toLowerCase() === 'subagent') throw new HttpFailure(403, 'Read-only subagent child session')
     return s
   }
@@ -261,7 +271,7 @@ export class SessionService {
 
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
   wireRow(s: Session): Record<string, unknown> {
-    return withSessionWireFlags(s.compact(), this.deps.runtime.activeStreamIds)
+    return withSessionWireFlags({ ...s.compact(), read_only: this.isReadOnly(s) }, this.deps.runtime.activeStreamIds)
   }
 
   /** Python `public_session_projection(s.__dict__)`: every persisted field, redacted (session export). */
@@ -354,6 +364,7 @@ export class SessionService {
     raw._msg_limit_max = MAX_MSG_LIMIT
     const revisionAfter = this.loadRevision(s)
     raw._load_revision = revisionBefore !== null && revisionBefore === revisionAfter ? hashRevision(revisionBefore) : `unstable-${randomUUID().replace(/-/g, '')}`
+    raw.read_only = this.isReadOnly(s)
     withSessionWireFlags(raw, activeStreamIds)
     return redactSessionData(raw, this.deps.redactEnabled())
   }
@@ -464,13 +475,13 @@ export class SessionService {
 
   // ── list / search ────────────────────────────────────────────────────────
 
-  list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity'>): { body: ListResponse; etag: string } {
+  list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources'>): { body: ListResponse; etag: string } {
     const activeProfile = this.deps.activeProfile()
     const wantState = params.showCliSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
     // Python reads every profile's state.db under all_profiles; this port projects the active profile only.
     const cliRows = wantState ? this.deps.cliSessions(activeProfile, { sourceFilter: params.sourceFilter ?? null }) : undefined
     const gatewayIdentity = loadGatewaySessionIdentityMap(join(this.deps.profileHome(activeProfile), 'sessions', 'sessions.json'))
-    const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), gatewayIdentity, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
+    const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), gatewayIdentity, stateDbSources: this.stateDbSources, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now())
   }
 
@@ -478,6 +489,7 @@ export class SessionService {
     const activeProfile = this.deps.activeProfile()
     let sessions = allSessions(this.store)
     if (!opts.allProfiles) sessions = sessions.filter((r) => this.deps.profilesMatch(str(r.profile) || null, activeProfile))
+    sessions = withOwnerLocks(sessions, this.stateDbSources)
     const redact = this.deps.redactEnabled()
     const redactRow = (item: Row) => {
       withSessionWireFlags(item, this.deps.runtime.activeStreamIds)
@@ -581,7 +593,7 @@ export class SessionService {
     const title = nextTitle.trim().slice(0, 80) || 'Untitled'
     let current: Session
     try { current = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
-    if (current.read_only) throw new HttpFailure(403, `Session ${sid} is read-only`)
+    if (this.isReadOnly(current)) throw new HttpFailure(403, `Session ${sid} is read-only`)
     await this.store.withLock(sid, () => {
       current.title = title
       markSessionTitleGenerated(current)
@@ -702,7 +714,7 @@ export class SessionService {
   async setToolsets(sid: string, toolsets: unknown): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     const cleaned = this.validateToolsetsShape(toolsets)
-    const s = this.get404(sid)
+    const s = this.mutationTarget(sid, 'modified')
     await this.store.withLock(sid, () => {
       s.enabled_toolsets = cleaned
       this.store.save(s)
@@ -726,7 +738,7 @@ export class SessionService {
   async truncate(sid: string, keepRaw: unknown): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     if (keepRaw === null || keepRaw === undefined) throw new HttpFailure(400, 'Missing required field(s): keep_count')
-    const s = this.get404(sid)
+    const s = this.mutationTarget(sid, 'modified')
     // Python `int(body["keep_count"])`: a float truncates, a non-integer string is rejected.
     let keep: number
     if (typeof keepRaw === 'number') keep = Number.isFinite(keepRaw) ? Math.trunc(keepRaw) : Number.NaN
@@ -744,7 +756,7 @@ export class SessionService {
 
   async clear(sid: string): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
-    const s = this.get404(sid)
+    const s = this.mutationTarget(sid, 'modified')
     await this.store.withLock(sid, () => {
       const hadMessages = s.messages.length > 0
       truncateSessionAtKeep(s, 0)
@@ -775,7 +787,7 @@ export class SessionService {
   async retry(sid: string): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     return this.store.withLock(sid, () => {
-      const s = this.get404(sid)
+      const s = this.mutationTarget(sid, 'modified')
       const history = s.messages
       const lastUser = findLastUserIndex(history)
       if (lastUser === null) return { error: 'No previous message to retry.' }
@@ -790,7 +802,7 @@ export class SessionService {
   async undo(sid: string): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     return this.store.withLock(sid, () => {
-      const s = this.get404(sid)
+      const s = this.mutationTarget(sid, 'modified')
       const history = s.messages
       const lastUser = findLastUserIndex(history)
       if (lastUser === null) return { error: 'Nothing to undo.' }
@@ -830,7 +842,7 @@ export class SessionService {
   branch(sid: string, body: Record<string, unknown>): Record<string, unknown> {
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot be branched from WebUI')
     const source = this.get404(sid)
-    if (source.read_only) {
+    if (this.isReadOnly(source)) {
       if (str(source.source_tag || source.raw_source).trim().toLowerCase() !== 'cron') throw new HttpFailure(403, 'Read-only sessions cannot be branched from WebUI')
       source.branchSourceReadonly = true
     }

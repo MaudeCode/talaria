@@ -223,7 +223,7 @@ export const sessionsRouter = os.router({
       const sid = input.session_id
       let session: Session
       try { session = ctx.deps.sessionStore.get(sid) } catch { throw new HttpError(404, 'Session not found') }
-      if (session.read_only || ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(403, 'Read-only imported sessions cannot regenerate titles')
+      if (ctx.deps.sessions.isReadOnly(session) || ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(403, 'Read-only imported sessions cannot regenerate titles')
       const generated = await ctx.deps.turns.generateTitle(session, { preferLatest: Boolean(input.prefer_latest) })
       if (!generated.title) throw new HttpError(422, `Could not generate a better title (${generated.status || 'empty'})`)
       const current = await ctx.deps.sessions.persistGeneratedTitle(sid, generated.title, 'session_title_regenerate')
