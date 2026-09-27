@@ -808,10 +808,11 @@ type Span = [start: number, end: number, assignment: number]
  * as the shell expands it, and where each substituted value sits in it. `pick` chooses among the name's assignments so
  * far (in text order, an unknown one included) and returns `-1` to leave the reference as written, as unknown names and
  * parameter operators are. One pass. A substitution past the size cap (a long value referenced many times) is left as
- * written, and its assignment is reported.
+ * written, and its assignment is reported, as is each reference to a `watch`ed name.
  */
-function expandAssignments(text: string, assignments: Assignment[], pick: (name: string, history: number[]) => number): { expanded: string; spans: Span[]; overflow: Set<number> } {
+function expandAssignments(text: string, assignments: Assignment[], pick: (name: string, history: number[]) => number, watch = new Set<string>()): { expanded: string; spans: Span[]; overflow: Set<number>; watched: number[] } {
   const spans: Span[] = []
+  const watched: number[] = []
   const overflow = new Set<number>()
   const history = new Map<string, number[]>()
   const cap = text.length * 2 + 4096
@@ -839,6 +840,7 @@ function expandAssignments(text: string, assignments: Assignment[], pick: (name:
       VAR_REF_RE.lastIndex = i
       const ref = VAR_REF_RE.exec(text)
       const name = ref ? ref[1] ?? ref[2]! : ''
+      if (watch.has(name)) watched.push(i)
       const assignment = ref && history.has(name) ? pick(name, history.get(name)!) : -1
       const value = assignment < 0 ? undefined : assignments[assignment]!.value
       if (value === undefined) continue
@@ -854,7 +856,7 @@ function expandAssignments(text: string, assignments: Assignment[], pick: (name:
       i = last - 1
     }
   }
-  return { expanded: out + text.slice(last), spans, overflow }
+  return { expanded: out + text.slice(last), spans, overflow, watched }
 }
 
 /** A word, and a shell-word unit (a run between shell and URL delimiters, `hunter2!!!`); `*` is a mask's. */
@@ -890,20 +892,50 @@ export function redactSensitive(text: string): string {
   const assignments = inlineAssignments(joined)
   const secretAssignments = new Set<number>()
   const secrets = new Set<string>()
-  // Control flow is not modelled, so a name may hold any value assigned to it (`OPT=-u; false && OPT=echo`): besides
-  // the latest and the earliest values, each other value of a reassigned name gets a view.
+  // Control flow is not modelled, so a reassigned name may hold any of its values, or an unknown one (`OPT=-u; false &&
+  // OPT=echo`, `false && OPT=$(x)`). Besides the latest values, each combination of the reassigned names' values gets a
+  // view: from its first assignment on, a name holds the chosen value.
+  const byName = new Map<string, Map<string | undefined, number>>()
+  for (const [n, { name, value }] of assignments.entries()) {
+    const values = byName.get(name) ?? new Map<string | undefined, number>()
+    if (!values.has(value)) values.set(value, n)
+    byName.set(name, values)
+  }
+  const reassigned = [...byName].filter(([, values]) => values.size > 1)
+  // ponytail: past 8 combinations (2 in a text over 50k characters, to keep redaction fast), a word with a reassigned
+  // name's reference fails closed instead.
+  const budget = joined.length > 50_000 ? 2 : 8
+  let combinations: Map<string, number>[] = [new Map<string, number>()]
+  for (const [name, values] of reassigned) {
+    combinations = combinations.flatMap((chosen) => [...values.values()].map((n) => new Map(chosen).set(name, n)))
+    if (combinations.length > budget) break
+  }
   const latest = (_: string, history: number[]): number => history.at(-1)!
   const views = [latest]
-  const values = new Map<string, Map<string, number>>()
-  for (const [n, { name, value }] of assignments.entries()) if (value !== undefined && !values.get(name)?.has(value)) values.set(name, (values.get(name) ?? new Map<string, number>()).set(value, n))
-  const reassigned = [...values].filter(([, byValue]) => byValue.size > 1)
-  if (reassigned.length) views.push((ref, history) => { const first = values.get(ref)?.values().next().value ?? -1; return first >= 0 && history.at(-1)! >= first ? first : -1 })
-  const alternatives = reassigned.flatMap(([name, byValue]) => [...byValue.values()].map((n) => [name, n] as const))
-  // ponytail: past 8 views, the values of reassigned names are taken as secrets rather than viewed.
-  if (alternatives.length > 6) for (const [, n] of alternatives) secretAssignments.add(n)
-  else for (const [name, n] of alternatives) views.push((ref, history) => (ref === name && history.at(-1)! >= n ? n : latest(ref, history)))
-  for (const pick of views) {
-    const { expanded, spans, overflow } = expandAssignments(joined, assignments, pick)
+  const failClosed = combinations.length > budget
+  if (reassigned.length && !failClosed) for (const chosen of combinations) views.push((name, history) => { const n = chosen.get(name); return n !== undefined && history.at(-1)! >= n ? n : history.at(-1)! })
+  // Ranges of the text masked before redaction: secret assignment values, and words that fail closed.
+  const masks: [start: number, end: number][] = []
+  for (const [v, pick] of views.entries()) {
+    const { expanded, spans, overflow, watched } = expandAssignments(joined, assignments, pick, v === 0 && failClosed ? new Set(reassigned.map(([name]) => name)) : undefined)
+    // A reference to a reassigned name is masked to the end of its word, and a whole-word one with the next word
+    // (`$OPT bob:hunter2`, `-H "${H}: x"`).
+    if (watched.length) {
+      const quoteAt = quoteTracker(joined)
+      const closeOf = enclosingClose(joined)
+      let reached = 0
+      for (const at of watched) {
+        if (at < reached) continue
+        const quote = quoteAt(at)
+        let end = shellWordEnd(joined, at, quote, closeOf)
+        if (!quote && /^\s?$/.test(joined[at - 1] ?? '')) {
+          const next = /^[ \t]+(?=\S)/.exec(joined.slice(end, end + 64))
+          if (next) end = shellWordEnd(joined, end + next[0].length, '', closeOf)
+        }
+        masks.push([at, end])
+        reached = end
+      }
+    }
     // Past the expansion cap, a value is taken as a secret.
     for (const n of overflow) secretAssignments.add(n)
     if (!spans.length) continue
@@ -944,14 +976,16 @@ export function redactSensitive(text: string): string {
     }
   }
   secrets.delete('')
-  if (!secrets.size && !secretAssignments.size) return redacted
+  if (!secrets.size && !secretAssignments.size && !masks.length) return redacted
+  for (const [n, { start, end }] of assignments.entries()) if (secretAssignments.has(n)) masks.push([start, end])
   let base = out
-  if (secretAssignments.size) {
+  if (masks.length) {
     let masked = ''
     let last = 0
-    for (const [n, { start, end }] of assignments.entries()) {
-      if (!secretAssignments.has(n)) continue
-      masked += joined.slice(last, start) + maskShellWord(joined.slice(start, end))
+    for (const [start, end] of masks.sort((a, b) => a[0] - b[0])) {
+      if (end <= last) continue
+      const from = Math.max(start, last)
+      masked += joined.slice(last, from) + maskShellWord(joined.slice(from, end))
       last = end
     }
     base = redactRules(redactComposedWords(masked + joined.slice(last)))

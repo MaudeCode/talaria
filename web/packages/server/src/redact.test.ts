@@ -334,10 +334,16 @@ describe('inline shell assignments', () => {
     for (const text of ['HEADER=X-Trace; HEADER=Authorization; SEP=:; curl -H "${HEADER}${SEP} Basic hunter2"', 'HEADER=Authorization; HEADER=X-Trace; SEP=:; curl -H "${HEADER}${SEP} Basic hunter2"', 'OPT=-u; false && OPT=echo; curl $OPT bob:hunter2 x']) {
       expect(redactText(text, true)).not.toContain('hunter2')
     }
+    // An unknown reassignment, many values of one name, and combinations of several reassigned names.
+    for (const text of ['OPT=-u; false && OPT=$(echo); curl $OPT bob:hunter2 x', 'OPT=a; OPT=b; OPT=-u; false && OPT=c; false && OPT=d; false && OPT=e; false && OPT=f; curl $OPT bob:hunter2 x',
+      'H1=Author; false && H1=X; H2=ization; false && H2=Y; SEP=x; SEP=:; curl -H "${H1}${H2}${SEP} Basic hunter2"']) {
+      expect(redactText(text, true)).not.toContain('hunter2')
+    }
+    // Past 8 combinations, a word with a reassigned name's reference fails closed, with the next word when it is whole.
+    expect(redactText('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; curl $OPT bob:hunter2 x', true)).toBe('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; curl *** x')
+    for (const kept of ['D=/a; false && D=/b; cat $D/x.txt', 'A=1; A=2; seq $A']) expect(redactText(kept, true)).toBe(kept)
     // An escaped separator keeps the rest in the value: `OPT=echo` is part of `A`.
     expect(redactText('OPT=-u; A=foo\\;OPT=echo; curl $OPT bob:hunter2 x', true)).not.toContain('hunter2')
-    const kept = 'A=1; A=2; seq $A'
-    expect(redactText(kept, true)).toBe(kept)
   })
 
   it('masks a discovered secret everywhere, the assignment that defined it included', () => {
@@ -408,7 +414,7 @@ describe('redactSensitive cost', () => {
       // Inline assignments: long chains, prefix chains, many substitutions, and a secret substituted many times.
       ...['A=x; ', 'A=x B=y ', 'export A=x ', '; ', ';A', `A='x `, 'A="x ', 'A=${ ', 'A=$( ', `A=n'x `, 'A=@; $A ', 'A=!; $A '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       `A=x; ${'$A ${A} '.repeat(30_000)}`, Array.from({ length: 20_000 }, (_, i) => `A=${i}; $A `).join(''), `${'A=$(x); '.repeat(20_000)}${'A=1; $A '.repeat(20_000)}`,
-      Array.from({ length: 5 }, (_, i) => `A=${i}; `).join('') + '$A '.repeat(50_000), `P=hunter2; ${'curl -u bob:$P '.repeat(15_000)}`, `A=${'x'.repeat(10_000)}; ${'$A'.repeat(50_000)}`]) {
+      Array.from({ length: 5 }, (_, i) => `A=${i}; `).join('') + '$A '.repeat(50_000), `A=1; A=2; B=1; B=2; C=1; C=2; ${'curl -u bob:$A$B$C '.repeat(12_000)}`, `P=hunter2; ${'curl -u bob:$P '.repeat(15_000)}`, `A=${'x'.repeat(10_000)}; ${'$A'.repeat(50_000)}`]) {
       const started = performance.now()
       redactSensitive(text)
       expect(performance.now() - started).toBeLessThan(1000)
