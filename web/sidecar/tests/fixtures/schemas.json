@@ -3665,6 +3665,16 @@
       },
       "pending_steer": {
         "type": "string"
+      },
+      "checkpoint": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
       }
     },
     "required": [
