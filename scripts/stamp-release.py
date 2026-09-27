@@ -13,6 +13,13 @@ _SHA = r"[a-f0-9]{40}"
 _VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
 
 
+def web_version_ok(version, tag, source):
+    """X.Y.Z, or an Experimental package's X.Y.Z-exp.<12-hex source> under a web-exp tag (TAL-343)."""
+    if re.fullmatch(_VERSION, version):
+        return True
+    return tag.startswith("web-exp-v") and re.fullmatch(_VERSION + r"-exp\.[a-f0-9]{12}", version) and version.endswith(source[:12])
+
+
 def web_identity():
     """The packaged Agent pin and supported contract versions (Web `release.ts` reads the same files)."""
     pin = json.loads((ROOT / "web/sidecar/agent_dependency.json").read_text())
@@ -32,7 +39,7 @@ def validate_release_info(metadata):
             raise ValueError(f"Web {key} must be an immutable commit")
     if metadata["sourceRevision"] != metadata["releaseSet"]:
         raise ValueError("Web release-set identity must match its source")
-    if not re.fullmatch(_VERSION, str(metadata["version"])):
+    if not web_version_ok(str(metadata["version"]), str(metadata["tag"]), metadata["sourceRevision"]):
         raise ValueError("Web release version must be X.Y.Z")
     if metadata["tag"] not in (f"web-v{metadata['version']}", f"web-exp-v{metadata['version']}"):
         raise ValueError("Web release tag must match its namespaced version")
@@ -55,7 +62,7 @@ def main():
         parser.error("checkout must match the immutable release source")
     if subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=normal"], cwd=ROOT):
         parser.error("release stamping requires a clean checkout")
-    if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", args.version):
+    if not (re.fullmatch(_VERSION, args.version) or args.component == "web" and web_version_ok(args.version, args.tag or "", head)):
         parser.error("release version must be X.Y.Z")
     metadata = {"version": args.version, "sourceRevision": head, "releaseSet": head}
     if args.component == "web":

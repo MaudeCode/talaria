@@ -47,7 +47,9 @@ export function validateReleaseInfo(metadata: unknown, webRoot: string): Release
     if (typeof m[key] !== 'string' || !SHA_RE.test(m[key])) throw new Error(`Web ${key} must be an immutable commit`)
   }
   if (m.sourceRevision !== m.releaseSet) throw new Error('Web release-set identity must match its source')
-  if (typeof m.version !== 'string' || !/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(m.version)) throw new Error('Web release version must be X.Y.Z')
+  // An Experimental package is `X.Y.Z-exp.<12-hex source>` under a web-exp tag (TAL-343).
+  const experimental = typeof m.version === 'string' && typeof m.tag === 'string' && m.tag.startsWith('web-exp-v') && m.version.endsWith(`-exp.${String(m.sourceRevision).slice(0, 12)}`)
+  if (typeof m.version !== 'string' || !(experimental ? /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-exp\.[a-f0-9]{12}$/ : /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/).test(m.version)) throw new Error('Web release version must be X.Y.Z')
   if (m.tag !== `web-v${m.version}` && m.tag !== `web-exp-v${m.version}`) throw new Error('Web release tag must match its namespaced version')
   if (JSON.stringify(m.contracts) !== JSON.stringify(supportedContracts(webRoot)) || JSON.stringify(m.compatibleAgent) !== JSON.stringify(compatibleAgent(webRoot))) {
     throw new Error('Web release metadata disagrees with its packaged contracts or Agent pin')

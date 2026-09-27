@@ -1,0 +1,76 @@
+# Publishes every main commit that changes Web or contracts and passes CI as the
+# Experimental Web OCI artifact (TAL-343): ghcr.io/maudecode/talaria-web-experimental
+# gets an immutable sha-<commit> tag, and the forward-only `experimental` tag moves
+# to it only when it descends from the commit `experimental` names.
+
+name: Web Experimental
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+# Runs never cancel each other: an older run that finishes late still publishes its sha- tag.
+concurrency:
+  group: web-experimental
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish Experimental Web
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          # Stable web-v* tags set the version; history orders the forward-only tag.
+          fetch-depth: 0
+
+      - name: Select Web or contracts changes
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          # workflow_run carries no push base; the repository activity feed records it.
+          # An unknown base classifies as every suite, which publishes.
+          base=$(gh api "repos/${GITHUB_REPOSITORY}/activity?ref=refs/heads/main&per_page=100" \
+            --jq "[.[] | select(.after == \"${HEAD_SHA}\") | .before][0] // \"\"") || base=""
+          python3 scripts/changed-components.py --base="$base" --head="$HEAD_SHA" > "$RUNNER_TEMP/changes"
+          cat "$RUNNER_TEMP/changes"
+          if grep -qxE '(web_server|web_frontend|contracts)=true' "$RUNNER_TEMP/changes"; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.changes.outputs.publish == 'true'
+        uses: ./.github/actions/release-python
+
+      - if: steps.changes.outputs.publish == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+
+      - if: steps.changes.outputs.publish == 'true'
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+
+      - name: Pack the Experimental npm package
+        if: steps.changes.outputs.publish == 'true'
+        run: '"$RELEASE_PYTHON" releases/build.py web --experimental --output "$RUNNER_TEMP/web-experimental"'
+
+      - name: Push to GHCR, advance experimental, prune old versions
+        if: steps.changes.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          "$RELEASE_PYTHON" releases/experimental.py "$RUNNER_TEMP/web-experimental"

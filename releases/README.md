@@ -141,6 +141,16 @@ Local execution writes `build-result.json`; Actions execution additionally write
 a receipt tied to the actual run. An unsigned App archive is not an installable
 device-validation build.
 
+`build.py web --experimental --output NEW_DIRECTORY` packs only the Web npm
+package for the Experimental channel from `HEAD`, without a plan or Docker image:
+version `<latest web-v tag>-exp.<12-hex source>`, tag `web-exp-v<version>`, and
+the contracts package bundled so installs never look it up. `experimental.py
+BUILD_DIRECTORY` pushes that tarball to `ghcr.io/maudecode/talaria-web-experimental`
+as `sha-<source>`, moves `experimental` only onto a descendant of its current
+revision, and keeps the newest 50 package versions plus the `experimental` target.
+The `web-experimental.yml` workflow runs both after each passing `main` push that
+changes Web or contracts.
+
 `cli.py gate` writes a success receipt only after its supplied validation command
 succeeds. `cli.py assemble` combines receipts and notes; failed/missing gates,
 changed artifact identities, and attempted completion of dry-run plans fail.
