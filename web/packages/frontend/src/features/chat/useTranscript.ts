@@ -125,5 +125,5 @@ export function useTranscript(sessionId: string | null) {
 
   const refresh = useCallback(() => qc.invalidateQueries({ queryKey: keys.sessions.detail(sessionId ?? '') }), [qc, sessionId])
 
-  return { query, session, rows, live, truncated, loadOlder, loadingOlder, refresh }
+  return { query, session, rows, base, live, truncated, loadOlder, loadingOlder, refresh }
 }

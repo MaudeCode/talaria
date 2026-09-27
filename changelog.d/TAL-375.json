@@ -1,0 +1,1 @@
+{"skip": "CI and unit tests only: test view models use a spy instead of requesting real Live Activities; no app behavior changes."}

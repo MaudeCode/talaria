@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Switching back to a Web chat opens it at its latest message instead of partway through.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Links to a specific message in a Web chat scroll to that message.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

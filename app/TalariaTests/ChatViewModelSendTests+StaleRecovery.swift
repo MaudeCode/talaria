@@ -1083,6 +1083,112 @@ extension ChatViewModelSendTests {
         )
         XCTAssertEqual(reopenedViewModel.messages.filter { $0.role == "assistant" }.count, 1)
     }
+
+    // TAL-250: reopening a running session paints the run's live snapshot from the selected row's server stream id
+    // before the session load answers, so its prose, reasoning and tools never drop out while the load is delayed.
+    func testReopeningRunningSessionPaintsLiveSnapshotBeforeSessionLoadAnswers() async throws {
+        let streamID = "stream-tal250-reopen"
+        try await suspendRunWithLiveSnapshot(streamID: streamID)
+        let context = try makeContext()
+        let sessionRequested = expectation(description: "session requested")
+        let releaseSession = DispatchSemaphore(value: 0)
+        let reopenedViewModel = try makeViewModel(sessionSummary: try makeRunningRow(streamID: streamID)) { request in
+            XCTAssertEqual(request.url?.path, "/api/session")
+            sessionRequested.fulfill()
+            XCTAssertEqual(releaseSession.wait(timeout: .now() + .seconds(5)), .success)
+            return apiTestJSONResponse("""
+            {"session": {"session_id": "session-abc", "title": "Tiger Story", "active_stream_id": "\(streamID)",
+              "messages": [{"role": "user", "content": "Tell me a tiger story", "timestamp": 1770000100, "message_id": "user-1"}]}}
+            """, for: request)
+        }
+        defer { releaseSession.signal() }
+
+        reopenedViewModel.prepareInitialMessageLoad(modelContext: context)
+
+        // The row's hint paints; only the session load may adopt the run.
+        XCTAssertNil(reopenedViewModel.activeStreamID)
+        XCTAssertTrue(reopenedViewModel.showsRunStateCheck)
+        assertLiveTigerRun(reopenedViewModel)
+
+        let load = Task { @MainActor in await reopenedViewModel.loadMessages(modelContext: context) }
+        await fulfillment(of: [sessionRequested], timeout: 2)
+        assertLiveTigerRun(reopenedViewModel)
+        XCTAssertTrue(reopenedViewModel.showsRunStateCheck)
+
+        releaseSession.signal()
+        await load.value
+
+        // The server confirms the same run: it is adopted and its live work stays.
+        XCTAssertEqual(reopenedViewModel.activeStreamID, streamID)
+        XCTAssertFalse(reopenedViewModel.showsRunStateCheck)
+        assertLiveTigerRun(reopenedViewModel)
+    }
+
+    // TAL-250: a run that finished before the session load answered settles once to the server's transcript.
+    func testReopenedRunThatFinishedBeforeSessionLoadSettlesToTheServerTranscript() async throws {
+        let streamID = "stream-tal250-finished"
+        try await suspendRunWithLiveSnapshot(streamID: streamID)
+        let context = try makeContext()
+        let reopenedViewModel = try makeViewModel(sessionSummary: try makeRunningRow(streamID: streamID)) { request in
+            XCTAssertEqual(request.url?.path, "/api/session")
+            return apiTestJSONResponse("""
+            {"session": {"session_id": "session-abc", "title": "Tiger Story", "active_stream_id": null, "transcript_seq": null,
+              "messages": [
+                {"role": "user", "content": "Tell me a tiger story", "timestamp": 1770000100, "message_id": "user-1"},
+                {"role": "assistant", "content": "Raj crossed the river.", "timestamp": 1770000200, "message_id": "assistant-1"}
+              ]}}
+            """, for: request)
+        }
+
+        reopenedViewModel.prepareInitialMessageLoad(modelContext: context)
+        assertLiveTigerRun(reopenedViewModel)
+        await reopenedViewModel.loadMessages(modelContext: context)
+
+        XCTAssertNil(reopenedViewModel.activeStreamID)
+        XCTAssertFalse(reopenedViewModel.showsRunStateCheck)
+        XCTAssertTrue(reopenedViewModel.liveActivityRows.isEmpty)
+        XCTAssertEqual(
+            reopenedViewModel.messages.compactMap(\.content),
+            ["Tell me a tiger story", "Raj crossed the river."]
+        )
+    }
+
+    /// Starts `streamID`, streams reasoning, a tool and prose, then leaves the chat so the run's live snapshot is saved.
+    private func suspendRunWithLiveSnapshot(streamID: String) async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            XCTAssertEqual(request.url?.path, "/api/chat/start")
+            return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"\#(streamID)"}"#, for: request)
+        }
+        let didStart = await viewModel.sendMessage("Tell me a tiger story")
+        XCTAssertTrue(didStart)
+        streamClient.emit(.reasoning("Planning the tiger story."))
+        streamClient.emit(.toolStarted(ToolStreamEvent(
+            eventType: "tool.started", name: "read_file", preview: "Reading jungle notes",
+            args: ["path": .string("notes.md")], duration: nil, isError: nil
+        )))
+        streamClient.emit(.token("Once Raj reached the river. "))
+        viewModel.suspendStreamForNavigation()
+    }
+
+    private func makeRunningRow(streamID: String) throws -> SessionSummary {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(SessionSummary.self, from: Data("""
+        {"session_id":"session-abc","title":"Tiger Story","is_streaming":true,"active_stream_id":"\(streamID)"}
+        """.utf8))
+    }
+
+    private func assertLiveTigerRun(_ viewModel: ChatViewModel, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(viewModel.liveReasoningText, "Planning the tiger story.", file: file, line: line)
+        XCTAssertEqual(viewModel.liveToolCalls.map(\.name), ["read_file"], file: file, line: line)
+        XCTAssertEqual(
+            viewModel.messages.compactMap(\.content),
+            ["Tell me a tiger story", "Once Raj reached the river. "],
+            file: file,
+            line: line
+        )
+    }
 }
 
 extension ChatViewModelSendTests {

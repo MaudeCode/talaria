@@ -1037,6 +1037,7 @@ struct ChatView: View {
             streamingAssistantMessageID: viewModel.streamingAssistantMessageID,
             liveTokensPerSecond: viewModel.liveTokensPerSecond,
             activeStreamRecoveryState: viewModel.activeStreamRecoveryState,
+            showsRunStateCheck: viewModel.showsRunStateCheck,
             clarificationPrompt: viewModel.clarificationPrompt,
             hidesRunStatusAccessibility: activeRunStatusPresentation != nil,
             showsThinkingAndToolCards: showsThinkingAndToolCards,

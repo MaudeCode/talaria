@@ -203,7 +203,7 @@ describe('turn worklog presentation', () => {
     const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
     try {
-      const view = render(<Transcript rows={projectMessages(session.messages ?? [], 40)} live={{ ...run.turn, userMessageId }} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
+      const view = render(<Transcript rows={projectMessages(session.messages ?? [], 40)} live={{ ...run.turn, userMessageId }} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
       expect(view.container.querySelectorAll('.assistant-turn')).toHaveLength(1)
       expect(view.container.querySelector('.live-turn')).toBeNull()
       expect(screen.getByText('Tool budget exhausted; here is the saved explanation.')).toBeVisible()
@@ -227,7 +227,7 @@ describe('turn worklog presentation', () => {
     const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
     try {
-      const view = render(<Transcript rows={projectMessages(session.messages ?? [])} live={run.turn} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
+      const view = render(<Transcript rows={projectMessages(session.messages ?? [])} live={run.turn} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
       expect(view.container.querySelector('.live-turn')).toBeNull()
       expect(view.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'true')
       expect(screen.getByRole('status')).toHaveTextContent('The response failed')

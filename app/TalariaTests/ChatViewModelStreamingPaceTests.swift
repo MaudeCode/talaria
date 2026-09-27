@@ -306,6 +306,7 @@ final class ChatViewModelStreamingPaceTests: XCTestCase {
             streamClient: streamClient,
             approvalStreamClient: PacingSpySSEStreamingClient(),
             clarifyStreamClient: PacingSpySSEStreamingClient(),
+            liveActivityManager: SpyChatLiveActivityManager(),
             streamingScrollCoalescingDelayNanoseconds: 1_000_000,
             streamingWordRevealCadenceNanoseconds: wordCadenceNanoseconds,
             streamingMaxRevealLagNanoseconds: maxLagNanoseconds
