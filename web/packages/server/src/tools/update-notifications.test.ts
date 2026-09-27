@@ -150,4 +150,100 @@ describe('UpdateNotificationStore', () => {
     store.action(alice, firstID, 'acknowledge')
     expect(store.create(alice, { kind: 'system', phase: 'notice', title: 'Stored', message: 'There is room now.', visibility: 'server' }).title).toBe('Stored')
   })
+
+  describe('stale Web tab refresh notices', () => {
+    const oldBuild = 'a'.repeat(64)
+    const newBuild = 'b'.repeat(64)
+    const newerBuild = 'c'.repeat(64)
+    const tabA = { ...alice, tab: 'tab-aaaaaaaa' }
+    const tabB = { ...alice, tab: 'tab-bbbbbbbb' }
+
+    it('compares exact builds and never raises a notice for a matching or unknown build', () => {
+      const store = new UpdateNotificationStore(temp())
+      expect(store.syncTabBuild(tabA, newBuild, newBuild)).toEqual({ current_build: newBuild, loaded_build: newBuild, refresh_required: false, notification_id: null })
+      expect(store.syncTabBuild(tabA, oldBuild, null)).toMatchObject({ refresh_required: false, notification_id: null })
+      expect(store.syncTabBuild(tabA, null, newBuild)).toMatchObject({ refresh_required: false, notification_id: null })
+      expect(store.syncTabBuild(tabA, 'web-v1.2.3', newBuild)).toMatchObject({ loaded_build: null, refresh_required: false })
+      expect(store.syncTabBuild({ ...alice, tab: null }, oldBuild, newBuild)).toMatchObject({ refresh_required: false, notification_id: null })
+      expect(store.list(tabA).notifications).toEqual([])
+    })
+
+    it('keeps one persistent tab-scoped notice per stale tab, invisible to other tabs and non-tab clients', () => {
+      const store = new UpdateNotificationStore(temp())
+      const first = store.syncTabBuild(tabA, oldBuild, newBuild)
+      expect(first).toMatchObject({ current_build: newBuild, loaded_build: oldBuild, refresh_required: true })
+      const again = store.syncTabBuild(tabA, oldBuild, newBuild)
+      expect(again.notification_id).toBe(first.notification_id)
+      const listed = store.list(tabA).notifications
+      expect(listed).toHaveLength(1)
+      expect(listed[0]).toMatchObject({
+        id: first.notification_id, kind: 'web_refresh', persistent: true, requires_interaction: true, can_dismiss: false,
+        actions: [{ id: 'reload', label: 'Refresh now', style: 'primary', acknowledges: false }],
+      })
+
+      expect(store.list(alice).notifications).toEqual([])
+      expect(store.list(tabB).notifications).toEqual([])
+      expect(store.list({ ...tabA, owner: 'oidc:bob' }).notifications).toEqual([])
+      expect(store.syncTabBuild(tabB, newerBuild, newBuild).notification_id).not.toBe(first.notification_id)
+      expect(store.list(tabA).notifications.map((row) => row.id)).toEqual([first.notification_id])
+      expect(store.read(alice, first.notification_id!)).toBeNull()
+      expect(store.dismiss(tabB, first.notification_id!)).toBe('not_found')
+    })
+
+    it('treats read, clear, dismissal, and the refresh action as non-resolving until the tab reports the current build', () => {
+      const root = temp()
+      let now = new Date('2026-09-26T12:00:00Z')
+      const store = new UpdateNotificationStore(root, () => now)
+      const id = store.syncTabBuild(tabA, oldBuild, newBuild).notification_id!
+      const created = store.list(tabA).notifications[0]!
+      now = new Date('2026-09-26T12:01:00Z')
+      expect(store.read(tabA, id)).toMatchObject({ unread: false, requires_interaction: true })
+      expect(store.dismiss(tabA, id)).toBe('acknowledgement_required')
+      expect(store.clear(tabA).notifications.map((row) => row.id)).toEqual([id])
+      expect(store.action(tabA, id, 'reload')).toMatchObject({ requires_interaction: true, acknowledged_at: null, can_dismiss: false })
+      expect(store.action(tabA, id, 'reload')).toMatchObject({ requires_interaction: true })
+
+      now = new Date('2026-09-26T12:02:00Z')
+      expect(store.syncTabBuild(tabA, oldBuild, newBuild).notification_id).toBe(id)
+      expect(new UpdateNotificationStore(root, () => now).syncTabBuild(tabA, oldBuild, newBuild).notification_id).toBe(id)
+      expect(store.list(tabA).notifications[0]?.updated_at).not.toBe(created.updated_at)
+
+      const verified = store.syncTabBuild(tabA, newBuild, newBuild)
+      expect(verified).toMatchObject({ refresh_required: false, notification_id: null })
+      expect(store.list(tabA).notifications).toEqual([])
+      expect(new UpdateNotificationStore(root).list(tabA).notifications).toEqual([])
+    })
+
+    it('retargets one record to a newer deployment and drops notices of tabs that stopped checking in', () => {
+      let now = new Date('2026-09-26T12:00:00Z')
+      const store = new UpdateNotificationStore(temp(), () => now)
+      const id = store.syncTabBuild(tabA, oldBuild, newBuild).notification_id!
+      store.read(tabA, id)
+      const before = store.list(tabA).notifications[0]!
+      now = new Date('2026-09-26T12:10:00Z')
+      expect(store.syncTabBuild(tabA, oldBuild, newBuild).notification_id).toBe(id)
+      expect(store.list(tabA).notifications[0]).toEqual(before)
+      expect(store.syncTabBuild(tabA, oldBuild, newerBuild).notification_id).toBe(id)
+      expect(store.list(tabA).notifications).toMatchObject([{ id, unread: true, updated_at: now.toISOString() }])
+
+      now = new Date('2026-09-26T13:20:00Z')
+      expect(store.list(tabA).notifications).toEqual([])
+    })
+
+    it('bounds tab notices separately so stale tabs never block or evict other notifications', () => {
+      const store = new UpdateNotificationStore(temp())
+      const tabs = Array.from({ length: 51 }, (_, index) => ({ ...alice, tab: `tab-${String(index).padStart(8, '0')}` }))
+      const created = tabs.map((scope) => store.syncTabBuild(scope, oldBuild, newBuild))
+      expect(created.slice(0, 50).every((state) => state.notification_id !== null)).toBe(true)
+      expect(created[50]).toMatchObject({ refresh_required: true, notification_id: null })
+
+      const required = store.create(alice, {
+        kind: 'system', phase: 'attention', requiresAcknowledgement: true, title: 'Still delivered', message: 'Tabs do not use this capacity.',
+        actions: [{ id: 'acknowledge', label: 'Acknowledge', style: 'primary', acknowledges: true }],
+      })
+      for (let index = 0; index < 50; index += 1) store.create(alice, { kind: 'profile_notice', phase: 'notice', title: `Notice ${String(index)}`, message: 'History.' })
+      expect(store.list(alice).notifications.map((row) => row.id)).toContain(required.id)
+      expect(store.list(tabs[0]!).notifications.map((row) => row.id)).toContain(created[0]!.notification_id)
+    })
+  })
 })

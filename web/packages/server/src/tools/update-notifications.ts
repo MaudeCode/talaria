@@ -5,7 +5,8 @@ import { atomicWriteSecretJson } from '../fs/atomic.js'
 
 export type UpdateNotificationTarget = 'webui' | 'agent'
 export type UpdateNotificationPhase = 'applying' | 'awaiting_confirmation' | 'restarting' | 'succeeded' | 'blocked' | 'failed' | 'unknown'
-export interface UpdateNotificationScope { owner: string; profile: string; serverOwner?: boolean }
+/** `tab` names one open Talaria Web tab; rows stamped with a tab are visible only to that tab. */
+export interface UpdateNotificationScope { owner: string; profile: string; serverOwner?: boolean; tab?: string | null }
 
 interface StoredUpdateNotification {
   id: string
@@ -32,18 +33,20 @@ interface StoredUpdateNotification {
   performed_action_ids: string[]
   dismissed_at: string | null
   expected_identity: string | null
+  tab_id: string | null
 }
 
 export interface UpdateNotificationAction { id: string; label: string; style: 'default' | 'primary' | 'destructive'; acknowledges: boolean }
 export interface UpdateNotificationDestination { key: string; label: string }
 export interface VerifiedUpdateIdentity { revision: string | null; version: string | null }
 
-export type PublicUpdateNotification = Omit<StoredUpdateNotification, 'owner' | 'profile' | 'visibility' | 'dismissed_at' | 'expected_identity' | 'performed_action_ids'> & {
+export type PublicUpdateNotification = Omit<StoredUpdateNotification, 'owner' | 'profile' | 'visibility' | 'dismissed_at' | 'expected_identity' | 'performed_action_ids' | 'tab_id'> & {
   unread: boolean
   active: boolean
   requires_interaction: boolean
   can_dismiss: boolean
 }
+export interface FrontendBuildState { current_build: string | null; loaded_build: string | null; refresh_required: boolean; notification_id: string | null }
 export interface UpdateNotificationList { scope_id: string; notifications: PublicUpdateNotification[]; unread_count: number; clearable_count: number; can_clear: boolean }
 export interface CreateUpdateNotificationInput {
   kind: string
@@ -63,6 +66,12 @@ const PHASES = new Set<UpdateNotificationPhase>(['applying', 'awaiting_confirmat
 const REVISION = /^[a-f0-9]{40}$/
 const PER_SCOPE_LIMIT = 50
 const GLOBAL_LIMIT = 500
+export const FRONTEND_BUILD = /^[a-f0-9]{64}$/
+export const TAB_ID = /^[A-Za-z0-9_-]{8,64}$/
+export const WEB_REFRESH_KIND = 'web_refresh'
+export const WEB_REFRESH_ACTION = 'reload'
+/** A closed tab stops checking in; its refresh notice is dropped once unseen this long. An open tab recreates it on its next check. */
+const TAB_TTL_MS = 60 * 60 * 1000
 
 const copy = (row: StoredUpdateNotification): PublicUpdateNotification => ({
   id: row.id, kind: row.kind, target: row.target, phase: row.phase, severity: row.severity,
@@ -94,10 +103,65 @@ const wording = (target: UpdateNotificationTarget, phase: UpdateNotificationPhas
 export class UpdateNotificationStore {
   private rows: StoredUpdateNotification[]
   private readonly file: string
+  /** Last check-in per tab refresh notice; kept in memory so polling never rewrites the store. */
+  private readonly tabSeen = new Map<string, number>()
+  private readonly loadedAt: number
 
   constructor(stateDir: string, private readonly now: () => Date = () => new Date()) {
     this.file = resolve(stateDir, 'update-notifications.json')
     this.rows = this.load()
+    this.loadedAt = this.now().valueOf()
+  }
+
+  /**
+   * Compare the frontend build a tab loaded with the build this server now serves. A mismatch keeps one
+   * persistent, tab-scoped refresh notice per tab; a match resolves and removes it. Unknown builds change nothing.
+   */
+  syncTabBuild(scope: UpdateNotificationScope, loadedBuild: string | null, currentBuild: string | null): FrontendBuildState {
+    this.pruneClosedTabs()
+    const tab = scope.tab && TAB_ID.test(scope.tab) ? scope.tab : null
+    const loaded = loadedBuild && FRONTEND_BUILD.test(loadedBuild) ? loadedBuild : null
+    const current = currentBuild && FRONTEND_BUILD.test(currentBuild) ? currentBuild : null
+    const state: FrontendBuildState = { current_build: current, loaded_build: loaded, refresh_required: false, notification_id: null }
+    if (!tab || !loaded || !current) return state
+    const existing = this.rows.find((row) => row.kind === WEB_REFRESH_KIND && row.tab_id === tab && row.owner === scope.owner && row.profile === scope.profile)
+    if (loaded === current) {
+      if (existing) {
+        this.rows = this.rows.filter((row) => row !== existing)
+        this.tabSeen.delete(existing.id)
+        this.save()
+      }
+      return state
+    }
+    state.refresh_required = true
+    const stamp = this.now().toISOString()
+    if (existing) {
+      this.tabSeen.set(existing.id, this.now().valueOf())
+      if (existing.expected_identity !== current) {
+        existing.expected_identity = current
+        existing.updated_at = stamp
+        existing.read_at = null
+        this.save()
+      }
+      state.notification_id = existing.id
+      return state
+    }
+    const row: StoredUpdateNotification = {
+      id: randomUUID(), owner: scope.owner.slice(0, 256), profile: scope.profile.slice(0, 64), visibility: 'profile',
+      kind: WEB_REFRESH_KIND, target: 'webui', phase: 'refresh_required', severity: 'warning',
+      persistent: true, requires_acknowledgement: true,
+      actions: [{ id: WEB_REFRESH_ACTION, label: 'Refresh now', style: 'primary', acknowledges: false }],
+      destination: null, title: 'Talaria Web was updated', message: 'Refresh this tab to load the new version.',
+      created_at: stamp, updated_at: stamp, read_at: null, acknowledged_at: null,
+      acknowledged_action_id: null, verified_revision: null, verified_version: null,
+      performed_action_ids: [], dismissed_at: null, expected_identity: current, tab_id: tab,
+    }
+    if (!this.hasProtectedCapacity(row)) return state
+    this.rows.push(row)
+    this.tabSeen.set(row.id, this.now().valueOf())
+    this.save()
+    state.notification_id = row.id
+    return state
   }
 
   begin(scope: UpdateNotificationScope, target: UpdateNotificationTarget): PublicUpdateNotification {
@@ -126,12 +190,9 @@ export class UpdateNotificationStore {
       destination: safeDestination(input.destination), title, message,
       created_at: stamp, updated_at: stamp, read_at: null, acknowledged_at: null,
       acknowledged_action_id: null, verified_revision: null, verified_version: null,
-      performed_action_ids: [], dismissed_at: null, expected_identity: null,
+      performed_action_ids: [], dismissed_at: null, expected_identity: null, tab_id: null,
     }
-    const bucket = retentionBucket(row)
-    const protectedInBucket = this.rows.filter((entry) => retentionBucket(entry) === bucket && isProtected(entry)).length
-    const protectedGlobally = this.rows.filter(isProtected).length
-    if (protectedInBucket >= PER_SCOPE_LIMIT || protectedGlobally >= GLOBAL_LIMIT) throw new Error('Update notification protected capacity reached')
+    if (!this.hasProtectedCapacity(row)) throw new Error('Update notification protected capacity reached')
     this.rows.push(row)
     this.save()
     return copy(row)
@@ -160,6 +221,7 @@ export class UpdateNotificationStore {
   }
 
   list(scope: UpdateNotificationScope): UpdateNotificationList {
+    this.pruneClosedTabs()
     const scoped = this.rows.filter((row) => this.isVisible(row, scope) && row.dismissed_at === null)
     const ordered = scoped.sort((a, b) => b.updated_at.localeCompare(a.updated_at))
     const protectedRows = ordered.filter(isProtected)
@@ -251,8 +313,23 @@ export class UpdateNotificationStore {
   }
 
   private isVisible(row: StoredUpdateNotification, scope: UpdateNotificationScope): boolean {
+    if (row.tab_id !== null) return row.tab_id === scope.tab && row.owner === scope.owner && row.profile === scope.profile
     if (row.visibility === 'server') return scope.serverOwner === true && (row.owner === scope.owner || row.owner === '*')
     return row.owner === scope.owner && row.profile === scope.profile
+  }
+
+  private hasProtectedCapacity(row: StoredUpdateNotification): boolean {
+    const peers = this.rows.filter((entry) => isProtected(entry) && isTabNotice(entry) === isTabNotice(row))
+    return peers.filter((entry) => retentionBucket(entry) === retentionBucket(row)).length < PER_SCOPE_LIMIT && peers.length < GLOBAL_LIMIT
+  }
+
+  private pruneClosedTabs(): void {
+    const cutoff = this.now().valueOf() - TAB_TTL_MS
+    const closed = this.rows.filter((row) => row.tab_id !== null && (this.tabSeen.get(row.id) ?? this.loadedAt) < cutoff)
+    if (closed.length === 0) return
+    for (const row of closed) this.tabSeen.delete(row.id)
+    this.rows = this.rows.filter((row) => !closed.includes(row))
+    this.save()
   }
 
   private load(): StoredUpdateNotification[] {
@@ -265,7 +342,8 @@ export class UpdateNotificationStore {
         const row = value
         if (typeof row.id !== 'string' || typeof row.owner !== 'string' || typeof row.profile !== 'string'
           || (row.target != null && row.target !== 'webui' && row.target !== 'agent') || typeof row.phase !== 'string'
-          || typeof row.created_at !== 'string' || typeof row.updated_at !== 'string') return []
+          || typeof row.created_at !== 'string' || typeof row.updated_at !== 'string'
+          || (row.tab_id != null && !(typeof row.tab_id === 'string' && TAB_ID.test(row.tab_id)))) return []
         const kind = safeToken(row.kind, 'update')
         const target = row.target === 'webui' || row.target === 'agent' ? row.target : null
         const phase = safeToken(row.phase, 'unknown')
@@ -287,13 +365,16 @@ export class UpdateNotificationStore {
           performed_action_ids: Array.isArray(row.performed_action_ids) ? row.performed_action_ids.map((id) => safeToken(id, '')).filter(Boolean).slice(0, 16) : [],
           dismissed_at: typeof row.dismissed_at === 'string' ? row.dismissed_at : null,
           expected_identity: typeof row.expected_identity === 'string' ? row.expected_identity.slice(0, 160) : null,
+          tab_id: typeof row.tab_id === 'string' ? row.tab_id : null,
         }]
       })
     } catch { return [] }
   }
 
+  /** Tab refresh notices are bounded by `hasProtectedCapacity` and kept apart, so they never evict or block other notifications. */
   private save(): void {
-    const sorted = [...this.rows].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    const tabNotices = this.rows.filter(isTabNotice)
+    const sorted = this.rows.filter((row) => !isTabNotice(row)).sort((a, b) => b.updated_at.localeCompare(a.updated_at))
     const protectedRows = sorted.filter(isProtected)
     if (protectedRows.length > GLOBAL_LIMIT) throw new Error('Update notification protected capacity exceeded')
     const kept: StoredUpdateNotification[] = [...protectedRows]
@@ -310,7 +391,7 @@ export class UpdateNotificationStore {
       counts.set(key, count + 1)
       kept.push(row)
     }
-    this.rows = kept.reverse()
+    this.rows = [...kept.reverse(), ...tabNotices]
     mkdirSync(dirname(this.file), { recursive: true })
     atomicWriteSecretJson(this.file, this.rows)
   }
@@ -334,6 +415,7 @@ const safeDestination = (value: unknown): UpdateNotificationDestination | null =
   const label = safeText(destination.label, '', 80)
   return key && label ? { key, label } : null
 }
+const isTabNotice = (row: StoredUpdateNotification): boolean => row.tab_id !== null
 const isDismissible = (row: StoredUpdateNotification): boolean => !row.requires_acknowledgement || row.acknowledged_at !== null
 const isProtected = (row: StoredUpdateNotification): boolean => (row.requires_acknowledgement && row.acknowledged_at === null) || (row.kind === 'update' && ['applying', 'awaiting_confirmation', 'restarting'].includes(row.phase))
 const retentionBucket = (row: StoredUpdateNotification): string => `${row.owner}\u0000${row.visibility === 'server' ? '*' : row.profile}`

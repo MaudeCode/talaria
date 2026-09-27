@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Web tabs left open across an update show a persistent Refresh now notice until they load the new version.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

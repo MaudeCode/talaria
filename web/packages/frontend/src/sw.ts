@@ -9,13 +9,15 @@
  * - hashed lazy chunks are cached on first use (cache-first, bounded);
  * - never cache API responses or SSE (the UI needs a live backend);
  * - navigations are network-first and fall back to the cached shell so an
- *   installed app still opens offline and shows its own offline notice;
+ *   installed app still opens offline and shows its own offline notice; the
+ *   precache never answers a navigation, so a reload after a deployment loads
+ *   the current shell even before this worker updates (TAL-363);
  * - obsolete precaches from previous builds are removed on activate;
  * - activation waits for the page's confirmation (`SKIP_WAITING` message) so
  *   the in-app update prompt controls when the new version takes over;
  * - the scope is the mount root, so subpath installs keep working.
  */
-import { cleanupOutdatedCaches, precacheAndRoute, matchPrecache } from 'workbox-precaching'
+import { cleanupOutdatedCaches, getCacheKeyForURL, precache, matchPrecache } from 'workbox-precaching'
 import { registerRoute } from 'workbox-routing'
 import { CacheFirst } from 'workbox-strategies'
 import { ExpirationPlugin } from 'workbox-expiration'
@@ -26,8 +28,14 @@ declare const self: ServiceWorkerGlobalScope & { __WB_MANIFEST: { url: string; r
 const SHELL_URL = './index.html'
 const ASSET_CACHE = 'hermes-assets-v1'
 
-precacheAndRoute(self.__WB_MANIFEST)
+precache(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
+
+// Precached shell sub-resources (entry chunks, stylesheet, manifest) come from the precache.
+registerRoute(
+  ({ url, request }) => request.mode !== 'navigate' && getCacheKeyForURL(url.href) !== undefined,
+  async ({ request }) => (await matchPrecache(request.url)) ?? fetch(request),
+)
 
 // Hashed, immutable chunks under the mount root: cache on first use, keep a bounded set.
 registerRoute(

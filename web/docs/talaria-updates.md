@@ -201,6 +201,20 @@ preserves unresolved required acknowledgements. Opening a notification is distin
 only its explicit acknowledging action satisfies that requirement. Semantic destinations such as
 `settings.system` are mapped by each client to its native route and never carry arbitrary URLs or code.
 
+## Stale Web tab refresh notice
+
+Each frontend build stamps an exact identity into its shell (`<meta name="talaria-build">`, a hash of every
+emitted client file, written by `finalize-dist`). An open tab sends that identity and a per-tab id
+(sessionStorage, so a reload keeps it) with every notification check; the check runs with the notification
+poll and again on focus, reconnect, and a service-worker takeover. The server compares the identity with
+the shell it now serves and returns the result as `frontend_build`. A mismatch keeps one persistent
+`web_refresh` record visible only to that tab: its **Refresh now** action reloads the tab without
+acknowledging it, and read, dismiss, and Clear all cannot remove it. The server deletes the record once
+the same tab reports the current identity. A matching build, a missing identity, or an unreadable shell
+never creates a notice; iOS and other tabs never see it. Records of tabs that stop checking in expire
+after an hour. The service worker answers navigations network-first, so a reload reaches the current
+shell once the server is reachable; offline it falls back to the cached shell and the notice stays.
+
 Packaged installations compare version numbers only within the selected channel.
 Switching between stable and experimental reports a manual update with unknown
 distance, even when both tags refer to the same source.

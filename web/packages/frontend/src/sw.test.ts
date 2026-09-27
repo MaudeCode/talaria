@@ -4,7 +4,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('workbox-precaching', () => ({ precacheAndRoute: () => undefined, cleanupOutdatedCaches: () => undefined, matchPrecache: () => Promise.resolve(undefined) }))
+vi.mock('workbox-precaching', () => ({ precache: () => undefined, getCacheKeyForURL: () => undefined, cleanupOutdatedCaches: () => undefined, matchPrecache: () => Promise.resolve(undefined) }))
 vi.mock('workbox-routing', () => ({ registerRoute: () => undefined }))
 vi.mock('workbox-strategies', () => ({ CacheFirst: class { handle = vi.fn() } }))
 vi.mock('workbox-expiration', () => ({ ExpirationPlugin: class { name = 'expiration' } }))

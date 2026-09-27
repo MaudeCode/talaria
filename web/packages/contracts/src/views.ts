@@ -344,8 +344,18 @@ export const UpdateNotificationSchema = z.object({
   requires_interaction: z.boolean(),
   can_dismiss: z.boolean(),
 })
+export const FrontendBuildIdSchema = z.string().regex(/^[a-f0-9]{64}$/)
+export const TabIdSchema = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/)
+/** Server comparison of the frontend build one Web tab loaded against the build the server now serves. */
+export const FrontendBuildSchema = z.object({
+  current_build: FrontendBuildIdSchema.nullable(),
+  loaded_build: FrontendBuildIdSchema.nullable(),
+  refresh_required: z.boolean(),
+  notification_id: z.uuid().nullable(),
+})
 export const UpdateNotificationsSchema = z.object({
   scope_id: z.string().min(1).max(64),
+  frontend_build: FrontendBuildSchema,
   notifications: z.array(UpdateNotificationSchema),
   unread_count: z.number().int().nonnegative(),
   clearable_count: z.number().int().nonnegative(),

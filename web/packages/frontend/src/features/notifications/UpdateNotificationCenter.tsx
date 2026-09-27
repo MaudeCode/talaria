@@ -10,6 +10,9 @@ import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { dismissToast, removeToast, showRichToast, showToast, type ToastAction } from '../toast/toast'
 
+/** Server action that asks this tab to load the build the server now serves; the server clears the notice only after verifying it. */
+const RELOAD_ACTION = 'reload'
+
 function StatusIcon({ notification }: { notification: UpdateNotification }) {
   if (notification.severity === 'critical' || notification.phase === 'failed' || notification.phase === 'unknown') return <CircleAlert className="size-5 text-error" aria-hidden="true" />
   if (notification.phase === 'succeeded') return <CheckCircle2 className="size-5 text-success" aria-hidden="true" />
@@ -37,6 +40,13 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
   const persistentVersions = useRef(new Map<string, string>())
   const notifications = useQuery({ queryKey: keys.updateNotifications, queryFn: api.fetchUpdateNotifications, staleTime: 1_000, refetchInterval: 2_000 })
   useEffect(() => () => { for (const toastId of visibleServerToasts.current) removeToast(toastId) }, [])
+  // A new service worker taking over is a signal that the server may serve a newer build: recheck now.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    const recheck = () => { void qc.invalidateQueries({ queryKey: keys.updateNotifications }) }
+    navigator.serviceWorker.addEventListener('controllerchange', recheck)
+    return () => { navigator.serviceWorker.removeEventListener('controllerchange', recheck) }
+  }, [qc])
   useEffect(() => {
     if (notifications.data || observedScope.current === null) return
     for (const toastId of visibleServerToasts.current) removeToast(toastId)
@@ -59,7 +69,11 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
     onError: (error) => showToast(`Couldn't clear notifications: ${error instanceof Error ? error.message : String(error)}`, 5_000, 'error'),
   })
   const action = useMutation({
-    mutationFn: ({ id, actionId }: { id: string; actionId: string }) => api.performUpdateNotificationAction(id, actionId),
+    mutationFn: async ({ id, actionId }: { id: string; actionId: string }) => {
+      const row = await api.performUpdateNotificationAction(id, actionId)
+      if (actionId === RELOAD_ACTION) window.location.reload()
+      return row
+    },
     onSuccess: (row) => {
       qc.setQueryData<UpdateNotifications>(keys.updateNotifications, (current) => current ? { ...current, notifications: current.notifications.map((item) => item.id === row.id ? row : item) } : current)
       if (!row.requires_interaction) dismissToast(`server-${row.id}`)
