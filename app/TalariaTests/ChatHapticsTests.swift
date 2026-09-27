@@ -58,7 +58,8 @@ final class ChatHapticsTests: XCTestCase {
                 modelProvider: "openai",
                 profile: "work"
             ),
-            server: URL(string: "https://example.test")!
+            server: URL(string: "https://example.test")!,
+            liveActivityManager: SpyChatLiveActivityManager()
         )
 
         let didSelectCurrentModel = await viewModel.selectComposerModel(ModelCatalogOption(

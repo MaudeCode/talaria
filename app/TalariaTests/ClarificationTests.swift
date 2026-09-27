@@ -785,7 +785,8 @@ final class ClarificationTests: APIClientTestCase {
             client: client,
             streamClient: streamClient ?? ClarificationSpySSEStreamingClient(),
             approvalStreamClient: approvalStreamClient ?? ClarificationSpySSEStreamingClient(),
-            clarifyStreamClient: clarifyStreamClient ?? ClarificationSpySSEStreamingClient()
+            clarifyStreamClient: clarifyStreamClient ?? ClarificationSpySSEStreamingClient(),
+            liveActivityManager: SpyChatLiveActivityManager()
         )
     }
 
