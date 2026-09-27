@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import threading
 import time
 
@@ -421,7 +422,13 @@ def test_tool_frames_keep_content_args_long_and_extract_result_previews(monkeypa
 def test_tool_complete_ships_the_raw_result_and_no_error_decision(monkeypatch) -> None:
     """The server decides failure from ``raw_result``: a parsed dict (strings capped), else the capped text."""
     _patch(monkeypatch)
-    results = [{"exit_code": 2, "output": "o" * 5000}, '{"error": "boom", "nested": {"text": "' + "n" * 5000 + '"}}', "plain " + "p" * 5000, None]
+    results = [
+        {"exit_code": 2, "output": "o" * 5000, "items": list(range(10_000)), "empty": {}},
+        '{"error": "boom", "nested": {"text": "' + "n" * 5000 + '"}}',
+        "plain " + "p" * 5000,
+        None,
+        {f"k{i}": i for i in range(100)},
+    ]
 
     class ToolAgent(FakeAgent):
         def run_conversation(self, **kwargs):
@@ -434,9 +441,11 @@ def test_tool_complete_ships_the_raw_result_and_no_error_decision(monkeypatch) -
     ctx = Ctx()
     assert chat.start(ctx, _params("st-raw"))["status"] == "completed"
     frames = [data for event, data in ctx.frames if event == "tool_complete"]
-    assert [frame["tid"] for frame in frames] == ["t0", "t1", "t2", "t3"]
+    assert [frame["tid"] for frame in frames] == ["t0", "t1", "t2", "t3", "t4"]
     assert all("is_error" not in frame for frame in frames)
-    assert frames[0]["raw_result"] == {"exit_code": 2, "output": "o" * 4000}
-    assert frames[1]["raw_result"] == {"error": "boom", "nested": {"text": "n" * 4000}}
+    # Bounded: top-level fields only, nested values as capped JSON text, at most 64 fields.
+    assert frames[0]["raw_result"] == {"exit_code": 2, "output": "o" * 4000, "items": json.dumps(list(range(10_000)))[:4000], "empty": {}}
+    assert frames[1]["raw_result"] == {"error": "boom", "nested": json.dumps({"text": "n" * 5000})[:4000]}
+    assert len(frames[4]["raw_result"]) == 64
     assert frames[2]["raw_result"] == ("plain " + "p" * 5000)[:4000]
     assert frames[3]["raw_result"] == ""

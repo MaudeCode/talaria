@@ -208,8 +208,8 @@ export const ChatStartResultSchema = z.object({
 })
 const Text = z.object({ text: z.string() }).catchall(Json)
 /**
- * A `tool_complete` frame carries `raw_result` (through the catch-all): the parsed result object (strings capped) or its
- * capped text. The server decides `is_error` from it and never forwards it; `is_error` is only an older sidecar's `false`.
+ * A `tool_complete` frame carries `raw_result` (through the catch-all): the result object's first 64 top-level fields
+ * (scalars as sent, text and nested values as capped text) or its capped text. The server decides `is_error` from it and never forwards it; `is_error` is only an older sidecar's `false`.
  */
 const ToolFrame = z.object({ event_type: z.string(), name: z.string().nullable().optional(), preview: Json.optional(), args: Loose.optional(), tid: z.string().optional(), is_error: z.boolean().optional() }).catchall(Json)
 export const ChatStreamSchema = z.discriminatedUnion('event', [

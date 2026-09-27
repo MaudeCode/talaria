@@ -339,6 +339,16 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
         }
       }
       toolSeq.push(seq)
+    } else if (m.role === 'user' && Array.isArray(m.content)) {
+      // Anthropic-style results: `tool_result` blocks in a user row, each naming its call.
+      for (const part of m.content) {
+        const tid = isDict(part) && part.type === 'tool_result' ? str(part.tool_use_id) : ''
+        const name = pendingNames.get(tid) ?? ''
+        if (!tid || !name || name === 'tool' || !isDict(part)) continue
+        const raw = part.content ?? ''
+        const resolved = outcome(tid, raw)
+        toolCalls.push({ name, snippet: toolResultSnippet(raw), tid, assistant_msg_idx: pendingAsst.get(tid) ?? -1, args: truncateToolArgs(pendingArgs.get(tid) ?? {}), ...resolved, is_error: resolved.is_error || part.is_error === true })
+      }
     }
   })
   const live = liveToolCalls.filter((tc) => isDict(tc) && str(tc.name) && tc.name !== 'clarify')

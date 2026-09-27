@@ -1545,4 +1545,25 @@ describe('live tool outcomes (TAL-313)', () => {
     const scene = (detail.messages as Json[]).at(-1)?._anchor_activity_scene as Json
     expect((scene.activity_rows as Json[]).filter((r) => r.role === 'tool').map((r) => { const t = r.tool as Json; return [t.id, t.is_error, t.duration] })).toEqual([['call-make', true, 4]])
   })
+
+  it('keeps an Anthropic tool_result call\'s live duration after reload', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'search_files', args: { pattern: 'TODO' }, tid: 'toolu-1' } })
+      clock += 2.5
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'search_files', preview: 'denied', args: { pattern: 'TODO' }, tid: 'toolu-1', raw_result: { error: 'denied' } } })
+      return completed([
+        { role: 'user', content: str(params.user_message) },
+        { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu-1', name: 'search_files', input: { pattern: 'TODO' } }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu-1', content: '{"error": "denied"}' }] },
+        { role: 'assistant', content: 'The search failed.' },
+      ])
+    })
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'search' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end')
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    expect((detail.tool_calls as Json[]).map((c) => [c.tid, c.is_error, c.duration])).toEqual([['toolu-1', true, 2.5]])
+    const calls = (detail.messages as Json[]).find((m) => Array.isArray(m.tool_calls))?.tool_calls as Json[]
+    expect(calls.map((c) => [c.id, c.done, c.is_error, c.duration])).toEqual([['toolu-1', true, true, 2.5]])
+  })
 })

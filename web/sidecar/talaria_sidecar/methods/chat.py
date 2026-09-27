@@ -83,25 +83,29 @@ def _snippet(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> str:
     return text[:limit]
 
 
+_RAW_RESULT_MAX_KEYS = 64
+
+
 def _raw_result(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> Any:
-    """The tool result as the server's outcome rule reads it: a dict (or JSON-object text) with every string capped, else
-    the capped text. The sidecar decides nothing about success; the server does."""
-
-    def cap(value: Any) -> Any:
-        if isinstance(value, str):
-            return value[:limit]
-        if isinstance(value, dict):
-            return {str(k): cap(v) for k, v in value.items()}
-        if isinstance(value, list):
-            return [cap(v) for v in value]
-        return value
-
+    """The tool result as the server's outcome rule reads it, bounded: a dict (or JSON-object text) keeps its first
+    ``_RAW_RESULT_MAX_KEYS`` top-level fields, scalars as they are, text and non-empty nested values as capped (JSON) text;
+    anything else is the capped text. The sidecar decides nothing about success; the server does."""
     try:
-        # A dict result round-trips through JSON so only wire-safe values reach the frame.
-        data = json.loads(json.dumps(raw, default=str, allow_nan=False)) if isinstance(raw, dict) else json.loads(str(raw or ""))
+        data = raw if isinstance(raw, dict) else json.loads(str(raw or ""))
     except Exception:  # noqa: BLE001
         data = None
-    return cap(data) if isinstance(data, dict) else str(raw if raw is not None else "")[:limit]
+    if not isinstance(data, dict):
+        return str(raw if raw is not None else "")[:limit]
+    out: dict = {}
+    for key, value in list(data.items())[:_RAW_RESULT_MAX_KEYS]:
+        if value is None or isinstance(value, (bool, int)) or (isinstance(value, float) and value == value and abs(value) != float("inf")):
+            out[str(key)] = value
+        elif isinstance(value, (dict, list)) and not value:
+            out[str(key)] = {} if isinstance(value, dict) else []
+        else:
+            text = value if isinstance(value, str) else json.dumps(value, default=str)
+            out[str(key)] = text[:limit]
+    return out
 
 
 def _delegation_cost_usd(name: Any, raw: Any):
