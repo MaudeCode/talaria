@@ -4,8 +4,8 @@ import { parseChatEvent, RELAY_CLOSE_EVENTS } from './sse'
 describe('parseChatEvent', () => {
   it('parses every authoritative wire name into the union', () => {
     for (const [name, data] of [
-      ['token', { text: 'hi' }], ['reasoning', { text: '', titles: ['a'] }], ['tool', { name: 'read_file', args: { path: 'x' } }],
-      ['tool_complete', { name: 'read_file', is_error: false, duration: 0.2 }], ['approval', { approval_id: 'a1', command: 'rm -rf' }],
+      ['token', { text: 'hi' }], ['reasoning', { text: '', titles: ['a'] }], ['tool', { id: 't1', name: 'read_file', args: { path: 'x' } }],
+      ['tool_complete', { id: 't1', name: 'read_file', is_error: false, duration: 0.2 }], ['approval', { approval_id: 'a1', command: 'rm -rf' }],
       ['clarify', { clarify_id: 'c1', question: 'Which?', choices: ['a', 'b'] }], ['done', { session: {}, usage: { input_tokens: 1 } }],
       ['stream_end', { session_id: 's' }], ['apperror', { type: 'chat_admission_timeout', message: 'busy' }], ['cancel', {}],
       ['metering', { tps: 12.5 }], ['context_status', { state: 'ok' }], ['title', { title: 'T' }], ['todo_state', { todos: [] }],

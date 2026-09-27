@@ -1284,6 +1284,7 @@ final class LiveActivityTests: XCTestCase {
             args: nil,
             duration: nil,
             isError: nil,
+            stableID: "call-shell",
             kind: .shell
         )))
         streamClient.emit(.token("Done."))
@@ -1293,7 +1294,8 @@ final class LiveActivityTests: XCTestCase {
             preview: nil,
             args: nil,
             duration: 1.2,
-            isError: false
+            isError: false,
+            stableID: "call-shell"
         )))
         streamClient.emit(.done(DoneStreamEvent()))
 

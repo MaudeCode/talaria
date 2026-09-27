@@ -197,8 +197,8 @@ test('a credential in a tool command never reaches the page, live or settled', a
   // Live frames as the server sends them: the sidecar's raw args through the server's public tool frame.
   const events: [string, Record<string, unknown>][] = [
     ['server_turn_started', { session_id: sid, stream_id: 'secret-run', user_message_id: 1 }],
-    ['tool', publicToolFrame({ tid: 'curl', name: 'terminal', args: { command } }, true)],
-    ['tool_complete', publicToolFrame({ tid: 'curl', name: 'terminal', args: { command }, preview: 'ok' }, true)],
+    ['tool', publicToolFrame({ id: 'curl', name: 'terminal', args: { command } }, true)],
+    ['tool_complete', publicToolFrame({ id: 'curl', name: 'terminal', args: { command }, preview: 'ok' }, true)],
   ]
   let stream: ServerResponse | undefined
   const server = createServer((_request, response) => {

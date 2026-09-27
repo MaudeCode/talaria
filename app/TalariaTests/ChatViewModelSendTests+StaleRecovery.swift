@@ -773,7 +773,8 @@ extension ChatViewModelSendTests {
             preview: "Running tests",
             args: ["cmd": .string("xcodebuild test")],
             duration: nil,
-            isError: nil
+            isError: nil,
+            stableID: "call-run-command"
         )
         let completedTool = ToolStreamEvent(
             eventType: "tool.completed",
@@ -781,7 +782,8 @@ extension ChatViewModelSendTests {
             preview: "Passed tests",
             args: ["cmd": .string("xcodebuild test")],
             duration: 1.5,
-            isError: false
+            isError: false,
+            stableID: "call-run-command"
         )
 
         let didStart = await viewModel.sendMessage("Inspect logs")
@@ -1007,7 +1009,8 @@ extension ChatViewModelSendTests {
             preview: "Reading jungle notes",
             args: ["path": .string("notes.md")],
             duration: nil,
-            isError: nil
+            isError: nil,
+            stableID: "call-read-notes"
         )))
         originalStreamClient.emit(.toolCompleted(ToolStreamEvent(
             eventType: "tool.completed",
@@ -1015,7 +1018,8 @@ extension ChatViewModelSendTests {
             preview: "Read jungle notes",
             args: ["path": .string("notes.md")],
             duration: 0.15,
-            isError: false
+            isError: false,
+            stableID: "call-read-notes"
         )))
         originalStreamClient.emit(.token("Once Raj reached the river. "))
 
