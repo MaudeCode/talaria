@@ -57,12 +57,13 @@ export function updateNotificationOwner(session: SessionInfo | null): string {
   return username ? `${authType || 'auth'}:${username}` : 'local-owner'
 }
 
-async function updateNotificationScope(ctx: RequestContext): Promise<UpdateNotificationScope> {
+async function updateNotificationScope(ctx: RequestContext, tab?: string): Promise<UpdateNotificationScope> {
   const session = await ensureTrustedAuthSession(ctx)
   return {
     owner: updateNotificationOwner(session),
     profile: activeProfileName(ctx),
     serverOwner: await sessionCanManageServer(ctx, session),
+    tab: tab ?? null,
   }
 }
 
@@ -318,25 +319,33 @@ export const toolsRouter = os.router({
     summary: os.updates.summary.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.summarize(input.updates ?? {}, input.target) as never)),
   },
   updateNotifications: {
-    list: os.updateNotifications.list.handler(({ context: { ctx } }) => run(async () => ctx.deps.updateNotifications.list(await updateNotificationScope(ctx)) as never)),
+    list: os.updateNotifications.list.handler(({ input, context: { ctx } }) => run(async () => {
+      const scope = await updateNotificationScope(ctx, input.tab_id)
+      const frontendBuild = ctx.deps.updateNotifications.syncTabBuild(scope, input.loaded_build ?? null, ctx.deps.spa.buildId())
+      return { ...ctx.deps.updateNotifications.list(scope), frontend_build: frontendBuild } as never
+    })),
     read: os.updateNotifications.read.handler(({ input, context: { ctx } }) => run(async () => {
-      const notification = ctx.deps.updateNotifications.read(await updateNotificationScope(ctx), input.id)
+      const notification = ctx.deps.updateNotifications.read(await updateNotificationScope(ctx, input.tab_id), input.id)
       if (!notification) throw new HttpError(404, 'Update notification not found')
       return notification as never
     })),
     dismiss: os.updateNotifications.dismiss.handler(({ input, context: { ctx } }) => run(async () => {
-      const result = ctx.deps.updateNotifications.dismiss(await updateNotificationScope(ctx), input.id)
+      const result = ctx.deps.updateNotifications.dismiss(await updateNotificationScope(ctx, input.tab_id), input.id)
       if (result === 'acknowledgement_required') throw new HttpError(409, 'This notification requires acknowledgement before it can be dismissed')
       return { ok: true as const }
     })),
-    clear: os.updateNotifications.clear.handler(({ context: { ctx } }) => run(async () => ctx.deps.updateNotifications.clear(await updateNotificationScope(ctx)) as never)),
+    clear: os.updateNotifications.clear.handler(({ input, context: { ctx } }) => run(async () => {
+      const scope = await updateNotificationScope(ctx, input.tab_id)
+      const frontendBuild = ctx.deps.updateNotifications.syncTabBuild(scope, input.loaded_build ?? null, ctx.deps.spa.buildId())
+      return { ...ctx.deps.updateNotifications.clear(scope), frontend_build: frontendBuild } as never
+    })),
     cancel: os.updateNotifications.cancel.handler(({ input, context: { ctx } }) => run(async () => {
       const notification = ctx.deps.updateNotifications.cancelUpdate(await updateNotificationScope(ctx), input.id)
       if (!notification) throw new HttpError(404, 'Awaiting update notification not found')
       return notification as never
     })),
     action: os.updateNotifications.action.handler(({ input, context: { ctx } }) => run(async () => {
-      const notification = ctx.deps.updateNotifications.action(await updateNotificationScope(ctx), input.id, input.action_id)
+      const notification = ctx.deps.updateNotifications.action(await updateNotificationScope(ctx, input.tab_id), input.id, input.action_id)
       if (!notification) throw new HttpError(404, 'Notification action not found')
       return notification as never
     })),

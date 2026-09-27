@@ -12,7 +12,8 @@
 // createRoot rather than hydrating SSR output, so neither inline script is
 // needed. Everything here is deterministic: no timestamps, sorted file order.
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
+import { createHash } from 'node:crypto'
 
 const here = resolve(import.meta.dirname)
 const clientDir = resolve(here, '../dist/client')
@@ -48,12 +49,26 @@ if (!/<script type="module"[^>]*src="\.\/assets\//.test(html)) {
   process.exit(1)
 }
 
+// 6. Exact build identity: a hash of the shell and every emitted client file. The server
+//    compares it with the identity an open tab loaded to decide when that tab is stale.
+const skip = new Set(['_shell.html', '.vite'])
+const build = createHash('sha256').update(html)
+const hashTree = (dir) => {
+  for (const name of readdirSync(dir).sort()) {
+    if (dir === clientDir && skip.has(name)) continue
+    const p = join(dir, name)
+    if (statSync(p).isDirectory()) hashTree(p)
+    else build.update(`\0${relative(clientDir, p)}\0`).update(readFileSync(p))
+  }
+}
+hashTree(clientDir)
+html = html.replace(/<base href="__BASE_HREF__">/, `$&<meta name="talaria-build" content="${build.digest('hex')}">`)
+
 rmSync(outDir, { recursive: true, force: true })
 mkdirSync(outDir, { recursive: true })
 writeFileSync(join(outDir, 'index.html'), html + (html.endsWith('\n') ? '' : '\n'))
 
 // Copy assets and PWA files, sorted for deterministic output.
-const skip = new Set(['_shell.html', '.vite'])
 for (const name of readdirSync(clientDir).sort()) {
   if (skip.has(name)) continue
   const from = join(clientDir, name)
