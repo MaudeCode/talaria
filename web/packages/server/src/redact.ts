@@ -1057,6 +1057,19 @@ export function publicToolFrame(data: Record<string, unknown>, enabled: boolean)
   return frame
 }
 
+/** The open call a tool completion settles: the one with its Agent id, else the newest id-less call of the same name; -1 when none. */
+export function completedToolIndex(calls: readonly Record<string, unknown>[], tid: string, name: unknown): number {
+  const exact = tid ? calls.findLastIndex((call) => !call.done && call.tid === tid) : -1
+  return exact >= 0 ? exact : calls.findLastIndex((call) => !call.done && !call.tid && call.name === name)
+}
+
+/** A tool frame carrying its public call `id` in place of the sidecar-internal `tid`. */
+export function withToolId(data: Record<string, unknown>, id: string): Record<string, unknown> {
+  const frame: Record<string, unknown> = { ...data, id }
+  delete frame.tid
+  return frame
+}
+
 function redactNestedMessageContainers(value: unknown, enabled: boolean): unknown {
   const scrubbed = scrubInternalReplayFields(value)
   if (!scrubbed || typeof scrubbed !== 'object' || Array.isArray(scrubbed)) return redactValue(scrubbed, enabled)

@@ -989,7 +989,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                     "name": "fixture_tool",
                     "preview": "fixture input",
                     "args": ["target": "synthetic"],
-                    "tid": "ui-fixture-tool"
+                    "id": "ui-fixture-tool"
                 ]),
                 ("approval", [
                     "approval_id": "ui-fixture-approval",
@@ -1005,7 +1005,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                     "name": "fixture_tool",
                     "preview": "fixture result",
                     "duration": 0.1,
-                    "tid": "ui-fixture-tool"
+                    "id": "ui-fixture-tool"
                 ]),
                 ("token", ["text": " Fixture finished."]),
                 ("clarify", [
@@ -1076,7 +1076,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                         "name": "fixture_tool",
                         "preview": "fixture input",
                         "args": ["target": "synthetic"],
-                        "tid": "ui-fixture-tool"
+                        "id": "ui-fixture-tool"
                     ])
                 ])
                 // Held open until leaving the chat stops this connection.

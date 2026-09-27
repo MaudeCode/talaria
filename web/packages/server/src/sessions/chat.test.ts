@@ -209,12 +209,13 @@ describe('chat turns through the sidecar', () => {
     expect(target).toMatch(/^curl -H "Authorization: Bearer /)
     expect(live[1]?.target).toBe(target)
 
-    // A journal written before redaction existed is redacted and stamped on read.
+    // A journal written before redaction existed is redacted and stamped on read, including the id it replays with.
+    const legacyTid = 'ghp_0123456789abcdefghijABCDEFGHIJ012345'
     const legacy = readFileSync(journalPath, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Json).map((row) => {
       if (row.event !== 'tool' && row.event !== 'tool_complete') return row
       // New rows record that the server redacted them; a legacy row has no such flag and carries the raw args.
       expect(row.redacted).toBe(true)
-      const legacyRow: Json = { ...row, payload: { event_type: 'tool.started', name: 'terminal', preview: command, args: { command }, tid: 'call_1' } }
+      const legacyRow: Json = { ...row, payload: { event_type: 'tool.started', name: 'terminal', preview: command, args: { command }, tid: legacyTid } }
       delete legacyRow.redacted
       return legacyRow
     })
@@ -222,6 +223,7 @@ describe('chat turns through the sidecar', () => {
     const replayed = (await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
     expect(replayed).toHaveLength(2)
     expect(leaks(replayed.map((f) => f.data))).toEqual([])
+    expect(JSON.stringify(replayed.map((f) => f.data))).not.toContain(legacyTid)
     expect(replayed.map((f) => [(f.data as Json).kind, (f.data as Json).target])).toEqual([['shell', target], ['shell', target]])
 
     // After reload: the persisted call, the session-level call, and the scene row carry the same kind and target.
@@ -281,6 +283,90 @@ describe('chat turns through the sidecar', () => {
     } finally {
       release()
     }
+  })
+
+  it('ships one canonical tool-call id on live, replayed and pre-change journal tool frames', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params, emit) => {
+      // Two same-name calls that finish in reverse order.
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'a' }, tid: 'call_a' } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'b' }, tid: 'call_b' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'B', tid: 'call_b', is_error: false } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'A', tid: 'call_a', is_error: true } })
+      // Agent callbacks without a call id: the server mints one, and a completion settles the newest unfinished same-name call.
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', preview: null, args: { path: 'c' }, tid: '' } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', preview: null, args: { path: 'd' } } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', preview: 'D', is_error: false } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', preview: 'C', is_error: false } })
+      // A completion naming its call settles that call even when a newer same-name call has no id.
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'e' }, tid: 'call_e' } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'f' } } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'E', tid: 'call_e', is_error: false } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'F', is_error: false } })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Done.' }])
+    })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Tool ids"', usage: null }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'run both' }))).stream_id)
+    const tools = (frames: SseFrame[]) => frames.filter((f) => f.event === 'tool' || f.event === 'tool_complete').map((f) => f.data as Json)
+    const pairs = (frames: Json[]) => frames.map((d) => [d.id, d.preview])
+
+    const live = tools(await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end'))
+    const [c, d] = [live[4]?.id, live[5]?.id]
+    expect(c).toMatch(new RegExp(`^tool-${streamId}-\\d+$`))
+    expect(d).toMatch(new RegExp(`^tool-${streamId}-\\d+$`))
+    expect(c).not.toBe(d)
+    const f = live[9]?.id
+    expect(f).toMatch(new RegExp(`^tool-${streamId}-\\d+$`))
+    const expected = [['call_a', null], ['call_b', null], ['call_b', 'B'], ['call_a', 'A'], [c, null], [d, null], [d, 'D'], [c, 'C'], ['call_e', null], [f, null], ['call_e', 'E'], [f, 'F']]
+    expect(pairs(live)).toEqual(expected)
+    expect(live.filter((frame) => 'tid' in frame)).toEqual([])
+
+    // The journal stores the public frame, so a reconnect from the start replays the same pairing.
+    const journalPath = join(realpathSync(s.state), 'sessions', '_run_journal', sid, `${streamId}.jsonl`)
+    expect(readFileSync(journalPath, 'utf8')).not.toContain('"tid"')
+    const replayed = tools(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_seq=0`, (f) => f.event === 'stream_end'))
+    expect(pairs(replayed)).toEqual(expected)
+
+    // A journal written before the public id carries the Agent's call id as `tid`.
+    const legacy = readFileSync(journalPath, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Json).map((row) => {
+      if (row.event !== 'tool' && row.event !== 'tool_complete') return row
+      const { id, ...payload } = row.payload as Json
+      return { ...row, payload: { ...payload, tid: str(id).startsWith('call_') ? id : '' } }
+    })
+    writeFileSync(journalPath, `${legacy.map((row) => JSON.stringify(row)).join('\n')}\n`)
+    const fromLegacy = tools(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_seq=0`, (f) => f.event === 'stream_end'))
+    expect(pairs(fromLegacy).slice(0, 4)).toEqual(expected.slice(0, 4))
+    expect(fromLegacy.every((frame) => typeof frame.id === 'string' && frame.id !== '' && !('tid' in frame))).toBe(true)
+    // Its id-less rows pair across the run the way the live server pairs them, even when the cursor is past the start.
+    const [lc, ld] = [fromLegacy[4]?.id, fromLegacy[5]?.id]
+    expect(lc).not.toBe(ld)
+    const lf = fromLegacy[9]?.id
+    expect(pairs(fromLegacy).slice(4)).toEqual([[lc, null], [ld, null], [ld, 'D'], [lc, 'C'], ['call_e', null], [lf, null], ['call_e', 'E'], [lf, 'F']])
+    const startSeq = legacy.findIndex((row) => row.event === 'tool' && (row.payload as Json).tid === '' && ((row.payload as Json).args as Json).path === 'c') + 1
+    const tail = tools(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_seq=${String(startSeq)}`, (f) => f.event === 'stream_end'))
+    expect(pairs(tail).slice(0, 3)).toEqual([[ld, null], [ld, 'D'], [lc, 'C']])
+  })
+
+  it('names a tool\'s minted id as the causal place of a steer the Agent took after it', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let release: () => void = () => undefined
+    let emitLive: ((frame: { event: string; data: Json }) => void) | null = null
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emitLive = emit
+      release = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Done.' }])) }
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', args: {} } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', preview: 'A' } })
+    }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'read' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'tool_complete')
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'then stop', steer_id: 'steer-m' })
+    emitLive!({ event: 'steer_pending', data: { text: '' } })
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'steer_consumed')
+    const toolId = (frames.find((f) => f.event === 'tool_complete')?.data as Json).id
+    expect(toolId).toMatch(new RegExp(`^tool-${streamId}-\\d+$`))
+    expect((frames.find((f) => f.event === 'steer_consumed')?.data as Json).after_tool_call_id).toBe(toolId)
+    release()
   })
 
   it('builds the settled turn\'s scene with Codex commentary as prose under Worked, leaving the stored rows as the Agent wrote them', async () => {

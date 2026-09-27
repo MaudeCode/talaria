@@ -4856,15 +4856,9 @@ final class ChatViewModel {
     }
 
     private func liveToolCallCompletionIndex(for payload: ToolStreamEvent) -> Int? {
-        if let stableID = payload.stableID?.nonEmptyReplayMatchText,
-           let stableIndex = liveToolCalls.lastIndex(where: { toolCall in
-               !toolCall.isCompleted && toolCall.matchesStableToolID(stableID)
-           }) {
-            return stableIndex
-        }
-
+        guard let stableID = payload.stableID?.nonEmptyReplayMatchText else { return nil }
         return liveToolCalls.lastIndex { toolCall in
-            !toolCall.isCompleted && (payload.name == nil || toolCall.name == payload.name)
+            !toolCall.isCompleted && toolCall.matchesStableToolID(stableID)
         }
     }
 

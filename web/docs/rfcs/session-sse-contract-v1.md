@@ -169,8 +169,8 @@ when integrating with the live chat SSE relay.
 |---|---|
 | `token` | Assistant text delta |
 | `reasoning` | Model reasoning / thinking delta |
-| `tool` | Tool call started |
-| `tool_complete` | Tool call finished (result or error) |
+| `tool` | Tool call started; required `id` names the call |
+| `tool_complete` | Tool call finished (result or error); carries the same `id` as its `tool` frame |
 | `interim_assistant` | Mid-turn assistant prose (pre-final) |
 | `approval` | Destructive-command approval prompt |
 | `clarify` | Structured clarification prompt |
@@ -191,6 +191,14 @@ when integrating with the live chat SSE relay.
 | `steer_consumed` | User steer inserted into the active run, with stable `steer_id`, text, and consumption timestamp |
 | `state_saved` | Durable state write acknowledgment |
 | `todo_state` | Todo / checklist panel update |
+
+Tool call identity: the server gives every `tool` / `tool_complete` frame one
+`id`. It is the Agent's tool-call id; when the Agent supplied none, the server
+mints `tool-<stream_id>-<n>` at `tool` and gives it to the completion that pairs
+with that call (newest unfinished call of the same name). Clients settle a card
+by `id` only. `steer_consumed.after_tool_call_id` names the same `id`. Public
+frames never carry the sidecar-internal `tid`; journal rows written before this
+field replay with `tid` mapped to `id`.
 
 Relay close set (stop draining the live queue): `stream_end`, `cancel`,
 `apperror`, and legacy `error` — see `api.run_journal.SSE_RELAY_CLOSE_EVENTS`.
