@@ -1098,7 +1098,7 @@ export interface UpdateServiceDeps {
   checkEnabled?: () => boolean
   autoNotification?: {
     begin: () => string
-    transition: (id: string, phase: 'restarting' | 'succeeded' | 'blocked' | 'failed', expectedIdentity?: string | null, verifiedIdentity?: { revision: string | null; version: string | null }) => void
+    transition: (id: string, phase: 'restarting' | 'succeeded' | 'blocked' | 'failed', expectedIdentity?: string | null, verifiedIdentity?: { revision: string | null; version: string | null }, detail?: unknown) => void
   }
   blockers: () => RestartBlockers
   /** Re-exec the server once active work drains (`restartWhenSafe`). */
@@ -1240,8 +1240,8 @@ export class UpdateService {
       notificationId = this.deps.autoNotification?.begin() ?? null
       const result = await this.apply('webui', channel, stillEnabled)
       if (notificationId) {
-        if (result.restart_blocked === true) this.deps.autoNotification?.transition(notificationId, 'blocked')
-        else if (result.ok !== true) this.deps.autoNotification?.transition(notificationId, 'failed')
+        if (result.restart_blocked === true) this.deps.autoNotification?.transition(notificationId, 'blocked', null, undefined, result.message)
+        else if (result.ok !== true) this.deps.autoNotification?.transition(notificationId, 'failed', null, undefined, result.message || result.error)
         else if (result.restart_scheduled === true) this.deps.autoNotification?.transition(notificationId, 'restarting', str(result.sourceRevision || result.candidate_revision))
         else this.deps.autoNotification?.transition(notificationId, 'succeeded')
       }
@@ -1249,7 +1249,7 @@ export class UpdateService {
       if (!result.ok) this.cache.webui = { ...web, message: result.message, error: result.restart_blocked ? undefined : result.message }
       return result
     } catch (error) {
-      if (notificationId) this.deps.autoNotification?.transition(notificationId, 'failed')
+      if (notificationId) this.deps.autoNotification?.transition(notificationId, 'failed', null, undefined, (error as Error).message)
       this.deps.log(`[updates] automatic Web update failed: ${(error as Error).message}`)
       return { ok: false, error: (error as Error).message }
     } finally { this.autoRunning = false }

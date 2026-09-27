@@ -54,6 +54,61 @@ describe('UpdateNotificationStore', () => {
     expect(store.activeUpdate({ owner: alice.owner, profile: 'personal', serverOwner: true }, 'webui')?.id).toBe(automatic.id)
   })
 
+  it('keeps each tab on its latest update operation across a restart without leaking it to another owner', () => {
+    const root = temp()
+    let now = new Date('2026-09-27T12:00:00Z')
+    const store = new UpdateNotificationStore(root, () => now)
+    const tab = { ...alice, tab: 'tab-aaaaaaaa' }
+    const agent = store.begin(tab, 'agent')
+    now = new Date('2026-09-27T12:01:00Z')
+    const web = store.begin(tab, 'webui')
+    store.transition(agent.id, 'failed')
+    expect(store.list(tab).tab_update?.id).toBe(web.id)
+    expect(store.list(alice).tab_update).toBeNull()
+    expect(store.list({ owner: 'oidc:bob', profile: 'work', serverOwner: true, tab: 'tab-aaaaaaaa' }).tab_update).toBeNull()
+    store.transition(web.id, 'restarting', 'a'.repeat(40))
+    const restarted = new UpdateNotificationStore(root, () => now)
+    restarted.reconcileInterruptedUpdates('a'.repeat(40))
+    expect(restarted.list(tab).tab_update).toMatchObject({ id: web.id, phase: 'succeeded' })
+    expect(restarted.list(tab).tab_update).not.toHaveProperty('watchers')
+  })
+
+  it('keeps a failed or blocked attempt\'s own explanation, line breaks included, and drops it on the next phase', () => {
+    const root = temp()
+    const store = new UpdateNotificationStore(root)
+    const web = store.begin(alice, 'webui')
+    expect(web.detail).toBeNull()
+    expect(store.transition(web.id, 'failed', null, undefined, '  npm run build failed.\r\nRun `npm ci`\u0007 again.  ')?.detail).toBe('npm run build failed.\nRun `npm ci`  again.')
+    expect(new UpdateNotificationStore(root).list(alice).notifications[0]?.detail).toBe('npm run build failed.\nRun `npm ci`  again.')
+    expect(store.transition(web.id, 'blocked', null, undefined, 'x'.repeat(3_000))?.detail).toHaveLength(2_000)
+    expect(store.transition(web.id, 'succeeded', null, undefined, 'ignored')?.detail).toBeNull()
+  })
+
+  it('follows the operation a tab rejoined most recently, not the newest one', () => {
+    let now = new Date('2026-09-27T12:00:00Z')
+    const store = new UpdateNotificationStore(temp(), () => now)
+    const other = { ...alice, tab: 'tab-bbbbbbbb' }
+    const tab = { ...alice, tab: 'tab-aaaaaaaa' }
+    const web = store.begin(other, 'webui')
+    now = new Date('2026-09-27T12:01:00Z')
+    const agent = store.begin(tab, 'agent')
+    expect(store.list(tab).tab_update?.id).toBe(agent.id)
+    now = new Date('2026-09-27T12:02:00Z')
+    store.watch(tab, web.id)
+    expect(store.list(tab)).toMatchObject({ tab_update: { id: web.id, updated_at: '2026-09-27T12:00:00.000Z' }, tab_joined_at: '2026-09-27T12:02:00.000Z' })
+    expect(store.list(other).tab_update?.id).toBe(web.id)
+  })
+
+  it('keeps every tab that joined an operation attached to it, however many join', () => {
+    const root = temp()
+    const store = new UpdateNotificationStore(root)
+    const tabs = Array.from({ length: 12 }, (_, index) => ({ ...alice, tab: `tab-${String(index).padStart(8, '0')}` }))
+    const web = store.begin(tabs[0]!, 'webui')
+    for (const tab of tabs.slice(1)) store.watch(tab, web.id)
+    const restarted = new UpdateNotificationStore(root)
+    for (const tab of tabs) expect(restarted.list(tab).tab_update?.id).toBe(web.id)
+  })
+
   it('reconciles interrupted applying and restarting records against the running identity', () => {
     const root = temp()
     const first = new UpdateNotificationStore(root).begin(alice, 'webui')

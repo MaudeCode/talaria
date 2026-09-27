@@ -1,4 +1,13 @@
+import type { Page } from '@playwright/test'
 import { expect, settle, test } from './fixtures'
+
+/** Each apply opens the Updating dialog; with no server record to follow it shows the server's answer. */
+async function closeUpdating(page: Page, name: string, text: string) {
+  const dialog = page.getByRole('dialog', { name: `Updating ${name}` })
+  await expect(dialog).toContainText(text)
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(dialog).toBeHidden()
+}
 
 // Service-worker requests bypass page routing; these fixtures own every response.
 test.use({ serviceWorkers: 'block' })
@@ -14,7 +23,7 @@ test('automatic updates retain the selected channel and can apply a Stable npm u
     webui: { behind: applied ? 0 : 1, install_kind: 'npm', no_git: true, manual_update: false }, agent: { behind: 0 },
   } }))
   await page.route('**/api/updates/apply', (route) => {
-    expect(route.request().postDataJSON()).toEqual({ target: 'webui', channel: 'stable' })
+    expect(route.request().postDataJSON()).toEqual({ target: 'webui', channel: 'stable', tab_id: expect.any(String) })
     applied = true
     return route.fulfill({ json: { ok: true, restart_scheduled: true } })
   })
@@ -45,7 +54,7 @@ for (const initialWebBehind of [0, 1]) {
     } }))
     await page.route('**/api/updates/apply', (route) => {
       const body = route.request().postDataJSON() as { target: string; channel?: string }
-      expect(body).toEqual(body.target === 'webui' ? { target: 'webui', channel: 'stable' } : { target: 'agent', agent_channel: 'stable' })
+      expect(body).toEqual(body.target === 'webui' ? { target: 'webui', channel: 'stable', tab_id: expect.any(String) } : { target: 'agent', agent_channel: 'stable', tab_id: expect.any(String) })
       targets.push(body.target)
       if (body.target === 'webui') webBehind = 0
       else agentBehind = 0
@@ -57,10 +66,12 @@ for (const initialWebBehind of [0, 1]) {
     await page.screenshot({ path: testInfo.outputPath('agent-updates.png'), fullPage: true })
     if (initialWebBehind) {
       await page.getByRole('button', { name: 'Update Web', exact: true }).click()
+      await closeUpdating(page, 'Talaria Web', 'Synthetic update complete')
       await expect(page.getByRole('button', { name: 'Update Web', exact: true })).toHaveCount(0)
     }
     await expect(page.getByRole('button', { name: 'Update Agent', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Update Agent', exact: true }).click()
+    await closeUpdating(page, 'Hermes Agent', 'Synthetic update complete')
     await expect(page.getByRole('button', { name: 'Update Agent', exact: true })).toHaveCount(0)
     expect(targets).toEqual(initialWebBehind ? ['webui', 'agent'] : ['agent'])
   })
@@ -74,7 +85,7 @@ test('Web updates: finish an incomplete release at the current source', async ({
   } }))
   await page.route('**/api/updates/apply', (route) => {
     expect(route.request().method()).toBe('POST')
-    expect(route.request().postDataJSON()).toEqual({ target: 'webui', channel: 'stable' })
+    expect(route.request().postDataJSON()).toEqual({ target: 'webui', channel: 'stable', tab_id: expect.any(String) })
     applied += 1
     repair = false
     return route.fulfill({ json: { ok: true, restart_scheduled: true, message: 'Release metadata repaired' } })
@@ -107,7 +118,7 @@ test('Experimental uses the existing check and update buttons', async ({ page },
       current_sha: 'a'.repeat(40), latest_sha: 'b'.repeat(40) }, agent: { behind: 0 },
   } }))
   await page.route('**/api/updates/apply', (route) => {
-    expect(route.request().postDataJSON()).toEqual({ target: 'webui', channel: 'experimental' })
+    expect(route.request().postDataJSON()).toEqual({ target: 'webui', channel: 'experimental', tab_id: expect.any(String) })
     applied += 1
     behind = 0
     return route.fulfill({ json: { ok: true, restart_scheduled: true, sourceRevision: 'b'.repeat(40) } })

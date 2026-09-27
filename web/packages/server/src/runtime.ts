@@ -600,7 +600,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     checkEnabled: () => !truthy(env.HERMES_WEBUI_TEST_NETWORK_BLOCK) && settings.load().check_for_updates !== false,
     autoNotification: {
       begin: () => updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'webui').id,
-      transition: (id, phase, expectedIdentity, verifiedIdentity) => { updateNotifications.transition(id, phase, expectedIdentity, verifiedIdentity) },
+      transition: (id, phase, expectedIdentity, verifiedIdentity, detail) => { updateNotifications.transition(id, phase, expectedIdentity, verifiedIdentity, detail) },
     },
     blockers: restartBlockers,
     scheduleRestart: () => { setTimeout(() => { void waitUntilRestartSafe(restartBlockers, { maxWaitMs: Infinity, log }).then(() => { deps.requestRestart() }) }, 2000).unref() },

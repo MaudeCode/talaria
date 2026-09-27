@@ -355,6 +355,8 @@ export const UpdateNotificationSchema = z.object({
   acknowledged_action_id: z.string().nullable(),
   verified_revision: z.string().regex(/^[a-f0-9]{40}$/).nullable(),
   verified_version: z.string().min(1).max(80).nullable(),
+  /** The apply's own explanation of a failed or blocked attempt, line breaks kept; null in every other phase. */
+  detail: z.string().max(2000).nullable(),
   unread: z.boolean(),
   active: z.boolean(),
   requires_interaction: z.boolean(),
@@ -373,6 +375,10 @@ export const UpdateNotificationsSchema = z.object({
   scope_id: z.string().min(1).max(64),
   frontend_build: FrontendBuildSchema,
   notifications: z.array(UpdateNotificationSchema),
+  /** Update operation the requesting tab most recently started or rejoined from Settings (even once dismissed); its Updating dialog follows this record. */
+  tab_update: UpdateNotificationSchema.nullable(),
+  /** When the requesting tab last started or rejoined `tab_update`; a rejoin changes only this. */
+  tab_joined_at: z.iso.datetime().nullable(),
   unread_count: z.number().int().nonnegative(),
   clearable_count: z.number().int().nonnegative(),
   can_clear: z.boolean(),

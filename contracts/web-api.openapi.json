@@ -25990,6 +25990,10 @@
                   "confirmed_agent_revision": {
                     "type": "string",
                     "pattern": "^[a-f0-9]{40}$"
+                  },
+                  "tab_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{8,64}$"
                   }
                 }
               }
@@ -26101,6 +26105,10 @@
                   "confirmed_agent_revision": {
                     "type": "string",
                     "pattern": "^[a-f0-9]{40}$"
+                  },
+                  "tab_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{8,64}$"
                   }
                 }
               }
@@ -26212,6 +26220,10 @@
                   "confirmed_agent_revision": {
                     "type": "string",
                     "pattern": "^[a-f0-9]{40}$"
+                  },
+                  "tab_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{8,64}$"
                   }
                 }
               }
@@ -26648,6 +26660,17 @@
                               }
                             ]
                           },
+                          "detail": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 2000
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "unread": {
                             "type": "boolean"
                           },
@@ -26680,12 +26703,276 @@
                           "acknowledged_action_id",
                           "verified_revision",
                           "verified_version",
+                          "detail",
                           "unread",
                           "active",
                           "requires_interaction",
                           "can_dismiss"
                         ]
                       }
+                    },
+                    "tab_update": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                            },
+                            "target": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "webui",
+                                    "agent"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "phase": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "applying",
+                                    "awaiting_confirmation",
+                                    "restarting",
+                                    "succeeded",
+                                    "blocked",
+                                    "failed",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                }
+                              ]
+                            },
+                            "severity": {
+                              "enum": [
+                                "info",
+                                "warning",
+                                "critical"
+                              ],
+                              "type": "string"
+                            },
+                            "persistent": {
+                              "type": "boolean"
+                            },
+                            "requires_acknowledgement": {
+                              "type": "boolean"
+                            },
+                            "actions": {
+                              "type": "array",
+                              "maxItems": 4,
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64,
+                                    "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 80
+                                  },
+                                  "style": {
+                                    "enum": [
+                                      "default",
+                                      "primary",
+                                      "destructive"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "acknowledges": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "label",
+                                  "style",
+                                  "acknowledges"
+                                ]
+                              }
+                            },
+                            "destination": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 64,
+                                      "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+                                    },
+                                    "label": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 80
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "label"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "created_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "updated_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "read_at": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "acknowledged_at": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "acknowledged_action_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "verified_revision": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^[a-f0-9]{40}$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "verified_version": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 80
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "detail": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "unread": {
+                              "type": "boolean"
+                            },
+                            "active": {
+                              "type": "boolean"
+                            },
+                            "requires_interaction": {
+                              "type": "boolean"
+                            },
+                            "can_dismiss": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "target",
+                            "phase",
+                            "severity",
+                            "persistent",
+                            "requires_acknowledgement",
+                            "actions",
+                            "destination",
+                            "title",
+                            "message",
+                            "created_at",
+                            "updated_at",
+                            "read_at",
+                            "acknowledged_at",
+                            "acknowledged_action_id",
+                            "verified_revision",
+                            "verified_version",
+                            "detail",
+                            "unread",
+                            "active",
+                            "requires_interaction",
+                            "can_dismiss"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "tab_joined_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "unread_count": {
                       "type": "integer",
@@ -26705,6 +26992,8 @@
                     "scope_id",
                     "frontend_build",
                     "notifications",
+                    "tab_update",
+                    "tab_joined_at",
                     "unread_count",
                     "clearable_count",
                     "can_clear"
@@ -26955,6 +27244,17 @@
                         }
                       ]
                     },
+                    "detail": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 2000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "unread": {
                       "type": "boolean"
                     },
@@ -26987,6 +27287,7 @@
                     "acknowledged_action_id",
                     "verified_revision",
                     "verified_version",
+                    "detail",
                     "unread",
                     "active",
                     "requires_interaction",
@@ -27349,6 +27650,17 @@
                               }
                             ]
                           },
+                          "detail": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 2000
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "unread": {
                             "type": "boolean"
                           },
@@ -27381,12 +27693,276 @@
                           "acknowledged_action_id",
                           "verified_revision",
                           "verified_version",
+                          "detail",
                           "unread",
                           "active",
                           "requires_interaction",
                           "can_dismiss"
                         ]
                       }
+                    },
+                    "tab_update": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                            },
+                            "target": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "webui",
+                                    "agent"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "phase": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "applying",
+                                    "awaiting_confirmation",
+                                    "restarting",
+                                    "succeeded",
+                                    "blocked",
+                                    "failed",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                }
+                              ]
+                            },
+                            "severity": {
+                              "enum": [
+                                "info",
+                                "warning",
+                                "critical"
+                              ],
+                              "type": "string"
+                            },
+                            "persistent": {
+                              "type": "boolean"
+                            },
+                            "requires_acknowledgement": {
+                              "type": "boolean"
+                            },
+                            "actions": {
+                              "type": "array",
+                              "maxItems": 4,
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64,
+                                    "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 80
+                                  },
+                                  "style": {
+                                    "enum": [
+                                      "default",
+                                      "primary",
+                                      "destructive"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "acknowledges": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "label",
+                                  "style",
+                                  "acknowledges"
+                                ]
+                              }
+                            },
+                            "destination": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 64,
+                                      "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+                                    },
+                                    "label": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 80
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "label"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "created_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "updated_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "read_at": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "acknowledged_at": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "acknowledged_action_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "verified_revision": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^[a-f0-9]{40}$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "verified_version": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 80
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "detail": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "unread": {
+                              "type": "boolean"
+                            },
+                            "active": {
+                              "type": "boolean"
+                            },
+                            "requires_interaction": {
+                              "type": "boolean"
+                            },
+                            "can_dismiss": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "target",
+                            "phase",
+                            "severity",
+                            "persistent",
+                            "requires_acknowledgement",
+                            "actions",
+                            "destination",
+                            "title",
+                            "message",
+                            "created_at",
+                            "updated_at",
+                            "read_at",
+                            "acknowledged_at",
+                            "acknowledged_action_id",
+                            "verified_revision",
+                            "verified_version",
+                            "detail",
+                            "unread",
+                            "active",
+                            "requires_interaction",
+                            "can_dismiss"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "tab_joined_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "unread_count": {
                       "type": "integer",
@@ -27406,6 +27982,8 @@
                     "scope_id",
                     "frontend_build",
                     "notifications",
+                    "tab_update",
+                    "tab_joined_at",
                     "unread_count",
                     "clearable_count",
                     "can_clear"
@@ -27652,6 +28230,17 @@
                         }
                       ]
                     },
+                    "detail": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 2000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "unread": {
                       "type": "boolean"
                     },
@@ -27684,6 +28273,7 @@
                     "acknowledged_action_id",
                     "verified_revision",
                     "verified_version",
+                    "detail",
                     "unread",
                     "active",
                     "requires_interaction",
@@ -27945,6 +28535,17 @@
                         }
                       ]
                     },
+                    "detail": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 2000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "unread": {
                       "type": "boolean"
                     },
@@ -27977,6 +28578,7 @@
                     "acknowledged_action_id",
                     "verified_revision",
                     "verified_version",
+                    "detail",
                     "unread",
                     "active",
                     "requires_interaction",

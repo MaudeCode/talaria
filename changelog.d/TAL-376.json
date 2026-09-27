@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Update Web and Update Agent now open an Updating window that follows the update through restart, keeps reconnecting while Talaria Web is unavailable, and shows the server's verified result.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
