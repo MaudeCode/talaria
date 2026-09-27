@@ -1,1 +1,1 @@
-{"skip": "CI only: erase the simulator before the live Web contract relaunch; no app behavior changes."}
+{"skip": "CI and unit tests only: test view models use a spy instead of requesting real Live Activities; no app behavior changes."}

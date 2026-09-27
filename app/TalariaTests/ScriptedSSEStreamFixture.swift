@@ -136,7 +136,9 @@ extension XCTestCase {
             streamClient: streamClient,
             approvalStreamClient: ScriptedSSEStreamingClient(),
             clarifyStreamClient: ScriptedSSEStreamingClient(),
-            btwStreamClient: ScriptedSSEStreamingClient()
+            btwStreamClient: ScriptedSSEStreamingClient(),
+            // A real manager leaves Live Activities that break the next test-host launch (TAL-375).
+            liveActivityManager: SpyChatLiveActivityManager()
         )
         if flushesEachEvent {
             streamClient.flushPendingStreamingContent = { [weak viewModel] in

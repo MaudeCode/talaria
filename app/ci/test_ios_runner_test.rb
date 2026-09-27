@@ -29,19 +29,25 @@ class TestIOSRunnerTest < Minitest::Test
     refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
   end
 
-  def test_pr_ci_erases_the_simulator_before_the_live_contract_relaunch
-    workflow = File.read(
-      File.expand_path("../../.github/workflows/pr-ci.yml", __dir__),
-      encoding: "UTF-8"
-    )
-    live_step = workflow[/- name: Run the live Web contract test.*?(?=\n      - name: )/m]
+  def test_unit_tests_never_request_real_live_activities
+    # A test host that requests real Live Activities leaves them on the simulator,
+    # and the next host launch there fails with "No such process" or hangs (TAL-375).
+    constructions = Dir[File.expand_path("../TalariaTests/**/*.swift", __dir__)].flat_map do |path|
+      File.read(path, encoding: "UTF-8").scan(/^(\s*)(?:let \w+ = |return )ChatViewModel\((.*?)\n\1\)/m).map do |_, arguments|
+        [File.basename(path), arguments]
+      end
+    end
 
-    # A contract-only run leaves its test host's state on this simulator, and the
-    # next launch fails even after a clean shutdown (TAL-375).
-    erase = live_step.index('xcrun simctl erase "${SIMULATOR_ID}"')
-    refute_nil(erase)
-    assert_operator(live_step.index('xcrun simctl shutdown "${SIMULATOR_ID}"'), :<, erase)
-    assert_operator(erase, :<, live_step.index("xcodebuild test-without-building"))
+    assert_operator(constructions.length, :>=, 10)
+    constructions.each do |file, arguments|
+      assert_match(/liveActivityManager: \S/, arguments, "#{file} builds a ChatViewModel with the real Live Activity manager")
+    end
+    support = File.read(File.expand_path("../TalariaTests/ChatViewModelSendTests+Support.swift", __dir__), encoding: "UTF-8")
+    assert_includes(support, "liveActivityManager: liveActivityManager ?? SpyChatLiveActivityManager(),")
+
+    workflow = File.read(File.expand_path("../../.github/workflows/pr-ci.yml", __dir__), encoding: "UTF-8")
+    live_step = workflow[/- name: Run the live Web contract test.*?(?=\n      - name: )/m]
+    refute_includes(live_step, "xcrun simctl")
   end
 
   def test_pr_ci_runs_pr_smoke_without_clones_and_main_ui_with_two_workers
