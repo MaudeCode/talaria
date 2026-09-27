@@ -1057,6 +1057,13 @@ export function publicToolFrame(data: Record<string, unknown>, enabled: boolean)
   return frame
 }
 
+/** A tool frame carrying its public call `id` in place of the sidecar-internal `tid`. */
+export function withToolId(data: Record<string, unknown>, id: string): Record<string, unknown> {
+  const frame: Record<string, unknown> = { ...data, id }
+  delete frame.tid
+  return frame
+}
+
 function redactNestedMessageContainers(value: unknown, enabled: boolean): unknown {
   const scrubbed = scrubInternalReplayFields(value)
   if (!scrubbed || typeof scrubbed !== 'object' || Array.isArray(scrubbed)) return redactValue(scrubbed, enabled)

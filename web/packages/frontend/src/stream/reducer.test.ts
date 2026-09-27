@@ -35,16 +35,20 @@ describe('stream reducer: ordering and projection', () => {
     expect(turn.segments.map((x) => x.kind)).toEqual(['text', 'tool', 'text'])
     expect(turn.tools.c1).toMatchObject({ done: true, isError: false, duration: 0.3, preview: 'ok' })
   })
-  it('completes the oldest running call with the same name when no id is sent', () => {
-    let s = started()
-    s = ev(s, 'tool', { name: 'shell', args: { cmd: 'ls' } })
-    s = ev(s, 'tool', { name: 'shell', args: { cmd: 'pwd' } })
-    s = ev(s, 'tool_complete', { name: 'shell', is_error: true })
-    const turn = s.turns[SID]!
-    const [first, second] = turn.toolOrder.map((id) => turn.tools[id]!)
-    expect(first?.done).toBe(true)
-    expect(first?.isError).toBe(true)
-    expect(second?.done).toBe(false)
+  it('settles each same-name call by its own id when they finish out of order, and a replay adds no card', () => {
+    const run = (s: StreamState, from = 1) => [
+      ['tool', { id: 'a', name: 'terminal', args: { command: 'a' } }],
+      ['tool', { id: 'b', name: 'terminal', args: { command: 'b' } }],
+      ['tool_complete', { id: 'b', name: 'terminal', is_error: false, duration: 0.2, preview: 'B' }],
+      ['tool_complete', { id: 'a', name: 'terminal', is_error: true, duration: 1.5, preview: 'A' }],
+    ].reduce((acc, [name, data], i) => ev(acc, name as string, data, { id: `${STREAM}:${String(from + i)}` }), s)
+    const live = run(started())
+    const turn = live.turns[SID]!
+    expect(turn.toolOrder).toEqual(['a', 'b'])
+    expect(turn.tools.a).toMatchObject({ done: true, isError: true, duration: 1.5, preview: 'A' })
+    expect(turn.tools.b).toMatchObject({ done: true, isError: false, duration: 0.2, preview: 'B' })
+    // A reconnect from the start of the journal re-delivers the same frames.
+    expect(run(live).turns[SID]).toEqual(turn)
   })
   it('accumulates reasoning with bounded titles', () => {
     let s = started()
@@ -92,16 +96,6 @@ describe('stream reducer: consumed steering', () => {
     s = ev(s, 'steer_consumed', { steer_id: 's0', text: 'before any tool', after_tool_call_id: null })
     const kinds = s.turns[SID]!.segments.map((seg) => (seg.kind === 'steering' ? `steer:${seg.steerId}` : seg.kind === 'tool' ? `tool:${seg.toolId}` : seg.kind))
     expect(kinds).toEqual(['steer:s0', 'text', 'tool:ta', 'steer:s1', 'tool:tb'])
-  })
-
-  it('places a steer after the tool the server names by its `tid`', () => {
-    let s = started()
-    s = ev(s, 'tool', { tid: 'ta', name: 'read_file' })
-    s = ev(s, 'tool_complete', { tid: 'ta', name: 'read_file', preview: 'A' })
-    s = ev(s, 'tool', { tid: 'tb', name: 'read_file' })
-    s = ev(s, 'steer_consumed', { steer_id: 's1', text: 'check b', after_tool_call_id: 'ta' })
-    const kinds = s.turns[SID]!.segments.map((seg) => (seg.kind === 'steering' ? `steer:${seg.steerId}` : seg.kind === 'tool' ? `tool:${seg.toolId}` : seg.kind))
-    expect(kinds).toEqual(['tool:ta', 'steer:s1', 'tool:tb'])
   })
 
   it('keeps steers taken after the same tool in consumption order', () => {

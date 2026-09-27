@@ -283,6 +283,53 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it('ships one canonical tool-call id on live, replayed and pre-change journal tool frames', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params, emit) => {
+      // Two same-name calls that finish in reverse order.
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'a' }, tid: 'call_a' } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'b' }, tid: 'call_b' } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'B', tid: 'call_b', is_error: false } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'A', tid: 'call_a', is_error: true } })
+      // Agent callbacks without a call id: the server mints one, and a completion settles the newest unfinished same-name call.
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', preview: null, args: { path: 'c' }, tid: '' } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', preview: null, args: { path: 'd' } } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', preview: 'D', is_error: false } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', preview: 'C', is_error: false } })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Done.' }])
+    })
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Tool ids"', usage: null }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'run both' }))).stream_id)
+    const tools = (frames: SseFrame[]) => frames.filter((f) => f.event === 'tool' || f.event === 'tool_complete').map((f) => f.data as Json)
+    const pairs = (frames: Json[]) => frames.map((d) => [d.id, d.preview])
+
+    const live = tools(await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end'))
+    const [c, d] = [live[4]?.id, live[5]?.id]
+    expect(c).toMatch(new RegExp(`^tool-${streamId}-\\d+$`))
+    expect(d).toMatch(new RegExp(`^tool-${streamId}-\\d+$`))
+    expect(c).not.toBe(d)
+    const expected = [['call_a', null], ['call_b', null], ['call_b', 'B'], ['call_a', 'A'], [c, null], [d, null], [d, 'D'], [c, 'C']]
+    expect(pairs(live)).toEqual(expected)
+    expect(live.filter((frame) => 'tid' in frame)).toEqual([])
+
+    // The journal stores the public frame, so a reconnect from the start replays the same pairing.
+    const journalPath = join(realpathSync(s.state), 'sessions', '_run_journal', sid, `${streamId}.jsonl`)
+    expect(readFileSync(journalPath, 'utf8')).not.toContain('"tid"')
+    const replayed = tools(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_seq=0`, (f) => f.event === 'stream_end'))
+    expect(pairs(replayed)).toEqual(expected)
+
+    // A journal written before the public id carries the Agent's call id as `tid`.
+    const legacy = readFileSync(journalPath, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Json).map((row) => {
+      if (row.event !== 'tool' && row.event !== 'tool_complete') return row
+      const { id, ...payload } = row.payload as Json
+      return { ...row, payload: { ...payload, tid: str(id).startsWith('call_') ? id : '' } }
+    })
+    writeFileSync(journalPath, `${legacy.map((row) => JSON.stringify(row)).join('\n')}\n`)
+    const fromLegacy = tools(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_seq=0`, (f) => f.event === 'stream_end'))
+    expect(pairs(fromLegacy).slice(0, 4)).toEqual(expected.slice(0, 4))
+    expect(fromLegacy.every((frame) => typeof frame.id === 'string' && frame.id !== '' && !('tid' in frame))).toBe(true)
+  })
+
   it('builds the settled turn\'s scene with Codex commentary as prose under Worked, leaving the stored rows as the Agent wrote them', async () => {
     const sid = await newSession(s)
     const commentary = (text: string) => ({ type: 'message', role: 'assistant', status: 'completed', phase: 'commentary', content: [{ type: 'output_text', text }] })

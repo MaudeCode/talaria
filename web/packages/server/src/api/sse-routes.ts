@@ -14,7 +14,7 @@ import { withSessionWireFlags } from '../sessions/list.js'
 import type { GatewayWatcher } from '../sessions/gateway-watcher.js'
 import { str } from '../util.js'
 import { streamOwnerSessionId } from './session-visibility.js'
-import { publicToolFrame } from '../redact.js'
+import { publicToolFrame, withToolId } from '../redact.js'
 
 export const SSE_HEARTBEAT_INTERVAL_MS = 5_000
 const SESSION_SSE_SENT_EVENT_ID_LIMIT = 4096
@@ -148,7 +148,12 @@ function publicFramePayload(ctx: RequestContext, event: string, payload: unknown
 }
 
 function publicJournalPayload(ctx: RequestContext, entry: JournalEvent): unknown {
-  return publicFramePayload(ctx, entry.event, entry.payload, entry.redacted)
+  const payload = publicFramePayload(ctx, entry.event, entry.payload, entry.redacted)
+  if ((entry.event !== 'tool' && entry.event !== 'tool_complete') || !payload || typeof payload !== 'object' || Array.isArray(payload) || 'id' in payload) return payload
+  // A journal written before the public `id` carries the Agent's call id as `tid`.
+  // ponytail: a pre-change row without a `tid` gets a per-row id, so its completion shows as its own card; pair by name here if that ever matters.
+  const frame = payload as Record<string, unknown>
+  return withToolId(frame, str(frame.tid) || `tool-${entry.event_id}`)
 }
 
 function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: string, afterSeq: number | null, opts: { maxSeq?: number | null; includeStale?: boolean } = {}): { found: boolean; terminal: boolean } {

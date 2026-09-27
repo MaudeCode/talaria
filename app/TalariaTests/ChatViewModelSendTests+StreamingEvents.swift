@@ -38,7 +38,8 @@ extension ChatViewModelSendTests {
             preview: "Reading PROJECT_SPEC.md",
             args: ["path": .string("PROJECT_SPEC.md")],
             duration: nil,
-            isError: nil
+            isError: nil,
+            stableID: "call-read-spec"
         )))
         streamClient.emit(.toolCompleted(ToolStreamEvent(
             eventType: "tool.completed",
@@ -46,7 +47,8 @@ extension ChatViewModelSendTests {
             preview: "Read PROJECT_SPEC.md",
             args: ["path": .string("PROJECT_SPEC.md")],
             duration: 0.25,
-            isError: false
+            isError: false,
+            stableID: "call-read-spec"
         )))
         streamClient.emit(.token("First live token."))
 
@@ -65,6 +67,60 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testSameNameToolsSettleByServerIDWhenTheyFinishOutOfOrder() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            XCTAssertEqual(request.url?.path, "/api/chat/start")
+            return apiTestJSONResponse("""
+            {"session_id":"session-abc","stream_id":"stream-123"}
+            """, for: request)
+        }
+
+        let didStart = await viewModel.sendMessage("Run both")
+        XCTAssertTrue(didStart)
+
+        func started(_ id: String, _ command: String) -> SSEEvent {
+            .toolStarted(ToolStreamEvent(
+                eventType: "tool",
+                name: "terminal",
+                preview: command,
+                args: ["command": .string(command)],
+                duration: nil,
+                isError: nil,
+                stableID: id
+            ))
+        }
+        func completed(_ id: String, _ preview: String, _ duration: Double, _ isError: Bool) -> SSEEvent {
+            .toolCompleted(ToolStreamEvent(
+                eventType: "tool_complete",
+                name: "terminal",
+                preview: preview,
+                args: nil,
+                duration: duration,
+                isError: isError,
+                stableID: id
+            ))
+        }
+        let events = [
+            started("call-a", "make a"),
+            started("call-b", "make b"),
+            completed("call-b", "b passed", 0.2, false),
+            completed("call-a", "a failed", 1.5, true)
+        ]
+        // The second pass is a reconnect replaying the journal from the start.
+        for _ in 0..<2 {
+            for (offset, event) in events.enumerated() {
+                streamClient.emit(event, lastEventID: "stream-123:\(offset + 1)")
+            }
+        }
+
+        XCTAssertEqual(viewModel.liveToolCalls.map(\.id), ["call-a", "call-b"])
+        XCTAssertEqual(viewModel.liveToolCalls.map(\.preview), ["a failed", "b passed"])
+        XCTAssertEqual(viewModel.liveToolCalls.map(\.duration), [1.5, 0.2])
+        XCTAssertEqual(viewModel.liveToolCalls.map(\.isError), [true, false])
+        XCTAssertEqual(viewModel.liveToolCalls.map(\.isCompleted), [true, true])
+    }
+
     func testReasoningAndToolEventsAnchorToStableAssistantTurnBeforeFirstToken() async throws {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
@@ -977,7 +1033,8 @@ extension ChatViewModelSendTests {
             preview: "xurl",
             args: ["name": .string("xurl")],
             duration: nil,
-            isError: nil
+            isError: nil,
+            stableID: "toolu-skill-xurl"
         )))
         streamClient.emit(.toolCompleted(ToolStreamEvent(
             eventType: "tool_complete",
@@ -985,7 +1042,8 @@ extension ChatViewModelSendTests {
             preview: "X/Twitter via xurl CLI",
             args: ["name": .string("xurl")],
             duration: 0.2,
-            isError: false
+            isError: false,
+            stableID: "toolu-skill-xurl"
         )))
         streamClient.emit(.toolStarted(ToolStreamEvent(
             eventType: "tool",
@@ -993,7 +1051,8 @@ extension ChatViewModelSendTests {
             preview: "which xurl",
             args: ["command": .string("which xurl")],
             duration: nil,
-            isError: nil
+            isError: nil,
+            stableID: "toolu-terminal-xurl"
         )))
         streamClient.emit(.toolCompleted(ToolStreamEvent(
             eventType: "tool_complete",
@@ -1001,7 +1060,8 @@ extension ChatViewModelSendTests {
             preview: "xurl not installed",
             args: ["command": .string("which xurl")],
             duration: 0.4,
-            isError: false
+            isError: false,
+            stableID: "toolu-terminal-xurl"
         )))
 
         let completedSession = try makeSessionDetail("""
@@ -1052,7 +1112,7 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
-    func testCompletedStreamSessionDeduplicatesLiveFallbackToolsWithCompletedTranscriptTools() async throws {
+    func testCompletedStreamSessionDeduplicatesLiveToolsWithCompletedTranscriptTools() async throws {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
             XCTAssertEqual(request.url?.path, "/api/chat/start")
@@ -1073,7 +1133,8 @@ extension ChatViewModelSendTests {
             preview: "pwd",
             args: nil,
             duration: nil,
-            isError: nil
+            isError: nil,
+            stableID: "call-terminal"
         )))
         streamClient.emit(.toolCompleted(ToolStreamEvent(
             eventType: "tool_complete",
@@ -1081,7 +1142,8 @@ extension ChatViewModelSendTests {
             preview: "/tmp/workspace",
             args: nil,
             duration: 0.2,
-            isError: false
+            isError: false,
+            stableID: "call-terminal"
         )))
         streamClient.emit(.toolStarted(ToolStreamEvent(
             eventType: "tool",
@@ -1089,7 +1151,8 @@ extension ChatViewModelSendTests {
             preview: "README",
             args: nil,
             duration: nil,
-            isError: nil
+            isError: nil,
+            stableID: "call-search"
         )))
         streamClient.emit(.toolCompleted(ToolStreamEvent(
             eventType: "tool_complete",
@@ -1097,7 +1160,8 @@ extension ChatViewModelSendTests {
             preview: "README.md",
             args: nil,
             duration: 0.4,
-            isError: false
+            isError: false,
+            stableID: "call-search"
         )))
 
         XCTAssertEqual(viewModel.liveToolCalls.map(\.name), ["terminal", "search_files"])
