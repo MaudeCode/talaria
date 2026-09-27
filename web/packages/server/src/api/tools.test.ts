@@ -560,6 +560,37 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
+  it('names the update operation each tab started, even once cleared, and never an automatic one', async () => {
+    const originalApply = s.deps.updates.apply.bind(s.deps.updates)
+    let finish!: () => void
+    const gate = new Promise<void>((resolve) => { finish = resolve })
+    let calls = 0
+    s.deps.updates.apply = async () => { calls += 1; await gate; return { ok: false, message: 'fixture failure' } }
+    const tabUpdate = async (tab: string) => (await json(await s.get(`/api/update-notifications?tab_id=${tab}`))).tab_update as Json | null
+    try {
+      const automatic = s.deps.updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'agent')
+      s.deps.updateNotifications.transition(automatic.id, 'succeeded')
+      expect(await tabUpdate('tab-starter')).toBeNull()
+      const first = post(s, '/api/updates/apply', { target: 'webui', tab_id: 'tab-starter' })
+      for (let attempt = 0; attempt < 20 && calls === 0; attempt += 1) await new Promise<void>((resolve) => { setImmediate(resolve) })
+      const started = await tabUpdate('tab-starter')
+      expect(started).toMatchObject({ kind: 'update', target: 'webui', phase: 'applying', active: true })
+      expect(await tabUpdate('tab-bystander')).toBeNull()
+      expect((await json(await s.get('/api/update-notifications'))).tab_update).toBeNull()
+      const rejoined = await json(await post(s, '/api/updates/apply', { target: 'webui', tab_id: 'tab-rejoiner' }))
+      expect(rejoined).toMatchObject({ status: 'already_in_progress', notification_id: started!.id })
+      expect((await tabUpdate('tab-rejoiner'))?.id).toBe(started!.id)
+      await post(s, '/api/update-notifications/clear', { clear: true })
+      finish()
+      expect((await json(await first)).notification_id).toBe(started!.id)
+      expect(await tabUpdate('tab-starter')).toMatchObject({ id: started!.id, phase: 'failed', active: false })
+      expect((await post(s, '/api/updates/apply', { target: 'webui', tab_id: 'x' })).status).toBe(400)
+    } finally {
+      finish()
+      s.deps.updates.apply = originalApply
+    }
+  })
+
   it('transcribe proxies multipart audio to the sidecar; tts proxies openai and rate limits [py:test_issue2931_edge_tts_endpoint.py::test_tts_requires_text] [py:test_issue2931_edge_tts_endpoint.py::test_tts_rate_limits_second_immediate_request] [py:test_issue4982_openai_tts.py::test_openai_tts_no_key_returns_503]', async () => {
     sidecar.respond('stt.transcribe', (params) => ({ transcript: `heard ${String(Buffer.from(params.audio_b64, 'base64').length)} bytes${params.suffix ?? ''}` }))
     const boundary = 'abc'

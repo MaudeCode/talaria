@@ -1,24 +1,19 @@
 import { Dialog as BaseDialog } from '@base-ui/react/dialog'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, CheckCircle2, CircleAlert, Clock3, LoaderCircle, Trash2, X } from 'lucide-react'
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Bell, Trash2, X } from 'lucide-react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import type { UpdateNotification, UpdateNotifications } from '../../contracts'
+import { isApiError } from '../../contracts/common'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { dismissToast, removeToast, showRichToast, showToast, type ToastAction } from '../toast/toast'
+import { StatusIcon, UpdatingDialog, type UpdateDialogTarget } from './UpdatingDialog'
 
 /** Server action that asks this tab to load the build the server now serves; the server clears the notice only after verifying it. */
 const RELOAD_ACTION = 'reload'
-
-function StatusIcon({ notification }: { notification: UpdateNotification }) {
-  if (notification.severity === 'critical' || notification.phase === 'failed' || notification.phase === 'unknown') return <CircleAlert className="size-5 text-error" aria-hidden="true" />
-  if (notification.phase === 'succeeded') return <CheckCircle2 className="size-5 text-success" aria-hidden="true" />
-  if (notification.severity === 'warning' || notification.phase === 'blocked' || notification.phase === 'awaiting_confirmation') return <Clock3 className="size-5 text-warning" aria-hidden="true" />
-  return <LoaderCircle className={cn('size-5 text-accent-text', notification.active && 'animate-spin')} aria-hidden="true" />
-}
 
 const formatTimestamp = (value: string) => {
   const date = new Date(value)
@@ -27,6 +22,41 @@ const formatTimestamp = (value: string) => {
 
 interface CenterContextValue { unread: number; show: () => void }
 const CenterContext = createContext<CenterContextValue | null>(null)
+
+/**
+ * Settings' handle on the Updating dialog. `begin` opens it for the clicked target before the apply
+ * request settles; `settle` hands over the apply response or error; `dismiss` hides it (the Agent
+ * confirmation dialog takes over). Everything shown after that comes from the server's `tab_update`.
+ */
+export interface UpdateProgress {
+  begin: (target: UpdateDialogTarget) => void
+  settle: (target: UpdateDialogTarget, outcome: { notification_id?: string | undefined; message?: string | undefined; error?: string | undefined; status?: string | undefined } | { failure: unknown }) => void
+  dismiss: (notificationId?: string) => void
+}
+const ProgressContext = createContext<UpdateProgress | null>(null)
+/** Null outside the app shell (isolated component tests). */
+export const useUpdateProgress = () => useContext(ProgressContext)
+
+/** The dialog's device-local state for the operation this tab just started, until the server's record takes over. */
+interface Tracking {
+  target: UpdateDialogTarget
+  /** The tab's server record when the click happened; only a newer record (or `notificationId`) belongs to this start. */
+  baseline: string | null
+  notificationId: string | null
+  /** When the apply request lost the server: the outcome is unknown until a later read answers. */
+  lostAt: number | null
+  /** The server's answer when it returned no operation record to follow. */
+  message: string | null
+  /** Closed before its record arrived: the dialog stays hidden for this start on this page load. */
+  hidden: boolean
+}
+const recordKey = (row: UpdateNotification | null) => row ? `${row.id}@${row.updated_at}` : null
+/** A lost connection leaves the apply outcome unknown; any other answer came from the server. */
+const lostServer = (error: unknown) => isApiError(error) ? error.kind === 'network' || error.kind === 'timeout' || [502, 503, 504].includes(error.status) : true
+const CLOSED_KEY = 'talaria-closed-update-dialogs'
+const readClosed = (): string[] => {
+  try { const parsed: unknown = JSON.parse(sessionStorage.getItem(CLOSED_KEY) ?? '[]'); return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [] } catch { return [] }
+}
 
 export function UpdateNotificationProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false)
@@ -39,6 +69,39 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
   const visibleServerToasts = useRef(new Set<string>())
   const persistentVersions = useRef(new Map<string, string>())
   const notifications = useQuery({ queryKey: keys.updateNotifications, queryFn: api.fetchUpdateNotifications, staleTime: 1_000, refetchInterval: 2_000 })
+  const [tracking, setTracking] = useState<Tracking | null>(null)
+  // Operations whose dialog this tab closed; sessionStorage keeps a reload from reopening them.
+  const [closed, setClosed] = useState(readClosed)
+  const tabUpdate = notifications.data?.tab_update ?? null
+  const dialogRow = tracking
+    ? tabUpdate?.target === tracking.target && (tabUpdate.id === tracking.notificationId || recordKey(tabUpdate) !== tracking.baseline) ? tabUpdate : null
+    : tabUpdate && !closed.includes(tabUpdate.id) ? tabUpdate : null
+  const dialogRowId = dialogRow?.id ?? null
+  // The dialog replaces this record's phase toasts while it shows them.
+  const shownRowId = tracking?.hidden ? null : dialogRowId
+  const closeDialog = useCallback((id: string | null) => {
+    setTracking(null)
+    if (!id) return
+    setClosed((current) => {
+      const next = [...current.filter((entry) => entry !== id), id].slice(-20)
+      try { sessionStorage.setItem(CLOSED_KEY, JSON.stringify(next)) } catch { /* storage unavailable: closing lasts for this page load */ }
+      return next
+    })
+  }, [])
+  const progress = useMemo<UpdateProgress>(() => ({
+    begin: (target) => { setTracking({ target, baseline: recordKey(tabUpdate), notificationId: null, lostAt: null, message: null, hidden: false }) },
+    settle: (target, outcome) => {
+      setTracking((current) => {
+        if (current?.target !== target) return current
+        if ('failure' in outcome) return lostServer(outcome.failure)
+          ? { ...current, lostAt: Date.now() }
+          : { ...current, message: outcome.failure instanceof Error ? outcome.failure.message : String(outcome.failure) }
+        return outcome.notification_id ? { ...current, notificationId: outcome.notification_id } : { ...current, message: outcome.message ?? outcome.error ?? outcome.status ?? m.update_dialog_unverified() }
+      })
+      void qc.invalidateQueries({ queryKey: keys.updateNotifications })
+    },
+    dismiss: (notificationId) => { closeDialog(notificationId ?? null) },
+  }), [tabUpdate, qc, closeDialog])
   useEffect(() => () => { for (const toastId of visibleServerToasts.current) removeToast(toastId) }, [])
   // A new service worker taking over is a signal that the server may serve a newer build: recheck now.
   useEffect(() => {
@@ -56,6 +119,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
     visibleServerToasts.current.clear()
     persistentVersions.current.clear()
     observedScope.current = null
+    setTracking(null)
   }, [notifications.data])
   const refresh = () => { void qc.invalidateQueries({ queryKey: keys.updateNotifications }) }
   const dismiss = useMutation({ mutationFn: api.dismissUpdateNotification, onSuccess: refresh, onError: (error) => showToast(`Couldn't dismiss the notification: ${error instanceof Error ? error.message : String(error)}`, 5_000, 'error') })
@@ -115,6 +179,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
       visiblePersistent.current.clear()
       visibleServerToasts.current.clear()
       persistentVersions.current.clear()
+      if (observedScope.current !== null) setTracking(null)
       observedScope.current = notifications.data.scope_id
     }
     const destinationActions = (row: UpdateNotification): ToastAction[] => row.destination?.key === 'settings.system' ? [{
@@ -139,7 +204,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
           visibleServerToasts.current.add(toastId)
           persistentVersions.current.set(toastId, row.updated_at)
         }
-      } else if (primed.current && (priorPhase === undefined || (row.kind === 'update' && priorPhase !== row.phase))) {
+      } else if (primed.current && row.id !== shownRowId && (priorPhase === undefined || (row.kind === 'update' && priorPhase !== row.phase))) {
         showRichToast({
           id: toastId,
           revision: row.updated_at,
@@ -162,15 +227,30 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
     for (const toastId of visibleServerToasts.current) if (!current.has(toastId)) dismissToast(toastId)
     visiblePersistent.current = unresolvedPersistent
     primed.current = true
-  }, [notifications.data, interact, performAction])
+  }, [notifications.data, interact, performAction, shownRowId])
 
   const show = () => {
     setOpen(true)
     for (const row of rows) if (row.unread) void markRead(row)
   }
 
-  return <CenterContext.Provider value={{ unread, show }}>
+  // The read endpoint is the dialog's connection probe: a failing or paused poll, or a lost apply not yet answered by a later read.
+  const reconnecting = notifications.isError || notifications.failureCount > 0 || notifications.fetchStatus === 'paused'
+    || (tracking?.lostAt != null && notifications.dataUpdatedAt <= tracking.lostAt)
+  const dialogTarget = dialogRow?.target ?? tracking?.target ?? null
+
+  return <CenterContext.Provider value={{ unread, show }}><ProgressContext.Provider value={progress}>
     {children}
+    {dialogTarget && !tracking?.hidden && <UpdatingDialog
+      target={dialogTarget}
+      row={dialogRow}
+      message={tracking?.message ?? null}
+      lost={tracking?.lostAt != null}
+      reconnecting={reconnecting}
+      checking={notifications.isFetching}
+      onCheckAgain={() => { void notifications.refetch() }}
+      onClose={() => { if (tracking && !dialogRowId) setTracking({ ...tracking, hidden: true }); else closeDialog(dialogRowId) }}
+    />}
     <BaseDialog.Root open={open} onOpenChange={setOpen}>
       <BaseDialog.Portal>
         <BaseDialog.Backdrop className="fixed inset-0 z-[1300] bg-black/45" />
@@ -205,7 +285,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
         </BaseDialog.Popup>
       </BaseDialog.Portal>
     </BaseDialog.Root>
-  </CenterContext.Provider>
+  </ProgressContext.Provider></CenterContext.Provider>
 }
 
 export function UpdateNotificationCenterButton({ placement }: { placement: 'rail' | 'titlebar' }) {

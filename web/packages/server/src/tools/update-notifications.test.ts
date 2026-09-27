@@ -54,6 +54,25 @@ describe('UpdateNotificationStore', () => {
     expect(store.activeUpdate({ owner: alice.owner, profile: 'personal', serverOwner: true }, 'webui')?.id).toBe(automatic.id)
   })
 
+  it('keeps each tab on its latest update operation across a restart without leaking it to another owner', () => {
+    const root = temp()
+    let now = new Date('2026-09-27T12:00:00Z')
+    const store = new UpdateNotificationStore(root, () => now)
+    const tab = { ...alice, tab: 'tab-aaaaaaaa' }
+    const agent = store.begin(tab, 'agent')
+    now = new Date('2026-09-27T12:01:00Z')
+    const web = store.begin(tab, 'webui')
+    store.transition(agent.id, 'failed')
+    expect(store.list(tab).tab_update?.id).toBe(web.id)
+    expect(store.list(alice).tab_update).toBeNull()
+    expect(store.list({ owner: 'oidc:bob', profile: 'work', serverOwner: true, tab: 'tab-aaaaaaaa' }).tab_update).toBeNull()
+    store.transition(web.id, 'restarting', 'a'.repeat(40))
+    const restarted = new UpdateNotificationStore(root, () => now)
+    restarted.reconcileInterruptedUpdates('a'.repeat(40))
+    expect(restarted.list(tab).tab_update).toMatchObject({ id: web.id, phase: 'succeeded' })
+    expect(restarted.list(tab).tab_update).not.toHaveProperty('watching_tabs')
+  })
+
   it('reconciles interrupted applying and restarting records against the running identity', () => {
     const root = temp()
     const first = new UpdateNotificationStore(root).begin(alice, 'webui')

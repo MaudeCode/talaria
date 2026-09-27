@@ -69,6 +69,7 @@
       "can_dismiss": true
     }
   ],
+  "tab_update": null,
   "unread_count": 1,
   "clearable_count": 1,
   "can_clear": true
