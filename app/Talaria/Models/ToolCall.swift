@@ -95,26 +95,6 @@ struct PersistedToolCall: Decodable, Equatable {
         kind = ToolDisplayKind(serverValue: container.decodeLossyStringIfPresent(forKey: .kind))
         target = container.decodeLossyStringIfPresent(forKey: .target)
     }
-
-    func toolCall(fallbackIndex: Int) -> ToolCall {
-        let trimmedID = tid?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let id: String
-        if let trimmedID, !trimmedID.isEmpty {
-            id = trimmedID
-        } else {
-            id = "persisted-tool-\(fallbackIndex)"
-        }
-
-        return ToolCall(
-            id: id,
-            name: name,
-            preview: snippet,
-            args: args,
-            kind: kind,
-            target: target,
-            isCompleted: true
-        )
-    }
 }
 
 struct ToolCallGroup: Identifiable, Equatable {
@@ -152,313 +132,43 @@ struct ToolCallGroup: Identifiable, Equatable {
         )
     }
 
-    static func groups(
-        persistedToolCalls: [PersistedToolCall],
-        messages: [ChatMessage],
-        messageOffset: Int?
-    ) -> [ToolCallGroup] {
-        let derivedGroups = groupsFromMessageMetadata(messages, messageOffset: messageOffset)
-        guard !persistedToolCalls.isEmpty else {
-            return derivedGroups
-        }
-
-        return merging(
-            primaryGroups: groupsFromPersistedToolCalls(
-                persistedToolCalls,
-                messages: messages,
-                messageOffset: messageOffset
-            ),
-            fallbackGroups: derivedGroups
-        )
-    }
-
-    private static func groupsFromPersistedToolCalls(
-        _ persistedToolCalls: [PersistedToolCall],
-        messages: [ChatMessage],
-        messageOffset: Int?
-    ) -> [ToolCallGroup] {
-        let offset = messageOffset ?? 0
-        var groups: [ToolCallGroup] = []
-        var groupIndexesByAnchor: [String: Int] = [:]
-
-        for (toolIndex, persistedToolCall) in persistedToolCalls.enumerated() {
-            guard let assistantMsgIdx = persistedToolCall.assistantMsgIdx else {
-                continue
+    /// Each assistant message's `tool_calls` as the server resolved them (TAL-313): its done, error, duration and result
+    /// fields decide the card. An older server sends none, so its calls show as completed without an error or result.
+    static func groups(messages: [ChatMessage], messageOffset: Int?) -> [ToolCallGroup] {
+        messages.enumerated().compactMap { messageIndex, message in
+            guard message.role == "assistant" else { return nil }
+            let toolCalls = (message.toolCalls ?? []).enumerated().compactMap { toolIndex, value in
+                toolCall(from: value, fallbackID: "message-tool-\(messageIndex)-\(toolIndex)")
             }
-
-            let loadedMessageIndex = assistantMsgIdx - offset
-            guard messages.indices.contains(loadedMessageIndex) else {
-                continue
-            }
-
-            guard let anchorMessageID = TranscriptTurnClassifier.assistantAnchorID(
-                forRawIndex: loadedMessageIndex,
-                in: messages,
-                messageOffset: messageOffset
-            ) else {
-                continue
-            }
-            let toolCall = persistedToolCall.toolCall(fallbackIndex: toolIndex)
-
-            if let groupIndex = groupIndexesByAnchor[anchorMessageID] {
-                var existingGroup = groups[groupIndex]
-                existingGroup = ToolCallGroup(
-                    id: existingGroup.id,
-                    anchorMessageID: existingGroup.anchorMessageID,
-                    toolCalls: existingGroup.toolCalls + [toolCall]
-                )
-                groups[groupIndex] = existingGroup
-            } else {
-                groupIndexesByAnchor[anchorMessageID] = groups.count
-                groups.append(
-                    ToolCallGroup(
-                        id: "persisted-tools-\(anchorMessageID)",
-                        anchorMessageID: anchorMessageID,
-                        toolCalls: [toolCall]
-                    )
-                )
-            }
-        }
-
-        return groups
-    }
-
-    private static func groupsFromMessageMetadata(_ messages: [ChatMessage], messageOffset: Int?) -> [ToolCallGroup] {
-        let resultsByToolID = toolResultSnippetsByID(from: messages)
-        var groups: [ToolCallGroup] = []
-
-        for (messageIndex, message) in messages.enumerated() {
-            guard message.role == "assistant" else { continue }
-
-            let toolCalls = openAIToolCalls(
-                from: message,
-                messageIndex: messageIndex,
-                resultsByToolID: resultsByToolID
-            )
-            + anthropicToolCalls(
-                from: message,
-                messageIndex: messageIndex,
-                resultsByToolID: resultsByToolID
-            )
-
-            guard !toolCalls.isEmpty else { continue }
+            guard !toolCalls.isEmpty else { return nil }
             let anchorMessageID = TranscriptTurnClassifier.anchorID(
                 for: message,
                 at: messageIndex,
                 messageOffset: messageOffset
             )
-            groups.append(ToolCallGroup(
+            return ToolCallGroup(
                 id: "persisted-tools-\(anchorMessageID)",
                 anchorMessageID: anchorMessageID,
-                toolCalls: uniqueToolCalls(toolCalls)
-            ))
-        }
-
-        return groups
-    }
-
-    private static func toolResultSnippetsByID(from messages: [ChatMessage]) -> [String: String] {
-        messages.reduce(into: [String: String]()) { result, message in
-            if message.role == "tool",
-               let toolCallID = nonEmpty(message.toolCallId) ?? nonEmpty(message.toolUseId),
-               let content = nonEmpty(message.content) {
-                result[toolCallID] = content
-            }
-
-            for part in message.contentParts ?? [] {
-                guard let toolResult = toolResult(from: part) else { continue }
-                result[toolResult.id] = toolResult.content
-            }
-        }
-    }
-
-    private static func openAIToolCalls(
-        from message: ChatMessage,
-        messageIndex: Int,
-        resultsByToolID: [String: String]
-    ) -> [ToolCall] {
-        (message.toolCalls ?? []).enumerated().compactMap { toolIndex, value in
-            toolCall(
-                fromOpenAIToolCall: value,
-                messageIndex: messageIndex,
-                toolIndex: toolIndex,
-                resultsByToolID: resultsByToolID
+                toolCalls: toolCalls
             )
         }
     }
 
-    private static func toolCall(
-        fromOpenAIToolCall value: JSONValue,
-        messageIndex: Int,
-        toolIndex: Int,
-        resultsByToolID: [String: String]
-    ) -> ToolCall? {
+    private static func toolCall(from value: JSONValue, fallbackID: String) -> ToolCall? {
         guard case .object(let object) = value else { return nil }
 
         let function = object["function"]?.objectValue
-        let name = nonEmpty(function?["name"]?.stringValue)
-            ?? nonEmpty(object["name"]?.stringValue)
-            ?? "tool"
-        let toolID = nonEmpty(object["id"]?.stringValue)
-            ?? nonEmpty(object["call_id"]?.stringValue)
-            ?? nonEmpty(object["tool_call_id"]?.stringValue)
-            ?? "message-tool-\(messageIndex)-\(toolIndex)"
-        let argumentValue = function?["arguments"]
-            ?? object["arguments"]
-            ?? object["args"]
-            ?? object["input"]
-        let preview = nonEmpty(resultsByToolID[toolID])
-            ?? nonEmpty(object["snippet"]?.stringValue)
-            ?? nonEmpty(object["preview"]?.stringValue)
-
         return ToolCall(
-            id: toolID,
-            name: name,
-            preview: preview,
-            args: arguments(from: argumentValue),
+            id: nonEmpty(object["id"]?.stringValue) ?? nonEmpty(object["call_id"]?.stringValue) ?? fallbackID,
+            name: nonEmpty(function?["name"]?.stringValue) ?? nonEmpty(object["name"]?.stringValue) ?? "tool",
+            preview: nonEmpty(object["result"]?.stringValue) ?? nonEmpty(object["preview"]?.stringValue),
+            args: arguments(from: function?["arguments"] ?? object["args"]),
             kind: ToolDisplayKind(serverValue: object["kind"]?.stringValue),
             target: object["target"]?.stringValue,
-            isCompleted: true
+            duration: object["duration"]?.numberValue,
+            isError: object["is_error"]?.boolValue,
+            isCompleted: object["done"]?.boolValue ?? true
         )
-    }
-
-    private static func anthropicToolCalls(
-        from message: ChatMessage,
-        messageIndex: Int,
-        resultsByToolID: [String: String]
-    ) -> [ToolCall] {
-        (message.contentParts ?? []).enumerated().compactMap { toolIndex, value in
-            guard case .object(let object) = value,
-                  object["type"]?.stringValue == "tool_use"
-            else {
-                return nil
-            }
-
-            let name = nonEmpty(object["name"]?.stringValue) ?? "tool"
-            let toolID = nonEmpty(object["id"]?.stringValue) ?? "message-tool-\(messageIndex)-\(toolIndex)"
-            let argumentValue = object["input"] ?? object["arguments"] ?? object["args"]
-
-            return ToolCall(
-                id: toolID,
-                name: name,
-                preview: nonEmpty(resultsByToolID[toolID])
-                    ?? nonEmpty(object["snippet"]?.stringValue)
-                    ?? nonEmpty(object["preview"]?.stringValue),
-                args: arguments(from: argumentValue),
-                kind: ToolDisplayKind(serverValue: object["kind"]?.stringValue),
-                target: object["target"]?.stringValue,
-                isCompleted: true
-            )
-        }
-    }
-
-    private static func toolResult(from value: JSONValue) -> (id: String, content: String)? {
-        guard case .object(let object) = value,
-              object["type"]?.stringValue == "tool_result",
-              let id = nonEmpty(object["tool_use_id"]?.stringValue)
-                ?? nonEmpty(object["tool_call_id"]?.stringValue)
-                ?? nonEmpty(object["id"]?.stringValue),
-              let content = resultContent(from: object["content"])
-        else {
-            return nil
-        }
-
-        return (id, content)
-    }
-
-    private static func resultContent(from value: JSONValue?) -> String? {
-        guard let value else { return nil }
-
-        switch value {
-        case .string(let string):
-            return nonEmpty(string)
-        case .array(let values):
-            let text = values.compactMap { item -> String? in
-                if case .string(let string) = item {
-                    return string
-                }
-
-                guard case .object(let object) = item else { return nil }
-                return object["text"]?.stringValue
-                    ?? object["content"]?.stringValue
-            }
-            .joined()
-            return nonEmpty(text)
-        case .object, .number, .bool, .null:
-            return value.compactJSONString.flatMap(nonEmpty)
-        }
-    }
-
-    private static func uniqueToolCalls(_ toolCalls: [ToolCall]) -> [ToolCall] {
-        var stableIDIndexes: [String: Int] = [:]
-        var fingerprintIndexes: [String: Int] = [:]
-        var uniqueToolCalls: [ToolCall] = []
-        var isGeneratedByIndex: [Bool] = []
-
-        for toolCall in toolCalls {
-            let isGenerated = isGeneratedToolID(toolCall.id)
-            let fingerprint = toolCallFingerprint(toolCall)
-            let stableIDIndex = isGenerated ? nil : stableIDIndexes[toolCall.id]
-            let fingerprintIndex = fingerprintIndexes[fingerprint].flatMap { index -> Int? in
-                isGenerated || isGeneratedByIndex[index] ? index : nil
-            }
-
-            if let existingIndex = stableIDIndex ?? fingerprintIndex {
-                uniqueToolCalls[existingIndex] = mergingToolCall(uniqueToolCalls[existingIndex], with: toolCall)
-                isGeneratedByIndex[existingIndex] = isGeneratedToolID(uniqueToolCalls[existingIndex].id)
-                if !isGenerated {
-                    stableIDIndexes[toolCall.id] = existingIndex
-                }
-                fingerprintIndexes[fingerprint] = existingIndex
-            } else {
-                if !isGenerated {
-                    stableIDIndexes[toolCall.id] = uniqueToolCalls.count
-                }
-                if fingerprintIndexes[fingerprint] == nil || isGenerated {
-                    fingerprintIndexes[fingerprint] = uniqueToolCalls.count
-                }
-                isGeneratedByIndex.append(isGenerated)
-                uniqueToolCalls.append(toolCall)
-            }
-        }
-
-        return uniqueToolCalls
-    }
-
-    static func merging(
-        primaryGroups: [ToolCallGroup],
-        fallbackGroups: [ToolCallGroup]
-    ) -> [ToolCallGroup] {
-        var merged = primaryGroups
-        var groupIndexesByAnchor = Dictionary(
-            uniqueKeysWithValues: primaryGroups.enumerated().compactMap { index, group in
-                group.anchorMessageID.map { ($0, index) }
-            }
-        )
-
-        for fallbackGroup in fallbackGroups {
-            guard let anchorMessageID = fallbackGroup.anchorMessageID,
-                  let groupIndex = groupIndexesByAnchor[anchorMessageID]
-            else {
-                if let anchorMessageID = fallbackGroup.anchorMessageID {
-                    groupIndexesByAnchor[anchorMessageID] = merged.count
-                }
-                merged.append(fallbackGroup)
-                continue
-            }
-
-            let existingGroup = merged[groupIndex]
-            merged[groupIndex] = ToolCallGroup(
-                id: existingGroup.id,
-                anchorMessageID: existingGroup.anchorMessageID,
-                toolCalls: mergingToolCalls(
-                    primaryToolCalls: existingGroup.toolCalls,
-                    fallbackToolCalls: fallbackGroup.toolCalls
-                )
-            )
-        }
-
-        return merged
     }
 
     private static func arguments(from value: JSONValue?) -> [String: JSONValue]? {
@@ -482,140 +192,6 @@ struct ToolCallGroup: Identifiable, Equatable {
     private static func nonEmpty(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed?.isEmpty == false ? trimmed : nil
-    }
-
-    private static func toolCallFingerprint(_ toolCall: ToolCall) -> String {
-        return [
-            "fallback",
-            toolCall.displayName,
-            argumentsKey(toolCall.args)
-        ].joined(separator: ":")
-    }
-
-    private static func isGeneratedToolID(_ id: String) -> Bool {
-        id.hasPrefix("live-tool-") || id.hasPrefix("message-tool-") || id.hasPrefix("persisted-tool-")
-    }
-
-    private static func mergingToolCalls(
-        primaryToolCalls: [ToolCall],
-        fallbackToolCalls: [ToolCall]
-    ) -> [ToolCall] {
-        var mergedToolCalls = uniqueToolCalls(primaryToolCalls)
-        var fallbackNameOrdinals: [String: Int] = [:]
-
-        for fallbackToolCall in fallbackToolCalls {
-            let nameKey = toolCallNameKey(fallbackToolCall)
-            let nameOrdinal = (fallbackNameOrdinals[nameKey] ?? 0) + 1
-            fallbackNameOrdinals[nameKey] = nameOrdinal
-
-            if let existingIndex = matchingToolCallIndex(
-                for: fallbackToolCall,
-                nameOrdinal: nameOrdinal,
-                in: mergedToolCalls
-            ) {
-                mergedToolCalls[existingIndex] = mergingToolCall(
-                    mergedToolCalls[existingIndex],
-                    with: fallbackToolCall
-                )
-            } else {
-                mergedToolCalls.append(fallbackToolCall)
-            }
-        }
-
-        return uniqueToolCalls(mergedToolCalls)
-    }
-
-    private static func matchingToolCallIndex(
-        for fallbackToolCall: ToolCall,
-        nameOrdinal: Int,
-        in toolCalls: [ToolCall]
-    ) -> Int? {
-        let fallbackIsGenerated = isGeneratedToolID(fallbackToolCall.id)
-
-        // Stable transcript IDs are authoritative; generated live IDs are only
-        // reconciliation hints while the completed transcript catches up.
-        if !fallbackIsGenerated,
-           let stableIDIndex = toolCalls.firstIndex(where: { toolCall in
-               !isGeneratedToolID(toolCall.id) && toolCall.id == fallbackToolCall.id
-           }) {
-            return stableIDIndex
-        }
-
-        // Fingerprints preserve the saved-transcript dedupe rule when one side
-        // has a generated fallback ID and both sides still carry matching args.
-        let fallbackFingerprint = toolCallFingerprint(fallbackToolCall)
-        if let fingerprintIndex = toolCalls.firstIndex(where: { toolCall in
-            (fallbackIsGenerated || isGeneratedToolID(toolCall.id))
-                && toolCallFingerprint(toolCall) == fallbackFingerprint
-        }) {
-            return fingerprintIndex
-        }
-
-        return matchingToolCallNameOrdinalIndex(
-            for: fallbackToolCall,
-            fallbackIsGenerated: fallbackIsGenerated,
-            nameOrdinal: nameOrdinal,
-            in: toolCalls
-        )
-    }
-
-    private static func matchingToolCallNameOrdinalIndex(
-        for fallbackToolCall: ToolCall,
-        fallbackIsGenerated: Bool,
-        nameOrdinal: Int,
-        in toolCalls: [ToolCall]
-    ) -> Int? {
-        let fallbackNameKey = toolCallNameKey(fallbackToolCall)
-        var currentOrdinal = 0
-
-        for (index, toolCall) in toolCalls.enumerated() {
-            guard toolCallNameKey(toolCall) == fallbackNameKey else { continue }
-            // Name order is a last resort for live fallback events whose args
-            // can be missing/truncated; never collapse two stable transcript IDs.
-            guard fallbackIsGenerated || isGeneratedToolID(toolCall.id) else { continue }
-
-            currentOrdinal += 1
-            if currentOrdinal == nameOrdinal {
-                return index
-            }
-        }
-
-        return nil
-    }
-
-    private static func toolCallNameKey(_ toolCall: ToolCall) -> String {
-        toolCall.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func argumentsKey(_ args: [String: JSONValue]?) -> String {
-        guard let args, !args.isEmpty else { return "" }
-        let sortedObject = Dictionary(uniqueKeysWithValues: args.sorted { $0.key < $1.key })
-        return JSONValue.object(sortedObject).compactJSONString ?? ""
-    }
-
-    private static func mergingToolCall(_ existing: ToolCall, with fallback: ToolCall) -> ToolCall {
-        let id = isGeneratedToolID(existing.id) && !isGeneratedToolID(fallback.id) ? fallback.id : existing.id
-
-        return ToolCall(
-            id: id,
-            name: existing.name ?? fallback.name,
-            preview: existing.preview ?? fallback.preview,
-            args: existing.args ?? fallback.args,
-            kind: existing.kind ?? fallback.kind,
-            target: existing.target ?? fallback.target,
-            duration: existing.duration ?? fallback.duration,
-            isError: mergedErrorState(existing.isError, fallback.isError),
-            isCompleted: existing.isCompleted || fallback.isCompleted,
-            startedAt: min(existing.startedAt, fallback.startedAt)
-        )
-    }
-
-    private static func mergedErrorState(_ existing: Bool?, _ fallback: Bool?) -> Bool? {
-        if existing == true || fallback == true {
-            return true
-        }
-
-        return existing ?? fallback
     }
 }
 
@@ -655,11 +231,19 @@ private extension JSONValue {
         }
     }
 
-    var compactJSONString: String? {
-        guard let data = try? JSONEncoder().encode(self) else {
-            return nil
+    var numberValue: Double? {
+        if case .number(let value) = self {
+            return value
         }
 
-        return String(data: data, encoding: .utf8)
+        return nil
+    }
+
+    var boolValue: Bool? {
+        if case .bool(let value) = self {
+            return value
+        }
+
+        return nil
     }
 }
