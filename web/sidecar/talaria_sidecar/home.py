@@ -10,8 +10,10 @@ process-wide swap of ``HERMES_HOME`` for older Agents.
 Credentials use the Agent's own multi-profile hosting policy: a named profile
 activates fail-closed multiplexing and installs its file-backed secret scope;
 the launch profile installs the Agent's frozen launch scope. A miss can never
-fall through to another profile's process environment. If the installed Agent
-has no secret scope, named-profile calls fail closed instead.
+fall through to another profile's process environment. Agent 0.21.3 has the
+multiplex switch and secret scopes but not the launch-profile policy module, so
+the sidecar mirrors that policy for it. If the installed Agent has no secret
+scope, named-profile calls fail closed instead.
 """
 
 from __future__ import annotations
@@ -24,6 +26,8 @@ from pathlib import Path
 from .errors import InvalidParams, RpcError
 
 _ENV_LOCK = threading.RLock()
+_LAUNCH_ENV_LOCK = threading.Lock()
+_LAUNCH_ENV: dict[str, str] | None = None
 _PROCESS_HOME = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes").expanduser()
 
 
@@ -34,20 +38,46 @@ def _is_named_profile(home: Path) -> bool:
         return True
 
 
+def _frozen_launch_env() -> dict[str, str]:
+    """The launch profile's environment, frozen before the first named profile runs; the first capture wins."""
+    global _LAUNCH_ENV
+    with _LAUNCH_ENV_LOCK:
+        if _LAUNCH_ENV is None:
+            _LAUNCH_ENV = dict(os.environ)
+        return dict(_LAUNCH_ENV)
+
+
+def _activate_multi_profile_hosting() -> None:
+    """Agent 0.21.3 twin of ``tui_gateway.launch_profile_policy.activate_multi_profile_hosting``."""
+    from agent.secret_scope import set_multiplex_active
+
+    _frozen_launch_env()
+    set_multiplex_active(True)
+
+
+def _launch_secret_scope(home: Path) -> dict[str, str]:
+    """Agent 0.21.3 twin of ``tui_gateway.launch_profile_policy.launch_secret_scope``."""
+    from agent.secret_scope import _is_global_env, build_profile_secret_scope, is_multiplex_active
+
+    env = _frozen_launch_env() if is_multiplex_active() else dict(os.environ)
+    scope = {k: v for k, v in env.items() if not _is_global_env(k)}
+    scope.update(build_profile_secret_scope(home))
+    return scope
+
+
 @contextlib.contextmanager
 def _secret_scope(home: Path):
     """Install ``home``'s credential scope for the call; named profiles run under multiplex semantics."""
     named = _is_named_profile(home)
-    legacy = False
     try:
         from agent.secret_scope import build_profile_secret_scope, reset_secret_scope, set_secret_scope
+        from hermes_cli.env_loader import hydrate_profile_secret_sources
         try:
-            from hermes_cli.env_loader import hydrate_profile_secret_sources
             from tui_gateway.launch_profile_policy import activate_multi_profile_hosting, launch_secret_scope
         except ImportError:
-            # Older Agents provide the same isolation through per-call context tokens.
-            from agent.secret_scope import reset_multiplex_context, set_multiplex_context
-            legacy = True
+            # Probe the whole 0.21.3 surface up front so a partial Agent fails closed before the body.
+            from agent.secret_scope import _is_global_env, is_multiplex_active, set_multiplex_active  # noqa: F401
+            activate_multi_profile_hosting, launch_secret_scope = _activate_multi_profile_hosting, _launch_secret_scope
     except Exception:  # noqa: BLE001 - older Agent without a secret scope
         if named:
             raise RpcError(
@@ -56,9 +86,7 @@ def _secret_scope(home: Path):
             )
         yield
         return
-    if legacy:
-        secrets = build_profile_secret_scope(home)
-    elif named:
+    if named:
         activate_multi_profile_hosting()
         hydrate_profile_secret_sources(home)
         secrets = build_profile_secret_scope(home)
@@ -66,12 +94,7 @@ def _secret_scope(home: Path):
         secrets = launch_secret_scope(home)
     scope_token = set_secret_scope(secrets)
     try:
-        mux_token = set_multiplex_context(True) if legacy and named else None
-        try:
-            yield
-        finally:
-            if legacy and named:
-                reset_multiplex_context(mux_token)
+        yield
     finally:
         reset_secret_scope(scope_token)
 

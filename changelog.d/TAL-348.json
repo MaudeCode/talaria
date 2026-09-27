@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Named profiles work with Hermes Agent 0.21.3, and each profile only sees its own credentials.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
