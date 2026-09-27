@@ -177,7 +177,7 @@ describe('turn worklog presentation', () => {
     run.emit(tool('a'))
     const base = liveActivity(run.turn)
     const view = render(<View activity={base} mode={mode} />)
-    for (const [status, label] of [['no_response', 'No final answer'], ['tool_limit_reached', 'Tool limit reached'], ['compression_exhausted', 'Context limit reached'], ['error', 'The response failed'], ['cancelled', 'Task cancelled'], ['interrupted', 'Task interrupted']]) {
+    for (const [status, label] of [['no_response', 'No final answer'], ['tool_limit_reached', 'Tool limit reached'], ['compression_exhausted', 'Context limit reached'], ['error', 'The response failed'], ['cancelled', 'Stopped'], ['interrupted', 'Task interrupted']]) {
       for (const items of [base.items, []]) {
         view.rerender(<View activity={{ ...base, status: status!, items }} mode={mode} />)
         expect(screen.getByRole('status')).toHaveTextContent(label!)

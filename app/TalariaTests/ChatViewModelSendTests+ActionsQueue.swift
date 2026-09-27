@@ -1144,7 +1144,7 @@ extension ChatViewModelSendTests {
             case "/api/session":
                 // The server settled the cancelled turn before answering the cancel.
                 return apiTestJSONResponse(
-                    #"{"session":{"session_id":"session-abc","messages":[{"role":"user","content":"Initial request","message_id":"user-1","_turn_id":"stream-123"},{"role":"assistant","content":"**Task cancelled:** Task cancelled.","message_id":"assistant-cancelled","_error":true,"_turn_id":"stream-123","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"","terminal_state":"cancelled","activity_rows":[]}}]}}"#,
+                    #"{"session":{"session_id":"session-abc","messages":[{"role":"user","content":"Initial request","message_id":"user-1","_turn_id":"stream-123"},{"role":"assistant","content":"","message_id":"assistant-cancelled","_error":true,"_terminal_state":"cancelled","_turn_id":"stream-123","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"","terminal_state":"cancelled","activity_rows":[]}}]}}"#,
                     for: request
                 )
             default:

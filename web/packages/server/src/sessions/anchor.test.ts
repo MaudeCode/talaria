@@ -216,13 +216,15 @@ describe('buildTurnScene', () => {
     ['interim', [{ role: 'assistant', content: 'Still going', _interim: true }], 'no_response', true],
     ['partial', [{ role: 'assistant', content: 'Half an ans', _partial: true }], 'no_response', true],
     ['error', [{ role: 'assistant', content: 'Working', tool_calls: [{ id: 't' }] }, { role: 'assistant', content: '**Error:** failed', _error: true }], 'error', true],
-    ['cancelled', [{ role: 'assistant', content: 'Half', _partial: true }, { role: 'assistant', content: '**Task cancelled:** Task cancelled.', _error: true, provider_details_label: 'Cancellation details' }], 'cancelled', false],
+    ['cancelled', [{ role: 'assistant', content: 'Half', _partial: true }, { role: 'assistant', content: '', _error: true, _terminal_state: 'cancelled' }], 'cancelled', false],
+    ['cancelled (pre-TAL-364 copy)', [{ role: 'assistant', content: 'Half', _partial: true }, { role: 'assistant', content: '**Task cancelled:** Task cancelled.', _error: true, provider_details_label: 'Cancellation details' }], 'cancelled', false],
     ['interrupted', [{ role: 'assistant', content: 'Half', _partial: true }, { role: 'assistant', content: '**Interrupted:** lost', _error: true, provider_details_label: 'Interruption details' }], 'interrupted', false],
   ])('reports %s turns without promoting work to an answer', (_name, rows, state, expanded) => {
     const scene = buildTurnScene(turnOf(rows))!
     expect(scene.terminal_state).toBe(state)
     expect(scene.expanded_by_default).toBe(expanded)
-    if (state === 'no_response') expect(scene.final_answer).toBe('')
+    // A Stop shows one status: an older row's "Task cancelled" copy is no answer either.
+    if (state === 'no_response' || state === 'cancelled') expect(scene.final_answer).toBe('')
   })
 
   it('builds nothing for a turn without an assistant row', () => {

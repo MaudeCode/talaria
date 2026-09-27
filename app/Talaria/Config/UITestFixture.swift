@@ -701,9 +701,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             // As the server settles a stopped turn: the partial work, the steer it took, and the cancelled outcome.
             messages.append([
                 "role": "assistant",
-                "content": "**Task cancelled:** Task cancelled.",
+                "content": "",
                 "message_id": "ui-fixture-cancelled",
                 "_error": true,
+                "_terminal_state": "cancelled",
                 "_ts": 2_000_000_101,
                 "_anchor_activity_scene": [
                     "version": "activity_scene_v1",

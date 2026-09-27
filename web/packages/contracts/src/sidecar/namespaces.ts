@@ -236,7 +236,11 @@ export const CHAT_METHODS = {
     result: ChatStartResultSchema,
     stream: ChatStreamSchema,
   },
-  'chat.interrupt': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional() }), result: z.object({ ok: z.boolean(), reason: z.string().optional(), pending_steer: z.string().optional() }) },
+  'chat.interrupt': {
+    params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional() }),
+    /** `checkpoint`: the Agent's canonical transcript for the stopped turn, captured before the interrupt (absent until it has one). */
+    result: z.object({ ok: z.boolean(), reason: z.string().optional(), pending_steer: z.string().optional(), checkpoint: z.array(Loose).optional() }),
+  },
   'chat.steer': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), text: z.string().min(1) }), result: z.object({ accepted: z.boolean(), fallback: z.string().nullable().optional() }) },
   'chat.evict_agent': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ evicted: z.boolean() }) },
   'chat.commit_memory': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ committed: z.boolean() }) },
