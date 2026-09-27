@@ -573,6 +573,42 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'assistant', content: 'Operation interrupted.' }])
   })
 
+  it('a second Stop while the first interrupt is in flight keeps the first Stop\'s checkpoint (TAL-364)', async () => {
+    const sid = await newSession(s)
+    const earlier = await earlierTurn(sid)
+    let prompt = ''
+    let finish: () => void = () => undefined
+    const lateCall: Json = { role: 'assistant', content: '', tool_calls: [{ id: 'call-unwind-2', type: 'function', function: { name: 'terminal', arguments: '{}' } }] }
+    const lateResult: Json = { role: 'tool', name: 'terminal', tool_call_id: 'call-unwind-2', content: 'finished while unwinding' }
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      prompt = str(params.user_message)
+      for (const e of toolFrames) emit(e)
+      finish = () => { resolve({ ...completed([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, lateCall, lateResult, { role: 'assistant', content: 'Operation interrupted.' }]), status: 'cancelled' }) }
+    }))
+    let interrupts = 0
+    let firstReply: (reply: SidecarResult<'chat.interrupt'>) => void = () => undefined
+    // The first Stop's snapshot is slow to arrive; a duplicate Stop's interrupt finds the run unwinding and has none.
+    sidecar.respond('chat.interrupt', () => {
+      interrupts += 1
+      if (interrupts === 1) return new Promise((resolve) => { firstReply = resolve })
+      return { ok: false, reason: 'not_running' }
+    })
+    const streamId = await start(sid, 'Check the rollout')
+    await frames(streamId, (f) => f.event === 'tool_complete')
+    const first = s.get(`/api/chat/cancel?stream_id=${streamId}`)
+    while (interrupts < 1) await new Promise((r) => setTimeout(r, 5))
+    const second = s.get(`/api/chat/cancel?stream_id=${streamId}`)
+    await new Promise((r) => setTimeout(r, 50))
+    finish()
+    await new Promise((r) => setTimeout(r, 50))
+    firstReply({ ok: true, checkpoint: [...earlier, { role: 'user', content: prompt }, toolCall, toolResult] })
+    await Promise.all([first, second])
+    const until = Date.now() + 5000
+    while (s.deps.registry.activeRuns.has(streamId) && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    expect((await messagesOf(s, sid)).filter((m) => m._error)).toHaveLength(1)
+    expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'assistant', content: 'Operation interrupted.' }])
+  })
+
   it('the worker\'s canonical result replaces the fallback context when the interrupt reply failed (TAL-364)', async () => {
     const sid = await newSession(s)
     const earlier = await earlierTurn(sid)

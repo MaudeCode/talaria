@@ -1018,9 +1018,14 @@ export class TurnRunner {
     if (run) { run.phase = 'cancelling'; run.cancelled_at = this.deps.now() }
     // Python `_finalize_webui_steers` drained the Agent's pending steer text at cancel time: the interrupt reply
     // carries it so queued steers settle as consumed / leftover before the terminal row.
-    const sidecar = this.deps.sidecar()
-    const interrupt = sidecar ? sidecar.call('chat.interrupt', { stream_id: streamId }, { timeoutMs: 5_000 }).catch(() => null) : Promise.resolve(null)
-    this.interrupts.set(streamId, interrupt)
+    // A duplicate Stop (another tab, a retried request) shares the first interrupt: its snapshot is the boundary, and a
+    // later interrupt finds the run already unwinding.
+    let interrupt = this.interrupts.get(streamId)
+    if (!interrupt) {
+      const sidecar = this.deps.sidecar()
+      interrupt = sidecar ? sidecar.call('chat.interrupt', { stream_id: streamId }, { timeoutMs: 5_000 }).catch(() => null) : Promise.resolve(null)
+      this.interrupts.set(streamId, interrupt)
+    }
     const reply = await interrupt
     const leftover = str(reply?.pending_steer)
     const checkpoint = reply?.checkpoint ?? null
