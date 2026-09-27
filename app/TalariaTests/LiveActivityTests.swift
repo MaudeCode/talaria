@@ -1731,9 +1731,7 @@ final class LiveActivityTests: XCTestCase {
                         "role": "assistant",
                         "content": "Completed from transcript refresh.",
                         "timestamp": 1770000110,
-                        "message_id": "assistant-1",
-                        "_turn_id": "stream-123",
-                        "_anchor_activity_scene": {"version": "activity_scene_v1", "activity_rows": [], "final_answer": "Completed from transcript refresh.", "terminal_state": "completed"}
+                        "message_id": "assistant-1"
                       }
                     ]
                   }
@@ -1891,9 +1889,7 @@ final class LiveActivityTests: XCTestCase {
                         "role": "assistant",
                         "content": "Completed after foreground reconnect.",
                         "timestamp": 1770000110,
-                        "message_id": "assistant-1",
-                        "_turn_id": "stream-1",
-                        "_anchor_activity_scene": {"version": "activity_scene_v1", "activity_rows": [], "final_answer": "Completed after foreground reconnect.", "terminal_state": "completed"}
+                        "message_id": "assistant-1"
                       }
                     ]
                   }

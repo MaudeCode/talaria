@@ -369,6 +369,7 @@ final class ChatViewModel {
     private var backgroundPromptsByTaskID: [String: String] = [:]
     @ObservationIgnored private var backgroundPollTask: Task<Void, Never>?
     private var isRefreshingCompletedResponseTitle = false
+    private var latestServerLoadHadAssistantResponseAfterLatestUser = false
     // The latest applied load's `pending_started_at`: when its running turn began.
     private var loadedPendingStartedAt: Double?
     private var needsComposerConfigurationReload = false
@@ -1192,6 +1193,7 @@ final class ChatViewModel {
         }
 
         resetPendingStreamingContentBuffers()
+        latestServerLoadHadAssistantResponseAfterLatestUser = false
         let streamLoadPreparation = streamCoordinator.prepareForSessionLoad()
         sessionLoadRequestGeneration &+= 1
         let loadRequestGeneration = sessionLoadRequestGeneration
@@ -1334,6 +1336,9 @@ final class ChatViewModel {
                 // render; signal the view to re-pin to the bottom without a visible jump.
                 cacheFirstReconcileScrollToken += 1
             }
+            latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
+                in: messages
+            )
             responseCompletionNeedsTranscriptRefresh = false
             isViewingCachedData = false
             lastError = nil
@@ -1387,6 +1392,7 @@ final class ChatViewModel {
             guard loadRequestGeneration > latestHandledSessionLoadFailureGeneration else { return }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
             lastError = error
+            latestServerLoadHadAssistantResponseAfterLatestUser = false
             if CacheFallbackPolicy.shouldUseCache(for: error), let modelContext {
                 do {
                     let cachedMessages = try CacheStore.cachedMessages(
@@ -1398,6 +1404,9 @@ final class ChatViewModel {
                     if !cachedMessages.isEmpty {
                         clearCompressionAnchorMetadata()
                         messages = cachedMessages
+                        latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
+                            in: messages
+                        )
                         responseCompletionNeedsTranscriptRefresh = false
                         messagesOffset = 0
                         hasOlderMessages = false
@@ -1579,6 +1588,9 @@ final class ChatViewModel {
             let didAddMessages = mergedMessages.count > messages.count
             applyCompressionAnchorMetadata(from: session)
             messages = mergedMessages
+            latestServerLoadHadAssistantResponseAfterLatestUser = Self.hasAssistantResponseAfterLatestUser(
+                in: messages
+            )
             responseCompletionNeedsTranscriptRefresh = false
             updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
             isViewingCachedData = false
@@ -2039,6 +2051,66 @@ final class ChatViewModel {
             ?? ChatStreamCoordinator.runStart(
                 fromEpochSeconds: messages.last(where: TranscriptTurnClassifier.isUserTurnBoundary)?.timestamp
             )
+    }
+
+    nonisolated private static func hasAssistantResponseAfterLatestUser(in messages: [ChatMessage]) -> Bool {
+        guard !messages.isEmpty else { return false }
+
+        let searchRange: Range<Int>
+        if let latestUserIndex = messages.lastIndex(where: { $0.role == "user" }) {
+            searchRange = messages.index(after: latestUserIndex)..<messages.endIndex
+        } else {
+            searchRange = messages.startIndex..<messages.endIndex
+        }
+
+        return messages[searchRange].contains { message in
+            guard message.role == "assistant" else { return false }
+            return hasAssistantResponseContent(message)
+        }
+    }
+
+    nonisolated private static func hasAssistantResponseContent(_ message: ChatMessage) -> Bool {
+        if message.content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            return true
+        }
+
+        if message.reasoning?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            return true
+        }
+
+        if message.toolCalls?.isEmpty == false {
+            return true
+        }
+
+        return hasAssistantContentParts(message.contentParts)
+    }
+
+    nonisolated private static func hasAssistantContentParts(_ parts: [JSONValue]?) -> Bool {
+        guard let parts else { return false }
+
+        return parts.contains { part in
+            switch part {
+            case .string(let value):
+                return value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            case .object(let object):
+                if case .string(let type)? = object["type"] {
+                    switch type {
+                    case "tool_use", "thinking", "reasoning", "redacted_thinking":
+                        return true
+                    case "text":
+                        if case .string(let text)? = object["text"] {
+                            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                        }
+                    default:
+                        break
+                    }
+                }
+
+                return false
+            case .number, .bool, .array, .null:
+                return false
+            }
+        }
     }
 
     nonisolated private static func remappedAnchorMessageID(
@@ -5381,7 +5453,12 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     func streamCoordinatorServerTerminalState(turnID: String) -> String? {
-        messages.last { $0.turnId == turnID && $0.activityScene != nil }?.activityScene?.terminalState
+        // ponytail: old-server fallback — a Web from before settled-turn scenes states no outcome, so the latest load's
+        // reply after the prompt counts as completed. Delete once every supported Web ships scene `terminal_state`.
+        guard messages.contains(where: { $0.activityScene?.terminalState != nil }) else {
+            return latestServerLoadHadAssistantResponseAfterLatestUser ? "completed" : nil
+        }
+        return messages.last { $0.turnId == turnID && $0.activityScene != nil }?.activityScene?.terminalState
     }
 
     func streamCoordinatorOmitLoadedRunningTurn() -> Bool {
