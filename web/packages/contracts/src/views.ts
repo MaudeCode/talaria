@@ -355,6 +355,8 @@ export const UpdateNotificationSchema = z.object({
   acknowledged_action_id: z.string().nullable(),
   verified_revision: z.string().regex(/^[a-f0-9]{40}$/).nullable(),
   verified_version: z.string().min(1).max(80).nullable(),
+  /** The apply's own explanation of a failed or blocked attempt, line breaks kept; null in every other phase. */
+  detail: z.string().max(2000).nullable(),
   unread: z.boolean(),
   active: z.boolean(),
   requires_interaction: z.boolean(),

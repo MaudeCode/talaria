@@ -191,7 +191,7 @@ visible across the same owner's profiles because the installation being updated 
 for another authenticated owner remain isolated. Automatic Web updates produce server-wide owner notices.
 
 The notification lifecycle is `applying`, `awaiting_confirmation`, `restarting`, then `succeeded`,
-`blocked`, `failed`, or `unknown`. A restarted server marks an interrupted `applying` operation unknown.
+`blocked`, `failed`, or `unknown`. A failed or blocked record keeps the apply's own explanation as `detail` (line breaks kept, bounded, cleared by the next phase); the notification center and the Updating dialog show it under the message. A restarted server marks an interrupted `applying` operation unknown.
 A `restarting` Web operation becomes succeeded only when the running release identity exactly matches the
 persisted expected identity; otherwise it becomes unknown. A dropped connection never proves success.
 

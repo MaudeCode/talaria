@@ -26580,6 +26580,17 @@
                               }
                             ]
                           },
+                          "detail": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 2000
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "unread": {
                             "type": "boolean"
                           },
@@ -26612,6 +26623,7 @@
                           "acknowledged_action_id",
                           "verified_revision",
                           "verified_version",
+                          "detail",
                           "unread",
                           "active",
                           "requires_interaction",
@@ -26816,6 +26828,17 @@
                                 }
                               ]
                             },
+                            "detail": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
                             "unread": {
                               "type": "boolean"
                             },
@@ -26848,6 +26871,7 @@
                             "acknowledged_action_id",
                             "verified_revision",
                             "verified_version",
+                            "detail",
                             "unread",
                             "active",
                             "requires_interaction",
@@ -27140,6 +27164,17 @@
                         }
                       ]
                     },
+                    "detail": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 2000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "unread": {
                       "type": "boolean"
                     },
@@ -27172,6 +27207,7 @@
                     "acknowledged_action_id",
                     "verified_revision",
                     "verified_version",
+                    "detail",
                     "unread",
                     "active",
                     "requires_interaction",
@@ -27534,6 +27570,17 @@
                               }
                             ]
                           },
+                          "detail": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 2000
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "unread": {
                             "type": "boolean"
                           },
@@ -27566,6 +27613,7 @@
                           "acknowledged_action_id",
                           "verified_revision",
                           "verified_version",
+                          "detail",
                           "unread",
                           "active",
                           "requires_interaction",
@@ -27770,6 +27818,17 @@
                                 }
                               ]
                             },
+                            "detail": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
                             "unread": {
                               "type": "boolean"
                             },
@@ -27802,6 +27861,7 @@
                             "acknowledged_action_id",
                             "verified_revision",
                             "verified_version",
+                            "detail",
                             "unread",
                             "active",
                             "requires_interaction",
@@ -28090,6 +28150,17 @@
                         }
                       ]
                     },
+                    "detail": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 2000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "unread": {
                       "type": "boolean"
                     },
@@ -28122,6 +28193,7 @@
                     "acknowledged_action_id",
                     "verified_revision",
                     "verified_version",
+                    "detail",
                     "unread",
                     "active",
                     "requires_interaction",
@@ -28383,6 +28455,17 @@
                         }
                       ]
                     },
+                    "detail": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 2000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "unread": {
                       "type": "boolean"
                     },
@@ -28415,6 +28498,7 @@
                     "acknowledged_action_id",
                     "verified_revision",
                     "verified_version",
+                    "detail",
                     "unread",
                     "active",
                     "requires_interaction",

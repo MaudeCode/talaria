@@ -22,7 +22,7 @@ const record = (id: string, phase: Phase, target: 'webui' | 'agent' = 'webui') =
   title: target === 'webui' ? 'Talaria Web update' : 'Hermes Agent update',
   message: target === 'webui' ? MESSAGES[phase] : MESSAGES[phase].replace('Talaria Web', 'Hermes Agent'),
   created_at: '2026-09-27T12:00:00Z', updated_at: `2026-09-27T12:0${Object.keys(MESSAGES).indexOf(phase)}:00Z`,
-  read_at: null, acknowledged_at: null, acknowledged_action_id: null, verified_revision: null, verified_version: null,
+  read_at: null, acknowledged_at: null, acknowledged_action_id: null, verified_revision: null, verified_version: null, detail: null as string | null,
   unread: true, active: phase === 'applying' || phase === 'restarting', requires_interaction: false, can_dismiss: true,
 })
 type Row = ReturnType<typeof record>
@@ -134,6 +134,10 @@ test('an unverifiable outcome says so and checks again without starting another 
   await dialog.getByRole('button', { name: 'Check again', exact: true }).click()
   await expect(dialog).toContainText(MESSAGES.failed)
   expect(server.reads).toBeGreaterThan(reads)
+  // The server keeps the apply's own explanation on the record; the dialog shows it, line breaks included.
+  server.tabUpdate = { ...record(WEB_ID, 'failed'), detail: 'npm run build failed.\nRun `npm ci` in web/ and press Update again.', updated_at: '2026-09-27T12:20:00Z' }
+  await expect(dialog).toContainText('npm run build failed.')
+  await expect(dialog.getByText(/Run `npm ci` in web\//)).toBeVisible()
   expect(applies).toBe(1)
   dropExpectedFailures(errors)
 })

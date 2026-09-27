@@ -73,6 +73,17 @@ describe('UpdateNotificationStore', () => {
     expect(restarted.list(tab).tab_update).not.toHaveProperty('watchers')
   })
 
+  it('keeps a failed or blocked attempt\'s own explanation, line breaks included, and drops it on the next phase', () => {
+    const root = temp()
+    const store = new UpdateNotificationStore(root)
+    const web = store.begin(alice, 'webui')
+    expect(web.detail).toBeNull()
+    expect(store.transition(web.id, 'failed', null, undefined, '  npm run build failed.\r\nRun `npm ci`\u0007 again.  ')?.detail).toBe('npm run build failed.\nRun `npm ci`  again.')
+    expect(new UpdateNotificationStore(root).list(alice).notifications[0]?.detail).toBe('npm run build failed.\nRun `npm ci`  again.')
+    expect(store.transition(web.id, 'blocked', null, undefined, 'x'.repeat(3_000))?.detail).toHaveLength(2_000)
+    expect(store.transition(web.id, 'succeeded', null, undefined, 'ignored')?.detail).toBeNull()
+  })
+
   it('follows the operation a tab rejoined most recently, not the newest one', () => {
     let now = new Date('2026-09-27T12:00:00Z')
     const store = new UpdateNotificationStore(temp(), () => now)

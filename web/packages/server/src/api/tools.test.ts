@@ -583,7 +583,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       await post(s, '/api/update-notifications/clear', { clear: true })
       finish()
       expect((await json(await first)).notification_id).toBe(started!.id)
-      expect(await tabUpdate('tab-starter')).toMatchObject({ id: started!.id, phase: 'failed', active: false })
+      expect(await tabUpdate('tab-starter')).toMatchObject({ id: started!.id, phase: 'failed', active: false, detail: 'fixture failure' })
       expect((await post(s, '/api/updates/apply', { target: 'webui', tab_id: 'x' })).status).toBe(400)
     } finally {
       finish()

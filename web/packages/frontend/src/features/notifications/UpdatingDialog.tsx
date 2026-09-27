@@ -44,6 +44,7 @@ export function UpdatingDialog({ target, row, message, lost, reconnecting, check
         </div>
         <div className="min-w-0 flex-1 text-sm leading-5">
           <p className="text-text">{text}</p>
+          {row?.detail && <p className="mt-1 whitespace-pre-line break-words text-muted">{row.detail}</p>}
           {reconnecting && <p className="mt-1 text-muted">{m.update_dialog_reconnecting()}</p>}
         </div>
       </div>

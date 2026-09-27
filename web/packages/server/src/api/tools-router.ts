@@ -88,14 +88,14 @@ async function applyWithNotification(
       ? { revision: result.verified_revision, version: typeof result.verified_version === 'string' ? result.verified_version : null }
       : undefined
     if (result.confirmation_required === true) ctx.deps.updateNotifications.transition(notification.id, 'awaiting_confirmation', null, verifiedIdentity)
-    else if (result.restart_blocked === true) ctx.deps.updateNotifications.transition(notification.id, 'blocked', null, verifiedIdentity)
-    else if (result.ok !== true) ctx.deps.updateNotifications.transition(notification.id, 'failed', null, verifiedIdentity)
+    else if (result.restart_blocked === true) ctx.deps.updateNotifications.transition(notification.id, 'blocked', null, verifiedIdentity, result.message)
+    else if (result.ok !== true) ctx.deps.updateNotifications.transition(notification.id, 'failed', null, verifiedIdentity, result.message || result.error)
     else if (target === 'webui' && result.restart_scheduled === true) {
       ctx.deps.updateNotifications.transition(notification.id, 'restarting', str(result.sourceRevision || result.candidate_revision), verifiedIdentity)
     } else ctx.deps.updateNotifications.transition(notification.id, 'succeeded', null, verifiedIdentity)
     return { ...result, notification_id: notification.id }
   } catch (error) {
-    ctx.deps.updateNotifications.transition(notification.id, 'failed')
+    ctx.deps.updateNotifications.transition(notification.id, 'failed', null, undefined, error instanceof Error ? error.message : null)
     throw error
   }
 }

@@ -30,6 +30,8 @@ interface StoredUpdateNotification {
   acknowledged_action_id: string | null
   verified_revision: string | null
   verified_version: string | null
+  /** The apply's own explanation of a failed or blocked attempt (sanitized, bounded); null in every other phase. */
+  detail: string | null
   performed_action_ids: string[]
   dismissed_at: string | null
   expected_identity: string | null
@@ -83,7 +85,7 @@ const copy = (row: StoredUpdateNotification): PublicUpdateNotification => ({
   destination: row.destination,
   title: row.title, message: row.message, created_at: row.created_at, updated_at: row.updated_at, read_at: row.read_at,
   acknowledged_at: row.acknowledged_at, acknowledged_action_id: row.acknowledged_action_id,
-  verified_revision: row.verified_revision, verified_version: row.verified_version,
+  verified_revision: row.verified_revision, verified_version: row.verified_version, detail: row.detail,
   unread: row.read_at === null,
   active: row.kind === 'update' && ['applying', 'restarting'].includes(row.phase),
   requires_interaction: row.requires_acknowledgement && row.acknowledged_at === null,
@@ -157,7 +159,7 @@ export class UpdateNotificationStore {
       actions: [{ id: WEB_REFRESH_ACTION, label: 'Refresh now', style: 'primary', acknowledges: false }],
       destination: null, title: 'Talaria Web was updated', message: 'Refresh this tab to load the new version.',
       created_at: stamp, updated_at: stamp, read_at: null, acknowledged_at: null,
-      acknowledged_action_id: null, verified_revision: null, verified_version: null,
+      acknowledged_action_id: null, verified_revision: null, verified_version: null, detail: null,
       performed_action_ids: [], dismissed_at: null, expected_identity: current, tab_id: tab, watchers: [],
     }
     if (!this.hasProtectedCapacity(row)) return state
@@ -204,7 +206,7 @@ export class UpdateNotificationStore {
       requires_acknowledgement: input.requiresAcknowledgement === true, actions,
       destination: safeDestination(input.destination), title, message,
       created_at: stamp, updated_at: stamp, read_at: null, acknowledged_at: null,
-      acknowledged_action_id: null, verified_revision: null, verified_version: null,
+      acknowledged_action_id: null, verified_revision: null, verified_version: null, detail: null,
       performed_action_ids: [], dismissed_at: null, expected_identity: null, tab_id: null, watchers: [],
     }
     if (!this.hasProtectedCapacity(row)) throw new Error('Update notification protected capacity reached')
@@ -218,7 +220,7 @@ export class UpdateNotificationStore {
     return row ? copy(row) : null
   }
 
-  transition(id: string, phase: UpdateNotificationPhase, expectedIdentity?: string | null, verifiedIdentity?: VerifiedUpdateIdentity): PublicUpdateNotification | null {
+  transition(id: string, phase: UpdateNotificationPhase, expectedIdentity?: string | null, verifiedIdentity?: VerifiedUpdateIdentity, detail?: unknown): PublicUpdateNotification | null {
     const row = this.rows.find((entry) => entry.id === id)
     if (!row) return null
     const phaseChanged = row.phase !== phase
@@ -227,6 +229,7 @@ export class UpdateNotificationStore {
     row.updated_at = this.now().toISOString()
     if (phaseChanged) row.read_at = null
     row.expected_identity = expectedIdentity?.trim().slice(0, 160) || null
+    row.detail = phase === 'failed' || phase === 'blocked' ? safeDetail(detail) : null
     if (verifiedIdentity) {
       row.verified_revision = typeof verifiedIdentity.revision === 'string' && REVISION.test(verifiedIdentity.revision) ? verifiedIdentity.revision : null
       row.verified_version = safeText(verifiedIdentity.version, '', 80) || null
@@ -381,6 +384,7 @@ export class UpdateNotificationStore {
           acknowledged_action_id: typeof row.acknowledged_action_id === 'string' ? row.acknowledged_action_id.slice(0, 64) : null,
           verified_revision: typeof row.verified_revision === 'string' && REVISION.test(row.verified_revision) ? row.verified_revision : null,
           verified_version: safeText(row.verified_version, '', 80) || null,
+          detail: safeDetail(row.detail),
           performed_action_ids: Array.isArray(row.performed_action_ids) ? row.performed_action_ids.map((id) => safeToken(id, '')).filter(Boolean).slice(0, 16) : [],
           dismissed_at: typeof row.dismissed_at === 'string' ? row.dismissed_at : null,
           expected_identity: typeof row.expected_identity === 'string' ? row.expected_identity.slice(0, 160) : null,
@@ -420,6 +424,8 @@ export class UpdateNotificationStore {
 const safeToken = (value: unknown, fallback: string): string => typeof value === 'string' && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(value) ? value : fallback
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const safeText = (value: unknown, fallback: string, limit: number): string => typeof value === 'string' && value.trim() ? value.trim().replace(/[\x00-\x1f\x7f]+/g, ' ').slice(0, limit) : fallback
+/** Keeps line breaks (build output, recovery commands); drops other control characters. */
+const safeDetail = (value: unknown): string | null => typeof value === 'string' && value.trim() ? value.trim().replace(/\r\n?/g, '\n').replace(/[\x00-\x09\x0b-\x1f\x7f]+/g, ' ').slice(0, 2000) : null
 const safeActions = (value: unknown): UpdateNotificationAction[] => !Array.isArray(value) ? [] : value.slice(0, 4).flatMap((raw): UpdateNotificationAction[] => {
   if (!raw || typeof raw !== 'object') return []
   const action = raw as Partial<UpdateNotificationAction>
