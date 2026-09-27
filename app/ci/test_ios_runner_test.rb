@@ -32,18 +32,23 @@ class TestIOSRunnerTest < Minitest::Test
   def test_unit_tests_never_request_real_live_activities
     # A test host that requests real Live Activities leaves them on the simulator,
     # and the next host launch there fails with "No such process" or hangs (TAL-375).
+    spy = /Spy\w*LiveActivityManager/
     constructions = Dir[File.expand_path("../TalariaTests/**/*.swift", __dir__)].flat_map do |path|
-      File.read(path, encoding: "UTF-8").scan(/^(\s*)(?:let \w+ = |return )ChatViewModel\((.*?)\n\1\)/m).map do |_, arguments|
-        [File.basename(path), arguments]
+      source = File.read(path, encoding: "UTF-8")
+      source.enum_for(:scan, /^(\s*)(?:let \w+ = |return )ChatViewModel\((.*?)\n\1\)/m).map do
+        match = Regexp.last_match
+        enclosing_function = source[0...match.begin(0)][/.*\bfunc .*/m].to_s.split(/\bfunc /).last.to_s
+        [File.basename(path), enclosing_function, match[2][/liveActivityManager: ([^,\n]+)/, 1]]
       end
     end
 
     assert_operator(constructions.length, :>=, 10)
-    constructions.each do |file, arguments|
-      assert_match(/liveActivityManager: \S/, arguments, "#{file} builds a ChatViewModel with the real Live Activity manager")
+    constructions.each do |file, enclosing_function, manager|
+      # A nil or omitted manager resolves to the shared production manager.
+      test_double = manager&.match?(/\A(?:liveActivityManager \?\? )?#{spy}\(\)\z/) ||
+        (manager&.match?(/\A\w+\z/) && enclosing_function.match?(/\b#{manager}(?: = |: )#{spy}\b/))
+      assert(test_double, "#{file} builds a ChatViewModel with #{manager || "the default"} Live Activity manager")
     end
-    support = File.read(File.expand_path("../TalariaTests/ChatViewModelSendTests+Support.swift", __dir__), encoding: "UTF-8")
-    assert_includes(support, "liveActivityManager: liveActivityManager ?? SpyChatLiveActivityManager(),")
 
     workflow = File.read(File.expand_path("../../.github/workflows/pr-ci.yml", __dir__), encoding: "UTF-8")
     live_step = workflow[/- name: Run the live Web contract test.*?(?=\n      - name: )/m]
