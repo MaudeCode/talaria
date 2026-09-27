@@ -29,7 +29,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, findCurrentUserTurn, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
@@ -831,11 +831,21 @@ export class TurnRunner {
       this.deps.store.sessions.delete(current.session_id)
       return true
     }
-    if (current.messages.some((m) => isCancelMarker(m)) && current.active_stream_id === null && !current.pending_user_message) return true
+    const stop = this.stopContexts.get(streamId)
+    const settle = (): Message[] | null => (stop ? stoppedTurnContext(stop.previousContext, checkpoint, stop.prompt, stop.msgText, (this.registry.partialText.get(streamId) ?? []).join('')) : null)
+    if (current.messages.some((m) => isCancelMarker(m)) && current.active_stream_id === null && !current.pending_user_message) {
+      // The worker's canonical result can arrive after cancel() settled without a checkpoint (the interrupt reply failed
+      // or timed out): it replaces this stream's context and never adds a second Stop row.
+      const late = stop && checkpoint && current.messages.some((m) => isCancelMarker(m) && m._turn_id === streamId) && findCurrentUserTurn(checkpoint, stop.msgText) !== null ? settle() : null
+      if (late) {
+        current.context_messages = dedupeContext(late)
+        try { this.deps.store.save(current) } catch { return false }
+      }
+      return true
+    }
     const startedAt = current.pending_started_at
     this.materializePendingUserTurn(current, buildActiveTurnToken(streamId, current.pending_started_at), streamId)
-    const stop = this.stopContexts.get(streamId)
-    const context = stop ? stoppedTurnContext(stop.previousContext, checkpoint, stop.prompt, stop.msgText, (this.registry.partialText.get(streamId) ?? []).join('')) : null
+    const context = settle()
     if (context) current.context_messages = dedupeContext(context)
     current.active_stream_id = null
     current.pending_user_message = null

@@ -569,6 +569,26 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'assistant', content: 'Operation interrupted.' }])
   })
 
+  it('the worker\'s canonical result replaces the fallback context when the interrupt reply failed (TAL-364)', async () => {
+    const sid = await newSession(s)
+    const earlier = await earlierTurn(sid)
+    let prompt = ''
+    sidecar.respond('chat.interrupt', () => { throw new SidecarError('interrupt timed out', { condition: 'sidecar_error' }) })
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      prompt = str(params.user_message)
+      for (const e of toolFrames) emit(e)
+      opts.signal?.addEventListener('abort', () => { resolve({ ...completed([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'assistant', content: 'Operation interrupted.' }]), status: 'cancelled' }) })
+    }))
+    const streamId = await start(sid, 'Check the rollout')
+    await frames(streamId, (f) => f.event === 'tool_complete')
+    expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+    await frames(streamId, (f) => f.event === 'cancel')
+    const until = Date.now() + 5000
+    while (s.deps.registry.activeRuns.has(streamId) && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    expect((await messagesOf(s, sid)).filter((m) => m._error)).toHaveLength(1)
+    expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'assistant', content: 'Operation interrupted.' }])
+  })
+
   it('a stopped worker that unwinds after a successor was admitted cannot overwrite the successor (TAL-364)', async () => {
     const sid = await newSession(s)
     const earlier = await earlierTurn(sid)
