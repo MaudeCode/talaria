@@ -174,8 +174,18 @@ describe('stream reducer: every lifecycle exit', () => {
     s = ev(s, 'error', { message: 'legacy' })
     expect(s.turns[SID]!.status).toBe('error')
     let c = started()
-    c = ev(c, 'apperror', { type: 'interrupted', message: 'stopped' })
+    c = ev(c, 'apperror', { type: 'interrupted', terminal_state: 'interrupted', message: 'stopped' })
     expect(c.turns[SID]).toMatchObject({ status: 'cancelled', cancelledMessage: 'stopped', error: null })
+  })
+  it.each([
+    ['done', { terminal_state: 'no_response' }, 'done', 'no_response'],
+    ['apperror', { type: 'cancelled', terminal_state: 'cancelled', message: 'stopped' }, 'cancelled', 'cancelled'],
+    ['apperror', { type: 'compression_exhausted', terminal_state: 'compression_exhausted', message: 'full' }, 'error', 'compression_exhausted'],
+    ['apperror', { type: 'cancelled', message: 'no outcome' }, 'error', 'error'],
+    ['cancel', { terminal_state: 'cancelled' }, 'cancelled', 'cancelled'],
+  ] as const)('takes the outcome of %s from its terminal_state, never from the error type (%j)', (name, data, status, terminalState) => {
+    const s = ev(started(), name, data)
+    expect(s.turns[SID]).toMatchObject({ status, terminalState })
   })
   it('cancellation: cancel event finalizes and ends the stream', () => {
     let s = started()

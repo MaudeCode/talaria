@@ -44,7 +44,10 @@ contributor guidance; it does not change runtime behavior or CI gates.
   `_turn_id` and attaches each completed turn's scene (ordered rows under
   "Worked", `final_answer`, `terminal_state`, `expanded_by_default`) in session
   detail and terminal payloads; Web and iOS render those fields and derive none
-  of them. Remaining hardening stays tracked under #3400.
+  of them. Every terminal chat frame (`done`, `apperror`/`error`, `cancel`)
+  carries the same `terminal_state` enum (`TurnTerminalStateSchema`) that the
+  settled scene then shows; the run journal maps it to its own run-status
+  vocabulary. Remaining hardening stays tracked under #3400.
 - [`docs/architecture/stable-assistant-turn-anchor-phase0.md`](architecture/stable-assistant-turn-anchor-phase0.md):
   cumulative implementation inventory for the Stable Assistant Turn Anchors
   work under #3926. Use it to distinguish shipped wiring from historical slice

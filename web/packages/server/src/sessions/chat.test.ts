@@ -336,6 +336,37 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it('stamps one terminal_state on every terminal frame and the persisted turn, and keeps the journal vocabulary', async () => {
+    const cases: [string, (params: Json, emit: (frame: { event: string; data: Json }) => void) => ChatResult, string, string, string][] = [
+      ['completed', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Answer' }]), 'done', 'completed', 'completed'],
+      ['no_response', (params, emit) => {
+        emit({ event: 'token', data: { text: ' ' } })
+        return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: '', tool_calls: [{ id: 'nr1', name: 'read_file' }] }, { role: 'tool', tool_call_id: 'nr1', content: 'x' }])
+      }, 'done', 'no_response', 'completed'],
+      ['cancelled', () => { throw new Error('Task cancelled by user') }, 'apperror', 'cancelled', 'interrupted-by-user'],
+      ['interrupted', () => { throw new Error('Response interrupted') }, 'apperror', 'interrupted', 'interrupted-by-crash'],
+      ['compression_exhausted', () => { throw new Error('compression_exhausted: context length exceeded and cannot compress further') }, 'apperror', 'compression_exhausted', 'errored'],
+      ['error', () => { throw new Error('boom') }, 'apperror', 'error', 'errored'],
+    ]
+    for (const [label, respond, event, state, journalState] of cases) {
+      const sid = await newSession(s)
+      sidecar.respond('chat.start', (params, emit) => respond(params as Json, emit as never))
+      const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: label }))
+      const streamId = String(start.stream_id)
+      const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end' || f.event === 'apperror')
+      expect((frames.find((f) => f.event === event)?.data as Json).terminal_state, label).toBe(state)
+      // The scene rides on the turn's last assistant row, in the full transcript and in each window that holds it.
+      const total = s.deps.sessionStore.get(sid).messages.length
+      for (const query of ['', '&msg_limit=2', `&msg_limit=2&msg_before=${String(total)}`]) {
+        const messages = ((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages as Json[]
+        expect(messages.findLast((m) => m.role === 'assistant')?._anchor_activity_scene, `${label}${query}`).toMatchObject({ terminal_state: state })
+      }
+      if (event === 'apperror') expect(s.deps.sessionStore.get(sid).messages.at(-1)?._terminal_state, label).toBe(state)
+      const status = await json(await s.get(`/api/chat/stream/status?stream_id=${streamId}`))
+      expect((status.journal as Json).terminal_state, label).toBe(journalState)
+    }
+  })
+
   it('relays approval and clarify prompts and resolves them through the sidecar [py:test_issue4771_local_approval_regression.py::test_local_mirrored_approval_resolves_not_409] [py:test_issue4948_local_stale_approval.py::test_stale_card_click_clears_not_dead_ends] [py:test_issue4948_local_stale_approval.py::test_fresh_local_approval_still_resolves] [py:test_issue5345_clarify_toast_and_interrupt_provenance.py::test_clarify_pending_never_404s]', async () => {
     const sid = await newSession(s)
     let releaseApproval: (choice: string) => void = () => undefined
@@ -413,12 +444,13 @@ describe('chat turns through the sidecar', () => {
     expect(interrupted).toBe(true)
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'cancel')
     expect(eventNames(frames)).toContain('cancel')
-    expect(frames.find((f) => f.event === 'cancel')?.data).toMatchObject({ type: 'cancelled', message: 'Cancelled by user' })
+    expect(frames.find((f) => f.event === 'cancel')?.data).toMatchObject({ type: 'cancelled', message: 'Cancelled by user', terminal_state: 'cancelled' })
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     const messages = detail.messages as Json[]
     expect(messages[0]).toMatchObject({ role: 'user', content: 'long task', _recovered: true })
     expect(messages[1]).toMatchObject({ role: 'assistant', content: 'partial answer', _partial: true })
     expect(String(messages[2]?.content)).toMatch(/^\*\*Task cancelled:\*\* Task cancelled\./)
+    expect(messages[2]).toMatchObject({ _terminal_state: 'cancelled', _anchor_activity_scene: { terminal_state: 'cancelled' } })
     expect(messages.map((m) => m._turn_id)).toEqual([streamId, streamId, streamId])
     expect(((frames.find((f) => f.event === 'cancel')?.data as Json).session as Json | undefined)?.messages).toSatisfy((rows: Json[] | undefined) => !rows || rows.every((m) => m._turn_id === streamId))
     expect(detail.active_stream_id).toBeNull()

@@ -398,6 +398,11 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
   }
 }
 
+/** A settled turn's outcome by the scene's rules, so its `done` frame reports what the settled scene then shows. */
+export function turnTerminalState(messages: unknown[], turnId: string): string {
+  return str(buildTurnScene(turnsOf(messages).get(turnId) ?? [])?.terminal_state) || 'no_response'
+}
+
 /**
  * A stored scene keeps its rows; the final answer it predates comes from its turn by the same rule, except after a
  * consumed steer (the reply then answers the steer, so the last row is not promoted).

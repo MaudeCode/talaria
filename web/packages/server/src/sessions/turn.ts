@@ -26,7 +26,7 @@ import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles
 import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
 import { attachTodoState } from './todo.js'
 import { withSessionWireFlags } from './list.js'
-import { hydrateAnchorActivityScenes, withTurnIds } from './anchor.js'
+import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
 import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
@@ -134,9 +134,12 @@ export function cancelledTurnHint(agentName = 'Hermes'): string {
   return `${agentName} stopped this turn at your request. Send a new message to continue.`
 }
 
+/** Error classifications that are turn outcomes in their own right; every other one ends the turn as `error`. */
+const CLASSIFIED_OUTCOMES = new Set(['no_response', 'compression_exhausted', 'interrupted', 'cancelled'])
+
 export function providerErrorPayload(message: string, errType: string, hint = '', redact = true): Record<string, unknown> {
   const safe = redact ? redactString(message).trim() : message
-  const payload: Record<string, unknown> = { message: safe || message, type: errType }
+  const payload: Record<string, unknown> = { message: safe || message, type: errType, terminal_state: CLASSIFIED_OUTCOMES.has(errType) ? errType : 'error' }
   if (hint) payload.hint = hint
   if (safe) payload.details = safe.length > 1200 ? `${safe.slice(0, 1197).trimEnd()}…` : safe
   return payload
@@ -204,9 +207,6 @@ export function explicitTextSignal(cfg: Config): boolean {
 }
 
 export const GATEWAY_APPROVAL_RELAY_UNAVAILABLE = 'Gateway approval could not be relayed because the active run is unavailable. Reopen the session or retry after it reconnects.'
-
-/** Error classifications that are turn outcomes in their own right (not a generic failure). */
-const CLASSIFIED_OUTCOMES = new Set(['no_response', 'compression_exhausted', 'interrupted', 'cancelled'])
 
 export class TurnRunner {
   readonly writers = new Map<string, RunJournalWriter>()
@@ -311,7 +311,7 @@ export class TurnRunner {
       }
       channel.put([event, data, eventId, meta.redacted])
       if (event === 'done' || event === 'cancel' || event === 'apperror' || event === 'error') {
-        try { deps.onTerminal?.(streamId, event === 'done' ? 'completed' : event === 'cancel' ? 'cancelled' : 'failed') } catch { /* best effort */ }
+        try { deps.onTerminal?.(streamId, event === 'done' ? 'completed' : event === 'cancel' || data.terminal_state === 'cancelled' ? 'cancelled' : 'failed') } catch { /* best effort */ }
       }
     }
     this.sessionPuts.set(sessionId, put)
@@ -320,7 +320,7 @@ export class TurnRunner {
     try {
       s = deps.store.get(sessionId)
     } catch {
-      put('apperror', { type: 'error', message: 'Session not found', session_id: sessionId })
+      put('apperror', { type: 'error', terminal_state: 'error', message: 'Session not found', session_id: sessionId })
       this.teardown(sessionId, streamId)
       return
     }
@@ -463,7 +463,7 @@ export class TurnRunner {
         }
         opts.onDone?.(answer)
         // Python `_ephemeral_session_payload`: only role and content leave the server for a btw turn.
-        put('done', { session: { session_id: sessionId, messages: (result.messages).map((m) => ({ role: m.role, content: m.content })) }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer })
+        put('done', { session: { session_id: sessionId, messages: (result.messages).map((m) => ({ role: m.role, content: m.content })) }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer, terminal_state: answer.trim() ? 'completed' : 'no_response' })
         try { rmSync(deps.store.pathFor(sessionId), { force: true }) } catch { /* ignore */ }
         deps.store.sessions.delete(sessionId)
         return
@@ -607,11 +607,9 @@ export class TurnRunner {
       const donePayload: Record<string, unknown> = {
         session: redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled()),
         usage: doneUsage,
+        terminal_state: turnTerminalState(s.messages, streamId),
       }
-      if (result.tool_limit_reached) {
-        donePayload.terminal_state = 'tool_limit_reached'
-        donePayload.terminal_reason = 'max_iterations'
-      }
+      if (result.tool_limit_reached) donePayload.terminal_reason = 'max_iterations'
       put('done', donePayload)
       for (const [event, payload] of steerEvents) put(event, payload)
       // The turn is over: release admission before the title work so a follow-up message is accepted while the
@@ -748,8 +746,8 @@ export class TurnRunner {
     const hint = str(payload.hint)
     const errorMessage: Message = { role: 'assistant', content: `**${label}:** ${str(payload.message) || label}${hint ? `\n\n*${hint}*` : ''}`, timestamp: Math.trunc(this.deps.now()), _error: true, _turn_id: streamId }
     if (duration !== null) errorMessage._turnDuration = Math.round(duration * 1000) / 1000
-    // The classified outcome the live frame reported stays on the row, so the settled scene says the same.
-    if (CLASSIFIED_OUTCOMES.has(str(payload.type))) errorMessage._terminal_state = str(payload.type)
+    // The outcome the live frame reported stays on the row, so the settled scene says the same.
+    errorMessage._terminal_state = str(payload.terminal_state) || 'error'
     if (payload.type === 'compression_exhausted') {
       // Python `stamp_compression_exhausted_recovery`: durable recovery metadata on the session, the marker, and the frame.
       const recovery = stampCompressionExhaustedRecovery(s, str(payload.message) || label, str(payload.details))
@@ -804,7 +802,7 @@ export class TurnRunner {
   }
 
   private cancelPayload(message = 'Cancelled by user'): Record<string, unknown> {
-    return { type: 'cancelled', message, hint: cancelledTurnHint(this.deps.agentName()) }
+    return { type: 'cancelled', terminal_state: 'cancelled', message, hint: cancelledTurnHint(this.deps.agentName()) }
   }
 
   /** Python `_emit_cancel_event`: the terminal frame carries the settled session so tabs can render the partial without a reload. */
@@ -835,7 +833,7 @@ export class TurnRunner {
     current.pending_user_source = null
     this.appendPartialSnapshot(current, streamId)
     const text = message.trim().endsWith('.') ? message.trim() : `${message.trim()}.`
-    current.messages.push({ role: 'assistant', content: `**Task cancelled:** ${text}\n\n*${cancelledTurnHint(this.deps.agentName())}*`, _error: true, provider_details: text, provider_details_label: 'Cancellation details', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
+    current.messages.push({ role: 'assistant', content: `**Task cancelled:** ${text}\n\n*${cancelledTurnHint(this.deps.agentName())}*`, _error: true, _terminal_state: 'cancelled', provider_details: text, provider_details_label: 'Cancellation details', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
     try { this.deps.store.save(current) } catch { return false }
     this.deps.pending.clearApprovals(current.session_id)
