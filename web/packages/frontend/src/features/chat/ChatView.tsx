@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
@@ -32,14 +32,13 @@ import { ErrorState, formatDate } from '../../ui/States'
 import { readPersisted, removePersisted, writePersisted } from '../../lib/persisted'
 import type { ActivityMode } from './blocks/Worklog'
 import { createSessionNow } from '../sessions/useNewChat'
-import { useSessionSearch } from './useSessionSearch'
 
 export function ChatView({ sessionId }: { sessionId: string | null }) {
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
   const navigate = useNavigate()
   const settings = useSettingsQuery()
-  const { query, session, rows, live, truncated, loadOlder, loadingOlder, refresh } = useTranscript(sessionId)
+  const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, refresh } = useTranscript(sessionId)
   const clarify = useClarify(sessionId, live)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [workspaceOpen, setWorkspaceOpen] = useState(() => readPersisted('hermes-webui-workspace-panel') === 'open')
@@ -48,7 +47,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const [yolo, setYolo] = useState(false)
   // Choices made on the unsaved chat (no session yet) apply when the session is created.
   const [pending, setPending] = useState<{ model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null }>({})
-  useSessionSearch(sessionId)
+  const focusKey = useSearch({ strict: false }).msg
 
   useEffect(() => {
     configureStream({ queryClient: qc, onCompressed: (sid, next) => { if (sid === sessionId) void navigate({ to: '/session/$sessionId', params: { sessionId: next } }) } })
@@ -256,9 +255,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             renderUserMarkdown={!!settings.data?.render_user_markdown}
             autoFollow={settings.data?.auto_scroll_follow !== false}
             sessionId={sessionId ?? undefined}
+            focusKey={focusKey}
             actions={{ ...(session?.read_only ? {} : { onEdit: (row: VisibleMessage, text: string) => { void onEdit(row, text) }, onRegenerate: () => { void onRegenerate() } }), ...(session?.can_branch ? { onBranch: (row: VisibleMessage) => { void onBranch(row) } } : {}) }}
             tts={!!(settings.data as Record<string, unknown> | undefined)?.tts_enabled}
             truncated={truncated}
+            loadedFrom={base}
             onLoadOlder={() => { void loadOlder() }}
             loadingOlder={loadingOlder}
             emptyState={query.isPending && !knownEmpty ? <TranscriptSkeleton /> : emptyState}

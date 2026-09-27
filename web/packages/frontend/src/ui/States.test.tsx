@@ -30,6 +30,7 @@ describe('LoadingState', () => {
         actions={{ onRegenerate: vi.fn() }}
         tts={false}
         truncated={false}
+        loadedFrom={0}
         onLoadOlder={vi.fn()}
         loadingOlder={false}
         emptyState={<TranscriptSkeleton />}

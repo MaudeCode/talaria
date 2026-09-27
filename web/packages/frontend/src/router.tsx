@@ -18,7 +18,8 @@ export function getRouter(opts?: CreateRouterOptions) {
     basepath: opts?.root ? routerBasepath(opts.root) : '/',
     // The prerender (SSR shell) calls getRouter() without options; the client always passes them.
     context: { queryClient: opts?.queryClient, bootstrap: opts?.bootstrap } as unknown as RouterContext,
-    scrollRestoration: true,
+    // A session transcript owns its entry position (its bottom, or a `?msg=` row); the router would restore an offset copied from the previous location.
+    scrollRestoration: ({ location }) => !/\/session\/[^/]+\/?$/.test(location.pathname),
     defaultPreload: 'intent',
     defaultPreloadStaleTime: 0,
     defaultStructuralSharing: true,
