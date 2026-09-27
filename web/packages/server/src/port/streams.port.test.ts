@@ -589,6 +589,46 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'assistant', content: 'Operation interrupted.' }])
   })
 
+  it('work the Agent finishes after a checkpointed Stop stays out of the next request (TAL-364)', async () => {
+    const sid = await newSession(s)
+    const earlier = await earlierTurn(sid)
+    let prompt = ''
+    const lateCall: Json = { role: 'assistant', content: '', tool_calls: [{ id: 'call-late', type: 'function', function: { name: 'terminal', arguments: '{"command":"kubectl rollout restart"}' } }] }
+    const lateResult: Json = { role: 'tool', name: 'terminal', tool_call_id: 'call-late', content: 'restarted after the Stop' }
+    sidecar.respond('chat.interrupt', () => ({ ok: true, checkpoint: [...earlier, { role: 'user', content: prompt }, toolCall, toolResult] }))
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      prompt = str(params.user_message)
+      for (const e of toolFrames) emit(e)
+      opts.signal?.addEventListener('abort', () => { resolve({ ...completed([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, lateCall, lateResult, { role: 'assistant', content: 'Operation interrupted.' }]), status: 'cancelled' }) })
+    }))
+    const streamId = await start(sid, 'Check the rollout')
+    await frames(streamId, (f) => f.event === 'tool_complete')
+    expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+    await frames(streamId, (f) => f.event === 'cancel')
+    const until = Date.now() + 5000
+    while (s.deps.registry.activeRuns.has(streamId) && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'assistant', content: 'Operation interrupted.' }])
+  })
+
+  it('an eager-saved prompt is not repeated in a stopped turn\'s context (TAL-364)', async () => {
+    const turns = s.deps.turns as unknown as { deps: { saveMode: () => 'deferred' | 'eager' } }
+    const original = turns.deps.saveMode
+    turns.deps.saveMode = () => 'eager'
+    try {
+      const sid = await newSession(s)
+      sidecar.respond('chat.interrupt', () => ({ ok: true }))
+      const started = blockingTurn([{ event: 'token', data: { text: 'Half of the answer' } }])
+      const streamId = await start(sid, 'Explain the outage')
+      const prompt = await started
+      await frames(streamId, (f) => f.event === 'token')
+      expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+      await frames(streamId, (f) => f.event === 'cancel')
+      expect(await nextHistory(sid)).toEqual([{ role: 'user', content: prompt }, { role: 'assistant', content: 'Half of the answer' }])
+    } finally {
+      turns.deps.saveMode = original
+    }
+  })
+
   it('a stopped worker that unwinds after a successor was admitted cannot overwrite the successor (TAL-364)', async () => {
     const sid = await newSession(s)
     const earlier = await earlierTurn(sid)

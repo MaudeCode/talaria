@@ -214,8 +214,11 @@ export class TurnRunner {
   private readonly lastCompletedTool = new Map<string, string>()
   /** Streams whose run completed (`done` emitted) and only await title work; a late cancel is a no-op for these. */
   private readonly settledStreams = new Set<string>()
-  /** TAL-364: what a Stop needs to write the turn's model context: its starting context and the prompt the Agent got. */
-  private readonly stopContexts = new Map<string, { previousContext: Message[]; prompt: string | Record<string, unknown>[]; msgText: string }>()
+  /**
+   * TAL-364: what a Stop needs to write the turn's model context: its starting context, the prompt the Agent got, and
+   * whether a settlement already used a canonical checkpoint (which marks the stop boundary; later work never replaces it).
+   */
+  private readonly stopContexts = new Map<string, { previousContext: Message[]; prompt: string | Record<string, unknown>[]; msgText: string; checkpointed: boolean }>()
 
   constructor(readonly deps: TurnRunnerDeps) {}
 
@@ -332,7 +335,8 @@ export class TurnRunner {
     const apiHistory = sanitizeMessagesForApi(previousContext)
     const workspaceCtx = workspaceContextPrefix(opts.workspace)
     // Before the first await: a Stop can land at any point after admission.
-    this.stopContexts.set(streamId, { previousContext, prompt: workspaceCtx + msgText, msgText })
+    // An eager save already put this turn's prompt in the transcript; the Stop fallback appends it once itself.
+    this.stopContexts.set(streamId, { previousContext: previousContext.filter((m) => m._turn_id !== streamId), prompt: workspaceCtx + msgText, msgText, checkpointed: false })
     const activeTurnToken = buildActiveTurnToken(streamId, s.pending_started_at)
     const sidecar = deps.sidecar()
     const partialText = this.registry.partialText.get(streamId) ?? []
@@ -832,11 +836,17 @@ export class TurnRunner {
       return true
     }
     const stop = this.stopContexts.get(streamId)
-    const settle = (): Message[] | null => (stop ? stoppedTurnContext(stop.previousContext, checkpoint, stop.prompt, stop.msgText, (this.registry.partialText.get(streamId) ?? []).join('')) : null)
+    const canonical = stop !== undefined && checkpoint !== null && findCurrentUserTurn(checkpoint, stop.msgText) !== null
+    const settle = (): Message[] | null => {
+      if (!stop) return null
+      if (canonical) stop.checkpointed = true
+      return stoppedTurnContext(stop.previousContext, checkpoint, stop.prompt, stop.msgText, (this.registry.partialText.get(streamId) ?? []).join(''))
+    }
     if (current.messages.some((m) => isCancelMarker(m)) && current.active_stream_id === null && !current.pending_user_message) {
       // The worker's canonical result can arrive after cancel() settled without a checkpoint (the interrupt reply failed
-      // or timed out): it replaces this stream's context and never adds a second Stop row.
-      const late = stop && checkpoint && current.messages.some((m) => isCancelMarker(m) && m._turn_id === streamId) && findCurrentUserTurn(checkpoint, stop.msgText) !== null ? settle() : null
+      // or timed out): it replaces this stream's context and never adds a second Stop row. A settlement that already had
+      // one keeps it, so work the Agent finished after the Stop stays out.
+      const late = canonical && !stop.checkpointed && current.messages.some((m) => isCancelMarker(m) && m._turn_id === streamId) ? settle() : null
       if (late) {
         current.context_messages = dedupeContext(late)
         try { this.deps.store.save(current) } catch { return false }
