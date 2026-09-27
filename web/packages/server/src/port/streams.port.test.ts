@@ -591,6 +591,22 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'user', content: 'Prefer the staging cluster' }, { role: 'assistant', content: 'Operation interrupted.' }])
   })
 
+  it('Stop during a tool_use call keeps no reasoning left behind by the unanswered call (TAL-364)', async () => {
+    const sid = await newSession(s)
+    const earlier = await earlierTurn(sid)
+    let prompt = ''
+    const thinkingCall: Json = { role: 'assistant', content: [{ type: 'thinking', thinking: 'private plan' }, { type: 'tool_use', id: 'use-open', name: 'terminal', input: { command: 'sleep 600' } }] }
+    sidecar.respond('chat.interrupt', () => ({ ok: true, checkpoint: [...earlier, { role: 'user', content: prompt }, thinkingCall] }))
+    const started = blockingTurn([{ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'sleep 600' }, tid: 'use-open' } }])
+    const streamId = await start(sid, 'Wait for it')
+    prompt = await started
+    await frames(streamId, (f) => f.event === 'tool')
+    expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+    await frames(streamId, (f) => f.event === 'cancel')
+    // Nothing usable was captured: the earlier context stays, the prompt is not replayed, and the reasoning never enters.
+    expect(await nextHistory(sid)).toEqual(earlier)
+  })
+
   it('a worker result that settles the cancel before the interrupt reply writes one marker and keeps the pre-Stop checkpoint (TAL-364)', async () => {
     const sid = await newSession(s)
     const earlier = await earlierTurn(sid)

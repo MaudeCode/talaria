@@ -543,6 +543,8 @@ export function sanitizeMessagesForApi(messages: Message[]): Message[] {
       const parts = msg.content.filter((part) => !(isDict(part) && part.type === 'tool_use' && !answered.has(str(part.id))))
       if (!parts.length) continue
       msg = { ...msg, content: parts }
+      // Reasoning left behind by a dropped call is not an answer either.
+      if (isReasoningOnlyAssistant(msg)) continue
     }
     if (msg.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
       const kept = msg.tool_calls.filter((tc) => answered.has(toolCallId(tc)))
