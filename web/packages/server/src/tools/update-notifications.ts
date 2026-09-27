@@ -51,7 +51,7 @@ export type PublicUpdateNotification = Omit<StoredUpdateNotification, 'owner' | 
 }
 export interface FrontendBuildState { current_build: string | null; loaded_build: string | null; refresh_required: boolean; notification_id: string | null }
 /** `tab_update` is the update operation the requesting tab most recently started or rejoined, even once dismissed; automatic updates never set it. */
-export interface UpdateNotificationList { scope_id: string; notifications: PublicUpdateNotification[]; tab_update: PublicUpdateNotification | null; unread_count: number; clearable_count: number; can_clear: boolean }
+export interface UpdateNotificationList { scope_id: string; notifications: PublicUpdateNotification[]; tab_update: PublicUpdateNotification | null; tab_joined_at: string | null; unread_count: number; clearable_count: number; can_clear: boolean }
 export interface CreateUpdateNotificationInput {
   kind: string
   target?: UpdateNotificationTarget | null
@@ -248,7 +248,7 @@ export class UpdateNotificationStore {
     const joinedAt = (row: StoredUpdateNotification) => row.watchers.find((watcher) => watcher.tab === tab)?.at ?? ''
     const tabUpdate = tab ? this.rows.filter((row) => row.kind === 'update' && joinedAt(row) !== '' && this.isVisible(row, scope))
       .sort((a, b) => joinedAt(b).localeCompare(joinedAt(a)) || b.created_at.localeCompare(a.created_at))[0] : undefined
-    return { scope_id: updateNotificationScopeId(scope), notifications, tab_update: tabUpdate ? copy(tabUpdate) : null, unread_count: visible.filter((row) => row.read_at === null).length, clearable_count: clearableCount, can_clear: clearableCount > 0 }
+    return { scope_id: updateNotificationScopeId(scope), notifications, tab_update: tabUpdate ? copy(tabUpdate) : null, tab_joined_at: tabUpdate ? joinedAt(tabUpdate) : null, unread_count: visible.filter((row) => row.read_at === null).length, clearable_count: clearableCount, can_clear: clearableCount > 0 }
   }
 
   clear(scope: UpdateNotificationScope): UpdateNotificationList {

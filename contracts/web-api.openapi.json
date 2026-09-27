@@ -26859,6 +26859,17 @@
                         }
                       ]
                     },
+                    "tab_joined_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "unread_count": {
                       "type": "integer",
                       "minimum": 0,
@@ -26878,6 +26889,7 @@
                     "frontend_build",
                     "notifications",
                     "tab_update",
+                    "tab_joined_at",
                     "unread_count",
                     "clearable_count",
                     "can_clear"
@@ -27801,6 +27813,17 @@
                         }
                       ]
                     },
+                    "tab_joined_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "unread_count": {
                       "type": "integer",
                       "minimum": 0,
@@ -27820,6 +27843,7 @@
                     "frontend_build",
                     "notifications",
                     "tab_update",
+                    "tab_joined_at",
                     "unread_count",
                     "clearable_count",
                     "can_clear"

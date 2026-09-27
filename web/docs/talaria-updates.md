@@ -207,7 +207,8 @@ only its explicit acknowledging action satisfies that requirement. Semantic dest
 before the request settles; the other target's action stays available. The apply request carries the tab id,
 and the server records it, with the time, on the operation it starts or rejoins. Each notification read then
 returns the operation that tab started or rejoined most recently as `tab_update`, including after it is dismissed
-from the notification center. Automatic
+from the notification center, and when the tab last joined it as `tab_joined_at`. A rejoin whose response is lost
+changes only that time, so the dialog still recognizes its operation. Automatic
 updates carry no tab and never open the dialog. The dialog shows the record's phase and message, so a reload or a
 route change keeps following the same operation, and a different owner never sees it.
 

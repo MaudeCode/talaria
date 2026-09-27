@@ -84,7 +84,7 @@ describe('UpdateNotificationStore', () => {
     expect(store.list(tab).tab_update?.id).toBe(agent.id)
     now = new Date('2026-09-27T12:02:00Z')
     store.watch(tab, web.id)
-    expect(store.list(tab).tab_update?.id).toBe(web.id)
+    expect(store.list(tab)).toMatchObject({ tab_update: { id: web.id, updated_at: '2026-09-27T12:00:00.000Z' }, tab_joined_at: '2026-09-27T12:02:00.000Z' })
     expect(store.list(other).tab_update?.id).toBe(web.id)
   })
 

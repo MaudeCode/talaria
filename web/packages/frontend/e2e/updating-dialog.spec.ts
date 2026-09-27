@@ -29,7 +29,7 @@ type Row = ReturnType<typeof record>
 
 /** The notification read endpoint, reachable or not, answering this tab's `tab_update` from test-owned state. */
 async function serveNotifications(page: Page) {
-  const state = { up: true, scope: 'owner-a', tabUpdate: null as Row | null, reads: 0 }
+  const state = { up: true, scope: 'owner-a', tabUpdate: null as Row | null, joinedAt: null as string | null, reads: 0 }
   await page.route('**/api/update-notifications**', (route) => {
     const request = route.request()
     if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/cancel')) {
@@ -42,6 +42,7 @@ async function serveNotifications(page: Page) {
     return route.fulfill({ json: {
       scope_id: state.scope, frontend_build: { current_build: null, loaded_build: null, refresh_required: false, notification_id: null },
       notifications: state.tabUpdate ? [state.tabUpdate] : [], tab_update: state.tabUpdate,
+      tab_joined_at: state.tabUpdate ? state.joinedAt ?? state.tabUpdate.created_at : null,
       unread_count: state.tabUpdate ? 1 : 0, clearable_count: state.tabUpdate ? 1 : 0, can_clear: state.tabUpdate !== null,
     } })
   })
@@ -160,6 +161,35 @@ test('closing before the server record arrives keeps that operation closed acros
   const after = server.reads
   await expect.poll(() => server.reads).toBeGreaterThan(after + 1)
   await expect(dialog).toBeHidden()
+})
+
+test('rejoining the operation the tab already follows shows its phase even when the response is lost', async ({ page, errors }) => {
+  const server = await serveNotifications(page)
+  await serveUpdatesCheck(page, { web: 1, agent: 0 })
+  server.tabUpdate = record(WEB_ID, 'applying')
+  server.joinedAt = '2026-09-27T12:00:00Z'
+  let applies = 0
+  await page.route('**/api/updates/apply', (route) => {
+    applies += 1
+    // The server rejoins the same record (only this tab's join time changes), then the response is lost.
+    server.joinedAt = '2026-09-27T12:05:00Z'
+    return route.abort('connectionreset')
+  })
+  await page.goto('/settings/system')
+  await settle(page)
+  const dialog = page.getByRole('dialog', { name: 'Updating Talaria Web' })
+  await expect(dialog).toContainText(MESSAGES.applying)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+
+  await page.getByRole('button', { name: 'Update Web', exact: true }).click()
+  await expect(dialog).toContainText(MESSAGES.applying)
+  const reads = server.reads
+  await expect.poll(() => server.reads).toBeGreaterThan(reads + 1)
+  await expect(dialog).toContainText(MESSAGES.applying)
+  await expect(dialog.getByRole('status')).not.toContainText('could not be verified')
+  expect(applies).toBe(1)
+  dropExpectedFailures(errors)
 })
 
 test('the dialog follows the server operation across route change and reload, and clears for another owner', async ({ page }) => {

@@ -375,6 +375,8 @@ export const UpdateNotificationsSchema = z.object({
   notifications: z.array(UpdateNotificationSchema),
   /** Update operation the requesting tab most recently started or rejoined from Settings (even once dismissed); its Updating dialog follows this record. */
   tab_update: UpdateNotificationSchema.nullable(),
+  /** When the requesting tab last started or rejoined `tab_update`; a rejoin changes only this. */
+  tab_joined_at: z.iso.datetime().nullable(),
   unread_count: z.number().int().nonnegative(),
   clearable_count: z.number().int().nonnegative(),
   can_clear: z.boolean(),

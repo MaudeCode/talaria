@@ -70,6 +70,7 @@
     }
   ],
   "tab_update": null,
+  "tab_joined_at": null,
   "unread_count": 1,
   "clearable_count": 1,
   "can_clear": true

@@ -50,7 +50,8 @@ interface Tracking {
   /** Closed before its record arrived: this start stays hidden, across reloads of the tab, until another start replaces it. */
   hidden: boolean
 }
-const recordKey = (row: UpdateNotification | null) => row ? `${row.id}@${row.updated_at}` : null
+/** The tab's server record as of now; a rejoin of the same record changes only its join time. */
+const recordKey = (row: UpdateNotification | null, joinedAt: string | null) => row ? `${row.id}@${row.updated_at}@${joinedAt ?? ''}` : null
 /** A lost connection leaves the apply outcome unknown; any other answer came from the server. */
 const lostServer = (error: unknown) => isApiError(error) ? error.kind === 'network' || error.kind === 'timeout' || [502, 503, 504].includes(error.status) : true
 const CLOSED_KEY = 'talaria-closed-update-dialogs'
@@ -90,8 +91,9 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
   // Operations whose dialog this tab closed; sessionStorage keeps a reload from reopening them.
   const [closed, setClosed] = useState(readClosed)
   const tabUpdate = notifications.data?.tab_update ?? null
+  const tabJoinedAt = notifications.data?.tab_joined_at ?? null
   const dialogRow = tracking
-    ? tabUpdate?.target === tracking.target && (tabUpdate.id === tracking.notificationId || recordKey(tabUpdate) !== tracking.baseline) ? tabUpdate : null
+    ? tabUpdate?.target === tracking.target && (tabUpdate.id === tracking.notificationId || recordKey(tabUpdate, tabJoinedAt) !== tracking.baseline) ? tabUpdate : null
     : tabUpdate && !closed.includes(tabUpdate.id) ? tabUpdate : null
   const dialogRowId = dialogRow?.id ?? null
   // The dialog replaces this record's phase toasts while it shows them.
@@ -106,7 +108,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
     })
   }, [])
   const progress = useMemo<UpdateProgress>(() => ({
-    begin: (target) => { setTracking({ target, baseline: recordKey(tabUpdate), notificationId: null, lostAt: null, message: null, hidden: false }) },
+    begin: (target) => { setTracking({ target, baseline: recordKey(tabUpdate, tabJoinedAt), notificationId: null, lostAt: null, message: null, hidden: false }) },
     settle: (target, outcome) => {
       setTracking((current) => {
         if (current?.target !== target) return current
@@ -118,7 +120,7 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
       void qc.invalidateQueries({ queryKey: keys.updateNotifications })
     },
     dismiss: (notificationId) => { closeDialog(notificationId ?? null) },
-  }), [tabUpdate, qc, closeDialog])
+  }), [tabUpdate, tabJoinedAt, qc, closeDialog])
   useEffect(() => () => { for (const toastId of visibleServerToasts.current) removeToast(toastId) }, [])
   // A new service worker taking over is a signal that the server may serve a newer build: recheck now.
   useEffect(() => {
