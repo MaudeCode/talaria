@@ -7,14 +7,14 @@ is superseded by the TAL-202 source consolidation.
 
 **Status:** v0.4 spec — revised pre-polish plan with a glass-forward native mobile UI direction
 **Author:** Project owner + planning assistant
-**Target:** Native iOS client for the [`MaudeCode/hermes-webui`](https://github.com/MaudeCode/hermes-webui) Python server
+**Target:** Native iOS client for the [Talaria Web](../web/README.md) server (originally the `hermes-webui` Python server)
 **Audience:** A coding agent tasked with building the app, plus the human owner reviewing it
 
 ---
 
 ## 0. How to use this document
 
-You (the coding agent) are building a native iOS app called **Talaria** in App Store Connect. The Xcode target and iPhone home-screen display name are both `Talaria`. You are NOT modifying the upstream `MaudeCode/hermes-webui` Python server in this project. You are building a separate Swift/SwiftUI iOS application that talks to that server over HTTPS.
+You (the coding agent) are building a native iOS app called **Talaria** in App Store Connect. The Xcode target and iPhone home-screen display name are both `Talaria`. This spec covers the Swift/SwiftUI app; server changes belong in Talaria Web (`../web/`) and its shared contracts, following the root `AGENTS.md` server-owned state rule. You are building a separate Swift/SwiftUI iOS application that talks to that server over HTTPS.
 
 Treat each section's checkboxes as your work plan. After every milestone, update the `## Progress log` at the bottom.
 
@@ -47,7 +47,7 @@ The phone is not the compute plane. The phone is the control plane and review su
 The server owns execution. The app owns mobile interaction quality.
 
 ### 1.5 Upstream project — quick facts
-- Repo: https://github.com/MaudeCode/hermes-webui
+- Source: [`../web/`](../web/README.md) in this repository. The facts below describe the original Python server; Talaria Web is now TypeScript on Node 24.
 - Language: Python 3 (server), HTML/CSS/vanilla JS (existing browser client)
 - License: MIT
 - Default port: `8787`
@@ -386,7 +386,7 @@ Each phase ends in a working, committable state. Run on the simulator after ever
 - [x] Add a `README.md` that points at this spec.
 - [x] Write a one-page `DEVELOPMENT.md` with:
   - **Primary test target:** the developer's own HTTPS-exposed `hermes-webui` instance (needs the password). Works from simulator AND a physical device.
-  - **Local-only fallback**: clone `MaudeCode/hermes-webui`, run via Docker OR `python3 server.py` from the repo. Note: physical-device testing against `http://localhost:8787` requires either a Tailscale IP or an ATS exception.
+  - **Local-only fallback**: run this repository's `../web/` locally (Docker or its launcher). Note: physical-device testing against `http://localhost:8787` requires either a Tailscale IP or an ATS exception.
   - How to verify the server is up before debugging the app: `curl https://<your-server>/health`.
 
 ### Phase 1 — Onboarding + auth (1–2 days)
@@ -841,10 +841,8 @@ Stop and ask before guessing:
 
 ## 15. References
 
-- Upstream repo: https://github.com/MaudeCode/hermes-webui
-- Upstream `api/routes.py`: https://github.com/MaudeCode/hermes-webui/blob/master/api/routes.py
-- Upstream `server.py`: https://github.com/MaudeCode/hermes-webui/blob/master/server.py
-- Upstream `ARCHITECTURE.md`: https://github.com/MaudeCode/hermes-webui/blob/master/ARCHITECTURE.md
+- Talaria Web source: [`../web/`](../web/README.md)
+- Talaria Web architecture: [`../web/ARCHITECTURE.md`](../web/ARCHITECTURE.md)
 - Pinned local upstream copy: `.codex-tmp/hermes-webui/` (read-only; see `CONTRACT_TESTS.md`)
 - Cloudflare Tunnel docs: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
 - Tailscale download: https://tailscale.com/download
