@@ -803,9 +803,9 @@ type Span = [start: number, end: number, assignment: number]
 /**
  * The text with each `$NAME` / `${NAME}` that has a recorded value replaced by it, outside single and ANSI-C quotes, as
  * the shell expands it, and where each substituted value sits in it. Unknown names and parameter operators stay as
- * written. One pass. `null` past the size cap (a long value referenced many times), with the assignments used so far.
+ * written. One pass. `null` past the size cap (a long value referenced many times).
  */
-function expandAssignments(text: string, assignments: Assignment[]): { expanded: string; spans: Span[] } | { expanded: null; used: Set<number> } {
+function expandAssignments(text: string, assignments: Assignment[]): { expanded: string; spans: Span[] } | { expanded: null } {
   const spans: Span[] = []
   const known = new Map<string, number>()
   const cap = text.length * 4 + 4096
@@ -837,7 +837,7 @@ function expandAssignments(text: string, assignments: Assignment[]): { expanded:
       out += text.slice(last, i)
       spans.push([out.length, out.length + word.length, assignment])
       out += word
-      if (out.length > cap) return { expanded: null, used: new Set(spans.map(([, , used]) => used)) }
+      if (out.length > cap) return { expanded: null }
       last = VAR_REF_RE.lastIndex
       i = last - 1
     }
@@ -877,7 +877,8 @@ export function redactSensitive(text: string): string {
   // assignment whose substitution the view masks, and every word and unit the view masks, wherever it appears.
   const assignments = inlineAssignments(joined)
   const expansion = expandAssignments(joined, assignments)
-  const secretAssignments = expansion.expanded === null ? expansion.used : new Set<number>()
+  // Past the expansion cap, every literal value is taken as a secret.
+  const secretAssignments = new Set(expansion.expanded === null ? assignments.flatMap(({ value }, n) => (value ? [n] : [])) : [])
   const secrets = new Set<string>()
   if (expansion.expanded !== null) {
     const { expanded, spans } = expansion
@@ -906,12 +907,13 @@ export function redactSensitive(text: string): string {
     // A value of delimiters only (`P='@@@'`) has no unit to count: it is a secret when the view shows it fewer times,
     // which fails closed on a delimiter a masked credential also held (`SEP='='` beside `--token=x`).
     // ponytail: past 32 such values, each is taken as a secret rather than counted.
+    // Counted as substituted, escapes included (`"$P"` with `P='$$$'` is `\$\$\$`).
     const delimiterValues = new Map<string, boolean>()
-    for (const [, , n] of spans) {
-      const value = assignments[n]!.value!
-      if (!value || HAS_SECRET_UNIT_RE.test(value)) continue
-      let secret = delimiterValues.get(value)
-      if (secret === undefined) delimiterValues.set(value, (secret = delimiterValues.size >= 32 || expanded.split(value).length > view.split(value).length))
+    for (const [start, end, n] of spans) {
+      const word = expanded.slice(start, end)
+      if (!assignments[n]!.value || HAS_SECRET_UNIT_RE.test(assignments[n]!.value)) continue
+      let secret = delimiterValues.get(word)
+      if (secret === undefined) delimiterValues.set(word, (secret = delimiterValues.size >= 32 || expanded.split(word).length > view.split(word).length))
       if (secret) secretAssignments.add(n)
     }
     secrets.delete('')

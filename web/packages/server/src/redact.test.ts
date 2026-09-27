@@ -364,9 +364,11 @@ describe('inline shell assignments', () => {
     expect(redactText(`P='hunter2!!!'; curl -u "bob:$P" x`, true)).toBe(`P='***'; curl -u "bob:***" x`)
     expect(redactText(`SCHEME='https://'; U=bob; SEP=:; AT=@; curl "\${SCHEME}\${U}\${SEP}hunter2!!!\${AT}example.com"`, true)).not.toMatch(/hunter2|!!!/)
     expect(redactText(`SCHEME='https://'; U=bob; SEP=:; AT=@; P=hunt; curl "\${SCHEME}\${U}\${SEP}$P!!!\${AT}example.com"`, true)).not.toMatch(/hunt|!!!/)
-    // Past the expansion cap every substituted value is taken as a secret.
+    expect(redactText(`P='$$$'; curl -u "bob:$P" x`, true)).toBe(`P='***'; curl -u "bob:***" x`)
+    // Past the expansion cap every literal value is taken as a secret.
     const long = 'x'.repeat(2_000)
     expect(redactText(`P=${long}; echo $P $P $P $P $P; curl -u bob:$P x`, true)).not.toContain(long.slice(0, 20))
+    expect(redactText(`A=${long}; echo $A $A $A $A $A $A; Q=hunter2; curl -u bob:$Q x`, true)).not.toContain('hunter2')
   })
 
   it('keeps a command with nothing to mask as written', () => {
