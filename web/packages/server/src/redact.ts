@@ -730,13 +730,119 @@ function redactComposedWords(text: string): string {
   return out + text.slice(last)
 }
 
+/** Where a command may start with `NAME=` / `export NAME=`: the text's start, or after `;`, `&&`, `||`, `|`, a newline or `(`. */
+const ASSIGNMENT_START_RE = /(?:^|[;&|\n(])[ \t]*(export[ \t]+)?(?=[A-Za-z_][A-Za-z0-9_]*\+?=)/g
+const ASSIGNMENT_WORD_RE = /([A-Za-z_][A-Za-z0-9_]*)(\+?)=/y
+const BLANKS_RE = /[ \t]*/y
+/** `$NAME` or `${NAME}`; a parameter operator (`${NAME:-x}`, `${#NAME}`) is not a plain reference. */
+const VAR_REF_RE = /\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/y
+
+/** An assignment the text makes: from `at` on, `$name` is `value` (`undefined` once the shell computes it). */
+interface Assignment { at: number; name: string; value: string | undefined }
+
+/**
+ * The simple assignments (`NAME=value`, `export NAME=value`) at command starts, in text order. A value is one shell word,
+ * dequoted; one with an expansion, substitution or append (`+=`) is unknown. A prefix assignment (`SEP=x curl …`) only
+ * sets the command's environment, so it is skipped. One pass.
+ */
+function inlineAssignments(text: string): Assignment[] {
+  const found: Assignment[] = []
+  const quoteAt = quoteTracker(text)
+  const closeOf = enclosingClose(text)
+  ASSIGNMENT_START_RE.lastIndex = 0
+  for (let m = ASSIGNMENT_START_RE.exec(text); m; m = ASSIGNMENT_START_RE.exec(text)) {
+    let i = m.index + m[0].length
+    // An assignment inside a quoted argument is text (`echo "; SEP=x"`).
+    if (quoteAt(i)) continue
+    const chain: Assignment[] = []
+    ASSIGNMENT_WORD_RE.lastIndex = i
+    for (let a = ASSIGNMENT_WORD_RE.exec(text); a; ASSIGNMENT_WORD_RE.lastIndex = i, a = ASSIGNMENT_WORD_RE.exec(text)) {
+      const start = i + a[0].length
+      const end = shellWordEnd(text, start, '', closeOf)
+      const word = text.slice(start, end)
+      const known = !a[2] && firstExpansion(word) < 0 && !word.startsWith('(')
+      // An unknown value takes effect where it starts: the word of a command substitution runs to the end of the text.
+      chain.push(known ? { at: end, name: a[1]!, value: shellDequote(word).replaceAll(WORD_SPACE, ' ') } : { at: start, name: a[1]!, value: undefined })
+      BLANKS_RE.lastIndex = end
+      BLANKS_RE.exec(text)
+      i = BLANKS_RE.lastIndex
+    }
+    if (m[1] || i >= text.length || /[;&|\n)#]/.test(text[i]!)) found.push(...chain)
+    ASSIGNMENT_START_RE.lastIndex = Math.max(i, ASSIGNMENT_START_RE.lastIndex)
+  }
+  return found
+}
+
+/** A substituted value as one shell word: escaped inside `"…"`, single-quoted outside unless it is plain. */
+function substitutedWord(value: string, quote: string): string {
+  if (quote) return value.replace(/["\\$`]/g, '\\$&')
+  return /^[\w.:/@%+,=-]*$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`
+}
+
+/**
+ * The text with each `$NAME` / `${NAME}` that has a recorded value replaced by it, outside single and ANSI-C quotes, as
+ * the shell expands it. Unknown names and parameter operators stay as written. One pass.
+ */
+function expandAssignments(text: string, assignments: Assignment[]): string {
+  const known = new Map<string, string>()
+  // ponytail: an expansion past this size (a long value referenced many times) keeps the unexpanded view.
+  const cap = text.length * 4 + 4096
+  let next = 0
+  let quote = ''
+  let out = ''
+  let last = 0
+  for (let i = 0; i < text.length; i += 1) {
+    for (; next < assignments.length && assignments[next]!.at <= i; next += 1) {
+      const { name, value } = assignments[next]!
+      if (value === undefined) known.delete(name)
+      else known.set(name, value)
+    }
+    const c = text[i]!
+    if (c === '\\') i += 1
+    else if (!quote && c === "'") {
+      const close = text.indexOf("'", i + 1)
+      if (close === -1) break
+      i = close
+    } else if (!quote && c === '$' && text[i + 1] === "'") {
+      for (i += 2; i < text.length && text[i] !== "'"; i += text[i] === '\\' ? 2 : 1);
+    } else if (c === '"') quote = quote ? '' : '"'
+    else if (c === '$') {
+      VAR_REF_RE.lastIndex = i
+      const ref = VAR_REF_RE.exec(text)
+      const value = ref ? known.get(ref[1] ?? ref[2]!) : undefined
+      if (value === undefined) continue
+      out += text.slice(last, i) + substitutedWord(value, quote)
+      if (out.length > cap) return text
+      last = VAR_REF_RE.lastIndex
+      i = last - 1
+    }
+  }
+  return last ? out + text.slice(last) : text
+}
+
+/**
+ * Threat model: the redactor reads only the tool's text. Variables the text itself assigns (`SEP=:; curl -u bob${SEP}x`)
+ * are resolved in text order; shell control flow (conditionals, loops, functions, `read`, `unset`) is not modelled.
+ * Variables from the environment or from earlier tool calls are unknown: the fail-closed rules (computed key tails, `-u`
+ * expansions, URL authorities built from expansions) are the only guard for them, and a secret assembled entirely from
+ * unknown variables can still be published.
+ */
 export function redactSensitive(text: string): string {
   if (!text) return text
   // Line continuations join their lines as the shell runs them (`--user \⏎ bob:pw`, `--pass\⏎word=x`): that view is
   // redacted, and a text with nothing to mask keeps its lines as written.
   const joined = text.replace(/\\\r?\n/g, '')
   const out = redactRules(redactComposedWords(joined))
-  return joined !== text && out === joined ? text : out
+  const redacted = joined !== text && out === joined ? text : out
+  // The view with the text's own assignments resolved: when it masks something, it is shown, and each secret it
+  // discovered is masked everywhere, the assignment that defined it included.
+  const expanded = joined.includes('=') && joined.includes('$') ? expandAssignments(joined, inlineAssignments(joined)) : joined
+  if (expanded === joined) return redacted
+  const view = redactRules(redactComposedWords(expanded))
+  if (view === expanded) return redacted
+  const shown = tokenCounts(view)
+  const secrets = new Set([...tokenCounts(expanded)].filter(([token, count]) => count > (shown.get(token) ?? 0)).map(([token]) => token))
+  return view.replace(/[\p{L}\p{N}_]+/gu, (token) => (secrets.has(token) ? '***' : token))
 }
 
 function redactRules(text: string): string {
