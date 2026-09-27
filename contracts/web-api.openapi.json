@@ -2806,6 +2806,9 @@
                               "_turn_id": {
                                 "type": "string"
                               },
+                              "_active_turn_user": {
+                                "type": "boolean"
+                              },
                               "_steer": {
                                 "type": "object",
                                 "properties": {
@@ -4235,6 +4238,9 @@
                               "_turn_id": {
                                 "type": "string"
                               },
+                              "_active_turn_user": {
+                                "type": "boolean"
+                              },
                               "_steer": {
                                 "type": "object",
                                 "properties": {
@@ -5424,6 +5430,9 @@
                               },
                               "_turn_id": {
                                 "type": "string"
+                              },
+                              "_active_turn_user": {
+                                "type": "boolean"
                               },
                               "_steer": {
                                 "type": "object",
@@ -7492,6 +7501,9 @@
                               "_turn_id": {
                                 "type": "string"
                               },
+                              "_active_turn_user": {
+                                "type": "boolean"
+                              },
                               "_steer": {
                                 "type": "object",
                                 "properties": {
@@ -9465,6 +9477,9 @@
                               },
                               "_turn_id": {
                                 "type": "string"
+                              },
+                              "_active_turn_user": {
+                                "type": "boolean"
                               },
                               "_steer": {
                                 "type": "object",
@@ -18451,6 +18466,9 @@
                               },
                               "_turn_id": {
                                 "type": "string"
+                              },
+                              "_active_turn_user": {
+                                "type": "boolean"
                               },
                               "_steer": {
                                 "type": "object",

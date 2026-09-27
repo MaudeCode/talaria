@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reopening or reloading a chat while the agent is still working keeps your latest message visible above its reply.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "A Web chat keeps loading after a reply to a message with attached files.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

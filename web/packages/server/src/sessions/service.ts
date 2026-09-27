@@ -17,7 +17,7 @@ import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow } from './state-db.js'
-import { mergeSessionMessagesAppendOnly, withoutRunningTurnOutput } from './merge.js'
+import { mergeSessionMessagesAppendOnly, pendingUserRow, withPendingUserTurn, withoutRunningTurnOutput } from './merge.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
@@ -296,7 +296,9 @@ export class SessionService {
     this.clearStaleStreamState(s)
     const journaled = loadMessages ? this.journaledActiveTurn(s) : null
     let transcript = loadMessages ? this.mergedTranscript(s) : []
-    if (journaled) transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
+    const pending = loadMessages ? this.pendingTurn(s) : null
+    if (pending) transcript = withPendingUserTurn(transcript, pending)
+    if (journaled)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids and scenes are computed over the full transcript, so every window reports the same values.
     const all: unknown[] = loadMessages ? hydrateAnchorActivityScenes(withTurnIds(transcript), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null }) : []
     let truncated: unknown[] = []
@@ -305,6 +307,14 @@ export class SessionService {
     let summaryLast: number | null = null
     if (loadMessages) {
       ;[truncated, offset] = messageWindowForDisplay(all, msgLimit, msgBefore)
+      // TAL-368: a tail window starts no later than the running turn's prompt, so a turn whose output stays in the
+      // transcript (no journal to replay it) keeps its prompt; older pages end before it, so it is never sent twice.
+      // ponytail: the window grows with that turn's persisted rows; clip the turn instead if degraded runs get long.
+      const prompt = pending && msgBefore === null ? all.findIndex((m) => isDict(m) && m.role === 'user' && m._active_turn_token === pending.activeTurnToken) : -1
+      if (prompt >= 0 && prompt < offset) {
+        truncated = all.slice(prompt, offset + truncated.length)
+        offset = prompt
+      }
       if (msgLimit !== null) truncated = messagesForLimitedPayload(truncated)
     } else {
       summaryCount = s.metadataMessageCount ?? s.messages.length
@@ -359,6 +369,16 @@ export class SessionService {
     const summary = this.deps.journal?.findRunSummary(turnId)
     if (summary?.session_id !== s.session_id || summary.journal_pruned) return null
     return { turnId, startedAt: Number(s.pending_started_at), activeTurnToken }
+  }
+
+  /** TAL-368: the active run's prompt, which the detail shows until settlement persists it; null when idle or promptless. */
+  private pendingTurn(s: Session): Parameters<typeof withPendingUserTurn>[1] | null {
+    const turnId = str(s.active_stream_id).trim()
+    const activeTurnToken = buildActiveTurnToken(turnId, s.pending_started_at)
+    const text = str(s.pending_user_message)
+    if (!turnId || !activeTurnToken || (!text && !s.pending_attachments.length)) return null
+    const startedAt = Number(s.pending_started_at)
+    return { turnId, startedAt, activeTurnToken, localCount: s.messages.length, prompt: pendingUserRow(text, s.pending_attachments, startedAt, s.pending_user_source || 'webui', turnId) }
   }
 
   /** A session without a sidecar, synthesized from state.db for this profile; 404/409 like the detail. */

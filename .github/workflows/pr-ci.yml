@@ -290,6 +290,10 @@ jobs:
           fixture="$RUNNER_TEMP/contract-fixture/live-responses.json"
           ../scripts/s3-artifact get "${fixture_key}" "${fixture}"
           echo "${fixture_sha256}  ${fixture}" | shasum -a 256 --check
+          # A contract-only selection leaves the test host (with its Live Activities) running on this
+          # simulator, and relaunching it fails with "No such process". Start from a shut-down
+          # simulator; xcodebuild boots it.
+          xcrun simctl shutdown "${SIMULATOR_ID}" 2>/dev/null || true
           # xcodebuild strips TEST_RUNNER_ and hands the path to the simulator test process.
           # The scheme is parallelizable, so without -parallel-testing-enabled NO this single
           # test would clone the simulator while the main run's clones are still torn down.
