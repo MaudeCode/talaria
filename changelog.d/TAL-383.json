@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The onboarding setup prompt now installs and starts Talaria Web instead of the retired Python web UI.",
+      "highlight": false
+    }
+  ]
+}
