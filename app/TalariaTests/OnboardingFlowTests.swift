@@ -178,6 +178,7 @@ final class OnboardingFlowTests: XCTestCase {
             "talaria-web ctl start",
             "talaria-web ctl status",
             "talaria-web ctl restart",
+            "If a service or another launcher runs Talaria Web, do not restart it yourself",
             "Inventory before changing anything",
             "command -v tailscale",
             "tailscale version",

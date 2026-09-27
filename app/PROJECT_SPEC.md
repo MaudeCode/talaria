@@ -14,7 +14,7 @@ is superseded by the TAL-202 source consolidation.
 
 ## 0. How to use this document
 
-You (the coding agent) are building a native iOS app called **Talaria** in App Store Connect. The Xcode target and iPhone home-screen display name are both `Talaria`. You are NOT modifying the Talaria Web server (`../web/`) in this project. You are building a separate Swift/SwiftUI iOS application that talks to that server over HTTPS.
+You (the coding agent) are building a native iOS app called **Talaria** in App Store Connect. The Xcode target and iPhone home-screen display name are both `Talaria`. This spec covers the Swift/SwiftUI app; server changes belong in Talaria Web (`../web/`) and its shared contracts, following the root `AGENTS.md` server-owned state rule. You are building a separate Swift/SwiftUI iOS application that talks to that server over HTTPS.
 
 Treat each section's checkboxes as your work plan. After every milestone, update the `## Progress log` at the bottom.
 

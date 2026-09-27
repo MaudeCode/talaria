@@ -20,7 +20,7 @@ Set up or repair Talaria Web safely:
 - Only if `talaria-web` is not already installed, check `node --version`. If Node is missing or older than 24, tell me what to install and stop. Otherwise install it with `npm install -g @maudecode/talaria-web`.
 - Keep Talaria Web bound to `127.0.0.1:8787`, its default. Do not set `HERMES_WEBUI_HOST`.
 - Talaria Web reads its password from `$HERMES_HOME/.env` (default `~/.hermes/.env`). Preserve every existing line in `.env`; only add or update the `HERMES_WEBUI_PASSWORD` entry, and never truncate or replace the file. Preserve an existing password; if none exists, generate a secure random one. Set `umask 077` before creating a new `.env`. Whether `.env` already existed or is new, inspect its permissions and run `chmod 600` on it. Do not print the full .env or expose unrelated secrets.
-- Start it with `talaria-web ctl start`, or run `talaria-web ctl restart` if it was already running and you changed its password. Confirm with `talaria-web ctl status`.
+- If nothing runs Talaria Web yet, start it with `talaria-web ctl start` and confirm with `talaria-web ctl status`. If `talaria-web ctl start` already runs it and you changed its password, run `talaria-web ctl restart`. If a service or another launcher runs Talaria Web, do not restart it yourself; give me the exact restart command for that service or launcher instead.
 - Reuse an existing service when present. Do not configure auto-start yourself. Propose the exact OS-appropriate commands and steps around the verified launcher, then wait for me to run them. Do not touch `~/Library/LaunchAgents/` or restart Mac services.
 
 Expose only the localhost service through private Tailscale HTTPS:
