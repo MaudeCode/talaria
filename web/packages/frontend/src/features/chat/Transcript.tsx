@@ -122,20 +122,25 @@ export function Transcript(props: TranscriptProps) {
   })
 
   // Entry is keyed by the session scope (and a `?msg=` link), never by row keys: sessions can share them, and older rows change the first.
-  const entryRef = useRef<{ focus: string | undefined } | null>(null)
+  const entryRef = useRef<{ focus: string | undefined; pagedAt?: number } | null>(null)
   useLayoutEffect(() => { entryRef.current = { focus: focusKey }; settlingRef.current = true; lastTopRef.current = 0; pin(true) }, [scope, focusKey, pin])
   useLayoutEffect(() => {
     const entry = entryRef.current
     if (!entry || rows.length === 0) return
-    entryRef.current = null
     const index = entry.focus ? rows.findIndex((row) => row.key === entry.focus) : -1
+    // A linked message older than the loaded window pages older rows in until it appears; a failed page falls back to the bottom.
+    if (index < 0 && entry.focus && truncated && (entry.pagedAt !== rows.length || loadingOlder)) {
+      if (entry.pagedAt !== rows.length && !loadingOlder) { entry.pagedAt = rows.length; onLoadOlder() }
+      return
+    }
+    entryRef.current = null
     const target = index < 0 || virtualize ? null : scrollRef.current?.querySelector(`[data-message-key="${CSS.escape(entry.focus ?? '')}"]`)
     if (index < 0 || (!virtualize && !target)) { scrollToBottom(false); return }
     pin(false)
     settlingRef.current = false
     if (target) target.scrollIntoView({ block: 'center' })
     else virtualizer.scrollToIndex(index, { align: 'center' })
-  }, [rows, virtualize, virtualizer, pin, scrollToBottom])
+  }, [rows, virtualize, virtualizer, truncated, loadingOlder, onLoadOlder, pin, scrollToBottom])
 
   const renderRow = (row: VisibleMessage, i: number) => (
     row.message.role === 'user'

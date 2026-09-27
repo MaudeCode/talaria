@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Page, Route } from '@playwright/test'
 import { expect, test } from './fixtures'
 
 test.use({ serviceWorkers: 'block' })
@@ -64,13 +64,25 @@ test('a message deep link wins over the entry jump to the bottom', async ({ page
   await expect(target).toBeInViewport()
 })
 
+/** A first window of the newest `turns` turns over `turns` older ones, as the server pages `msg_before`. */
+const paged = (sid: string, turns: number) => (route: Route) => {
+  const before = new URL(route.request().url()).searchParams.get('msg_before')
+  const messages = before ? transcript(sid, turns) : transcript(sid, turns, turns)
+  return route.fulfill({ json: { session: { session_id: sid, title: sid, messages, _messages_truncated: !before, _messages_offset: before ? 0 : turns * 2 } } })
+}
+
+test('a message deep link loads older rows until it finds its message', async ({ page }) => {
+  await page.route('**/api/session?**', paged('entry-deep', 20))
+  await page.goto('/session/entry-deep?msg=5')
+  const target = page.locator('[data-message-key="5"]')
+  await expect(target).toBeInViewport()
+  await page.waitForTimeout(500)
+  await expect(target).toBeInViewport()
+})
+
 test('loading older rows keeps the reader where they are', async ({ page }) => {
   const turns = 20
-  await page.route('**/api/session?**', (route) => {
-    const before = new URL(route.request().url()).searchParams.get('msg_before')
-    const messages = before ? transcript('entry-older', turns) : transcript('entry-older', turns, turns)
-    return route.fulfill({ json: { session: { session_id: 'entry-older', title: 'Older', messages, _messages_truncated: !before, _messages_offset: before ? 0 : turns * 2 } } })
-  })
+  await page.route('**/api/session?**', paged('entry-older', turns))
   await page.goto('/session/entry-older')
   await expect(page.getByText(`entry-older question ${turns * 2}`, { exact: true })).toBeAttached()
   await expect.poll(() => distance(page)).toBeLessThan(2)
