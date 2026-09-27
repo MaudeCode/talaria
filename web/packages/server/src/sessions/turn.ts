@@ -425,9 +425,10 @@ export class TurnRunner {
                 if (tc.done) continue
                 if ((str(data.tid) && tc.tid === str(data.tid)) || (!tc.tid && tc.name === data.name)) { tc.done = true; tc.snippet = data.preview; id = toolIds.get(tc) ?? id; break }
               }
-              if (str(data.tid)) this.lastCompletedTool.set(streamId, str(data.tid))
+              id ||= mintToolId()
+              this.lastCompletedTool.set(streamId, id)
               const redacted = deps.redactEnabled()
-              put('tool_complete', publicToolFrame(withToolId(data, id || mintToolId()), redacted), { redacted })
+              put('tool_complete', publicToolFrame(withToolId(data, id), redacted), { redacted })
               return
             }
             // Python: the live chat frame carries the queue head plus depth, not the entry that just arrived.

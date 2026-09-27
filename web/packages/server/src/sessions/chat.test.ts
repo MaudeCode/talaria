@@ -328,6 +328,35 @@ describe('chat turns through the sidecar', () => {
     const fromLegacy = tools(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_seq=0`, (f) => f.event === 'stream_end'))
     expect(pairs(fromLegacy).slice(0, 4)).toEqual(expected.slice(0, 4))
     expect(fromLegacy.every((frame) => typeof frame.id === 'string' && frame.id !== '' && !('tid' in frame))).toBe(true)
+    // Its id-less rows pair across the run the way the live server pairs them, even when the cursor is past the start.
+    const [lc, ld] = [fromLegacy[4]?.id, fromLegacy[5]?.id]
+    expect(lc).not.toBe(ld)
+    expect(pairs(fromLegacy).slice(4)).toEqual([[lc, null], [ld, null], [ld, 'D'], [lc, 'C']])
+    const startSeq = legacy.findIndex((row) => row.event === 'tool' && (row.payload as Json).tid === '' && ((row.payload as Json).args as Json).path === 'c') + 1
+    const tail = tools(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_seq=${String(startSeq)}`, (f) => f.event === 'stream_end'))
+    expect(pairs(tail)).toEqual([[ld, null], [ld, 'D'], [lc, 'C']])
+  })
+
+  it('names a tool\'s minted id as the causal place of a steer the Agent took after it', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let release: () => void = () => undefined
+    let emitLive: ((frame: { event: string; data: Json }) => void) | null = null
+    sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
+      emitLive = emit
+      release = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Done.' }])) }
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', args: {} } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', preview: 'A' } })
+    }))
+    const streamId = String((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'read' }))).stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'tool_complete')
+    await post(s, '/api/chat/steer', { session_id: sid, text: 'then stop', steer_id: 'steer-m' })
+    emitLive!({ event: 'steer_pending', data: { text: '' } })
+    const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'steer_consumed')
+    const toolId = (frames.find((f) => f.event === 'tool_complete')?.data as Json).id
+    expect(toolId).toMatch(new RegExp(`^tool-${streamId}-\\d+$`))
+    expect((frames.find((f) => f.event === 'steer_consumed')?.data as Json).after_tool_call_id).toBe(toolId)
+    release()
   })
 
   it('builds the settled turn\'s scene with Codex commentary as prose under Worked, leaving the stored rows as the Agent wrote them', async () => {

@@ -147,13 +147,32 @@ function publicFramePayload(ctx: RequestContext, event: string, payload: unknown
   return tool ? publicToolFrame(payload as Record<string, unknown>, ctx.deps.sessions.deps.redactEnabled()) : payload
 }
 
-function publicJournalPayload(ctx: RequestContext, entry: JournalEvent): unknown {
+/** Journal rows written before the public tool `id`, keyed by run: each row's id, paired the way the live server pairs them. */
+type LegacyToolIds = Map<string, Map<number, string>>
+
+function legacyToolIds(ctx: RequestContext, entry: JournalEvent, cache: LegacyToolIds): Map<number, string> {
+  let ids = cache.get(entry.run_id)
+  if (ids) return ids
+  ids = new Map()
+  cache.set(entry.run_id, ids)
+  const open: { name: unknown; tid: string; id: string }[] = []
+  for (const row of ctx.deps.journal.readRunEvents(entry.session_id, entry.run_id)) {
+    if ((row.event !== 'tool' && row.event !== 'tool_complete') || !row.payload || typeof row.payload !== 'object') continue
+    const data = row.payload as Record<string, unknown>
+    const tid = str(data.tid)
+    const at = row.event === 'tool' ? -1 : open.findLastIndex((call) => (tid && call.tid === tid) || (!call.tid && call.name === data.name))
+    const id = at >= 0 ? open.splice(at, 1)[0]!.id : tid || `tool-${row.event_id}`
+    if (row.event === 'tool') open.push({ name: data.name, tid, id })
+    ids.set(row.seq, id)
+  }
+  return ids
+}
+
+function publicJournalPayload(ctx: RequestContext, entry: JournalEvent, legacy: LegacyToolIds): unknown {
   const payload = publicFramePayload(ctx, entry.event, entry.payload, entry.redacted)
   if ((entry.event !== 'tool' && entry.event !== 'tool_complete') || !payload || typeof payload !== 'object' || Array.isArray(payload) || 'id' in payload) return payload
-  // A journal written before the public `id` carries the Agent's call id as `tid`.
-  // ponytail: a pre-change row without a `tid` gets a per-row id, so its completion shows as its own card; pair by name here if that ever matters.
-  const frame = payload as Record<string, unknown>
-  return withToolId(frame, str(frame.tid) || `tool-${entry.event_id}`)
+  // A journal written before the public `id` carries the Agent's call id as `tid`, or nothing when the Agent sent none.
+  return withToolId(payload as Record<string, unknown>, legacyToolIds(ctx, entry, legacy).get(entry.seq) ?? `tool-${entry.event_id}`)
 }
 
 function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: string, afterSeq: number | null, opts: { maxSeq?: number | null; includeStale?: boolean } = {}): { found: boolean; terminal: boolean } {
@@ -161,8 +180,9 @@ function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: string,
   if (!summary) return { found: false, terminal: false }
   let terminal = false
   const events = ctx.deps.journal.readRunEvents(summary.session_id, streamId, { afterSeq, maxSeq: opts.maxSeq ?? null })
+  const legacy: LegacyToolIds = new Map()
   for (const entry of events) {
-    sse.event(entry.event || 'message', publicJournalPayload(ctx, entry), entry.event_id)
+    sse.event(entry.event || 'message', publicJournalPayload(ctx, entry, legacy), entry.event_id)
     if (SSE_RELAY_CLOSE_EVENTS.has(entry.event)) terminal = true
   }
   if ((opts.includeStale ?? true) && !summary.terminal) {
@@ -394,11 +414,12 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
   const sentOrder: string[] = []
   const note = (id: string): void => { sent.add(id); sentOrder.push(id); while (sentOrder.length > SESSION_SSE_SENT_EVENT_ID_LIMIT) sent.delete(sentOrder.shift()!) }
   const emitReplay = (events: JournalEvent[], streamId: string | null, cutoff: number | null): void => {
+    const legacy: LegacyToolIds = new Map()
     for (const entry of events) {
       const seq = streamId ? sameRunSeq(entry.event_id, streamId) : null
       if (cutoff !== null && seq !== null && seq > cutoff) continue
       if (entry.event_id && sent.has(entry.event_id)) continue
-      sse.event(entry.event || 'message', publicJournalPayload(ctx, entry), entry.event_id)
+      sse.event(entry.event || 'message', publicJournalPayload(ctx, entry, legacy), entry.event_id)
       if (entry.event_id) note(entry.event_id)
     }
   }
