@@ -311,7 +311,10 @@ export class TurnRunner {
       }
       channel.put([event, data, eventId, meta.redacted])
       if (event === 'done' || event === 'cancel' || event === 'apperror' || event === 'error') {
-        try { deps.onTerminal?.(streamId, event === 'done' ? 'completed' : event === 'cancel' || data.terminal_state === 'cancelled' ? 'cancelled' : 'failed') } catch { /* best effort */ }
+        // Relay's phase follows the turn outcome, so a background Live Activity ends as the app would end it.
+        const state = str(data.terminal_state)
+        const phase = state === 'completed' || state === 'tool_limit_reached' ? 'completed' : event === 'cancel' || state === 'cancelled' ? 'cancelled' : 'failed'
+        try { deps.onTerminal?.(streamId, phase) } catch { /* best effort */ }
       }
     }
     this.sessionPuts.set(sessionId, put)

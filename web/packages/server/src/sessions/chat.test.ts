@@ -337,18 +337,20 @@ describe('chat turns through the sidecar', () => {
   })
 
   it('stamps one terminal_state on every terminal frame and the persisted turn, and keeps the journal vocabulary', async () => {
-    const cases: [string, (params: Json, emit: (frame: { event: string; data: Json }) => void) => ChatResult, string, string, string][] = [
-      ['completed', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Answer' }]), 'done', 'completed', 'completed'],
+    const cases: [string, (params: Json, emit: (frame: { event: string; data: Json }) => void) => ChatResult, string, string, string, string][] = [
+      ['completed', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Answer' }]), 'done', 'completed', 'completed', 'completed'],
       ['no_response', (params, emit) => {
         emit({ event: 'token', data: { text: ' ' } })
         return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: '', tool_calls: [{ id: 'nr1', name: 'read_file' }] }, { role: 'tool', tool_call_id: 'nr1', content: 'x' }])
-      }, 'done', 'no_response', 'completed'],
-      ['cancelled', () => { throw new Error('Task cancelled by user') }, 'apperror', 'cancelled', 'interrupted-by-user'],
-      ['interrupted', () => { throw new Error('Response interrupted') }, 'apperror', 'interrupted', 'interrupted-by-crash'],
-      ['compression_exhausted', () => { throw new Error('compression_exhausted: context length exceeded and cannot compress further') }, 'apperror', 'compression_exhausted', 'errored'],
-      ['error', () => { throw new Error('boom') }, 'apperror', 'error', 'errored'],
+      }, 'done', 'no_response', 'completed', 'failed'],
+      ['cancelled', () => { throw new Error('Task cancelled by user') }, 'apperror', 'cancelled', 'interrupted-by-user', 'cancelled'],
+      ['interrupted', () => { throw new Error('Response interrupted') }, 'apperror', 'interrupted', 'interrupted-by-crash', 'failed'],
+      ['compression_exhausted', () => { throw new Error('compression_exhausted: context length exceeded and cannot compress further') }, 'apperror', 'compression_exhausted', 'errored', 'failed'],
+      ['error', () => { throw new Error('boom') }, 'apperror', 'error', 'errored', 'failed'],
     ]
-    for (const [label, respond, event, state, journalState] of cases) {
+    const relayPhase = vi.spyOn(s.deps.relay, 'noteTerminal')
+    for (const [label, respond, event, state, journalState, phase] of cases) {
+      relayPhase.mockClear()
       const sid = await newSession(s)
       sidecar.respond('chat.start', (params, emit) => respond(params as Json, emit as never))
       const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: label }))
@@ -364,7 +366,10 @@ describe('chat turns through the sidecar', () => {
       if (event === 'apperror') expect(s.deps.sessionStore.get(sid).messages.at(-1)?._terminal_state, label).toBe(state)
       const status = await json(await s.get(`/api/chat/stream/status?stream_id=${streamId}`))
       expect((status.journal as Json).terminal_state, label).toBe(journalState)
+      // Relay publishes the same outcome the app shows: only a completed turn is `completed`.
+      expect(relayPhase.mock.calls.map(([, p]) => p), label).toEqual([phase])
     }
+    relayPhase.mockRestore()
   })
 
   it('relays approval and clarify prompts and resolves them through the sidecar [py:test_issue4771_local_approval_regression.py::test_local_mirrored_approval_resolves_not_409] [py:test_issue4948_local_stale_approval.py::test_stale_card_click_clears_not_dead_ends] [py:test_issue4948_local_stale_approval.py::test_fresh_local_approval_still_resolves] [py:test_issue5345_clarify_toast_and_interrupt_provenance.py::test_clarify_pending_never_404s]', async () => {
