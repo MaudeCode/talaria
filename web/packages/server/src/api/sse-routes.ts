@@ -400,7 +400,7 @@ export async function handleSessionJournalStream(ctx: RequestContext, sessionId:
   const snapshot = (activeStreamId: string | null): void => {
     let fresh = session
     try { fresh = ctx.deps.sessionStore.get(sessionId, { metadataOnly: true }) } catch { fresh = session }
-    sse.event('session_snapshot', { session: withSessionWireFlags(fresh.compact(), new Set(activeStreamId ? [activeStreamId] : [])) })
+    sse.event('session_snapshot', { session: withSessionWireFlags({ ...fresh.compact(), read_only: ctx.deps.sessions.isReadOnly(fresh) }, new Set(activeStreamId ? [activeStreamId] : [])) })
   }
   const attach = (): { sub: StreamSubscriber | null; streamId: string | null; snapshot: { last_event_id: string | null } } => {
     const streamId = ctx.deps.registry.activeRunStreamForSession(sessionId)

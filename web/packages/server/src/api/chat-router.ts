@@ -137,7 +137,7 @@ export const chatRouter = os.router({
       }
       // Python `_get_or_materialize_session` raised PermissionError for both: a read-only import and a delegated
       // subagent child (by sidecar tag or state.db row), which chat start answered with the same 403.
-      if (s.read_only || s.branchSourceReadonly || ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
+      if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly || ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
       const requestedProfile = str(body.profile).trim()
       if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
       visibleOrRetag(ctx, s, requestedProfile)
@@ -229,7 +229,7 @@ export const chatRouter = os.router({
     // Python: a delegated subagent child is view-only; its goal state is never mutated and no turn starts on it.
     if (ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(400, 'Subagent sessions are view-only and cannot run /goal from WebUI')
     const s = getSession(ctx, sid)
-    if (s.read_only || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
+    if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     const requestedProfile = str(body.profile).trim()
     if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
     if (requestedProfile && !ctx.deps.profilesMatch(s.profile, requestedProfile) && !s.messages.length && !s.context_messages.length && !s.pending_user_message) s.profile = requestedProfile
@@ -267,7 +267,7 @@ export const chatRouter = os.router({
       // A subagent child's profile/workspace/context must never seed a runnable background session.
       if (ctx.deps.sessions.isSubagentViewOnly(str(body.session_id))) throw new HttpError(400, 'Subagent sessions are view-only and cannot run background tasks from WebUI')
       const parent = getSession(ctx, str(body.session_id))
-      if (parent.read_only || parent.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
+      if (ctx.deps.sessions.isReadOnly(parent) || parent.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
       const prompt = str(body.prompt).trim()
       if (!prompt) throw new HttpError(400, 'prompt is required')
       const bg = ctx.deps.sessionStore.newSession({ workspace: parent.workspace, model: parent.model, modelProvider: parent.model_provider, profile: parent.profile })
@@ -316,7 +316,7 @@ export const chatRouter = os.router({
     // Python: a subagent child's context must not be cloned into a runnable ephemeral session.
     if (ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(400, 'Subagent sessions are view-only and cannot be used for /btw from WebUI')
     const s = getSession(ctx, sid)
-    if (s.read_only || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
+    if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     const question = str(body.question).trim()
     if (!question) throw new HttpError(400, 'question is required')
     if (s.active_stream_id && ctx.deps.registry.liveIds.has(s.active_stream_id)) throw new HttpError(409, 'session already has an active stream')
