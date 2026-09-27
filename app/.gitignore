@@ -21,7 +21,7 @@ Package.resolved
 .env.local
 .env.*
 
-# Per-machine signing overrides (see CONTRIBUTING.md)
+# Per-machine signing overrides (see DEVELOPMENT.md)
 Config/Local.xcconfig
 
 # Local reference material
