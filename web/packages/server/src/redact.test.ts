@@ -341,6 +341,9 @@ describe('inline shell assignments', () => {
     expect(redactText('P=hunter2; curl -u "bob:${P}" x; echo hunter2', true)).toBe('P=***; curl -u "bob:***" x; echo ***')
     // A secret glued from a value and literal text is masked by its pieces.
     expect(redactText(`SCHEME='https://'; U=bob; SEP=:; AT=@; P=hunt; curl "\${SCHEME}\${U}\${SEP}\${P}er2\${AT}example.com"`, true)).not.toMatch(/hunt|er2/)
+    // A secret with no letter or digit.
+    expect(redactText(`P='!!!'; curl -u "bob:$P" x`, true)).toBe(`P='***'; curl -u "bob:***" x`)
+    expect(redactText(`SCHEME='https://'; U=bob; SEP=:; AT=@; curl "\${SCHEME}\${U}\${SEP}!!!\${AT}example.com"`, true)).not.toContain('!!!')
     // Unquoted, `;` would end the substituted word and publish the rest.
     expect(redactText(`P='hunter2;extra words'; curl -u bob:$P x`, true)).not.toMatch(/hunter2|extra|words/)
   })

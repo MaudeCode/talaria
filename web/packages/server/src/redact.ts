@@ -577,9 +577,6 @@ function shellDequote(word: string): string {
   return out
 }
 
-/** A word token, as `tokenCounts` splits them. */
-const TOKEN_RE = /[\p{L}\p{N}_]+/gu
-
 /** A text's word tokens, counted. */
 function tokenCounts(text: string): Map<string, number> {
   const counts = new Map<string, number>()
@@ -828,6 +825,20 @@ function expandAssignments(text: string, assignments: Assignment[]): { expanded:
   return { expanded: out + text.slice(last), spans }
 }
 
+/** Shell and URL delimiters, and the `*` and `.` of a mask. */
+const SECRET_DELIMITERS = String.raw`\s'"\x60$\\=:@/;&|<>(){}[\],.*`
+/**
+ * A token of the resolved view's secret accounting: a word, or a run of other characters between delimiters, so a secret
+ * with no letter or digit (`P='!!!'`) is counted and masked too.
+ */
+const SECRET_TOKEN_RE = new RegExp(String.raw`[\p{L}\p{N}_]+|(?<![^${SECRET_DELIMITERS}])[^${SECRET_DELIMITERS}\p{L}\p{N}_]+(?![^${SECRET_DELIMITERS}])`, 'gu')
+
+function secretTokenCounts(text: string): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const [token] of text.matchAll(SECRET_TOKEN_RE)) counts.set(token, (counts.get(token) ?? 0) + 1)
+  return counts
+}
+
 /**
  * Threat model: the redactor reads only the tool's text. Variables the text itself assigns (`SEP=:; curl -u bob${SEP}x`)
  * are resolved in text order; shell control flow (conditionals, loops, functions, `read`, `unset`) is not modelled.
@@ -848,12 +859,12 @@ export function redactSensitive(text: string): string {
   // unmask nothing), and the assignment that defined a secret is masked with it.
   const { expanded, spans } = expandAssignments(joined, inlineAssignments(joined))
   if (!spans.length) return redacted
-  const view = tokenCounts(redactRules(redactComposedWords(expanded)))
-  const secrets = new Set([...tokenCounts(expanded)].filter(([token, count]) => count > (view.get(token) ?? 0)).map(([token]) => token))
+  const view = secretTokenCounts(redactRules(redactComposedWords(expanded)))
+  const secrets = new Set([...secretTokenCounts(expanded)].filter(([token, count]) => count > (view.get(token) ?? 0)).map(([token]) => token))
   if (!secrets.size) return redacted
   // A secret the substitution glued together (`P=hunt; …${P}er2`) is masked by its pieces, each one of the text's tokens.
   let k = 0
-  for (const m of expanded.matchAll(TOKEN_RE)) {
+  for (const m of expanded.matchAll(SECRET_TOKEN_RE)) {
     if (!secrets.has(m[0])) continue
     const end = m.index + m[0].length
     while (k < spans.length && spans[k]![1] <= m.index) k += 1
@@ -867,7 +878,7 @@ export function redactSensitive(text: string): string {
     if (cut > m.index) secrets.add(expanded.slice(cut, end))
   }
   secrets.delete('')
-  const masked = out.replace(TOKEN_RE, (token) => (secrets.has(token) ? '***' : token))
+  const masked = out.replace(SECRET_TOKEN_RE, (token) => (secrets.has(token) ? '***' : token))
   return masked === out ? redacted : masked
 }
 
