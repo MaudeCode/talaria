@@ -653,6 +653,92 @@
       },
       {
         "role": "user",
+        "content": "Start a long refactor",
+        "message_id": "contract-user-x",
+        "_turn_id": "contract-run-x"
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "message_id": "contract-run-x-1",
+        "_error": true,
+        "_terminal_state": "cancelled",
+        "_turn_id": "contract-run-x",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "",
+          "terminal_state": "cancelled",
+          "expanded_by_default": false,
+          "turn_duration": null,
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "has_consumed_steering": false,
+          "activity_scene_ref": "contract-cancelled-scene"
+        }
+      },
+      {
+        "role": "user",
+        "content": "Call the provider",
+        "message_id": "contract-user-y",
+        "_turn_id": "contract-run-y"
+      },
+      {
+        "role": "assistant",
+        "content": "**Error:** boom",
+        "message_id": "contract-run-y-1",
+        "_error": true,
+        "_terminal_state": "error",
+        "provider_details": "boom",
+        "_turn_id": "contract-run-y",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "**Error:** boom",
+          "terminal_state": "error",
+          "expanded_by_default": false,
+          "turn_duration": null,
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "has_consumed_steering": false,
+          "activity_scene_ref": "contract-error-scene"
+        }
+      },
+      {
+        "role": "user",
+        "content": "An older cancelled run",
+        "message_id": "contract-user-z",
+        "_turn_id": "contract-run-z"
+      },
+      {
+        "role": "assistant",
+        "content": "**Task cancelled:** Task cancelled.\n\n*Hermes stopped this turn at your request. Send a new message to continue.*",
+        "message_id": "contract-run-z-1",
+        "_error": true,
+        "provider_details": "Task cancelled.",
+        "provider_details_label": "Cancellation details",
+        "_turn_id": "contract-run-z",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "**Task cancelled:** Task cancelled.\n\n*Hermes stopped this turn at your request. Send a new message to continue.*",
+          "terminal_state": "cancelled",
+          "expanded_by_default": false,
+          "turn_duration": null,
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "has_consumed_steering": false,
+          "activity_scene_ref": "contract-legacy-cancelled-scene"
+        }
+      },
+      {
+        "role": "user",
         "content": "Keep going",
         "message_id": "contract-user-f",
         "_turn_id": "contract-run-f"

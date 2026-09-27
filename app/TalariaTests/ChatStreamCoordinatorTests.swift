@@ -212,7 +212,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let liveActivityManager = CoordinatorSpyLiveActivityManager()
         let delegate = CoordinatorDelegateSpy()
-        delegate.latestServerLoadHadAssistantResponseAfterLatestUser = true
+        delegate.serverTerminalState = "completed"
         let coordinator = makeCoordinator(
             streamClient: streamClient,
             liveActivityManager: liveActivityManager,
@@ -238,8 +238,8 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let liveActivityManager = CoordinatorSpyLiveActivityManager()
         let delegate = CoordinatorDelegateSpy()
-        // The reloaded transcript surfaced no assistant reply after the user message.
-        delegate.latestServerLoadHadAssistantResponseAfterLatestUser = false
+        // The reloaded transcript holds no settled outcome for the run.
+        delegate.serverTerminalState = nil
         let coordinator = makeCoordinator(
             streamClient: streamClient,
             liveActivityManager: liveActivityManager,
@@ -263,11 +263,37 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testForegroundReconnectInactiveEndsLiveActivityWithTheTurnsSettledOutcome() async throws {
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let liveActivityManager = CoordinatorSpyLiveActivityManager()
+        let delegate = CoordinatorDelegateSpy()
+        delegate.serverTerminalState = "cancelled"
+        let coordinator = makeCoordinator(
+            streamClient: streamClient,
+            liveActivityManager: liveActivityManager,
+            delegate: delegate
+        ) { request in
+            apiTestJSONResponse(#"{"active": false, "stream_id": "stream-123"}"#, for: request)
+        }
+
+        coordinator.start(streamID: "stream-123")
+        coordinator.suspendActiveStreamConnection()
+
+        await coordinator.reconnectIfNeeded()
+
+        // The run's own turn (its stream id) is read from the reloaded transcript, not the latest reply.
+        XCTAssertEqual(delegate.terminalStateTurnIDs, ["stream-123"])
+        XCTAssertNil(coordinator.activeStreamID)
+        XCTAssertEqual(liveActivityManager.ends.last?.status, .cancelled)
+        XCTAssertTrue(delegate.completedNeedsTranscriptRefreshValues.isEmpty)
+    }
+
+    @MainActor
     func testRefreshTranscriptIfCompletedWithoutAssistantKeepsWaitingWithoutEndingLiveActivity() async throws {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let liveActivityManager = CoordinatorSpyLiveActivityManager()
         let delegate = CoordinatorDelegateSpy()
-        delegate.latestServerLoadHadAssistantResponseAfterLatestUser = false
+        delegate.serverTerminalState = nil
         let coordinator = makeCoordinator(
             streamClient: streamClient,
             liveActivityManager: liveActivityManager,
@@ -294,7 +320,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let liveActivityManager = CoordinatorSpyLiveActivityManager()
         let delegate = CoordinatorDelegateSpy()
-        delegate.latestServerLoadHadAssistantResponseAfterLatestUser = true
+        delegate.serverTerminalState = "completed"
         let coordinator = makeCoordinator(
             streamClient: streamClient,
             liveActivityManager: liveActivityManager,
@@ -323,7 +349,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let liveActivityManager = CoordinatorSpyLiveActivityManager()
         let delegate = CoordinatorDelegateSpy()
-        delegate.latestServerLoadHadAssistantResponseAfterLatestUser = true
+        delegate.serverTerminalState = "completed"
         let coordinator = makeCoordinator(
             streamClient: streamClient,
             liveActivityManager: liveActivityManager,
@@ -353,7 +379,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let liveActivityManager = CoordinatorSpyLiveActivityManager()
         let delegate = CoordinatorDelegateSpy()
-        delegate.latestServerLoadHadAssistantResponseAfterLatestUser = true
+        delegate.serverTerminalState = "completed"
         let coordinator = makeCoordinator(
             streamClient: streamClient,
             liveActivityManager: liveActivityManager,
@@ -587,7 +613,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let liveActivityManager = CoordinatorSpyLiveActivityManager()
         let delegate = CoordinatorDelegateSpy()
-        delegate.latestServerLoadHadAssistantResponseAfterLatestUser = true
+        delegate.serverTerminalState = "completed"
         let coordinator = makeCoordinator(
             streamClient: streamClient,
             liveActivityManager: liveActivityManager,
@@ -627,7 +653,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         let streamClient = CoordinatorSpySSEStreamingClient()
         let liveActivityManager = CoordinatorSpyLiveActivityManager()
         let delegate = CoordinatorDelegateSpy()
-        delegate.latestServerLoadHadAssistantResponseAfterLatestUser = true
+        delegate.serverTerminalState = "completed"
         let coordinator = makeCoordinator(
             streamClient: streamClient,
             liveActivityManager: liveActivityManager,
@@ -671,7 +697,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         let liveActivityManager = CoordinatorSpyLiveActivityManager()
         let delegate = CoordinatorDelegateSpy()
         // The reloaded transcript surfaced the assistant reply for the completed run.
-        delegate.latestServerLoadHadAssistantResponseAfterLatestUser = true
+        delegate.serverTerminalState = "completed"
         let coordinator = makeCoordinator(
             streamClient: streamClient,
             liveActivityManager: liveActivityManager,
@@ -797,6 +823,38 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         XCTAssertEqual(streamClient.startedURLs.count, 2)
         XCTAssertTrue(liveActivityManager.ends.isEmpty)
         XCTAssertEqual(delegate.finishCount, 0)
+    }
+
+    @MainActor
+    func testTerminalFramesEndLiveActivityWithServerTerminalState() {
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let liveActivityManager = CoordinatorSpyLiveActivityManager()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(
+            streamClient: streamClient,
+            liveActivityManager: liveActivityManager,
+            delegate: delegate
+        )
+        let frames: [(String, String, AgentRunActivityStatus)] = [
+            ("apperror", #"{"type":"cancelled","terminal_state":"cancelled","message":"Task cancelled"}"#, .cancelled),
+            ("apperror", #"{"type":"interrupted","terminal_state":"interrupted","message":"Lost"}"#, .failed),
+            ("apperror", #"{"type":"compression_exhausted","terminal_state":"compression_exhausted","message":"Full"}"#, .failed),
+            ("done", #"{"terminal_state":"no_response"}"#, .failed),
+            ("done", #"{"terminal_state":"tool_limit_reached"}"#, .complete),
+            ("done", #"{"terminal_state":"completed"}"#, .complete),
+        ]
+        for (index, (event, data, status)) in frames.enumerated() {
+            coordinator.start(streamID: "stream-\(index)")
+            for decoded in SSEEventDecoder.decodeFrame(eventType: event, data: data) {
+                streamClient.emit(decoded)
+            }
+            XCTAssertNil(coordinator.activeStreamID, data)
+            XCTAssertEqual(liveActivityManager.ends.last?.status, status, data)
+        }
+        // A cancelled run is not an error: it shows no failure message.
+        XCTAssertEqual(delegate.errorMessages, ["Lost", "Full"])
+        // Only the two turns the server reports complete get the completion haptic and notification.
+        XCTAssertEqual(delegate.completedNeedsTranscriptRefreshValues.count, 2)
     }
 
     @MainActor
@@ -1515,10 +1573,9 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
     var streamCoordinatorDisplayTitle = "Planning"
     var streamCoordinatorHasRunningLiveToolCall = false
     var streamCoordinatorHasPendingPrompt = false
-    var latestServerLoadHadAssistantResponseAfterLatestUser = false
-    var streamCoordinatorLatestServerLoadHadAssistantResponseAfterLatestUser: Bool {
-        latestServerLoadHadAssistantResponseAfterLatestUser
-    }
+    /// The loaded transcript's settled outcome for the run; nil while it has none.
+    var serverTerminalState: String?
+    private(set) var terminalStateTurnIDs: [String] = []
     var streamCoordinatorStreamingAssistantMessageID: String?
 
     private(set) var loadMessagesCount = 0
@@ -1555,6 +1612,11 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
 
     func streamCoordinatorLatestAssistantMessageID() -> String? {
         latestAssistantMessageID
+    }
+
+    func streamCoordinatorServerTerminalState(turnID: String) -> String? {
+        terminalStateTurnIDs.append(turnID)
+        return serverTerminalState
     }
 
     var omitsLoadedRunningTurn = true

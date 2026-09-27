@@ -495,6 +495,15 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(outcome("contract-run-d-2"), "Tool limit reached")
         XCTAssertEqual(outcome("contract-run-e-1"), "No answer produced.")
         XCTAssertNil(outcome("contract-run-c-2"))
+        // Stamped and legacy failed turns end their Live Activity by the server's outcome (fixtures from TAL-297 on).
+        for (messageID, status) in [
+            ("contract-run-x-1", AgentRunActivityStatus.cancelled),
+            ("contract-run-y-1", .failed),
+            ("contract-run-z-1", .cancelled),
+        ] {
+            guard let scene = messages.first(where: { $0.messageId == messageID })?.activityScene else { continue }
+            XCTAssertEqual(LiveActivityReconciler.outcome(forTurnTerminalState: scene.terminalState).status, status, messageID)
+        }
         // Persisted steers split the turn into phases whose lengths the server measured.
         let steered = try turn("contract-run-g-3")
         XCTAssertTrue(steered.hasSteering)

@@ -4403,7 +4403,7 @@ final class ChatViewModel {
             break
         case .streamEnd, .cancelled:
             finishBtwStream()
-        case .error(let message):
+        case .error(let message, _):
             activeBtwAnswer = "Error: \(message)"
             updateActiveBtwMessage(isLoading: false)
             finishBtwStream()
@@ -5409,9 +5409,6 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     var streamCoordinatorHasPendingPrompt: Bool {
         pendingActionCoordinator.hasPendingPrompt
     }
-    var streamCoordinatorLatestServerLoadHadAssistantResponseAfterLatestUser: Bool {
-        latestServerLoadHadAssistantResponseAfterLatestUser
-    }
     var streamCoordinatorStreamingAssistantMessageID: String? {
         get { streamingAssistantMessageID }
         set {
@@ -5428,6 +5425,15 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     func streamCoordinatorLatestAssistantMessageID() -> String? {
         Self.latestAssistantMessageIDAfterLatestSteeringHint(in: messages)
+    }
+
+    func streamCoordinatorServerTerminalState(turnID: String) -> String? {
+        if let state = messages.last(where: { $0.turnId == turnID && $0.activityScene != nil })?.activityScene?.terminalState {
+            return state
+        }
+        // ponytail: old-server fallback — a turn from a Web before settled-turn scenes states no outcome, so the latest
+        // load's reply after the prompt counts as completed. Delete once every supported Web ships scene `terminal_state`.
+        return latestServerLoadHadAssistantResponseAfterLatestUser ? "completed" : nil
     }
 
     func streamCoordinatorOmitLoadedRunningTurn() -> Bool {

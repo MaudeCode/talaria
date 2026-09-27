@@ -155,7 +155,8 @@ describe('stream reducer: every lifecycle exit', () => {
     let s = started()
     s = ev(s, 'done', { session: { session_id: SID, title: 'A' }, usage: { input_tokens: 1 } })
     s = ev(s, 'stream_end', { session_id: SID })
-    expect(s.turns[SID]).toMatchObject({ status: 'done', streamEnded: true })
+    // A done frame journaled before terminal_state shipped still reads as a completed turn.
+    expect(s.turns[SID]).toMatchObject({ status: 'done', streamEnded: true, terminalState: 'completed' })
     expect(isTerminal(s.turns[SID]!.status)).toBe(true)
   })
   it('terminal error: apperror carries type, message and continuation', () => {
@@ -168,8 +169,18 @@ describe('stream reducer: every lifecycle exit', () => {
     s = ev(s, 'error', { message: 'legacy' })
     expect(s.turns[SID]!.status).toBe('error')
     let c = started()
-    c = ev(c, 'apperror', { type: 'interrupted', message: 'stopped' })
+    c = ev(c, 'apperror', { type: 'interrupted', terminal_state: 'interrupted', message: 'stopped' })
     expect(c.turns[SID]).toMatchObject({ status: 'cancelled', cancelledMessage: 'stopped', error: null })
+  })
+  it.each([
+    ['done', { terminal_state: 'no_response' }, 'done', 'no_response'],
+    ['apperror', { type: 'cancelled', terminal_state: 'cancelled', message: 'stopped' }, 'cancelled', 'cancelled'],
+    ['apperror', { type: 'compression_exhausted', terminal_state: 'compression_exhausted', message: 'full' }, 'error', 'compression_exhausted'],
+    ['apperror', { type: 'cancelled', message: 'no outcome' }, 'error', 'error'],
+    ['cancel', { terminal_state: 'cancelled' }, 'cancelled', 'cancelled'],
+  ] as const)('takes the outcome of %s from its terminal_state, never from the error type (%j)', (name, data, status, terminalState) => {
+    const s = ev(started(), name, data)
+    expect(s.turns[SID]).toMatchObject({ status, terminalState })
   })
   it('cancellation: cancel event finalizes and ends the stream', () => {
     let s = started()

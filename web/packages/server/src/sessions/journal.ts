@@ -70,21 +70,15 @@ export function parseRunJournalEventId(raw: string | null | undefined): [string 
   return [runId, Number.parseInt(seqText, 10)]
 }
 
+/** The journal's run-status vocabulary, from the turn outcome (`terminal_state`) every terminal frame carries. */
 export function terminalStateForEvent(eventName: string, payload: unknown): string | null {
   const name = eventName || ''
   const p = payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : null
-  if (name === 'done' || name === 'stream_end') {
-    const explicit = str(p?.terminal_state).trim().toLowerCase()
-    return explicit === 'tool_limit_reached' ? explicit : 'completed'
-  }
+  const state = str(p?.terminal_state)
+  // A turn that settled without an answer is not a success: it ends as `errored`, like the app and Relay show it.
+  if (name === 'done' || name === 'stream_end') return state === 'tool_limit_reached' ? state : state === 'no_response' ? 'errored' : 'completed'
   if (name === 'cancel') return 'interrupted-by-user'
-  if (name === 'apperror' || name === 'error') {
-    const errType = str(p?.type).trim().toLowerCase()
-    if (errType === 'tool_limit_reached') return 'tool_limit_reached'
-    if (errType === 'cancelled' || errType === 'canceled') return 'interrupted-by-user'
-    if (errType === 'interrupted') return 'interrupted-by-crash'
-    return 'errored'
-  }
+  if (name === 'apperror' || name === 'error') return state === 'cancelled' ? 'interrupted-by-user' : state === 'interrupted' ? 'interrupted-by-crash' : 'errored'
   return null
 }
 

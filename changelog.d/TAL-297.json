@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A response you stop now ends as cancelled on the Live Activity instead of failed.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "A response that ends without an answer now shows as not completed on the Live Activity.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Every finished response now reports how it ended, so the app and the browser show the same outcome.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

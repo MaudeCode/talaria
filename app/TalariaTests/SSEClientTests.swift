@@ -865,7 +865,13 @@ final class SSEClientTests: XCTestCase {
             data: #"{"error": "Terminal failure", "type": "tool_limit_reached", "terminal_state": "tool_limit_reached"}"#
         )
 
-        XCTAssertEqual(event, .error("Terminal failure"))
+        XCTAssertEqual(event, .error("Terminal failure", terminalState: "tool_limit_reached"))
+    }
+
+    func testDoneEventDecodesServerTerminalState() {
+        let event = SSEEventDecoder.decode(eventType: "done", data: #"{"terminal_state": "no_response"}"#)
+
+        XCTAssertEqual(event, .done(DoneStreamEvent(terminalState: "no_response")))
     }
 
     func testAppErrorEventWithoutMessageFallsBackToGenericError() {

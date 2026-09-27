@@ -63,6 +63,10 @@ export const TurnFileChangeSchema = z.looseObject({ path: z.string(), action: z.
 export type TurnFileChange = z.infer<typeof TurnFileChangeSchema>
 
 /** `_anchor_activity_scene`: a completed turn's server-owned presentation: the rows under "Worked" (a tail preview plus paging fields), the visible final answer, the outcome, and the default disclosure. */
+/** How a turn ended: every terminal chat frame carries it, and the turn's settled scene shows the same value. */
+export const TurnTerminalStateSchema = z.enum(['completed', 'no_response', 'cancelled', 'interrupted', 'tool_limit_reached', 'compression_exhausted', 'error'])
+export type TurnTerminalState = z.infer<typeof TurnTerminalStateSchema>
+
 export const ActivitySceneSchema = z.looseObject({
   version: z.literal('activity_scene_v1'), activity_rows: z.array(ActivitySceneRowSchema), final_answer: z.string().optional(), turn_duration: z.number().nullable().optional(),
   /** The turn's outcome (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...). */

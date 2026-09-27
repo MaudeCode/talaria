@@ -160,7 +160,7 @@ describe('turn worklog presentation', () => {
   it('labels a finished live turn with the server\'s terminal outcome and never splits an answer out itself', () => {
     const run = liveRun()
     run.emit({ event: 'interim_assistant', data: { text: 'Still inspecting' } })
-    run.emit({ event: 'done', data: {} })
+    run.emit({ event: 'done', data: { terminal_state: 'completed' } })
     expect(liveActivity(run.turn)).toMatchObject({ finalAnswer: '', status: 'completed', live: true })
     const limited = liveRun()
     limited.emit({ event: 'token', data: { text: 'Partial result' } })
@@ -168,7 +168,7 @@ describe('turn worklog presentation', () => {
     expect(liveActivity(limited.turn)).toMatchObject({ finalAnswer: '', status: 'tool_limit_reached' })
     const interrupted = liveRun()
     interrupted.emit(tool('a'))
-    interrupted.emit({ event: 'apperror', data: { type: 'interrupted', message: 'Connection lost' } })
+    interrupted.emit({ event: 'apperror', data: { type: 'interrupted', terminal_state: 'interrupted', message: 'Connection lost' } })
     expect(liveActivity(interrupted.turn).status).toBe('interrupted')
   })
 

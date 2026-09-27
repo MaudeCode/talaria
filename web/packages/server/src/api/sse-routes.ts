@@ -267,7 +267,7 @@ export async function handleChatStream(ctx: RequestContext): Promise<void> {
         if (replayed) replayCutoffSeq = replayMaxSeq
       }
       if (gapRequired && (!covered || !replayed)) {
-        sse.event('apperror', { type: 'interrupted', recovery_control: true, message: "The live stream's replay buffer overflowed while no tab was attached and the run journal cannot backfill the dropped frames.", hint: 'The transcript was restored to the last saved state.', session_id: owner ?? '', stream_id: streamId, offline_dropped_events: snapshot.offline_dropped_events || Math.max(0, (replayMaxSeq ?? 0) - afterSeq) })
+        sse.event('apperror', { type: 'interrupted', terminal_state: 'interrupted', recovery_control: true, message: "The live stream's replay buffer overflowed while no tab was attached and the run journal cannot backfill the dropped frames.", hint: 'The transcript was restored to the last saved state.', session_id: owner ?? '', stream_id: streamId, offline_dropped_events: snapshot.offline_dropped_events || Math.max(0, (replayMaxSeq ?? 0) - afterSeq) })
         return
       }
       if (terminalReplayed) return
