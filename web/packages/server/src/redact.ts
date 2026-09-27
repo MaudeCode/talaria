@@ -737,6 +737,9 @@ function redactComposedWords(text: string): string {
 const ASSIGNMENT_RE = /(?<![^\s;&|(){}!\x60])([A-Za-z_][A-Za-z0-9_]*)(\+?)=/g
 /** `$NAME` or `${NAME}`; a parameter operator (`${NAME:-x}`, `${#NAME}`) is not a plain reference. */
 const VAR_REF_RE = /\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/y
+const VAR_REFS_RE = new RegExp(VAR_REF_RE.source, 'g')
+/** A builtin that takes `NAME=value` operands, quoted ones included (`export "KEY=x"`). */
+const ASSIGNMENT_BUILTIN_RE = /(?<![^\s;&|(){}!\x60])(?:export|declare|typeset|readonly|local)(?=[ \t])/g
 
 /** The end of the `$NAME` / `${NAME}` reference at `at`. */
 const VAR_REF_END = (text: string, at: number): number => {
@@ -840,7 +843,29 @@ function inlineAssignments(text: string): Assignment[] {
     if (m[2] || (!literal && !template)) found.push({ name: m[1]!, start, end, at: start, value: undefined })
     else found.push({ name: m[1]!, start, end, at: end, value: literal ? shellDequote(word).replaceAll(WORD_SPACE, ' ') : undefined, ...(template ? { template: word } : {}) })
   }
-  return found
+  // A quoted operand of an assignment builtin (`export "KEY=--password"`) is an assignment too; the whole operand is its
+  // value word.
+  const closeOf = enclosingClose(text)
+  const builtinAt = quoteTracker(text)
+  ASSIGNMENT_BUILTIN_RE.lastIndex = 0
+  for (let m = ASSIGNMENT_BUILTIN_RE.exec(text); m; m = ASSIGNMENT_BUILTIN_RE.exec(text)) {
+    if (builtinAt(m.index)) continue
+    let i = m.index + m[0].length
+    for (;;) {
+      while (text[i] === ' ' || text[i] === '\t') i += 1
+      if (i >= text.length || /[;&|<>()\n#]/.test(text[i]!)) break
+      const end = Math.max(i + 1, shellWordEnd(text, i, '', closeOf))
+      const word = text.slice(i, end)
+      const operand = /^\$?["']/.test(word) ? /^([A-Za-z_][A-Za-z0-9_]*)(\+?)=([\s\S]*)$/.exec(shellDequote(word).replaceAll(WORD_SPACE, ' ')) : null
+      if (operand) {
+        const known = !operand[2] && firstExpansion(word) < 0
+        found.push({ name: operand[1]!, start: i, end, at: known ? end : i, value: known ? operand[3] : undefined })
+      }
+      i = end
+    }
+    ASSIGNMENT_BUILTIN_RE.lastIndex = Math.max(i, ASSIGNMENT_BUILTIN_RE.lastIndex)
+  }
+  return found.sort((a, b) => a.start - b.start)
 }
 
 /** A substituted value as one shell word: escaped inside `"…"`, single-quoted outside unless it is plain. */
@@ -956,10 +981,12 @@ export function redactSensitive(text: string): string {
   // Control flow is not modelled, so a reassigned name may hold any of its values, or an unknown one (`OPT=-u; false &&
   // OPT=echo`, `false && OPT=$(x)`). Besides the latest values, each combination of the reassigned names' values gets a
   // view: from its first assignment on, a name holds the chosen value.
-  const byName = new Map<string, Map<string | undefined, number>>()
-  for (const [n, { name, value }] of assignments.entries()) {
-    const values = byName.get(name) ?? new Map<string | undefined, number>()
-    if (!values.has(value)) values.set(value, n)
+  // Candidates are told apart by literal value, template text, or being unknown.
+  const byName = new Map<string, Map<string, number>>()
+  for (const [n, { name, value, template }] of assignments.entries()) {
+    const values = byName.get(name) ?? new Map<string, number>()
+    const key = value !== undefined ? `=${value}` : template !== undefined ? `$${template}` : '?'
+    if (!values.has(key)) values.set(key, n)
     byName.set(name, values)
   }
   const reassigned = [...byName].filter(([, values]) => values.size > 1)
@@ -975,10 +1002,14 @@ export function redactSensitive(text: string): string {
   const views = [latest]
   const failClosed = combinations.length > budget
   if (reassigned.length && !failClosed) for (const chosen of combinations) views.push((name, history) => { const n = chosen.get(name); return n !== undefined && history.at(-1)! >= n ? n : history.at(-1)! })
+  // Failing closed watches the reassigned names and, in text order, every name whose template refers to a watched one
+  // (`ARG=$OPT`).
+  const watchedNames = new Set(reassigned.map(([name]) => name))
+  if (failClosed) for (const { name, template } of assignments) if (template !== undefined && [...template.matchAll(VAR_REFS_RE)].some((ref) => watchedNames.has(ref[1] ?? ref[2]!))) watchedNames.add(name)
   // Ranges of the text masked before redaction: secret assignment values, and words that fail closed.
   const masks: [start: number, end: number][] = []
   for (const [v, pick] of views.entries()) {
-    const { expanded, spans, overflow, watched } = expandAssignments(joined, assignments, pick, v === 0 && failClosed ? new Set(reassigned.map(([name]) => name)) : undefined)
+    const { expanded, spans, overflow, watched } = expandAssignments(joined, assignments, pick, v === 0 && failClosed ? watchedNames : undefined)
     // A reference to a reassigned name is masked to the end of its word, and a whole-word one with the next word
     // (`$OPT bob:hunter2`, `-H "${H}: x"`).
     if (watched.length) {

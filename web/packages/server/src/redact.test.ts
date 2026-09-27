@@ -342,9 +342,16 @@ describe('inline shell assignments', () => {
     // Past 8 combinations, a word with a reassigned name's reference fails closed, with the next word when it is whole.
     expect(redactText('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; curl $OPT bob:hunter2 x', true)).toBe('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; curl *** x')
     expect(redactText('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; curl "$OPT" bob:hunter2 x', true)).not.toContain('hunter2')
+    // …and through a template alias of a reassigned name.
+    expect(redactText('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; ARG=$OPT; curl $ARG bob:hunter2 x', true)).not.toContain('hunter2')
     for (const kept of ['D=/a; false && D=/b; cat $D/x.txt', 'A=1; A=2; seq $A']) expect(redactText(kept, true)).toBe(kept)
     // A value built from other assigned names.
     for (const text of ['OPT=-u; ARG=$OPT; curl $ARG bob:hunter2 x', 'U=bob; SEP=:; CRED="${U}${SEP}"; curl -u ${CRED}hunter2 x']) expect(redactText(text, true)).not.toContain('hunter2')
+    // Distinct templates are distinct candidates; a quoted operand of an assignment builtin is an assignment.
+    for (const text of ['A=-u; B=echo; ARG=$A; false && ARG=$B; curl $ARG bob:hunter2 x', 'export "KEY=--password"; login $KEY hunter2 x', "declare -x 'OPT=-u'; curl $OPT bob:hunter2 x"]) {
+      expect(redactText(text, true)).not.toContain('hunter2')
+    }
+    expect(redactText('echo "KEY=--password"; login $KEY hunter2 x', true)).toBe('echo "KEY=--password"; login $KEY hunter2 x')
     // An escaped separator keeps the rest in the value: `OPT=echo` is part of `A`.
     expect(redactText('OPT=-u; A=foo\\;OPT=echo; curl $OPT bob:hunter2 x', true)).not.toContain('hunter2')
   })
@@ -422,7 +429,7 @@ describe('redactSensitive cost', () => {
       ...['A=x; ', 'A=x B=y ', 'export A=x ', '; ', ';A', `A='x `, 'A="x ', 'A=${ ', 'A=$( ', `A=n'x `, 'A=@; $A ', 'A=!; $A '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       `A=x; ${'$A ${A} '.repeat(30_000)}`, Array.from({ length: 20_000 }, (_, i) => `A=${i}; $A `).join(''), `${'A=$(x); '.repeat(20_000)}${'A=1; $A '.repeat(20_000)}`,
       Array.from({ length: 5 }, (_, i) => `A=${i}; `).join('') + '$A '.repeat(50_000), `A=${'x'.repeat(10_000)}; ${'B=$A; '.repeat(30_000)}`, `A=x; ${'A=$A$A; '.repeat(25_000)}curl -u bob:$A`,
-      `P=hunter2; ${'Q="${P}x"; curl -u bob:$Q '.repeat(8_000)}`, `A=1; A=2; B=1; B=2; C=1; C=2; ${'curl -u bob:$A$B$C '.repeat(12_000)}`, `P=hunter2; ${'curl -u bob:$P '.repeat(15_000)}`, `A=${'x'.repeat(10_000)}; ${'$A'.repeat(50_000)}`]) {
+      `P=hunter2; ${'Q="${P}x"; curl -u bob:$Q '.repeat(8_000)}`, `export ${'"A=1" '.repeat(40_000)}`, `export ${'"A=$(x" '.repeat(30_000)}`, `A=1; A=2; B=1; B=2; C=1; C=2; ${'curl -u bob:$A$B$C '.repeat(12_000)}`, `P=hunter2; ${'curl -u bob:$P '.repeat(15_000)}`, `A=${'x'.repeat(10_000)}; ${'$A'.repeat(50_000)}`]) {
       const started = performance.now()
       redactSensitive(text)
       expect(performance.now() - started).toBeLessThan(1000)
