@@ -115,8 +115,26 @@ Dependencies move with the package and the existing global CLI links keep workin
 Failed installation or verification preserves the previous package. The service
 user needs write access to the installation directory and room for both versions;
 the updater never invokes sudo. It never follows `latest` independently.
-Linked, local, npx-cache, container, mismatched-prefix, and Experimental packaged
-installs remain manual. Containers use the immutable image digest from the completed
+On Experimental, a direct global npm installation follows the public
+`ghcr.io/maudecode/talaria-web-experimental:experimental` artifact with no token. The
+updater requests an anonymous pull token and reads the manifest. It requires the
+Experimental artifact type, one npm tarball layer, and revision and version
+annotations. It downloads the layer only through GHCR's redirect to
+`pkg-containers.githubusercontent.com` without the token, and requires the bytes to
+match the layer digest. The installation is behind when its release `sourceRevision`
+differs from the annotated revision. The tarball installs into the same staged
+prefix, and its baked `_release.json` must match the annotations before the rename.
+
+Changing the channel switches an npm installation on its next update, in either
+direction. A switch installs the selected channel's newest artifact regardless of
+version order; within Stable the "ahead of the selected release" guard still applies.
+Before a switch replaces the package, the updater copies `settings.json`,
+`projects.json`, `workspaces.json`, and `last_workspace.txt` from the Web state
+directory to `backups/channel-switch-<UTC timestamp>/`, keeping the newest five.
+If that backup fails, the switch is aborted and the installed package is kept.
+
+Linked, local, npx-cache, container, and mismatched-prefix packaged installs remain
+manual. Containers use the immutable image digest from the completed
 manifest. Settings distinguishes a failed check, an unknown status, local changes,
 and an available automatic update; manual installations link to the releases page.
 
