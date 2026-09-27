@@ -27,6 +27,8 @@ struct ChatTranscriptView: View {
     let streamingAssistantMessageID: String?
     let liveTokensPerSecond: Double?
     let activeStreamRecoveryState: ActiveStreamRecoveryState
+    /// The run state is still being confirmed by the first session load (TAL-250).
+    let showsRunStateCheck: Bool
     let clarificationPrompt: ClarificationPromptState?
     let hidesRunStatusAccessibility: Bool
     let showsThinkingAndToolCards: Bool
@@ -430,6 +432,10 @@ struct ChatTranscriptView: View {
                     .accessibilityHidden(hidesRunStatusAccessibility)
                     .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
             }
+        } else if showsRunStateCheck {
+            StreamRecoveryStatusView(state: .checking)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
         }
     }
 

@@ -308,6 +308,30 @@ final class ChatRecoveryUITests: ChatUITestCase {
         XCTAssertEqual(countElements(containing: "After reconnect."), 1)
         XCTAssertNotNil(waitForComposer(timeout: 5))
     }
+
+    // TAL-250: reopening a running chat paints its work and a run-state check before the held session detail answers.
+    func testReopeningRunningChatKeepsItsWorkVisibleWhileTheSessionLoads() throws {
+        launchChatFixture(
+            argument: "--ui-test-chat-reopen",
+            trace: "start -> token + tool -> leave -> list streaming -> reopen (detail held 4s) -> active detail -> reconnect -> token -> done"
+        )
+        try sendFixtureMessage("Run the deterministic fixture")
+        XCTAssertTrue(element(labelContaining: "Reopen fixture progress.").waitForExistence(timeout: 5))
+
+        tapCenter(of: app.buttons["BackButton"])
+        XCTAssertTrue(element(labelContaining: "Streaming").waitForExistence(timeout: 10), "The list never reported the run")
+        tapCenter(of: fixtureSessionButton)
+
+        XCTAssertTrue(
+            element(labelContaining: "Reopen fixture progress.").waitForExistence(timeout: 2.5),
+            "The running turn's work vanished while the session detail was held"
+        )
+        XCTAssertTrue(element(label: "Checking stream").waitForExistence(timeout: 1))
+
+        XCTAssertTrue(element(labelContaining: "Reopen fixture done.").waitForExistence(timeout: 20))
+        XCTAssertTrue(element(label: "Checking stream").waitForNonExistence(timeout: 5))
+        XCTAssertEqual(countElements(containing: "Reopen fixture progress."), 1)
+    }
 }
 
 final class ChatComposerUITests: ChatUITestCase {

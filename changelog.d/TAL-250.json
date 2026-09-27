@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reopening a chat while the agent is still working keeps its work on screen and shows that the stream is being checked until it reconnects.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
