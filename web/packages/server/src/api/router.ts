@@ -132,6 +132,7 @@ export function healthPayload(ctx: RequestContext, deep: boolean): { status: num
     server_started_at: deps.startedAt,
     uptime_seconds: Math.round((now - deps.startedAt) * 10) / 10,
     accept_loop: { requests_total: deps.stats.requestsTotal, last_request_at: Math.round(deps.stats.lastRequestAt * 1000) / 1000 },
+    agent: { status: deps.sidecar()?.status ?? 'unavailable' },
   }
   if (deep) {
     if (!deps.startup.ready) {

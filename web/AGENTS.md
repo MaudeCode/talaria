@@ -14,9 +14,8 @@ The root tracker/release-note rules also apply to Web changes.
 Before making changes, read:
 
 1. `README.md`
-2. `CONTRIBUTING.md`
-3. `docs/CONTRACTS.md`
-4. `CHANGELOG.md`
+2. `docs/CONTRACTS.md`
+3. `CHANGELOG.md`
 
 For architecture, testing, or setup work, also read the matching reference:
 
@@ -61,6 +60,10 @@ Follow that checklist's safety rules:
   regenerate `../contracts/web-api.openapi.json` with `npm run openapi` and keep it committed.
 - Follow root server-owned state (`../AGENTS.md`): the frontend renders contract fields;
   derivations go in `packages/server` and ship through `packages/contracts`.
+- Persisted state stays readable by the current Stable release, because users switch
+  channels in either direction (TAL-343). Changes on `main` to `settings.json`, the
+  project store, or the workspace store are additive. Rename or remove a persisted key
+  or file only after a Stable release reads the new form.
 - Do not add third-party dependencies, build tools, frameworks, or long-lived processes
   without clear justification and a rollback story.
 - Update docs when changing setup, onboarding, runtime behavior, architecture,
@@ -74,6 +77,8 @@ Follow that checklist's safety rules:
   the manual verification performed.
 - For runtime, streaming, recovery, replay, compression, or sidebar metadata
   changes, name the state layer being mutated and prove the relevant invariant.
+- Treat auth, path handling, uploads, streaming, and environment handling as
+  high-risk; say so in the PR body and explain how the change was verified.
 - For Docker build changes in `docker_init.bash`, mirror directory exclusions
   in both the `rsync` and `cp -a` paths — `/opt/hermes` may contain subdirectories
   with restricted permissions (e.g. `.playwright/`).

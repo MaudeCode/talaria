@@ -1,5 +1,11 @@
 # Talaria
 
+> [!WARNING]
+> **Talaria is under heavy development and is not accepting outside contributions.**
+> Interfaces, storage formats, and release flows change without notice. Report
+> security vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+> This notice changes when that does.
+
 Talaria combines a native Apple client, Talaria Web, and the APNs/Live Activity
 relay. Components share source history and contracts, with independent builds
 and releases.

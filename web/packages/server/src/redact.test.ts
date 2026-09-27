@@ -240,7 +240,7 @@ describe('round 44 shapes', () => {
     expect(redactText(`ls -$OPTS dir && tar --out-$(date +%F) x && login --pass$X`, true)).toBe(`ls -$OPTS dir && tar --out-$(date +%F) x && login --pass$X`)
     expect(redactText(`login --{password,user}=hunter2 --{pass,pass}word=hunter3 --{p{a,b},x}=hunter4 next`, true)).toBe(`login --{password,user}=*** --*** --***`)
     expect(redactText(`echo --{a,b} {x,y}=1`, true)).toBe(`echo --{a,b} {x,y}=1`)
-    expect(redactText(`SEP='='; login --password\${SEP}hunter2 --api_key$(printf =)hunter3 --token\${S}x=hunter4 next`, true)).toBe(`SEP='='; login --password*** --api_key*** --token*** next`)
+    expect(redactText(`SEP='='; login --password\${SEP}hunter2 --api_key$(printf =)hunter3 --token\${S}x=hunter4 next`, true)).toBe(`SEP='***'; login --password*** --api_key*** --token*** next`)
     // Markdown code spans are prose, not substitutions.
     expect(redactText('answer with **markdown** and `code` about the token', true)).toBe('answer with **markdown** and `code` about the token')
     expect(redactText('check the `token` field; use `${base}/api` and `a=$(date)`.', true)).toBe('check the `token` field; use `${base}/api` and `a=$(date)`.')
@@ -280,8 +280,8 @@ describe('shell-composed words', () => {
 
   it('fails closed where an expansion may supply a delimiter', () => {
     expect(redactText('AT=@; curl https://bob:hunter2${AT}example.com next', true)).toBe('AT=@; curl https://bob:*** next')
-    expect(redactText(`SEP='='; login --password"\${SEP}"hunter2 next`, true)).not.toContain('hunter2')
-    expect(redactText(`SEP='='; login --password"\${SEP}"hunter2 next`, true)).toContain(' next')
+    expect(redactText(`login --password"\${SEP}"hunter2 next`, true)).not.toContain('hunter2')
+    expect(redactText(`login --password"\${SEP}"hunter2 next`, true)).toContain(' next')
     expect(redactText('SEP=:; curl https://bob${SEP}hunter2@example.com https://bob${C}pw2${A}host next', true)).toBe('SEP=:; curl https://bob***@example.com https://bob*** next')
     for (const kept of ['curl https://api.github.com/repos/$OWNER/x', 'curl https://$HOST:8080/x', 'curl https://$SUB.example.com/x', "echo '$HOME' --token-file=$HOME/.tok"]) {
       expect(redactText(kept, true)).toBe(kept)
@@ -325,6 +325,98 @@ describe('shell-composed words', () => {
   })
 })
 
+describe('inline shell assignments', () => {
+  it('masks a credential the command builds from variables it assigns', () => {
+    expect(redactText(`SCHEME='https://'; U=bob; SEP=:; AT=@; curl "\${SCHEME}\${U}\${SEP}hunter2\${AT}example.com"`, true)).toBe(`SCHEME='https://'; U=bob; SEP=:; AT=@; curl "\${SCHEME}\${U}\${SEP}***\${AT}example.com"`)
+    expect(redactText('HEADER=Authorization; SEP=:; curl -H "${HEADER}${SEP} Basic hunter2"', true)).toBe('HEADER=Authorization; SEP=:; curl -H "${HEADER}${SEP} Basic ***"')
+    for (const text of ['SEP=:; curl -u bob${SEP}hunter2 x', 'export TOKEN_NAME=api_key; login --$TOKEN_NAME hunter2']) expect(redactText(text, true)).not.toContain('hunter2')
+    // A reassigned name may hold any of its values: control flow may skip either assignment.
+    for (const text of ['HEADER=X-Trace; HEADER=Authorization; SEP=:; curl -H "${HEADER}${SEP} Basic hunter2"', 'HEADER=Authorization; HEADER=X-Trace; SEP=:; curl -H "${HEADER}${SEP} Basic hunter2"', 'OPT=-u; false && OPT=echo; curl $OPT bob:hunter2 x']) {
+      expect(redactText(text, true)).not.toContain('hunter2')
+    }
+    // An unknown reassignment, many values of one name, and combinations of several reassigned names.
+    for (const text of ['OPT=-u; false && OPT=$(echo); curl $OPT bob:hunter2 x', 'OPT=a; OPT=b; OPT=-u; false && OPT=c; false && OPT=d; false && OPT=e; false && OPT=f; curl $OPT bob:hunter2 x',
+      'H1=Author; false && H1=X; H2=ization; false && H2=Y; SEP=x; SEP=:; curl -H "${H1}${H2}${SEP} Basic hunter2"']) {
+      expect(redactText(text, true)).not.toContain('hunter2')
+    }
+    // Past 8 combinations, a word with a reassigned name's reference fails closed, with the next word when it is whole.
+    expect(redactText('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; curl $OPT bob:hunter2 x', true)).toBe('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; curl *** x')
+    expect(redactText('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; curl "$OPT" bob:hunter2 x', true)).not.toContain('hunter2')
+    // …through overlapping references and any run of blanks…
+    for (const gap of [' ', ' '.repeat(65)]) expect(redactText(`A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=x; false && OPT=echo; OPT2=-u; false && OPT2=echo; curl $OPT $OPT2${gap}bob:hunter2 x`, true)).not.toContain('hunter2')
+    // …through a word of adjacent references…
+    expect(redactText('A=--pass; false && A=x; B=word; false && B=y; C=1; C=2; D=1; D=2; login $A$B hunter2 x', true)).not.toContain('hunter2')
+    // …and through a template alias of a reassigned name.
+    expect(redactText('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; ARG=$OPT; curl $ARG bob:hunter2 x', true)).not.toContain('hunter2')
+    for (const kept of ['D=/a; false && D=/b; cat $D/x.txt', 'A=1; A=2; seq $A']) expect(redactText(kept, true)).toBe(kept)
+    // A value built from other assigned names.
+    for (const text of ['OPT=-u; ARG=$OPT; curl $ARG bob:hunter2 x', 'U=bob; SEP=:; CRED="${U}${SEP}"; curl -u ${CRED}hunter2 x']) expect(redactText(text, true)).not.toContain('hunter2')
+    // Distinct templates are distinct candidates; a quoted operand of an assignment builtin is an assignment.
+    for (const text of ['A=-u; B=echo; ARG=$A; false && ARG=$B; curl $ARG bob:hunter2 x', 'export "KEY=--password"; login $KEY hunter2 x', "declare -x 'OPT=-u'; curl $OPT bob:hunter2 x"]) {
+      expect(redactText(text, true)).not.toContain('hunter2')
+    }
+    expect(redactText('echo "KEY=--password"; login $KEY hunter2 x', true)).toBe('echo "KEY=--password"; login $KEY hunter2 x')
+    // A literal append, and a quote inside a comment.
+    for (const text of ['OPT=-; OPT+=u; curl $OPT bob:hunter2 x', 'export "OPT=-"; export "OPT+=u"; curl $OPT bob:hunter2 x', `H=Authorization; S=: # don't\ncurl -H "\${H}\${S} Basic hunter2"`]) {
+      expect(redactText(text, true)).not.toContain('hunter2')
+    }
+    // A computed value fails closed; an unquoted value splits into fields as the shell does.
+    expect(redactText('OPT=$(printf -- -u); curl $OPT bob:hunter2 x', true)).toBe('OPT=$(printf -- -u); curl *** x')
+    expect(redactText(`OPT='foo --password'; login $OPT hunter2 x`, true)).not.toContain('hunter2')
+    // An escaped separator keeps the rest in the value: `OPT=echo` is part of `A`.
+    expect(redactText('OPT=-u; A=foo\\;OPT=echo; curl $OPT bob:hunter2 x', true)).not.toContain('hunter2')
+  })
+
+  it('masks a discovered secret everywhere, the assignment that defined it included', () => {
+    expect(redactText('P=hunter2; curl -u bob:$P x', true)).toBe('P=***; curl -u bob:*** x')
+    expect(redactText('P=hunter2; curl -u "bob:${P}" x; echo hunter2', true)).toBe('P=***; curl -u "bob:***" x; echo ***')
+    // A secret glued from a value and literal text is masked by its pieces.
+    expect(redactText(`SCHEME='https://'; U=bob; SEP=:; AT=@; P=hunt; curl "\${SCHEME}\${U}\${SEP}\${P}er2\${AT}example.com"`, true)).not.toMatch(/hunt|er2/)
+    // A secret with no letter or digit.
+    expect(redactText(`P='!!!'; curl -u "bob:$P" x`, true)).toBe(`P='***'; curl -u "bob:***" x`)
+    expect(redactText(`SCHEME='https://'; U=bob; SEP=:; AT=@; curl "\${SCHEME}\${U}\${SEP}!!!\${AT}example.com"`, true)).not.toContain('!!!')
+    // Unquoted, `;` would end the substituted word and publish the rest.
+    expect(redactText(`P='hunter2;extra words'; curl -u bob:$P x`, true)).not.toMatch(/hunter2|extra|words/)
+  })
+
+  it('keeps every fail-closed mask, whatever the shell runs', () => {
+    // `KEY=foo` never runs: the ambient `KEY` may name a credential.
+    expect(redactText('false && KEY=foo; login --${KEY} hunter2; P=pw; curl -u bob:$P x', true)).toBe('false && KEY=foo; login --*** ***; P=***; curl -u bob:*** x')
+  })
+
+  it('reads an assignment wherever the shell may, and past an unknown one', () => {
+    for (const text of ['{ OPT=-u; curl $OPT bob:hunter2 x; }', 'if true; then OPT=-u; curl $OPT bob:hunter2 x; fi', 'A=$(printf x); OPT=-u; curl $OPT bob:hunter2 x', 'A="$(date)" OPT=-u; curl $OPT bob:hunter2 x']) {
+      expect(redactText(text, true)).not.toContain('hunter2')
+    }
+  })
+
+  it('masks the whole value of an assignment whose substitution is masked', () => {
+    expect(redactText(`P='@@@'; curl -u "bob:$P" x`, true)).toBe(`P='***'; curl -u "bob:***" x`)
+    expect(redactText(`P='hunter2!!!'; curl -u "bob:$P" x`, true)).toBe(`P='***'; curl -u "bob:***" x`)
+    expect(redactText(`SCHEME='https://'; U=bob; SEP=:; AT=@; curl "\${SCHEME}\${U}\${SEP}hunter2!!!\${AT}example.com"`, true)).not.toMatch(/hunter2|!!!/)
+    expect(redactText(`SCHEME='https://'; U=bob; SEP=:; AT=@; P=hunt; curl "\${SCHEME}\${U}\${SEP}$P!!!\${AT}example.com"`, true)).not.toMatch(/hunt|!!!/)
+    expect(redactText(`P='$$$'; curl -u "bob:$P" x`, true)).toBe(`P='***'; curl -u "bob:***" x`)
+    // A secret is masked at every assignment of it, however spelled.
+    expect(redactText(String.raw`P=$'hunter\x32'; false && P=hunter2; curl -u bob:$P x`, true)).toBe(String.raw`P=$'***'; false && P=***; curl -u bob:*** x`)
+    // A delimiter-only secret is masked at every assignment of it and as a whole word.
+    expect(redactText(`P='@@@'; P='@@@'; curl -u "bob:$P" x; echo @@@`, true)).toBe(`P='***'; P='***'; curl -u "bob:***" x; echo ***`)
+    // Past the expansion cap every literal value is taken as a secret.
+    const long = 'x'.repeat(2_000)
+    expect(redactText(`P=${long}; echo $P $P $P $P $P; curl -u bob:$P x`, true)).not.toContain(long.slice(0, 20))
+    expect(redactText(`A=${long}; echo $A $A $A $A $A $A; Q=hunter2; curl -u bob:$Q x`, true)).not.toContain('hunter2')
+  })
+
+  it('keeps a command with nothing to mask as written', () => {
+    for (const text of ['D=/tmp; cat $D/x.txt', 'N=3; seq $N', 'export D=/tmp && ls "$D"']) expect(redactText(text, true)).toBe(text)
+  })
+
+  it('leaves unknown variables, parameter operators and single-quoted names alone', () => {
+    expect(redactText('curl -u bob${SEP}hunter2', true)).toBe('curl -u bob***')
+    const kept = "A=@; echo 'bob:hunter2$A'x bob:hunter2${A:-}x"
+    expect(redactText(kept, true)).toBe(kept)
+  })
+})
+
 describe('credential key length', () => {
   it('masks a credential option whose identifier is longer than any fixed cap, through the public prefilter', () => {
     const namespace = 'company'.repeat(40)
@@ -343,7 +435,12 @@ describe('redactSensitive cost', () => {
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
       // Shell-composed identifiers: unclosed and alternating quote and escape pieces.
-      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`, `a{b,`, `a{b`, `a{,}`, `a$'\\`, `--$'\\x`, `a'='`, `a'b `, `x:'@'`, `%41`, `a%4`, `a:b`, `'--a', '`, `"-u", "x`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`)]) {
+      ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`, `a{b,`, `a{b`, `a{,}`, `a$'\\`, `--$'\\x`, `a'='`, `a'b `, `x:'@'`, `%41`, `a%4`, `a:b`, `'--a', '`, `"-u", "x`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`),
+      // Inline assignments: long chains, prefix chains, many substitutions, and a secret substituted many times.
+      ...['A=x; ', 'A=x B=y ', 'export A=x ', '; ', ';A', `A='x `, 'A="x ', 'A=${ ', 'A=$( ', `A=n'x `, 'A=@; $A ', 'A=!; $A '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+      `A=x; ${'$A ${A} '.repeat(30_000)}`, Array.from({ length: 20_000 }, (_, i) => `A=${i}; $A `).join(''), `${'A=$(x); '.repeat(20_000)}${'A=1; $A '.repeat(20_000)}`,
+      Array.from({ length: 5 }, (_, i) => `A=${i}; `).join('') + '$A '.repeat(50_000), `A=${'x'.repeat(10_000)}; ${'B=$A; '.repeat(30_000)}`, `A=x; ${'A=$A$A; '.repeat(25_000)}curl -u bob:$A`,
+      `P=hunter2; ${'Q="${P}x"; curl -u bob:$Q '.repeat(8_000)}`, `export ${'"A=1" '.repeat(40_000)}`, `A=1; ${'A+=1; '.repeat(30_000)}$A`, `x # '\n`.repeat(40_000), `A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; ${'$A '.repeat(40_000)}`, `export ${'"A=$(x" '.repeat(30_000)}`, `A=1; A=2; B=1; B=2; C=1; C=2; ${'curl -u bob:$A$B$C '.repeat(12_000)}`, `P=hunter2; ${'curl -u bob:$P '.repeat(15_000)}`, `A=${'x'.repeat(10_000)}; ${'$A'.repeat(50_000)}`]) {
       const started = performance.now()
       redactSensitive(text)
       expect(performance.now() - started).toBeLessThan(1000)

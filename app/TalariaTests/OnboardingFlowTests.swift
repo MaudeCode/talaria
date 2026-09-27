@@ -171,7 +171,14 @@ final class OnboardingFlowTests: XCTestCase {
         let prompt = OnboardingFlowPolicy.agentSetupPrompt
 
         let requiredInstructions = [
-            "Python standard library + vanilla JavaScript",
+            "@maudecode/talaria-web",
+            "npm install -g @maudecode/talaria-web",
+            "Node 24 or newer",
+            "command -v talaria-web",
+            "talaria-web ctl start",
+            "talaria-web ctl status",
+            "talaria-web ctl restart",
+            "If a service or another launcher runs Talaria Web, do not restart it yourself",
             "Inventory before changing anything",
             "command -v tailscale",
             "tailscale version",
@@ -194,16 +201,18 @@ final class OnboardingFlowTests: XCTestCase {
             "chmod 600",
             "Preserve every existing line in `.env`",
             "only add or update the `HERMES_WEBUI_PASSWORD` entry",
+            "If the running service or shell already sets `HERMES_WEBUI_PASSWORD`, that value wins over `.env`",
+            "If Talaria Web runs from a source checkout, a `.env` in that checkout wins over both",
             "never truncate or replace the file",
             "Whether `.env` already existed or is new",
             "Do not print the full .env",
-            "python3 bootstrap.py",
-            "./ctl.sh",
             "Do not configure auto-start yourself",
             "Propose the exact OS-appropriate commands and steps",
             "wait for me to run them",
             "Do not touch `~/Library/LaunchAgents/` or restart Mac services",
             "curl --fail http://127.0.0.1:8787/health",
+            "confirm its JSON `agent.status` is `ready`",
+            "do not report setup as complete",
             "actual ts.net HTTPS URL",
             "exact HTTPS URL, password, launcher, and both health-check results",
             "manual fallback",
@@ -214,7 +223,9 @@ final class OnboardingFlowTests: XCTestCase {
             XCTAssertTrue(prompt.contains(instruction), "Missing safe setup instruction: \(instruction)")
         }
 
-        XCTAssertFalse(prompt.contains("Node.js"))
+        for staleInstruction in ["hermes-webui", "bootstrap.py", "ctl.sh", "Python standard library"] {
+            XCTAssertFalse(prompt.contains(staleInstruction), "Stale setup instruction: \(staleInstruction)")
+        }
         XCTAssertFalse(prompt.contains("curl http://$(tailscale ip -4):8787/health"))
         XCTAssertFalse(prompt.contains("fall back: bind the server to 0.0.0.0"))
         XCTAssertFalse(prompt.contains("Otherwise configure auto-start appropriate for this OS"))

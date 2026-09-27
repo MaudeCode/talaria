@@ -685,7 +685,7 @@ Daily during first week:
 1. Review TestFlight feedback.
 2. Review crash reports in App Store Connect/Xcode Organizer.
 3. Check server health and logs if testers report connection issues.
-4. Capture actionable reports in GitHub Issues.
+4. Capture actionable reports in the project tracker.
 5. Triage:
    - P0: fix immediately, upload new external-capable build, resubmit if required.
    - P1: fix before widening tester pool.

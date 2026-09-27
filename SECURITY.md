@@ -2,26 +2,19 @@
 
 ## Reporting a vulnerability
 
-Please **do not** report security vulnerabilities through public GitHub issues.
-
-Instead, use GitHub's private vulnerability reporting: go to the repository's
-**Security** tab and click **Report a vulnerability** (or open
-`https://github.com/MaudeCode/talaria/security/advisories/new`). This opens a
-private security advisory that only the maintainer can see.
+Report security vulnerabilities privately through GitHub's private vulnerability
+reporting: go to the repository's **Security** tab and click **Report a
+vulnerability** (or open `https://github.com/MaudeCode/talaria/security/advisories/new`).
+This opens a private security advisory that only the maintainers can see.
 
 Include as much of the following as you can:
 
 - A description of the vulnerability and its impact
 - Steps to reproduce, or a proof of concept
-- The app version (or commit) and iOS version you tested against
+- The affected component (App, Web, or Relay) and its version or commit
+- The platform you tested on (for example the iOS, macOS, or Linux version, or the browser)
 
-You should get an initial response within a week. Please give the maintainer a
+You should get an initial response within a week. Please give the maintainers a
 reasonable window to ship a fix before disclosing publicly.
 
-## Scope
-
-This repository contains only the iOS client. Vulnerabilities in the
-[hermes-webui](https://github.com/MaudeCode/hermes-webui) server should be
-reported to that project instead. Issues with how *this app* stores
-credentials, talks to the server, or handles untrusted server responses are in
-scope here.
+Report vulnerabilities in Hermes Agent itself to that project, not here.

@@ -619,7 +619,7 @@ volumes:
 - #569 — UID/GID detection priority order
 - #7027 — state dir probed before `/workspace` in UID/GID detection (see [#9 above](#9-failed-to-verify-state-directory--restart-loop-on-a-bind-mounted-state-dir-7027))
 
-If you hit a new failure mode not covered here, please open a Talaria issue with:
+For a new failure mode not covered here, collect:
 
 1. Which compose file you used
 2. The error from `docker logs hermes-webui`

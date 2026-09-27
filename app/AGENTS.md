@@ -3,8 +3,8 @@
 Commands and source paths below are relative to `app/`. Root policy is in
 `../AGENTS.md`; shared workflow files stay in `../.github/`.
 
-Talaria is a native SwiftUI iPhone client for a self-hosted `hermes-webui`
-server. Inherited documentation describes this project only where Talaria has
+Talaria is a native SwiftUI iPhone client for a self-hosted Talaria Web server
+(`../web/`). Inherited documentation describes this project only where Talaria has
 explicitly adopted it.
 
 ## Scope and issue tracking
@@ -54,6 +54,9 @@ explicitly adopted it.
 
 - For API requests, JSON decoding, SSE or streaming, and server-version
   compatibility, use `$talaria-upstream-contract`.
+- Never invent API endpoints or JSON shapes; verify them against the Web
+  contracts or a running server. Every `Codable` model decodes tolerantly and
+  never crashes on unknown fields.
 - Follow root server-owned state (`../AGENTS.md`): views and view models render
   decoded contract fields; derivation from server data goes on the server
   through `$talaria-upstream-contract`.

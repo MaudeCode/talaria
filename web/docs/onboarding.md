@@ -184,10 +184,9 @@ State normally lives outside the repository. By default:
 Override these with `HERMES_HOME` and `HERMES_WEBUI_STATE_DIR` when you need an
 isolated test install.
 
-## When to file an issue
+## Collecting diagnostics
 
-File an issue when the diagnostics point to WebUI rather than local
-configuration. Include:
+When the diagnostics point to WebUI rather than local configuration, collect:
 
 1. Install path: local bootstrap, Docker single-container, Docker
    two-container, Docker three-container, or WSL2.

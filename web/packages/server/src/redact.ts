@@ -730,13 +730,405 @@ function redactComposedWords(text: string): string {
   return out + text.slice(last)
 }
 
+/**
+ * `NAME=` at a word start: an assignment wherever the shell may read one (after `;`, `{`, `then`, `export`, as a prefix
+ * …). Reading more assignments than the shell runs only adds masks.
+ */
+const ASSIGNMENT_RE = /(?<![^\s;&|(){}!\x60])([A-Za-z_][A-Za-z0-9_]*)(\+?)=/g
+/** `$NAME` or `${NAME}`; a parameter operator (`${NAME:-x}`, `${#NAME}`) is not a plain reference. */
+const VAR_REF_RE = /\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/y
+const VAR_REFS_RE = new RegExp(VAR_REF_RE.source, 'g')
+/** Blanks before the next word. */
+const BLANK_RUN_RE = /[ \t]+(?=\S)/y
+/** A builtin that takes `NAME=value` operands, quoted ones included (`export "KEY=x"`). */
+const ASSIGNMENT_BUILTIN_RE = /(?<![^\s;&|(){}!\x60])(?:export|declare|typeset|readonly|local)(?=[ \t])/g
+
+/** The end of the `$NAME` / `${NAME}` reference at `at`. */
+const VAR_REF_END = (text: string, at: number): number => {
+  VAR_REF_RE.lastIndex = at
+  return VAR_REF_RE.exec(text) ? VAR_REF_RE.lastIndex : at + 1
+}
+
+/** An assignment the text makes: its value word, and from `at` on, `$name` is `value` (`undefined` once the shell computes it). */
+interface Assignment { name: string; start: number; end: number; at: number; value: string | undefined; template?: string }
+
+/**
+ * The end of an assignment's value word, and whether it is literal (bare, quoted and escaped pieces) or a template that
+ * also holds plain references (`$OPT`, `"${A}x"`). Any other expansion, a substitution or an unterminated quote makes it
+ * neither, and the scan stops there, so no value is scanned twice.
+ */
+function assignedWord(text: string, start: number): { end: number; literal: boolean; template: boolean } {
+  const unknown = (end: number): { end: number; literal: boolean; template: boolean } => ({ end, literal: false, template: false })
+  if (text[start] === '(') return unknown(start)
+  let template = false
+  let i = start
+  while (i < text.length) {
+    const c = text[i]!
+    if (/[\s;&|<>()]/.test(c)) break
+    if (c === '\\') i += 2
+    else if (c === '$' && text[i + 1] === "'") {
+      let k = i + 2
+      while (k < text.length && text[k] !== "'") k += text[k] === '\\' ? 2 : 1
+      if (k >= text.length) return unknown(i)
+      i = k + 1
+    } else if (c === '$' || c === '`') {
+      VAR_REF_RE.lastIndex = i
+      if (c === '`' || !VAR_REF_RE.exec(text)) return unknown(i)
+      template = true
+      i = VAR_REF_RE.lastIndex
+    } else if (c === "'") {
+      const close = text.indexOf("'", i + 1)
+      if (close === -1) return unknown(i)
+      i = close + 1
+    } else if (c === '"') {
+      let k = i + 1
+      while (k < text.length && text[k] !== '"') {
+        if (text[k] === '`') return unknown(k)
+        if (text[k] === '$') {
+          VAR_REF_RE.lastIndex = k
+          if (!VAR_REF_RE.exec(text)) return unknown(k)
+          template = true
+          k = VAR_REF_RE.lastIndex
+        } else k += text[k] === '\\' ? 2 : 1
+      }
+      if (k >= text.length) return unknown(i)
+      i = k + 1
+    } else i += 1
+  }
+  return { end: Math.min(i, text.length), literal: !template, template }
+}
+
+/**
+ * A template value (`"${A}x"`) with its references replaced through `lookup`, dequoted; `undefined` when a reference is
+ * unknown or the value grows past `cap`.
+ */
+function expandTemplate(word: string, lookup: (name: string) => string | undefined, cap: number): string | undefined {
+  let out = ''
+  let last = 0
+  let quote = ''
+  for (let i = 0; i < word.length; i += 1) {
+    const c = word[i]!
+    if (c === '\\') i += 1
+    else if (!quote && c === "'") i = Math.max(i, word.indexOf("'", i + 1))
+    else if (!quote && c === '$' && word[i + 1] === "'") for (i += 2; i < word.length && word[i] !== "'"; i += word[i] === '\\' ? 2 : 1);
+    else if (c === '"') quote = quote ? '' : '"'
+    else if (c === '$') {
+      VAR_REF_RE.lastIndex = i
+      const ref = VAR_REF_RE.exec(word)
+      const value = ref ? lookup(ref[1] ?? ref[2]!) : undefined
+      if (value === undefined || out.length + value.length > cap) return undefined
+      out += word.slice(last, i) + substitutedWord(value, quote)
+      last = VAR_REF_RE.lastIndex
+      i = last - 1
+    }
+  }
+  return shellDequote(out + word.slice(last)).replaceAll(WORD_SPACE, ' ')
+}
+
+/**
+ * The assignments (`NAME=value`) outside quotes, in text order. A value is one shell word, dequoted, or a template of
+ * plain references; one with another expansion, a substitution or an append (`+=`) is unknown. One pass.
+ */
+function inlineAssignments(text: string): Assignment[] {
+  const found: Assignment[] = []
+  const quoteAt = quoteTracker(text)
+  ASSIGNMENT_RE.lastIndex = 0
+  for (let m = ASSIGNMENT_RE.exec(text); m; m = ASSIGNMENT_RE.exec(text)) {
+    const start = m.index + m[0].length
+    // An assignment inside a quoted argument, or after an escaped separator (`A=foo\;B=x` is one word), is text.
+    if (quoteAt(m.index)) continue
+    let escapes = 0
+    for (let k = m.index - 2; k >= 0 && text[k] === '\\'; k -= 1) escapes += 1
+    if (escapes % 2) continue
+    const { end, literal, template } = assignedWord(text, start)
+    const word = text.slice(start, end)
+    // An append (`OPT+=u`) is a template of the previous value and the word.
+    if (!literal && !template) found.push({ name: m[1]!, start, end, at: start, value: undefined })
+    else if (m[2]) found.push({ name: m[1]!, start, end, at: end, value: undefined, template: `\${${m[1]!}}${word}` })
+    else found.push({ name: m[1]!, start, end, at: end, value: literal ? shellDequote(word).replaceAll(WORD_SPACE, ' ') : undefined, ...(template ? { template: word } : {}) })
+  }
+  // A quoted operand of an assignment builtin (`export "KEY=--password"`) is an assignment too; the whole operand is its
+  // value word.
+  const closeOf = enclosingClose(text)
+  const builtinAt = quoteTracker(text)
+  ASSIGNMENT_BUILTIN_RE.lastIndex = 0
+  for (let m = ASSIGNMENT_BUILTIN_RE.exec(text); m; m = ASSIGNMENT_BUILTIN_RE.exec(text)) {
+    if (builtinAt(m.index)) continue
+    let i = m.index + m[0].length
+    for (;;) {
+      while (text[i] === ' ' || text[i] === '\t') i += 1
+      if (i >= text.length || /[;&|<>()\n#]/.test(text[i]!)) break
+      const end = Math.max(i + 1, shellWordEnd(text, i, '', closeOf))
+      const word = text.slice(i, end)
+      const operand = /^\$?["']/.test(word) ? /^([A-Za-z_][A-Za-z0-9_]*)(\+?)=([\s\S]*)$/.exec(shellDequote(word).replaceAll(WORD_SPACE, ' ')) : null
+      if (operand && firstExpansion(word) >= 0) found.push({ name: operand[1]!, start: i, end, at: i, value: undefined })
+      else if (operand?.[2]) found.push({ name: operand[1]!, start: i, end, at: end, value: undefined, template: `\${${operand[1]!}}${substitutedWord(operand[3]!, '')}` })
+      else if (operand) found.push({ name: operand[1]!, start: i, end, at: end, value: operand[3] })
+      i = end
+    }
+    ASSIGNMENT_BUILTIN_RE.lastIndex = Math.max(i, ASSIGNMENT_BUILTIN_RE.lastIndex)
+  }
+  return found.sort((a, b) => a.start - b.start)
+}
+
+/** The text with each shell comment (`#` at a word start, outside quotes, to the line end) replaced by spaces. */
+function blankComments(text: string): string {
+  let out = ''
+  let last = 0
+  let quote = ''
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i]!
+    if (c === '\\' && quote !== "'") i += 1
+    else if (quote) { if (c === quote.slice(-1)) quote = '' }
+    else if (c === "'" || c === '"') quote = text[i - 1] === '$' && c === "'" ? "$'" : c
+    else if (c === '#' && /^[\s;&|()]?$/.test(text[i - 1] ?? '')) {
+      const end = text.indexOf('\n', i)
+      const stop = end === -1 ? text.length : end
+      out += text.slice(last, i) + ' '.repeat(stop - i)
+      last = i = stop
+    }
+  }
+  return last ? out + text.slice(last) : text
+}
+
+/**
+ * A substituted value as the shell passes it: escaped inside `"…"`; outside, split into fields at blanks, each field
+ * single-quoted unless it is plain.
+ */
+function substitutedWord(value: string, quote: string): string {
+  if (quote) return value.replace(/["\\$`]/g, '\\$&')
+  return value.split(/[ \t\n]+/).filter(Boolean).map((field) => (/^[\w.:/@%+,=-]*$/.test(field) ? field : `'${field.replaceAll("'", `'\\''`)}'`)).join(' ')
+}
+
+/** A substituted value's place in the expanded text, the assignment that defined it, and the value. */
+type Span = [start: number, end: number, assignment: number, value: string]
+
+/**
+ * The text with each `$NAME` / `${NAME}` replaced by a value assigned to it earlier, outside single and ANSI-C quotes,
+ * as the shell expands it, and where each substituted value sits in it. `pick` chooses among the name's assignments so
+ * far (in text order, an unknown one included) and returns `-1` to leave the reference as written, as unknown names and
+ * parameter operators are. One pass. A substitution past the size cap (a long value referenced many times) is left as
+ * written, and its assignment is reported, as is each reference to a `watch`ed name.
+ */
+function expandAssignments(text: string, assignments: Assignment[], pick: (name: string, history: number[]) => number, watch = new Set<string>()): { expanded: string; spans: Span[]; overflow: Set<number>; watched: number[] } {
+  const spans: Span[] = []
+  const watched: number[] = []
+  const overflow = new Set<number>()
+  const history = new Map<string, number[]>()
+  const cap = text.length * 2 + 4096
+  // A template's value is resolved in this view when it takes effect.
+  const resolved = new Map<number, string | undefined>()
+  // ponytail: templates share one size budget; past it a template is unknown.
+  let templateBudget = cap
+  const valueOf = (n: number): string | undefined => (assignments[n]!.template === undefined ? assignments[n]!.value : resolved.get(n))
+  let next = 0
+  let quote = ''
+  let out = ''
+  let last = 0
+  for (let i = 0; i < text.length; i += 1) {
+    for (; next < assignments.length && assignments[next]!.at <= i; next += 1) {
+      const { name, template } = assignments[next]!
+      if (template !== undefined) {
+        const value = expandTemplate(template, (ref) => { const refs = history.get(ref); const n = refs ? pick(ref, refs) : -1; return n >= 0 ? valueOf(n) : undefined }, templateBudget)
+        templateBudget -= value?.length ?? 0
+        resolved.set(next, value)
+      }
+      const past = history.get(name)
+      if (past) past.push(next)
+      else history.set(name, [next])
+    }
+    const c = text[i]!
+    if (c === '\\') i += 1
+    else if (!quote && c === "'") {
+      const close = text.indexOf("'", i + 1)
+      if (close === -1) break
+      i = close
+    } else if (!quote && c === '$' && text[i + 1] === "'") {
+      for (i += 2; i < text.length && text[i] !== "'"; i += text[i] === '\\' ? 2 : 1);
+    } else if (c === '"') quote = quote ? '' : '"'
+    else if (c === '$') {
+      VAR_REF_RE.lastIndex = i
+      const ref = VAR_REF_RE.exec(text)
+      const name = ref ? ref[1] ?? ref[2]! : ''
+      if (watch.has(name)) watched.push(i)
+      const assignment = ref && history.has(name) ? pick(name, history.get(name)!) : -1
+      const value = assignment < 0 ? undefined : valueOf(assignment)
+      if (value === undefined) continue
+      const word = out.length + value.length > cap ? '' : substitutedWord(value, quote)
+      if (!word && value) {
+        overflow.add(assignment)
+        continue
+      }
+      out += text.slice(last, i)
+      spans.push([out.length, out.length + word.length, assignment, value])
+      out += word
+      last = VAR_REF_RE.lastIndex
+      i = last - 1
+    }
+  }
+  return { expanded: out + text.slice(last), spans, overflow, watched }
+}
+
+/** A word, and a shell-word unit (a run between shell and URL delimiters, `hunter2!!!`); `*` is a mask's. */
+const SECRET_WORD_RE = /[\p{L}\p{N}_]+/gu
+const SECRET_UNIT_RE = /[^\s'"`$\\=:@/;&|<>(){}[\],*]+/gu
+const HAS_SECRET_UNIT_RE = new RegExp(SECRET_UNIT_RE.source, 'u')
+
+/** A text's words and units, counted together. */
+function secretTokenCounts(text: string): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const re of [SECRET_WORD_RE, SECRET_UNIT_RE]) for (const [token] of text.matchAll(re)) counts.set(token, (counts.get(token) ?? 0) + 1)
+  return counts
+}
+
+/**
+ * Threat model: the redactor reads only the tool's text. Variables the text itself assigns (`SEP=:; curl -u bob${SEP}x`)
+ * are resolved in text order; shell control flow (conditionals, loops, functions, `read`, `unset`) is not modelled.
+ * Variables from the environment or from earlier tool calls are unknown: the fail-closed rules (computed key tails, `-u`
+ * expansions, URL authorities built from expansions) are the only guard for them, and a secret assembled entirely from
+ * unknown variables can still be published.
+ */
 export function redactSensitive(text: string): string {
   if (!text) return text
   // Line continuations join their lines as the shell runs them (`--user \⏎ bob:pw`, `--pass\⏎word=x`): that view is
   // redacted, and a text with nothing to mask keeps its lines as written.
   const joined = text.replace(/\\\r?\n/g, '')
   const out = redactRules(redactComposedWords(joined))
-  return joined !== text && out === joined ? text : out
+  const redacted = joined !== text && out === joined ? text : out
+  if (!joined.includes('=') || !joined.includes('$')) return redacted
+  // The views with the text's own assignments resolved only add masks to the redaction above, which keeps its own
+  // fail-closed masks (an assignment the shell never runs, `false && KEY=x`, can unmask nothing): the whole value of an
+  // assignment whose substitution a view masks, and every word and unit a view masks, wherever it appears.
+  // Comments are blanked, keeping every position, so a quote in one (`# don't`) cannot hide what follows.
+  const code = blankComments(joined)
+  const assignments = inlineAssignments(code)
+  const secretAssignments = new Set<number>()
+  const secrets = new Set<string>()
+  const delimiterSecrets = new Set<string>()
+  const secretValues = new Set<string>()
+  // Control flow is not modelled, so a reassigned name may hold any of its values, or an unknown one (`OPT=-u; false &&
+  // OPT=echo`, `false && OPT=$(x)`). Besides the latest values, each combination of the reassigned names' values gets a
+  // view: from its first assignment on, a name holds the chosen value.
+  // Candidates are told apart by literal value, template text, or being unknown.
+  const byName = new Map<string, Map<string, number>>()
+  for (const [n, { name, value, template }] of assignments.entries()) {
+    const values = byName.get(name) ?? new Map<string, number>()
+    const key = value !== undefined ? `=${value}` : template !== undefined ? `$${template}` : '?'
+    if (!values.has(key)) values.set(key, n)
+    byName.set(name, values)
+  }
+  const reassigned = [...byName].filter(([, values]) => values.size > 1)
+  // ponytail: past 8 combinations (2 in a text over 50k characters, to keep redaction fast), a word with a reassigned
+  // name's reference fails closed instead.
+  const budget = joined.length > 50_000 ? 2 : 8
+  let combinations: Map<string, number>[] = [new Map<string, number>()]
+  for (const [name, values] of reassigned) {
+    combinations = combinations.flatMap((chosen) => [...values.values()].map((n) => new Map(chosen).set(name, n)))
+    if (combinations.length > budget) break
+  }
+  const latest = (_: string, history: number[]): number => history.at(-1)!
+  const views = [latest]
+  const failClosed = combinations.length > budget
+  if (reassigned.length && !failClosed) for (const chosen of combinations) views.push((name, history) => { const n = chosen.get(name); return n !== undefined && history.at(-1)! >= n ? n : history.at(-1)! })
+  // Failing closed watches the reassigned names and, in text order, every name whose template refers to a watched one
+  // (`ARG=$OPT`).
+  // A name the text computes (`OPT=$(printf -- -u)`) is always watched.
+  const watchedNames = new Set(failClosed ? reassigned.map(([name]) => name) : [])
+  for (const { name, value, template } of assignments) if (value === undefined && template === undefined) watchedNames.add(name)
+  if (watchedNames.size) for (const { name, template } of assignments) if (template !== undefined && [...template.matchAll(VAR_REFS_RE)].some((ref) => watchedNames.has(ref[1] ?? ref[2]!))) watchedNames.add(name)
+  // Ranges of the text masked before redaction: secret assignment values, and words that fail closed.
+  const masks: [start: number, end: number][] = []
+  for (const [v, pick] of views.entries()) {
+    const { expanded, spans, overflow, watched } = expandAssignments(code, assignments, pick, v === 0 ? watchedNames : undefined)
+    // A reference to a watched name is masked to the end of its word, and a whole-word one with the next word
+    // (`$OPT bob:hunter2`, `-H "${H}: x"`).
+    if (watched.length) {
+      const quoteAt = quoteTracker(code)
+      const closeOf = enclosingClose(code)
+      for (const at of watched) {
+        const quote = quoteAt(at)
+        let end = shellWordEnd(code, at, quote, closeOf)
+        if (quote && code[end] === quote.slice(-1)) end += 1
+        // A word of references and quotes only (`$OPT`, `"$OPT"`, `$A$B`) may be an option that takes the next word.
+        if (/(?:^|\s)\$?["']*$/.test(code.slice(Math.max(0, at - 4), at)) && /^(?:["']|\$\{[A-Za-z_]\w*\}|\$[A-Za-z_]\w*)*$/.test(code.slice(VAR_REF_END(code, at), end))) {
+          BLANK_RUN_RE.lastIndex = end
+          if (BLANK_RUN_RE.exec(code)) end = shellWordEnd(code, BLANK_RUN_RE.lastIndex, '', closeOf)
+        }
+        // A reference inside the previous mask extends it (`$OPT $OPT2 bob:hunter2`).
+        const previous = masks.at(-1)
+        if (previous && at < previous[1] && previous[0] <= at) previous[1] = Math.max(previous[1], end)
+        else masks.push([at, end])
+      }
+    }
+    // Past the expansion cap, a value is taken as a secret.
+    for (const n of overflow) secretAssignments.add(n)
+    if (!spans.length) continue
+    const view = redactRules(redactComposedWords(expanded))
+    const shown = secretTokenCounts(view)
+    const found = new Set<string>()
+    for (const [token, count] of secretTokenCounts(expanded)) if (count > (shown.get(token) ?? 0)) found.add(token)
+    // A masked unit that a substitution built (`P=hunt; …${P}er2`) masks its value's assignment, and its literal pieces.
+    let k = 0
+    for (const m of expanded.matchAll(SECRET_UNIT_RE)) {
+      if (!found.has(m[0])) continue
+      const end = m.index + m[0].length
+      while (k < spans.length && spans[k]![1] <= m.index) k += 1
+      // A piece after an unbraced reference reads as one unit with its name (`$P!!!`).
+      let cut = m.index
+      let name = ''
+      for (let j = k; j < spans.length && spans[j]![0] < end; j += 1) {
+        const piece = expanded.slice(cut, Math.max(spans[j]![0], m.index))
+        if (piece) secrets.add(piece).add(name + piece)
+        secretAssignments.add(spans[j]![2])
+        secretValues.add(spans[j]![3])
+        name = assignments[spans[j]![2]]!.name
+        cut = Math.min(spans[j]![1], end)
+      }
+      if (cut > m.index && cut < end) secrets.add(expanded.slice(cut, end)).add(name + expanded.slice(cut, end))
+    }
+    for (const token of found) secrets.add(token)
+    // A value of delimiters only (`P='@@@'`) has no unit to count: it is a secret when the view shows it fewer times,
+    // counted as substituted, escapes included (`"$P"` with `P='$$$'` is `\$\$\$`). This fails closed on a delimiter a
+    // masked credential also held (`SEP='='` beside `--token=x`).
+    // ponytail: past 32 such values, each is taken as a secret rather than counted.
+    const delimiterValues = new Map<string, boolean>()
+    for (const [start, end, n, value] of spans) {
+      const word = expanded.slice(start, end)
+      if (!value || HAS_SECRET_UNIT_RE.test(value)) continue
+      let secret = delimiterValues.get(word)
+      if (secret === undefined) delimiterValues.set(word, (secret = delimiterValues.size >= 32 || expanded.split(word).length > view.split(word).length))
+      if (secret) {
+        secretAssignments.add(n)
+        delimiterSecrets.add(value)
+      }
+    }
+  }
+  // A secret value is masked at every assignment of it, however spelled (`P=$'hunter\x32'`), and a delimiter-only one
+  // wherever it stands as a whole word (`echo @@@`).
+  for (const n of secretAssignments) {
+    const { value } = assignments[n]!
+    if (value !== undefined) secretValues.add(value)
+  }
+  for (const value of delimiterSecrets) secretValues.add(value)
+  for (const [n, { value }] of assignments.entries()) if (value !== undefined && secretValues.has(value)) secretAssignments.add(n)
+  secrets.delete('')
+  if (!secrets.size && !secretAssignments.size && !masks.length && !delimiterSecrets.size) return redacted
+  for (const [n, { start, end }] of assignments.entries()) if (secretAssignments.has(n)) masks.push([start, end])
+  let base = out
+  if (masks.length) {
+    let masked = ''
+    let last = 0
+    for (const [start, end] of masks.sort((a, b) => a[0] - b[0])) {
+      if (end <= last) continue
+      const from = Math.max(start, last)
+      masked += joined.slice(last, from) + maskShellWord(joined.slice(from, end))
+      last = end
+    }
+    base = redactRules(redactComposedWords(masked + joined.slice(last)))
+  }
+  if (delimiterSecrets.size) base = base.replace(new RegExp(String.raw`(?<![^\s'"=])(?:${[...delimiterSecrets].map((value) => value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('|')})(?![^\s'"])`, 'g'), '***')
+  const masked = base.replace(SECRET_UNIT_RE, (unit) => (secrets.has(unit) ? '***' : unit.replace(SECRET_WORD_RE, (word) => (secrets.has(word) ? '***' : word))))
+  return masked === out ? redacted : masked
 }
 
 function redactRules(text: string): string {

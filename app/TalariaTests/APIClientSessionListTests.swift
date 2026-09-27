@@ -76,7 +76,9 @@ final class APIClientSessionListTests: APIClientTestCase {
         try decode(SessionBranchResponse.self, fixture: "session_branch")
         try decode(ChatStreamStatusResponse.self, fixture: "stream_status")
 
-        let clarificationData = try JSONSerialization.data(withJSONObject: XCTUnwrap(manifest["clarification_pending"]))
+        // A release checks this App against every retained Web; one from before TAL-367 has no such example.
+        guard let clarificationExample = manifest["clarification_pending"] else { return }
+        let clarificationData = try JSONSerialization.data(withJSONObject: clarificationExample)
         let clarification = try decoder.decode(ClarificationPendingResponse.self, from: clarificationData)
         let steps = try XCTUnwrap(clarification.pending?.steps)
         XCTAssertEqual(steps.count, 1)

@@ -88,7 +88,7 @@ upstream ancestry remain reachable through the import merge parents.
 | `.gitattributes` | Root owns LF text rules; Web retains generated-dist attributes in `web/.gitattributes`. |
 | `AGENTS.md` | Root routes components; app and Web retain their scoped rules; Relay has an explicit local/production boundary. |
 | `README.md` | Root component index plus component-owned setup/runtime documentation. |
-| `CONTRIBUTING.md` | Root repository policy and app setup; Web's detailed contribution policy stays in `web/`. |
+| `CONTRIBUTING.md` | Root contribution policy for every component; `web/CONTRIBUTING.md` points to it. |
 | `LICENSE` | One shared root MIT license retains both original copyright notices. `web/NOTICE` preserves the complete upstream notice inside Python/container distributions. |
 | `CHANGELOG.md` | Component-owned historical release notes remain under `app/` and `web/`. |
 | `docs/` | Component docs stay with components; migration and shared contract documentation stay at root. |

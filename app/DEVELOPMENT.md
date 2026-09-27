@@ -2,7 +2,7 @@
 
 Run commands in this document from `app/`. Workflows live in `../.github/`.
 
-This app is developed against a self-hosted `hermes-webui` server exposed over real HTTPS. See [`PROJECT_SPEC.md`](PROJECT_SPEC.md) for the full product and API plan.
+This app is developed against a self-hosted [Talaria Web](../web/README.md) server exposed over real HTTPS. See [`PROJECT_SPEC.md`](PROJECT_SPEC.md) for the full product and API plan.
 
 > Sections covering TestFlight and App Store Connect are **maintainer-only ops** — they require the maintainer's Apple Developer account and App Store Connect access. Contributors never need them to build, test, or run the app.
 
@@ -14,7 +14,7 @@ Use:
 https://<your-server>
 ```
 
-Point this at your own `hermes-webui` server exposed through an HTTPS tunnel or reverse proxy (e.g. Cloudflare Tunnel). Real HTTPS works from both the iOS simulator and physical devices without an App Transport Security exception. If the server sets `HERMES_WEBUI_PASSWORD`, you need that password to sign in.
+Point this at your own Talaria Web server exposed through an HTTPS tunnel or reverse proxy (e.g. Cloudflare Tunnel). Real HTTPS works from both the iOS simulator and physical devices without an App Transport Security exception. If the server sets `HERMES_WEBUI_PASSWORD`, you need that password to sign in.
 
 Before debugging the app, verify the server is reachable:
 
@@ -204,6 +204,32 @@ Recognized variables:
 - `TALARIA_SWIFT_FILE_SIZE_LIMIT` — warning threshold for `scripts/check-swift-file-sizes`.
 - `HERMES_WEBUI_BASE_URL` and `HERMES_WEBUI_PASSWORD` — server credentials for `scripts/webui-json`.
 
+## Signing with your own Apple team
+
+The committed signing identity (`DEVELOPMENT_TEAM`, bundle IDs) belongs to the
+maintainer. Never edit `Config/Shared.xcconfig` or `project.pbxproj` to sign
+with your own team; override locally instead:
+
+1. Create `Config/Local.xcconfig`. It is gitignored.
+
+   ```xcconfig
+   DEVELOPMENT_TEAM = YOUR_TEAM_ID
+   // Optional — only needed if provisioning complains about the bundle ID.
+   // The app-group entitlement must stay in sync with the bundle ID.
+   // APP_BUNDLE_IDENTIFIER = com.yourname.talaria
+   // APP_GROUP_IDENTIFIER = group.com.yourname.talaria
+   // ICLOUD_CONTAINER_IDENTIFIER = iCloud.com.yourname.talaria
+   ```
+
+2. Build normally. `Config/Shared.xcconfig` ends with `#include? "Local.xcconfig"`,
+   so your values override the committed defaults for every target.
+
+Simulator builds don't need a paid team. CI signs simulator builds ad hoc
+(`CODE_SIGN_IDENTITY=-`), which needs no certificate but still embeds
+entitlements. A build made with `CODE_SIGNING_ALLOWED=NO` has no entitlements,
+so Keychain and the share extension's app group break when you install it for
+manual testing; use a normally signed build for that.
+
 ## Swift package updates
 
 Normal CI, test, and release builds use the versions in
@@ -366,7 +392,7 @@ not upload or produce an installable phone build.
 ## Full-App Manual Regression Checklist
 
 Use this before internal TestFlight smoke builds and again before adding external testers.
-Capture bugs, polish notes, and follow-up ideas in [GitHub Issues](https://github.com/MaudeCode/talaria/issues).
+Capture bugs, polish notes, and follow-up ideas in the project tracker (see [`AGENTS.md`](../AGENTS.md)).
 
 ### Onboarding/Auth
 - Fresh install opens onboarding.

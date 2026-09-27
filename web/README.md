@@ -164,8 +164,9 @@ Settings → System checks for updates on the **Stable** (completed release sets
 `npm ci` / `npm run build` steps above, and restarts once active work drains and embedded terminals close; a failed build leaves the old
 release stamp and server in place and reports the npm error. Update checks run at startup and every five minutes.
 Enable **Automatically apply Web updates** to apply them: source installations can follow Experimental `origin/main`, and direct global
-npm installations can install the exact package in a completed Stable release. Containers remain manual image
-replacements. Details:
+npm installations can install the exact package in a completed Stable release or the verified Experimental artifact on
+GHCR. Changing the channel switches an npm installation on its next update, in either direction. Containers remain
+manual image replacements. Details:
 [docs/talaria-updates.md](docs/talaria-updates.md).
 The Notifications bell keeps a bounded server-owned history of update progress and results across Web
 restarts. Talaria Web and the iPhone app render the same records, including required acknowledgement and
@@ -190,8 +191,8 @@ npm run e2e -w packages/frontend                   # Playwright against the buil
 
 `scripts/check web` at the repository root runs the full gate (`scripts/check-web-server`,
 frontend checks, and `scripts/check-web-browser`, which uses the fixture replay sidecar so no Agent is
-needed). See [TESTING.md](TESTING.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
-[CONTRIBUTING.md](CONTRIBUTING.md).
+needed). See [TESTING.md](TESTING.md) and [ARCHITECTURE.md](ARCHITECTURE.md). Talaria is not accepting
+outside contributions; see the [contribution policy](../CONTRIBUTING.md).
 
 ## Docs
 

@@ -79,6 +79,8 @@ export const HealthSchema = z.object({
   uptime_seconds: z.number(),
   accept_loop: z.object({ requests_total: z.number().int(), last_request_at: z.number() }),
   checks: z.record(z.string(), z.unknown()).optional(),
+  /** Hermes Agent sidecar readiness, separate from server liveness: chat needs `ready`; `unavailable` means no Agent is configured. */
+  agent: z.object({ status: z.enum(['ready', 'starting', 'restarting', 'incompatible', 'stopped', 'unavailable']) }),
 })
 export type Health = z.infer<typeof HealthSchema>
 
