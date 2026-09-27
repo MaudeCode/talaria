@@ -137,6 +137,31 @@ test('an unverifiable outcome says so and checks again without starting another 
   dropExpectedFailures(errors)
 })
 
+test('closing before the server record arrives keeps that operation closed across a reload', async ({ page }) => {
+  const server = await serveNotifications(page)
+  await serveUpdatesCheck(page, { web: 1, agent: 0 })
+  await page.route('**/api/updates/apply', async (route) => {
+    server.tabUpdate = record(WEB_ID, 'applying')
+    await new Promise((resolve) => { setTimeout(resolve, 4_000) })
+    await route.fulfill({ json: { ok: true, restart_scheduled: true, notification_id: WEB_ID } }).catch(() => undefined)
+  })
+  await page.goto('/settings/system')
+  await settle(page)
+  await page.getByRole('button', { name: 'Update Web', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Updating Talaria Web' })
+  await expect(dialog.getByRole('status')).toContainText('Starting the update')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  const reads = server.reads
+  await expect.poll(() => server.reads).toBeGreaterThan(reads + 1)
+  await expect(dialog).toBeHidden()
+  await page.reload()
+  await settle(page)
+  const after = server.reads
+  await expect.poll(() => server.reads).toBeGreaterThan(after + 1)
+  await expect(dialog).toBeHidden()
+})
+
 test('the dialog follows the server operation across route change and reload, and clears for another owner', async ({ page }) => {
   const server = await serveNotifications(page)
   await serveUpdatesCheck(page, { web: 1, agent: 0 })

@@ -47,13 +47,23 @@ interface Tracking {
   lostAt: number | null
   /** The server's answer when it returned no operation record to follow. */
   message: string | null
-  /** Closed before its record arrived: the dialog stays hidden for this start on this page load. */
+  /** Closed before its record arrived: this start stays hidden, across reloads of the tab, until another start replaces it. */
   hidden: boolean
 }
 const recordKey = (row: UpdateNotification | null) => row ? `${row.id}@${row.updated_at}` : null
 /** A lost connection leaves the apply outcome unknown; any other answer came from the server. */
 const lostServer = (error: unknown) => isApiError(error) ? error.kind === 'network' || error.kind === 'timeout' || [502, 503, 504].includes(error.status) : true
 const CLOSED_KEY = 'talaria-closed-update-dialogs'
+const HIDDEN_KEY = 'talaria-hidden-update-start'
+const readHidden = (): Tracking | null => {
+  try {
+    const parsed: unknown = JSON.parse(sessionStorage.getItem(HIDDEN_KEY) ?? 'null')
+    if (!parsed || typeof parsed !== 'object') return null
+    const { target, baseline, notificationId } = parsed as Record<string, unknown>
+    if ((target !== 'webui' && target !== 'agent') || (baseline !== null && typeof baseline !== 'string') || (notificationId !== null && typeof notificationId !== 'string')) return null
+    return { target, baseline, notificationId, lostAt: null, message: null, hidden: true }
+  } catch { return null }
+}
 const readClosed = (): string[] => {
   try { const parsed: unknown = JSON.parse(sessionStorage.getItem(CLOSED_KEY) ?? '[]'); return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [] } catch { return [] }
 }
@@ -69,7 +79,14 @@ export function UpdateNotificationProvider({ children }: { children: ReactNode }
   const visibleServerToasts = useRef(new Set<string>())
   const persistentVersions = useRef(new Map<string, string>())
   const notifications = useQuery({ queryKey: keys.updateNotifications, queryFn: api.fetchUpdateNotifications, staleTime: 1_000, refetchInterval: 2_000 })
-  const [tracking, setTracking] = useState<Tracking | null>(null)
+  const [tracking, setTracking] = useState(readHidden)
+  // A start closed before its record arrived is remembered for the tab's session, so its record never reopens the dialog.
+  useEffect(() => {
+    try {
+      if (tracking?.hidden) sessionStorage.setItem(HIDDEN_KEY, JSON.stringify({ target: tracking.target, baseline: tracking.baseline, notificationId: tracking.notificationId }))
+      else sessionStorage.removeItem(HIDDEN_KEY)
+    } catch { /* storage unavailable: the close lasts for this page load */ }
+  }, [tracking])
   // Operations whose dialog this tab closed; sessionStorage keeps a reload from reopening them.
   const [closed, setClosed] = useState(readClosed)
   const tabUpdate = notifications.data?.tab_update ?? null

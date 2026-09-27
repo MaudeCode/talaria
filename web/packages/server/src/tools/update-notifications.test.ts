@@ -70,7 +70,22 @@ describe('UpdateNotificationStore', () => {
     const restarted = new UpdateNotificationStore(root, () => now)
     restarted.reconcileInterruptedUpdates('a'.repeat(40))
     expect(restarted.list(tab).tab_update).toMatchObject({ id: web.id, phase: 'succeeded' })
-    expect(restarted.list(tab).tab_update).not.toHaveProperty('watching_tabs')
+    expect(restarted.list(tab).tab_update).not.toHaveProperty('watchers')
+  })
+
+  it('follows the operation a tab rejoined most recently, not the newest one', () => {
+    let now = new Date('2026-09-27T12:00:00Z')
+    const store = new UpdateNotificationStore(temp(), () => now)
+    const other = { ...alice, tab: 'tab-bbbbbbbb' }
+    const tab = { ...alice, tab: 'tab-aaaaaaaa' }
+    const web = store.begin(other, 'webui')
+    now = new Date('2026-09-27T12:01:00Z')
+    const agent = store.begin(tab, 'agent')
+    expect(store.list(tab).tab_update?.id).toBe(agent.id)
+    now = new Date('2026-09-27T12:02:00Z')
+    store.watch(tab, web.id)
+    expect(store.list(tab).tab_update?.id).toBe(web.id)
+    expect(store.list(other).tab_update?.id).toBe(web.id)
   })
 
   it('reconciles interrupted applying and restarting records against the running identity', () => {

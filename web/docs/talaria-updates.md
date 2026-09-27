@@ -205,8 +205,9 @@ only its explicit acknowledging action satisfies that requirement. Semantic dest
 
 **Update Web** and **Update Agent** in Settings > System open an **Updating** dialog for the clicked target
 before the request settles; the other target's action stays available. The apply request carries the tab id,
-and the server records it on the operation it starts or rejoins. Each notification read then returns that tab's
-latest operation as `tab_update`, including after it is dismissed from the notification center. Automatic
+and the server records it, with the time, on the operation it starts or rejoins. Each notification read then
+returns the operation that tab started or rejoined most recently as `tab_update`, including after it is dismissed
+from the notification center. Automatic
 updates carry no tab and never open the dialog. The dialog shows the record's phase and message, so a reload or a
 route change keeps following the same operation, and a different owner never sees it.
 
@@ -215,7 +216,8 @@ dialog keeps the last verified phase and says it is reconnecting; the 2-second p
 browser reconnection retries at once. Once the server answers, the dialog shows its record. When no record
 matches, it says the outcome could not be verified and offers **Check again**, which rereads without starting
 another update. The Agent confirmation dialog replaces it until **Update anyway** continues the same operation.
-Closing the dialog is remembered for the tab's session. A Web update that leaves the tab on an old bundle still
+Closing the dialog is remembered for the tab's session, including a close made before the operation's record
+arrived. A Web update that leaves the tab on an old bundle still
 shows the **Refresh now** notice below.
 
 ## Stale Web tab refresh notice

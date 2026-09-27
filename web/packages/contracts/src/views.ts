@@ -363,7 +363,7 @@ export const UpdateNotificationsSchema = z.object({
   scope_id: z.string().min(1).max(64),
   frontend_build: FrontendBuildSchema,
   notifications: z.array(UpdateNotificationSchema),
-  /** Latest update operation the requesting tab started from Settings (even once dismissed); its Updating dialog follows this record. */
+  /** Update operation the requesting tab most recently started or rejoined from Settings (even once dismissed); its Updating dialog follows this record. */
   tab_update: UpdateNotificationSchema.nullable(),
   unread_count: z.number().int().nonnegative(),
   clearable_count: z.number().int().nonnegative(),

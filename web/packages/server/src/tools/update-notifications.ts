@@ -34,22 +34,23 @@ interface StoredUpdateNotification {
   dismissed_at: string | null
   expected_identity: string | null
   tab_id: string | null
-  /** Tabs that started or rejoined this update operation from Settings; each follows it in its Updating dialog. */
-  watching_tabs: string[]
+  /** Tabs that started or rejoined this update operation from Settings, with when they last did; each tab's Updating dialog follows the operation it joined most recently. */
+  watchers: UpdateWatcher[]
 }
 
+interface UpdateWatcher { tab: string; at: string }
 export interface UpdateNotificationAction { id: string; label: string; style: 'default' | 'primary' | 'destructive'; acknowledges: boolean }
 export interface UpdateNotificationDestination { key: string; label: string }
 export interface VerifiedUpdateIdentity { revision: string | null; version: string | null }
 
-export type PublicUpdateNotification = Omit<StoredUpdateNotification, 'owner' | 'profile' | 'visibility' | 'dismissed_at' | 'expected_identity' | 'performed_action_ids' | 'tab_id' | 'watching_tabs'> & {
+export type PublicUpdateNotification = Omit<StoredUpdateNotification, 'owner' | 'profile' | 'visibility' | 'dismissed_at' | 'expected_identity' | 'performed_action_ids' | 'tab_id' | 'watchers'> & {
   unread: boolean
   active: boolean
   requires_interaction: boolean
   can_dismiss: boolean
 }
 export interface FrontendBuildState { current_build: string | null; loaded_build: string | null; refresh_required: boolean; notification_id: string | null }
-/** `tab_update` is the latest update operation the requesting tab started, even once dismissed; automatic updates never set it. */
+/** `tab_update` is the update operation the requesting tab most recently started or rejoined, even once dismissed; automatic updates never set it. */
 export interface UpdateNotificationList { scope_id: string; notifications: PublicUpdateNotification[]; tab_update: PublicUpdateNotification | null; unread_count: number; clearable_count: number; can_clear: boolean }
 export interface CreateUpdateNotificationInput {
   kind: string
@@ -75,7 +76,7 @@ export const WEB_REFRESH_KIND = 'web_refresh'
 export const WEB_REFRESH_ACTION = 'reload'
 /** A closed tab stops checking in; its refresh notice is dropped once unseen this long. An open tab recreates it on its next check. */
 const TAB_TTL_MS = 60 * 60 * 1000
-const WATCHING_TAB_LIMIT = 8
+const WATCHER_LIMIT = 8
 
 const copy = (row: StoredUpdateNotification): PublicUpdateNotification => ({
   id: row.id, kind: row.kind, target: row.target, phase: row.phase, severity: row.severity,
@@ -158,7 +159,7 @@ export class UpdateNotificationStore {
       destination: null, title: 'Talaria Web was updated', message: 'Refresh this tab to load the new version.',
       created_at: stamp, updated_at: stamp, read_at: null, acknowledged_at: null,
       acknowledged_action_id: null, verified_revision: null, verified_version: null,
-      performed_action_ids: [], dismissed_at: null, expected_identity: current, tab_id: tab, watching_tabs: [],
+      performed_action_ids: [], dismissed_at: null, expected_identity: current, tab_id: tab, watchers: [],
     }
     if (!this.hasProtectedCapacity(row)) return state
     this.rows.push(row)
@@ -183,8 +184,8 @@ export class UpdateNotificationStore {
   watch(scope: UpdateNotificationScope, id: string): void {
     const tab = scope.tab && TAB_ID.test(scope.tab) ? scope.tab : null
     const row = this.rows.find((entry) => entry.id === id && entry.kind === 'update' && this.isVisible(entry, scope))
-    if (!tab || !row || row.watching_tabs.includes(tab)) return
-    row.watching_tabs = [...row.watching_tabs, tab].slice(-WATCHING_TAB_LIMIT)
+    if (!tab || !row) return
+    row.watchers = [...row.watchers.filter((watcher) => watcher.tab !== tab), { tab, at: this.now().toISOString() }].slice(-WATCHER_LIMIT)
     this.save()
   }
 
@@ -205,7 +206,7 @@ export class UpdateNotificationStore {
       destination: safeDestination(input.destination), title, message,
       created_at: stamp, updated_at: stamp, read_at: null, acknowledged_at: null,
       acknowledged_action_id: null, verified_revision: null, verified_version: null,
-      performed_action_ids: [], dismissed_at: null, expected_identity: null, tab_id: null, watching_tabs: [],
+      performed_action_ids: [], dismissed_at: null, expected_identity: null, tab_id: null, watchers: [],
     }
     if (!this.hasProtectedCapacity(row)) throw new Error('Update notification protected capacity reached')
     this.rows.push(row)
@@ -245,7 +246,9 @@ export class UpdateNotificationStore {
     const notifications = visible.map(copy)
     const clearableCount = scoped.filter(isDismissible).length
     const tab = scope.tab && TAB_ID.test(scope.tab) ? scope.tab : null
-    const tabUpdate = tab ? this.rows.filter((row) => row.kind === 'update' && row.watching_tabs.includes(tab) && this.isVisible(row, scope)).sort((a, b) => b.created_at.localeCompare(a.created_at))[0] : undefined
+    const joinedAt = (row: StoredUpdateNotification) => row.watchers.find((watcher) => watcher.tab === tab)?.at ?? ''
+    const tabUpdate = tab ? this.rows.filter((row) => row.kind === 'update' && joinedAt(row) !== '' && this.isVisible(row, scope))
+      .sort((a, b) => joinedAt(b).localeCompare(joinedAt(a)) || b.created_at.localeCompare(a.created_at))[0] : undefined
     return { scope_id: updateNotificationScopeId(scope), notifications, tab_update: tabUpdate ? copy(tabUpdate) : null, unread_count: visible.filter((row) => row.read_at === null).length, clearable_count: clearableCount, can_clear: clearableCount > 0 }
   }
 
@@ -383,7 +386,7 @@ export class UpdateNotificationStore {
           dismissed_at: typeof row.dismissed_at === 'string' ? row.dismissed_at : null,
           expected_identity: typeof row.expected_identity === 'string' ? row.expected_identity.slice(0, 160) : null,
           tab_id: typeof row.tab_id === 'string' ? row.tab_id : null,
-          watching_tabs: Array.isArray(row.watching_tabs) ? row.watching_tabs.filter((id): id is string => typeof id === 'string' && TAB_ID.test(id)).slice(-WATCHING_TAB_LIMIT) : [],
+          watchers: Array.isArray(row.watchers) ? row.watchers.flatMap((watcher): UpdateWatcher[] => isRecord(watcher) && typeof watcher.tab === 'string' && TAB_ID.test(watcher.tab) && typeof watcher.at === 'string' ? [{ tab: watcher.tab, at: watcher.at }] : []).slice(-WATCHER_LIMIT) : [],
         }]
       })
     } catch { return [] }
