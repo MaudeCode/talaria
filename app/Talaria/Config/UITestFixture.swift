@@ -194,6 +194,7 @@ private enum UITestChatScenario: String, CaseIterable {
     case controls = "--ui-test-chat-controls"
     case error = "--ui-test-chat-error"
     case reconnect = "--ui-test-chat-reconnect"
+    case reopen = "--ui-test-chat-reopen"
 
     static var current: Self? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -352,7 +353,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
 
-        if let delay = Self.panelResponseDelay(for: url) ?? Self.workspaceResponseDelay(for: url) {
+        if let delay = Self.panelResponseDelay(for: url)
+            ?? Self.workspaceResponseDelay(for: url)
+            ?? Self.chatResponseDelay(for: url) {
             DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -565,13 +568,30 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     private static func sessionsResponse(firstTitle: String) -> Data {
         let sessionCount = UITestFixtureEnvironment.isDense ? 300 : 18
-        let sessions: [[String: Any]] = (0..<sessionCount).map { index in
+        var sessions: [[String: Any]] = (0..<sessionCount).map { index in
             session(
                 id: index == 0 ? sessionID : "ui-fixture-session-\(index)",
                 title: index == 0 ? firstTitle : String(format: "Fixture Session %02d", index)
             )
         }
+        if isReopenRunActive {
+            sessions[0]["is_streaming"] = true
+            sessions[0]["active_stream_id"] = chatStreamID
+        }
         return json(["sessions": sessions, "archived_count": 0])
+    }
+
+    private static var isReopenRunActive: Bool {
+        let state = chatState.snapshot()
+        return UITestChatScenario.current == .reopen && state.started && !state.settled
+    }
+
+    /// TAL-250: the reopen scenario holds the cold first open and the running session's detail, so a test sees
+    /// what the chat paints before each answers.
+    private static func chatResponseDelay(for url: URL) -> TimeInterval? {
+        guard UITestChatScenario.current == .reopen, url.path == "/api/session" else { return nil }
+        let state = chatState.snapshot()
+        return state.started && state.settled ? nil : 6
     }
 
     private static func sessionResponse() -> Data {
@@ -702,6 +722,13 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                         ]
                     ]
                 ]
+            ])
+        } else if state.settled, UITestChatScenario.current == .reopen {
+            messages.append([
+                "role": "assistant",
+                "content": "Reopen fixture progress. Reopen fixture done.",
+                "message_id": "ui-fixture-assistant",
+                "_ts": 2_000_000_101
             ])
         } else if state.started, UITestChatScenario.current == .reconnect {
             messages.append([
@@ -1036,6 +1063,29 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             Self.chatState.settle()
             send(events: [
                 ("token", ["text": " After reconnect."]),
+                ("done", [:]),
+                ("stream_end", [:])
+            ])
+            finish()
+        case .reopen:
+            if connection == 1 {
+                send(events: [
+                    ("token", ["text": "Reopen fixture progress."]),
+                    ("tool", [
+                        "event_type": "tool.started",
+                        "name": "fixture_tool",
+                        "preview": "fixture input",
+                        "args": ["target": "synthetic"],
+                        "tid": "ui-fixture-tool"
+                    ])
+                ])
+                // Held open until leaving the chat stops this connection.
+                wait { _ in false }
+                return
+            }
+            Self.chatState.settle()
+            send(events: [
+                ("token", ["text": " Reopen fixture done."]),
                 ("done", [:]),
                 ("stream_end", [:])
             ])

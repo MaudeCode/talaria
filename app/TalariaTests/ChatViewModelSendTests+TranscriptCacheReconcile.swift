@@ -380,6 +380,79 @@ extension ChatViewModelSendTests {
         XCTAssertFalse(viewModel.isViewingCachedData)
     }
 
+    // TAL-250: a row without a run state (a deep link) shows the check over the cached transcript until the first
+    // load answers; a failed load keeps the transcript and ends the check without claiming the run finished.
+    @MainActor
+    func testUnknownRunStateShowsCheckUntilTheFirstLoadAnswersAndFailureKeepsTheTranscript() async throws {
+        let context = try makeContext()
+        try cacheQuestionAndAnswer(in: context)
+        let viewModel = try makeViewModel { request in
+            XCTAssertEqual(request.url?.path, "/api/session")
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 500,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )
+            return (try XCTUnwrap(response), Data(#"{"error":"boom"}"#.utf8))
+        }
+
+        viewModel.prepareInitialMessageLoad(modelContext: context)
+        XCTAssertTrue(viewModel.showsRunStateCheck)
+
+        await viewModel.loadMessages(modelContext: context)
+
+        XCTAssertFalse(viewModel.showsRunStateCheck)
+        XCTAssertNil(viewModel.activeStreamID)
+        XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Cached question", "Cached answer"])
+        XCTAssertNotNil(viewModel.errorMessage)
+    }
+
+    // TAL-250: an idle row paints without the check; when its detail reveals a run, the server's run is adopted.
+    @MainActor
+    func testStaleIdleRowAdoptsTheRunItsDetailReveals() async throws {
+        let context = try makeContext()
+        try cacheQuestionAndAnswer(in: context)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let idleRow = try decoder.decode(SessionSummary.self, from: Data(#"""
+        {"session_id":"session-abc","title":"Planning","is_streaming":false}
+        """#.utf8))
+        let viewModel = try makeViewModel(sessionSummary: idleRow) { request in
+            XCTAssertEqual(request.url?.path, "/api/session")
+            return apiTestJSONResponse("""
+            {"session": {"session_id": "session-abc", "title": "Planning", "active_stream_id": "stream-other-client",
+              "messages": [
+                {"role": "user", "content": "Cached question", "timestamp": 1770000001, "message_id": "cached-user"},
+                {"role": "assistant", "content": "Cached answer", "timestamp": 1770000002, "message_id": "cached-assistant"},
+                {"role": "user", "content": "Started elsewhere", "timestamp": 1770000100, "message_id": "user-2"}
+              ]}}
+            """, for: request)
+        }
+
+        viewModel.prepareInitialMessageLoad(modelContext: context)
+        XCTAssertFalse(viewModel.showsRunStateCheck)
+
+        await viewModel.loadMessages(modelContext: context)
+
+        XCTAssertEqual(viewModel.activeStreamID, "stream-other-client")
+        XCTAssertFalse(viewModel.showsRunStateCheck)
+        XCTAssertEqual(viewModel.messages.last?.content, "Started elsewhere")
+    }
+
+    @MainActor
+    private func cacheQuestionAndAnswer(in context: ModelContext) throws {
+        try CacheStore.cacheMessages(
+            [
+                ChatMessage(role: "user", content: "Cached question", timestamp: 1_770_000_001, messageId: "cached-user"),
+                ChatMessage(role: "assistant", content: "Cached answer", timestamp: 1_770_000_002, messageId: "cached-assistant")
+            ],
+            serverURL: try XCTUnwrap(URL(string: "https://example.test")),
+            sessionID: "session-abc",
+            in: context
+        )
+    }
+
     @MainActor
     func testPrepareInitialMessageLoadBoundsLargeCachedTranscriptToNewestPage() throws {
         let context = try makeContext()

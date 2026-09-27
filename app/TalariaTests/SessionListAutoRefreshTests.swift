@@ -245,6 +245,29 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertNil(viewModel.errorMessage)
     }
 
+    /// TAL-250: each refresh (return, foreground or tick) shows the server's run state: idle, a run started on
+    /// another client, then its completion.
+    func testRefreshFollowsTheServersRunStateFromIdleThroughRunningToCompleted() async throws {
+        let responses = SessionListResponses(bodies: [
+            #"{"sessions":[{"session_id":"existing","title":"Existing","archived":false,"is_streaming":false}]}"#,
+            #"{"sessions":[{"session_id":"existing","title":"Existing","archived":false,"is_streaming":true,"active_stream_id":"stream-elsewhere"}]}"#,
+            #"{"sessions":[{"session_id":"existing","title":"Existing","archived":false,"is_streaming":false,"active_stream_id":null}]}"#
+        ])
+        let viewModel = try makeViewModel(responses: responses)
+        defer { MockURLProtocol.requestHandler = nil }
+
+        await viewModel.load()
+        XCTAssertEqual(viewModel.sessions.first?.isStreaming, false)
+
+        await runOneTick(refreshing: viewModel)
+        XCTAssertEqual(viewModel.sessions.first?.isStreaming, true)
+        XCTAssertEqual(viewModel.sessions.first?.activeStreamId, "stream-elsewhere")
+
+        await runOneTick(refreshing: viewModel)
+        XCTAssertEqual(viewModel.sessions.first?.isStreaming, false)
+        XCTAssertNil(viewModel.sessions.first?.activeStreamId)
+    }
+
     func testTransientFailureKeepsTheLastGoodListAndTheNextTickRecovers() async throws {
         let responses = SessionListResponses(
             bodies: [

@@ -71,6 +71,15 @@ final class ChatViewModel {
     /// otherwise the height growth produces a visible scroll jump.
     private(set) var cacheFirstReconcileScrollToken = 0
     private var hasPrimedInitialCachedMessages = false
+    /// The selected list row's server run state (TAL-250): a provisional hint for
+    /// the first paint, never authority to adopt, resend or settle a run.
+    private let selectedRowIsStreaming: Bool?
+    private let selectedRowActiveStreamID: String?
+    /// True from the first paint until the first session load answers, unless the
+    /// selected row reported the session idle.
+    private var isConfirmingRunState = false
+    /// Shows that the run state is still being confirmed while no run is adopted.
+    var showsRunStateCheck: Bool { isConfirmingRunState && activeStreamID == nil }
     @ObservationIgnored private var pendingStreamingScrollTriggerTask: Task<Void, Never>?
     @ObservationIgnored private var pendingAssistantTokenText = ""
     @ObservationIgnored private var pendingReasoningText = ""
@@ -396,6 +405,8 @@ final class ChatViewModel {
         isCLISession = session.isCliSession == true
         isSessionReadOnly = session.isSessionReadOnly
         canBranch = session.canBranch != false
+        selectedRowIsStreaming = session.isStreaming
+        selectedRowActiveStreamID = Self.nonEmpty(session.activeStreamId)
         self.server = server
         let resolvedClient = client ?? APIClient(baseURL: server)
         let resolvedStreamClient = streamClient ?? SSEClient()
@@ -1306,6 +1317,7 @@ final class ChatViewModel {
                     cacheFirstReconcileScrollToken += 1
                 }
                 latestAppliedSessionLoadRequestGeneration = loadRequestGeneration
+                isConfirmingRunState = false
                 return
             }
             guard streamCoordinator.canApplySessionLoad(streamLoadPreparation) else { return }
@@ -1370,6 +1382,7 @@ final class ChatViewModel {
                 statesTranscriptSeq: session?.statesTranscriptSeq ?? true
             )
             latestAppliedSessionLoadRequestGeneration = loadRequestGeneration
+            isConfirmingRunState = false
         } catch {
             if waitsForPendingMessageSend {
                 await waitForMessageSendToFinish()
@@ -1448,6 +1461,7 @@ final class ChatViewModel {
                 errorMessage = error.localizedDescription
             }
             latestHandledSessionLoadFailureGeneration = loadRequestGeneration
+            isConfirmingRunState = false
         }
     }
 
@@ -1459,13 +1473,21 @@ final class ChatViewModel {
         guard let sessionID else { return }
 
         isLoading = true
+        if sessionLoadRequestGeneration == 0 {
+            isConfirmingRunState = selectedRowIsStreaming != false
+        }
         guard messages.isEmpty else { return }
 
-        let cachedMessages = renderCachedMessagesBeforeReload(
-            sessionID: sessionID,
-            modelContext: modelContext
-        )
-        hasPrimedInitialCachedMessages = !cachedMessages.isEmpty
+        // A run this process already streamed keeps its live snapshot, which is newer
+        // than the cache, so it paints first. The session load then keeps it (same
+        // run) or replaces it (finished or replaced run).
+        if selectedRowIsStreaming != false, let selectedRowActiveStreamID {
+            restoreActiveStreamSnapshotIfAvailable(streamID: selectedRowActiveStreamID)
+        }
+        if messages.isEmpty {
+            _ = renderCachedMessagesBeforeReload(sessionID: sessionID, modelContext: modelContext)
+        }
+        hasPrimedInitialCachedMessages = !messages.isEmpty
     }
 
     /// Cache-first render (#289): on a cold session open, paint the cached transcript
