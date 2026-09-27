@@ -738,6 +738,12 @@ const ASSIGNMENT_RE = /(?<![^\s;&|(){}!\x60])([A-Za-z_][A-Za-z0-9_]*)(\+?)=/g
 /** `$NAME` or `${NAME}`; a parameter operator (`${NAME:-x}`, `${#NAME}`) is not a plain reference. */
 const VAR_REF_RE = /\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/y
 
+/** The end of the `$NAME` / `${NAME}` reference at `at`. */
+const VAR_REF_END = (text: string, at: number): number => {
+  VAR_REF_RE.lastIndex = at
+  return VAR_REF_RE.exec(text) ? VAR_REF_RE.lastIndex : at + 1
+}
+
 /** An assignment the text makes: its value word, and from `at` on, `$name` is `value` (`undefined` once the shell computes it). */
 interface Assignment { name: string; start: number; end: number; at: number; value: string | undefined }
 
@@ -892,6 +898,7 @@ export function redactSensitive(text: string): string {
   const assignments = inlineAssignments(joined)
   const secretAssignments = new Set<number>()
   const secrets = new Set<string>()
+  const delimiterSecrets = new Set<string>()
   // Control flow is not modelled, so a reassigned name may hold any of its values, or an unknown one (`OPT=-u; false &&
   // OPT=echo`, `false && OPT=$(x)`). Besides the latest values, each combination of the reassigned names' values gets a
   // view: from its first assignment on, a name holds the chosen value.
@@ -928,7 +935,9 @@ export function redactSensitive(text: string): string {
         if (at < reached) continue
         const quote = quoteAt(at)
         let end = shellWordEnd(joined, at, quote, closeOf)
-        if (!quote && /^\s?$/.test(joined[at - 1] ?? '')) {
+        if (quote && joined[end] === quote.slice(-1)) end += 1
+        // A whole word, quotes included (`$OPT`, `"$OPT"`), may be an option that takes the next word.
+        if (/(?:^|\s)\$?["']*$/.test(joined.slice(Math.max(0, at - 4), at)) && /^["']*$/.test(joined.slice(VAR_REF_END(joined, at), end))) {
           const next = /^[ \t]+(?=\S)/.exec(joined.slice(end, end + 64))
           if (next) end = shellWordEnd(joined, end + next[0].length, '', closeOf)
         }
@@ -972,11 +981,13 @@ export function redactSensitive(text: string): string {
       if (!assignments[n]!.value || HAS_SECRET_UNIT_RE.test(assignments[n]!.value)) continue
       let secret = delimiterValues.get(word)
       if (secret === undefined) delimiterValues.set(word, (secret = delimiterValues.size >= 32 || expanded.split(word).length > view.split(word).length))
-      if (secret) secretAssignments.add(n)
+      if (secret) delimiterSecrets.add(assignments[n]!.value)
     }
   }
+  // A delimiter-only secret is masked at every assignment of it, and wherever it stands as a whole word (`echo @@@`).
+  for (const [n, { value }] of assignments.entries()) if (value !== undefined && delimiterSecrets.has(value)) secretAssignments.add(n)
   secrets.delete('')
-  if (!secrets.size && !secretAssignments.size && !masks.length) return redacted
+  if (!secrets.size && !secretAssignments.size && !masks.length && !delimiterSecrets.size) return redacted
   for (const [n, { start, end }] of assignments.entries()) if (secretAssignments.has(n)) masks.push([start, end])
   let base = out
   if (masks.length) {
@@ -990,6 +1001,7 @@ export function redactSensitive(text: string): string {
     }
     base = redactRules(redactComposedWords(masked + joined.slice(last)))
   }
+  if (delimiterSecrets.size) base = base.replace(new RegExp(String.raw`(?<![^\s'"=])(?:${[...delimiterSecrets].map((value) => value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('|')})(?![^\s'"])`, 'g'), '***')
   const masked = base.replace(SECRET_UNIT_RE, (unit) => (secrets.has(unit) ? '***' : unit.replace(SECRET_WORD_RE, (word) => (secrets.has(word) ? '***' : word))))
   return masked === out ? redacted : masked
 }

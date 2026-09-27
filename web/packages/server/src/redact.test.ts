@@ -341,6 +341,7 @@ describe('inline shell assignments', () => {
     }
     // Past 8 combinations, a word with a reassigned name's reference fails closed, with the next word when it is whole.
     expect(redactText('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; curl $OPT bob:hunter2 x', true)).toBe('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; curl *** x')
+    expect(redactText('A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; OPT=-u; false && OPT=echo; curl "$OPT" bob:hunter2 x', true)).not.toContain('hunter2')
     for (const kept of ['D=/a; false && D=/b; cat $D/x.txt', 'A=1; A=2; seq $A']) expect(redactText(kept, true)).toBe(kept)
     // An escaped separator keeps the rest in the value: `OPT=echo` is part of `A`.
     expect(redactText('OPT=-u; A=foo\\;OPT=echo; curl $OPT bob:hunter2 x', true)).not.toContain('hunter2')
@@ -375,6 +376,8 @@ describe('inline shell assignments', () => {
     expect(redactText(`SCHEME='https://'; U=bob; SEP=:; AT=@; curl "\${SCHEME}\${U}\${SEP}hunter2!!!\${AT}example.com"`, true)).not.toMatch(/hunter2|!!!/)
     expect(redactText(`SCHEME='https://'; U=bob; SEP=:; AT=@; P=hunt; curl "\${SCHEME}\${U}\${SEP}$P!!!\${AT}example.com"`, true)).not.toMatch(/hunt|!!!/)
     expect(redactText(`P='$$$'; curl -u "bob:$P" x`, true)).toBe(`P='***'; curl -u "bob:***" x`)
+    // A delimiter-only secret is masked at every assignment of it and as a whole word.
+    expect(redactText(`P='@@@'; P='@@@'; curl -u "bob:$P" x; echo @@@`, true)).toBe(`P='***'; P='***'; curl -u "bob:***" x; echo ***`)
     // Past the expansion cap every literal value is taken as a secret.
     const long = 'x'.repeat(2_000)
     expect(redactText(`P=${long}; echo $P $P $P $P $P; curl -u bob:$P x`, true)).not.toContain(long.slice(0, 20))
