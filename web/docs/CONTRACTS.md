@@ -42,7 +42,8 @@ contributor guidance; it does not change runtime behavior or CI gates.
   `activity_scene_v1` into Compact Worklog, Transparent Stream, or Final answer
   only. The server owns that projection: it stamps every message with its turn's
   `_turn_id` and attaches each completed turn's scene (ordered rows under
-  "Worked", `final_answer`, `terminal_state`, `expanded_by_default`) in session
+  "Worked", `final_answer`, `terminal_state`, `expanded_by_default`, and the
+  `file_changes` its file-mutating calls made) in session
   detail and terminal payloads; Web and iOS render those fields and derive none
   of them. Remaining hardening stays tracked under #3400.
 - [`docs/architecture/stable-assistant-turn-anchor-phase0.md`](architecture/stable-assistant-turn-anchor-phase0.md):
