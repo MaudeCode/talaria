@@ -29,7 +29,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, workspaceContextPrefix } from './merge.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
@@ -57,7 +57,6 @@ export interface TurnRunnerDeps {
   /** Per-session toolsets override or the profile's configured toolsets (null lets the Agent decide). */
   toolsetsFor: (session: Session) => string[] | null
   attachmentDir: (sid: string) => string
-  agentName: () => string
   titleGenerationEnabled: () => boolean
   /** Terminal relay phase per stream (`completed`/`cancelled`/`failed`); Python `note_talaria_terminal`. */
   onTerminal?: (streamId: string, phase: string) => void
@@ -110,7 +109,7 @@ export function classifyProviderError(errStr: string, opts: { silentFailure?: bo
   const lower = errStr.toLowerCase()
   if (opts.condition === 'credential_missing') return { label: 'Authentication failed', type: 'auth_mismatch', hint: 'The selected model may not be supported by your configured provider or your API key is invalid. Run `hermes model` in your terminal to update credentials, then restart the WebUI.' }
   const cancelled = ['cancelled by user', 'canceled by user', 'user cancelled', 'user canceled', 'task cancelled', 'task canceled', 'cancellederror'].some((k) => lower.includes(k))
-  if (cancelled) return { label: 'Task cancelled', type: 'cancelled', hint: cancelledTurnHint() }
+  if (cancelled) return { label: 'Task cancelled', type: 'cancelled', hint: '' }
   if (['interrupted by user', 'response interrupted', 'operation interrupted', 'operation was interrupted', 'operation aborted', 'request was aborted', 'aborterror'].some((k) => lower.includes(k))) {
     return { label: 'Response interrupted', type: 'interrupted', hint: 'The run stopped before a provider response completed. If you did not cancel it, try again.' }
   }
@@ -128,10 +127,6 @@ export function classifyProviderError(errStr: string, opts: { silentFailure?: bo
   if (compressionExhausted) return { label: 'Context compression exhausted', type: 'compression_exhausted', hint: 'The conversation context is too large to compress safely. Start a new conversation or retry with a narrower task.' }
   if (opts.silentFailure) return { label: 'No response from provider', type: 'no_response', hint: 'The provider returned no content and no error. This often means a usage/rate limit was hit silently. Check provider status, switch providers via `hermes model`, or try again in a moment.' }
   return { label: 'Error', type: 'error', hint: '' }
-}
-
-export function cancelledTurnHint(agentName = 'Hermes'): string {
-  return `${agentName} stopped this turn at your request. Send a new message to continue.`
 }
 
 export function providerErrorPayload(message: string, errType: string, hint = '', redact = true): Record<string, unknown> {
@@ -219,6 +214,8 @@ export class TurnRunner {
   private readonly lastCompletedTool = new Map<string, string>()
   /** Streams whose run completed (`done` emitted) and only await title work; a late cancel is a no-op for these. */
   private readonly settledStreams = new Set<string>()
+  /** TAL-364: what a Stop needs to write the turn's model context: its starting context and the prompt the Agent got. */
+  private readonly stopContexts = new Map<string, { previousContext: Message[]; prompt: string; msgText: string }>()
 
   constructor(readonly deps: TurnRunnerDeps) {}
 
@@ -333,6 +330,9 @@ export class TurnRunner {
     const previousContext = structuredClone(localContext.some((m) => isContextCompressionMarker(m)) ? localContext : deps.service().mergedTranscript(s, localContext))
     // Python `_sanitize_messages_for_api`: the model never sees display-only rows or a replayed cancelled prompt.
     const apiHistory = sanitizeMessagesForApi(previousContext)
+    const workspaceCtx = workspaceContextPrefix(opts.workspace)
+    // Before the first await: a Stop can land at any point after admission.
+    this.stopContexts.set(streamId, { previousContext, prompt: workspaceCtx + msgText, msgText })
     const activeTurnToken = buildActiveTurnToken(streamId, s.pending_started_at)
     const sidecar = deps.sidecar()
     const partialText = this.registry.partialText.get(streamId) ?? []
@@ -344,7 +344,6 @@ export class TurnRunner {
     let capturedTerminalError: string | null = null
     const controller = new AbortController()
     this.abortControllers.set(streamId, controller)
-    const workspaceCtx = workspaceContextPrefix(opts.workspace)
     const userMessage = await this.buildUserMessage(workspaceCtx, msgText, opts.attachments ?? [], opts.workspace, sessionId, s, opts, controller.signal)
     if (activeRun) activeRun.phase = 'running'
     const settledAt = { value: false }
@@ -360,8 +359,8 @@ export class TurnRunner {
       // Last yield before `chat.start`: a cancel that landed during the attachment, config or YOLO awaits must not
       // start an Agent turn (the client also refuses an already-aborted signal outright).
       if (this.registry.cancelled.has(streamId)) {
-        this.finalizeCancelled(s, streamId, 'Task cancelled before start.', opts.ephemeral)
-        put('cancel', this.cancelPayload('Cancelled before start'))
+        this.finalizeCancelled(s, streamId, opts.ephemeral)
+        put('cancel', this.cancelFrame(sessionId))
         return
       }
       const frozenWorkspace = str(s.created_workspace) || str(s.workspace)
@@ -451,7 +450,8 @@ export class TurnRunner {
       })
       settledAt.value = true
       if (this.registry.cancelled.has(streamId) || result.status === 'cancelled') {
-        this.finalizeCancelled(s, streamId, 'Task cancelled.', opts.ephemeral)
+        // The Agent's own interrupted result is its canonical transcript for the turn.
+        this.finalizeCancelled(s, streamId, opts.ephemeral, result.messages)
         put('cancel', this.cancelFrame(sessionId))
         return
       }
@@ -632,7 +632,7 @@ export class TurnRunner {
       }
       failed = true
       if (this.registry.cancelled.has(streamId)) {
-        this.finalizeCancelled(s, streamId, 'Task cancelled.', opts.ephemeral)
+        this.finalizeCancelled(s, streamId, opts.ephemeral)
         put('cancel', this.cancelFrame(sessionId))
         return
       }
@@ -803,19 +803,22 @@ export class TurnRunner {
     s.messages.push(partial)
   }
 
-  private cancelPayload(message = 'Cancelled by user'): Record<string, unknown> {
-    return { type: 'cancelled', message, hint: cancelledTurnHint(this.deps.agentName()) }
-  }
-
-  /** Python `_emit_cancel_event`: the terminal frame carries the settled session so tabs can render the partial without a reload. */
-  private cancelFrame(sessionId: string): Record<string, unknown> {
+  /**
+   * Python `_emit_cancel_event`: the terminal frame carries the settled session so tabs can render the partial without a
+   * reload. TAL-364: no copy — clients show their one localized status for the `cancelled` outcome.
+   */
+  private cancelFrame(sessionId: string | null): Record<string, unknown> {
     let snapshot: Record<string, unknown> | null = null
-    try { snapshot = redactSessionData(this.terminalSessionPayload(this.deps.store.get(sessionId)), this.deps.redactEnabled()) } catch { snapshot = null }
-    return { ...this.cancelPayload(), status: 'cancelled', session_id: sessionId, ...(snapshot ? { session: snapshot } : {}) }
+    if (sessionId) try { snapshot = redactSessionData(this.terminalSessionPayload(this.deps.store.get(sessionId)), this.deps.redactEnabled()) } catch { snapshot = null }
+    return { type: 'cancelled', status: 'cancelled', ...(sessionId ? { session_id: sessionId } : {}), ...(snapshot ? { session: snapshot } : {}) }
   }
 
-  /** Python `_finalize_cancelled_turn`/`_persist_cancelled_turn`: only while this stream still owns writeback. */
-  private finalizeCancelled(s: Session, streamId: string, message: string, ephemeral: boolean | undefined): boolean {
+  /**
+   * Python `_finalize_cancelled_turn`/`_persist_cancelled_turn`: only while this stream still owns writeback. TAL-364: the
+   * turn's model context keeps what the Agent had captured (`checkpoint`, its canonical transcript) and the prose that
+   * streamed, so the next request continues from it; the terminal row carries the outcome and no copy.
+   */
+  private finalizeCancelled(s: Session, streamId: string, ephemeral: boolean | undefined, checkpoint: unknown[] | null = null): boolean {
     if (this.registry.writebackOwners.get(s.session_id) !== streamId) return false
     let current: Session = s
     try { current = this.deps.store.get(s.session_id) } catch { return false }
@@ -825,17 +828,19 @@ export class TurnRunner {
       this.deps.store.sessions.delete(current.session_id)
       return true
     }
-    if (current.messages.some((m) => m._error && str(m.content).startsWith('**Task cancelled:**')) && current.active_stream_id === null && !current.pending_user_message) return true
+    if (current.messages.some((m) => isCancelMarker(m)) && current.active_stream_id === null && !current.pending_user_message) return true
     const startedAt = current.pending_started_at
     this.materializePendingUserTurn(current, buildActiveTurnToken(streamId, current.pending_started_at), streamId)
+    const stop = this.stopContexts.get(streamId)
+    const context = stop ? stoppedTurnContext(stop.previousContext, checkpoint, stop.prompt, stop.msgText, (this.registry.partialText.get(streamId) ?? []).join('')) : null
+    if (context) current.context_messages = dedupeContext(context)
     current.active_stream_id = null
     current.pending_user_message = null
     current.pending_attachments = []
     current.pending_started_at = null
     current.pending_user_source = null
     this.appendPartialSnapshot(current, streamId)
-    const text = message.trim().endsWith('.') ? message.trim() : `${message.trim()}.`
-    current.messages.push({ role: 'assistant', content: `**Task cancelled:** ${text}\n\n*${cancelledTurnHint(this.deps.agentName())}*`, _error: true, provider_details: text, provider_details_label: 'Cancellation details', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
+    current.messages.push({ role: 'assistant', content: '', _error: true, _terminal_state: 'cancelled', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
     try { this.deps.store.save(current) } catch { return false }
     this.deps.pending.clearApprovals(current.session_id)
@@ -853,6 +858,7 @@ export class TurnRunner {
     const writer = this.writers.get(streamId)
     if (writer) { try { writer.close() } catch { /* ignore */ } this.writers.delete(streamId) }
     this.abortControllers.delete(streamId)
+    this.stopContexts.delete(streamId)
     this.steers.delete(streamId)
     this.consumedSteers.delete(streamId)
     this.lastCompletedTool.delete(streamId)
@@ -985,9 +991,14 @@ export class TurnRunner {
     // Python `_finalize_webui_steers` drained the Agent's pending steer text at cancel time: the interrupt reply
     // carries it so queued steers settle as consumed / leftover before the terminal row.
     let leftover = ''
+    let checkpoint: unknown[] | null = null
     const sidecar = this.deps.sidecar()
     if (sidecar) {
-      try { leftover = str((await sidecar.call('chat.interrupt', { stream_id: streamId }, { timeoutMs: 5_000 })).pending_steer) } catch { leftover = '' }
+      try {
+        const reply = await sidecar.call('chat.interrupt', { stream_id: streamId }, { timeoutMs: 5_000 })
+        leftover = str(reply.pending_steer)
+        checkpoint = reply.checkpoint ?? null
+      } catch { leftover = '' }
     }
     // Settle the steers first so the persisted cancel carries every consumed one.
     const steerEvents = (this.steers.get(streamId) ?? []).length ? this.finalizeSteerEvents(streamId, leftover) : []
@@ -995,7 +1006,7 @@ export class TurnRunner {
       let current: Session | null = null
       try { current = this.deps.store.get(sessionId) } catch { current = null }
       if (current?.active_stream_id === streamId) {
-        this.finalizeCancelled(current, streamId, 'Task cancelled.', run?.ephemeral)
+        this.finalizeCancelled(current, streamId, run?.ephemeral, checkpoint)
       }
     }
     // The worker may already have written its terminal row while the interrupt was in flight; the stream is then
@@ -1008,7 +1019,7 @@ export class TurnRunner {
         channel.put([event, data, eventId])
       }
       for (const [event, data] of steerEvents) emit(event, data)
-      emit('cancel', sessionId ? this.cancelFrame(sessionId) : this.cancelPayload())
+      emit('cancel', this.cancelFrame(sessionId))
       this.registry.streams.delete(streamId)
       this.registry.liveIds.delete(streamId)
     }
@@ -1249,6 +1260,11 @@ export class TurnRunner {
 
 function previousStartedAt(s: Session, run: { started_at: number } | undefined): number {
   return typeof s.pending_started_at === 'number' && s.pending_started_at > 0 ? s.pending_started_at : (run?.started_at ?? Date.now() / 1000)
+}
+
+/** A persisted Stop row: TAL-364 marks its outcome; older rows carry only their English copy. */
+function isCancelMarker(m: Message): boolean {
+  return m._error === true && (m._terminal_state === 'cancelled' || str(m.content).startsWith('**Task cancelled:**'))
 }
 
 function dedupeContext(messages: Message[]): Message[] {

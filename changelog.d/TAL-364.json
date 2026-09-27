@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Stopping a response keeps the work and tool results it had gathered, so your next message continues from them.",
+      "highlight": true,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "A stopped response now shows a single Stopped status instead of repeated cancellation messages.",
+      "highlight": false,
+      "components": ["web", "app"]
+    }
+  ]
+}

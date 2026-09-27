@@ -12,13 +12,13 @@ Every `web/tests/test_*.py` case at the ticket's creation commit (db3f02679) —
 
 | Disposition | Meaning | Cases |
 |---|---|---|
-| `asserted` | a TypeScript test title carries `[py:<file>::<case>]` and asserts the same observable behaviour | 329 |
-| `dropped` | no TypeScript counterpart; the `ref` column states why (Python-only internals, pytest/packaging/docs tooling, dropped routes and features, or behaviour owned by the Agent sidecar) | 1766 |
+| `asserted` | a TypeScript test title carries `[py:<file>::<case>]` and asserts the same observable behaviour | 332 |
+| `dropped` | no TypeScript counterpart; the `ref` column states why (Python-only internals, pytest/packaging/docs tooling, dropped routes and features, or behaviour owned by the Agent sidecar) | 1763 |
 | `subject` | covered by the named suite without a one-to-one assertion (the file-level tables below) | 7730 |
 
 Two scopes went through different processes:
 
-- **Regression files** (`test_issue*.py` and `test_regressions.py`: 390 files, 3 170 cases). The six highest-risk surfaces were ported case by case (`web/packages/server/src/port/*.port.test.ts` plus markers added to the existing suites): auth and profile isolation, startup and environment, proxies and size caps, worktrees and terminals, chat streams and journals, and per-profile behaviour. Within those 993 cases: 325 asserted, 667 dropped with a reason, 1 subject. The remaining regression files carry the reviewed file-level mapping in the first table below.
+- **Regression files** (`test_issue*.py` and `test_regressions.py`: 390 files, 3 170 cases). The six highest-risk surfaces were ported case by case (`web/packages/server/src/port/*.port.test.ts` plus markers added to the existing suites): auth and profile isolation, startup and environment, proxies and size caps, worktrees and terminals, chat streams and journals, and per-profile behaviour. Within those 993 cases: 328 asserted, 664 dropped with a reason, 1 subject. The remaining regression files carry the reviewed file-level mapping in the first table below.
 - **Other baseline files** (582 files, 6 655 cases: `test_session_*`, `test_sprint*`, `test_hweb*`, `test_workspace_*`, …). These were mapped at file level by feature area to the TypeScript suite that owns that area (`subject`, ref prefixed `file-level mapping (not individually reviewed)`), or marked `dropped` for pytest/conftest harness, packaging, launcher, docs and repo-hygiene tests and for the dropped gateway chat backend and Edge TTS voices. Their cases were **not** reviewed one by one; the second table below records the mapping so a later port can pick any file up.
 
 ## File-level mapping

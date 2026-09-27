@@ -61,7 +61,7 @@ enum AssistantTurnOutcome {
     static func label(for terminalState: String?) -> String? {
         switch terminalState {
         case nil, "", "completed", "running": nil
-        case "cancelled": String(localized: "Response cancelled")
+        case "cancelled": String(localized: "Stopped")
         case "no_response": String(localized: "No answer produced.")
         case "interrupted", "connection_lost": String(localized: "Response interrupted")
         case "tool_limit_reached": String(localized: "Tool limit reached")

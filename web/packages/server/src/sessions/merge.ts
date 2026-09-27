@@ -443,6 +443,27 @@ export function withPendingUserTurn(rows: Message[], turn: { localCount: number;
   return [...rows.slice(0, at), turn.prompt, ...rows.slice(at)]
 }
 
+/**
+ * TAL-364: the model context a stopped turn leaves. The Agent's checkpoint (its canonical transcript at the stop
+ * boundary) when it holds this turn's prompt, else the turn's starting context plus that prompt; then the prose that
+ * streamed past the last assistant row the Agent committed. A completed tool result gets the Agent's own closing row, so
+ * the next prompt never follows a tool row. Reasoning never enters. Null when nothing the model can use was captured:
+ * the prompt then stays a recovered row the next request does not replay.
+ */
+export function stoppedTurnContext(previousContext: Message[], checkpoint: unknown[] | null, prompt: string, msgText: string, streamedText: string): Message[] | null {
+  const agentRows = (checkpoint ?? []).filter((m): m is Message => isDict(m))
+  const at = findCurrentUserTurn(agentRows, msgText)
+  const rows: Message[] = at === null ? [...structuredClone(previousContext), { role: 'user', content: prompt }] : structuredClone(agentRows)
+  let unsettled = messageText(buildPartialMessage(streamedText, '', [])?.content)
+  for (const m of rows.slice((at ?? previousContext.length) + 1)) {
+    const text = m.role === 'assistant' ? messageText(m.content).trim() : ''
+    if (text && unsettled.includes(text)) unsettled = unsettled.replace(text, '').trim()
+  }
+  if (sanitizeMessagesForApi(rows).at(-1)?.role === 'tool') rows.push({ role: 'assistant', content: unsettled || 'Operation interrupted.' })
+  else if (unsettled) rows.push({ role: 'assistant', content: unsettled })
+  return sanitizeMessagesForApi(rows).at(-1)?.role === 'user' ? null : rows
+}
+
 function toolCallId(tc: unknown): string {
   if (!isDict(tc)) return ''
   return str(tc.id) || str(tc.call_id)

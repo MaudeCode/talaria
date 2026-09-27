@@ -285,9 +285,13 @@ function hasToolUseBlocks(message: Record<string, unknown>): boolean {
   return Array.isArray(message.content) && message.content.some((part) => isDict(part) && part.type === 'tool_use')
 }
 
-/** The final answer rule: the turn's last assistant row, with visible content, no tool calls, not interim or partial. */
+/**
+ * The final answer rule: the turn's last assistant row, with visible content, no tool calls, not interim or partial.
+ * A Stop row is no answer: its outcome is the status (TAL-364; older rows still carry English copy).
+ */
 function finalAnswerOf(last: Record<string, unknown>): string {
   if ((Array.isArray(last.tool_calls) && last.tool_calls.length > 0) || hasToolUseBlocks(last) || last._interim === true || last._partial === true) return ''
+  if (last._error === true && (last._terminal_state === 'cancelled' || last.provider_details_label === 'Cancellation details')) return ''
   return splitThinkingFromContent(messageText(last.content))[0]
 }
 

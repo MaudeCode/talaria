@@ -413,12 +413,16 @@ describe('chat turns through the sidecar', () => {
     expect(interrupted).toBe(true)
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'cancel')
     expect(eventNames(frames)).toContain('cancel')
-    expect(frames.find((f) => f.event === 'cancel')?.data).toMatchObject({ type: 'cancelled', message: 'Cancelled by user' })
+    // TAL-364: the terminal frame names the outcome only; clients show their one localized status for it.
+    const cancel = frames.find((f) => f.event === 'cancel')?.data as Json
+    expect(cancel).toMatchObject({ type: 'cancelled', status: 'cancelled' })
+    expect(cancel).not.toHaveProperty('message')
+    expect(cancel).not.toHaveProperty('hint')
     const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
     const messages = detail.messages as Json[]
     expect(messages[0]).toMatchObject({ role: 'user', content: 'long task', _recovered: true })
     expect(messages[1]).toMatchObject({ role: 'assistant', content: 'partial answer', _partial: true })
-    expect(String(messages[2]?.content)).toMatch(/^\*\*Task cancelled:\*\* Task cancelled\./)
+    expect(messages[2]).toMatchObject({ role: 'assistant', content: '', _error: true, _terminal_state: 'cancelled', _anchor_activity_scene: { terminal_state: 'cancelled', final_answer: '' } })
     expect(messages.map((m) => m._turn_id)).toEqual([streamId, streamId, streamId])
     expect(((frames.find((f) => f.event === 'cancel')?.data as Json).session as Json | undefined)?.messages).toSatisfy((rows: Json[] | undefined) => !rows || rows.every((m) => m._turn_id === streamId))
     expect(detail.active_stream_id).toBeNull()
@@ -974,7 +978,7 @@ describe('chat turns through the sidecar', () => {
       // Exactly one terminal row: the cancel route wrote it, the worker's "before start" unwind adds no second one.
       await new Promise((r) => setTimeout(r, 50))
       const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, () => false, { timeoutMs: 300 })
-      expect([...frames, ...replay].filter((f) => f.event === 'cancel').map((f) => (f.data as Json).message)).toEqual(['Cancelled by user', 'Cancelled by user'])
+      expect([...frames, ...replay].filter((f) => f.event === 'cancel').map((f) => (f.data as Json).type)).toEqual(['cancelled', 'cancelled'])
       expect(starts).toBe(0)
     } finally {
       turns.deps.profileConfig = original

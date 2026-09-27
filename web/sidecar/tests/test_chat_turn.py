@@ -126,6 +126,65 @@ def test_cancel_interrupts_the_running_turn_and_the_next_turn_starts_clean(monke
     assert agent.cleared >= 2
 
 
+def test_interrupt_returns_the_agents_checkpoint_only_once_this_turn_published_one(monkeypatch) -> None:
+    """TAL-364: Stop hands the server the Agent's canonical transcript for the stopped turn, taken before the interrupt."""
+    _patch(monkeypatch)
+    from talaria_sidecar.methods import Registry
+
+    registry = Registry(runtime=None)  # type: ignore[arg-type]
+    chat.register(registry)
+    previous = [{"role": "user", "content": "earlier"}, {"role": "assistant", "content": "earlier answer"}]
+    tool_call = {"role": "assistant", "content": "", "tool_calls": [{"id": "call-1", "type": "function", "function": {"name": "terminal", "arguments": "{}"}}]}
+    tool_result = {"role": "tool", "tool_call_id": "call-1", "content": "worker-2 CrashLoopBackOff"}
+    published = threading.Event()
+    publish = threading.Event()
+    gate = threading.Event()
+
+    class CheckpointingAgent(FakeAgent):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            # The list a cached Agent kept from its previous turn.
+            self._session_messages = list(previous)
+
+        def run_conversation(self, **kwargs):
+            publish.wait(5)
+            # What the Agent's tool round republishes after a completed call.
+            self._session_messages = [*kwargs["conversation_history"], {"role": "user", "content": kwargs["user_message"]}, tool_call, tool_result]
+            published.set()
+            gate.wait(5)
+            self._session_messages.append({"role": "assistant", "content": "Operation interrupted."})
+            return {"final_response": "", "messages": self._session_messages}
+
+        def interrupt(self, message, hard_cancel=False):
+            super().interrupt(message, hard_cancel)
+            gate.set()
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: CheckpointingAgent)
+    result: dict = {}
+    worker = threading.Thread(target=lambda: result.update(chat.start(Ctx(), {**_params("st-ck", "s-ck"), "conversation_history": previous, "user_message": "check the rollout"})))
+    worker.start()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and chat._run_for({"stream_id": "st-ck"}) is None:
+        time.sleep(0.01)
+    run = chat._run_for({"stream_id": "st-ck"})
+    assert run is not None
+    while time.monotonic() < deadline and run.agent is None:
+        time.sleep(0.01)
+    # Before the Agent republishes, it still holds the previous turn's list: no checkpoint, never a stale one.
+    assert chat._cancel_checkpoint(run) is None
+    publish.set()
+    assert published.wait(5)
+    reply = registry.methods["chat.interrupt"](Ctx(), {"stream_id": "st-ck"})
+    assert reply["ok"] is True
+    assert reply["checkpoint"] == [*previous, {"role": "user", "content": "check the rollout"}, tool_call, tool_result]
+    worker.join(5)
+    assert not worker.is_alive()
+    assert result["status"] == "cancelled"
+    # The snapshot is a copy: the Agent's own unwind (its closing row) does not change what the server received.
+    assert reply["checkpoint"][-1] == tool_result
+    assert registry.methods["chat.interrupt"](Ctx(), {"stream_id": "st-ck"}) == {"ok": False, "reason": "not_running"}
+
+
 def test_a_rotated_credential_never_reuses_the_cached_agent(monkeypatch) -> None:
     _patch(monkeypatch)
     runtime = {"model": "m", "provider": "p", "api_key": "sk-old"}
