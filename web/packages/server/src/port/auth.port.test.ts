@@ -5,12 +5,12 @@
  * OAuth provider cards. Markers `[py:<file>::<case>]` are verified by
  * scripts/check-regression-port.py.
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, cookieHeader, type TestServer } from '../test/harness.js'
 import { safeLoginRedirectPath } from '../auth/gate.js'
 import { AuthStore } from '../auth/store.js'
 import { readProjectContext } from '../tools/memory.js'
@@ -63,12 +63,40 @@ describe('password login: CSRF exemption and attempt persistence', () => {
   it('[py:test_issue1910_login_attempt_persistence.py::test_login_rate_limit_survives_reload] the attempt window persists on disk and a fresh store still rate-limits the address', async () => {
     for (let i = 0; i < 5; i += 1) await post(s, '/api/auth/login', { password: 'wrong' })
     expect((await post(s, '/api/auth/login', { password: PASSWORD })).status).toBe(429)
+    await s.deps.auth.flushPersistence()
     const reloaded = new AuthStore({ stateDir: s.state, env: s.deps.config.env, settings: s.deps.settings })
     expect(reloaded.checkLoginRate('127.0.0.1')).toBe(false)
     s.deps.auth.clearLoginAttempts('127.0.0.1')
+    await s.deps.auth.flushPersistence()
     expect(new AuthStore({ stateDir: s.state, env: s.deps.config.env, settings: s.deps.settings }).checkLoginRate('127.0.0.1')).toBe(true)
   })
 
+})
+
+describe('auth persistence off the request path', () => {
+  let s: TestServer
+  const PASSWORD = 'correct horse battery'
+  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: PASSWORD } }) })
+  afterAll(() => s.close())
+
+  it('answers login, the new session, and unrelated requests while the sessions write is held pending', async () => {
+    let open!: () => void
+    const gate = new Promise<void>((resolve) => { open = resolve })
+    const land = s.deps.auth.persistWrite
+    const held: string[] = []
+    s.deps.auth.persistWrite = async (file, text) => { held.push(file); await gate; await land(file, text) }
+    const login = await post(s, '/api/auth/login', { password: PASSWORD })
+    expect(login.status).toBe(200)
+    const cookie = cookieHeader(login.headers.getSetCookie(), 'hermes_session') ?? ''
+    expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).logged_in).toBe(true)
+    expect((await s.get('/health')).status).toBe(200)
+    const sessionsFile = join(s.state, '.sessions.json')
+    expect(held).toEqual([sessionsFile])
+    expect(existsSync(sessionsFile)).toBe(false)
+    open()
+    await s.deps.auth.flushPersistence()
+    expect(Object.keys(JSON.parse(readFileSync(sessionsFile, 'utf8')) as object)).toEqual([AuthStore.tokenFromCookieValue(cookie.split('=')[1])])
+  })
 })
 
 describe('authenticated stream budget', () => {

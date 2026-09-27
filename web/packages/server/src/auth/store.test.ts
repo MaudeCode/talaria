@@ -38,16 +38,36 @@ let dir: string
 let now = 1_800_000_000
 const clock = () => now
 
-function makeStore(env: Record<string, string> = {}, opts: { keys?: boolean } = {}): AuthStore {
+let stores: AuthStore[] = []
+
+function makeStore(env: Record<string, string> = {}, opts: { keys?: boolean; persistWrite?: AuthStore['persistWrite']; log?: (line: string) => void } = {}): AuthStore {
   const settings = new SettingsStore({ file: join(dir, 'settings.json'), env, stateDir: dir, defaultWorkspace: join(dir, 'workspace'), botName: 'Hermes' })
-  const store = new AuthStore({ stateDir: dir, env, settings, now: clock, log: () => undefined })
+  const store = new AuthStore({ stateDir: dir, env, settings, now: clock, log: opts.log ?? (() => undefined), ...(opts.persistWrite ? { persistWrite: opts.persistWrite } : {}) })
   settings.hooks = { hashPassword: (pw) => store.hashPassword(pw), onPasswordChanged: () => { store.invalidatePasswordHashCache() } }
   if (opts.keys ?? true) store.setKeysForTest(PBKDF2_KEY, SIGNING_KEY)
+  stores.push(store)
   return store
 }
 
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'talaria-auth-')); now = 1_800_000_000 })
-afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+/** A persistence seam whose writes wait until `open()`; `writes` records each snapshot as it is taken. */
+function gatedWriter() {
+  let open!: () => void
+  const gate = new Promise<void>((resolve) => { open = resolve })
+  const writes: { file: string; text: string }[] = []
+  const write = async (file: string, text: string): Promise<void> => {
+    writes.push({ file, text })
+    await gate
+    writeFileSync(file, text)
+  }
+  return { writes, write, open }
+}
+
+beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'talaria-auth-')); now = 1_800_000_000; stores = [] })
+afterEach(async () => {
+  // Land write-behind persistence before the directory goes away.
+  await Promise.all(stores.map((store) => store.flushPersistence()))
+  rmSync(dir, { recursive: true, force: true })
+})
 
 describe('Python byte compatibility', () => {
   it('hashes passwords exactly like api/auth._hash_password', async () => {
@@ -87,7 +107,7 @@ describe('Python byte compatibility', () => {
     expect(parseCookieHeader('bad name=1; ok=2').get('ok')).toBe('2')
   })
 
-  it('reads the Python-written .sessions.json and .login_attempts.json and keeps them 0600 [py:test_issue1910_login_attempt_persistence.py::test_login_attempts_persist_failed_attempts] [py:test_issue1910_login_attempt_persistence.py::test_login_attempts_load_prunes_expired_entries]', () => {
+  it('reads the Python-written .sessions.json and .login_attempts.json and keeps them 0600 [py:test_issue1910_login_attempt_persistence.py::test_login_attempts_persist_failed_attempts] [py:test_issue1910_login_attempt_persistence.py::test_login_attempts_load_prunes_expired_entries]', async () => {
     writeFileSync(join(dir, '.sessions.json'), JSON.stringify({
       live: now + 100,
       typed: { expiry: now + 100, auth_type: 'trusted', username: 'kim', bound_profile: 'work', oidc_owner: true, oidc_stale_evidence: 'x' },
@@ -102,18 +122,20 @@ describe('Python byte compatibility', () => {
     expect(store.getSessionInfo(`live.${store.signToken('live')}`)).toEqual({ token: 'live', expiry: now + 100, auth_type: null, username: null, bound_profile: null })
     expect(store.checkLoginRate('10.0.0.1')).toBe(true)
     store.recordLoginAttempt('10.0.0.1')
+    await store.flushPersistence()
     expect(statSync(join(dir, '.login_attempts.json')).mode & 0o777).toBe(0o600)
     expect(JSON.parse(readFileSync(join(dir, '.login_attempts.json'), 'utf8'))).toEqual({ '10.0.0.1': [now - 10, now] })
   })
 })
 
 describe('sessions', () => {
-  it('persists the stable OIDC issuer and subject separately from display username', () => {
+  it('persists the stable OIDC issuer and subject separately from display username', async () => {
     const store = makeStore()
     const cookie = store.createSession({
       authType: 'oidc', username: 'shared@example.test', boundProfile: 'work',
       oidcBinding: { mapping_fingerprint: 'a'.repeat(64), profile_identity: '1:2', issuer: 'https://issuer.example', subject: 'principal-a' },
     })
+    await store.flushPersistence()
 
     expect(makeStore().getSessionInfo(cookie)).toMatchObject({
       auth_type: 'oidc', username: 'shared@example.test', bound_profile: 'work',
@@ -121,25 +143,28 @@ describe('sessions', () => {
     })
   })
 
-  it('creates, verifies, persists, and prunes sessions', () => {
+  it('creates, verifies, persists, and prunes sessions', async () => {
     const store = makeStore()
     const cookie = store.createSession()
     expect(cookie).toMatch(/^[0-9a-f]{64}\.[0-9a-f]{64}$/)
     expect(store.verifySession(cookie)).toBe(true)
+    await store.flushPersistence()
     expect(statSync(join(dir, '.sessions.json')).mode & 0o777).toBe(0o600)
     const restarted = makeStore()
     expect(restarted.verifySession(cookie)).toBe(true)
     now += SESSION_TTL + 1
     expect(restarted.verifySession(cookie)).toBe(false)
+    await restarted.flushPersistence()
     expect(readFileSync(join(dir, '.sessions.json'), 'utf8')).toBe('{}')
   })
 
-  it('invalidation survives a restart and unknown tokens are safe', () => {
+  it('invalidation survives a restart and unknown tokens are safe', async () => {
     const store = makeStore()
     const cookie = store.createSession({ authType: 'password' })
     store.invalidateSession('nope.sig')
     store.invalidateSession(cookie)
     expect(store.verifySession(cookie)).toBe(false)
+    await store.flushPersistence()
     expect(makeStore().verifySession(cookie)).toBe(false)
   })
 
@@ -230,7 +255,7 @@ describe('password hash and login rate', () => {
     expect(await store.getPasswordHash()).toBe(PY.hash)
   })
 
-  it('allows five attempts per minute and clears on success', () => {
+  it('allows five attempts per minute and clears on success', async () => {
     const store = makeStore()
     for (let i = 0; i < 5; i += 1) {
       expect(store.checkLoginRate('1.2.3.4')).toBe(true)
@@ -242,18 +267,100 @@ describe('password hash and login rate', () => {
     expect(store.checkLoginRate('1.2.3.4')).toBe(true)
     store.recordLoginAttempt('1.2.3.4')
     store.clearLoginAttempts('1.2.3.4')
+    await store.flushPersistence()
     expect(JSON.parse(readFileSync(join(dir, '.login_attempts.json'), 'utf8'))).toEqual({})
   })
 
-  it('keeps working when the state directory is read-only', () => {
+  it('keeps working when the state directory is read-only', async () => {
     chmodSync(dir, 0o500)
     try {
       const store = makeStore({}, { keys: false })
       const cookie = store.createSession()
+      await store.flushPersistence()
       expect(store.verifySession(cookie)).toBe(true)
     } finally {
       chmodSync(dir, 0o700)
     }
+  })
+})
+
+describe('write-behind persistence', () => {
+  const sessionsFile = () => join(dir, '.sessions.json')
+  const attemptsFile = () => join(dir, '.login_attempts.json')
+
+  it('answers session calls while a sessions write is held pending', async () => {
+    const writer = gatedWriter()
+    const store = makeStore({}, { persistWrite: writer.write })
+    const first = store.createSession()
+    const second = store.createSession()
+    expect(store.verifySession(first)).toBe(true)
+    expect(store.verifySession(second)).toBe(true)
+    expect(existsSync(sessionsFile())).toBe(false)
+    writer.open()
+    await store.flushPersistence()
+    expect(makeStore().verifySession(second)).toBe(true)
+  })
+
+  it('coalesces rapid session writes into at most two and lands the newest table', async () => {
+    const writer = gatedWriter()
+    const store = makeStore({}, { persistWrite: writer.write })
+    const cookies = Array.from({ length: 10 }, () => store.createSession())
+    expect(writer.writes).toHaveLength(1)
+    writer.open()
+    await store.flushPersistence()
+    expect(writer.writes).toHaveLength(2)
+    const onDisk = JSON.parse(readFileSync(sessionsFile(), 'utf8')) as Record<string, unknown>
+    expect(Object.keys(onDisk)).toHaveLength(10)
+    expect(onDisk).toEqual(store.sessionTable)
+    const restarted = makeStore()
+    expect(cookies.every((cookie) => restarted.verifySession(cookie))).toBe(true)
+  })
+
+  it('checkLoginRate writes only when pruning removed timestamps', async () => {
+    const writer = gatedWriter()
+    writer.open()
+    const store = makeStore({}, { persistWrite: writer.write })
+    expect(store.checkLoginRate('1.2.3.4')).toBe(true)
+    await store.flushPersistence()
+    expect(writer.writes).toEqual([])
+    store.recordLoginAttempt('1.2.3.4')
+    expect(store.checkLoginRate('1.2.3.4')).toBe(true)
+    await store.flushPersistence()
+    expect(writer.writes).toHaveLength(1)
+    now += 61
+    expect(store.checkLoginRate('1.2.3.4')).toBe(true)
+    await store.flushPersistence()
+    expect(writer.writes).toHaveLength(2)
+    expect(JSON.parse(readFileSync(attemptsFile(), 'utf8'))).toEqual({})
+  })
+
+  it('logs a failed sessions write and keeps the in-memory session verifying', async () => {
+    const lines: string[] = []
+    const store = makeStore({}, { persistWrite: () => Promise.reject(new Error('disk gone')), log: (line) => lines.push(line) })
+    const cookie = store.createSession()
+    await store.flushPersistence()
+    expect(store.verifySession(cookie)).toBe(true)
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('Auth session persistence failed')
+    expect(lines[0]).toContain('disk gone')
+  })
+
+  it('flushPersistence resolves only after pending writes land, matching the in-memory tables', async () => {
+    const writer = gatedWriter()
+    const store = makeStore({}, { persistWrite: writer.write })
+    const dropped = store.createSession()
+    const kept = store.createSession()
+    store.invalidateSession(dropped)
+    store.recordLoginAttempt('1.2.3.4')
+    let flushed = false
+    const flushing = store.flushPersistence().then(() => { flushed = true })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(flushed).toBe(false)
+    writer.open()
+    await flushing
+    expect(JSON.parse(readFileSync(sessionsFile(), 'utf8'))).toEqual(store.sessionTable)
+    expect(Object.keys(store.sessionTable)).toEqual([AuthStore.tokenFromCookieValue(kept)])
+    expect(JSON.parse(readFileSync(attemptsFile(), 'utf8'))).toEqual({ '1.2.3.4': [now] })
   })
 })
 

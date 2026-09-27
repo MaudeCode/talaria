@@ -34,7 +34,8 @@ Three rules apply everywhere:
 | Run and turn journals | Per-journal append queue; retention in the hygiene ticker | Append order per `(session, stream)` is preserved; shard release follows pid liveness. |
 | Chat runs | `StreamRegistry` (`STREAMS`/`ACTIVE_RUNS` equivalent) plus per-session serialization in `TurnRunner` | One active turn per session; cancel and steer resolve through the registry, never through the sidecar alone. |
 | Pending approvals and clarify questions | `PendingPrompts` queues per session | Submit/resolve are synchronous; SSE fan-out happens after the queue mutation. |
-| Auth sessions, login attempts, passkey challenges | Synchronous read-modify-atomic-write; verification single-flight caches | Rate-limit decisions read and write `.login_attempts.json` in one call. |
+| Auth sessions, login attempts | In-memory tables are authoritative; one write-behind writer per file (one write in flight, later requests coalesce into a single follow-up of the newest table); orderly shutdown and restart await `flushPersistence()` | Rate-limit decisions read and update the table in one synchronous call; a slow fsync never blocks a request. |
+| Passkey challenges | Synchronous read-modify-atomic-write per mutation | Bounded file; no await inside. |
 | Shares, extension state, sidecar tokens, media snapshots | Synchronous read-modify-atomic-write per mutation | Token minting happens before the manifest commit. |
 | Provider caches (catalog, quotas, cost snapshots, OAuth flows) | Single-flight promises keyed on identity; cost snapshots use the per-provider lock file | A cold catalog build is shared by concurrent readers. |
 | Profiles | Process-global active profile; profile list cache with TTL; per-profile skills-stats cache | A switch clears dependent caches before publishing the new profile. |

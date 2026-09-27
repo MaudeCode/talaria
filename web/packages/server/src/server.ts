@@ -78,11 +78,14 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   const address = server.address()
   const port = typeof address === 'object' && address ? address.port : config.port
   log(`  Hermes Web UI listening on ${scheme}://${config.host}:${port}`)
-  const close = () =>
-    new Promise<void>((resolve) => {
+  const close = async () => {
+    await new Promise<void>((resolve) => {
       server.close(() => { resolve() })
       server.closeAllConnections()
     })
+    // Auth state is persisted write-behind: land pending session and login-attempt writes before the process exits.
+    await app.deps.auth.flushPersistence()
+  }
   if (opts.signals ?? true) {
     let requested = false
     const onSignal = (signal: NodeJS.Signals) => {
