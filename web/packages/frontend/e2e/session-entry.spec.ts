@@ -94,6 +94,23 @@ test('a message deep link finds a later message inside a grouped turn', async ({
   await expect.poll(() => distance(page)).toBeGreaterThan(200)
 })
 
+test('a message deep link pages through one turn that spans several windows', async ({ page }) => {
+  // One server-stamped turn of 60 assistant rows, then 20 ordinary turns; the server pages 20 messages at a time.
+  const messages = [
+    { role: 'user', id: 1, content: 'entry-long question' },
+    ...Array.from({ length: 60 }, (_, i) => ({ role: 'assistant', id: i + 2, content: `entry-long step ${i + 1}.`, _turn_id: 'long-turn' })),
+    ...transcript('entry-long', 20).map((m) => ({ ...m, id: m.id + 61 })),
+  ]
+  const size = 20
+  await page.route('**/api/session?**', (route) => {
+    const end = Number(new URL(route.request().url()).searchParams.get('msg_before') ?? messages.length)
+    const start = Math.max(0, end - size)
+    return route.fulfill({ json: { session: { session_id: 'entry-long', title: 'Long turn', messages: messages.slice(start, end), _messages_truncated: start > 0, _messages_offset: start } } })
+  })
+  await page.goto('/session/entry-long?msg=3')
+  await expect(page.locator('[data-message-key="2"]')).toBeInViewport()
+})
+
 test('loading older rows keeps the reader where they are', async ({ page }) => {
   const turns = 20
   await page.route('**/api/session?**', paged('entry-older', turns))

@@ -130,8 +130,9 @@ export function Transcript(props: TranscriptProps) {
     // A grouped turn is keyed by its first assistant message but answers for every message it holds.
     const index = entry.focus ? rows.findIndex((row) => row.key === entry.focus || !!row.assistantRows?.some((part) => part.key === entry.focus)) : -1
     // A linked message older than the loaded window pages older rows in until it appears; a failed page falls back to the bottom.
-    if (index < 0 && entry.focus && truncated && (entry.pagedAt !== rows.length || loadingOlder)) {
-      if (entry.pagedAt !== rows.length && !loadingOlder) { entry.pagedAt = rows.length; onLoadOlder() }
+    // Progress counts ungrouped rows: a page inside one long turn joins the same grouped row.
+    if (index < 0 && entry.focus && truncated && (entry.pagedAt !== rawRows.length || loadingOlder)) {
+      if (entry.pagedAt !== rawRows.length && !loadingOlder) { entry.pagedAt = rawRows.length; onLoadOlder() }
       return
     }
     entryRef.current = null
@@ -141,7 +142,7 @@ export function Transcript(props: TranscriptProps) {
     settlingRef.current = false
     if (target) target.scrollIntoView({ block: 'center' })
     else virtualizer.scrollToIndex(index, { align: 'center' })
-  }, [rows, virtualize, virtualizer, truncated, loadingOlder, onLoadOlder, pin, scrollToBottom])
+  }, [rows, rawRows.length, virtualize, virtualizer, truncated, loadingOlder, onLoadOlder, pin, scrollToBottom])
 
   const renderRow = (row: VisibleMessage, i: number) => (
     row.message.role === 'user'
