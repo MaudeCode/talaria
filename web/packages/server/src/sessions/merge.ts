@@ -459,7 +459,9 @@ export function stoppedTurnContext(previousContext: Message[], checkpoint: unkno
     const text = m.role === 'assistant' ? messageText(m.content).trim() : ''
     if (text && unsettled.includes(text)) unsettled = unsettled.replace(text, '').trim()
   }
-  if (sanitizeMessagesForApi(rows).at(-1)?.role === 'tool') rows.push({ role: 'assistant', content: unsettled || 'Operation interrupted.' })
+  // A tool result is a `tool` row or an Anthropic-style user row of `tool_result` blocks.
+  const toolResult = (m: Message | undefined): boolean => m?.role === 'tool' || (m?.role === 'user' && Array.isArray(m.content) && m.content.some((part) => isDict(part) && part.type === 'tool_result'))
+  if (toolResult(sanitizeMessagesForApi(rows).at(-1))) rows.push({ role: 'assistant', content: unsettled || 'Operation interrupted.' })
   else if (unsettled) rows.push({ role: 'assistant', content: unsettled })
   return sanitizeMessagesForApi(rows).at(-1)?.role === 'user' ? null : rows
 }
