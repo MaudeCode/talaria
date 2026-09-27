@@ -1724,6 +1724,14 @@ final class LiveActivityTests: XCTestCase {
                     "title": "Live work",
                     "messages": [
                       {
+                        "role": "assistant",
+                        "content": "Earlier answer.",
+                        "timestamp": 1770000000,
+                        "message_id": "assistant-0",
+                        "_turn_id": "stream-000",
+                        "_anchor_activity_scene": {"version": "activity_scene_v1", "activity_rows": [], "final_answer": "Earlier answer.", "terminal_state": "completed"}
+                      },
+                      {
                         "role": "user",
                         "content": "Keep working",
                         "timestamp": 1770000100,
@@ -1778,7 +1786,9 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertNil(viewModel.activeStreamID)
         XCTAssertEqual(streamClient.stopCount, 1)
         XCTAssertEqual(viewModel.responseCompletionHapticTrigger, 1)
+        // An earlier turn's scene (from a newer Web before a rollback) does not stop this turn's fallback.
         XCTAssertEqual(viewModel.messages.compactMap(\.content), [
+            "Earlier answer.",
             "Keep working",
             "Completed from transcript refresh."
         ])

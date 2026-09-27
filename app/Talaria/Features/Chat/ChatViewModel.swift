@@ -5431,12 +5431,12 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     func streamCoordinatorServerTerminalState(turnID: String) -> String? {
-        // ponytail: old-server fallback — a Web from before settled-turn scenes states no outcome, so the latest load's
-        // reply after the prompt counts as completed. Delete once every supported Web ships scene `terminal_state`.
-        guard messages.contains(where: { $0.activityScene?.terminalState != nil }) else {
-            return latestServerLoadHadAssistantResponseAfterLatestUser ? "completed" : nil
+        if let state = messages.last(where: { $0.turnId == turnID && $0.activityScene != nil })?.activityScene?.terminalState {
+            return state
         }
-        return messages.last { $0.turnId == turnID && $0.activityScene != nil }?.activityScene?.terminalState
+        // ponytail: old-server fallback — a turn from a Web before settled-turn scenes states no outcome, so the latest
+        // load's reply after the prompt counts as completed. Delete once every supported Web ships scene `terminal_state`.
+        return latestServerLoadHadAssistantResponseAfterLatestUser ? "completed" : nil
     }
 
     func streamCoordinatorOmitLoadedRunningTurn() -> Bool {
