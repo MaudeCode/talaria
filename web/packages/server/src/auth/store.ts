@@ -461,6 +461,15 @@ export class AuthStore {
   }
 
   /**
+   * Logout: resolves once the revocation is on disk, so a crash cannot revive a cookie the user was told is gone.
+   * Concurrent calls join the same pending write; ordinary verification never waits on disk.
+   */
+  async revokeSession(cookieValue: string | null | undefined): Promise<void> {
+    this.invalidateSession(cookieValue)
+    await this.sessionsWriter.flush()
+  }
+
+  /**
    * Sliding renewal: extend a live session when its remaining lifetime has
    * dropped below TTL minus min(TTL/10, 1h). Returns true when extended.
    */

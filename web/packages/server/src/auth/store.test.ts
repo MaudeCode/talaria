@@ -345,6 +345,24 @@ describe('write-behind persistence', () => {
     expect(lines[0]).toContain('disk gone')
   })
 
+  it('revokeSession resolves only after the revocation lands, and a concurrent revoke joins it', async () => {
+    const store = makeStore()
+    const cookie = store.createSession()
+    const token = AuthStore.tokenFromCookieValue(cookie) ?? ''
+    await store.flushPersistence()
+    const writer = gatedWriter()
+    store.persistWrite = writer.write
+    let revoked = 0
+    const revokes = [store.revokeSession(cookie), store.revokeSession(cookie)].map((pending) => pending.then(() => { revoked += 1 }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(revoked).toBe(0)
+    writer.open()
+    await Promise.all(revokes)
+    expect(writer.writes).toHaveLength(2)
+    expect(writer.writes.every(({ text }) => !(token in (JSON.parse(text) as object)))).toBe(true)
+    expect(makeStore().verifySession(cookie)).toBe(false)
+  })
+
   it('flushPersistence resolves only after pending writes land, matching the in-memory tables', async () => {
     const writer = gatedWriter()
     const store = makeStore({}, { persistWrite: writer.write })

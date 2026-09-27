@@ -85,17 +85,45 @@ describe('auth persistence off the request path', () => {
     const land = s.deps.auth.persistWrite
     const held: string[] = []
     s.deps.auth.persistWrite = async (file, text) => { held.push(file); await gate; await land(file, text) }
+    try {
+      const login = await post(s, '/api/auth/login', { password: PASSWORD })
+      expect(login.status).toBe(200)
+      const cookie = cookieHeader(login.headers.getSetCookie(), 'hermes_session') ?? ''
+      expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).logged_in).toBe(true)
+      expect((await s.get('/health')).status).toBe(200)
+      const sessionsFile = join(s.state, '.sessions.json')
+      expect(held).toEqual([sessionsFile])
+      expect(existsSync(sessionsFile)).toBe(false)
+      open()
+      await s.deps.auth.flushPersistence()
+      expect(Object.keys(JSON.parse(readFileSync(sessionsFile, 'utf8')) as object)).toEqual([AuthStore.tokenFromCookieValue(cookie.split('=')[1])])
+    } finally {
+      open()
+      s.deps.auth.persistWrite = land
+    }
+  })
+
+  it('answers logout only after the revoked session is on disk', async () => {
     const login = await post(s, '/api/auth/login', { password: PASSWORD })
-    expect(login.status).toBe(200)
     const cookie = cookieHeader(login.headers.getSetCookie(), 'hermes_session') ?? ''
-    expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).logged_in).toBe(true)
-    expect((await s.get('/health')).status).toBe(200)
-    const sessionsFile = join(s.state, '.sessions.json')
-    expect(held).toEqual([sessionsFile])
-    expect(existsSync(sessionsFile)).toBe(false)
-    open()
+    const token = AuthStore.tokenFromCookieValue(cookie.split('=')[1]) ?? ''
     await s.deps.auth.flushPersistence()
-    expect(Object.keys(JSON.parse(readFileSync(sessionsFile, 'utf8')) as object)).toEqual([AuthStore.tokenFromCookieValue(cookie.split('=')[1])])
+    let open!: () => void
+    const gate = new Promise<void>((resolve) => { open = resolve })
+    const land = s.deps.auth.persistWrite
+    s.deps.auth.persistWrite = async (file, text) => { await gate; await land(file, text) }
+    try {
+      let answered = false
+      const logout = s.get('/api/auth/logout', { method: 'POST', headers: { cookie } }).then((res) => { answered = true; return res })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(answered).toBe(false)
+      open()
+      expect((await logout).status).toBe(200)
+      expect(JSON.parse(readFileSync(join(s.state, '.sessions.json'), 'utf8'))).not.toHaveProperty(token)
+    } finally {
+      open()
+      s.deps.auth.persistWrite = land
+    }
   })
 })
 
