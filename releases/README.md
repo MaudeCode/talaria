@@ -146,8 +146,8 @@ package for the Experimental channel from `HEAD`, without a plan or Docker image
 version `<latest web-v tag>-exp.<12-hex source>`, tag `web-exp-v<version>`, and
 the contracts package bundled so installs never look it up. `experimental.py push
 BUILD_DIRECTORY` pushes that tarball to `ghcr.io/maudecode/talaria-web-experimental`
-as `sha-<source>`. `experimental.py advance SOURCE` moves `experimental` only onto a
-descendant of its current revision, then keeps the newest 50 package versions plus
+as `sha-<source>`. `experimental.py advance SOURCE` moves `experimental` forward to the newest
+published `sha-` commit on `main`, never behind its current revision, then keeps the newest 50 package versions plus
 the `experimental` target. The `web-experimental.yml` workflow runs them after each
 passing `main` push that changes Web or contracts; only `advance` is serialized.
 

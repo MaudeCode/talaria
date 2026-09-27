@@ -79,8 +79,8 @@ jobs:
           printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           "$RELEASE_PYTHON" releases/experimental.py push "$RUNNER_TEMP/web-experimental"
 
-  # Only moving the tag and pruning are serialized. A replaced pending run loses only its tag move,
-  # which the next publication's forward-only move covers.
+  # Only moving the tag and pruning are serialized. A pending advance can be replaced out of commit
+  # order, so each advance moves experimental to the newest published commit on main, not its own.
   advance:
     name: Advance experimental
     needs: publish

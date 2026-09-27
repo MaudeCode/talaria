@@ -18,20 +18,39 @@ MOVING = "experimental"
 RETAINED = 50
 
 
+def _ancestor(root, older, newer):
+    """git merge-base --is-ancestor: True, False, or None when either commit is unknown."""
+    code = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", older, newer], capture_output=True, check=False).returncode
+    return {0: True, 1: False}.get(code)
+
+
 def moves_forward(root, current, source):
     """Move `experimental` onto `source` only when it is missing or `source` descends from its revision."""
     if current is None:
         return True
-    result = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", current, source], capture_output=True, check=False)
-    if result.returncode not in (0, 1):
+    forward = _ancestor(root, current, source)
+    if forward is None:
         raise ValueError(f"cannot order the current {MOVING} revision {current} against {source}")
-    return result.returncode == 0
+    return forward
 
 
-def pruned(versions, retained=RETAINED):
-    """Package version IDs beyond the newest `retained` by creation time, never the one `experimental` names."""
+def newest_published(root, current, sources, tip):
+    """The newest published source on `tip`'s history that `experimental` may move forward to.
+
+    Advances are serialized but can run out of commit order, so each one reconciles every
+    published sha- tag instead of assuming its own commit is the newest.
+    """
+    target = current
+    for source in sources:
+        if _ancestor(root, source, tip) and moves_forward(root, target, source):
+            target = source
+    return target
+
+
+def pruned(versions, protected=(MOVING,), retained=RETAINED):
+    """Package version IDs beyond the newest `retained` by creation time, never one carrying a `protected` tag."""
     newest = sorted(versions, key=lambda version: version["created_at"], reverse=True)
-    return [version["id"] for version in newest[retained:] if MOVING not in version["metadata"]["container"]["tags"]]
+    return [version["id"] for version in newest[retained:] if not set(protected) & set(version["metadata"]["container"]["tags"])]
 
 
 def current_revision():
@@ -60,13 +79,18 @@ def push(build):
 def advance(source):
     if not re.fullmatch(r"[a-f0-9]{40}", source):
         raise ValueError("advance requires the published 40-hex source revision")
-    current = current_revision()
-    if moves_forward(ROOT, current, source):
-        subprocess.run(["oras", "tag", f"{REGISTRY}:sha-{source}", MOVING], check=True)
-    else:
-        print(f"{MOVING} stays at {current}; {source} is not its descendant.")
+    # Main may have moved past this run's checkout; later published commits must be orderable.
+    subprocess.run(["git", "-C", str(ROOT), "fetch", "--quiet", "origin", "main"], check=True)
     pages = json.loads(subprocess.check_output(["gh", "api", "--paginate", "--slurp", f"{PACKAGE}/versions?per_page=100"]))
-    for version_id in pruned([version for page in pages for version in page]):
+    versions = [version for page in pages for version in page]
+    published = {tag.removeprefix("sha-") for version in versions for tag in version["metadata"]["container"]["tags"]
+                 if re.fullmatch(r"sha-[a-f0-9]{40}", tag)} | {source}
+    current = current_revision()
+    target = newest_published(ROOT, current, sorted(published), "FETCH_HEAD")
+    if target != current:
+        subprocess.run(["oras", "tag", f"{REGISTRY}:sha-{target}", MOVING], check=True)
+    print(f"{MOVING} is at {target}.")
+    for version_id in pruned(versions, protected=(MOVING, f"sha-{target}")):
         subprocess.run(["gh", "api", "--method", "DELETE", f"{PACKAGE}/versions/{version_id}"], check=True)
 
 
