@@ -5,8 +5,9 @@
  * `.sessions.json`, `.login_attempts.json`.
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { atomicWriteSecretJson } from '../fs/atomic.js'
+import { mkdir } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
+import { atomicWriteTextAsync } from '../fs/atomic.js'
 import { truthy, type Env } from '../config.js'
 import type { SettingsStore } from '../settings.js'
 import { COOKIE_NAME_RE } from './cookies.js'
@@ -63,6 +64,49 @@ export interface AuthStoreOptions {
   oidcProbe?: () => Promise<unknown>
   /** `webui_passkey_enabled` from the base-home config.yaml (last known), consulted when the env flag is unset. */
   passkeyConfigFlag?: () => unknown
+  /** Writes one serialized table; tests inject a slow or failing writer. */
+  persistWrite?: (file: string, text: string) => Promise<void>
+}
+
+async function writeSecretFile(file: string, text: string): Promise<void> {
+  await mkdir(dirname(file), { recursive: true })
+  await atomicWriteTextAsync(file, text, { mode: 0o600 })
+}
+
+/**
+ * Write-behind for one file: at most one write in flight; requests made meanwhile coalesce into one follow-up that
+ * snapshots the table as it is then, so writes never reorder and the file converges on the newest state.
+ */
+class WriteBehind {
+  private running: Promise<void> | null = null
+  private dirty = false
+
+  constructor(private readonly write: () => Promise<void>) {}
+
+  request(): void {
+    if (this.running) this.dirty = true
+    else this.running = this.drain()
+  }
+
+  private async drain(): Promise<void> {
+    try {
+      do {
+        this.dirty = false
+        await this.write()
+      } while (this.dirty)
+    } finally {
+      this.running = null
+    }
+  }
+
+  get busy(): boolean {
+    return this.running !== null
+  }
+
+  /** Resolves once the in-flight write and any coalesced follow-up have landed. */
+  flush(): Promise<void> {
+    return this.running ?? Promise.resolve()
+  }
 }
 
 /** Returned while settings.json cannot be read: auth counts as enabled and no password verifies against it. */
@@ -86,6 +130,14 @@ export class AuthStore {
   oidcEnabled: () => boolean
   private readonly oidcProbe: () => Promise<unknown>
   passkeyConfigFlag: () => unknown
+  persistWrite: (file: string, text: string) => Promise<void>
+  // The in-memory tables are authoritative; disk is a write-behind copy so a slow fsync never blocks a request.
+  private readonly sessionsWriter = new WriteBehind(() => this.persistWrite(this.sessionsFile, JSON.stringify(this.sessions)).catch((error: unknown) => {
+    this.warnPersistence('Auth session persistence failed', this.sessionsFile, error, 'keeping the in-process session table available')
+  }))
+  private readonly attemptsWriter = new WriteBehind(() => this.persistWrite(this.attemptsFile, JSON.stringify(this.attempts)).catch(() => {
+    /* debug-level in Python */
+  }))
 
   constructor(opts: AuthStoreOptions) {
     this.stateDir = opts.stateDir
@@ -101,6 +153,15 @@ export class AuthStore {
     this.oidcEnabled = opts.oidcEnabled ?? (() => false)
     this.oidcProbe = opts.oidcProbe ?? (() => Promise.resolve())
     this.passkeyConfigFlag = opts.passkeyConfigFlag ?? (() => undefined)
+    this.persistWrite = opts.persistWrite ?? writeSecretFile
+  }
+
+  /**
+   * Awaits every pending session and login-attempt write; orderly shutdown and restart call it before exiting. Loops
+   * until both writers are idle, because a request still being served can start a write while this one waits.
+   */
+  async flushPersistence(): Promise<void> {
+    while (this.sessionsWriter.busy || this.attemptsWriter.busy) await Promise.all([this.sessionsWriter.flush(), this.attemptsWriter.flush()])
   }
 
   private warnPersistence(prefix: string, artifact: string, error: unknown, consequence: string): void {
@@ -312,12 +373,7 @@ export class AuthStore {
   }
 
   private persistSessions(): void {
-    try {
-      mkdirSync(this.stateDir, { recursive: true })
-      atomicWriteSecretJson(this.sessionsFile, this.sessions)
-    } catch (error) {
-      this.warnPersistence('Auth session persistence failed', this.sessionsFile, error, 'keeping the in-process session table available')
-    }
+    this.sessionsWriter.request()
   }
 
   /** Test seam: the in-memory table, keyed by raw token. */
@@ -412,6 +468,15 @@ export class AuthStore {
   }
 
   /**
+   * Logout: resolves once the revocation is on disk, so a crash cannot revive a cookie the user was told is gone.
+   * Concurrent calls join the same pending write; ordinary verification never waits on disk.
+   */
+  async revokeSession(cookieValue: string | null | undefined): Promise<void> {
+    this.invalidateSession(cookieValue)
+    await this.sessionsWriter.flush()
+  }
+
+  /**
    * Sliding renewal: extend a live session when its remaining lifetime has
    * dropped below TTL minus min(TTL/10, 1h). Returns true when extended.
    */
@@ -481,20 +546,16 @@ export class AuthStore {
   }
 
   private saveLoginAttempts(): void {
-    try {
-      mkdirSync(this.stateDir, { recursive: true })
-      atomicWriteSecretJson(this.attemptsFile, this.attempts)
-    } catch {
-      /* debug-level in Python */
-    }
+    this.attemptsWriter.request()
   }
 
   checkLoginRate(ip: string): boolean {
     const now = this.now()
-    const attempts = (this.attempts[ip] ?? []).filter((t) => now - t < LOGIN_WINDOW)
+    const stored = this.attempts[ip] ?? []
+    const attempts = stored.filter((t) => now - t < LOGIN_WINDOW)
     if (attempts.length) this.attempts[ip] = attempts
     else Reflect.deleteProperty(this.attempts, ip)
-    this.saveLoginAttempts()
+    if (attempts.length !== stored.length) this.saveLoginAttempts()
     return attempts.length < LOGIN_MAX_ATTEMPTS
   }
 

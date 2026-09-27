@@ -1,7 +1,7 @@
 /**
  * Listener lifecycle (Python `server.py` main): port exclusivity probe, HTTP or
  * TLS 1.2+ server with an HTTP fallback, keep-alive tuning, and orderly
- * SIGTERM/SIGINT shutdown.
+ * SIGTERM/SIGINT/SIGHUP shutdown.
  */
 import { createServer as createHttpServer, type Server } from 'node:http'
 import { createServer as createHttpsServer } from 'node:https'
@@ -78,11 +78,14 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   const address = server.address()
   const port = typeof address === 'object' && address ? address.port : config.port
   log(`  Hermes Web UI listening on ${scheme}://${config.host}:${port}`)
-  const close = () =>
-    new Promise<void>((resolve) => {
+  const close = async () => {
+    await new Promise<void>((resolve) => {
       server.close(() => { resolve() })
       server.closeAllConnections()
     })
+    // Auth state is persisted write-behind: land pending session and login-attempt writes before the process exits.
+    await app.deps.auth.flushPersistence()
+  }
   if (opts.signals ?? true) {
     let requested = false
     const onSignal = (signal: NodeJS.Signals) => {
@@ -93,6 +96,8 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
     }
     process.once('SIGTERM', onSignal)
     process.once('SIGINT', onSignal)
+    // The `serve` supervisor forwards SIGHUP too; its default action would exit before auth writes land.
+    process.once('SIGHUP', onSignal)
   }
   return { server, scheme, port, close }
 }

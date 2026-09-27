@@ -539,7 +539,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     },
     requestShutdown: () => { setTimeout(() => { process.kill(process.pid, 'SIGINT') }, 300).unref() },
     // Embedded shells are separate process groups that would outlive the worker: terminate and reap them on both exits.
-    requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => { deps.terminals.closeAll({ immediate: true }); purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
+    requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => auth.flushPersistence()).then(() => { deps.terminals.closeAll({ immediate: true }); purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
     updates: null as unknown as UpdateService,
     updateNotifications,
     cspLimiter: new WindowLimiter(60, 100, now),
