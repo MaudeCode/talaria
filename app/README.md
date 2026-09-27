@@ -6,7 +6,7 @@ Run commands in this document from `app/`. Workflows live in `../.github/`.
 
 # Talaria
 
-**Control your self-hosted [Hermes](https://github.com/MaudeCode/hermes-webui) agent from your iPhone.**
+**Control your self-hosted Hermes agent from your iPhone.**
 
 Your server. Your iPhone. No middleman.
 
@@ -18,7 +18,7 @@ Your server. Your iPhone. No middleman.
 
 </div>
 
-Talaria is a native SwiftUI iPhone app for driving a self-hosted [hermes-webui](https://github.com/MaudeCode/hermes-webui) server — a mobile cockpit for an AI agent that lives on a machine **you** control. The phone is the control plane, not the compute plane: the agent, its tools, and your data stay on your own hardware.
+Talaria is a native SwiftUI iPhone app for driving a self-hosted [Talaria Web](../web/README.md) server — a mobile cockpit for an AI agent that lives on a machine **you** control. The phone is the control plane, not the compute plane: the agent, its tools, and your data stay on your own hardware.
 
 - **Free.** No subscriptions, no in-app purchases.
 - **Private.** No analytics, no tracking, no third-party relay — the app talks only to your server.
@@ -49,9 +49,9 @@ Talaria is a native SwiftUI iPhone app for driving a self-hosted [hermes-webui](
 
 ## Getting started
 
-Talaria is a client only — it does not ship with, host, or provision a backend. You bring your own [hermes-webui](https://github.com/MaudeCode/hermes-webui) server (a third-party, MIT-licensed open-source project) running on a machine you control. Setup takes about 15 minutes:
+Talaria is a client only — it does not host or provision a backend. You run [Talaria Web](../web/README.md) next to Hermes Agent on a machine you control. Setup takes about 15 minutes:
 
-1. **Run the server.** Install and start `hermes-webui` on macOS, Linux, or Windows/WSL2 (Python 3.11+). Set `HERMES_WEBUI_PASSWORD`.
+1. **Run the server.** On macOS, Linux, or Windows/WSL2 with Node 24 or newer, install Talaria Web with `npm install -g @maudecode/talaria-web`, set `HERMES_WEBUI_PASSWORD` in `~/.hermes/.env`, and start it with `talaria-web ctl start`.
 2. **Make it reachable from your phone** (see options below).
 3. **Connect.** Build and install Talaria, enter your server URL (e.g. `https://hermes.yourdomain.com`), then use its password or a compatible WebUI OIDC provider.
 
@@ -67,8 +67,8 @@ Self-hosting the server, securing it, and keeping it reachable are your responsi
 
 If connection testing fails, check these first:
 
-1. The machine hosting `hermes-webui` is awake.
-2. `hermes-webui` is running and serving `/health` (`curl https://<your-server>/health`).
+1. The machine hosting Talaria Web is awake.
+2. Talaria Web is running and serving `/health` (`talaria-web ctl status`, or `curl https://<your-server>/health`).
 3. The tunnel, reverse proxy, or Tailscale route is connected.
 4. The server URL and password are correct.
 
@@ -123,8 +123,7 @@ Talaria is not accepting outside contributions; see [`CONTRIBUTING.md`](../CONTR
 
 MIT — see [LICENSE](../LICENSE).
 
-Talaria is an independent client built against the
-[`MaudeCode/hermes-webui`](https://github.com/MaudeCode/hermes-webui) fork of the
-public [`nesquena/hermes-webui`](https://github.com/nesquena/hermes-webui)
-project. It is not affiliated with either project. Apple, the Apple logo, and
-App Store are trademarks of Apple Inc.
+Talaria Web derives from the public
+[`nesquena/hermes-webui`](https://github.com/nesquena/hermes-webui) project;
+Talaria is not affiliated with it. Apple, the Apple logo, and App Store are
+trademarks of Apple Inc.
