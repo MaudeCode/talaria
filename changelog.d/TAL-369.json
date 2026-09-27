@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Tool activity hides passwords that a command builds from shell variables it sets itself, including where the variable was set.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}
