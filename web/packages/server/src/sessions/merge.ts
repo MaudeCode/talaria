@@ -296,11 +296,11 @@ function nearestAssistantIdx(messages: unknown[], msgIdx: number): number {
  */
 export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls: Record<string, unknown>[] = [], recorded: unknown[] = []): Record<string, unknown>[] {
   // An id may repeat across responses: an earlier turn's duration belongs to the row that made the call, and this turn's
-  // live durations to the latest call with each id.
+  // live durations, in order, to the latest calls with each id.
   const earlier = new Map<string, number | null>()
   for (const tc of recorded) if (isDict(tc) && str(tc.tid)) earlier.set(`${String(tc.assistant_msg_idx)}\0${str(tc.tid)}`, finiteOrNull(tc.duration))
-  const liveDurations = new Map<string, number | null>()
-  for (const tc of liveToolCalls) if (isDict(tc) && str(tc.tid)) liveDurations.set(str(tc.tid), finiteOrNull(tc.duration))
+  const liveDurations = new Map<string, (number | null)[]>()
+  for (const tc of liveToolCalls) if (isDict(tc) && str(tc.tid)) liveDurations.set(str(tc.tid), [...(liveDurations.get(str(tc.tid)) ?? []), finiteOrNull(tc.duration)])
   const outcome = (raw: unknown) => ({ is_error: toolOutcome(raw).is_error })
   const toolCalls: Record<string, unknown>[] = []
   const pendingNames = new Map<string, string>()
@@ -363,11 +363,11 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
       toolCalls.push({ name: str(tc.name) || 'tool', snippet: toolResultSnippet(seq.raw), tid: str(tc.tid), assistant_msg_idx: nearestAssistantIdx(messages, seq.msgIdx), args: truncateToolArgs(tc.args ?? {}, 4), ...outcome(seq.raw) })
     })
   }
-  const claimed = new Set<string>()
   for (let i = toolCalls.length - 1; i >= 0; i -= 1) {
     const tc = toolCalls[i]!
     const tid = str(tc.tid)
-    if (tid && liveDurations.has(tid) && !claimed.has(tid)) { claimed.add(tid); tc.duration = liveDurations.get(tid) ?? null } else tc.duration = earlier.get(`${String(tc.assistant_msg_idx)}\0${tid}`) ?? null
+    const live = liveDurations.get(tid)
+    tc.duration = live?.length ? live.pop() ?? null : earlier.get(`${String(tc.assistant_msg_idx)}\0${tid}`) ?? null
   }
   return toolCalls
 }

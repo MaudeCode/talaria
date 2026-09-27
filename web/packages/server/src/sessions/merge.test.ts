@@ -48,4 +48,11 @@ describe('withToolCallOutcomes (TAL-313)', () => {
     const settled = extractToolCallsFromMessages(messages, [{ name: 'terminal', tid: 'call_1', duration: 9 }], [{ tid: 'call_1', assistant_msg_idx: 0, duration: 1 }])
     expect(settled.map((c) => [c.assistant_msg_idx, c.duration])).toEqual([[0, 1], [2, 9]])
   })
+
+  it('keeps every live duration when one turn repeats an id', () => {
+    const call = (id: string) => ({ role: 'assistant', content: '', tool_calls: [{ id, function: { name: 'terminal', arguments: '{}' } }] })
+    const messages = [call('call_1'), { role: 'tool', tool_call_id: 'call_1', content: 'a' }, call('call_1'), { role: 'tool', tool_call_id: 'call_1', content: 'b' }]
+    const settled = extractToolCallsFromMessages(messages, [{ name: 'terminal', tid: 'call_1', duration: 1 }, { name: 'terminal', tid: 'call_1', duration: 2 }])
+    expect(settled.map((c) => [c.assistant_msg_idx, c.duration])).toEqual([[0, 1], [2, 2]])
+  })
 })

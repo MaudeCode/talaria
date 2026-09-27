@@ -1505,13 +1505,13 @@ describe('live tool outcomes (TAL-313)', () => {
     const completes = (frames: SseFrame[]) => frames.filter((f) => f.event === 'tool_complete').map((f) => f.data as Json)
     const expected = [['call-ok', false, 1.25], ['call-exit', true, 0.5], ['call-error', true, 2]]
     const live = completes(await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'stream_end'))
-    expect(live.map((d) => [d.tid, d.is_error, d.duration])).toEqual(expected)
+    expect(live.map((d) => [d.id, d.is_error, d.duration])).toEqual(expected)
     expect(JSON.stringify(live)).not.toContain('raw_result')
     const journal = readFileSync(join(realpathSync(s.state), 'sessions', '_run_journal', sid, `${streamId}.jsonl`), 'utf8')
     expect(journal).not.toContain(marker)
     expect(journal).not.toContain('raw_result')
     const replayed = completes(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end'))
-    expect(replayed.map((d) => [d.tid, d.is_error, d.duration])).toEqual(expected)
+    expect(replayed.map((d) => [d.id, d.is_error, d.duration])).toEqual(expected)
 
     // A later turn keeps the durations the first one recorded.
     sidecar.respond('chat.start', (params) => completed([...s.deps.sessionStore.get(sid).context_messages, { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Again.' }]))
