@@ -444,15 +444,26 @@ export function withPendingUserTurn(rows: Message[], turn: { localCount: number;
 }
 
 /**
+ * TAL-364: where a checkpoint's current-turn prompt sits, or null when it has none. The Agent's rows start with the
+ * `historyLength` rows it was sent, so the prompt comes after them; a repeated prompt matching an earlier turn does not
+ * count. A compressed checkpoint is shorter than that history, so there the last matching row stands.
+ */
+export function checkpointTurnStart(checkpoint: unknown[], msgText: string, historyLength: number): number | null {
+  const at = findCurrentUserTurn(checkpoint, msgText)
+  if (at === null) return null
+  return at >= historyLength || checkpoint.some((m) => isContextCompressionMarker(m)) ? at : null
+}
+
+/**
  * TAL-364: the model context a stopped turn leaves. The Agent's checkpoint (its canonical transcript at the stop
  * boundary) when it holds this turn's prompt, else the turn's starting context plus that prompt; then the prose that
  * streamed past the last assistant row the Agent committed. A completed tool result gets the Agent's own closing row, so
  * the next prompt never follows a tool row. Reasoning never enters. Null when nothing the model can use was captured:
  * the prompt then stays a recovered row the next request does not replay.
  */
-export function stoppedTurnContext(previousContext: Message[], checkpoint: unknown[] | null, prompt: string | Record<string, unknown>[], msgText: string, streamedText: string): Message[] | null {
+export function stoppedTurnContext(previousContext: Message[], checkpoint: unknown[] | null, prompt: string | Record<string, unknown>[], msgText: string, streamedText: string, historyLength: number): Message[] | null {
   const agentRows = (checkpoint ?? []).filter((m): m is Message => isDict(m))
-  const at = findCurrentUserTurn(agentRows, msgText)
+  const at = checkpointTurnStart(agentRows, msgText, historyLength)
   const rows: Message[] = at === null ? [...structuredClone(previousContext), { role: 'user', content: prompt }] : structuredClone(agentRows)
   let unsettled = messageText(buildPartialMessage(streamedText, '', [])?.content)
   for (const m of rows.slice((at ?? previousContext.length) + 1)) {

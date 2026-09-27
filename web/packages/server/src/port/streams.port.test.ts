@@ -607,6 +607,26 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(await nextHistory(sid)).toEqual(earlier)
   })
 
+  it('a repeated prompt never matches the earlier turn in a stale Agent result (TAL-364)', async () => {
+    const sid = await newSession(s)
+    const earlier = await earlierTurn(sid)
+    let prompt = ''
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    // The Agent stops before it publishes this turn: its result holds only the earlier transcript, whose prompt has the same text.
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      prompt = str(params.user_message)
+      emit({ event: 'token', data: { text: 'Looking again now' } })
+      opts.signal?.addEventListener('abort', () => { resolve({ ...completed(earlier), status: 'cancelled' }) })
+    }))
+    const streamId = await start(sid, 'Inspect the deployment')
+    await frames(streamId, (f) => f.event === 'token')
+    expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+    await frames(streamId, (f) => f.event === 'cancel')
+    const until = Date.now() + 5000
+    while (s.deps.registry.activeRuns.has(streamId) && Date.now() < until) await new Promise((r) => setTimeout(r, 10))
+    expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, { role: 'assistant', content: 'Looking again now' }])
+  })
+
   it('a worker result that settles the cancel before the interrupt reply writes one marker and keeps the pre-Stop checkpoint (TAL-364)', async () => {
     const sid = await newSession(s)
     const earlier = await earlierTurn(sid)
