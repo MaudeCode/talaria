@@ -285,6 +285,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         XCTAssertEqual(delegate.terminalStateTurnIDs, ["stream-123"])
         XCTAssertNil(coordinator.activeStreamID)
         XCTAssertEqual(liveActivityManager.ends.last?.status, .cancelled)
+        XCTAssertTrue(delegate.completedNeedsTranscriptRefreshValues.isEmpty)
     }
 
     @MainActor
@@ -852,6 +853,8 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         }
         // A cancelled run is not an error: it shows no failure message.
         XCTAssertEqual(delegate.errorMessages, ["Lost", "Full"])
+        // Only the two turns the server reports complete get the completion haptic and notification.
+        XCTAssertEqual(delegate.completedNeedsTranscriptRefreshValues.count, 2)
     }
 
     @MainActor

@@ -876,7 +876,10 @@ final class ChatStreamCoordinator {
         liveTokensPerSecond = nil
         delegate?.streamCoordinatorStreamingAssistantMessageID = nil
         hasCompletedCurrentResponse = true
-        delegate?.streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: needsTranscriptRefresh)
+        // Completion feedback (haptic, "response complete" notification) only for a turn the server reports complete.
+        if outcome.status == .complete {
+            delegate?.streamCoordinatorDidCompleteCurrentResponse(needsTranscriptRefresh: needsTranscriptRefresh)
+        }
         resetRecoveryState()
     }
 
