@@ -139,21 +139,6 @@ function appendReasoning(segments: Segment[], text: string, titles: string[] | n
   return [...segments, { kind: 'reasoning', text, titles: titles ?? [] }]
 }
 
-let toolSeq = 0
-function toolIdFor(data: { id?: string | undefined; call_id?: string | undefined; tool_call_id?: string | undefined; tid?: string | undefined; name?: string | undefined }, turn: LiveTurn, completing: boolean): string {
-  const explicit = data.id ?? data.call_id ?? data.tool_call_id ?? data.tid
-  if (explicit) return explicit
-  if (completing) {
-    // Match the oldest still-running call with the same name (legacy upsertLiveToolCall semantics).
-    for (const id of turn.toolOrder) {
-      const t = turn.tools[id]
-      if (t && !t.done && t.name === (data.name ?? '')) return id
-    }
-  }
-  toolSeq += 1
-  return `tool-${turn.streamId}-${toolSeq}`
-}
-
 function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event' }>): LiveTurn {
   const { event, lastEventId, now } = action
   // Invariant 3: duplicate or stale replay cursor.
@@ -193,7 +178,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       if (terminal) return stamped
       if (event.data.name === 'clarify') return stamped
       const t = live()
-      const id = toolIdFor(event.data, t, false)
+      const id = event.data.id
       const existing = t.tools[id]
       const call: LiveToolCall = existing ?? { id, name: event.data.name ?? 'tool', kind: event.data.kind ?? 'unknown', target: event.data.target ?? '', args: event.data.args ?? {}, preview: event.data.preview ?? null, done: false, isError: false, duration: null, costUsd: null, result: null, startedAt: event.data.timestamp ?? now }
       const tools = { ...t.tools, [id]: existing ? { ...existing, kind: event.data.kind ?? existing.kind, target: event.data.target ?? existing.target, args: event.data.args ?? existing.args, preview: event.data.preview ?? existing.preview } : call }
@@ -205,7 +190,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       if (terminal) return stamped
       if (event.data.name === 'clarify') return stamped
       const t = live()
-      const id = toolIdFor(event.data, t, true)
+      const id = event.data.id
       const existing = t.tools[id] ?? { id, name: event.data.name ?? 'tool', kind: 'unknown', target: '', args: event.data.args ?? {}, preview: null, done: false, isError: false, duration: null, costUsd: null, result: null, startedAt: now }
       const call: LiveToolCall = { ...existing, kind: event.data.kind ?? existing.kind, target: event.data.target ?? existing.target, done: true, isError: !!event.data.is_error, preview: event.data.preview ?? existing.preview, duration: event.data.duration ?? null, costUsd: event.data.cost_usd ?? null, result: event.data.result ?? event.data.output ?? existing.result, args: event.data.args ?? existing.args }
       const known = id in t.tools

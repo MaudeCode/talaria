@@ -245,11 +245,7 @@ struct ToolStreamEvent: Decodable, Equatable {
         case target
         case duration
         case isError = "is_error"
-        case tid
-        case id
-        case toolCallID = "tool_call_id"
-        case toolUseID = "tool_use_id"
-        case callID = "call_id"
+        case stableID = "id"
     }
 
     init(
@@ -284,13 +280,7 @@ struct ToolStreamEvent: Decodable, Equatable {
         isError = container.decodeLossyBoolIfPresent(forKey: .isError)
         kind = ToolDisplayKind(serverValue: container.decodeLossyStringIfPresent(forKey: .kind))
         target = container.decodeLossyStringIfPresent(forKey: .target)
-        stableID = [
-            container.decodeLossyStringIfPresent(forKey: .tid),
-            container.decodeLossyStringIfPresent(forKey: .id),
-            container.decodeLossyStringIfPresent(forKey: .toolCallID),
-            container.decodeLossyStringIfPresent(forKey: .toolUseID),
-            container.decodeLossyStringIfPresent(forKey: .callID)
-        ].compactMap { $0?.nonEmptyToolStreamID }.first
+        stableID = container.decodeLossyStringIfPresent(forKey: .stableID)?.nonEmptyToolStreamID
     }
 }
 

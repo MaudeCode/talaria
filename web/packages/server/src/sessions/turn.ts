@@ -20,7 +20,7 @@ import type { ClarifyAnswers } from '@maudecode/talaria-web-contracts'
 import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
 import { Session, titleFrom, type Message } from './session.js'
-import { buildActiveTurnToken, publicToolFrame, redactSessionData, redactString } from '../redact.js'
+import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactSessionData, redactString, withToolId } from '../redact.js'
 import { dict, type Config } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
@@ -341,6 +341,10 @@ export class TurnRunner {
     const partialText = this.registry.partialText.get(streamId) ?? []
     const reasoningText = this.registry.reasoningText.get(streamId) ?? []
     const liveToolCalls = this.registry.liveToolCalls.get(streamId) ?? []
+    // Each call's public `id`: the Agent's call id, else one minted here that its completion inherits through the pairing.
+    const toolIds = new WeakMap<Record<string, unknown>, string>()
+    let mintedToolIds = 0
+    const mintToolId = (): string => `tool-${streamId}-${String(++mintedToolIds)}`
     let tokenSent = false
     let firstTokenAt: number | null = null
     const titles = new ReasoningTitleTracker()
@@ -410,20 +414,20 @@ export class TurnRunner {
               this.saveConsumedSteers(sessionId, streamId)
               return
             case 'tool': {
-              liveToolCalls.push({ name: data.name, args: data.args ?? {}, tid: str(data.tid), done: false })
+              const call = { name: data.name, args: data.args ?? {}, tid: str(data.tid), done: false }
+              liveToolCalls.push(call)
+              toolIds.set(call, call.tid || mintToolId())
               const redacted = deps.redactEnabled()
-              put('tool', publicToolFrame(data, redacted), { redacted })
+              put('tool', publicToolFrame(withToolId(data, toolIds.get(call)!), redacted), { redacted })
               return
             }
             case 'tool_complete': {
-              for (let i = liveToolCalls.length - 1; i >= 0; i -= 1) {
-                const tc = liveToolCalls[i]!
-                if (tc.done) continue
-                if ((str(data.tid) && tc.tid === str(data.tid)) || (!tc.tid && tc.name === data.name)) { tc.done = true; tc.snippet = data.preview; break }
-              }
-              if (str(data.tid)) this.lastCompletedTool.set(streamId, str(data.tid))
+              const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
+              if (tc) { tc.done = true; tc.snippet = data.preview }
+              const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
+              this.lastCompletedTool.set(streamId, id)
               const redacted = deps.redactEnabled()
-              put('tool_complete', publicToolFrame(data, redacted), { redacted })
+              put('tool_complete', publicToolFrame(withToolId(data, id), redacted), { redacted })
               return
             }
             // Python: the live chat frame carries the queue head plus depth, not the entry that just arrived.

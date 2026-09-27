@@ -338,35 +338,36 @@ final class SSEClientTests: XCTestCase {
         XCTAssertNil(payload.stableID)
     }
 
-    func testDecodesStableToolIDAliasesFromUpstreamPayload() {
-        let aliases = [
-            "tid",
-            "id",
-            "tool_call_id",
-            "tool_use_id",
-            "call_id"
-        ]
-
-        for alias in aliases {
-            let event = SSEEventDecoder.decode(
-                eventType: "tool",
-                data: """
-                {
-                  "\(alias)": "  \(alias)-123  ",
-                  "name": "terminal",
-                  "preview": "Running command"
-                }
-                """
-            )
-
-            guard case .toolStarted(let payload) = event else {
-                XCTFail("Expected toolStarted for \(alias), got \(event)")
-                return
+    func testDecodesStableToolIDFromServerIDOnly() {
+        let event = SSEEventDecoder.decode(
+            eventType: "tool",
+            data: """
+            {
+              "id": "  call-123  ",
+              "name": "terminal",
+              "preview": "Running command"
             }
+            """
+        )
 
-            XCTAssertEqual(payload.stableID, "\(alias)-123", "alias \(alias)")
-            XCTAssertEqual(payload.name, "terminal")
-            XCTAssertEqual(payload.preview, "Running command")
+        guard case .toolStarted(let payload) = event else {
+            return XCTFail("Expected toolStarted, got \(event)")
+        }
+
+        XCTAssertEqual(payload.stableID, "call-123")
+        XCTAssertEqual(payload.name, "terminal")
+        XCTAssertEqual(payload.preview, "Running command")
+
+        // The server ships one `id`; other keys are not tool identities.
+        for key in ["tid", "tool_call_id", "tool_use_id", "call_id"] {
+            let legacy = SSEEventDecoder.decode(
+                eventType: "tool_complete",
+                data: #"{"\#(key)": "call-123", "name": "terminal"}"#
+            )
+            guard case .toolCompleted(let payload) = legacy else {
+                return XCTFail("Expected toolCompleted for \(key), got \(legacy)")
+            }
+            XCTAssertNil(payload.stableID, "key \(key)")
         }
     }
 

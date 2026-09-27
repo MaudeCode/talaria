@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "When two tools of the same kind run at once and finish out of order, each tool card now shows its own result, duration, and error state.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}
