@@ -835,12 +835,12 @@ struct ChatView: View {
     }
 
     /// Turn-end "File changes" recap card for the latest assistant turn (#316). Shown only
-    /// when the turn-end git surfaces are visible (status has refreshed) and the latest turn
-    /// actually changed files.
+    /// when the turn-end git surfaces are visible (status has refreshed) and the server says
+    /// the latest turn changed files; its scene sits on the turn's last assistant row.
     private var turnChangesRecapSummary: TurnFileChangeSummary? {
         guard turnGitSurfaceVisibility.isVisible else { return nil }
         let summary = TurnFileChangeAggregator.summarize(
-            toolCalls: viewModel.latestTurnToolCalls,
+            changes: transcriptMessages.last?.message.activityScene?.fileChanges ?? [],
             status: gitAvailabilityViewModel.status
         )
         return summary.hasChanges ? summary : nil
