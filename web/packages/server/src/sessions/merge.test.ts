@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toolOutcome, withToolCallOutcomes } from './merge.js'
+import { extractToolCallsFromMessages, toolOutcome, withToolCallOutcomes } from './merge.js'
 
 describe('toolOutcome (TAL-313)', () => {
   it('fails a result that reports an error, a non-zero exit code, or success false, in any persisted shape', () => {
@@ -29,7 +29,23 @@ describe('withToolCallOutcomes (TAL-313)', () => {
     const [assistant] = withToolCallOutcomes([
       { role: 'assistant', content: '', tool_calls: [{ tool_call_id: 'c1', function: { name: 'terminal', arguments: '{}' } }] },
       { role: 'tool', tool_call_id: 'c1', content: '{"exit_code": 1}' },
-    ], [{ tid: 'c1', duration: 2 }], null)
+    ], [{ tid: 'c1', assistant_msg_idx: 0, duration: 2 }], null)
     expect((assistant as { tool_calls: unknown[] }).tool_calls).toEqual([expect.objectContaining({ tool_call_id: 'c1', done: true, is_error: true, duration: 2, result: '{"exit_code": 1}' })])
+  })
+
+  it('pairs a reused id with the latest earlier call, so each call keeps its own outcome', () => {
+    const call = (id: string) => ({ role: 'assistant', content: '', tool_calls: [{ id, function: { name: 'terminal', arguments: '{}' } }] })
+    const rows = withToolCallOutcomes([
+      { role: 'user', content: 'one' }, call('call_1'), { role: 'tool', tool_call_id: 'call_1', content: 'ok' },
+      { role: 'user', content: 'two' }, call('call_1'), { role: 'tool', tool_call_id: 'call_1', content: '{"exit_code": 3}' },
+    ], [{ tid: 'call_1', assistant_msg_idx: 1, duration: 1 }, { tid: 'call_1', assistant_msg_idx: 4, duration: 5 }], null) as { tool_calls?: Record<string, unknown>[] }[]
+    expect([rows[1], rows[4]].map((m) => { const c = m?.tool_calls?.[0]; return [c?.result, c?.is_error, c?.duration] })).toEqual([['ok', false, 1], ['{"exit_code": 3}', true, 5]])
+  })
+
+  it('keeps each turn\'s own duration when a later turn reuses an id', () => {
+    const call = (id: string) => ({ role: 'assistant', content: '', tool_calls: [{ id, function: { name: 'terminal', arguments: '{}' } }] })
+    const messages = [call('call_1'), { role: 'tool', tool_call_id: 'call_1', content: 'a' }, call('call_1'), { role: 'tool', tool_call_id: 'call_1', content: 'b' }]
+    const settled = extractToolCallsFromMessages(messages, [{ name: 'terminal', tid: 'call_1', duration: 9 }], [{ tid: 'call_1', assistant_msg_idx: 0, duration: 1 }])
+    expect(settled.map((c) => [c.assistant_msg_idx, c.duration])).toEqual([[0, 1], [2, 9]])
   })
 })

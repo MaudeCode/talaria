@@ -295,9 +295,13 @@ function nearestAssistantIdx(messages: unknown[], msgIdx: number): number {
  * entry in `recorded`, the session's previous list), `null` when none did.
  */
 export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls: Record<string, unknown>[] = [], recorded: unknown[] = []): Record<string, unknown>[] {
-  const durations = new Map<string, number | null>()
-  for (const tc of [...recorded, ...liveToolCalls]) if (isDict(tc) && str(tc.tid) && finiteOrNull(tc.duration) !== null) durations.set(str(tc.tid), finiteOrNull(tc.duration))
-  const outcome = (tid: string, raw: unknown) => ({ is_error: toolOutcome(raw).is_error, duration: durations.get(tid) ?? null })
+  // An id may repeat across responses: an earlier turn's duration belongs to the row that made the call, and this turn's
+  // live durations to the latest call with each id.
+  const earlier = new Map<string, number | null>()
+  for (const tc of recorded) if (isDict(tc) && str(tc.tid)) earlier.set(`${String(tc.assistant_msg_idx)}\0${str(tc.tid)}`, finiteOrNull(tc.duration))
+  const liveDurations = new Map<string, number | null>()
+  for (const tc of liveToolCalls) if (isDict(tc) && str(tc.tid)) liveDurations.set(str(tc.tid), finiteOrNull(tc.duration))
+  const outcome = (raw: unknown) => ({ is_error: toolOutcome(raw).is_error })
   const toolCalls: Record<string, unknown>[] = []
   const pendingNames = new Map<string, string>()
   const pendingArgs = new Map<string, unknown>()
@@ -334,7 +338,7 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
       if (tid) {
         const name = pendingNames.get(tid) ?? ''
         if (name && name !== 'tool') {
-          toolCalls.push({ name, snippet: toolResultSnippet(m.content), tid, assistant_msg_idx: pendingAsst.get(tid) ?? -1, args: truncateToolArgs(pendingArgs.get(tid) ?? {}), ...outcome(tid, m.content) })
+          toolCalls.push({ name, snippet: toolResultSnippet(m.content), tid, assistant_msg_idx: pendingAsst.get(tid) ?? -1, args: truncateToolArgs(pendingArgs.get(tid) ?? {}), ...outcome(m.content) })
           seq.resolved = true
         }
       }
@@ -346,7 +350,7 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
         const name = pendingNames.get(tid) ?? ''
         if (!tid || !name || name === 'tool' || !isDict(part)) continue
         const raw = part.content ?? ''
-        const resolved = outcome(tid, raw)
+        const resolved = outcome(raw)
         toolCalls.push({ name, snippet: toolResultSnippet(raw), tid, assistant_msg_idx: pendingAsst.get(tid) ?? -1, args: truncateToolArgs(pendingArgs.get(tid) ?? {}), ...resolved, is_error: resolved.is_error || part.is_error === true })
       }
     }
@@ -356,8 +360,14 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
     toolSeq.forEach((seq, i) => {
       if (seq.resolved || i >= live.length) return
       const tc = live[i]!
-      toolCalls.push({ name: str(tc.name) || 'tool', snippet: toolResultSnippet(seq.raw), tid: str(tc.tid), assistant_msg_idx: nearestAssistantIdx(messages, seq.msgIdx), args: truncateToolArgs(tc.args ?? {}, 4), ...outcome(str(tc.tid), seq.raw) })
+      toolCalls.push({ name: str(tc.name) || 'tool', snippet: toolResultSnippet(seq.raw), tid: str(tc.tid), assistant_msg_idx: nearestAssistantIdx(messages, seq.msgIdx), args: truncateToolArgs(tc.args ?? {}, 4), ...outcome(seq.raw) })
     })
+  }
+  const claimed = new Set<string>()
+  for (let i = toolCalls.length - 1; i >= 0; i -= 1) {
+    const tc = toolCalls[i]!
+    const tid = str(tc.tid)
+    if (tid && liveDurations.has(tid) && !claimed.has(tid)) { claimed.add(tid); tc.duration = liveDurations.get(tid) ?? null } else tc.duration = earlier.get(`${String(tc.assistant_msg_idx)}\0${tid}`) ?? null
   }
   return toolCalls
 }
@@ -373,30 +383,31 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
 export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown[], activeTurnId: string | null): T[] {
   // Every identifier a stored call may carry (`ToolCallSchema`).
   const callId = (tc: unknown): string => (isDict(tc) ? toolCallId(tc) || str(tc.tool_call_id) : '')
+  // Providers may reuse an id (`call_1` in every response), so a reply answers the latest earlier assistant row that
+  // declared its id, and everything is keyed by that row's index and the id.
+  const key = (row: number, id: string) => `${String(row)}\0${id}`
   const replies = new Map<string, { content: unknown; is_error: boolean }>()
-  const called = new Set<string>()
-  for (const m of messages) {
-    if (!isDict(m)) continue
-    if (m.role === 'tool') {
-      const id = str(m.tool_call_id) || str(m.tool_use_id)
-      if (id) replies.set(id, { content: m.content, is_error: false })
-    } else if (m.role === 'user' && Array.isArray(m.content)) {
-      // Anthropic-style results: `tool_result` blocks in a user row, each naming its call.
-      for (const part of m.content) if (isDict(part) && part.type === 'tool_result' && str(part.tool_use_id)) replies.set(str(part.tool_use_id), { content: part.content ?? '', is_error: part.is_error === true })
-    } else if (m.role === 'assistant') {
-      for (const tc of Array.isArray(m.tool_calls) ? m.tool_calls : []) if (callId(tc)) called.add(callId(tc))
-      for (const part of Array.isArray(m.content) ? m.content : []) if (isDict(part) && part.type === 'tool_use' && str(part.id)) called.add(str(part.id))
-    }
+  const declared = new Map<string, number>()
+  const answer = (id: string, reply: { content: unknown; is_error: boolean }) => {
+    const row = declared.get(id)
+    if (id && row !== undefined) replies.set(key(row, id), reply)
   }
-  const recorded = new Map<string, Record<string, unknown>>()
-  const sessionOnly = new Map<number, Record<string, unknown>[]>()
+  messages.forEach((m, index) => {
+    if (!isDict(m)) return
+    if (m.role === 'tool') answer(str(m.tool_call_id) || str(m.tool_use_id), { content: m.content, is_error: false })
+    else if (m.role === 'user' && Array.isArray(m.content)) {
+      // Anthropic-style results: `tool_result` blocks in a user row, each naming its call.
+      for (const part of m.content) if (isDict(part) && part.type === 'tool_result') answer(str(part.tool_use_id), { content: part.content ?? '', is_error: part.is_error === true })
+    } else if (m.role === 'assistant') {
+      for (const tc of Array.isArray(m.tool_calls) ? m.tool_calls : []) if (callId(tc)) declared.set(callId(tc), index)
+      for (const part of Array.isArray(m.content) ? m.content : []) if (isDict(part) && part.type === 'tool_use' && str(part.id)) declared.set(str(part.id), index)
+    }
+  })
+  // The session-level list's entries, by the assistant row that made each call.
+  const recordedByRow = new Map<number, Record<string, unknown>[]>()
   for (const tc of sessionToolCalls) {
-    if (!isDict(tc)) continue
-    const tid = str(tc.tid)
-    if (tid) recorded.set(tid, tc)
-    const idx = tc.assistant_msg_idx
-    if ((tid && called.has(tid)) || typeof idx !== 'number' || !isDict(messages[idx]) || (messages[idx] as Record<string, unknown>).role !== 'assistant') continue
-    sessionOnly.set(idx, [...(sessionOnly.get(idx) ?? []), tc])
+    const idx = isDict(tc) ? tc.assistant_msg_idx : undefined
+    if (isDict(tc) && typeof idx === 'number') recordedByRow.set(idx, [...(recordedByRow.get(idx) ?? []), tc])
   }
   return messages.map((m, index) => {
     if (!isDict(m) || m.role !== 'assistant') return m
@@ -410,7 +421,9 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
     // Calls known only from a record: the session-level list's, and the live calls a failed or cancelled turn's partial
     // snapshot kept (`_partial_tool_calls`).
     const records: Record<string, unknown>[] = []
-    for (const tc of [...(sessionOnly.get(index) ?? []), ...(Array.isArray(m._partial_tool_calls) ? m._partial_tool_calls as unknown[] : [])]) {
+    const rowRecords = recordedByRow.get(index) ?? []
+    const recorded = new Map(rowRecords.filter((tc) => str(tc.tid)).map((tc) => [str(tc.tid), tc]))
+    for (const tc of [...rowRecords, ...(Array.isArray(m._partial_tool_calls) ? m._partial_tool_calls as unknown[] : [])]) {
       if (!isDict(tc)) continue
       const tid = str(tc.tid)
       if (tid && ids.has(tid)) continue
@@ -420,7 +433,7 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
     if (!calls.length && !records.length) return m
     const running = Boolean(activeTurnId) && m._turn_id === activeTurnId
     const resolve = (id: string, rec: Record<string, unknown> | undefined, answered: boolean) => {
-      const reply = id ? replies.get(id) : undefined
+      const reply = id ? replies.get(key(index, id)) : undefined
       const outcome = reply ? { ...toolOutcome(reply.content), flagged: reply.is_error } : null
       return {
         done: Boolean(reply) || answered || !running, is_error: outcome ? outcome.flagged || outcome.is_error : rec?.is_error === true,

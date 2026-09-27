@@ -84,12 +84,13 @@ def _snippet(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> str:
 
 
 _RAW_RESULT_MAX_KEYS = 64
+_RAW_RESULT_OUTCOME_KEYS = ("error", "exit_code", "exitCode", "success")
 
 
 def _raw_result(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> Any:
     """The tool result as the server's outcome rule reads it, bounded: a dict (or JSON-object text) keeps its first
-    ``_RAW_RESULT_MAX_KEYS`` top-level fields, scalars as they are, text and non-empty nested values as capped (JSON) text;
-    anything else is the capped text. The sidecar decides nothing about success; the server does."""
+    ``_RAW_RESULT_MAX_KEYS`` top-level fields plus its outcome fields, scalars as they are, text and non-empty nested
+    values as capped (JSON) text; anything else is the capped text. The sidecar decides nothing; the server does."""
     try:
         data = raw if isinstance(raw, dict) else json.loads(str(raw or ""))
     except Exception:  # noqa: BLE001
@@ -97,7 +98,9 @@ def _raw_result(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> Any:
     if not isinstance(data, dict):
         return str(raw if raw is not None else "")[:limit]
     out: dict = {}
-    for key, value in list(data.items())[:_RAW_RESULT_MAX_KEYS]:
+    # The server's outcome rule reads these, wherever they sit in the result.
+    kept = list(data.items())[:_RAW_RESULT_MAX_KEYS] + [(k, data[k]) for k in _RAW_RESULT_OUTCOME_KEYS if k in data]
+    for key, value in kept:
         if value is None or isinstance(value, (bool, int)) or (isinstance(value, float) and value == value and abs(value) != float("inf")):
             out[str(key)] = value
         elif isinstance(value, (dict, list)) and not value:

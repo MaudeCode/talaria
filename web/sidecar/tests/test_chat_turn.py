@@ -427,7 +427,7 @@ def test_tool_complete_ships_the_raw_result_and_no_error_decision(monkeypatch) -
         '{"error": "boom", "nested": {"text": "' + "n" * 5000 + '"}}',
         "plain " + "p" * 5000,
         None,
-        {f"k{i}": i for i in range(100)},
+        {**{f"k{i}": i for i in range(100)}, "exit_code": 7},
     ]
 
     class ToolAgent(FakeAgent):
@@ -446,6 +446,6 @@ def test_tool_complete_ships_the_raw_result_and_no_error_decision(monkeypatch) -
     # Bounded: top-level fields only, nested values as capped JSON text, at most 64 fields.
     assert frames[0]["raw_result"] == {"exit_code": 2, "output": "o" * 4000, "items": json.dumps(list(range(10_000)))[:4000], "empty": {}}
     assert frames[1]["raw_result"] == {"error": "boom", "nested": json.dumps({"text": "n" * 5000})[:4000]}
-    assert len(frames[4]["raw_result"]) == 64
+    assert len(frames[4]["raw_result"]) == 65 and frames[4]["raw_result"]["exit_code"] == 7
     assert frames[2]["raw_result"] == ("plain " + "p" * 5000)[:4000]
     assert frames[3]["raw_result"] == ""
