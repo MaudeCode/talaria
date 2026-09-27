@@ -146,22 +146,6 @@ final class ChatViewModel {
         }
     }
 
-    /// Tool calls for the latest assistant turn, driving the in-chat "file changes" recap
-    /// card and composer "N changes" capsule (#316). A turn often spans multiple assistant
-    /// messages (tool calls on one, the final text on the next), and the archived tool group
-    /// anchors to the *first* of them — so collect every completed group in the current turn
-    /// (since the last user message) plus any still-live calls, not just one anchor.
-    var latestTurnToolCalls: [ToolCall] {
-        let turnAnchors = Set(
-            TranscriptTurnClassifier.currentTurnAssistantAnchorIDs(in: messages, messageOffset: messagesOffset)
-        )
-        var calls = completedToolCallGroups
-            .filter { group in group.anchorMessageID.map(turnAnchors.contains) ?? false }
-            .flatMap(\.toolCalls)
-        calls.append(contentsOf: liveToolCalls)
-        return calls
-    }
-
     private func recomputeDisplayedTranscriptMessages() {
 #if DEBUG
         displayedTranscriptRecomputeCount += 1

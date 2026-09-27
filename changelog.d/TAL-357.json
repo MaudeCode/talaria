@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Signing in and loading pages no longer stall while the server waits on a slow disk.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

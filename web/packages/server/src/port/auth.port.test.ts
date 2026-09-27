@@ -5,12 +5,12 @@
  * OAuth provider cards. Markers `[py:<file>::<case>]` are verified by
  * scripts/check-regression-port.py.
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
-import { bootTestServer, type TestServer } from '../test/harness.js'
+import { bootTestServer, cookieHeader, type TestServer } from '../test/harness.js'
 import { safeLoginRedirectPath } from '../auth/gate.js'
 import { AuthStore } from '../auth/store.js'
 import { readProjectContext } from '../tools/memory.js'
@@ -63,12 +63,96 @@ describe('password login: CSRF exemption and attempt persistence', () => {
   it('[py:test_issue1910_login_attempt_persistence.py::test_login_rate_limit_survives_reload] the attempt window persists on disk and a fresh store still rate-limits the address', async () => {
     for (let i = 0; i < 5; i += 1) await post(s, '/api/auth/login', { password: 'wrong' })
     expect((await post(s, '/api/auth/login', { password: PASSWORD })).status).toBe(429)
+    await s.deps.auth.flushPersistence()
     const reloaded = new AuthStore({ stateDir: s.state, env: s.deps.config.env, settings: s.deps.settings })
     expect(reloaded.checkLoginRate('127.0.0.1')).toBe(false)
     s.deps.auth.clearLoginAttempts('127.0.0.1')
+    await s.deps.auth.flushPersistence()
     expect(new AuthStore({ stateDir: s.state, env: s.deps.config.env, settings: s.deps.settings }).checkLoginRate('127.0.0.1')).toBe(true)
   })
 
+})
+
+describe('auth persistence off the request path', () => {
+  let s: TestServer
+  const PASSWORD = 'correct horse battery'
+  beforeAll(async () => { s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: PASSWORD } }) })
+  afterAll(() => s.close())
+
+  it('answers login, the new session, and unrelated requests while the sessions write is held pending', async () => {
+    let open!: () => void
+    const gate = new Promise<void>((resolve) => { open = resolve })
+    const land = s.deps.auth.persistWrite
+    const held: string[] = []
+    s.deps.auth.persistWrite = async (file, text) => { held.push(file); await gate; await land(file, text) }
+    try {
+      const login = await post(s, '/api/auth/login', { password: PASSWORD })
+      expect(login.status).toBe(200)
+      const cookie = cookieHeader(login.headers.getSetCookie(), 'hermes_session') ?? ''
+      expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).logged_in).toBe(true)
+      expect((await s.get('/health')).status).toBe(200)
+      const sessionsFile = join(s.state, '.sessions.json')
+      expect(held).toEqual([sessionsFile])
+      expect(existsSync(sessionsFile)).toBe(false)
+      open()
+      await s.deps.auth.flushPersistence()
+      expect(Object.keys(JSON.parse(readFileSync(sessionsFile, 'utf8')) as object)).toEqual([AuthStore.tokenFromCookieValue(cookie.split('=')[1])])
+    } finally {
+      open()
+      s.deps.auth.persistWrite = land
+    }
+  })
+
+  it('answers logout only after the revoked session is on disk', async () => {
+    const login = await post(s, '/api/auth/login', { password: PASSWORD })
+    const cookie = cookieHeader(login.headers.getSetCookie(), 'hermes_session') ?? ''
+    const token = AuthStore.tokenFromCookieValue(cookie.split('=')[1]) ?? ''
+    await s.deps.auth.flushPersistence()
+    let open!: () => void
+    const gate = new Promise<void>((resolve) => { open = resolve })
+    const land = s.deps.auth.persistWrite
+    s.deps.auth.persistWrite = async (file, text) => { await gate; await land(file, text) }
+    try {
+      let answered = false
+      const logout = s.get('/api/auth/logout', { method: 'POST', headers: { cookie } }).then((res) => { answered = true; return res })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(answered).toBe(false)
+      open()
+      expect((await logout).status).toBe(200)
+      expect(JSON.parse(readFileSync(join(s.state, '.sessions.json'), 'utf8'))).not.toHaveProperty(token)
+    } finally {
+      open()
+      s.deps.auth.persistWrite = land
+    }
+  })
+})
+
+describe('orderly shutdown lands write-behind auth state', () => {
+  const SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP'] as const
+
+  it.each(SIGNALS)('%s exits only after the pending session write lands', async (signal) => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
+    const before = new Map(SIGNALS.map((name) => [name, process.listeners(name)]))
+    const s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: 'correct horse battery' }, signals: true })
+    let open!: () => void
+    const gate = new Promise<void>((resolve) => { open = resolve })
+    const land = s.deps.auth.persistWrite
+    s.deps.auth.persistWrite = async (file, text) => { await gate; await land(file, text) }
+    try {
+      const token = AuthStore.tokenFromCookieValue(s.deps.auth.createSession()) ?? ''
+      process.emit(signal, signal)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(exit).not.toHaveBeenCalled()
+      open()
+      await vi.waitFor(() => { expect(exit).toHaveBeenCalledWith(0) })
+      expect(JSON.parse(readFileSync(join(s.state, '.sessions.json'), 'utf8'))).toHaveProperty(token)
+    } finally {
+      open()
+      exit.mockRestore()
+      for (const name of SIGNALS) for (const listener of process.listeners(name)) if (!before.get(name)?.includes(listener)) process.off(name, listener)
+      await s.close()
+    }
+  })
 })
 
 describe('authenticated stream budget', () => {

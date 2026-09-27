@@ -10,6 +10,7 @@ import { agentSteerText, isContextCompressionMarker, isReasoningBlock, messageTe
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { toolArgs } from './tool-display.js'
+import { turnFileChanges } from './file-changes.js'
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
@@ -394,6 +395,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
   return {
     version: 'activity_scene_v1', activity_rows: rows, final_answer: finalAnswer, terminal_state: terminalState,
     expanded_by_default: EXPANDED_OUTCOMES.has(terminalState) && rows.length > 0, turn_duration: anchorSceneMessageTurnDuration(last),
+    file_changes: turnFileChanges(rows),
     ...(typeof last._final_phase_duration === 'number' ? { final_phase_duration: last._final_phase_duration } : {}),
   }
 }
@@ -414,9 +416,10 @@ function withStoredFinalAnswer(scene: Record<string, unknown>, built: Record<str
   return { ...scene, final_answer: built.final_answer }
 }
 
-/** The outcome fields a stored scene predates, from its turn by the same rules as a built one. */
+/** The outcome fields a stored scene predates, from its turn by the same rules as a built one, and the turn's file changes. */
 function withStoredOutcome(preview: Record<string, unknown>, built: Record<string, unknown> | null): Record<string, unknown> {
-  const next = { ...preview }
+  // Always the turn's own: a stored scene is client-posted, so its rows never decide what the turn changed.
+  const next: Record<string, unknown> = { ...preview, file_changes: built?.file_changes ?? [] }
   // Only an explicit outcome carries over from the turn; answered or not follows the scene's own final answer.
   const explicit = str(built?.terminal_state)
   if (!str(next.terminal_state)) next.terminal_state = explicit && explicit !== 'completed' && explicit !== 'no_response' ? explicit : str(next.final_answer).trim() ? 'completed' : 'no_response'
