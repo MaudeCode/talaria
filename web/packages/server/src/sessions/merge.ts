@@ -261,13 +261,47 @@ export function truncateToolArgs(args: unknown, limit = 6): Record<string, strin
   return out
 }
 
+/** An `error` that says something: non-blank text, `true`, or a non-empty object or list. */
+function presentError(v: unknown): boolean {
+  if (typeof v === 'string') return v.trim() !== ''
+  if (Array.isArray(v)) return v.length > 0
+  return isDict(v) ? Object.keys(v).length > 0 : v === true
+}
+
+/**
+ * The server's one tool outcome rule (TAL-313), for a live `raw_result` and a persisted tool-role content alike: a result
+ * is an error when it parses to an object with a non-empty `error`, a non-zero numeric `exit_code` / `exitCode`, or
+ * `success: false`. `result_text` is the result's display snippet.
+ */
+export function toolOutcome(raw: unknown): { is_error: boolean; result_text: string } {
+  const value = Array.isArray(raw) ? messageText(raw) : raw
+  let data: unknown = value
+  if (typeof value === 'string') { try { data = JSON.parse(value) } catch { data = null } }
+  const exit = isDict(data) ? data.exit_code ?? data.exitCode : undefined
+  const isError = isDict(data) && (presentError(data.error) || (typeof exit === 'number' && exit !== 0) || data.success === false)
+  return { is_error: isError, result_text: toolResultSnippet(value) }
+}
+
+const finiteOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
 function nearestAssistantIdx(messages: unknown[], msgIdx: number): number {
   for (let i = msgIdx; i >= 0; i -= 1) if (isDict(messages[i]) && (messages[i] as Record<string, unknown>).role === 'assistant') return i
   return -1
 }
 
-/** Python `_extract_tool_calls_from_messages`. */
-export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls: Record<string, unknown>[] = []): Record<string, unknown>[] {
+/**
+ * Python `_extract_tool_calls_from_messages`, plus each call's outcome (TAL-313): `is_error` by `toolOutcome` of its
+ * result, and the `duration` the live stream recorded for its id (this turn's `liveToolCalls`, else an earlier turn's
+ * entry in `recorded`, the session's previous list), `null` when none did.
+ */
+export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls: Record<string, unknown>[] = [], recorded: unknown[] = []): Record<string, unknown>[] {
+  // An id may repeat across responses: an earlier turn's duration belongs to the row that made the call, and this turn's
+  // live durations, in order, to the latest calls with each id.
+  const earlier = new Map<string, number | null>()
+  for (const tc of recorded) if (isDict(tc) && str(tc.tid)) earlier.set(`${String(tc.assistant_msg_idx)}\0${str(tc.tid)}`, finiteOrNull(tc.duration))
+  const liveDurations = new Map<string, (number | null)[]>()
+  for (const tc of liveToolCalls) if (isDict(tc) && str(tc.tid)) liveDurations.set(str(tc.tid), [...(liveDurations.get(str(tc.tid)) ?? []), finiteOrNull(tc.duration)])
+  const outcome = (raw: unknown) => ({ is_error: toolOutcome(raw).is_error })
   const toolCalls: Record<string, unknown>[] = []
   const pendingNames = new Map<string, string>()
   const pendingArgs = new Map<string, unknown>()
@@ -304,11 +338,21 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
       if (tid) {
         const name = pendingNames.get(tid) ?? ''
         if (name && name !== 'tool') {
-          toolCalls.push({ name, snippet: toolResultSnippet(m.content), tid, assistant_msg_idx: pendingAsst.get(tid) ?? -1, args: truncateToolArgs(pendingArgs.get(tid) ?? {}) })
+          toolCalls.push({ name, snippet: toolResultSnippet(m.content), tid, assistant_msg_idx: pendingAsst.get(tid) ?? -1, args: truncateToolArgs(pendingArgs.get(tid) ?? {}), ...outcome(m.content) })
           seq.resolved = true
         }
       }
       toolSeq.push(seq)
+    } else if (m.role === 'user' && Array.isArray(m.content)) {
+      // Anthropic-style results: `tool_result` blocks in a user row, each naming its call.
+      for (const part of m.content) {
+        const tid = isDict(part) && part.type === 'tool_result' ? str(part.tool_use_id) : ''
+        const name = pendingNames.get(tid) ?? ''
+        if (!tid || !name || name === 'tool' || !isDict(part)) continue
+        const raw = part.content ?? ''
+        const resolved = outcome(raw)
+        toolCalls.push({ name, snippet: toolResultSnippet(raw), tid, assistant_msg_idx: pendingAsst.get(tid) ?? -1, args: truncateToolArgs(pendingArgs.get(tid) ?? {}), ...resolved, is_error: resolved.is_error || part.is_error === true })
+      }
     }
   })
   const live = liveToolCalls.filter((tc) => isDict(tc) && str(tc.name) && tc.name !== 'clarify')
@@ -316,10 +360,96 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
     toolSeq.forEach((seq, i) => {
       if (seq.resolved || i >= live.length) return
       const tc = live[i]!
-      toolCalls.push({ name: str(tc.name) || 'tool', snippet: toolResultSnippet(seq.raw), tid: str(tc.tid), assistant_msg_idx: nearestAssistantIdx(messages, seq.msgIdx), args: truncateToolArgs(tc.args ?? {}, 4) })
+      toolCalls.push({ name: str(tc.name) || 'tool', snippet: toolResultSnippet(seq.raw), tid: str(tc.tid), assistant_msg_idx: nearestAssistantIdx(messages, seq.msgIdx), args: truncateToolArgs(tc.args ?? {}, 4), ...outcome(seq.raw) })
     })
   }
+  for (let i = toolCalls.length - 1; i >= 0; i -= 1) {
+    const tc = toolCalls[i]!
+    const tid = str(tc.tid)
+    const live = liveDurations.get(tid)
+    tc.duration = live?.length ? live.pop() ?? null : earlier.get(`${String(tc.assistant_msg_idx)}\0${tid}`) ?? null
+  }
   return toolCalls
+}
+
+/**
+ * TAL-313: every assistant row's tool calls as they leave the server, over the full `_turn_id`-stamped transcript (before
+ * any window, so every window agrees). Anthropic `tool_use` parts join `tool_calls` in the OpenAI shape (content stays),
+ * a call only the session-level list recorded joins the row at its `assistant_msg_idx`, a failed or cancelled turn's
+ * partial snapshot shows the live calls it kept, and every call carries `done`
+ * (answered, or outside the running turn), `is_error` (`toolOutcome` of its result, else the recorded value), `duration`
+ * (recorded live, else `null`) and `result` (the result snippet, else `null`). Returns copies; stored rows are untouched.
+ */
+export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown[], activeTurnId: string | null): T[] {
+  // Every identifier a stored call may carry (`ToolCallSchema`).
+  const callId = (tc: unknown): string => (isDict(tc) ? toolCallId(tc) || str(tc.tool_call_id) : '')
+  // Providers may reuse an id (`call_1` in every response), so a reply answers the latest earlier assistant row that
+  // declared its id, and everything is keyed by that row's index and the id.
+  const key = (row: number, id: string) => `${String(row)}\0${id}`
+  const replies = new Map<string, { content: unknown; is_error: boolean }>()
+  const declared = new Map<string, number>()
+  const answer = (id: string, reply: { content: unknown; is_error: boolean }) => {
+    const row = declared.get(id)
+    if (id && row !== undefined) replies.set(key(row, id), reply)
+  }
+  messages.forEach((m, index) => {
+    if (!isDict(m)) return
+    if (m.role === 'tool') answer(str(m.tool_call_id) || str(m.tool_use_id), { content: m.content, is_error: false })
+    else if (m.role === 'user' && Array.isArray(m.content)) {
+      // Anthropic-style results: `tool_result` blocks in a user row, each naming its call.
+      for (const part of m.content) if (isDict(part) && part.type === 'tool_result') answer(str(part.tool_use_id), { content: part.content ?? '', is_error: part.is_error === true })
+    } else if (m.role === 'assistant') {
+      for (const tc of Array.isArray(m.tool_calls) ? m.tool_calls : []) if (callId(tc)) declared.set(callId(tc), index)
+      for (const part of Array.isArray(m.content) ? m.content : []) if (isDict(part) && part.type === 'tool_use' && str(part.id)) declared.set(str(part.id), index)
+    }
+  })
+  // The session-level list's entries, by the assistant row that made each call.
+  const recordedByRow = new Map<number, Record<string, unknown>[]>()
+  for (const tc of sessionToolCalls) {
+    const idx = isDict(tc) ? tc.assistant_msg_idx : undefined
+    if (isDict(tc) && typeof idx === 'number') recordedByRow.set(idx, [...(recordedByRow.get(idx) ?? []), tc])
+  }
+  return messages.map((m, index) => {
+    if (!isDict(m) || m.role !== 'assistant') return m
+    const calls: unknown[] = Array.isArray(m.tool_calls) ? Array.from(m.tool_calls as unknown[]) : []
+    const ids = new Set(calls.map(callId).filter(Boolean))
+    for (const part of Array.isArray(m.content) ? m.content : []) {
+      if (!isDict(part) || part.type !== 'tool_use' || !str(part.id) || ids.has(str(part.id))) continue
+      ids.add(str(part.id))
+      calls.push({ id: str(part.id), type: 'function', function: { name: str(part.name), arguments: JSON.stringify(part.input ?? {}) } })
+    }
+    // Calls known only from a record: the session-level list's, and the live calls a failed or cancelled turn's partial
+    // snapshot kept (`_partial_tool_calls`).
+    const records: Record<string, unknown>[] = []
+    const rowRecords = recordedByRow.get(index) ?? []
+    const recorded = new Map(rowRecords.filter((tc) => str(tc.tid)).map((tc) => [str(tc.tid), tc]))
+    for (const tc of [...rowRecords, ...(Array.isArray(m._partial_tool_calls) ? m._partial_tool_calls as unknown[] : [])]) {
+      if (!isDict(tc)) continue
+      const tid = str(tc.tid)
+      if (tid && ids.has(tid)) continue
+      if (tid) ids.add(tid)
+      records.push(tc)
+    }
+    if (!calls.length && !records.length) return m
+    const running = Boolean(activeTurnId) && m._turn_id === activeTurnId
+    const resolve = (id: string, rec: Record<string, unknown> | undefined, answered: boolean) => {
+      const reply = id ? replies.get(key(index, id)) : undefined
+      const outcome = reply ? { ...toolOutcome(reply.content), flagged: reply.is_error } : null
+      return {
+        done: Boolean(reply) || answered || !running, is_error: outcome ? outcome.flagged || outcome.is_error : rec?.is_error === true,
+        duration: finiteOrNull(rec?.duration), result: outcome ? outcome.result_text : typeof rec?.snippet === 'string' ? rec.snippet : null,
+      }
+    }
+    const projected = [
+      ...calls.map((call) => (isDict(call) ? { ...call, ...resolve(callId(call), recorded.get(callId(call)), false) } : call)),
+      ...records.map((tc) => ({
+        ...(str(tc.tid) ? { id: str(tc.tid) } : {}), type: 'function', function: { name: str(tc.name), arguments: JSON.stringify(tc.args ?? {}) },
+        // A session-level entry was answered; a live call says whether it completed.
+        ...resolve(str(tc.tid), tc, typeof tc.done === 'boolean' ? tc.done : true),
+      })),
+    ]
+    return { ...m, tool_calls: projected }
+  })
 }
 
 /** Python `_build_partial_message`. */

@@ -736,5 +736,414 @@
         "_turn_id": "contract-run-h"
       }
     ]
+  },
+  "tool_outcomes_session": {
+    "session_id": "contract-tool-outcomes",
+    "title": "Tool outcomes",
+    "active_stream_id": "tool-run-live",
+    "is_streaming": true,
+    "read_only": false,
+    "can_branch": true,
+    "can_pin": true,
+    "can_archive": true,
+    "can_duplicate": true,
+    "transcript_seq": null,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Read a.txt and run the tests",
+        "message_id": "tool-user-openai",
+        "timestamp": 2000,
+        "_turn_id": "tool-run-openai"
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "message_id": "tool-openai-calls",
+        "timestamp": 2001,
+        "tool_calls": [
+          {
+            "kind": "read",
+            "target": "a.txt",
+            "function": {
+              "name": "read_file",
+              "arguments": "{\"path\":\"a.txt\"}"
+            },
+            "id": "call-read",
+            "done": true,
+            "is_error": false,
+            "result": "A contents",
+            "duration": 1.25,
+            "type": "function"
+          },
+          {
+            "kind": "shell",
+            "target": "make test",
+            "function": {
+              "name": "terminal",
+              "arguments": "{\"command\":\"make test\"}"
+            },
+            "id": "call-exit",
+            "done": true,
+            "is_error": true,
+            "result": "{\"exit_code\": 2, \"output\": \"1 failed\"}",
+            "duration": 3.5,
+            "type": "function"
+          }
+        ],
+        "_turn_id": "tool-run-openai"
+      },
+      {
+        "role": "tool",
+        "content": "A contents",
+        "timestamp": 2002,
+        "tool_call_id": "call-read",
+        "_turn_id": "tool-run-openai"
+      },
+      {
+        "role": "tool",
+        "content": "{\"exit_code\": 2, \"output\": \"1 failed\"}",
+        "timestamp": 2003,
+        "tool_call_id": "call-exit",
+        "_turn_id": "tool-run-openai"
+      },
+      {
+        "role": "assistant",
+        "content": "a.txt is read; one test fails.",
+        "message_id": "tool-openai-answer",
+        "timestamp": 2004,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "tool:call-read",
+              "order_index": 0,
+              "role": "tool",
+              "created_at": 2001,
+              "tool": {
+                "id": "call-read",
+                "name": "read_file",
+                "kind": "read",
+                "target": "a.txt",
+                "args": {
+                  "path": "a.txt"
+                },
+                "preview": null,
+                "result": "A contents",
+                "done": true,
+                "is_error": false,
+                "duration": 1.25,
+                "cost_usd": null
+              }
+            },
+            {
+              "row_id": "tool:call-exit",
+              "order_index": 1,
+              "role": "tool",
+              "created_at": 2001,
+              "tool": {
+                "id": "call-exit",
+                "name": "terminal",
+                "kind": "shell",
+                "target": "make test",
+                "args": {
+                  "command": "make test"
+                },
+                "preview": null,
+                "result": "{\"exit_code\": 2, \"output\": \"1 failed\"}",
+                "done": true,
+                "is_error": true,
+                "duration": 3.5,
+                "cost_usd": null
+              }
+            }
+          ],
+          "final_answer": "a.txt is read; one test fails.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 2,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "c3fcd1d20b6bc3e357a08300f6083b8edb3e14964428a5fe73101fcb6405ae22"
+        },
+        "_turn_id": "tool-run-openai"
+      },
+      {
+        "role": "user",
+        "content": "Search for TODOs",
+        "message_id": "tool-user-anthropic",
+        "timestamp": 2010,
+        "_turn_id": "tool-run-anthropic"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Searching."
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu-search",
+            "name": "search_files",
+            "input": {
+              "pattern": "TODO"
+            },
+            "kind": "search",
+            "target": "TODO"
+          }
+        ],
+        "message_id": "tool-anthropic-calls",
+        "timestamp": 2011,
+        "tool_calls": [
+          {
+            "kind": "search",
+            "target": "TODO",
+            "function": {
+              "name": "search_files",
+              "arguments": "{\"pattern\":\"TODO\"}"
+            },
+            "id": "toolu-search",
+            "done": true,
+            "is_error": true,
+            "result": "{\"error\": \"permission denied\"}",
+            "duration": null,
+            "type": "function"
+          }
+        ],
+        "_turn_id": "tool-run-anthropic"
+      },
+      {
+        "role": "tool",
+        "content": "{\"error\": \"permission denied\"}",
+        "timestamp": 2012,
+        "tool_use_id": "toolu-search",
+        "_turn_id": "tool-run-anthropic"
+      },
+      {
+        "role": "assistant",
+        "content": "The search failed.",
+        "message_id": "tool-anthropic-answer",
+        "timestamp": 2013,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "tool-anthropic-calls:prose",
+              "order_index": 0,
+              "role": "prose",
+              "created_at": 2011,
+              "text": "Searching."
+            },
+            {
+              "row_id": "tool:toolu-search",
+              "order_index": 1,
+              "role": "tool",
+              "created_at": 2011,
+              "tool": {
+                "id": "toolu-search",
+                "name": "search_files",
+                "kind": "search",
+                "target": "TODO",
+                "args": {
+                  "pattern": "TODO"
+                },
+                "preview": null,
+                "result": "{\"error\": \"permission denied\"}",
+                "done": true,
+                "is_error": true,
+                "duration": null,
+                "cost_usd": null
+              }
+            }
+          ],
+          "final_answer": "The search failed.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 2,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "125b3c9393e18c980353cd67b774b4272b18a35d947a6243f743be6ed2ccf8f6"
+        },
+        "_turn_id": "tool-run-anthropic"
+      },
+      {
+        "role": "user",
+        "content": "What day is it?",
+        "message_id": "tool-user-session",
+        "timestamp": 2020,
+        "_turn_id": "tool-run-session"
+      },
+      {
+        "role": "assistant",
+        "content": "Checking.",
+        "message_id": "tool-session-calls",
+        "timestamp": 2021,
+        "tool_calls": [
+          {
+            "kind": "shell",
+            "target": "date",
+            "function": {
+              "name": "terminal",
+              "arguments": "{\"command\":\"date\"}"
+            },
+            "id": "call-date",
+            "done": true,
+            "is_error": false,
+            "result": "Sat Sep 27",
+            "duration": 0.42,
+            "type": "function"
+          }
+        ],
+        "_turn_id": "tool-run-session"
+      },
+      {
+        "role": "tool",
+        "content": "Sat Sep 27",
+        "timestamp": 2022,
+        "_turn_id": "tool-run-session"
+      },
+      {
+        "role": "assistant",
+        "content": "It is Saturday.",
+        "message_id": "tool-session-answer",
+        "timestamp": 2023,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "tool-session-calls:prose",
+              "order_index": 0,
+              "role": "prose",
+              "created_at": 2021,
+              "text": "Checking."
+            },
+            {
+              "row_id": "tool:call-date",
+              "order_index": 1,
+              "role": "tool",
+              "created_at": 2021,
+              "tool": {
+                "id": "call-date",
+                "name": "terminal",
+                "kind": "shell",
+                "target": "date",
+                "args": {
+                  "command": "date"
+                },
+                "preview": null,
+                "result": "Sat Sep 27",
+                "done": true,
+                "is_error": false,
+                "duration": 0.42,
+                "cost_usd": null
+              }
+            }
+          ],
+          "final_answer": "It is Saturday.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 2,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "23134fbc4afa32ca0a29c3f00951f08af005beefcb792b2429beeabb4ef3525b"
+        },
+        "_turn_id": "tool-run-session"
+      },
+      {
+        "role": "user",
+        "content": "Run the build",
+        "message_id": "tool-user-live",
+        "timestamp": 2030,
+        "_turn_id": "tool-run-live"
+      },
+      {
+        "role": "assistant",
+        "content": "Building.",
+        "message_id": "tool-live-calls",
+        "timestamp": 2031,
+        "tool_calls": [
+          {
+            "kind": "shell",
+            "target": "make",
+            "function": {
+              "name": "terminal",
+              "arguments": "{\"command\":\"make\"}"
+            },
+            "id": "call-build",
+            "done": false,
+            "is_error": false,
+            "result": null,
+            "duration": null,
+            "type": "function"
+          }
+        ],
+        "_turn_id": "tool-run-live"
+      }
+    ],
+    "tool_calls": [
+      {
+        "kind": "read",
+        "target": "a.txt",
+        "name": "read_file",
+        "args": {
+          "path": "a.txt"
+        },
+        "is_error": false,
+        "duration": 1.25,
+        "snippet": "A contents",
+        "tid": "call-read",
+        "assistant_msg_idx": 1
+      },
+      {
+        "kind": "shell",
+        "target": "make test",
+        "name": "terminal",
+        "args": {
+          "command": "make test"
+        },
+        "is_error": true,
+        "duration": 3.5,
+        "snippet": "{\"exit_code\": 2, \"output\": \"1 failed\"}",
+        "tid": "call-exit",
+        "assistant_msg_idx": 1
+      },
+      {
+        "kind": "search",
+        "target": "TODO",
+        "name": "search_files",
+        "args": {
+          "pattern": "TODO"
+        },
+        "snippet": "{\"error\": \"permission denied\"}",
+        "tid": "toolu-search",
+        "assistant_msg_idx": 6
+      },
+      {
+        "kind": "shell",
+        "target": "date",
+        "name": "terminal",
+        "args": {
+          "command": "date"
+        },
+        "is_error": false,
+        "duration": 0.42,
+        "snippet": "Sat Sep 27",
+        "tid": "call-date",
+        "assistant_msg_idx": 10
+      }
+    ]
   }
 }

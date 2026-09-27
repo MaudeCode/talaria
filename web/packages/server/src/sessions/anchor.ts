@@ -386,9 +386,13 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
         }
         if (!isDict(part) || part.type !== 'tool_use') { chunk.push(part); continue }
         flush()
-        pushTool({ id: part.id, name: part.name, args: part.input ?? null }, i)
+        // The server's projection of this call (withToolCallOutcomes) carries its outcome.
+        const projected = (Array.isArray(m.tool_calls) ? m.tool_calls as unknown[] : []).find((call) => isDict(call) && str(call.id) === str(part.id))
+        pushTool({ ...(isDict(projected) ? projected : {}), id: part.id, name: part.name, args: part.input ?? null }, i)
       }
       flush()
+      // A call only the session-level list recorded follows the model's own blocks.
+      for (const [i, call] of (Array.isArray(m.tool_calls) ? m.tool_calls : []).entries()) pushTool(call, i)
       continue
     }
     const text = prose.trim() ? prose : commentary.join('\n\n')

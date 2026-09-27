@@ -975,7 +975,11 @@ extension ChatViewModelSendTests {
                   "function": {
                     "name": "terminal",
                     "arguments": "{\\"command\\":\\"pwd\\"}"
-                  }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": 0.3,
+                  "result": "/Users/uzair/project"
                 }
               ]
             },
@@ -1004,6 +1008,8 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.name, "terminal")
         XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.preview, "/Users/uzair/project")
         XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.args?["command"], .string("pwd"))
+        XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.duration, 0.3)
+        XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.isError, false)
         XCTAssertEqual(
             viewModel.completedToolCallGroupsForAnchor("assistant-tool"),
             viewModel.completedToolCallGroups
@@ -1012,7 +1018,7 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
-    func testCompletedStreamSessionMergesLiveFallbackIntoCompletedTurnActivity() async throws {
+    func testCompletedStreamSessionKeepsLiveToolsOnlyWhereTheTranscriptHasNone() async throws {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
             XCTAssertEqual(request.url?.path, "/api/chat/start")
@@ -1075,18 +1081,6 @@ extension ChatViewModelSendTests {
             },
             {
               "role": "assistant",
-              "message_id": "assistant-skills",
-              "content": [
-                {
-                  "type": "tool_use",
-                  "id": "toolu-skill-xurl",
-                  "name": "skill_view",
-                  "input": { "name": "xurl" }
-                }
-              ]
-            },
-            {
-              "role": "assistant",
               "content": "xurl is not installed.",
               "message_id": "assistant-final"
             }
@@ -1098,21 +1092,19 @@ extension ChatViewModelSendTests {
 
         XCTAssertNil(viewModel.activeStreamID)
         XCTAssertTrue(viewModel.liveToolCalls.isEmpty)
+        // The transcript carries no calls for this turn, so the live cards stay, anchored to its reply.
         XCTAssertEqual(viewModel.completedToolCallGroups.count, 1)
-        XCTAssertEqual(viewModel.completedToolCallGroups.first?.anchorMessageID, "assistant-skills")
-        XCTAssertEqual(viewModel.completedToolCallGroups.first?.activityTitle, "Activity: 2 tools")
+        XCTAssertEqual(viewModel.completedToolCallGroups.first?.anchorMessageID, "assistant-final")
         XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.map(\.name), ["skill_view", "terminal"])
-        XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.id, "toolu-skill-xurl")
-        XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.preview, "X/Twitter via xurl CLI")
-        XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.last?.preview, "xurl not installed")
+        XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.map(\.preview), ["X/Twitter via xurl CLI", "xurl not installed"])
         XCTAssertEqual(
-            viewModel.completedToolCallGroupsForAnchor("assistant-skills"),
+            viewModel.completedToolCallGroupsForAnchor("assistant-final"),
             viewModel.completedToolCallGroups
         )
     }
 
     @MainActor
-    func testCompletedStreamSessionDeduplicatesLiveToolsWithCompletedTranscriptTools() async throws {
+    func testCompletedStreamSessionRendersTheServerResolvedToolsInsteadOfLiveFallback() async throws {
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
             XCTAssertEqual(request.url?.path, "/api/chat/start")
@@ -1185,14 +1177,22 @@ extension ChatViewModelSendTests {
                   "function": {
                     "name": "terminal",
                     "arguments": "{\\"command\\":\\"pwd\\"}"
-                  }
+                  },
+                  "done": true,
+                  "is_error": false,
+                  "duration": 1.5,
+                  "result": "/tmp/workspace"
                 },
                 {
                   "id": "call-search",
                   "function": {
                     "name": "search_files",
                     "arguments": "{\\"pattern\\":\\"README\\"}"
-                  }
+                  },
+                  "done": true,
+                  "is_error": true,
+                  "duration": 2.5,
+                  "result": "README.md"
                 }
               ]
             },
@@ -1230,6 +1230,9 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.args?["command"], .string("pwd"))
         XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.last?.preview, "README.md")
         XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.last?.args?["pattern"], .string("README"))
+        // The server's durations and error states, not the live stream's.
+        XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.map(\.duration), [1.5, 2.5])
+        XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.map(\.isError), [false, true])
     }
 
     @MainActor

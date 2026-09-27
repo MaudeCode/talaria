@@ -83,6 +83,34 @@ def _snippet(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> str:
     return text[:limit]
 
 
+_RAW_RESULT_MAX_KEYS = 64
+_RAW_RESULT_OUTCOME_KEYS = ("error", "exit_code", "exitCode", "success")
+
+
+def _raw_result(raw: Any, limit: int = _TOOL_RESULT_SNIPPET_MAX) -> Any:
+    """The tool result as the server's outcome rule reads it, bounded: a dict (or JSON-object text) keeps its first
+    ``_RAW_RESULT_MAX_KEYS`` top-level fields plus its outcome fields, scalars as they are, text and non-empty nested
+    values as capped (JSON) text; anything else is the capped text. The sidecar decides nothing; the server does."""
+    try:
+        data = raw if isinstance(raw, dict) else json.loads(str(raw or ""))
+    except Exception:  # noqa: BLE001
+        data = None
+    if not isinstance(data, dict):
+        return str(raw if raw is not None else "")[:limit]
+    out: dict = {}
+    # The server's outcome rule reads these, wherever they sit in the result.
+    kept = list(data.items())[:_RAW_RESULT_MAX_KEYS] + [(k, data[k]) for k in _RAW_RESULT_OUTCOME_KEYS if k in data]
+    for key, value in kept:
+        if value is None or isinstance(value, (bool, int)) or (isinstance(value, float) and value == value and abs(value) != float("inf")):
+            out[str(key)] = value
+        elif isinstance(value, (dict, list)) and not value:
+            out[str(key)] = {} if isinstance(value, dict) else []
+        else:
+            text = value if isinstance(value, str) else json.dumps(value, default=str)
+            out[str(key)] = text[:limit]
+    return out
+
+
 def _delegation_cost_usd(name: Any, raw: Any):
     """Predecessor ``_delegation_cost_usd``: total spend a ``delegate_task`` result reports, or None."""
     if str(name or "") != "delegate_task":
@@ -458,7 +486,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                     call["done"] = True
                     call["snippet"] = snippet
                     break
-            payload = {"event_type": "tool.completed", "name": name, "preview": snippet, "args": _args_snapshot(args), "tid": tid, "is_error": False}
+            payload = {"event_type": "tool.completed", "name": name, "preview": snippet, "args": _args_snapshot(args), "tid": tid, "raw_result": _raw_result(function_result)}
             cost = _delegation_cost_usd(name, function_result)
             if cost is not None:
                 payload["cost_usd"] = cost
