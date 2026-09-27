@@ -190,8 +190,8 @@ npm run e2e -w packages/frontend                   # Playwright against the buil
 
 `scripts/check web` at the repository root runs the full gate (`scripts/check-web-server`,
 frontend checks, and `scripts/check-web-browser`, which uses the fixture replay sidecar so no Agent is
-needed). See [TESTING.md](TESTING.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
-[CONTRIBUTING.md](CONTRIBUTING.md).
+needed). See [TESTING.md](TESTING.md) and [ARCHITECTURE.md](ARCHITECTURE.md). Talaria is not accepting
+outside contributions; see the [contribution policy](../CONTRIBUTING.md).
 
 ## Docs
 

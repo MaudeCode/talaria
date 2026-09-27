@@ -204,6 +204,32 @@ Recognized variables:
 - `TALARIA_SWIFT_FILE_SIZE_LIMIT` — warning threshold for `scripts/check-swift-file-sizes`.
 - `HERMES_WEBUI_BASE_URL` and `HERMES_WEBUI_PASSWORD` — server credentials for `scripts/webui-json`.
 
+## Signing with your own Apple team
+
+The committed signing identity (`DEVELOPMENT_TEAM`, bundle IDs) belongs to the
+maintainer. Never edit `Config/Shared.xcconfig` or `project.pbxproj` to sign
+with your own team; override locally instead:
+
+1. Create `Config/Local.xcconfig`. It is gitignored.
+
+   ```xcconfig
+   DEVELOPMENT_TEAM = YOUR_TEAM_ID
+   // Optional — only needed if provisioning complains about the bundle ID.
+   // The app-group entitlement must stay in sync with the bundle ID.
+   // APP_BUNDLE_IDENTIFIER = com.yourname.talaria
+   // APP_GROUP_IDENTIFIER = group.com.yourname.talaria
+   // ICLOUD_CONTAINER_IDENTIFIER = iCloud.com.yourname.talaria
+   ```
+
+2. Build normally. `Config/Shared.xcconfig` ends with `#include? "Local.xcconfig"`,
+   so your values override the committed defaults for every target.
+
+Simulator builds don't need a paid team. CI signs simulator builds ad hoc
+(`CODE_SIGN_IDENTITY=-`), which needs no certificate but still embeds
+entitlements. A build made with `CODE_SIGNING_ALLOWED=NO` has no entitlements,
+so Keychain and the share extension's app group break when you install it for
+manual testing; use a normally signed build for that.
+
 ## Swift package updates
 
 Normal CI, test, and release builds use the versions in
