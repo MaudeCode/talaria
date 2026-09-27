@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Talaria Web installed with npm can follow the Experimental channel, and changing the update channel in Settings switches between Stable and Experimental on the next update.",
+      "highlight": true,
+      "components": ["web"]
+    },
+    {
+      "category": "Added",
+      "summary": "Web settings, projects, and workspaces are backed up before each channel switch, keeping the five most recent backups.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

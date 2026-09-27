@@ -18,7 +18,7 @@ import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
 import type { AppDeps } from './http/context.js'
 import { checkoutRevision, detectWebuiVersion, loadReleaseInfo } from './release.js'
-import { githubJson, normalizeChannel, purgePycache, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
+import { ghcrExperimental, githubJson, normalizeChannel, purgePycache, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
 import { UpdateNotificationStore } from './tools/update-notifications.js'
 import { RESTART_EXIT_CODE } from './cli/supervise.js'
 import { pyBool, SettingsStore } from './settings.js'
@@ -583,6 +583,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   deps.updates = new UpdateService({
     webRoot: config.webRoot,
     getJson: githubJson(lazyFetch, env),
+    experimental: ghcrExperimental(lazyFetch),
+    stateDir: config.stateDir,
     identity: { release: () => release, stamped: () => stampedRelease, runningSourceRevision: () => runningSourceRevision },
     webuiVersion: version,
     // Describe again only while HEAD is still the running revision; a pending restart keeps the running label.

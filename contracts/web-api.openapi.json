@@ -25493,6 +25493,9 @@
                             "npm": {
                               "type": "string"
                             },
+                            "channel_switch": {
+                              "type": "boolean"
+                            },
                             "dirty": {
                               "type": "boolean"
                             },
@@ -25599,6 +25602,9 @@
                             },
                             "npm": {
                               "type": "string"
+                            },
+                            "channel_switch": {
+                              "type": "boolean"
                             },
                             "dirty": {
                               "type": "boolean"
@@ -25780,6 +25786,9 @@
                             "npm": {
                               "type": "string"
                             },
+                            "channel_switch": {
+                              "type": "boolean"
+                            },
                             "dirty": {
                               "type": "boolean"
                             },
@@ -25886,6 +25895,9 @@
                             },
                             "npm": {
                               "type": "string"
+                            },
+                            "channel_switch": {
+                              "type": "boolean"
                             },
                             "dirty": {
                               "type": "boolean"
@@ -26007,6 +26019,22 @@
                     "notification_id": {
                       "type": "string",
                       "format": "uuid"
+                    },
+                    "channel_switch": {
+                      "type": "boolean"
+                    },
+                    "backup_dir": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "backup_failed": {
+                      "type": "boolean"
                     }
                   },
                   "additionalProperties": {}
@@ -26102,6 +26130,22 @@
                     "notification_id": {
                       "type": "string",
                       "format": "uuid"
+                    },
+                    "channel_switch": {
+                      "type": "boolean"
+                    },
+                    "backup_dir": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "backup_failed": {
+                      "type": "boolean"
                     }
                   },
                   "additionalProperties": {}
@@ -26197,6 +26241,22 @@
                     "notification_id": {
                       "type": "string",
                       "format": "uuid"
+                    },
+                    "channel_switch": {
+                      "type": "boolean"
+                    },
+                    "backup_dir": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "backup_failed": {
+                      "type": "boolean"
                     }
                   },
                   "additionalProperties": {}
