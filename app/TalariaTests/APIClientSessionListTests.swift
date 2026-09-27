@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+// TAL-375 validation only: this comment routes a PR to app tests and contracts.
 
 final class APIClientSessionListTests: APIClientTestCase {
     func testSessionStatusDecodesPinnedAgentRunningShape() async throws {
