@@ -88,6 +88,16 @@ describe('UpdateNotificationStore', () => {
     expect(store.list(other).tab_update?.id).toBe(web.id)
   })
 
+  it('keeps every tab that joined an operation attached to it, however many join', () => {
+    const root = temp()
+    const store = new UpdateNotificationStore(root)
+    const tabs = Array.from({ length: 12 }, (_, index) => ({ ...alice, tab: `tab-${String(index).padStart(8, '0')}` }))
+    const web = store.begin(tabs[0]!, 'webui')
+    for (const tab of tabs.slice(1)) store.watch(tab, web.id)
+    const restarted = new UpdateNotificationStore(root)
+    for (const tab of tabs) expect(restarted.list(tab).tab_update?.id).toBe(web.id)
+  })
+
   it('reconciles interrupted applying and restarting records against the running identity', () => {
     const root = temp()
     const first = new UpdateNotificationStore(root).begin(alice, 'webui')

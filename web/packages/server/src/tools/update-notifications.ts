@@ -76,7 +76,6 @@ export const WEB_REFRESH_KIND = 'web_refresh'
 export const WEB_REFRESH_ACTION = 'reload'
 /** A closed tab stops checking in; its refresh notice is dropped once unseen this long. An open tab recreates it on its next check. */
 const TAB_TTL_MS = 60 * 60 * 1000
-const WATCHER_LIMIT = 8
 
 const copy = (row: StoredUpdateNotification): PublicUpdateNotification => ({
   id: row.id, kind: row.kind, target: row.target, phase: row.phase, severity: row.severity,
@@ -180,12 +179,12 @@ export class UpdateNotificationStore {
     return created
   }
 
-  /** Let the requesting tab follow an update operation it started or rejoined. */
+  /** Let the requesting tab follow an update operation it started or rejoined. Watchers live as long as the record; only a server owner's Update click adds one. */
   watch(scope: UpdateNotificationScope, id: string): void {
     const tab = scope.tab && TAB_ID.test(scope.tab) ? scope.tab : null
     const row = this.rows.find((entry) => entry.id === id && entry.kind === 'update' && this.isVisible(entry, scope))
     if (!tab || !row) return
-    row.watchers = [...row.watchers.filter((watcher) => watcher.tab !== tab), { tab, at: this.now().toISOString() }].slice(-WATCHER_LIMIT)
+    row.watchers = [...row.watchers.filter((watcher) => watcher.tab !== tab), { tab, at: this.now().toISOString() }]
     this.save()
   }
 
@@ -386,7 +385,7 @@ export class UpdateNotificationStore {
           dismissed_at: typeof row.dismissed_at === 'string' ? row.dismissed_at : null,
           expected_identity: typeof row.expected_identity === 'string' ? row.expected_identity.slice(0, 160) : null,
           tab_id: typeof row.tab_id === 'string' ? row.tab_id : null,
-          watchers: Array.isArray(row.watchers) ? row.watchers.flatMap((watcher): UpdateWatcher[] => isRecord(watcher) && typeof watcher.tab === 'string' && TAB_ID.test(watcher.tab) && typeof watcher.at === 'string' ? [{ tab: watcher.tab, at: watcher.at }] : []).slice(-WATCHER_LIMIT) : [],
+          watchers: Array.isArray(row.watchers) ? row.watchers.flatMap((watcher): UpdateWatcher[] => isRecord(watcher) && typeof watcher.tab === 'string' && TAB_ID.test(watcher.tab) && typeof watcher.at === 'string' ? [{ tab: watcher.tab, at: watcher.at }] : []) : [],
         }]
       })
     } catch { return [] }
