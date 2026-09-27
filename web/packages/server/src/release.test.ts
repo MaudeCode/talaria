@@ -35,6 +35,10 @@ describe('release info', () => {
     expect(() => validateReleaseInfo({ ...good, tag: 'app-v1.2.3' }, WEB_ROOT)).toThrow('namespaced version')
     expect(() => validateReleaseInfo({ ...good, releaseSet: 'b'.repeat(40) }, WEB_ROOT)).toThrow('release-set identity')
     expect(() => validateReleaseInfo({ ...good, version: '1.2' }, WEB_ROOT)).toThrow('X.Y.Z')
+    const exp = `1.2.3-exp.${good.sourceRevision.slice(0, 12)}`
+    expect(validateReleaseInfo({ ...good, version: exp, tag: `web-exp-v${exp}` }, WEB_ROOT).version).toBe(exp)
+    expect(() => validateReleaseInfo({ ...good, version: exp, tag: `web-v${exp}` }, WEB_ROOT)).toThrow('X.Y.Z')
+    expect(() => validateReleaseInfo({ ...good, version: '1.2.3-exp.bbbbbbbbbbbb', tag: 'web-exp-v1.2.3-exp.bbbbbbbbbbbb' }, WEB_ROOT)).toThrow('X.Y.Z')
     expect(() => validateReleaseInfo({ ...good, extra: 1 }, WEB_ROOT)).toThrow('metadata fields')
     expect(() => validateReleaseInfo({ ...good, compatibleAgent: { ...good.compatibleAgent, version: '0.0.0' } }, WEB_ROOT)).toThrow('Agent pin')
   })

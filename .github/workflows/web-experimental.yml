@@ -1,0 +1,111 @@
+# Publishes every main commit that changes Web or contracts and passes CI as the
+# Experimental Web OCI artifact (TAL-343): ghcr.io/maudecode/talaria-web-experimental
+# gets an immutable sha-<commit> tag, and the forward-only `experimental` tag moves
+# to it only when it descends from the commit `experimental` names.
+
+name: Web Experimental
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Pushing sha- tags is not serialized: a concurrency group keeps only one pending run and
+  # replaces it, which would drop a queued commit's immutable artifact.
+  publish:
+    name: Publish Experimental Web
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      published: ${{ steps.changes.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          # Stable web-v* tags set the version; history orders the forward-only tag.
+          fetch-depth: 0
+
+      - name: Select Web or contracts changes
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          # workflow_run carries no push base; the repository activity feed records it.
+          # An unknown base classifies as every suite, which publishes.
+          base=$(gh api "repos/${GITHUB_REPOSITORY}/activity?ref=refs/heads/main&per_page=100" \
+            --jq "[.[] | select(.after == \"${HEAD_SHA}\") | .before][0] // \"\"") || base=""
+          python3 scripts/changed-components.py --base="$base" --head="$HEAD_SHA" > "$RUNNER_TEMP/changes"
+          cat "$RUNNER_TEMP/changes"
+          if ! grep -qxE '(web_server|web_frontend|contracts)=true' "$RUNNER_TEMP/changes"; then
+            exit 0
+          fi
+          # <stable>-exp.<12-hex> is invalid SemVer when those 12 characters are digits with a leading zero.
+          if [[ "${HEAD_SHA:0:12}" =~ ^0[0-9]{11}$ ]]; then
+            echo "::notice::${HEAD_SHA:0:12} cannot form a SemVer prerelease; the next Web change publishes instead."
+            exit 0
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
+      - if: steps.changes.outputs.publish == 'true'
+        uses: ./.github/actions/release-python
+
+      - if: steps.changes.outputs.publish == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+
+      - if: steps.changes.outputs.publish == 'true'
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+
+      - name: Pack the Experimental npm package
+        if: steps.changes.outputs.publish == 'true'
+        run: '"$RELEASE_PYTHON" releases/build.py web --experimental --output "$RUNNER_TEMP/web-experimental"'
+
+      - name: Push the immutable sha- tag
+        if: steps.changes.outputs.publish == 'true'
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          "$RELEASE_PYTHON" releases/experimental.py push "$RUNNER_TEMP/web-experimental"
+
+  # Only moving the tag and pruning are serialized. A pending advance can be replaced out of commit
+  # order, so each advance moves experimental to the newest published commit on main, not its own.
+  advance:
+    name: Advance experimental
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: web-experimental
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - uses: ./.github/actions/release-python
+
+      - uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+
+      - name: Move experimental forward and prune old versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          "$RELEASE_PYTHON" releases/experimental.py advance "$HEAD_SHA"
