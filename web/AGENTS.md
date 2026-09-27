@@ -60,6 +60,10 @@ Follow that checklist's safety rules:
   regenerate `../contracts/web-api.openapi.json` with `npm run openapi` and keep it committed.
 - Follow root server-owned state (`../AGENTS.md`): the frontend renders contract fields;
   derivations go in `packages/server` and ship through `packages/contracts`.
+- Persisted state stays readable by the current Stable release, because users switch
+  channels in either direction (TAL-343). Changes on `main` to `settings.json`, the
+  project store, or the workspace store are additive. Rename or remove a persisted key
+  or file only after a Stable release reads the new form.
 - Do not add third-party dependencies, build tools, frameworks, or long-lived processes
   without clear justification and a rollback story.
 - Update docs when changing setup, onboarding, runtime behavior, architecture,
