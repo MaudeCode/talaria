@@ -17,6 +17,7 @@ import { resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { BootstrapSchema, AuthStatusSchema, HealthSchema } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, cookieHeader, WEB_ROOT, type TestServer } from './test/harness.js'
+import { FakeSidecar } from './sidecar/fake.js'
 
 const DIST_INDEX = resolve(WEB_ROOT, 'static/dist/index.html')
 
@@ -36,6 +37,24 @@ describe('open server (no auth)', () => {
     expect(res.headers.get('content-security-policy')).toContain("frame-ancestors 'none'")
     expect(res.headers.get('content-security-policy-report-only')).toContain('report-uri /api/csp-report')
     expect(res.headers.get('report-to')).toContain('csp-endpoint')
+  })
+
+  it('/health reports Agent readiness separately from server liveness', async () => {
+    const body = HealthSchema.parse(await (await s.get('/health')).json())
+    expect(body.status).toBe('ok')
+    expect(body.agent).toEqual({ status: 'unavailable' })
+    for (const status of ['ready', 'incompatible', 'restarting'] as const) {
+      const withSidecar = await bootTestServer({ sidecar: new FakeSidecar({ status }) })
+      try {
+        const res = await withSidecar.get('/health')
+        expect(res.status).toBe(200)
+        const health = HealthSchema.parse(await res.json())
+        expect(health.status).toBe('ok')
+        expect(health.agent).toEqual({ status })
+      } finally {
+        await withSidecar.close()
+      }
+    }
   })
 
   it('/health never names sessions or streams (it is public)', async () => {

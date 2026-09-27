@@ -211,7 +211,7 @@ final class OnboardingFlowTests: XCTestCase {
             "wait for me to run them",
             "Do not touch `~/Library/LaunchAgents/` or restart Mac services",
             "curl --fail http://127.0.0.1:8787/health",
-            "confirm its JSON `status` is `ok`",
+            "confirm its JSON `agent.status` is `ready`",
             "do not report setup as complete",
             "actual ts.net HTTPS URL",
             "exact HTTPS URL, password, launcher, and both health-check results",

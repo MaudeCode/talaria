@@ -201,6 +201,25 @@
                         "type": "string"
                       },
                       "additionalProperties": {}
+                    },
+                    "agent": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "enum": [
+                            "ready",
+                            "starting",
+                            "restarting",
+                            "incompatible",
+                            "stopped",
+                            "unavailable"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "status"
+                      ]
                     }
                   },
                   "required": [
@@ -213,7 +232,8 @@
                     "last_run_finished_at",
                     "server_started_at",
                     "uptime_seconds",
-                    "accept_loop"
+                    "accept_loop",
+                    "agent"
                   ]
                 }
               }

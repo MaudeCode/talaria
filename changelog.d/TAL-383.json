@@ -4,6 +4,12 @@
       "category": "Fixed",
       "summary": "The onboarding setup prompt now installs and starts Talaria Web instead of the retired Python web UI.",
       "highlight": false
+    },
+    {
+      "category": "Added",
+      "summary": "The server health check now reports whether Hermes Agent is ready for chat.",
+      "highlight": false,
+      "components": ["web"]
     }
   ]
 }

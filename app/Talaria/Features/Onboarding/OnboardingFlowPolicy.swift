@@ -30,7 +30,7 @@ Expose only the localhost service through private Tailscale HTTPS:
 - If the root listener or route is already occupied, do not reset or replace it. Stop and report the exact conflict and safe options.
 
 Verify in this order:
-1. Confirm localhost health with `curl --fail http://127.0.0.1:8787/health`, and confirm its JSON `status` is `ok`. If it is `degraded` or `starting`, report its `checks` object (Hermes Agent may be missing or unusable, which breaks chat) and do not report setup as complete.
+1. Confirm localhost health with `curl --fail http://127.0.0.1:8787/health`, and confirm its JSON `agent.status` is `ready`. Any other value means Hermes Agent is missing, starting, or unusable, so chat will not work: report the value and do not report setup as complete.
 2. Read back `tailscale serve status`, identify the actual ts.net HTTPS URL, and verify that exact URL's `/health` endpoint with `curl --fail https://<actual-ts.net-hostname>/health`.
 
 Treat binding to `0.0.0.0` or using a Tailscale IP over plain HTTP as an explicit manual fallback only. Explain the additional exposure and require my confirmation. Do not automate it.
