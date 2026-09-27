@@ -1,8 +1,8 @@
 # Troubleshooting
 
-Concrete diagnostic flows for the most common failure modes when running Hermes WebUI. Each entry has the symptom, the diagnostic commands you should run *before* opening an issue, and the fix that has worked for past reporters.
+Concrete diagnostic flows for the most common failure modes when running Hermes WebUI. Each entry has the symptom, the diagnostic commands to run first, and the fix that has worked before.
 
-If your symptom isn't listed and the diagnostics don't narrow it down, file a bug in the Talaria tracker — include the relevant command output after redacting secrets, private paths, full `.env` files, full `auth.json` files, cookies, tokens, and password hashes.
+If your symptom isn't listed and the diagnostics don't narrow it down, keep the relevant command output, redacting secrets, private paths, full `.env` files, full `auth.json` files, cookies, tokens, and password hashes.
 
 ---
 
@@ -81,10 +81,10 @@ HERMES_WEBUI_AGENT_DIR=/absolute/path/to/hermes-agent sidecar/scripts/test.sh te
 The runtime tests spawn the sidecar exactly as the server does and report the import error verbatim.
 `/api/health/agent` and `/health` also carry the sidecar status once the server is up.
 
-### When to file a bug
+### When it's a Web bug
 
-If the sidecar tests pass but the server still answers `sidecar_unavailable`, that is a Web bug. Include
-the startup lines from step 1, the `/health` payload, and your OS, Node, and Agent versions.
+If the sidecar tests pass but the server still answers `sidecar_unavailable`, that is a Web bug. Its evidence
+is the startup lines from step 1, the `/health` payload, and your OS, Node, and Agent versions.
 
 ---
 
@@ -121,7 +121,7 @@ Recovery is incremental: the marker records how far into the journal it has repl
 
 **Caps.** The lazy retry path gives up after 12 failed attempts or 24h of wall-clock age, at which point the marker settles: it keeps the recovered-output wording if earlier passes placed output, and otherwise demotes to a neutral *"Partial output may have been lost."* wording so the "reload to retry" prompt doesn't linger forever for genuinely lost journals.
 
-**When to file a bug.** If, after the fix, you see the lazy-retry wording (*"Recovering the partial output from the run journal — reload this session to retry."*) but reloading the session never promotes it to the recovered wording even though the `.jsonl` clearly contains `token` events, capture the marker JSON and the run-journal file and file a bug.
+**When it's a bug.** If, after the fix, you see the lazy-retry wording (*"Recovering the partial output from the run journal — reload this session to retry."*) but reloading the session never promotes it to the recovered wording even though the `.jsonl` clearly contains `token` events, that is a bug; its evidence is the marker JSON and the run-journal file.
 
 ---
 
@@ -189,7 +189,7 @@ toolset lane, but intentionally starts with an empty model-facing transcript so
 the oversized exhausted tail is not replayed. After the new session opens,
 describe the next narrow task explicitly instead of sending a bare continuation.
 
-**When to file a bug.** File a bug if the exhausted message has no recovery
+**When it's a bug.** It is a bug if the exhausted message has no recovery
 action, the action creates a session with the old oversized context/messages
 replayed into the model-facing transcript, or a bare "continue" starts another
 turn in the exhausted session instead of being blocked with recovery guidance.
@@ -210,7 +210,7 @@ turn in the exhausted session instead of being blocked with recovery guidance.
 
 **Fix.** Prefer WebUI's own password for installed PWAs. If you keep proxy basic auth, configure it so the same-origin service-worker and shell update fetches can complete. If the installed shell is already blank, clear site data for the Hermes origin, then reopen or reinstall the PWA after that site-scoped cleanup.
 
-**When to file a bug.** File a WebUI bug if the blank screen still reproduces without proxy basic auth, or after the proxy allows the same-origin service-worker and shell update fetches through.
+**When it's a bug.** It is a WebUI bug if the blank screen still reproduces without proxy basic auth, or after the proxy allows the same-origin service-worker and shell update fetches through.
 
 ---
 
@@ -244,7 +244,7 @@ For a foreground `talaria-web --foreground`, stop it with Ctrl-C and start it ag
 
 **Automatic restart prerequisite.** Revision mismatch does not schedule a WebUI restart. Safe automation requires an Agent-owned terminal success receipt bound to the exact update transaction, final revision, and healthy environment, plus an Agent-owned atomic handoff or lease that excludes new mutations across process replacement (or an Agent updater that performs the restart itself). No such public contract is verified for this integration. Repeated readiness checks followed by a process replacement leave a race; WebUI's own update lock does not exclude an external Agent updater. Explicit updates initiated through WebUI retain their existing behavior and are outside this revision-mismatch guard.
 
-**When to file a bug.** File a WebUI bug if the restart-required message appears even though the Agent revision did not change or become unreadable, or if a clean WebUI restart still produces the same import error. Include the launch method, WebUI and Agent revisions, the marker diagnostic, and sanitized error text.
+**When it's a bug.** It is a WebUI bug if the restart-required message appears even though the Agent revision did not change or become unreadable, or if a clean WebUI restart still produces the same import error. Its evidence is the launch method, WebUI and Agent revisions, the marker diagnostic, and sanitized error text.
 
 An installed Agent revision different from the Web release's tested pin now produces an unsupported-version
 warning, not a blanket refusal. If Agent imports fail, the sidecar can still read and write operator config;
@@ -266,7 +266,7 @@ changing the Agent checkout.
 
 ## Other troubleshooting
 
-This document grows over time. If a recurring failure mode isn't covered here yet, add it via PR. The format for each entry: **Symptom → Why → Diagnostic commands → Fix → When to file a bug**.
+This document grows over time. Each entry follows **Symptom → Why → Diagnostic commands → Fix → When it's a bug**.
 
 Related references:
 

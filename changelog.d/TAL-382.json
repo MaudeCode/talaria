@@ -1,10 +1,1 @@
-{
-  "entries": [
-    {
-      "category": "Changed",
-      "summary": "The project documentation now states that Talaria is under heavy development and not accepting outside contributions.",
-      "highlight": false,
-      "components": ["app", "web", "relay"]
-    }
-  ]
-}
+{"skip": "Documentation only: states that the project is not accepting outside contributions; no app, Web, or Relay behavior changes."}

@@ -112,9 +112,8 @@ advertised capabilities and contracts remain compatible.
 - [`DEVELOPMENT.md`](DEVELOPMENT.md): local development workflow, server setup notes, and the maintainer release runbook.
 - [`TESTFLIGHT.md`](TESTFLIGHT.md): maintainer-only TestFlight/App Store Connect operations.
 - [`CONTRACT_TESTS.md`](../CONTRACT_TESTS.md): upstream contract-test readiness and the pin-advance policy.
-- [`SECURITY.md`](SECURITY.md): how to report a vulnerability.
+- [`SECURITY.md`](../SECURITY.md): how to report a vulnerability.
 - [`docs/agents/`](docs/agents): repo-local agent workflow conventions (issues, triage labels, domain notes).
-- [GitHub Issues](https://github.com/MaudeCode/talaria/issues): source of truth for active bugs, polish notes, and feature requests.
 
 ## Contributing
 

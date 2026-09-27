@@ -392,7 +392,7 @@ not upload or produce an installable phone build.
 ## Full-App Manual Regression Checklist
 
 Use this before internal TestFlight smoke builds and again before adding external testers.
-Capture bugs, polish notes, and follow-up ideas in [GitHub Issues](https://github.com/MaudeCode/talaria/issues).
+Capture bugs, polish notes, and follow-up ideas in the project tracker (see [`AGENTS.md`](../AGENTS.md)).
 
 ### Onboarding/Auth
 - Fresh install opens onboarding.
