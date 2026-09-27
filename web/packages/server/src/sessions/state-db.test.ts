@@ -14,9 +14,9 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { agentSessionRowsExisting, cheapChangeFingerprint, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbHasSession } from './state-db.js'
+import { agentSessionRowsExisting, cheapChangeFingerprint, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbHasSession, stateDbSessionSources } from './state-db.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
-import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, type GatewayIdentity } from './list.js'
+import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
 
 type Json = Record<string, unknown>
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
@@ -316,9 +316,24 @@ describe('state.db projection', () => {
       // The branch gate follows the lock, as the detail's `can_branch` says.
       expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).can_branch, sid).toBe(false)
       expect((await post('/api/session/branch', { session_id: sid })).status, sid).toBe(403)
+      // Every other sidecar mutation takes the same gate.
+      for (const [path, extra] of [['/api/session/toolsets', { toolsets: ['web'] }], ['/api/session/truncate', { keep_count: 0 }], ['/api/session/clear', {}], ['/api/session/retry', {}], ['/api/session/undo', {}]] as const) {
+        expect((await post(path, { session_id: sid, ...extra })).status, `${sid} ${path}`).toBe(403)
+      }
+      expect(s.deps.sessionStore.get(sid).messages, sid).toHaveLength(2)
       expect((await post('/api/session/delete', { session_id: sid })).status, sid).toBe(400)
       expect(s.deps.sessionStore.loadMetadataOnly(sid)?.title, sid).toMatch(/^Ownerprobe /)
     }
     for (const sid of writable) expect((await post('/api/session/rename', { session_id: sid, title: 'Ownerprobe renamed' })).status, sid).toBe(200)
+  })
+
+  it('locks a sidecar whose state.db owner cannot be read, and only a missing state.db means no owner (TAL-358)', () => {
+    expect(stateDbSessionSources(join(s.state, 'no-such-state.db'), ['a'])).toEqual(new Map())
+    // A path that exists but does not open as a database: the owner is unknown, not absent.
+    const unreadable = join(s.state, 'unreadable-state.db')
+    mkdirSync(unreadable, { recursive: true })
+    expect(stateDbSessionSources(unreadable, ['a'])).toBeNull()
+    const rows = withOwnerLocks([{ session_id: 'a' }, { session_id: 'b', source_tag: 'webui' }], () => null)
+    expect(rows.map((r) => r.read_only)).toEqual([true, undefined])
   })
 })

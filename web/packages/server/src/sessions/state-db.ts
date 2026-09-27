@@ -377,13 +377,16 @@ export function agentSessionRowsExisting(dbPath: string, sessionIds: Iterable<st
   }
 }
 
-/** TAL-358: the `sessions.source` owner of each present id, in one chunked read; empty when state.db is missing or unreadable. */
-export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<string>): Map<string, string> {
+/**
+ * TAL-358: the `sessions.source` owner of each present id, in one chunked read. A missing state.db (or one without a
+ * `source` column) owns nothing; an unreadable one answers null, so callers fail closed on an unknown owner.
+ */
+export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<string>): Map<string, string> | null {
   const sources = new Map<string, string>()
   const ids = [...new Set([...sessionIds].map((s) => s.trim()).filter(Boolean))]
   if (!ids.length || !existsSync(dbPath)) return sources
   let db: DatabaseSync
-  try { db = openStateDbReadonly(dbPath) } catch { return sources }
+  try { db = openStateDbReadonly(dbPath) } catch { return null }
   try {
     const cols = tableColumns(db, 'sessions')
     if (!cols.has('id') || !cols.has('source')) return sources
@@ -393,7 +396,7 @@ export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<strin
     }
     return sources
   } catch {
-    return sources
+    return null
   } finally {
     db.close()
   }

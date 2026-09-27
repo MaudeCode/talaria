@@ -356,7 +356,7 @@ export interface ListParams {
   gatewayIdentity?: Map<string, GatewayIdentity>
   sourceFilter?: string | null
   /** TAL-358: batched active-profile state.db owner lookup (`stateDbSessionSources`) for the sidecar owner lock. */
-  stateDbSources?: (ids: string[]) => Map<string, string>
+  stateDbSources?: (ids: string[]) => Map<string, string> | null
 }
 
 export interface GatewayIdentity { session_key: string; chat_id: string; thread_id: string; chat_type: string; user_id: string; platform: string; raw_source: string }
@@ -419,14 +419,16 @@ export function isClaimableCliSource(meta: Row, stateDbSource: string): boolean 
 /**
  * TAL-358: marks read-only each WebUI sidecar row whose active-profile state.db owner (`sessions.source`) refuses
  * claiming, as a sidecar-less row from that owner is. A sidecar persisted as WebUI- or fork-born stays WebUI-owned
- * whatever state.db mirrors for its id. `stateDbSources` reads every candidate's owner in one batch, not per row.
+ * whatever state.db mirrors for its id. `stateDbSources` reads every candidate's owner in one batch, not per row; an
+ * unreadable state.db (null) locks every candidate, since an unknown owner is not a released one.
  */
-export function withOwnerLocks(rows: Row[], stateDbSources: (ids: string[]) => Map<string, string>): Row[] {
+export function withOwnerLocks(rows: Row[], stateDbSources: (ids: string[]) => Map<string, string> | null): Row[] {
   const webuiOwned = (r: Row): boolean => ['source_tag', 'raw_source', 'session_source'].some((k) => ['webui', 'fork'].includes(str(r[k]).trim().toLowerCase()))
   const candidates = rows.filter((r) => !r.read_only && !webuiOwned(r)).map((r) => str(r.session_id))
   if (!candidates.length) return rows
   const owners = stateDbSources(candidates)
   const locked = new Set(candidates.filter((sid) => {
+    if (!owners) return true
     const source = str(owners.get(sid)).trim().toLowerCase()
     return Boolean(source) && !isClaimableCliSource({ source_tag: source, ...normalizeAgentSessionSource(source) }, source)
   }))

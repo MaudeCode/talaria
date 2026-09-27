@@ -136,7 +136,7 @@ export class SessionService {
   }
 
   /** TAL-358: batched `sessions.source` owners from the active profile's state.db. */
-  readonly stateDbSources = (ids: string[]): Map<string, string> => stateDbSessionSources(join(this.deps.profileHome(this.deps.activeProfile()), 'state.db'), ids)
+  readonly stateDbSources = (ids: string[]): Map<string, string> | null => stateDbSessionSources(join(this.deps.profileHome(this.deps.activeProfile()), 'state.db'), ids)
 
   /** The persisted flag folded with the state.db owner lock (TAL-358): the one read-only rule for mutation gates and the wire. */
   isReadOnly(s: Session): boolean {
@@ -714,7 +714,7 @@ export class SessionService {
   async setToolsets(sid: string, toolsets: unknown): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     const cleaned = this.validateToolsetsShape(toolsets)
-    const s = this.get404(sid)
+    const s = this.mutationTarget(sid, 'modified')
     await this.store.withLock(sid, () => {
       s.enabled_toolsets = cleaned
       this.store.save(s)
@@ -738,7 +738,7 @@ export class SessionService {
   async truncate(sid: string, keepRaw: unknown): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     if (keepRaw === null || keepRaw === undefined) throw new HttpFailure(400, 'Missing required field(s): keep_count')
-    const s = this.get404(sid)
+    const s = this.mutationTarget(sid, 'modified')
     // Python `int(body["keep_count"])`: a float truncates, a non-integer string is rejected.
     let keep: number
     if (typeof keepRaw === 'number') keep = Number.isFinite(keepRaw) ? Math.trunc(keepRaw) : Number.NaN
@@ -756,7 +756,7 @@ export class SessionService {
 
   async clear(sid: string): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
-    const s = this.get404(sid)
+    const s = this.mutationTarget(sid, 'modified')
     await this.store.withLock(sid, () => {
       const hadMessages = s.messages.length > 0
       truncateSessionAtKeep(s, 0)
@@ -787,7 +787,7 @@ export class SessionService {
   async retry(sid: string): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     return this.store.withLock(sid, () => {
-      const s = this.get404(sid)
+      const s = this.mutationTarget(sid, 'modified')
       const history = s.messages
       const lastUser = findLastUserIndex(history)
       if (lastUser === null) return { error: 'No previous message to retry.' }
@@ -802,7 +802,7 @@ export class SessionService {
   async undo(sid: string): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     return this.store.withLock(sid, () => {
-      const s = this.get404(sid)
+      const s = this.mutationTarget(sid, 'modified')
       const history = s.messages
       const lastUser = findLastUserIndex(history)
       if (lastUser === null) return { error: 'Nothing to undo.' }
