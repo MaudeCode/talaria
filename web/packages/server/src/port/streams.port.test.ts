@@ -542,6 +542,24 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, { role: 'assistant', content: 'The chart shows' }])
   })
 
+  it('Stop keeps a tool_use call and its tool_use_id result as a pair in the next request (TAL-364)', async () => {
+    const sid = await newSession(s)
+    const earlier = await earlierTurn(sid)
+    let prompt = ''
+    const useCall: Json = { role: 'assistant', content: [{ type: 'text', text: 'Checking pods.' }, { type: 'tool_use', id: 'use-1', name: 'terminal', input: { command: 'kubectl get pods' } }] }
+    const useResult: Json = { role: 'tool', tool_use_id: 'use-1', content: 'worker-2 CrashLoopBackOff' }
+    const pendingUse: Json = { role: 'assistant', content: [{ type: 'tool_use', id: 'use-2', name: 'terminal', input: { command: 'sleep 600' } }] }
+    sidecar.respond('chat.interrupt', () => ({ ok: true, checkpoint: [...earlier, { role: 'user', content: prompt }, useCall, useResult, pendingUse] }))
+    const started = blockingTurn(toolFrames)
+    const streamId = await start(sid, 'Check the rollout')
+    prompt = await started
+    await frames(streamId, (f) => f.event === 'tool_complete')
+    expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+    await frames(streamId, (f) => f.event === 'cancel')
+    // The completed call keeps its result; the unanswered one is dropped; the turn closes before the next prompt.
+    expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, useCall, useResult, { role: 'assistant', content: 'Operation interrupted.' }])
+  })
+
   it('a worker result that settles the cancel before the interrupt reply writes one marker and keeps the pre-Stop checkpoint (TAL-364)', async () => {
     const sid = await newSession(s)
     const earlier = await earlierTurn(sid)

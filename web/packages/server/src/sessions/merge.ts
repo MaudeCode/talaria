@@ -469,7 +469,7 @@ function toolCallId(tc: unknown): string {
   return str(tc.id) || str(tc.call_id)
 }
 
-const API_SAFE_MSG_KEYS = new Set(['role', 'content', 'tool_calls', 'tool_call_id', 'name', 'refusal', 'reasoning_content'])
+const API_SAFE_MSG_KEYS = new Set(['role', 'content', 'tool_calls', 'tool_call_id', 'tool_use_id', 'name', 'refusal', 'reasoning_content'])
 const OOB_USER_MESSAGE_BLOCK_RE = /\[OUT-OF-BAND\s+USER\s+MESSAGE(?:\s*(?:—|-)\s*[\s\S]*?)?\]\s*?[\s\S]*?\[\/OUT-OF-BAND\s+USER\s+MESSAGE\]/gi
 const OOB_DELIVERY_RE = /^\s*\[OUT-OF-BAND\s+USER\s+MESSAGE[^\]]*\]\s*([\s\S]*?)\s*\[\/OUT-OF-BAND\s+USER\s+MESSAGE\]\s*$/i
 
@@ -504,10 +504,14 @@ function stripOobBlocks(content: unknown): unknown {
  * otherwise the neighbours fuse cleanly or the prompt is stale, and replaying it would answer it again.
  */
 export function sanitizeMessagesForApi(messages: Message[]): Message[] {
+  // Calls are OpenAI `tool_calls` or Anthropic-style `tool_use` content blocks; results name them by `tool_call_id`,
+  // `tool_use_id`, or a user row's `tool_result` blocks.
+  const toolUseIds = (msg: Message): string[] => (Array.isArray(msg.content) ? msg.content.flatMap((part) => (isDict(part) && part.type === 'tool_use' && str(part.id) ? [str(part.id)] : [])) : [])
   const validToolCallIds = new Set<string>()
   for (const msg of messages) {
-    if (msg.role !== 'assistant' || !Array.isArray(msg.tool_calls)) continue
-    for (const tc of msg.tool_calls) { const id = toolCallId(tc); if (id) validToolCallIds.add(id) }
+    if (msg.role !== 'assistant') continue
+    for (const tc of Array.isArray(msg.tool_calls) ? msg.tool_calls : []) { const id = toolCallId(tc); if (id) validToolCallIds.add(id) }
+    for (const id of toolUseIds(msg)) validToolCallIds.add(id)
   }
   const clean: Message[] = []
   for (const msg of messages) {
@@ -517,16 +521,25 @@ export function sanitizeMessagesForApi(messages: Message[]): Message[] {
     if (msg._error || isDict(msg._steer)) continue
     if (msg._partial && !messageText(msg.content).trim()) continue
     const recovered = Boolean(msg._recovered) && msg.role === 'user'
-    if (msg.role === 'tool') { const tid = str(msg.tool_call_id); if (!tid || !validToolCallIds.has(tid)) continue }
+    if (msg.role === 'tool') { const tid = str(msg.tool_call_id) || str(msg.tool_use_id); if (!tid || !validToolCallIds.has(tid)) continue }
     const sanitized = Object.fromEntries(Object.entries(msg).filter(([k]) => API_SAFE_MSG_KEYS.has(k)))
     if (Array.isArray(sanitized.tool_calls) && !sanitized.tool_calls.length) Reflect.deleteProperty(sanitized, 'tool_calls')
     if (recovered) sanitized._recovered = true
     if ('content' in sanitized) sanitized.content = stripOobBlocks(sanitized.content)
     if (sanitized.role) clean.push(sanitized)
   }
-  const answered = new Set(clean.filter((m) => m.role === 'tool').map((m) => str(m.tool_call_id)).filter(Boolean))
+  const answered = new Set(clean.flatMap((m) => {
+    if (m.role === 'tool') return [str(m.tool_call_id) || str(m.tool_use_id)]
+    if (m.role === 'user' && Array.isArray(m.content)) return m.content.flatMap((part) => (isDict(part) && part.type === 'tool_result' ? [str(part.tool_use_id)] : []))
+    return []
+  }).filter(Boolean))
   const filtered: Message[] = []
   for (let msg of clean) {
+    if (msg.role === 'assistant' && toolUseIds(msg).length && Array.isArray(msg.content)) {
+      const parts = msg.content.filter((part) => !(isDict(part) && part.type === 'tool_use' && !answered.has(str(part.id))))
+      if (!parts.length) continue
+      msg = { ...msg, content: parts }
+    }
     if (msg.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
       const kept = msg.tool_calls.filter((tc) => answered.has(toolCallId(tc)))
       if (!kept.length) {
