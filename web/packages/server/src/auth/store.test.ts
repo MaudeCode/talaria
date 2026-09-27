@@ -108,6 +108,19 @@ describe('Python byte compatibility', () => {
 })
 
 describe('sessions', () => {
+  it('persists the stable OIDC issuer and subject separately from display username', () => {
+    const store = makeStore()
+    const cookie = store.createSession({
+      authType: 'oidc', username: 'shared@example.test', boundProfile: 'work',
+      oidcBinding: { mapping_fingerprint: 'a'.repeat(64), profile_identity: '1:2', issuer: 'https://issuer.example', subject: 'principal-a' },
+    })
+
+    expect(makeStore().getSessionInfo(cookie)).toMatchObject({
+      auth_type: 'oidc', username: 'shared@example.test', bound_profile: 'work',
+      oidc_issuer: 'https://issuer.example', oidc_subject: 'principal-a',
+    })
+  })
+
   it('creates, verifies, persists, and prunes sessions', () => {
     const store = makeStore()
     const cookie = store.createSession()

@@ -25853,6 +25853,10 @@
                         "experimental"
                       ],
                       "type": "string"
+                    },
+                    "notification_id": {
+                      "type": "string",
+                      "format": "uuid"
                     }
                   },
                   "additionalProperties": {}
@@ -25944,6 +25948,10 @@
                         "experimental"
                       ],
                       "type": "string"
+                    },
+                    "notification_id": {
+                      "type": "string",
+                      "format": "uuid"
                     }
                   },
                   "additionalProperties": {}
@@ -26035,6 +26043,10 @@
                         "experimental"
                       ],
                       "type": "string"
+                    },
+                    "notification_id": {
+                      "type": "string",
+                      "format": "uuid"
                     }
                   },
                   "additionalProperties": {}
@@ -26113,6 +26125,1495 @@
                     }
                   },
                   "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update-notifications": {
+      "get": {
+        "operationId": "updateNotifications.list",
+        "summary": "Server-owned update operation history for the authenticated owner and active profile.",
+        "tags": [
+          "tools"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scope_id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "notifications": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                          },
+                          "target": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "webui",
+                                  "agent"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "phase": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "applying",
+                                  "awaiting_confirmation",
+                                  "restarting",
+                                  "succeeded",
+                                  "blocked",
+                                  "failed",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              }
+                            ]
+                          },
+                          "severity": {
+                            "enum": [
+                              "info",
+                              "warning",
+                              "critical"
+                            ],
+                            "type": "string"
+                          },
+                          "persistent": {
+                            "type": "boolean"
+                          },
+                          "requires_acknowledgement": {
+                            "type": "boolean"
+                          },
+                          "actions": {
+                            "type": "array",
+                            "maxItems": 4,
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64,
+                                  "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 80
+                                },
+                                "style": {
+                                  "enum": [
+                                    "default",
+                                    "primary",
+                                    "destructive"
+                                  ],
+                                  "type": "string"
+                                },
+                                "acknowledges": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "style",
+                                "acknowledges"
+                              ]
+                            }
+                          },
+                          "destination": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64,
+                                    "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 80
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "label"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "read_at": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "acknowledged_at": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "acknowledged_action_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "verified_revision": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{40}$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "verified_version": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "unread": {
+                            "type": "boolean"
+                          },
+                          "active": {
+                            "type": "boolean"
+                          },
+                          "requires_interaction": {
+                            "type": "boolean"
+                          },
+                          "can_dismiss": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "target",
+                          "phase",
+                          "severity",
+                          "persistent",
+                          "requires_acknowledgement",
+                          "actions",
+                          "destination",
+                          "title",
+                          "message",
+                          "created_at",
+                          "updated_at",
+                          "read_at",
+                          "acknowledged_at",
+                          "acknowledged_action_id",
+                          "verified_revision",
+                          "verified_version",
+                          "unread",
+                          "active",
+                          "requires_interaction",
+                          "can_dismiss"
+                        ]
+                      }
+                    },
+                    "unread_count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "clearable_count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "can_clear": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "scope_id",
+                    "notifications",
+                    "unread_count",
+                    "clearable_count",
+                    "can_clear"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update-notifications/{id}/read": {
+      "post": {
+        "operationId": "updateNotifications.read",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "read": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "read"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                    },
+                    "target": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "webui",
+                            "agent"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "phase": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "applying",
+                            "awaiting_confirmation",
+                            "restarting",
+                            "succeeded",
+                            "blocked",
+                            "failed",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        }
+                      ]
+                    },
+                    "severity": {
+                      "enum": [
+                        "info",
+                        "warning",
+                        "critical"
+                      ],
+                      "type": "string"
+                    },
+                    "persistent": {
+                      "type": "boolean"
+                    },
+                    "requires_acknowledgement": {
+                      "type": "boolean"
+                    },
+                    "actions": {
+                      "type": "array",
+                      "maxItems": 4,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "style": {
+                            "enum": [
+                              "default",
+                              "primary",
+                              "destructive"
+                            ],
+                            "type": "string"
+                          },
+                          "acknowledges": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "style",
+                          "acknowledges"
+                        ]
+                      }
+                    },
+                    "destination": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 80
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "label"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "read_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "acknowledged_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "acknowledged_action_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "verified_revision": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{40}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "verified_version": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "unread": {
+                      "type": "boolean"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "requires_interaction": {
+                      "type": "boolean"
+                    },
+                    "can_dismiss": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "target",
+                    "phase",
+                    "severity",
+                    "persistent",
+                    "requires_acknowledgement",
+                    "actions",
+                    "destination",
+                    "title",
+                    "message",
+                    "created_at",
+                    "updated_at",
+                    "read_at",
+                    "acknowledged_at",
+                    "acknowledged_action_id",
+                    "verified_revision",
+                    "verified_version",
+                    "unread",
+                    "active",
+                    "requires_interaction",
+                    "can_dismiss"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update-notifications/{id}/dismiss": {
+      "post": {
+        "operationId": "updateNotifications.dismiss",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dismiss": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "dismiss"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update-notifications/clear": {
+      "post": {
+        "operationId": "updateNotifications.clear",
+        "tags": [
+          "tools"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "clear": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "clear"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scope_id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "notifications": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                          },
+                          "target": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "webui",
+                                  "agent"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "phase": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "applying",
+                                  "awaiting_confirmation",
+                                  "restarting",
+                                  "succeeded",
+                                  "blocked",
+                                  "failed",
+                                  "unknown"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              }
+                            ]
+                          },
+                          "severity": {
+                            "enum": [
+                              "info",
+                              "warning",
+                              "critical"
+                            ],
+                            "type": "string"
+                          },
+                          "persistent": {
+                            "type": "boolean"
+                          },
+                          "requires_acknowledgement": {
+                            "type": "boolean"
+                          },
+                          "actions": {
+                            "type": "array",
+                            "maxItems": 4,
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64,
+                                  "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 80
+                                },
+                                "style": {
+                                  "enum": [
+                                    "default",
+                                    "primary",
+                                    "destructive"
+                                  ],
+                                  "type": "string"
+                                },
+                                "acknowledges": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "style",
+                                "acknowledges"
+                              ]
+                            }
+                          },
+                          "destination": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64,
+                                    "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 80
+                                  }
+                                },
+                                "required": [
+                                  "key",
+                                  "label"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "read_at": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "acknowledged_at": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "acknowledged_action_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "verified_revision": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{40}$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "verified_version": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "unread": {
+                            "type": "boolean"
+                          },
+                          "active": {
+                            "type": "boolean"
+                          },
+                          "requires_interaction": {
+                            "type": "boolean"
+                          },
+                          "can_dismiss": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "target",
+                          "phase",
+                          "severity",
+                          "persistent",
+                          "requires_acknowledgement",
+                          "actions",
+                          "destination",
+                          "title",
+                          "message",
+                          "created_at",
+                          "updated_at",
+                          "read_at",
+                          "acknowledged_at",
+                          "acknowledged_action_id",
+                          "verified_revision",
+                          "verified_version",
+                          "unread",
+                          "active",
+                          "requires_interaction",
+                          "can_dismiss"
+                        ]
+                      }
+                    },
+                    "unread_count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "clearable_count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "can_clear": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "scope_id",
+                    "notifications",
+                    "unread_count",
+                    "clearable_count",
+                    "can_clear"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update-notifications/{id}/cancel": {
+      "post": {
+        "operationId": "updateNotifications.cancel",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cancel": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "cancel"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                    },
+                    "target": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "webui",
+                            "agent"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "phase": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "applying",
+                            "awaiting_confirmation",
+                            "restarting",
+                            "succeeded",
+                            "blocked",
+                            "failed",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        }
+                      ]
+                    },
+                    "severity": {
+                      "enum": [
+                        "info",
+                        "warning",
+                        "critical"
+                      ],
+                      "type": "string"
+                    },
+                    "persistent": {
+                      "type": "boolean"
+                    },
+                    "requires_acknowledgement": {
+                      "type": "boolean"
+                    },
+                    "actions": {
+                      "type": "array",
+                      "maxItems": 4,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "style": {
+                            "enum": [
+                              "default",
+                              "primary",
+                              "destructive"
+                            ],
+                            "type": "string"
+                          },
+                          "acknowledges": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "style",
+                          "acknowledges"
+                        ]
+                      }
+                    },
+                    "destination": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 80
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "label"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "read_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "acknowledged_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "acknowledged_action_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "verified_revision": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{40}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "verified_version": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "unread": {
+                      "type": "boolean"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "requires_interaction": {
+                      "type": "boolean"
+                    },
+                    "can_dismiss": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "target",
+                    "phase",
+                    "severity",
+                    "persistent",
+                    "requires_acknowledgement",
+                    "actions",
+                    "destination",
+                    "title",
+                    "message",
+                    "created_at",
+                    "updated_at",
+                    "read_at",
+                    "acknowledged_at",
+                    "acknowledged_action_id",
+                    "verified_revision",
+                    "verified_version",
+                    "unread",
+                    "active",
+                    "requires_interaction",
+                    "can_dismiss"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/update-notifications/{id}/actions/{action_id}": {
+      "post": {
+        "operationId": "updateNotifications.action",
+        "tags": [
+          "tools"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "perform": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "perform"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                    },
+                    "target": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "webui",
+                            "agent"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "phase": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "applying",
+                            "awaiting_confirmation",
+                            "restarting",
+                            "succeeded",
+                            "blocked",
+                            "failed",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        }
+                      ]
+                    },
+                    "severity": {
+                      "enum": [
+                        "info",
+                        "warning",
+                        "critical"
+                      ],
+                      "type": "string"
+                    },
+                    "persistent": {
+                      "type": "boolean"
+                    },
+                    "requires_acknowledgement": {
+                      "type": "boolean"
+                    },
+                    "actions": {
+                      "type": "array",
+                      "maxItems": 4,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "style": {
+                            "enum": [
+                              "default",
+                              "primary",
+                              "destructive"
+                            ],
+                            "type": "string"
+                          },
+                          "acknowledges": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "style",
+                          "acknowledges"
+                        ]
+                      }
+                    },
+                    "destination": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 80
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "label"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "read_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "acknowledged_at": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "acknowledged_action_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "verified_revision": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{40}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "verified_version": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "unread": {
+                      "type": "boolean"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "requires_interaction": {
+                      "type": "boolean"
+                    },
+                    "can_dismiss": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "target",
+                    "phase",
+                    "severity",
+                    "persistent",
+                    "requires_acknowledgement",
+                    "actions",
+                    "destination",
+                    "title",
+                    "message",
+                    "created_at",
+                    "updated_at",
+                    "read_at",
+                    "acknowledged_at",
+                    "acknowledged_action_id",
+                    "verified_revision",
+                    "verified_version",
+                    "unread",
+                    "active",
+                    "requires_interaction",
+                    "can_dismiss"
+                  ]
                 }
               }
             }

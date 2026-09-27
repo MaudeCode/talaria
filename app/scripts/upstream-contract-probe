@@ -175,6 +175,34 @@ class Probe:
                 "login response: missing success flag or hermes_session cookie"
             )
 
+        notifications = self.require_keys(
+            "update notification inbox",
+            self.request("update notification inbox", "/api/update-notifications"),
+            "scope_id",
+            "notifications",
+            "unread_count",
+            "clearable_count",
+            "can_clear",
+        )
+        if not isinstance(notifications["notifications"], list):
+            raise ContractFailure("update notification inbox: notifications must be a list")
+        cleared = self.require_keys(
+            "clear update notifications",
+            self.request(
+                "clear update notifications",
+                "/api/update-notifications/clear",
+                method="POST",
+                body={"clear": True},
+            ),
+            "scope_id",
+            "notifications",
+            "unread_count",
+            "clearable_count",
+            "can_clear",
+        )
+        if cleared["scope_id"] != notifications["scope_id"]:
+            raise ContractFailure("clear update notifications: scope identity changed")
+
         authenticated = self.require_keys(
             "authenticated status",
             self.request(

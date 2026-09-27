@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, NotesSourcesSchema, DashboardStatusSchema, TranscribeCapabilitySchema } from '../views.js'
+import { SkillsSchema, SkillContentSchema, SkillsUsageSchema, MemorySchema, PromptSchema, PromptsSchema, CommandsSchema, LogsSchema, InsightsSchema, AgentHealthSchema, SystemHealthSchema, McpServerSchema, McpServersSchema, McpToolsSchema, PluginsSchema, UpdatesCheckSchema, UpdatesSummarySchema, UpdateApplySchema, UpdateNotificationsSchema, UpdateNotificationSchema, NotesSourcesSchema, DashboardStatusSchema, TranscribeCapabilitySchema } from '../views.js'
 
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, and diagnostics. */
 
@@ -64,6 +64,14 @@ export const toolsContract = {
     force: oc.route({ method: 'POST', path: '/api/updates/force', tags }).input(Target).output(UpdateApplySchema),
     clearLock: oc.route({ method: 'POST', path: '/api/updates/clear_lock', tags }).input(Target).output(UpdateApplySchema),
     summary: oc.route({ method: 'POST', path: '/api/updates/summary', tags }).input(z.object({ updates: Loose.optional(), target: z.string().nullable().optional() })).output(UpdatesSummarySchema),
+  },
+  updateNotifications: {
+    list: oc.route({ method: 'GET', path: '/api/update-notifications', tags, summary: 'Server-owned update operation history for the authenticated owner and active profile.' }).output(UpdateNotificationsSchema),
+    read: oc.route({ method: 'POST', path: '/api/update-notifications/{id}/read', tags }).input(z.object({ id: z.uuid(), read: z.literal(true) })).output(UpdateNotificationSchema),
+    dismiss: oc.route({ method: 'POST', path: '/api/update-notifications/{id}/dismiss', tags }).input(z.object({ id: z.uuid(), dismiss: z.literal(true) })).output(z.object({ ok: z.literal(true) })),
+    clear: oc.route({ method: 'POST', path: '/api/update-notifications/clear', tags }).input(z.object({ clear: z.literal(true) })).output(UpdateNotificationsSchema),
+    cancel: oc.route({ method: 'POST', path: '/api/update-notifications/{id}/cancel', tags }).input(z.object({ id: z.uuid(), cancel: z.literal(true) })).output(UpdateNotificationSchema),
+    action: oc.route({ method: 'POST', path: '/api/update-notifications/{id}/actions/{action_id}', tags }).input(z.object({ id: z.uuid(), action_id: z.string().min(1).max(64), perform: z.literal(true) })).output(UpdateNotificationSchema),
   },
   transcribeCapability: oc.route({ method: 'GET', path: '/api/transcribe/capability', tags }).output(TranscribeCapabilitySchema),
   clientEvents: oc.route({ method: 'POST', path: '/api/client-events/log', tags, summary: 'Bounded browser diagnostics; only whitelisted scalar fields are logged.' }).input(Loose).output(z.object({ ok: z.literal(true), event: z.string().nullable() })),

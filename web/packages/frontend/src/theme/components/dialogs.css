@@ -8,4 +8,7 @@
 .toast.error{background:color-mix(in srgb,var(--error) 14%,var(--surface));border-color:color-mix(in srgb,var(--error) 45%,var(--surface));color:var(--error)}
 .toast.warning{background:color-mix(in srgb,var(--warning) 14%,var(--surface));border-color:color-mix(in srgb,var(--warning) 45%,var(--surface));color:var(--warning)}
 .toast{border-radius:var(--r-md);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-md);color:var(--text)}
+.notification-toast{opacity:1;transform:translate3d(0,0,0);transition:transform .32s cubic-bezier(.22,1,.36,1),opacity .2s ease-out;will-change:transform,opacity}
+.notification-toast[data-visible="false"]{opacity:0;transform:translate3d(0,calc(-100% - 32px),0)}
+@media (prefers-reduced-motion:reduce){.notification-toast{transition:none;will-change:auto}}
 }

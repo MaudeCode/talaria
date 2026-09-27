@@ -72,6 +72,7 @@
 		C107V0000000000000000001 /* SessionListInitialLoad.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000101 /* SessionListInitialLoad.swift */; };
 		C107V0000000000000000002 /* SessionListReturnRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000102 /* SessionListReturnRefresh.swift */; };
 		C107V0000000000000000031 /* SessionListAutoRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000131 /* SessionListAutoRefresh.swift */; };
+		C32200000000000000000001 /* UpdateNotificationsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C32200000000000000000002 /* UpdateNotificationsSheet.swift */; };
 		C107V0000000000000000003 /* NewChatRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000103 /* NewChatRequest.swift */; };
 		C107V0000000000000000004 /* PendingNewChatRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000104 /* PendingNewChatRoute.swift */; };
 		C107V0000000000000000005 /* SessionListUtilityDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000105 /* SessionListUtilityDestination.swift */; };
@@ -792,6 +793,7 @@
 		C107V0000000000000000101 /* SessionListInitialLoad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListInitialLoad.swift; sourceTree = "<group>"; };
 		C107V0000000000000000102 /* SessionListReturnRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListReturnRefresh.swift; sourceTree = "<group>"; };
 		C107V0000000000000000131 /* SessionListAutoRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListAutoRefresh.swift; sourceTree = "<group>"; };
+		C32200000000000000000002 /* UpdateNotificationsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateNotificationsSheet.swift; sourceTree = "<group>"; };
 		C107V0000000000000000103 /* NewChatRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewChatRequest.swift; sourceTree = "<group>"; };
 		C107V0000000000000000104 /* PendingNewChatRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingNewChatRoute.swift; sourceTree = "<group>"; };
 		C107V0000000000000000105 /* SessionListUtilityDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListUtilityDestination.swift; sourceTree = "<group>"; };
@@ -1837,6 +1839,7 @@
 				C107V0000000000000000101 /* SessionListInitialLoad.swift */,
 				C107V0000000000000000102 /* SessionListReturnRefresh.swift */,
 				C107V0000000000000000131 /* SessionListAutoRefresh.swift */,
+				C32200000000000000000002 /* UpdateNotificationsSheet.swift */,
 				C107V0000000000000000103 /* NewChatRequest.swift */,
 				C107V0000000000000000104 /* PendingNewChatRoute.swift */,
 				C107V0000000000000000105 /* SessionListUtilityDestination.swift */,
@@ -2824,6 +2827,7 @@
 					C107V0000000000000000001 /* SessionListInitialLoad.swift in Sources */,
 					C107V0000000000000000002 /* SessionListReturnRefresh.swift in Sources */,
 					C107V0000000000000000031 /* SessionListAutoRefresh.swift in Sources */,
+					C32200000000000000000001 /* UpdateNotificationsSheet.swift in Sources */,
 					C107V0000000000000000003 /* NewChatRequest.swift in Sources */,
 					C107V0000000000000000004 /* PendingNewChatRoute.swift in Sources */,
 					C107V0000000000000000005 /* SessionListUtilityDestination.swift in Sources */,

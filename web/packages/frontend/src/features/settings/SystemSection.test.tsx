@@ -16,6 +16,7 @@ vi.mock('../../api/endpoints', () => ({
   checkUpdatesNow: vi.fn(),
   passkeysList: vi.fn(),
   applyUpdates: vi.fn(),
+  cancelUpdateNotification: vi.fn(() => Promise.resolve({ id: '00000000-0000-4000-8000-000000000001' })),
   saveSettings: vi.fn(),
 }))
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
@@ -46,12 +47,24 @@ describe('SystemSection "Check now"', () => {
 
   it('requires confirmation for an unsupported Agent and cancellation never applies it', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 0 }, agent: { behind: 4914 } })
-    vi.mocked(api.applyUpdates).mockResolvedValue({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_version: '0.21.3', supported_revision: 'a'.repeat(40), agent_channel: 'stable' })
+    vi.mocked(api.applyUpdates).mockResolvedValue({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_version: '0.21.3', supported_revision: 'a'.repeat(40), agent_channel: 'stable', notification_id: '00000000-0000-4000-8000-000000000001' })
     renderSystem()
     await userEvent.click(await screen.findByRole('button', { name: /update agent/i }))
     expect(await screen.findByRole('alertdialog')).toHaveTextContent('may cause issues')
     expect(screen.getByRole('alertdialog')).not.toHaveTextContent(/SSO|chat/i)
     await userEvent.click(screen.getByRole('button', { name: /cancel/i }))
+    expect(api.applyUpdates).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(api.cancelUpdateNotification).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001'))
+  })
+
+  it('cancels an unsupported Agent notification when confirmation closes with Escape', async () => {
+    vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 0 }, agent: { behind: 1 } })
+    vi.mocked(api.applyUpdates).mockResolvedValue({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_version: '0.21.3', supported_revision: 'a'.repeat(40), agent_channel: 'stable', notification_id: '00000000-0000-4000-8000-000000000001' })
+    renderSystem()
+    await userEvent.click(await screen.findByRole('button', { name: /update agent/i }))
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(api.cancelUpdateNotification).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001'))
     expect(api.applyUpdates).toHaveBeenCalledTimes(1)
   })
 
@@ -59,7 +72,7 @@ describe('SystemSection "Check now"', () => {
     settingsState.update_channel = 'stable'
     vi.mocked(api.saveSettings).mockImplementation((patch) => { settingsState = { ...settingsState, ...patch }; return Promise.resolve(settingsState) })
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ webui: { behind: 0 }, agent: { behind: 4914 } })
-    vi.mocked(api.applyUpdates).mockResolvedValueOnce({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_version: '0.21.3', supported_revision: 'a'.repeat(40), agent_channel: 'experimental' }).mockResolvedValueOnce({ ok: true })
+    vi.mocked(api.applyUpdates).mockResolvedValueOnce({ ok: false, confirmation_required: true, candidate_revision: 'b'.repeat(40), supported_version: '0.21.3', supported_revision: 'a'.repeat(40), agent_channel: 'experimental', notification_id: '00000000-0000-4000-8000-000000000001' }).mockResolvedValueOnce({ ok: true })
     renderSystem()
     await userEvent.click(await screen.findByRole('combobox', { name: /^agent update channel$/i }))
     await userEvent.click(await screen.findByRole('option', { name: /^experimental$/i }))
@@ -70,9 +83,10 @@ describe('SystemSection "Check now"', () => {
     expect(await screen.findByRole('alertdialog')).toHaveTextContent('This Agent version is not officially supported by Talaria and may cause issues.')
     await userEvent.click(screen.getByRole('button', { name: /update anyway/i }))
     await waitFor(() => expect(api.applyUpdates).toHaveBeenLastCalledWith('apply', undefined, 'agent', { agent_channel: 'experimental', confirmed_agent_revision: 'b'.repeat(40) }))
+    expect(api.cancelUpdateNotification).not.toHaveBeenCalled()
   })
 
-  beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: false, auto_apply_updates: false, update_channel: 'experimental' }; vi.mocked(api.checkUpdatesNow).mockReset(); vi.mocked(api.applyUpdates).mockReset(); vi.mocked(api.saveSettings).mockReset(); vi.mocked(showToast).mockReset(); vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: { behind: 0 }, agent: { behind: 0 } }) })
+  beforeEach(() => { settingsState = { bot_name: 'Hermes', check_for_updates: false, auto_apply_updates: false, update_channel: 'experimental' }; vi.mocked(api.checkUpdatesNow).mockReset(); vi.mocked(api.applyUpdates).mockReset(); vi.mocked(api.cancelUpdateNotification).mockClear(); vi.mocked(api.saveSettings).mockReset(); vi.mocked(showToast).mockReset(); vi.mocked(api.fetchUpdatesCheck).mockResolvedValue({ cached: true, webui: { behind: 0 }, agent: { behind: 0 } }) })
 
   it('does not call unavailable private release metadata up to date', async () => {
     vi.mocked(api.fetchUpdatesCheck).mockResolvedValue(UpdatesCheckSchema.parse({ webui: { behind: null, current_sha: null, manual_update: true, error: 'Private release access unavailable' } }))

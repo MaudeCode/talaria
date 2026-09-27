@@ -164,7 +164,8 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { sanitizeClientEvent, WindowLimiter } from './tools-router.js'
+import { sanitizeClientEvent, updateNotificationOwner, WindowLimiter } from './tools-router.js'
+import type { SessionInfo } from '../auth/store.js'
 import { buildInsights } from '../tools/insights.js'
 import { serverSummary, maskSecrets } from '../tools/mcp.js'
 import { readProjectContext } from '../tools/memory.js'
@@ -422,7 +423,9 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     body = await json(res)
     expect(body).toMatchObject({ ok: false, manual_update: true })
     res = await post(s, '/api/updates/apply', { target: 'agent' })
-    expect(await json(res)).toEqual({ ok: false, message: 'Not a git repository' })
+    body = await json(res)
+    expect(body).toMatchObject({ ok: false, message: 'Not a git repository' })
+    expect(typeof body.notification_id).toBe('string')
     res = await post(s, '/api/updates/apply', { target: 'x' })
     expect(res.status).toBe(400)
     res = await post(s, '/api/updates/summary', { updates: { webui: { behind: 2 } } })
@@ -453,6 +456,63 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(await json(res)).toEqual({ status: 'shutting_down' })
     expect(requested).toBe(true)
     s.deps.requestShutdown = original
+  })
+
+  it('owns update notification lifecycle through typed HTTP routes', async () => {
+    let res = await s.get('/api/update-notifications')
+    expect(res.status).toBe(200)
+    let body = await json(res)
+    expect(typeof body.unread_count).toBe('number')
+    expect(typeof body.clearable_count).toBe('number')
+    expect(typeof body.can_clear).toBe('boolean')
+    expect(typeof body.scope_id).toBe('string')
+
+    res = await post(s, '/api/updates/apply', { target: 'webui' })
+    const applied = await json(res)
+    expect(applied.ok).toBe(false)
+    const notificationID = String(applied.notification_id)
+    expect(notificationID).toMatch(/^[0-9a-f-]{36}$/)
+
+    body = await json(await s.get('/api/update-notifications'))
+    const notification = (body.notifications as Json[]).find((row) => row.id === notificationID)
+    expect(notification).toMatchObject({ kind: 'update', target: 'webui', phase: 'failed', read_at: null, destination: { key: 'settings.system' } })
+
+    res = await post(s, `/api/update-notifications/${notificationID}/read`, { read: true })
+    const readNotification = await json(res)
+    expect(readNotification.id).toBe(notificationID)
+    expect(typeof readNotification.read_at).toBe('string')
+    res = await post(s, '/api/update-notifications/clear', { clear: true })
+    body = await json(res)
+    expect((body.notifications as Json[]).some((row) => row.id === notificationID)).toBe(false)
+    expect(body.clearable_count).toBe(0)
+    expect(body.can_clear).toBe(false)
+  })
+
+  it('deduplicates concurrent update requests onto one server lifecycle record', async () => {
+    const originalApply = s.deps.updates.apply.bind(s.deps.updates)
+    let finish!: () => void
+    const gate = new Promise<void>((resolve) => { finish = resolve })
+    let calls = 0
+    s.deps.updates.apply = async () => { calls += 1; await gate; return { ok: false, message: 'fixture failure' } }
+    try {
+      const first = post(s, '/api/updates/apply', { target: 'webui' })
+      for (let attempt = 0; attempt < 20 && calls === 0; attempt += 1) await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(calls).toBe(1)
+      const cleared = await json(await post(s, '/api/update-notifications/clear', { clear: true }))
+      expect(cleared.notifications).toEqual([])
+      const duplicate = await json(await post(s, '/api/updates/apply', { target: 'webui' }))
+      expect(duplicate).toMatchObject({ ok: false, status: 'already_in_progress' })
+      expect(typeof duplicate.notification_id).toBe('string')
+      expect(calls).toBe(1)
+      finish()
+      const completed = await json(await first)
+      expect(completed.notification_id).toBe(duplicate.notification_id)
+      const listed = await json(await s.get('/api/update-notifications'))
+      expect((listed.notifications as Json[]).filter((row) => row.id === completed.notification_id)).toHaveLength(0)
+    } finally {
+      finish()
+      s.deps.updates.apply = originalApply
+    }
   })
 
   it('transcribe proxies multipart audio to the sidecar; tts proxies openai and rate limits [py:test_issue2931_edge_tts_endpoint.py::test_tts_requires_text] [py:test_issue2931_edge_tts_endpoint.py::test_tts_rate_limits_second_immediate_request] [py:test_issue4982_openai_tts.py::test_openai_tts_no_key_returns_503]', async () => {
@@ -500,6 +560,23 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
 })
 
 describe('tools helpers', () => {
+  it('keys OIDC notifications by stable issuer and subject without cross-owner sharing', () => {
+    const session = (token: string, issuer: string, subject: string, boundProfile = 'work'): SessionInfo => ({
+      token, expiry: 2_000_000_000, auth_type: 'oidc', username: 'shared@example.test', bound_profile: boundProfile,
+      oidc_issuer: issuer, oidc_subject: subject,
+    })
+    const first = updateNotificationOwner(session('token-a', 'https://issuer.example', 'principal-a'))
+    expect(updateNotificationOwner(session('token-b', 'https://issuer.example', 'principal-a'))).toBe(first)
+    expect(updateNotificationOwner(session('token-c', 'https://issuer.example', 'principal-a', 'personal'))).toBe(first)
+    expect(updateNotificationOwner(session('token-d', 'https://issuer.example', 'principal-b'))).not.toBe(first)
+    expect(updateNotificationOwner(session('token-e', 'https://other-issuer.example', 'principal-a'))).not.toBe(first)
+    expect(updateNotificationOwner(session('token-f', 'https://issuer.example', 'principal-a '))).not.toBe(first)
+    expect(first.length).toBeLessThanOrEqual(256)
+
+    const legacy = (token: string): SessionInfo => ({ token, expiry: 2_000_000_000, auth_type: 'oidc', username: 'shared@example.test', bound_profile: 'work' })
+    expect(updateNotificationOwner(legacy('legacy-a'))).not.toBe(updateNotificationOwner(legacy('legacy-b')))
+  })
+
   it('window limiter, toggle list, mcp summary, project context', () => {
     let t = 0
     const limiter = new WindowLimiter(60, 2, () => t)

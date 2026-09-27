@@ -123,6 +123,7 @@ main.main > .main-view:not([id="mainChat"]):not([id="mainSettings"]) .main-view-
 .rail .rail-btn.dashboard-link{order:31}
 .rail .rail-btn[data-panel="logs"]{order:32}
 .rail .rail-spacer{order:90}
+.rail .rail-btn[data-panel="update-notifications"]{order:98}
 .rail .rail-btn[data-panel="settings"]{order:99}
 .rail .rail-btn[data-panel="tasks"],.rail .rail-btn[data-panel="skills"],.rail .rail-btn[data-panel="insights"]{margin-top:10px;position:relative}
 .rail .rail-btn[data-panel="tasks"]::before,.rail .rail-btn[data-panel="skills"]::before,.rail .rail-btn[data-panel="insights"]::before{content:'';position:absolute;left:8px;right:8px;top:-6px;height:1px;background:var(--border);transform:none;width:auto;border-radius:0}

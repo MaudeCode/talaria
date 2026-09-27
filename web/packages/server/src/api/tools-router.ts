@@ -1,10 +1,11 @@
 /** Skills, memory, prompts, commands, notes, insights, logs, health, MCP, plugins, updates, diagnostics (Python `api/routes.py` handlers of the same paths). */
 import { implement } from '@orpc/server'
+import { createHash } from 'node:crypto'
 import { toolsContract } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
-import { activeProfileName } from '../auth/gate.js'
+import { activeProfileName, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { ConfigUnavailable, type Dict } from '../config/agent-config.js'
@@ -16,6 +17,8 @@ import { agentHealth, dashboardStatus, readLogTail, systemHealth } from '../tool
 import { normalizeChannel } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
 import { str } from '../util.js'
+import type { UpdateNotificationScope, UpdateNotificationTarget } from '../tools/update-notifications.js'
+import type { SessionInfo } from '../auth/store.js'
 
 const os = implement(toolsContract).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -38,6 +41,61 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 }
 
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
+
+const principalHash = (...parts: string[]): string => createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex')
+
+export function updateNotificationOwner(session: SessionInfo | null): string {
+  const authType = str(session?.auth_type).trim()
+  if (authType === 'oidc') {
+    const issuer = str(session?.oidc_issuer).trim()
+    const subject = typeof session?.oidc_subject === 'string' ? session.oidc_subject : ''
+    if (issuer && subject.trim()) return `oidc:${principalHash(issuer, subject)}`
+    const token = str(session?.token).trim()
+    if (token) return `oidc-session:${principalHash(token)}`
+  }
+  const username = str(session?.username).trim()
+  return username ? `${authType || 'auth'}:${username}` : 'local-owner'
+}
+
+async function updateNotificationScope(ctx: RequestContext): Promise<UpdateNotificationScope> {
+  const session = await ensureTrustedAuthSession(ctx)
+  return {
+    owner: updateNotificationOwner(session),
+    profile: activeProfileName(ctx),
+    serverOwner: await sessionCanManageServer(ctx, session),
+  }
+}
+
+async function applyWithNotification(
+  ctx: RequestContext,
+  target: UpdateNotificationTarget,
+  apply: () => Promise<Dict>,
+  confirmed = false,
+): Promise<Dict> {
+  const scope = await updateNotificationScope(ctx)
+  const active = ctx.deps.updateNotifications.activeUpdate(scope, target)
+  if (active && (active.phase === 'applying' || active.phase === 'restarting')) {
+    return { ok: false, status: 'already_in_progress', message: 'Update already in progress', notification_id: active.id }
+  }
+  const notification = active ?? ctx.deps.updateNotifications.begin(scope, target)
+  if (active?.phase === 'awaiting_confirmation' && confirmed) ctx.deps.updateNotifications.transition(notification.id, 'applying')
+  try {
+    const result = await apply()
+    const verifiedIdentity = typeof result.verified_revision === 'string'
+      ? { revision: result.verified_revision, version: typeof result.verified_version === 'string' ? result.verified_version : null }
+      : undefined
+    if (result.confirmation_required === true) ctx.deps.updateNotifications.transition(notification.id, 'awaiting_confirmation', null, verifiedIdentity)
+    else if (result.restart_blocked === true) ctx.deps.updateNotifications.transition(notification.id, 'blocked', null, verifiedIdentity)
+    else if (result.ok !== true) ctx.deps.updateNotifications.transition(notification.id, 'failed', null, verifiedIdentity)
+    else if (target === 'webui' && result.restart_scheduled === true) {
+      ctx.deps.updateNotifications.transition(notification.id, 'restarting', str(result.sourceRevision || result.candidate_revision), verifiedIdentity)
+    } else ctx.deps.updateNotifications.transition(notification.id, 'succeeded', null, verifiedIdentity)
+    return { ...result, notification_id: notification.id }
+  } catch (error) {
+    ctx.deps.updateNotifications.transition(notification.id, 'failed')
+    throw error
+  }
+}
 
 /** Rate limiter keyed by client IP over a sliding window (Python `_csp_report_rate_limited` / `_client_event_rate_limited`). */
 export class WindowLimiter {
@@ -254,10 +312,34 @@ export const toolsRouter = os.router({
       ctx.deps.log(`[updates] checking for updates (force=${String(force)}, channel=${channel})`)
       return (await ctx.deps.updates.check(force, !pyBool(settings.ignore_agent_updates), channel, input.agent_channel)) as never
     })),
-    apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.apply(updateTarget(input.target), bodyChannel(input.channel), () => true, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }) as never)),
-    force: os.updates.force.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.force(updateTarget(input.target), bodyChannel(input.channel), { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }) as never)),
-    clearLock: os.updates.clearLock.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.clearLock(updateTarget(input.target), { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }) as never)),
+    apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.apply(target, bodyChannel(input.channel), () => true, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined) as never })),
+    force: os.updates.force.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.force(target, bodyChannel(input.channel), { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined) as never })),
+    clearLock: os.updates.clearLock.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.clearLock(target, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined) as never })),
     summary: os.updates.summary.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.summarize(input.updates ?? {}, input.target) as never)),
+  },
+  updateNotifications: {
+    list: os.updateNotifications.list.handler(({ context: { ctx } }) => run(async () => ctx.deps.updateNotifications.list(await updateNotificationScope(ctx)) as never)),
+    read: os.updateNotifications.read.handler(({ input, context: { ctx } }) => run(async () => {
+      const notification = ctx.deps.updateNotifications.read(await updateNotificationScope(ctx), input.id)
+      if (!notification) throw new HttpError(404, 'Update notification not found')
+      return notification as never
+    })),
+    dismiss: os.updateNotifications.dismiss.handler(({ input, context: { ctx } }) => run(async () => {
+      const result = ctx.deps.updateNotifications.dismiss(await updateNotificationScope(ctx), input.id)
+      if (result === 'acknowledgement_required') throw new HttpError(409, 'This notification requires acknowledgement before it can be dismissed')
+      return { ok: true as const }
+    })),
+    clear: os.updateNotifications.clear.handler(({ context: { ctx } }) => run(async () => ctx.deps.updateNotifications.clear(await updateNotificationScope(ctx)) as never)),
+    cancel: os.updateNotifications.cancel.handler(({ input, context: { ctx } }) => run(async () => {
+      const notification = ctx.deps.updateNotifications.cancelUpdate(await updateNotificationScope(ctx), input.id)
+      if (!notification) throw new HttpError(404, 'Awaiting update notification not found')
+      return notification as never
+    })),
+    action: os.updateNotifications.action.handler(({ input, context: { ctx } }) => run(async () => {
+      const notification = ctx.deps.updateNotifications.action(await updateNotificationScope(ctx), input.id, input.action_id)
+      if (!notification) throw new HttpError(404, 'Notification action not found')
+      return notification as never
+    })),
   },
   transcribeCapability: os.transcribeCapability.handler(({ context: { ctx } }) => run(async () => {
     const sidecar = ctx.deps.sidecar()

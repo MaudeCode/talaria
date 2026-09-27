@@ -144,6 +144,74 @@ struct UpdatesApplyResponse: Decodable, Equatable {
     let stashConflict: Bool?
     let activeStreams: Int?
     let activeRuns: Int?
+    let notificationId: String?
+}
+
+struct UpdateNotificationsResponse: Decodable, Equatable {
+    let scopeId: String
+    let notifications: [UpdateNotificationRecord]
+    let unreadCount: Int
+    let clearableCount: Int
+    let canClear: Bool
+}
+
+struct UpdateNotificationDismissResponse: Decodable, Equatable {
+    let ok: Bool
+}
+
+struct UpdateNotificationRecord: Decodable, Equatable, Identifiable {
+    let id: String
+    let kind: String
+    let target: String?
+    let phase: String
+    let severity: String
+    let persistent: Bool
+    let requiresAcknowledgement: Bool
+    let actions: [UpdateNotificationAction]
+    let destination: UpdateNotificationDestination?
+    let title: String
+    let message: String
+    let createdAt: String
+    let updatedAt: String
+    let readAt: String?
+    let acknowledgedAt: String?
+    let acknowledgedActionId: String?
+    let verifiedRevision: String?
+    let verifiedVersion: String?
+    let unread: Bool
+    let active: Bool
+    let requiresInteraction: Bool
+    let canDismiss: Bool
+}
+
+struct UpdateNotificationAction: Decodable, Equatable, Identifiable {
+    let id: String
+    let label: String
+    let style: String
+    let acknowledges: Bool
+}
+
+struct UpdateNotificationDestination: Decodable, Equatable {
+    let key: String
+    let label: String
+}
+
+enum UpdateNotificationTimestamp {
+    private static let standard: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let fractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    static func date(from value: String) -> Date? {
+        fractional.date(from: value) ?? standard.date(from: value)
+    }
 }
 
 extension UpdatesApplyResponse {

@@ -25,6 +25,8 @@ export interface SessionRecord {
   bound_profile?: string | null
   oidc_mapping_fingerprint?: string | null
   oidc_profile_identity?: string | null
+  oidc_issuer?: string | null
+  oidc_subject?: string | null
   oidc_owner?: boolean
   [key: string]: unknown
 }
@@ -38,7 +40,7 @@ export interface SessionInfo extends SessionRecord {
 
 type StoredSession = number | SessionRecord
 
-const OIDC_KEEP = new Set(['oidc_mapping_fingerprint', 'oidc_profile_identity', 'oidc_owner'])
+const OIDC_KEEP = new Set(['oidc_mapping_fingerprint', 'oidc_profile_identity', 'oidc_issuer', 'oidc_subject', 'oidc_owner'])
 
 export function sessionExpiry(record: unknown): number | null {
   const raw = record && typeof record === 'object' ? ((record as SessionRecord).expiry ?? (record as Record<string, unknown>).expires_at) : record
@@ -337,6 +339,8 @@ export class AuthStore {
       if (opts.oidcBinding) {
         record.oidc_mapping_fingerprint = (opts.oidcBinding.mapping_fingerprint as string | undefined) ?? null
         record.oidc_profile_identity = (opts.oidcBinding.profile_identity as string | undefined) ?? null
+        record.oidc_issuer = (opts.oidcBinding.issuer as string | undefined) ?? null
+        record.oidc_subject = (opts.oidcBinding.subject as string | undefined) ?? null
         if (opts.oidcBinding.owner) record.oidc_owner = true
       }
     }

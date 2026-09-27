@@ -19,6 +19,7 @@ import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.j
 import type { AppDeps } from './http/context.js'
 import { checkoutRevision, detectWebuiVersion, loadReleaseInfo } from './release.js'
 import { githubJson, normalizeChannel, purgePycache, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
+import { UpdateNotificationStore } from './tools/update-notifications.js'
 import { RESTART_EXIT_CODE } from './cli/supervise.js'
 import { pyBool, SettingsStore } from './settings.js'
 import { AssetCache, SpaShell } from './spa.js'
@@ -112,6 +113,9 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const runningSourceRevision = checkoutRevision(config.webRoot)
   // Container images bake `TALARIA_WEB_VERSION` (Python `api/_version.py`) because .git is not shipped.
   const version = opts.version ?? detectWebuiVersion(release, config.webRoot, (env.TALARIA_WEB_VERSION ?? '').trim() || packageVersion())
+  const updateNotifications = new UpdateNotificationStore(config.stateDir, () => new Date(now() * 1000))
+  const verifiedRunningVersion = /^web-(?:exp-)?v\d+\.\d+\.\d+$/.test(version) ? version : null
+  updateNotifications.reconcileInterruptedUpdates(runningSourceRevision ?? release.sourceRevision, verifiedRunningVersion)
   const home = opts.home ?? config.homeDir
   const PROFILE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
   // Python `init_profile_state` + `switch_profile(process_wide=False)`: the sticky `~/.hermes/active_profile` is
@@ -537,6 +541,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     // Embedded shells are separate process groups that would outlive the worker: terminate and reap them on both exits.
     requestRestart: () => { void waitUntilRestartSafe(restartBlockers, { log }).then(() => { deps.terminals.closeAll({ immediate: true }); purgeAgentPycache(); process.exit(RESTART_EXIT_CODE) }) },
     updates: null as unknown as UpdateService,
+    updateNotifications,
     cspLimiter: new WindowLimiter(60, 100, now),
     clientEventLimiter: new WindowLimiter(60, 30, now),
     ttsLimiter: new WindowLimiter(2, 1, now),
@@ -592,6 +597,10 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     includeAgent: () => !pyBool(settings.load().ignore_agent_updates),
     autoApply: () => settings.load().check_for_updates !== false && settings.load().auto_apply_updates === true,
     checkEnabled: () => !truthy(env.HERMES_WEBUI_TEST_NETWORK_BLOCK) && settings.load().check_for_updates !== false,
+    autoNotification: {
+      begin: () => updateNotifications.begin({ owner: '*', profile: 'default', serverOwner: true }, 'webui').id,
+      transition: (id, phase, expectedIdentity, verifiedIdentity) => { updateNotifications.transition(id, phase, expectedIdentity, verifiedIdentity) },
+    },
     blockers: restartBlockers,
     scheduleRestart: () => { setTimeout(() => { void waitUntilRestartSafe(restartBlockers, { maxWaitMs: Infinity, log }).then(() => { deps.requestRestart() }) }, 2000).unref() },
     gatewayRestart: async () => {

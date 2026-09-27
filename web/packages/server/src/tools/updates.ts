@@ -646,6 +646,11 @@ async function currentReleaseTag(path: string, git: GitRun): Promise<string | nu
   const out = await git(['describe', '--tags', '--exact-match', '--match', AGENT_TAG_GLOB, 'HEAD'], path)
   return out.ok && out.out ? out.out : null
 }
+async function verifiedAgentIdentity(path: string, expectedRevision: string, git: GitRun): Promise<{ verified_revision: string; verified_version: string | null } | null> {
+  const head = await git(['rev-parse', 'HEAD'], path)
+  if (!head.ok || head.out !== expectedRevision || !SHA.test(head.out)) return null
+  return { verified_revision: head.out, verified_version: await currentReleaseTag(path, git) }
+}
 const headContainsRef = async (path: string, ref: string, git: GitRun): Promise<boolean> => (await git(['merge-base', '--is-ancestor', ref, 'HEAD'], path)).ok
 const canFastForwardTo = async (path: string, ref: string, git: GitRun): Promise<boolean> => (await git(['merge-base', '--is-ancestor', 'HEAD', ref], path)).ok
 
@@ -720,7 +725,11 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
   }
   let info: Dict
   try { info = await agentTarget(path, git, channel) } catch (error) { return { ok: false, message: (error as Error).message } }
-  if (info.current_sha === info.latest_sha) return { ok: true, up_to_date: true, target: 'agent', message: 'Agent is up to date.' }
+  if (info.current_sha === info.latest_sha) {
+    const verified = await verifiedAgentIdentity(path, str(info.latest_sha), git)
+    if (!verified) return { ok: false, message: 'The installed Agent revision could not be verified.' }
+    return { ok: true, up_to_date: true, target: 'agent', message: 'Agent is up to date.', ...verified }
+  }
   if (info.manual_update || info.error) return { ...info, ok: false, message: info.message ?? info.error }
   const warning = confirmAgent(info, policy)
   if (warning) return warning
@@ -752,7 +761,9 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
     const popped = await git(['stash', 'pop'], path)
     if (!popped.ok) message += '. Local changes remain in `git stash list`; resolve them manually.'
   }
-  return { ok: true, message, target: 'agent', ref }
+  const verified = await verifiedAgentIdentity(path, revision, git)
+  if (!verified) return { ok: false, message: 'The Agent update completed, but the installed revision could not be verified.', target: 'agent' }
+  return { ok: true, message, target: 'agent', ref, ...verified }
 }
 
 async function restoreStash(path: string, git: GitRun, pullOut: string): Promise<string> {
@@ -779,7 +790,9 @@ export async function forceAgentUpdate(path: string | null, git: GitRun, log: (l
   const cleaned = await git(['clean', '-fd'], path)
   if (!cleaned.ok) log(`[updates] force update: git clean -fd failed (continuing to reset --hard): ${cleaned.out}`)
   if (!(await git(['reset', '--hard', revision], path)).ok) return { ok: false, message: `Force reset to ${ref} failed` }
-  return { ok: true, message: `agent force-updated to ${ref}`, target: 'agent', ref }
+  const verified = await verifiedAgentIdentity(path, revision, git)
+  if (!verified) return { ok: false, message: 'The Agent force update completed, but the installed revision could not be verified.', target: 'agent' }
+  return { ok: true, message: `agent force-updated to ${ref}`, target: 'agent', ref, ...verified }
 }
 
 /** Python `_inventory_locks`: report `.git/**\/*.lock` without touching any of them. */
@@ -917,6 +930,10 @@ export interface UpdateServiceDeps {
   includeAgent: () => boolean
   autoApply?: () => boolean
   checkEnabled?: () => boolean
+  autoNotification?: {
+    begin: () => string
+    transition: (id: string, phase: 'restarting' | 'succeeded' | 'blocked' | 'failed', expectedIdentity?: string | null, verifiedIdentity?: { revision: string | null; version: string | null }) => void
+  }
   blockers: () => RestartBlockers
   /** Re-exec the server once active work drains (`restartWhenSafe`). */
   scheduleRestart: () => void
@@ -1035,10 +1052,17 @@ export class UpdateService {
   /** Shared turn admission stays closed from update start through the supervisor restart. */
   blocksNewWork(): boolean { return this.applying || this.autoRestartScheduled }
 
+  private pendingRestartResponse(target: string): Dict | null {
+    if (!this.autoRestartScheduled) return null
+    if (target === 'webui') return { ok: true, target, restart_scheduled: true, message: 'A Web restart is already scheduled.' }
+    return { ok: false, status: 'already_in_progress', target, message: 'A Talaria Web restart is already scheduled. Wait for the server to restart before updating Hermes Agent.' }
+  }
+
   async autoApplyOnce(): Promise<Dict | null> {
     if (this.autoRunning || this.applying || this.autoRestartScheduled || !(this.deps.checkEnabled?.() ?? this.deps.autoApply?.())) return null
     this.autoRunning = true
     const lifecycle = this.lifecycle
+    let notificationId: string | null = null
     try {
       const channel = this.deps.channel()
       const stillEnabled = (): boolean => lifecycle === this.lifecycle && Boolean(this.deps.autoApply?.()) && (this.deps.checkEnabled?.() ?? true) && channel === this.deps.channel()
@@ -1047,11 +1071,19 @@ export class UpdateService {
       if (!stillEnabled()) return web
       if (web.error || web.manual_update) { this.deps.log(`[updates] automatic Web update unavailable: ${str(web.error || web.message)}`); return web }
       if (!(Number(web.behind) > 0 || web.metadata_repair === true)) return web
+      notificationId = this.deps.autoNotification?.begin() ?? null
       const result = await this.apply('webui', channel, stillEnabled)
+      if (notificationId) {
+        if (result.restart_blocked === true) this.deps.autoNotification?.transition(notificationId, 'blocked')
+        else if (result.ok !== true) this.deps.autoNotification?.transition(notificationId, 'failed')
+        else if (result.restart_scheduled === true) this.deps.autoNotification?.transition(notificationId, 'restarting', str(result.sourceRevision || result.candidate_revision))
+        else this.deps.autoNotification?.transition(notificationId, 'succeeded')
+      }
       this.deps.log(`[updates] automatic Web update: ${str(result.message || (result.ok ? 'applied' : 'failed'))}`)
       if (!result.ok) this.cache.webui = { ...web, message: result.message, error: result.restart_blocked ? undefined : result.message }
       return result
     } catch (error) {
+      if (notificationId) this.deps.autoNotification?.transition(notificationId, 'failed')
       this.deps.log(`[updates] automatic Web update failed: ${(error as Error).message}`)
       return { ok: false, error: (error as Error).message }
     } finally { this.autoRunning = false }
@@ -1077,7 +1109,8 @@ export class UpdateService {
   /** Python `apply_update`. */
   async apply(target: string, channel?: Channel | null, canApply: () => boolean = () => true, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
     if (this.checking) await this.checking
-    if (this.autoRestartScheduled) return { ok: true, restart_scheduled: true, message: 'A Web restart is already scheduled.' }
+    const pendingRestart = this.pendingRestartResponse(target)
+    if (pendingRestart) return pendingRestart
     if (!canApply()) return { ok: false, message: 'Web update settings changed; update deferred.' }
     const blocked = this.blockedResponse(target)
     if (blocked) return blocked
@@ -1127,6 +1160,8 @@ export class UpdateService {
   async force(target: string, channel?: Channel | null, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
     if (this.checking) await this.checking
     if (target === 'webui') return this.apply(target, channel)
+    const pendingRestart = this.pendingRestartResponse(target)
+    if (pendingRestart) return pendingRestart
     const blocked = this.blockedResponse(target)
     if (blocked) return Promise.resolve(blocked)
     return this.locked(async () => {
@@ -1139,6 +1174,8 @@ export class UpdateService {
   /** Python `apply_clear_lock`: never removes a lock; Web retries the clean path, the Agent gets the manual command. */
   clearLock(target: string, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
     if (target === 'webui') return this.apply(target).then((r) => ({ ...r, lock_recovery: { action: 'retry-only' } }))
+    const pendingRestart = this.pendingRestartResponse(target)
+    if (pendingRestart) return Promise.resolve(pendingRestart)
     const blocked = this.blockedResponse(target)
     if (blocked) return Promise.resolve(blocked)
     return this.locked(async () => {

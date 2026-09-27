@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Follow server update progress and alerts from a shared notification center on Web and iPhone.",
+      "highlight": true,
+      "components": ["app", "web"]
+    }
+  ]
+}

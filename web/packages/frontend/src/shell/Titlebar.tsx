@@ -7,6 +7,7 @@ import { ProfileMenu } from './ProfileMenu'
 import { toggleMobileSidebar } from './useShellState'
 import { useNewChat } from '../features/sessions/useNewChat'
 import { Brandmark } from './Brandmark'
+import { UpdateNotificationCenterButton } from '../features/notifications/UpdateNotificationCenter'
 
 /** Legacy `.app-titlebar`: hidden in desktop browsers, visible on mobile and in installed PWAs. */
 export function Titlebar({ title, subtitle }: { title?: string; subtitle?: string }) {
@@ -30,6 +31,7 @@ export function Titlebar({ title, subtitle }: { title?: string; subtitle?: strin
         {subtitle && <span className="app-titlebar-sub text-[10px] text-muted bg-hover py-0.5 px-[7px] rounded-[4px] font-mono whitespace-nowrap shrink-0 max-[641px]:text-[9px] max-[641px]:py-px max-[641px]:px-[5px]" id="appTitlebarSub">{subtitle}</span>}
       </div>
       <div className="app-titlebar-spacer hidden size-11 shrink-0 max-[901px]:flex" aria-hidden="true" />
+      <UpdateNotificationCenterButton placement="titlebar" />
       <button className="app-titlebar-new-chat" id="btnTitlebarNewChat" type="button" aria-label={m.new_conversation()} title={m.new_conversation()} onClick={() => { void newChat() }}>
         <Plus size={16} aria-hidden="true" />
       </button>
