@@ -1,0 +1,13 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A chat owned by a messaging app or Claude Code stays read-only even after it was opened in Talaria, so you can no longer send messages to it, rename it or delete it by mistake.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

@@ -304,6 +304,9 @@ struct AssistantActivityScene: Codable, Equatable {
     let activitySceneRef: String?
     /// Server-decided: whether the whole scene, including rows outside this preview, has a consumed steer.
     let serverHasConsumedSteering: Bool?
+    /// Server-attributed files the whole turn changed, in first-touch order; `nil` from a Web
+    /// that predates the field (TAL-355), which then shows no recap.
+    let fileChanges: [AssistantTurnFileChange]?
 
     enum CodingKeys: String, CodingKey {
         case version
@@ -316,6 +319,7 @@ struct AssistantActivityScene: Codable, Equatable {
         case activitySceneRef
         case finalPhaseDuration
         case serverHasConsumedSteering = "hasConsumedSteering"
+        case fileChanges
     }
 
     init(from decoder: Decoder) throws {
@@ -329,6 +333,8 @@ struct AssistantActivityScene: Codable, Equatable {
         activitySceneRef = container.decodeLossyStringIfPresent(forKey: .activitySceneRef)
         finalPhaseDuration = container.decodeLossyDoubleIfPresent(forKey: .finalPhaseDuration)
         serverHasConsumedSteering = try? container.decodeIfPresent(Bool.self, forKey: .serverHasConsumedSteering)
+        fileChanges = (try? container.decodeIfPresent([JSONValue].self, forKey: .fileChanges))
+            .map(AssistantTurnFileChange.decodeLossily)
 
         activityRows = (try? container.decodeIfPresent([JSONValue].self, forKey: .activityRows))
             .map(AssistantActivitySceneRow.decodeLossily)

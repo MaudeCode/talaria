@@ -174,7 +174,7 @@ export const coreRouter = os.router({
       const auth = ctx.deps.auth
       const sessionInfo = await ensureTrustedAuthSession(ctx)
       const cookieVal = ctx.trusted.cookieValue ?? ctx.authCookie()
-      if (cookieVal) auth.invalidateSession(cookieVal)
+      if (cookieVal) await auth.revokeSession(cookieVal)
       const payload: { ok: true; trusted_logout_url?: string } = { ok: true }
       if (sessionInfo?.auth_type === 'trusted') {
         const logoutUrl = (ctx.deps.config.env.HERMES_WEBUI_TRUSTED_AUTH_LOGOUT_URL ?? '').trim()

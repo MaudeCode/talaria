@@ -396,6 +396,10 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(timeline.rows.map(\.kind), ["prose", "tools", "prose"])
         XCTAssertEqual(timeline.toolCalls.map(\.id), ["contract-call"])
         XCTAssertEqual(CompletedAssistantTurn(rows: timeline.rows)?.finalAnswer, "Contract answer.")
+        // A Web from before server-attributed file changes (TAL-355) ships none; its turns show no recap.
+        guard let fileChanges = message.activityScene?.fileChanges else { return }
+        XCTAssertEqual(fileChanges, [AssistantTurnFileChange(path: "fixture.txt", action: .edited)])
+        XCTAssertEqual(TurnFileChangeAggregator.summarize(changes: fileChanges, status: nil).filesChangedTitle, "1 file changed")
     }
 
     func testSharedWebSessionStatesItsTranscriptCursor() throws {

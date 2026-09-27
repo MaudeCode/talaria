@@ -7,7 +7,7 @@
 import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
-import { atomicWriteText } from '../fs/atomic.js'
+import { atomicWriteText, atomicWriteTextAsync } from '../fs/atomic.js'
 import { AgentConfig, ConfigUnavailable } from '../config/agent-config.js'
 import { probeServer } from '../tools/mcp-health.js'
 import { agentHealth } from '../tools/health.js'
@@ -325,7 +325,7 @@ describe('image attachments in user messages (review round 14)', () => {
 })
 
 describe('atomic writes honour the umask for new files', () => {
-  it('a new file is created under the process umask while an existing mode is preserved', () => {
+  it('a new file is created under the process umask while an existing mode is preserved', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'talaria-atomic-'))
     const previous = process.umask(0o077)
     try {
@@ -334,6 +334,10 @@ describe('atomic writes honour the umask for new files', () => {
       writeFileSync(join(dir, 'open.json'), '{}', { mode: 0o644 })
       chmodSync(join(dir, 'open.json'), 0o644)
       atomicWriteText(join(dir, 'open.json'), '{"a":1}')
+      expect(statSync(join(dir, 'open.json')).mode & 0o777).toBe(0o644)
+      await atomicWriteTextAsync(join(dir, 'fresh-async.json'), '{}')
+      expect(statSync(join(dir, 'fresh-async.json')).mode & 0o777).toBe(0o600)
+      await atomicWriteTextAsync(join(dir, 'open.json'), '{"a":2}')
       expect(statSync(join(dir, 'open.json')).mode & 0o777).toBe(0o644)
     } finally {
       process.umask(previous)
