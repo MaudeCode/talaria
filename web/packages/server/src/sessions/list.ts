@@ -11,7 +11,7 @@ import { redactText } from '../redact.js'
 import { Session, stripSidebarHeavyMetadata } from './session.js'
 import type { SessionStore } from './store.js'
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, MESSAGING_SOURCES as STATE_DB_MESSAGING_SOURCES } from './state-db.js'
+import { isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, MESSAGING_SOURCES as STATE_DB_MESSAGING_SOURCES, normalizeAgentSessionSource } from './state-db.js'
 
 export type Row = Record<string, unknown>
 const num = (v: unknown): number => { const n = Number(v ?? 0); return Number.isFinite(n) && n > 0 ? n : 0 }
@@ -355,6 +355,8 @@ export interface ListParams {
   /** Gateway `sessions.json` identity map for the messaging dedupe (Python `_load_gateway_session_identity_map`). */
   gatewayIdentity?: Map<string, GatewayIdentity>
   sourceFilter?: string | null
+  /** TAL-358: batched active-profile state.db owner lookup (`stateDbSessionSources`) for the sidecar owner lock. */
+  stateDbSources?: (ids: string[]) => Map<string, string>
 }
 
 export interface GatewayIdentity { session_key: string; chat_id: string; thread_id: string; chat_type: string; user_id: string; platform: string; raw_source: string }
@@ -414,6 +416,23 @@ export function isClaimableCliSource(meta: Row, stateDbSource: string): boolean 
   return true
 }
 
+/**
+ * TAL-358: marks read-only each WebUI sidecar row whose active-profile state.db owner (`sessions.source`) refuses
+ * claiming, as a sidecar-less row from that owner is. A sidecar persisted as WebUI- or fork-born stays WebUI-owned
+ * whatever state.db mirrors for its id. `stateDbSources` reads every candidate's owner in one batch, not per row.
+ */
+export function withOwnerLocks(rows: Row[], stateDbSources: (ids: string[]) => Map<string, string>): Row[] {
+  const webuiOwned = (r: Row): boolean => ['source_tag', 'raw_source', 'session_source'].some((k) => ['webui', 'fork'].includes(str(r[k]).trim().toLowerCase()))
+  const candidates = rows.filter((r) => !r.read_only && !webuiOwned(r)).map((r) => str(r.session_id))
+  if (!candidates.length) return rows
+  const owners = stateDbSources(candidates)
+  const locked = new Set(candidates.filter((sid) => {
+    const source = str(owners.get(sid)).trim().toLowerCase()
+    return Boolean(source) && !isClaimableCliSource({ source_tag: source, ...normalizeAgentSessionSource(source) }, source)
+  }))
+  return locked.size ? rows.map((r) => (locked.has(str(r.session_id)) ? { ...r, read_only: true } : r)) : rows
+}
+
 /** Python `_session_is_subagent_view_only` on a row: a delegated child by any source marker. */
 export function isSubagentRow(row: Row): boolean {
   return str(row.source_tag || row.raw_source || row.session_source || row.source).trim().toLowerCase() === 'subagent'
@@ -422,8 +441,8 @@ export function isSubagentRow(row: Row): boolean {
 /**
  * TAL-312: the streaming and read-only flags every session payload ships. `is_streaming` holds only while the row's
  * `active_stream_id` is a live runtime stream, and a stale id goes out as `null`; `read_only` folds the persisted flag
- * with the view-only subagent rule (a not-claimable foreign row arrives already marked); the `can_*` flags mirror the
- * branch, pin, archive and duplicate gates. Clients render these as-is.
+ * with the view-only subagent rule (a not-claimable foreign row or owner-locked sidecar arrives already marked); the
+ * `can_*` flags mirror the branch, pin, archive and duplicate gates. Clients render these as-is.
  */
 export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: ReadonlySet<string>): T {
   const r: Row = row
@@ -592,6 +611,8 @@ export interface ListPayload {
 /** Python `_build_session_list_cache_payload`; the orphaned-sidecar prune (#3238/#4985) is not applied. */
 export function buildSessionListPayload(store: SessionStore, params: ListParams): ListPayload {
   let webuiSessions: Row[] = allSessions(store, { sidebarMetadataOnly: true }).map((r) => ({ ...r, is_cli_session: isCliSessionRow(r) }))
+  // Before the state.db overlay below replaces the sidecar's own source fields, which the WebUI-born exception reads.
+  if (params.stateDbSources) webuiSessions = withOwnerLocks(webuiSessions, params.stateDbSources)
   let dedupedCli: Row[] = []
   if (params.cliRows) {
     const cliById = new Map(params.cliRows.map((r) => [str(r.session_id), r]))

@@ -377,6 +377,28 @@ export function agentSessionRowsExisting(dbPath: string, sessionIds: Iterable<st
   }
 }
 
+/** TAL-358: the `sessions.source` owner of each present id, in one chunked read; empty when state.db is missing or unreadable. */
+export function stateDbSessionSources(dbPath: string, sessionIds: Iterable<string>): Map<string, string> {
+  const sources = new Map<string, string>()
+  const ids = [...new Set([...sessionIds].map((s) => s.trim()).filter(Boolean))]
+  if (!ids.length || !existsSync(dbPath)) return sources
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return sources }
+  try {
+    const cols = tableColumns(db, 'sessions')
+    if (!cols.has('id') || !cols.has('source')) return sources
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500)
+      for (const row of db.prepare(`SELECT id, source FROM sessions WHERE id IN (${chunk.map(() => '?').join(',')})`).all(...chunk) as { id: string; source: unknown }[]) sources.set(row.id, str(row.source))
+    }
+    return sources
+  } catch {
+    return sources
+  } finally {
+    db.close()
+  }
+}
+
 /** Python `state_db_has_session`: true only when `sid` is a row of the sessions table; a missing or unreadable db is false. */
 export function stateDbHasSession(dbPath: string, sid: string): boolean {
   const id = sid.trim()

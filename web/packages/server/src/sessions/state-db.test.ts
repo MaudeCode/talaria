@@ -278,4 +278,47 @@ describe('state.db projection', () => {
     // ...and the branch's model context carries the retained CLI row as well (the branch id has no state.db rows).
     expect(s.deps.sessionStore.get(branched.session_id).context_messages.map((m) => m.content)).toEqual(['from web', 'web reply', 'user says'])
   })
+
+  it('applies the state.db owner to an existing sidecar: messaging and Claude Code owners lock it, WebUI-born and claimable CLI sidecars stay writable (TAL-358)', async () => {
+    const post = (path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+    // A WebUI sidecar with no persisted `read_only`, whose id also has a state.db row owned by `source`.
+    const sidecar = async (source: string, persisted: Json = {}): Promise<string> => {
+      const sid = String(((await json(await post('/api/session/new', {}))).session as Json).session_id)
+      const stored = s.deps.sessionStore.get(sid)
+      stored.title = `Ownerprobe ${source}`
+      stored.messages = [{ role: 'user', content: 'ownerprobe', timestamp: 7000 }, { role: 'assistant', content: 'ok', timestamp: 7001 }]
+      Object.assign(stored, persisted)
+      s.deps.sessionStore.save(stored)
+      insertSession(db, { id: sid, source, started_at: 7000, chat_id: `owner-${sid}`, messages: [['user', 7000], ['assistant', 7001]] })
+      return sid
+    }
+    const locked = [await sidecar('telegram'), await sidecar('claude_code')]
+    const writable = [await sidecar('telegram', { source_tag: 'webui' }), await sidecar('cli')]
+    const payloads = async (sid: string): Promise<[string, Json | undefined][]> => {
+      const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+      const row = ((await json(await s.get('/api/sessions'))).sessions as Json[]).find((r) => r.session_id === sid)
+      const hit = ((await json(await s.get('/api/sessions/search?q=ownerprobe'))).sessions as Json[]).find((r) => r.session_id === sid)
+      const status = await json(await s.get(`/api/session/status?session_id=${sid}`))
+      return [['detail', detail], ['list', row], ['search', hit], ['status', status]]
+    }
+    // With and without the state.db sidebar rows loaded: the lock does not depend on which rows the sidebar shows.
+    for (const show of [false, true]) {
+      await s.deps.settings.save({ show_cli_sessions: show })
+      s.deps.cliSessions.invalidate()
+      for (const sid of [...locked, ...writable]) {
+        for (const [name, payload] of await payloads(sid)) expect(payload?.read_only, `${sid} ${name} show_cli=${String(show)}`).toBe(locked.includes(sid))
+      }
+    }
+    await s.deps.settings.save({ show_cli_sessions: false })
+    for (const sid of locked) {
+      expect((await post('/api/chat/start', { session_id: sid, message: 'hi' })).status, sid).toBe(403)
+      expect((await post('/api/session/rename', { session_id: sid, title: 'nope' })).status, sid).toBe(403)
+      // The branch gate follows the lock, as the detail's `can_branch` says.
+      expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).can_branch, sid).toBe(false)
+      expect((await post('/api/session/branch', { session_id: sid })).status, sid).toBe(403)
+      expect((await post('/api/session/delete', { session_id: sid })).status, sid).toBe(400)
+      expect(s.deps.sessionStore.loadMetadataOnly(sid)?.title, sid).toMatch(/^Ownerprobe /)
+    }
+    for (const sid of writable) expect((await post('/api/session/rename', { session_id: sid, title: 'Ownerprobe renamed' })).status, sid).toBe(200)
+  })
 })
