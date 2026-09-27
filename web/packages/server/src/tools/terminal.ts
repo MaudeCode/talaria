@@ -3,8 +3,8 @@
  * env allowlist, resize clamp 8..80 × 20..240, 2000-line backlog with seq
  * replay, 32-terminal cap, SIGHUP→SIGKILL teardown, 900 s idle reap.
  */
-import { accessSync, constants as fsConstants, existsSync, statSync } from 'node:fs'
-import { basename, delimiter, join, resolve } from 'node:path'
+import { accessSync, chmodSync, constants as fsConstants, existsSync, statSync } from 'node:fs'
+import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { str } from '../util.js'
 
@@ -20,9 +20,26 @@ const IDLE_GRACE_MS = 900_000
 export const CLOSED_RETENTION_MS = 60_000
 const SAFE_ENV_KEYS = new Set(['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LC_ALL', 'LC_CTYPE', 'LC_MESSAGES', 'LANGUAGE', 'TZ', 'TMPDIR', 'TEMP', 'XDG_RUNTIME_DIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME'])
 
+/**
+ * node-pty 1.1.0 publishes its macOS prebuilt `spawn-helper` without the execute bit and no install script
+ * sets it, so every spawn fails with `posix_spawnp failed`. Repair it once per process; best effort, since an
+ * unwritable install still surfaces node-pty's own spawn error.
+ */
+export function ensureSpawnHelperExecutable(ptyRoot: string, platform: string = process.platform, arch: string = process.arch): void {
+  const helper = join(ptyRoot, 'prebuilds', `${platform}-${arch}`, 'spawn-helper')
+  try {
+    if (!existsSync(helper)) return
+    accessSync(helper, fsConstants.X_OK)
+  } catch {
+    try { chmodSync(helper, statSync(helper).mode | 0o111) } catch { /* not ours to change */ }
+  }
+}
+
 export function loadPty(): PtyModuleLike | null {
   try {
-    const pty = createRequire(import.meta.url)('node-pty') as PtyModuleLike
+    const require = createRequire(import.meta.url)
+    const pty = require('node-pty') as PtyModuleLike
+    ensureSpawnHelperExecutable(dirname(require.resolve('node-pty/package.json')))
     // node-pty's `kill` signals the shell pid only; Python `killpg`'d the group so background jobs got the HUP too.
     return { spawn: (file, args, opts) => { const proc = pty.spawn(file, args, opts); proc.killGroup = (signal) => { try { process.kill(-proc.pid, signal) } catch { proc.kill(signal) } }; return proc } }
   } catch {

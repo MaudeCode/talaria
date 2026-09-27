@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Embedded terminals in Talaria Web start on macOS again instead of failing to launch a shell.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
