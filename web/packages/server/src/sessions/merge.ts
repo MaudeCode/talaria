@@ -459,11 +459,13 @@ export function stoppedTurnContext(previousContext: Message[], checkpoint: unkno
     const text = m.role === 'assistant' ? messageText(m.content).trim() : ''
     if (text && unsettled.includes(text)) unsettled = unsettled.replace(text, '').trim()
   }
-  // A tool result is a `tool` row or an Anthropic-style user row of `tool_result` blocks.
+  // A tool result is a `tool` row or an Anthropic-style user row of `tool_result` blocks. A steer the Agent applied is
+  // neither a prompt nor a result: the boundary goes after it, and it never makes the turn look unanswered.
   const toolResult = (m: Message | undefined): boolean => m?.role === 'tool' || (m?.role === 'user' && Array.isArray(m.content) && m.content.some((part) => isDict(part) && part.type === 'tool_result'))
-  if (toolResult(sanitizeMessagesForApi(rows).at(-1))) rows.push({ role: 'assistant', content: unsettled || 'Operation interrupted.' })
+  const tail = (): Message | undefined => sanitizeMessagesForApi(rows.filter((m) => agentSteerText(m) === null)).at(-1)
+  if (toolResult(tail())) rows.push({ role: 'assistant', content: unsettled || 'Operation interrupted.' })
   else if (unsettled) rows.push({ role: 'assistant', content: unsettled })
-  return sanitizeMessagesForApi(rows).at(-1)?.role === 'user' ? null : rows
+  return tail()?.role === 'user' ? null : rows
 }
 
 function toolCallId(tc: unknown): string {

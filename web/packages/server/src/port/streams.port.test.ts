@@ -576,6 +576,21 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, useCall, useResult, { role: 'assistant', content: 'Operation interrupted.' }])
   })
 
+  it('Stop keeps a checkpoint that ends on a steer the Agent applied (TAL-364)', async () => {
+    const sid = await newSession(s)
+    const earlier = await earlierTurn(sid)
+    let prompt = ''
+    const steer: Json = { role: 'user', content: 'Prefer the staging cluster', display_kind: 'steer' }
+    sidecar.respond('chat.interrupt', () => ({ ok: true, checkpoint: [...earlier, { role: 'user', content: prompt }, toolCall, toolResult, steer] }))
+    const started = blockingTurn(toolFrames)
+    const streamId = await start(sid, 'Check the rollout')
+    prompt = await started
+    await frames(streamId, (f) => f.event === 'tool_complete')
+    expect((await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).cancelled).toBe(true)
+    await frames(streamId, (f) => f.event === 'cancel')
+    expect(await nextHistory(sid)).toEqual([...earlier, { role: 'user', content: prompt }, toolCall, toolResult, { role: 'user', content: 'Prefer the staging cluster' }, { role: 'assistant', content: 'Operation interrupted.' }])
+  })
+
   it('a worker result that settles the cancel before the interrupt reply writes one marker and keeps the pre-Stop checkpoint (TAL-364)', async () => {
     const sid = await newSession(s)
     const earlier = await earlierTurn(sid)
