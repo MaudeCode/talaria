@@ -525,7 +525,9 @@ extension ChatViewModelSendTests {
                         "role": "assistant",
                         "content": "Final answer loaded without leaving the chat.",
                         "timestamp": 1770000110,
-                        "message_id": "assistant-1"
+                        "message_id": "assistant-1",
+                        "_turn_id": "stream-123",
+                        "_anchor_activity_scene": {"version": "activity_scene_v1", "activity_rows": [], "final_answer": "Final answer loaded without leaving the chat.", "terminal_state": "completed"}
                       }
                     ]
                   }
@@ -611,7 +613,9 @@ extension ChatViewModelSendTests {
                         "role": "assistant",
                         "content": "Final answer arrived after the stream was marked inactive.",
                         "timestamp": 1770000110,
-                        "message_id": "assistant-1"
+                        "message_id": "assistant-1",
+                        "_turn_id": "stream-123",
+                        "_anchor_activity_scene": {"version": "activity_scene_v1", "activity_rows": [], "final_answer": "Final answer arrived after the stream was marked inactive.", "terminal_state": "completed"}
                       }
                     ]
                   }
@@ -648,7 +652,7 @@ extension ChatViewModelSendTests {
         ])
     }
 
-    func testActiveStreamStatusRefreshTreatsToolOnlyAssistantAsCompletedResponse() {
+    func testActiveStreamStatusRefreshFinalizesToolOnlyTurnFromItsServerOutcome() {
         runMainActorTest {
             let streamClient = SpySSEStreamingClient()
             let viewModel = try self.makeViewModel(streamClient: streamClient) { request in
@@ -685,6 +689,8 @@ extension ChatViewModelSendTests {
                             "content": "",
                             "timestamp": 1770000110,
                             "message_id": "assistant-tool",
+                            "_turn_id": "stream-123",
+                            "_anchor_activity_scene": {"version": "activity_scene_v1", "activity_rows": [], "final_answer": "", "terminal_state": "no_response"},
                             "tool_calls": [
                               {
                                 "id": "functions.terminal:1",

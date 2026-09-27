@@ -135,7 +135,8 @@ enum SSEEvent: Equatable {
     /// The settled session an error or cancel frame carries, delivered just before that terminal event.
     case settledSession(SessionDetail)
     case cancelled
-    case error(String)
+    /// A terminal error frame: its message and the server's turn outcome (`terminal_state`).
+    case error(String, terminalState: String? = nil)
     case transportError(String)
     case heartbeat
     case ignored
@@ -458,7 +459,10 @@ struct SSEEventDecoder {
             guard let payload = decodePayload(ErrorPayload.self, eventType: eventType, from: eventData, decoder: decoder) else {
                 return .error(String(localized: "The stream returned a malformed error event."))
             }
-            return .error(payload.error ?? payload.message ?? String(localized: "The stream returned an error."))
+            return .error(
+                payload.error ?? payload.message ?? String(localized: "The stream returned an error."),
+                terminalState: payload.terminalState
+            )
         default:
             logger.debug("Ignoring unknown SSE event type '\(eventType, privacy: .public)'.")
             return .ignored
@@ -581,15 +585,25 @@ private struct ReasoningPayload: Decodable {
 private struct ErrorPayload: Decodable {
     let error: String?
     let message: String?
+    let terminalState: String?
+
+    enum CodingKeys: String, CodingKey {
+        case error
+        case message
+        case terminalState = "terminal_state"
+    }
 }
 
 struct DoneStreamEvent: Equatable {
     let usage: ContextWindowSnapshot?
     let session: SessionDetail?
+    /// The server's turn outcome (`completed`, `no_response`, `tool_limit_reached`); nil from an older server.
+    let terminalState: String?
 
-    init(usage: ContextWindowSnapshot? = nil, session: SessionDetail? = nil) {
+    init(usage: ContextWindowSnapshot? = nil, session: SessionDetail? = nil, terminalState: String? = nil) {
         self.usage = usage
         self.session = session
+        self.terminalState = terminalState
     }
 }
 
@@ -599,13 +613,15 @@ private struct DonePayload: Decodable {
     enum CodingKeys: String, CodingKey {
         case usage
         case session
+        case terminalState = "terminal_state"
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         event = DoneStreamEvent(
             usage: try Self.decodeUsage(from: container),
-            session: try Self.decodeSession(from: container)
+            session: try Self.decodeSession(from: container),
+            terminalState: try? container.decodeIfPresent(String.self, forKey: .terminalState)
         )
     }
 
