@@ -209,12 +209,13 @@ describe('chat turns through the sidecar', () => {
     expect(target).toMatch(/^curl -H "Authorization: Bearer /)
     expect(live[1]?.target).toBe(target)
 
-    // A journal written before redaction existed is redacted and stamped on read.
+    // A journal written before redaction existed is redacted and stamped on read, including the id it replays with.
+    const legacyTid = 'ghp_0123456789abcdefghijABCDEFGHIJ012345'
     const legacy = readFileSync(journalPath, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Json).map((row) => {
       if (row.event !== 'tool' && row.event !== 'tool_complete') return row
       // New rows record that the server redacted them; a legacy row has no such flag and carries the raw args.
       expect(row.redacted).toBe(true)
-      const legacyRow: Json = { ...row, payload: { event_type: 'tool.started', name: 'terminal', preview: command, args: { command }, tid: 'call_1' } }
+      const legacyRow: Json = { ...row, payload: { event_type: 'tool.started', name: 'terminal', preview: command, args: { command }, tid: legacyTid } }
       delete legacyRow.redacted
       return legacyRow
     })
@@ -222,6 +223,7 @@ describe('chat turns through the sidecar', () => {
     const replayed = (await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')).filter((f) => f.event === 'tool' || f.event === 'tool_complete')
     expect(replayed).toHaveLength(2)
     expect(leaks(replayed.map((f) => f.data))).toEqual([])
+    expect(JSON.stringify(replayed.map((f) => f.data))).not.toContain(legacyTid)
     expect(replayed.map((f) => [(f.data as Json).kind, (f.data as Json).target])).toEqual([['shell', target], ['shell', target]])
 
     // After reload: the persisted call, the session-level call, and the scene row carry the same kind and target.
@@ -296,6 +298,11 @@ describe('chat turns through the sidecar', () => {
       emit({ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', preview: null, args: { path: 'd' } } })
       emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', preview: 'D', is_error: false } })
       emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'read_file', preview: 'C', is_error: false } })
+      // A completion naming its call settles that call even when a newer same-name call has no id.
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'e' }, tid: 'call_e' } })
+      emit({ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'f' } } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'E', tid: 'call_e', is_error: false } })
+      emit({ event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'F', is_error: false } })
       return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Done.' }])
     })
     sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Tool ids"', usage: null }))
@@ -308,7 +315,9 @@ describe('chat turns through the sidecar', () => {
     expect(c).toMatch(new RegExp(`^tool-${streamId}-\\d+$`))
     expect(d).toMatch(new RegExp(`^tool-${streamId}-\\d+$`))
     expect(c).not.toBe(d)
-    const expected = [['call_a', null], ['call_b', null], ['call_b', 'B'], ['call_a', 'A'], [c, null], [d, null], [d, 'D'], [c, 'C']]
+    const f = live[9]?.id
+    expect(f).toMatch(new RegExp(`^tool-${streamId}-\\d+$`))
+    const expected = [['call_a', null], ['call_b', null], ['call_b', 'B'], ['call_a', 'A'], [c, null], [d, null], [d, 'D'], [c, 'C'], ['call_e', null], [f, null], ['call_e', 'E'], [f, 'F']]
     expect(pairs(live)).toEqual(expected)
     expect(live.filter((frame) => 'tid' in frame)).toEqual([])
 
@@ -331,10 +340,11 @@ describe('chat turns through the sidecar', () => {
     // Its id-less rows pair across the run the way the live server pairs them, even when the cursor is past the start.
     const [lc, ld] = [fromLegacy[4]?.id, fromLegacy[5]?.id]
     expect(lc).not.toBe(ld)
-    expect(pairs(fromLegacy).slice(4)).toEqual([[lc, null], [ld, null], [ld, 'D'], [lc, 'C']])
+    const lf = fromLegacy[9]?.id
+    expect(pairs(fromLegacy).slice(4)).toEqual([[lc, null], [ld, null], [ld, 'D'], [lc, 'C'], ['call_e', null], [lf, null], ['call_e', 'E'], [lf, 'F']])
     const startSeq = legacy.findIndex((row) => row.event === 'tool' && (row.payload as Json).tid === '' && ((row.payload as Json).args as Json).path === 'c') + 1
     const tail = tools(await s.sse(`/api/chat/stream?stream_id=${streamId}&after_seq=${String(startSeq)}`, (f) => f.event === 'stream_end'))
-    expect(pairs(tail)).toEqual([[ld, null], [ld, 'D'], [lc, 'C']])
+    expect(pairs(tail).slice(0, 3)).toEqual([[ld, null], [ld, 'D'], [lc, 'C']])
   })
 
   it('names a tool\'s minted id as the causal place of a steer the Agent took after it', async () => {

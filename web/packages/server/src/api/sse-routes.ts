@@ -14,7 +14,7 @@ import { withSessionWireFlags } from '../sessions/list.js'
 import type { GatewayWatcher } from '../sessions/gateway-watcher.js'
 import { str } from '../util.js'
 import { streamOwnerSessionId } from './session-visibility.js'
-import { publicToolFrame, withToolId } from '../redact.js'
+import { completedToolIndex, publicToolFrame, withToolId } from '../redact.js'
 
 export const SSE_HEARTBEAT_INTERVAL_MS = 5_000
 const SESSION_SSE_SENT_EVENT_ID_LIMIT = 4096
@@ -155,24 +155,27 @@ function legacyToolIds(ctx: RequestContext, entry: JournalEvent, cache: LegacyTo
   if (ids) return ids
   ids = new Map()
   cache.set(entry.run_id, ids)
-  const open: { name: unknown; tid: string; id: string }[] = []
+  const calls: { name: unknown; tid: string; id: string; done: boolean }[] = []
   for (const row of ctx.deps.journal.readRunEvents(entry.session_id, entry.run_id)) {
     if ((row.event !== 'tool' && row.event !== 'tool_complete') || !row.payload || typeof row.payload !== 'object') continue
     const data = row.payload as Record<string, unknown>
     const tid = str(data.tid)
-    const at = row.event === 'tool' ? -1 : open.findLastIndex((call) => (tid && call.tid === tid) || (!call.tid && call.name === data.name))
-    const id = at >= 0 ? open.splice(at, 1)[0]!.id : tid || `tool-${row.event_id}`
-    if (row.event === 'tool') open.push({ name: data.name, tid, id })
+    const call = row.event === 'tool' ? undefined : calls[completedToolIndex(calls, tid, data.name)]
+    if (call) call.done = true
+    const id = call?.id ?? (tid || `tool-${row.event_id}`)
+    if (row.event === 'tool') calls.push({ name: data.name, tid, id, done: false })
     ids.set(row.seq, id)
   }
   return ids
 }
 
 function publicJournalPayload(ctx: RequestContext, entry: JournalEvent, legacy: LegacyToolIds): unknown {
-  const payload = publicFramePayload(ctx, entry.event, entry.payload, entry.redacted)
-  if ((entry.event !== 'tool' && entry.event !== 'tool_complete') || !payload || typeof payload !== 'object' || Array.isArray(payload) || 'id' in payload) return payload
-  // A journal written before the public `id` carries the Agent's call id as `tid`, or nothing when the Agent sent none.
-  return withToolId(payload as Record<string, unknown>, legacyToolIds(ctx, entry, legacy).get(entry.seq) ?? `tool-${entry.event_id}`)
+  const { payload } = entry
+  if ((entry.event !== 'tool' && entry.event !== 'tool_complete') || !payload || typeof payload !== 'object' || Array.isArray(payload) || 'id' in payload) return publicFramePayload(ctx, entry.event, payload, entry.redacted)
+  // A journal written before the public `id` carries the Agent's call id as `tid`, or nothing when the Agent sent none; the id
+  // joins the frame before the redaction pass, like a live frame's.
+  const id = legacyToolIds(ctx, entry, legacy).get(entry.seq) ?? `tool-${entry.event_id}`
+  return publicFramePayload(ctx, entry.event, withToolId(payload as Record<string, unknown>, id), entry.redacted)
 }
 
 function replayRunJournal(ctx: RequestContext, sse: SseWriter, streamId: string, afterSeq: number | null, opts: { maxSeq?: number | null; includeStale?: boolean } = {}): { found: boolean; terminal: boolean } {

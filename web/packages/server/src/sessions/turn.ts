@@ -20,7 +20,7 @@ import type { ClarifyAnswers } from '@maudecode/talaria-web-contracts'
 import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
 import { Session, titleFrom, type Message } from './session.js'
-import { buildActiveTurnToken, publicToolFrame, redactSessionData, redactString, withToolId } from '../redact.js'
+import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactSessionData, redactString, withToolId } from '../redact.js'
 import { dict, type Config } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
 import { messageWindowForDisplay, messagesForLimitedPayload, toolCallsForMessageWindow } from './window.js'
@@ -419,13 +419,9 @@ export class TurnRunner {
               return
             }
             case 'tool_complete': {
-              let id = str(data.tid)
-              for (let i = liveToolCalls.length - 1; i >= 0; i -= 1) {
-                const tc = liveToolCalls[i]!
-                if (tc.done) continue
-                if ((str(data.tid) && tc.tid === str(data.tid)) || (!tc.tid && tc.name === data.name)) { tc.done = true; tc.snippet = data.preview; id = toolIds.get(tc) ?? id; break }
-              }
-              id ||= mintToolId()
+              const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
+              if (tc) { tc.done = true; tc.snippet = data.preview }
+              const id = (tc && toolIds.get(tc)) || str(data.tid) || mintToolId()
               this.lastCompletedTool.set(streamId, id)
               const redacted = deps.redactEnabled()
               put('tool_complete', publicToolFrame(withToolId(data, id), redacted), { redacted })
