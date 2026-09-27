@@ -1,7 +1,7 @@
 /**
  * Listener lifecycle (Python `server.py` main): port exclusivity probe, HTTP or
  * TLS 1.2+ server with an HTTP fallback, keep-alive tuning, and orderly
- * SIGTERM/SIGINT shutdown.
+ * SIGTERM/SIGINT/SIGHUP shutdown.
  */
 import { createServer as createHttpServer, type Server } from 'node:http'
 import { createServer as createHttpsServer } from 'node:https'
@@ -96,6 +96,8 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
     }
     process.once('SIGTERM', onSignal)
     process.once('SIGINT', onSignal)
+    // The `serve` supervisor forwards SIGHUP too; its default action would exit before auth writes land.
+    process.once('SIGHUP', onSignal)
   }
   return { server, scheme, port, close }
 }

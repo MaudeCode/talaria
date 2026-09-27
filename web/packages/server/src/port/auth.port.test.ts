@@ -8,7 +8,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, cookieHeader, type TestServer } from '../test/harness.js'
 import { safeLoginRedirectPath } from '../auth/gate.js'
@@ -123,6 +123,34 @@ describe('auth persistence off the request path', () => {
     } finally {
       open()
       s.deps.auth.persistWrite = land
+    }
+  })
+})
+
+describe('orderly shutdown lands write-behind auth state', () => {
+  const SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP'] as const
+
+  it.each(SIGNALS)('%s exits only after the pending session write lands', async (signal) => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
+    const before = new Map(SIGNALS.map((name) => [name, process.listeners(name)]))
+    const s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: 'correct horse battery' }, signals: true })
+    let open!: () => void
+    const gate = new Promise<void>((resolve) => { open = resolve })
+    const land = s.deps.auth.persistWrite
+    s.deps.auth.persistWrite = async (file, text) => { await gate; await land(file, text) }
+    try {
+      const token = AuthStore.tokenFromCookieValue(s.deps.auth.createSession()) ?? ''
+      process.emit(signal, signal)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(exit).not.toHaveBeenCalled()
+      open()
+      await vi.waitFor(() => { expect(exit).toHaveBeenCalledWith(0) })
+      expect(JSON.parse(readFileSync(join(s.state, '.sessions.json'), 'utf8'))).toHaveProperty(token)
+    } finally {
+      open()
+      exit.mockRestore()
+      for (const name of SIGNALS) for (const listener of process.listeners(name)) if (!before.get(name)?.includes(listener)) process.off(name, listener)
+      await s.close()
     }
   })
 })
