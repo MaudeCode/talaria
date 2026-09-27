@@ -78,7 +78,7 @@ function fakeGhcr(tarball: Buffer, opts: Ghcr = {}) {
   const digest = `sha256:${createHash('sha256').update(tarball).digest('hex')}`
   const requests: { url: string; auth: string | null }[] = []
   const fetchImpl = ((input: string | URL | Request, init?: RequestInit) => {
-    const url = String(input)
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
     const auth = new Headers(init?.headers).get('authorization')
     requests.push({ url, auth })
     if (url === 'https://ghcr.io/token?scope=repository:maudecode/talaria-web-experimental:pull') return Promise.resolve(Response.json({ token: 'anonymous-pull' }))
@@ -205,6 +205,10 @@ describe('Experimental npm updates (TAL-378)', () => {
     expect(readdirSync(join(state, 'backups')).sort()).toEqual(made.slice(2).map((path) => path.split('/').pop()))
     expect(existsSync(join(made[6]!, 'settings.json'))).toBe(true)
     expect(existsSync(join(made[6]!, 'workspaces.json'))).toBe(false)
+    // A failed copy leaves no partial backup to count toward (or survive) the retention limit.
+    mkdirSync(join(state, 'workspaces.json'))
+    expect(() => backupPersistedStores(state, new Date(Date.UTC(2026, 8, 27, 13)))).toThrow()
+    expect(readdirSync(join(state, 'backups')).sort()).toEqual(made.slice(2).map((path) => path.split('/').pop()))
   })
 
   it('leaves Stable-to-Stable npm updates on the release-set path', async () => {
