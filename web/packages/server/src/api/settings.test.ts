@@ -1,102 +1,3 @@
-/*
- * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
- *   web/tests/test_issue1013_handoff_dock.py
- *   web/tests/test_issue1094_provider_bugs.py
- *   web/tests/test_issue1105_ssrf_custom_providers.py
- *   web/tests/test_issue1106_custom_providers_models.py
- *   web/tests/test_issue1189_openai_codex_detection.py
- *   web/tests/test_issue1195_session_profile_routing.py
- *   web/tests/test_issue1202_oauth_provider_status.py
- *   web/tests/test_issue1217_transcript_compaction.py
- *   web/tests/test_issue1228_model_picker_duplicate_ids.py
- *   web/tests/test_issue1240_generic_cli_catalog_sync.py
- *   web/tests/test_issue1384_local_provider.py
- *   web/tests/test_issue1420_lmstudio_provider_env_var.py
- *   web/tests/test_issue1426_openrouter_free_tier_live_fetch.py
- *   web/tests/test_issue1494_state_db_fd_leak.py
- *   web/tests/test_issue1499_keyless_onboarding.py
- *   web/tests/test_issue1500_lmstudio_env_var_alignment.py
- *   web/tests/test_issue1527_lmstudio_base_url_classification.py
- *   web/tests/test_issue1538_nous_live_catalog.py
- *   web/tests/test_issue1567_nous_picker_capacity_and_symmetry.py
- *   web/tests/test_issue1568_duplicate_provider_groups.py
- *   web/tests/test_issue1612_renamed_root_profile.py
- *   web/tests/test_issue1699_model_cache_source_fingerprint.py
- *   web/tests/test_issue1807_codex_provider_card_live_models.py
- *   web/tests/test_issue1881_phantom_custom_groups.py
- *   web/tests/test_issue1894_provider_overlap.py
- *   web/tests/test_issue1909_csrf_token.py
- *   web/tests/test_issue2025_xiaomi_env_key.py
- *   web/tests/test_issue2157_sessions_list_stale_stream_state.py
- *   web/tests/test_issue2177_nvidia_prefix_preservation.py
- *   web/tests/test_issue2232_legacy_toolsets.py
- *   web/tests/test_issue2245_mixed_case_provider_models.py
- *   web/tests/test_issue2305_profile_create_seeds_skills.py
- *   web/tests/test_issue2399_provider_config_flags.py
- *   web/tests/test_issue2545_xai_oauth_provider.py
- *   web/tests/test_issue2698_isolated_hermes_home.py
- *   web/tests/test_issue2720_bedrock_model_picker.py
- *   web/tests/test_issue2840_windows_hermes_home_defaults.py
- *   web/tests/test_issue2914_truncation_watermark.py
- *   web/tests/test_issue2929_settings_max_tokens.py
- *   web/tests/test_issue3145_opencode_shared_runtime_key.py
- *   web/tests/test_issue3172_cron_session_limit.py
- *   web/tests/test_issue3260_self_hosted_providers_settings.py
- *   web/tests/test_issue3510_elevenlabs_tts.py
- *   web/tests/test_issue3623_profile_visibility.py
- *   web/tests/test_issue3691_model_picker_show_all.py
- *   web/tests/test_issue3717_context_length_provider_overrides.py
- *   web/tests/test_issue3820_chat_activity_display_mode.py
- *   web/tests/test_issue3825_oidc_auth.py
- *   web/tests/test_issue3875_recovery_anchor_dedup.py
- *   web/tests/test_issue3928_models_budget_fallback.py
- *   web/tests/test_issue3929_error_preserves_partial.py
- *   web/tests/test_issue3947_tasks_cross_profile_visibility.py
- *   web/tests/test_issue3988_show_cli_sessions_default.py
- *   web/tests/test_issue4324_photon_phantom_providers.py
- *   web/tests/test_issue4325_virtualization_toggle.py
- *   web/tests/test_issue4360_generic_pool_quota.py
- *   web/tests/test_issue4586_named_profile_not_isolated.py
- *   web/tests/test_issue4714_claude_code_visibility_toggle.py
- *   web/tests/test_issue4766_sidebar_source_pushdown.py
- *   web/tests/test_issue4770_anthropic_oauth_detection.py
- *   web/tests/test_issue4775_sidebar_hidden_zero_message_pushdown.py
- *   web/tests/test_issue4836_manual_compression_recovery.py
- *   web/tests/test_issue4982_openai_tts.py
- *   web/tests/test_issue5121_provider_auth_terminal_error.py
- *   web/tests/test_issue5130_cron_profile_snapshot.py
- *   web/tests/test_issue5139_gateway_approval_offline_notice.py
- *   web/tests/test_issue5270_cli_webui_continuity.py
- *   web/tests/test_issue5339_restart_stale_user_dedup.py
- *   web/tests/test_issue5532_session_clear_state_db_replay.py
- *   web/tests/test_issue5572_messaging_clear_semantics.py
- *   web/tests/test_issue570_permission.py
- *   web/tests/test_issue572.py
- *   web/tests/test_issue6022_worktree_config_default.py
- *   web/tests/test_issue603_provider_categories.py
- *   web/tests/test_issue604_all_providers_model_picker.py
- *   web/tests/test_issue617_cron_profile_selector.py
- *   web/tests/test_issue6335_catalog_admission_regression.py
- *   web/tests/test_issue644.py
- *   web/tests/test_issue6498_memory_config_gates.py
- *   web/tests/test_issue6626_402_ttl_parity.py
- *   web/tests/test_issue6722_provider_qualified_model_leak.py
- *   web/tests/test_issue6751_api_content_agent_replay.py
- *   web/tests/test_issue7168_round6_default_isolated_clamp.py
- *   web/tests/test_issue7182_profile_model_tag_truncation.py
- *   web/tests/test_issue7333_slash_id_provider_hint.py
- *   web/tests/test_issue7404_models_discovered_not_allowlist.py
- *   web/tests/test_issue749_profile_create_model_picker.py
- *   web/tests/test_issue7514_openrouter_zai_namespace.py
- *   web/tests/test_issue7540_codex_catalog_fingerprint.py
- *   web/tests/test_issue7543_title_first_exchange.py
- *   web/tests/test_issue_1932_goal_hook_unrelated_turns.py
- *   web/tests/test_issue_neuralwatt_env_key.py
- *   web/tests/test_issue_t16551f61_auth_token_churn_fingerprint.py
- *   web/tests/test_issues_373_374_375.py
- *   web/tests/test_issues_907_908_909_model_dropdown.py
- * (issues #570, #572, #603, #604, #617, #644, #749, #1013, #1094, #1105, #1106, #1189, #1195, #1202, #1217, #1228, #1240, #1384, #1420, #1426, #1494, #1499, #1500, #1527, #1538, #1567, #1568, #1612, #1699, #1807, #1881, #1894, #1909, #2025, #2157, #2177, #2232, #2245, #2305, #2399, #2545, #2698, #2720, #2840, #2914, #2929, #3145, #3172, #3260, #3510, #3623, #3691, #3717, #3820, #3825, #3875, #3928, #3929, #3947, #3988, #4324, #4325, #4360, #4586, #4714, #4766, #4770, #4775, #4836, #4982, #5121, #5130, #5139, #5270, #5339, #5532, #5572, #6022, #6335, #6498, #6626, #6722, #6751, #7168, #7182, #7333, #7404, #7514, #7540, #7543) is covered here; see docs/architecture/regression-port-ledger.md.
- */
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -154,7 +55,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
   })
   afterAll(() => s.close())
 
-  it('GET /api/settings carries auth state, max_tokens, and version badges without the password hash [py:test_issue1560_password_env_var_lock.py::test_get_settings_returns_password_env_var_false_when_unset]', async () => {
+  it('GET /api/settings carries auth state, max_tokens, and version badges without the password hash', async () => {
     const res = await s.get('/api/settings')
     expect(res.status).toBe(200)
     const body = await json(res)
@@ -277,7 +178,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(sidecar.calls.filter((c) => c.method === 'providers.model_ids').length).toBeGreaterThan(before)
   })
 
-  it('GET /api/providers reports key presence and sources; POST writes and removes keys in .env [py:test_issue1202_oauth_provider_status.py::test_not_configured_when_no_key_and_not_logged_in] [py:test_issue1202_oauth_provider_status.py::test_auth_error_preserved_when_not_logged_in_and_no_config_key]', async () => {
+  it('GET /api/providers reports key presence and sources; POST writes and removes keys in .env', async () => {
     let res = await s.get('/api/providers')
     expect(res.status).toBe(200)
     let body = await json(res)
@@ -524,7 +425,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((configs.get(s.state)?.auxiliary as Json).vision).toEqual({ provider: 'auto', model: '' })
   })
 
-  it('a renamed root profile (is_default from the Agent) is a root alias for switching, home lookup, and session visibility [py:test_issue1195_session_profile_routing.py::test_default_string_returns_default] [py:test_issue1611_session_profile_filtering.py::test_profiles_match_default_alias_treated_as_root] [py:test_issue1612_renamed_root_profile.py::test_is_root_profile_renamed_root_via_list_profiles_api] [py:test_issue1612_renamed_root_profile.py::test_get_active_hermes_home_returns_default_for_renamed_root] [py:test_issue1612_renamed_root_profile.py::test_switch_profile_resolution_renamed_root_picks_default_home]', async () => {
+  it('a renamed root profile (is_default from the Agent) is a root alias for switching, home lookup, and session visibility', async () => {
     sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'kinni', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
     s.deps.profiles.invalidate()
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
@@ -545,7 +446,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     s.deps.profiles.invalidate()
   })
 
-  it('profiles list/active/switch/create/delete go through the sidecar and set the profile cookie [py:test_issue2698_isolated_hermes_home.py::test_normal_mode_when_hermes_home_is_base] [py:test_issue2698_isolated_hermes_home.py::test_normal_mode_profile_operations_work] [py:test_issue749_profile_create_model_picker.py::test_profile_model_config_writer_persists_default_and_provider] [py:test_issue749_profile_create_model_picker.py::test_profile_model_selection_accepts_catalog_model_with_provider] [py:test_issue749_profile_create_model_picker.py::test_profile_model_selection_accepts_provider_qualified_picker_value] [py:test_issue749_profile_create_model_picker.py::test_profile_model_selection_rejects_unknown_model_provider_pair] [py:test_issue749_profile_create_model_picker.py::test_profile_create_rejects_unknown_model_before_creating_profile]', async () => {
+  it('profiles list/active/switch/create/delete go through the sidecar and set the profile cookie', async () => {
     let res = await s.get('/api/profiles')
     expect(res.status).toBe(200)
     let body = await json(res)
@@ -656,7 +557,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(res.status).toBe(501)
   })
 
-  it('providers/self-hosted writes the provider block and activates the model [py:test_issue1500_lmstudio_env_var_alignment.py::test_onboarding_writes_canonical_name_only]', async () => {
+  it('providers/self-hosted writes the provider block and activates the model', async () => {
     const res = await post(s, '/api/providers/self-hosted', { provider: 'lmstudio', model: 'qwen3', base_url: 'http://localhost:1234/v1/', api_key: 'lm-key-12345' })
     expect(res.status).toBe(200)
     expect(await json(res)).toEqual({ ok: true, provider: 'lmstudio', base_url: 'http://localhost:1234/v1', model: 'qwen3' })
@@ -683,7 +584,7 @@ async function csrfFor(s: TestServer, cookie: string): Promise<string> {
 }
 
 describe('env file writer', () => {
-  it('preserves comments and order, removes keys, appends new ones, and refuses newlines [py:test_issue1164_env_file_corruption.py::test_comments_preserved_on_update] [py:test_issue1164_env_file_corruption.py::test_blank_lines_preserved] [py:test_issue1164_env_file_corruption.py::test_key_order_preserved] [py:test_issue1164_env_file_corruption.py::test_new_key_appended_with_separator] [py:test_issue1164_env_file_corruption.py::test_key_removal_preserves_others]', () => {
+  it('preserves comments and order, removes keys, appends new ones, and refuses newlines', () => {
     const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-env-${String(process.pid)}-${String(Date.now())}`)
     mkdirSync(dir, { recursive: true })
     const path = join(dir, '.env')
@@ -710,7 +611,7 @@ describe('catalog helpers', () => {
     expect(groups.map((g) => g.models[0]?.id)).toEqual(['@b:gpt', 'gpt'])
   })
 
-  it('parses provider-qualified ids and coerces efforts down the ladder [py:test_issue7182_profile_model_tag_truncation.py::test_split_preserves_ollama_tag] [py:test_issue7182_profile_model_tag_truncation.py::test_strip_preserves_ollama_tag] [py:test_issue7182_profile_model_tag_truncation.py::test_split_preserves_multi_segment_custom_provider] [py:test_issue7182_profile_model_tag_truncation.py::test_split_matches_shared_parser] [py:test_issue7182_profile_model_tag_truncation.py::test_strip_matches_shared_parser] [py:test_issue7182_profile_model_tag_truncation.py::test_no_last_colon_split_remains]', () => {
+  it('parses provider-qualified ids and coerces efforts down the ladder', () => {
     expect(parseProviderQualifiedModel('@custom:backup:model-a:free')).toEqual(['model-a:free', 'custom:backup'])
     expect(parseProviderQualifiedModel('@custom:127.0.0.1:1234:llama')).toEqual(['llama', 'custom:127.0.0.1:1234'])
     expect(parseProviderQualifiedModel('@ollama:qwen3.8:27b')).toEqual(['qwen3.8:27b', 'ollama'])
@@ -742,7 +643,7 @@ describe('isolated profile mode', () => {
   })
   afterAll(async () => { await s.close(); rmSync(join(home, '..', '..'), { recursive: true, force: true }) })
 
-  it('pins the process to the HERMES_HOME profile and refuses every cross-profile surface [py:test_issue1611_session_profile_filtering.py::test_all_profiles_disabled_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_isolated_mode_when_hermes_home_is_profile_subdir] [py:test_issue2698_isolated_hermes_home.py::test_list_returns_only_isolated_profile_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_list_includes_single_profile_mode_flag] [py:test_issue2698_isolated_hermes_home.py::test_get_active_profile_name_ignores_tls_and_global_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_init_profile_state_pins_runtime_home_to_isolated_profile] [py:test_issue2698_isolated_hermes_home.py::test_create_profile_rejected_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_delete_profile_rejected_in_isolated_mode] [py:test_issue2698_isolated_hermes_home.py::test_switch_to_different_profile_rejected] [py:test_issue3947_tasks_cross_profile_visibility.py::test_crons_route_ignores_all_profiles_toggle_in_isolated_mode]', async () => {
+  it('pins the process to the HERMES_HOME profile and refuses every cross-profile surface', async () => {
     expect(s.deps.isolatedProfileMode()).toBe(true)
     expect(s.deps.activeProfile()).toBe('tenant')
     expect(s.deps.profileHome('tenant')).toBe(home)

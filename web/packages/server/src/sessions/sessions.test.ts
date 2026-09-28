@@ -1,56 +1,3 @@
-/*
- * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
- *   web/tests/test_issue1013_handoff_dock.py
- *   web/tests/test_issue1217_transcript_compaction.py
- *   web/tests/test_issue1494_state_db_fd_leak.py
- *   web/tests/test_issue1955_worktree_sessions.py
- *   web/tests/test_issue2419_cache_usage_display.py
- *   web/tests/test_issue2592_partial_dedupe.py
- *   web/tests/test_issue2841_show_cron_sessions_toggle.py
- *   web/tests/test_issue2863_session_index_prime.py
- *   web/tests/test_issue2914_truncation_watermark.py
- *   web/tests/test_issue3019_cron_project_sessions.py
- *   web/tests/test_issue3023_safe_session_id_validators.py
- *   web/tests/test_issue3346_legacy_dedup.py
- *   web/tests/test_issue3585_cron_session_overflow.py
- *   web/tests/test_issue3586_cli_session_source_label.py
- *   web/tests/test_issue3831_watermark_clear.py
- *   web/tests/test_issue3875_recovery_anchor_dedup.py
- *   web/tests/test_issue3929_error_preserves_partial.py
- *   web/tests/test_issue3929_partial_work_recovery.py
- *   web/tests/test_issue3987_imported_session_titles.py
- *   web/tests/test_issue4385_cron_archive_reappears.py
- *   web/tests/test_issue4490_presession_toolsets.py
- *   web/tests/test_issue4638_lineage_top_n_cap.py
- *   web/tests/test_issue4685_post_compression_context_metering.py
- *   web/tests/test_issue4714_claude_code_visibility_toggle.py
- *   web/tests/test_issue4718_claude_code_parse_cache.py
- *   web/tests/test_issue4836_manual_compression_recovery.py
- *   web/tests/test_issue4842_cron_projection_perf.py
- *   web/tests/test_issue4985_orphaned_webui_zero_message.py
- *   web/tests/test_issue5121_provider_auth_terminal_error.py
- *   web/tests/test_issue5132_state_db_override_top_n_cap.py
- *   web/tests/test_issue5270_cli_webui_continuity.py
- *   web/tests/test_issue5339_restart_stale_user_dedup.py
- *   web/tests/test_issue5532_clear_truncation_watermark.py
- *   web/tests/test_issue5532_session_clear_state_db_replay.py
- *   web/tests/test_issue5570_clear_backup_recovery.py
- *   web/tests/test_issue5572_messaging_clear_semantics.py
- *   web/tests/test_issue5854_anchor_scene_split.py
- *   web/tests/test_issue6022_worktree_config_default.py
- *   web/tests/test_issue6068_used_model_footer.py
- *   web/tests/test_issue6611_regenerate_turn_identity.py
- *   web/tests/test_issue6611_regeneration_authority.py
- *   web/tests/test_issue6611_regeneration_settlement.py
- *   web/tests/test_issue6672_workspace_switch_system_prompt.py
- *   web/tests/test_issue6722_provider_qualified_model_leak.py
- *   web/tests/test_issue6751_api_content_agent_replay.py
- *   web/tests/test_issue6911_intentional_shrink_backup.py
- *   web/tests/test_issue7168_round6_default_isolated_clamp.py
- *   web/tests/test_issue789.py
- *   web/tests/test_issue_branch_context_at_fork.py
- * (issues #789, #1013, #1217, #1494, #1955, #2419, #2592, #2841, #2863, #2914, #3019, #3023, #3346, #3585, #3586, #3831, #3875, #3929, #3987, #4385, #4490, #4638, #4685, #4714, #4718, #4836, #4842, #4985, #5121, #5132, #5270, #5339, #5532, #5570, #5572, #5854, #6022, #6068, #6611, #6672, #6722, #6751, #6911, #7168) is covered here; see docs/architecture/regression-port-ledger.md.
- */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { readMetadataJsonPrefixWithSignature, statSignature } from './store.js'
@@ -122,7 +69,7 @@ describe('session lifecycle over HTTP', () => {
     expect(await json(res)).toEqual({ error: 'Session not found' })
   })
 
-  it('renames, archives, pins with the configured cap, and moves between projects [py:test_issue2508_session_pin_cap.py::test_session_pin_endpoint_caps_pinned_sessions_at_three]', async () => {
+  it('renames, archives, pins with the configured cap, and moves between projects', async () => {
     const a = await newSession(s)
     const sid = String(a.session_id)
     writeMessages(s, sid, [{ role: 'user', content: 'hi' }])
@@ -475,7 +422,7 @@ describe('projects, workspaces, and files over HTTP', () => {
   beforeAll(async () => { s = await bootTestServer() })
   afterAll(() => s.close())
 
-  it('projects require a name, validate colours, and list per profile [py:test_issue1614_project_profile_filtering.py::test_profile_field_on_project_dict_default_create]', async () => {
+  it('projects require a name, validate colours, and list per profile', async () => {
     expect((await post(s, '/api/projects/create', { name: '   ' })).status).toBe(400)
     let res = await post(s, '/api/projects/create', { name: 'Alpha', color: 'red' })
     expect(res.status).toBe(400)

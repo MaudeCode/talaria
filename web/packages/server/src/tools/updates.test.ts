@@ -1,12 +1,6 @@
-/*
- * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
- *   web/tests/test_issue4356_no_git_update_check.py
- *   web/tests/test_issue5175_macos_launchd_git.py
- * (issues #4356, #5175) is covered here; see docs/architecture/regression-port-ledger.md.
- */
 /**
- * Port of `tests/test_tal203_source_update.py`, `tests/test_tal203_published_releases.py`,
- * and the Agent branches of `tests/test_updates*.py` onto synthetic repositories and manifests.
+ * Source and published-release self-updates, and the Agent update branches, on synthetic
+ * repositories and manifests.
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -401,7 +395,7 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(await npmInstallInfo(real, npm)).toBeNull()
   })
 
-  it('[py:test_issue4356_no_git_update_check.py::test_check_repo_returns_no_git_sentinel_when_dot_git_absent] a web root without .git reports the no_git sentinel', async () => {
+  it('a web root without .git reports the no_git sentinel', async () => {
     const s = sourceInstall()
     const bare = tmp()
     write(join(bare, 'web/package.json'), '{"version":"1.0.0"}\n')
@@ -744,7 +738,7 @@ describe('Agent checkout updates', () => {
     return { agent, origin, v1, v2 }
   }
 
-  it('reports the tag gap, fast-forwards with a stash, and restarts the gateway through the sidecar [py:test_issue4356_no_git_update_check.py::test_check_repo_returns_no_git_sentinel_when_path_is_none] [py:test_issue4356_no_git_update_check.py::test_check_repo_still_returns_dict_when_dot_git_exists]', async () => {
+  it('reports the tag gap, fast-forwards with a stash, and restarts the gateway through the sidecar', async () => {
     const a = agentInstall()
     expect(await checkAgentUpdate(null, runGit)).toEqual({ name: 'agent', behind: null, no_git: true })
     const status = await checkAgentUpdate(a.agent, runGit)

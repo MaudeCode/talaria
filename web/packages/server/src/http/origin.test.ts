@@ -1,14 +1,3 @@
-/*
- * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
- *   web/tests/test_issue1850_csp_connect_src_jsdelivr.py
- *   web/tests/test_issue1909_csp_enforcement.py
- *   web/tests/test_issue2901_csp_connect_extra.py
- *   web/tests/test_issue6022_worktree_config_default.py
- *   web/tests/test_issue6611_regeneration_authority.py
- *   web/tests/test_issue6751_api_content_agent_replay.py
- *   web/tests/test_issue6757_redaction_and_runner_sse_fixes.py
- * (issues #1850, #1909, #2901, #6022, #6611, #6751, #6757) is covered here; see docs/architecture/regression-port-ledger.md.
- */
 import { describe, expect, it } from 'vitest'
 import { allowedPublicOrigins, checkSameOriginBrowserRequest, forwardedClientIp, isLoopback, normalizeHostPort, portsMatch, rawPeerIsTrustedProxy } from './origin.js'
 import { buildCspEnforcedPolicy, buildCspReportOnlyPolicy, cspExtras } from './csp.js'
@@ -32,7 +21,7 @@ describe('host and port normalisation', () => {
 
 describe('same-origin browser check', () => {
   const host = '127.0.0.1:8787'
-  it('accepts same-origin, allowlisted, and non-browser requests; rejects the rest [py:test_issue1909_csrf_token.py::test_authenticated_allowed_public_origin_accepts_valid_csrf_token] [py:test_issue1909_csrf_token.py::test_non_browser_mcp_style_authenticated_post_remains_compatible]', () => {
+  it('accepts same-origin, allowlisted, and non-browser requests; rejects the rest', () => {
     expect(checkSameOriginBrowserRequest({ origin: 'http://127.0.0.1:8787', host }, {})).toBeNull()
     expect(checkSameOriginBrowserRequest({ referer: 'http://127.0.0.1:8787/settings', host }, {})).toBeNull()
     expect(checkSameOriginBrowserRequest({ host }, {})).toBeNull()
@@ -45,7 +34,7 @@ describe('same-origin browser check', () => {
     expect(checkSameOriginBrowserRequest({ origin: 'ftp://x', host }, {})).toBe('origin_mismatch')
   })
 
-  it('trusts forwarded hosts only with the opt-in [py:test_issue1909_csrf_token.py::test_authenticated_reverse_proxy_same_origin_accepts_valid_csrf_token] [py:test_issue1909_csrf_token.py::test_authenticated_forwarded_host_is_ignored_without_proxy_opt_in]', () => {
+  it('trusts forwarded hosts only with the opt-in', () => {
     const h = { origin: 'https://ui.example', host, forwardedHost: 'ui.example' }
     expect(checkSameOriginBrowserRequest(h, {})).toBe('origin_mismatch')
     expect(checkSameOriginBrowserRequest(h, { HERMES_WEBUI_TRUST_FORWARDED_HOST: '1' })).toBeNull()

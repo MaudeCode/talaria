@@ -48,7 +48,7 @@ class RoutingTests(unittest.TestCase):
             ([".github/workflows/ui-performance.yml"], {"app", "tooling"}),
             # Every script is mapped; an unmapped one would select the full suite.
             (["scripts/check-release-contracts.py"], {"contracts", "tooling"}),
-            (["scripts/check", "scripts/check-regression-port.py", "scripts/test-check-regression-port.py"], {"tooling"}),
+            (["scripts/check"], {"tooling"}),
             (["scripts/generate-brand-icons.py"], {"web_frontend", "tooling"}),
             (["app/changelog.d/TAL-123.json"], set()),
             (["README.md", "docs/guide.md", "app/DEVELOPMENT.md", "web/docs/guide.md", "relay/README.md"], set()),
@@ -61,8 +61,7 @@ class RoutingTests(unittest.TestCase):
             (["web/sidecar/agent_dependency.json"], {"web_server", "contracts", "docker"}),
             (["web/sidecar/talaria_sidecar/rpc.py"], {"web_server", "web_frontend", "contracts"}),
             (["web/packages/server/src/api/auth.ts"], {"web_server", "web_frontend", "contracts"}),
-            (["web/docs/architecture/regression-port-cases.tsv"], {"web_server", "contracts", "tooling"}),
-            (["web/packages/server/src/port/auth.port.test.ts"], {"web_server", "contracts", "tooling"}),
+            (["web/packages/server/src/port/auth.port.test.ts"], {"web_server", "web_frontend", "contracts"}),
             (["web/package-lock.json"], {"web_server", "web_frontend", "docker", "contracts"}),
             (["web/skills/runtime/SKILL.md"], {"web_server", "web_frontend", "docker", "contracts"}),
             (["web/packages/frontend/src/guide.md"], {"web_frontend"}),

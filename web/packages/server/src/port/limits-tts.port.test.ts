@@ -1,7 +1,5 @@
 /**
- * One-to-one ports of the Python TTS, tool-argument cap, and speech-settings
- * regression cases (TAL-245). Markers `[py:<file>::<case>]` are verified by
- * scripts/check-regression-port.py.
+ * TTS, tool-argument cap, and speech-settings regressions.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -60,13 +58,13 @@ describe('TTS validation, limits, and engines', () => {
   const setEnv = (keys: Record<string, string | null>): void => { writeEnvFile(join(s.state, '.env'), keys) }
   const fresh = (): void => { s.deps.ttsLimiter = new WindowLimiter(60, 100); requests.length = 0 }
 
-  it('[py:test_issue2931_edge_tts_endpoint.py::test_tts_requires_post] GET /api/tts answers 405', async () => {
+  it('GET /api/tts answers 405', async () => {
     const res = await s.get('/api/tts')
     expect(res.status).toBe(405)
     expect(String((await json(res)).error)).toContain('POST required')
   })
 
-  it('[py:test_issue2931_edge_tts_endpoint.py::test_tts_rejects_overlong_text] 5001 characters answer 400 too long', async () => {
+  it('5001 characters answer 400 too long', async () => {
     fresh()
     const res = await post(s, '/api/tts', { text: 'x'.repeat(5001), engine: 'openai' })
     expect(res.status).toBe(400)
@@ -74,7 +72,7 @@ describe('TTS validation, limits, and engines', () => {
     expect(requests).toEqual([])
   })
 
-  it('[py:test_issue2931_edge_tts_endpoint.py::test_tts_rejects_invalid_rate_before_engine] an invalid rate answers 400 before any engine call', async () => {
+  it('an invalid rate answers 400 before any engine call', async () => {
     fresh()
     const res = await post(s, '/api/tts', { text: 'hi', rate: '<break/>', engine: 'openai' })
     expect(res.status).toBe(400)
@@ -82,7 +80,7 @@ describe('TTS validation, limits, and engines', () => {
     expect(requests).toEqual([])
   })
 
-  it('[py:test_issue2931_edge_tts_endpoint.py::test_tts_rejects_invalid_pitch_before_engine] an invalid pitch answers 400 before any engine call', async () => {
+  it('an invalid pitch answers 400 before any engine call', async () => {
     fresh()
     const res = await post(s, '/api/tts', { text: 'hi', pitch: '+500Hz', engine: 'openai' })
     expect(res.status).toBe(400)
@@ -90,14 +88,14 @@ describe('TTS validation, limits, and engines', () => {
     expect(requests).toEqual([])
   })
 
-  it('[py:test_issue2931_edge_tts_endpoint.py::test_tts_rate_limit_ignores_spoofed_forwarded_for_by_default] X-Forwarded-For does not split the limiter key unless opted in', async () => {
+  it('X-Forwarded-For does not split the limiter key unless opted in', async () => {
     setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
     s.deps.ttsLimiter = new WindowLimiter(60, 1)
     expect((await post(s, '/api/tts', { text: 'hi', engine: 'openai' }, { 'x-forwarded-for': '203.0.113.1' })).status).toBe(200)
     expect((await post(s, '/api/tts', { text: 'hi', engine: 'openai' }, { 'x-forwarded-for': '203.0.113.2' })).status).toBe(429)
   })
 
-  it('[py:test_issue3510_elevenlabs_tts.py::test_elevenlabs_missing_key_returns_503] ElevenLabs without a key answers 503 and calls nothing', async () => {
+  it('ElevenLabs without a key answers 503 and calls nothing', async () => {
     fresh()
     setEnv({ ELEVENLABS_API_KEY: null })
     const res = await post(s, '/api/tts', { text: 'hi', engine: 'elevenlabs' })
@@ -106,7 +104,7 @@ describe('TTS validation, limits, and engines', () => {
     expect(requests).toEqual([])
   })
 
-  it('[py:test_issue3510_elevenlabs_tts.py::test_elevenlabs_rejects_traversal_voice_id_in_config] a traversal voice_id in config answers 400 before any request', async () => {
+  it('a traversal voice_id in config answers 400 before any request', async () => {
     fresh()
     setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
     setConfig({ tts: { elevenlabs: { voice_id: '../../etc/passwd' } } })
@@ -116,7 +114,7 @@ describe('TTS validation, limits, and engines', () => {
     expect(requests).toEqual([])
   })
 
-  it('[py:test_issue3510_elevenlabs_tts.py::test_elevenlabs_happy_path_streams_mp3] a keyed ElevenLabs request streams audio/mpeg with the voice id, key header, and text', async () => {
+  it('a keyed ElevenLabs request streams audio/mpeg with the voice id, key header, and text', async () => {
     fresh()
     setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
     setConfig({ tts: { elevenlabs: { voice_id: 'voiceABC', model_id: 'eleven_turbo' } } })
@@ -141,7 +139,7 @@ describe('TTS validation, limits, and engines', () => {
     expect(requests).toEqual([])
   })
 
-  it('[py:test_issue3510_elevenlabs_tts.py::test_elevenlabs_overlong_text_rejected_before_engine] the 5000-character cap applies to ElevenLabs before any request', async () => {
+  it('the 5000-character cap applies to ElevenLabs before any request', async () => {
     fresh()
     setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
     const res = await post(s, '/api/tts', { text: 'x'.repeat(5001), engine: 'elevenlabs' })
@@ -150,7 +148,7 @@ describe('TTS validation, limits, and engines', () => {
     expect(requests).toEqual([])
   })
 
-  it('[py:test_issue3510_elevenlabs_tts.py::test_elevenlabs_rejects_oversized_upstream_audio] oversized ElevenLabs audio answers 502', async () => {
+  it('oversized ElevenLabs audio answers 502', async () => {
     fresh()
     setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
     setConfig({})
@@ -159,7 +157,7 @@ describe('TTS validation, limits, and engines', () => {
     expect(await json(res)).toEqual({ error: 'ElevenLabs TTS generation failed' })
   })
 
-  it('[py:test_issue3510_elevenlabs_tts.py::test_elevenlabs_tts_does_not_follow_upstream_redirect] an ElevenLabs redirect is not followed and answers 502', async () => {
+  it('an ElevenLabs redirect is not followed and answers 502', async () => {
     fresh()
     setEnv({ ELEVENLABS_API_KEY: 'el-key-1234' })
     const res = await post(s, '/api/tts', { text: 'redirect', engine: 'elevenlabs' })
@@ -168,7 +166,7 @@ describe('TTS validation, limits, and engines', () => {
     expect(requests).toHaveLength(1)
   })
 
-  it('[py:test_issue4982_openai_tts.py::test_openai_tts_success_returns_audio] OpenAI TTS posts the default model and voice with the bearer key', async () => {
+  it('OpenAI TTS posts the default model and voice with the bearer key', async () => {
     fresh()
     setEnv({ OPENAI_API_KEY: 'sk-openai-1234', VOICE_TOOLS_OPENAI_KEY: null })
     setConfig({})
@@ -181,7 +179,7 @@ describe('TTS validation, limits, and engines', () => {
     expect(JSON.parse(requests[0]?.init?.body as string)).toEqual({ model: 'gpt-4o-mini-tts', input: 'Hello', voice: 'alloy' })
   })
 
-  it('[py:test_issue4982_openai_tts.py::test_openai_tts_prefers_voice_tools_key_over_openai_key] VOICE_TOOLS_OPENAI_KEY wins over OPENAI_API_KEY', async () => {
+  it('VOICE_TOOLS_OPENAI_KEY wins over OPENAI_API_KEY', async () => {
     fresh()
     setEnv({ OPENAI_API_KEY: 'sk-openai-1234', VOICE_TOOLS_OPENAI_KEY: 'sk-voice-tools-1234' })
     expect((await post(s, '/api/tts', { text: 'Hello', engine: 'openai' })).status).toBe(200)
@@ -189,7 +187,7 @@ describe('TTS validation, limits, and engines', () => {
     setEnv({ VOICE_TOOLS_OPENAI_KEY: null })
   })
 
-  it('[py:test_issue4982_openai_tts.py::test_openai_tts_config_overrides] tts.openai base_url, model, and voice override the request', async () => {
+  it('tts.openai base_url, model, and voice override the request', async () => {
     fresh()
     setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
     setConfig({ tts: { openai: { base_url: 'https://custom.example.com/v1', model: 'tts-custom', voice: 'nova' } } })
@@ -287,7 +285,7 @@ describe('TTS validation, limits, and engines', () => {
   })
 
   it.each(['http://169.254.169.254/v1', 'https://user:pass@api.example.com/v1', 'http://user:pass@localhost:8080/v1', 'https://169.254.169.254/v1', 'https://10.0.0.5/v1', 'https://192.168.1.10/v1', 'https://127.0.0.1/v1', 'https://[::1]/v1', 'https://[::ffff:7f00:1]/v1', 'https://[64:ff9b::a9fe:a9fe]/v1'])(
-    '[py:test_issue4982_openai_tts.py::test_openai_tts_rejects_invalid_base_url_config] base_url %s answers 400', async (baseUrl) => {
+    'base_url %s answers 400', async (baseUrl) => {
       fresh()
       setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
       setConfig({ tts: { openai: { base_url: baseUrl } } })
@@ -297,7 +295,7 @@ describe('TTS validation, limits, and engines', () => {
       expect(requests).toEqual([])
     })
 
-  it('[py:test_issue4982_openai_tts.py::test_openai_tts_rejects_non_audio_upstream_response] a JSON upstream body answers 502', async () => {
+  it('a JSON upstream body answers 502', async () => {
     fresh()
     setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
     setConfig({})
@@ -306,7 +304,7 @@ describe('TTS validation, limits, and engines', () => {
     expect(await json(res)).toEqual({ error: 'OpenAI TTS generation failed' })
   })
 
-  it('[py:test_issue4982_openai_tts.py::test_openai_tts_does_not_follow_upstream_redirect] an OpenAI redirect is not followed and the bearer is never re-sent', async () => {
+  it('an OpenAI redirect is not followed and the bearer is never re-sent', async () => {
     fresh()
     setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
     const res = await post(s, '/api/tts', { text: 'redirect', engine: 'openai' })
@@ -316,14 +314,14 @@ describe('TTS validation, limits, and engines', () => {
     expect(requests[0]?.addresses).toEqual(['104.18.7.192'])
   })
 
-  it('[py:test_issue4982_openai_tts.py::test_openai_tts_rejects_redirect_with_pinned_opener] the redirect target is never dialled', async () => {
+  it('the redirect target is never dialled', async () => {
     fresh()
     setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
     expect((await post(s, '/api/tts', { text: 'redirect', engine: 'openai' })).status).toBe(502)
     expect(requests.map((r) => r.url)).toEqual(['https://api.openai.com/v1/audio/speech'])
   })
 
-  it('[py:test_issue4982_openai_tts.py::test_openai_tts_rejects_oversized_upstream_audio] oversized OpenAI audio answers 502', async () => {
+  it('oversized OpenAI audio answers 502', async () => {
     fresh()
     setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
     const res = await post(s, '/api/tts', { text: 'big', engine: 'openai' })
@@ -337,7 +335,7 @@ describe('TTS limiter behind an opted-in trusted proxy', () => {
   beforeAll(async () => { ({ s } = await bootTts({ HERMES_WEBUI_TRUST_FORWARDED_FOR: '1' })); writeEnvFile(join(s.state, '.env'), { OPENAI_API_KEY: 'sk-openai-1234' }) })
   afterAll(() => s.close())
 
-  it('[py:test_issue2931_edge_tts_endpoint.py::test_tts_rate_limit_can_trust_forwarded_for_when_opted_in] different forwarded clients get separate limiter keys', async () => {
+  it('different forwarded clients get separate limiter keys', async () => {
     s.deps.ttsLimiter = new WindowLimiter(60, 1)
     expect((await post(s, '/api/tts', { text: 'hi', engine: 'openai' }, { 'x-forwarded-for': '203.0.113.1' })).status).toBe(200)
     expect((await post(s, '/api/tts', { text: 'hi', engine: 'openai' }, { 'x-forwarded-for': '203.0.113.2' })).status).toBe(200)
@@ -346,7 +344,7 @@ describe('TTS limiter behind an opted-in trusted proxy', () => {
 })
 
 describe('tool argument content cap', () => {
-  it('[py:test_issue4928_tool_arg_content_cap.py::test_backend_keeps_full_command_arg] a long command survives past 120 characters', () => {
+  it('a long command survives past 120 characters', () => {
     const command = `${'echo start\n'.repeat(30)}echo end`
     expect(command.length).toBeGreaterThan(120)
     const out = truncateToolArgs({ command })
@@ -354,24 +352,24 @@ describe('tool argument content cap', () => {
     expect(String(out.command).endsWith('echo end')).toBe(true)
   })
 
-  it('[py:test_issue4928_tool_arg_content_cap.py::test_backend_keeps_patch_diff_args] old_string, new_string, and patch keep their full text', () => {
+  it('old_string, new_string, and patch keep their full text', () => {
     const out = truncateToolArgs({ old_string: 'a'.repeat(300), new_string: 'b'.repeat(300), patch: `@@ -1 +1 @@\n${'-x\n+y\n'.repeat(60)}` })
     expect(String(out.old_string).length).toBe(300)
     expect(String(out.new_string).length).toBe(300)
     expect(String(out.patch).startsWith('@@ -1 +1 @@')).toBe(true)
   })
 
-  it('[py:test_issue4928_tool_arg_content_cap.py::test_backend_incidental_arg_still_capped] an incidental argument is cut to 120 characters', () => {
+  it('an incidental argument is cut to 120 characters', () => {
     expect(truncateToolArgs({ label: 'z'.repeat(300) }).label).toBe(`${'z'.repeat(120)}...`)
   })
 
-  it('[py:test_issue4928_tool_arg_content_cap.py::test_backend_content_cap_is_large] the content cap is at least 4000 and names command and old_string', () => {
+  it('the content cap is at least 4000 and names command and old_string', () => {
     expect(TOOL_ARG_CONTENT_CAP).toBeGreaterThanOrEqual(4000)
     expect(TOOL_ARG_CONTENT_KEYS.has('command')).toBe(true)
     expect(TOOL_ARG_CONTENT_KEYS.has('old_string')).toBe(true)
   })
 
-  it('[py:test_issue4928_tool_arg_content_cap.py::test_backend_very_large_content_still_bounded] a command past the cap is bounded to cap + ellipsis', () => {
+  it('a command past the cap is bounded to cap + ellipsis', () => {
     const out = truncateToolArgs({ command: 'c'.repeat(TOOL_ARG_CONTENT_CAP + 5000) })
     expect(String(out.command).endsWith('...')).toBe(true)
     expect(String(out.command).length).toBe(TOOL_ARG_CONTENT_CAP + 3)
@@ -384,13 +382,13 @@ describe('speech settings', () => {
   beforeAll(async () => { s = await bootTestServer() })
   afterAll(() => s.close())
 
-  it('[py:test_issue5435_tts_voice_preferences.py::test_settings_api_exposes_tts_voice_and_raw_audio_defaults] GET /api/settings carries the speech defaults and no persisted speech keys', async () => {
+  it('GET /api/settings carries the speech defaults and no persisted speech keys', async () => {
     const body = await json(await s.get('/api/settings'))
     expect(body).toMatchObject(SPEECH)
     expect(body.persisted_speech_keys).toEqual([])
   })
 
-  it('[py:test_issue5435_tts_voice_preferences.py::test_settings_api_round_trips_speech_preferences] all speech keys round-trip with string coercion and report as persisted', async () => {
+  it('all speech keys round-trip with string coercion and report as persisted', async () => {
     const payload = { tts_enabled: true, tts_auto_read: true, tts_engine: 'openai', tts_voice: 'nova', tts_rate: '1.4', tts_pitch: '0', voice_mode_button: true, voice_continuous: true, voice_silence_ms: '2400', raw_audio_mode: true }
     const res = await post(s, '/api/settings', payload)
     expect(res.status).toBe(200)
@@ -399,14 +397,14 @@ describe('speech settings', () => {
     expect(await json(await s.get('/api/settings'))).toMatchObject({ ...expected, persisted_speech_keys: Object.keys(payload).sort() })
   })
 
-  it('[py:test_issue5435_tts_voice_preferences.py::test_invalid_speech_settings_preserve_previous_values_and_unrelated_settings] invalid speech values keep the previous ones while unrelated settings still apply', async () => {
+  it('invalid speech values keep the previous ones while unrelated settings still apply', async () => {
     const res = await post(s, '/api/settings', { tts_engine: '', tts_voice: 'v'.repeat(201), tts_rate: 'nan', tts_pitch: 3, voice_silence_ms: 199, show_tps: true })
     expect(res.status).toBe(200)
     const body = await json(res)
     expect(body).toMatchObject({ tts_engine: 'openai', tts_voice: 'nova', tts_rate: 1.4, tts_pitch: 0, voice_silence_ms: 2400, show_tps: true })
   })
 
-  it('[py:test_issue5435_tts_voice_preferences.py::test_settings_api_reports_only_raw_persisted_speech_keys] only the keys present in settings.json are reported as persisted', async () => {
+  it('only the keys present in settings.json are reported as persisted', async () => {
     const other = await bootTestServer()
     try {
       writeFileSync(join(other.state, 'settings.json'), JSON.stringify({ tts_pitch: 0.5, voice_mode_button: true }))

@@ -1,17 +1,3 @@
-/*
- * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
- *   web/tests/test_issue1458_stability_hardening.py
- *   web/tests/test_issue1850_csp_connect_src_jsdelivr.py
- *   web/tests/test_issue1909_csp_enforcement.py
- *   web/tests/test_issue1909_csp_report_only.py
- *   web/tests/test_issue2775_log_request.py
- *   web/tests/test_issue2901_csp_connect_extra.py
- *   web/tests/test_issue6022_worktree_config_default.py
- *   web/tests/test_issue6611_regeneration_authority.py
- *   web/tests/test_issue6751_api_content_agent_replay.py
- *   web/tests/test_issue6757_redaction_and_runner_sse_fixes.py
- * (issues #1458, #1850, #1909, #2775, #2901, #6022, #6611, #6751, #6757) is covered here; see docs/architecture/regression-port-ledger.md.
- */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -236,7 +222,7 @@ describe('password auth', () => {
 
   const host = () => s.base.replace('http://', '')
 
-  it('protected API routes answer 401 and pages redirect to login with an encoded next [py:test_issue5578_login_next_nesting.py::test_rejects_nested_next_chain] [py:test_issue5578_login_next_nesting.py::test_rejects_encoded_login_chain_at_any_depth] [py:test_issue5578_login_next_nesting.py::test_inner_next_helper_drops_login_keeps_safe_nonlogin]', async () => {
+  it('protected API routes answer 401 and pages redirect to login with an encoded next', async () => {
     const api = await s.get('/api/sessions?limit=50&offset=0')
     expect(api.status).toBe(401)
     expect(await api.json()).toEqual({ error: 'Authentication required' })
@@ -263,7 +249,7 @@ describe('password auth', () => {
     expect(boot.bot_name).toBe('Hermes')
   })
 
-  it('logs in, receives a signed HttpOnly cookie, and the CSRF token is bound to the session [py:test_issue1909_csrf_token.py::test_authenticated_same_origin_browser_post_requires_session_csrf_token] [py:test_issue2572_csrf_diagnostics.py::test_origin_mismatch_csrf_rejection_has_diagnostic_error] [py:test_issue2572_csrf_diagnostics.py::test_token_mismatch_csrf_rejection_has_reload_error]', async () => {
+  it('logs in, receives a signed HttpOnly cookie, and the CSRF token is bound to the session', async () => {
     const bad = await s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'nope' }) })
     expect(bad.status).toBe(401)
     expect(await bad.json()).toEqual({ error: 'Invalid password' })

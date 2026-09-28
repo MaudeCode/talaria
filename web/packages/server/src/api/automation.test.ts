@@ -1,8 +1,3 @@
-/*
- * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
- *   web/tests/test_issue6619_dotfile_archive_validator.py
- * (issues #6619) is covered here; see docs/architecture/regression-port-ledger.md.
- */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -256,7 +251,7 @@ describe('crons, kanban, extensions, terminal', () => {
     expect((eventsFrame?.data as Json).cursor).toBe(7)
   })
 
-  it('extension status, registry, install, static serving, consent, proxy, and uninstall [py:test_issue4746_extension_gallery.py::test_install_valid] [py:test_issue4746_extension_gallery.py::test_install_prefixed_zip] [py:test_issue4746_extension_gallery.py::test_gallery_installed_extension_becomes_runtime_manifest] [py:test_issue4746_extension_gallery.py::test_install_bootstraps_managed_default_root_without_env] [py:test_issue4746_extension_gallery.py::test_install_bad_hash] [py:test_issue4746_extension_gallery.py::test_uninstall] [py:test_issue4746_extension_gallery.py::test_gallery_registry_extensions_format]', async () => {
+  it('extension status, registry, install, static serving, consent, proxy, and uninstall', async () => {
     let res = await s.get('/api/extensions/status')
     let body = await json(res)
     expect(body).toMatchObject({ enabled: false, extension_dir_configured: true, extension_dir_valid: false })
@@ -490,7 +485,7 @@ describe('crons, kanban, extensions, terminal', () => {
     }
   })
 
-  it('a live terminal locks its worktree, and deleting the session closes the terminal [py:test_issue2057_worktree_status.py::test_worktree_status_reports_live_terminal_lock]', async () => {
+  it('a live terminal locks its worktree, and deleting the session closes the terminal', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const worktree = join(s.state, 'workspace', 'wt-locked')
     mkdirSync(worktree, { recursive: true })
@@ -519,7 +514,7 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(s.deps.terminals.get(sid)).toBeNull()
   })
 
-  it('a new session honours the profile config worktree default when the body omits worktree [py:test_issue6022_worktree_config_default.py::test_absent_key_with_config_default_on_creates_worktree_session]', async () => {
+  it('a new session honours the profile config worktree default when the body omits worktree', async () => {
     sidecar.respond('config.get', (params) => ({ path: join(params.profile_home, 'config.yaml'), exists: true, config: { worktree: true } }))
     s.deps.agentConfig.invalidate()
     await s.deps.agentConfig.read(s.state)

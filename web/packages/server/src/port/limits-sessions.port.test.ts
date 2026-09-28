@@ -1,7 +1,5 @@
 /**
- * One-to-one ports of the Python extension-install, pin-cap, and state.db
- * window regression cases (TAL-245). Markers `[py:<file>::<case>]` are
- * verified by scripts/check-regression-port.py.
+ * Extension-install, pin-cap, and state.db window regressions.
  */
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -68,12 +66,12 @@ describe('extension gallery installs', () => {
   const root = (): string => join(s.state, 'extensions')
   const install = (id: string, file: string): Promise<Response> => post(s, '/api/extensions/install', { id, download_url: `https://hermes-webui.github.io/x/${file}`, sha256: sha(zips[file] ?? Buffer.alloc(0)) })
 
-  it('[py:test_issue4746_extension_gallery.py::test_gallery_registry_list_format] a top-level JSON array registry keeps its order', async () => {
+  it('a top-level JSON array registry keeps its order', async () => {
     const body = await json(await s.get('/api/extensions/registry'))
     expect((body.entries as Json[]).map((e) => e.id)).toEqual(['zeta', 'alpha'])
   })
 
-  it('[py:test_issue4746_extension_gallery.py::test_install_zipslip] a zip-slip member is refused and nothing escapes the root', async () => {
+  it('a zip-slip member is refused and nothing escapes the root', async () => {
     const res = await install('slip-ext', 'slip.zip')
     expect(res.status).toBe(400)
     expect(existsSync(join(s.state, 'evil.txt'))).toBe(false)
@@ -81,7 +79,7 @@ describe('extension gallery installs', () => {
     expect(existsSync(join(root(), 'slip-ext'))).toBe(false)
   })
 
-  it('[py:test_issue4746_extension_gallery.py::test_uninstall_cleans_nested_dirs] uninstall removes nested empty directories too', async () => {
+  it('uninstall removes nested empty directories too', async () => {
     expect((await install('deep-ext', 'nested.zip')).status).toBe(200)
     expect(existsSync(join(root(), 'deep-ext', 'sub', 'a', 'b.js'))).toBe(true)
     const res = await post(s, '/api/extensions/uninstall', { id: 'deep-ext' })
@@ -89,7 +87,7 @@ describe('extension gallery installs', () => {
     expect(existsSync(join(root(), 'deep-ext'))).toBe(false)
   })
 
-  it('[py:test_issue4746_extension_gallery.py::test_gallery_installed_settings_only_manifest_becomes_runtime_entry] a settings-only manifest becomes a storage-owned runtime entry with a normalized schema', async () => {
+  it('a settings-only manifest becomes a storage-owned runtime entry with a normalized schema', async () => {
     expect((await install('set-ext', 'settings.zip')).status).toBe(200)
     // Python `get_extension_config()` entry: storage ownership and the normalized schema live on the status payload.
     const status = await json(await s.get('/api/extensions/status'))
@@ -101,7 +99,7 @@ describe('extension gallery installs', () => {
     expect(manifest?.settings_schema).toEqual([{ key: 'greeting', type: 'string', label: 'Greeting', description: 'd', default: 'hi' }])
   })
 
-  it('[py:test_issue4746_extension_gallery.py::test_install_rollback] a write failure mid-extraction leaves no partial extension behind', async () => {
+  it('a write failure mid-extraction leaves no partial extension behind', async () => {
     const dir = join(root(), 'roll-ext')
     mkdirSync(dir, { recursive: true })
     chmodSync(dir, 0o500)
@@ -115,7 +113,7 @@ describe('extension gallery installs', () => {
     expect(existsSync(dir) ? readdirSync(dir) : []).toEqual([])
   })
 
-  it('[py:test_issue4746_extension_gallery.py::test_install_rejects_symlinked_ext_dir_outside_root] a pre-existing symlink out of the root is refused and nothing is written at its target', async () => {
+  it('a pre-existing symlink out of the root is refused and nothing is written at its target', async () => {
     const outside = join(s.state, 'outside-target')
     mkdirSync(outside, { recursive: true })
     mkdirSync(root(), { recursive: true })
@@ -164,7 +162,7 @@ describe('extension gallery installs', () => {
     rmSync(join(root(), 'assets-ext-real'), { recursive: true })
   })
 
-  it('[py:test_issue4746_extension_gallery.py::test_install_rejects_symlinked_ext_dir_inside_root] a symlink that stays inside the root is refused too', async () => {
+  it('a symlink that stays inside the root is refused too', async () => {
     mkdirSync(join(root(), 'real-inside'), { recursive: true })
     symlinkSync(join(root(), 'real-inside'), join(root(), 'inside-ext'))
     const res = await install('inside-ext', 'inside.zip')
@@ -172,7 +170,7 @@ describe('extension gallery installs', () => {
     expect(String((await json(res)).error).toLowerCase()).toContain('symlink')
   })
 
-  it('[py:test_issue4746_extension_gallery.py::test_install_rejects_redirect_to_disallowed_host] a download that redirects off the gallery host is refused', async () => {
+  it('a download that redirects off the gallery host is refused', async () => {
     const res = await post(s, '/api/extensions/install', { id: 'redir-ext', download_url: 'https://hermes-webui.github.io/x/redirect.zip', sha256: 'a'.repeat(64) })
     expect(res.status).toBe(400)
     expect(String((await json(res)).error).toLowerCase()).toContain('disallowed host')
@@ -191,7 +189,7 @@ describe('pin cap and hidden snapshots', () => {
     return sid
   }
 
-  it('[py:test_issue2508_session_pin_cap.py::test_session_pin_endpoint_ignores_hidden_snapshot_when_enforcing_cap] a pinned hidden pre-compression snapshot does not consume pin quota', async () => {
+  it('a pinned hidden pre-compression snapshot does not consume pin quota', async () => {
     const hidden = s.deps.sessionStore.get(await newSession())
     hidden.pre_compression_snapshot = true
     hidden.pinned = true
@@ -238,7 +236,7 @@ describe('state.db windows and probes', () => {
   })
   afterAll(() => s.close())
 
-  it('[py:test_issue3172_cron_session_limit.py::test_cron_sessions_survive_when_outnumbered_by_recent_sessions] an older cron session outnumbered by newer CLI rows is still listed with a project', async () => {
+  it('an older cron session outnumbered by newer CLI rows is still listed with a project', async () => {
     const rows = (await json(await s.get('/api/sessions?show_cron_sessions=1'))).sessions as Json[]
     const cron = rows.find((r) => r.session_id === 'cron_old_1')
     expect(cron, JSON.stringify(rows.map((r) => r.session_id))).toBeDefined()
@@ -246,21 +244,21 @@ describe('state.db windows and probes', () => {
     expect(cron?.project_id).toBeTruthy()
   })
 
-  it('[py:test_issue3172_cron_session_limit.py::test_cron_sessions_deduplicated_across_passes] each cron id appears exactly once', async () => {
+  it('each cron id appears exactly once', async () => {
     const rows = (await json(await s.get('/api/sessions?show_cron_sessions=1'))).sessions as Json[]
     expect(rows.filter((r) => r.session_id === 'cron_old_1')).toHaveLength(1)
   })
 
-  it('[py:test_issue3172_cron_session_limit.py::test_cron_session_with_no_messages_excluded_from_second_pass] a message-less cron row is not surfaced', async () => {
+  it('a message-less cron row is not surfaced', async () => {
     const rows = (await json(await s.get('/api/sessions?show_cron_sessions=1'))).sessions as Json[]
     expect(rows.map((r) => r.session_id)).not.toContain('cron_empty')
   })
 
-  it('[py:test_issue3238_orphaned_cli_sidecar_prune.py::test_agent_session_rows_existing_safe_when_db_missing] a missing state.db reports every probed id as present', () => {
+  it('a missing state.db reports every probed id as present', () => {
     expect(agentSessionRowsExisting(join(s.state, 'missing', 'state.db'), ['a', 'b'])).toEqual(new Set(['a', 'b']))
   })
 
-  it('[py:test_issue3238_orphaned_cli_sidecar_prune.py::test_agent_session_rows_existing_batches_over_500_ids] 600 probe ids against 300 present rows answer exactly those 300', () => {
+  it('600 probe ids against 300 present rows answer exactly those 300', () => {
     const path = join(s.state, 'batch.db')
     const db = createStateDb(path)
     for (let i = 0; i < 300; i += 1) insertSession(db, { id: `b-${String(i)}`, source: 'cli', started_at: i })
@@ -272,7 +270,7 @@ describe('state.db windows and probes', () => {
     expect(present.has('b-300')).toBe(false)
   })
 
-  it('[py:test_issue3238_orphaned_cli_sidecar_prune.py::test_agent_session_rows_existing_normalizes_whitespace_in_probe_ids] probe ids are trimmed', () => {
+  it('probe ids are trimmed', () => {
     const path = join(s.state, 'trim.db')
     const db = createStateDb(path)
     insertSession(db, { id: 'cli-padded', source: 'cli', started_at: 1 })
@@ -280,7 +278,7 @@ describe('state.db windows and probes', () => {
     expect(agentSessionRowsExisting(path, ['  cli-padded  '])).toEqual(new Set(['cli-padded']))
   })
 
-  it('[py:test_issue5132_state_db_override_top_n_cap.py::test_stale_cli_json_beyond_cap_stays_webui_via_real_db] a sidecar that claims CLI but whose state.db row says webui lists as a WebUI session', async () => {
+  it('a sidecar that claims CLI but whose state.db row says webui lists as a WebUI session', async () => {
     const db = new DatabaseSync(dbPath)
     insertSession(db, { id: 'stale-json', source: 'webui', started_at: 500, messages: [['user', 501]] })
     db.close()
@@ -297,7 +295,7 @@ describe('state.db windows and probes', () => {
     expect(row).toMatchObject({ is_cli_session: false, session_source: 'webui' })
   })
 
-  it('[py:test_issue5132_state_db_override_top_n_cap.py::test_capped_rows_still_receive_source_overrides] state.db source metadata applies to every row regardless of position', async () => {
+  it('state.db source metadata applies to every row regardless of position', async () => {
     const rows = (await json(await s.get('/api/sessions'))).sessions as Json[]
     expect(rows.find((r) => r.session_id === 'stale-json')).toMatchObject({ is_cli_session: false })
   })

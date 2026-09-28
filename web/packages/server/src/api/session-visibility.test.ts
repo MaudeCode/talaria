@@ -2,11 +2,7 @@
  * Request-profile session visibility across the whole API surface: the active
  * profile is bound per request (cookie / trusted-session binding), and any
  * request-supplied top-level `session_id` outside the request's profile answers
- * 404 before the handler runs (Python `_guard_request_session_visibility`).
- *
- * Regression ports (TAL-245): test_issue1195_session_profile_routing.py,
- * test_issue1611_session_profile_filtering.py, test_issue1700_parallel_profile_switch.py,
- * test_chat_start_claim_cli_session.py (request-session guard cases).
+ * 404 before the handler runs.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { BootstrapSchema } from '@maudecode/talaria-web-contracts'
@@ -40,7 +36,7 @@ describe('request-profile session visibility', () => {
   })
   afterAll(() => s.close())
 
-  it('activeProfile() follows the request binding, so the list and the detail load are profile-scoped [py:test_issue1611_session_profile_filtering.py::test_get_session_rejects_session_from_inactive_profile] [py:test_issue1611_session_profile_filtering.py::test_get_session_rejects_metadata_only_session_from_inactive_profile] [py:test_issue1611_session_profile_filtering.py::test_missing_session_under_nondefault_profile_still_404_primary_branch]', async () => {
+  it('activeProfile() follows the request binding, so the list and the detail load are profile-scoped', async () => {
     const workList = (await (await s.get('/api/sessions', { headers: work.headers })).json()) as { active_profile: string; sessions: { session_id: string }[] }
     expect(workList.active_profile).toBe('work')
     expect(workList.sessions.map((r) => r.session_id)).not.toContain(sid)

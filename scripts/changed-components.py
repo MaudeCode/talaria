@@ -48,8 +48,6 @@ SCRIPTS = {
     "check-previous-app.py": {"contracts", "tooling"},
     "check-release-contracts.py": {"contracts", "tooling"},
     "check": {"tooling"},
-    "check-regression-port.py": {"tooling"},
-    "test-check-regression-port.py": {"tooling"},
     "generate-brand-icons.py": {"web_frontend", "tooling"},
     "check-release-agent.py": {"tooling"},
     "check-releases": {"tooling"},
@@ -142,9 +140,6 @@ def path_suites(path):
         # The Agent pin is baked into the container images and extended by the Compose files: it needs the smoke too.
         if local == "sidecar/agent_dependency.json":
             return {"web_server", "contracts", "docker"}
-        # The regression-port ledger and its port suites are verified by the tooling checker as well.
-        if local.startswith("docs/architecture/regression-port-") or local.startswith("packages/server/src/port/"):
-            return {"web_server", "contracts", "tooling"}
         # The sidecar RPC surface and the server are one consumer of the shared contracts; the Playwright suite drives
         # the real Node server from the frontend job, so server changes run it too.
         if local.startswith(("packages/server/", "sidecar/")):

@@ -1,14 +1,3 @@
-/*
- * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
- *   web/tests/test_issue1494_state_db_fd_leak.py
- *   web/tests/test_issue2628_cli_sessions_perf.py
- *   web/tests/test_issue3238_orphaned_cli_sidecar_prune.py
- *   web/tests/test_issue3762_importable_rows_schema_guard.py
- *   web/tests/test_issue4385_cron_archive_reappears.py
- *   web/tests/test_issue5455_lineage_readonly_reads.py
- *   web/tests/test_issue5455_listing_readonly_connection.py
- * (issues #1494, #2628, #3238, #3762, #4385, #5455) is covered here; see docs/architecture/regression-port-ledger.md.
- */
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -21,7 +10,7 @@ import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSide
 type Json = Record<string, unknown>
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 
-/** The Python test schema (`tests/test_gateway_sync.py::_ensure_state_db`): the Agent's columns the projection reads. */
+/** The Agent's `state.db` columns the projection reads. */
 function createStateDb(path: string): DatabaseSync {
   mkdirSync(join(path, '..'), { recursive: true })
   const db = new DatabaseSync(path)
@@ -59,7 +48,7 @@ describe('state.db projection', () => {
     expect(normalizeAgentSessionSource('my_bridge')).toMatchObject({ session_source: 'other', source_label: 'My Bridge' })
   })
 
-  it('projects messageful gateway rows, hides empty ones, and keeps cron out of the default window [py:test_issue3238_orphaned_cli_sidecar_prune.py::test_agent_session_rows_existing_returns_present_subset]', () => {
+  it('projects messageful gateway rows, hides empty ones, and keeps cron out of the default window', () => {
     insertSession(db, { id: 'tg-1', source: 'telegram', started_at: 100, title: 'Telegram chat', messages: [['user', 101], ['assistant', 102]], chat_id: 'c1' })
     insertSession(db, { id: 'tg-empty', source: 'telegram', started_at: 90 })
     insertSession(db, { id: 'cron_job1_1', source: 'cron', started_at: 95, messages: [['user', 96]] })
@@ -191,7 +180,7 @@ describe('state.db projection', () => {
     writeFileSync(join(s.state, 'profiles', 'legacy', 'note.txt'), 'x')
   })
 
-  it('file operations resolve an Agent-owned state.db session without a sidecar file to the active workspace [py:test_file_manager_external_session.py::test_get_session_for_file_ops_state_db_fallback] [py:test_file_manager_external_session.py::test_get_session_for_file_ops_unknown_session_raises] [py:test_file_manager_external_session.py::test_state_db_has_session_present] [py:test_file_manager_external_session.py::test_state_db_has_session_missing_db]', async () => {
+  it('file operations resolve an Agent-owned state.db session without a sidecar file to the active workspace', async () => {
     expect(stateDbHasSession(join(s.state, 'no-such.db'), 'tg-external-files')).toBe(false)
     insertSession(db, { id: 'tg-external-files', source: 'telegram', started_at: 300, title: 'From Telegram', messages: [['user', 301]] })
     const ws = realpathSync(join(s.state, 'workspace'))

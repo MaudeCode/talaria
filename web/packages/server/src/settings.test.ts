@@ -1,76 +1,3 @@
-/*
- * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
- *   web/tests/test_issue1013_handoff_dock.py
- *   web/tests/test_issue1094_provider_bugs.py
- *   web/tests/test_issue1105_ssrf_custom_providers.py
- *   web/tests/test_issue1106_custom_providers_models.py
- *   web/tests/test_issue1189_openai_codex_detection.py
- *   web/tests/test_issue1217_transcript_compaction.py
- *   web/tests/test_issue1228_model_picker_duplicate_ids.py
- *   web/tests/test_issue1240_generic_cli_catalog_sync.py
- *   web/tests/test_issue1384_local_provider.py
- *   web/tests/test_issue1420_lmstudio_provider_env_var.py
- *   web/tests/test_issue1426_openrouter_free_tier_live_fetch.py
- *   web/tests/test_issue1499_keyless_onboarding.py
- *   web/tests/test_issue1500_lmstudio_env_var_alignment.py
- *   web/tests/test_issue1527_lmstudio_base_url_classification.py
- *   web/tests/test_issue1538_nous_live_catalog.py
- *   web/tests/test_issue1567_nous_picker_capacity_and_symmetry.py
- *   web/tests/test_issue1568_duplicate_provider_groups.py
- *   web/tests/test_issue1699_model_cache_source_fingerprint.py
- *   web/tests/test_issue1807_codex_provider_card_live_models.py
- *   web/tests/test_issue1881_phantom_custom_groups.py
- *   web/tests/test_issue1894_provider_overlap.py
- *   web/tests/test_issue1909_csrf_token.py
- *   web/tests/test_issue2025_xiaomi_env_key.py
- *   web/tests/test_issue2177_nvidia_prefix_preservation.py
- *   web/tests/test_issue2232_legacy_toolsets.py
- *   web/tests/test_issue2245_mixed_case_provider_models.py
- *   web/tests/test_issue2399_provider_config_flags.py
- *   web/tests/test_issue2545_xai_oauth_provider.py
- *   web/tests/test_issue2720_bedrock_model_picker.py
- *   web/tests/test_issue2840_windows_hermes_home_defaults.py
- *   web/tests/test_issue2914_truncation_watermark.py
- *   web/tests/test_issue2929_settings_max_tokens.py
- *   web/tests/test_issue3172_cron_session_limit.py
- *   web/tests/test_issue3260_self_hosted_providers_settings.py
- *   web/tests/test_issue3510_elevenlabs_tts.py
- *   web/tests/test_issue3691_model_picker_show_all.py
- *   web/tests/test_issue3717_context_length_provider_overrides.py
- *   web/tests/test_issue3820_chat_activity_display_mode.py
- *   web/tests/test_issue3928_models_budget_fallback.py
- *   web/tests/test_issue3929_error_preserves_partial.py
- *   web/tests/test_issue3988_show_cli_sessions_default.py
- *   web/tests/test_issue4324_photon_phantom_providers.py
- *   web/tests/test_issue4325_virtualization_toggle.py
- *   web/tests/test_issue4770_anthropic_oauth_detection.py
- *   web/tests/test_issue4836_manual_compression_recovery.py
- *   web/tests/test_issue4982_openai_tts.py
- *   web/tests/test_issue5121_provider_auth_terminal_error.py
- *   web/tests/test_issue5139_gateway_approval_offline_notice.py
- *   web/tests/test_issue5270_cli_webui_continuity.py
- *   web/tests/test_issue5339_restart_stale_user_dedup.py
- *   web/tests/test_issue5532_session_clear_state_db_replay.py
- *   web/tests/test_issue5572_messaging_clear_semantics.py
- *   web/tests/test_issue570_permission.py
- *   web/tests/test_issue6335_catalog_admission_regression.py
- *   web/tests/test_issue644.py
- *   web/tests/test_issue6498_memory_config_gates.py
- *   web/tests/test_issue6722_provider_qualified_model_leak.py
- *   web/tests/test_issue6751_api_content_agent_replay.py
- *   web/tests/test_issue7168_round6_default_isolated_clamp.py
- *   web/tests/test_issue7182_profile_model_tag_truncation.py
- *   web/tests/test_issue7333_slash_id_provider_hint.py
- *   web/tests/test_issue7404_models_discovered_not_allowlist.py
- *   web/tests/test_issue7514_openrouter_zai_namespace.py
- *   web/tests/test_issue7540_codex_catalog_fingerprint.py
- *   web/tests/test_issue_1932_goal_hook_unrelated_turns.py
- *   web/tests/test_issue_neuralwatt_env_key.py
- *   web/tests/test_issue_t16551f61_auth_token_churn_fingerprint.py
- *   web/tests/test_issues_373_374_375.py
- *   web/tests/test_issues_907_908_909_model_dropdown.py
- * (issues #570, #644, #1013, #1094, #1105, #1106, #1189, #1217, #1228, #1240, #1384, #1420, #1426, #1499, #1500, #1527, #1538, #1567, #1568, #1699, #1807, #1881, #1894, #1909, #2025, #2177, #2232, #2245, #2399, #2545, #2720, #2840, #2914, #2929, #3172, #3260, #3510, #3691, #3717, #3820, #3928, #3929, #3988, #4324, #4325, #4770, #4836, #4982, #5121, #5139, #5270, #5339, #5532, #5572, #6335, #6498, #6722, #6751, #7168, #7182, #7333, #7404, #7514, #7540) is covered here; see docs/architecture/regression-port-ledger.md.
- */
 import { closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -269,7 +196,7 @@ describe('save', () => {
     expect((await s.save({ auto_apply_updates: true })).auto_apply_updates).toBe(true)
     expect(store().load().auto_apply_updates).toBe(true)
   })
-  it('ignores unknown keys, validates enums, ranges, lists, and coerces bools [py:test_issue5435_tts_voice_preferences.py::test_unrelated_settings_save_does_not_materialize_absent_speech_defaults]', async () => {
+  it('ignores unknown keys, validates enums, ranges, lists, and coerces bools', async () => {
     const s = store()
     const saved = await s.save({
       unknown_key: 1,

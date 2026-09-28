@@ -1,7 +1,0 @@
-{
-  "version": 1,
-  "disabled_extensions": [
-    "continuity-ext"
-  ],
-  "sidecar_proxy_consents": {}
-}
