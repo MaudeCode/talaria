@@ -24,10 +24,6 @@ from test_release_set import candidate, complete
 from cli import require_latest_predecessor
 
 
-RELEASE_WORKFLOWS = ("release.yml", "production-cutover.yml", "release-set.yml", "ios-release-build.yml",
-                     "recover-cutover.yml", "inspect-testflight.yml", "fuzz-soak.yml", "ui-performance.yml")
-
-
 class PublicationTests(unittest.TestCase):
     def setUp(self):
         self.enterContext(patch("publish.require_latest_predecessor", return_value=[], create=True))
@@ -312,42 +308,6 @@ class PublicationTests(unittest.TestCase):
         self.assertFalse(any("cli.py assemble" in step.get("run", "") for step in app_steps[:upload_index]),
                          "Partial publication receipts must not be assembled as a dry-run candidate")
 
-    def test_release_and_scheduled_workflows_run_on_hosted_runners_without_the_nas(self):
-        # Each macOS job names the native dependency its steps must still show and selects Xcode through the shared
-        # action; every other job runs on GitHub-hosted Linux. Results and handoffs are Actions artifacts with an
-        # explicit retention, and no job references the retired object store.
-        native = {
-            ("fuzz-soak.yml", "soak"): "xcodebuild",
-            ("ui-performance.yml", "measure"): "xcodebuild",
-            ("ios-release-build.yml", "build"): "xcodebuild archive",
-            ("release-set.yml", "contracts"): "check-release-contracts.py --only app",
-            ("release-set.yml", "previous-app-contracts"): "check-previous-app.py",
-            ("release-set.yml", "app-dry-build"): "build.py app",
-        }
-        root = Path(__file__).resolve().parents[1]
-        found = {}
-        for name in RELEASE_WORKFLOWS:
-            path = root / ".github/workflows" / name
-            # The character classes keep this guard out of its own repository-wide search for the retired store.
-            self.assertIsNone(re.search(r"s3[-]artifact|TALARIA[_]\w*S3|buildcache/", path.read_text()), name)
-            document = json.loads(subprocess.check_output([
-                "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(path),
-            ], text=True))
-            for job_name, job in document["jobs"].items():
-                if "steps" not in job:
-                    continue
-                if job["runs-on"] == "xcode-27":
-                    found[(name, job_name)] = json.dumps(job["steps"])
-                    self.assertIn({"uses": "./.github/actions/setup-xcode"}, job["steps"], (name, job_name))
-                else:
-                    self.assertEqual(job["runs-on"], "ubuntu-latest", (name, job_name))
-                for step in job["steps"]:
-                    if step.get("uses", "").startswith("actions/upload-artifact@"):
-                        self.assertIn(step["with"]["retention-days"], (14, 30), (name, job_name))
-        self.assertEqual(set(found), set(native))
-        for job, dependency in native.items():
-            self.assertIn(dependency, found[job], job)
-
     def test_signing_uses_a_job_owned_keychain_that_is_always_deleted(self):
         root = Path(__file__).resolve().parents[1]
         build = json.loads(subprocess.check_output([
@@ -489,9 +449,8 @@ class PublicationTests(unittest.TestCase):
                 "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(path),
             ], text=True))
             for name, job in document["jobs"].items():
-                runner = job.get("runs-on")
-                # Linux jobs: GitHub-hosted labels, or a self-hosted label list; the rest are macOS images.
-                if "steps" not in job or (isinstance(runner, str) and not runner.startswith("ubuntu")):
+                # Linux jobs only; scripts/check-hosted-runners.py keeps every runner GitHub-hosted.
+                if "steps" not in job or not str(job.get("runs-on")).startswith("ubuntu"):
                     continue
                 runs = "\n".join(step.get("run", "") for step in job["steps"])
                 if any(marker in runs for marker in needs_ruby):

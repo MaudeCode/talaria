@@ -189,7 +189,7 @@ jobs:
 
       - name: Download app provisioning profile
         id: app-profile
-        uses: apple-actions/download-provisioning-profiles@v6
+        uses: apple-actions/download-provisioning-profiles@2126b5f86a0e2863cbf4d2d312112b22b943a594 # v6.1.0
         with:
           bundle-id: dev.kil.talaria
           profile-type: IOS_APP_STORE
@@ -199,7 +199,7 @@ jobs:
 
       - name: Download share extension provisioning profile
         id: share-profile
-        uses: apple-actions/download-provisioning-profiles@v6
+        uses: apple-actions/download-provisioning-profiles@2126b5f86a0e2863cbf4d2d312112b22b943a594 # v6.1.0
         with:
           bundle-id: dev.kil.talaria.shareextension
           profile-type: IOS_APP_STORE
@@ -209,7 +209,7 @@ jobs:
 
       - name: Download Live Activity provisioning profile
         id: live-activity-profile
-        uses: apple-actions/download-provisioning-profiles@v6
+        uses: apple-actions/download-provisioning-profiles@2126b5f86a0e2863cbf4d2d312112b22b943a594 # v6.1.0
         with:
           bundle-id: dev.kil.talaria.liveactivitywidget
           profile-type: IOS_APP_STORE

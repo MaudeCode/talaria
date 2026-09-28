@@ -54,17 +54,21 @@ source-install safety boundaries.
 
 ## Runners and handoffs
 
-Every release job runs on a GitHub-hosted runner; the repository is public, so
-they cost nothing. Jobs that need Xcode, an iOS simulator or Apple signing run on
-`xcode-27` (GitHub's Xcode 27 public-preview image, macOS 27 arm64) and select
-Xcode through `.github/actions/setup-xcode`; every other job runs on
-`ubuntu-latest` and installs its tools through the `release-python`,
+Every job in every workflow runs on a GitHub-hosted runner; the repository is
+public, so they cost nothing. Jobs that need Xcode, an iOS simulator or Apple
+signing run on `xcode-27` (GitHub's Xcode 27 public-preview image, macOS 27
+arm64) and select Xcode through `.github/actions/setup-xcode`; every other job
+runs on `ubuntu-latest` and installs its tools through the `release-python`,
 `release-node`, `release-ruby` and `docker-plugins` actions.
-`releases/test_publication.py` fails when a release or scheduled workflow moves
-a job elsewhere or a macOS job loses its native dependency:
+`scripts/check-hosted-runners.py` fails when any job, for any event, can resolve
+to another runner or a workflow references the retired NAS credentials; its test
+fails when a macOS job appears or loses its native dependency:
 
 | Workflow | Job | Native dependency |
 |---|---|---|
+| `pr-ci.yml` | `app-build` | `xcodebuild build-for-testing` once, uploaded as the run's `app-build` artifact |
+| `pr-ci.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: two unit-test shards for a pull request, four full-suite shards for a main push; shard 0 also runs the live Web contract test |
+| `pr-ci.yml` | `app-tooling` (`macos-latest`) | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
 | `fuzz-soak.yml` | `soak` | `xcodebuild test` in the simulator |
 | `ui-performance.yml` | `measure` | `xcodebuild test` in the simulator |
 | `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
@@ -73,17 +77,25 @@ a job elsewhere or a macOS job loses its native dependency:
 | `release-set.yml` | `app-dry-build` | unsigned `xcodebuild archive` |
 
 The organization runs at most five macOS jobs at once; a release uses three
-(the two contract gates and one App build). They cache the SwiftPM repository
-cache; the signed build does not, so the shipped IPA never starts from a cache.
+(the two contract gates and one App build). Simulator jobs request the runtime
+matching the selected Xcode's SDK and an iPhone 17 through
+`app/scripts/select-ios-simulator`, which creates one when the image has none.
+The release gates and dry build cache Xcode's SwiftPM repository cache, the fuzz
+soak and UI performance share PR CI's SwiftPM checkout cache, and the signed
+build caches nothing, so the shipped IPA never starts from a cache.
 
 The signed build imports the distribution certificate into a keychain the job
 creates under `$RUNNER_TEMP` with a random, masked password, searches it first,
 and deletes it in an `always()` step. Provisioning profiles come from
 `apple-actions/download-provisioning-profiles`.
 
-The Web contract probe, Docker smoke, release-plan preparation, Web/Relay
-fixture suites, Agent verification, Relay/Web builds, publication receipt jobs,
-manifest assembly, TestFlight inspection and cutover recovery run on Linux.
+PR CI's Web contract probe uploads its live responses as the run's
+`contract-fixture` artifact for App shard 0 (see
+[contract validation](../CONTRACT_TESTS.md)); the Web end-to-end suite runs in
+three Playwright shards and the Docker smoke in one job per Compose variant
+(five). Release-plan preparation, Web/Relay fixture suites, Agent verification,
+Relay/Web builds, publication receipt jobs, manifest assembly, TestFlight
+inspection and cutover recovery run on Linux too.
 The Web image build caches its layers in the GitHub Actions cache
 (`type=gha`, scope `talaria-web-release`); `actions/github-script` hands the
 runtime token Buildx needs, masked, to that one build step.
