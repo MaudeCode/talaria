@@ -1,4 +1,4 @@
-# Two-container Docker Compose: Hermes Agent + Hermes WebUI
+# Two-container Docker Compose: Hermes Agent + Talaria Web
 #
 # QUICK START:
 #   docker compose -f docker-compose.two-container.yml up -d
