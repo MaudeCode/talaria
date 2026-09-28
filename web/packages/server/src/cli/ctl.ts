@@ -29,7 +29,7 @@ export interface CtlContext {
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase())
 const sleep = (ms: number): Promise<void> => new Promise((r) => { setTimeout(r, ms) })
 
-export interface CtlPaths { hermesHome: string; runtimeRoot: string; runtimeBase: string | null; worktreeMode: boolean; pidFile: string; logFile: string; stateFile: string; stateDir: string; launchdLabel: string }
+export interface CtlPaths { hermesHome: string; runtimeRoot: string; runtimeBase: string | null; worktreeMode: boolean; pidFile: string; logFile: string; stateFile: string; stateDir: string; launchdLabels: string[] }
 
 function gitPath(webRoot: string, flag: string): string {
   const r = spawnSync('git', ['-C', webRoot, 'rev-parse', '--path-format=absolute', flag], { encoding: 'utf8' })
@@ -73,7 +73,8 @@ export function ctlPaths(ctx: CtlContext): CtlPaths {
     logFile,
     stateFile: (env.HERMES_WEBUI_CTL_STATE_FILE ?? '').trim() || join(runtimeRoot, 'webui.ctl.env'),
     stateDir: (env.HERMES_WEBUI_STATE_DIR ?? '').trim() || join(runtimeRoot, 'webui'),
-    launchdLabel: (env.HERMES_WEBUI_LAUNCHD_LABEL ?? '').trim() || 'com.parantoux.hermes-webui',
+    // An override names the only job to probe; otherwise the current default, then the label upgraded installs still carry.
+    launchdLabels: (env.HERMES_WEBUI_LAUNCHD_LABEL ?? '').trim() ? [(env.HERMES_WEBUI_LAUNCHD_LABEL ?? '').trim()] : ['dev.kil.talaria.web', 'com.parantoux.hermes-webui'],
   }
 }
 
@@ -226,10 +227,18 @@ function pidListensOnPort(pid: number, port: number): 0 | 1 | 2 {
   return rows.some((r) => r.includes('pid=')) ? 1 : 2
 }
 
-/** Python `_launchd_webui_pid`: a launchd job with our label listening on the wanted port blocks a second instance. */
-export function launchdConflictPid(p: CtlPaths, env: Record<string, string | undefined>, wantPort: number): number | null {
+/** Python `_launchd_webui_pid`: a launchd job with one of our labels listening on the wanted port blocks a second instance. */
+export function launchdConflictPid(p: CtlPaths, env: Record<string, string | undefined>, wantPort: number): { pid: number; label: string } | null {
   if (truthy(env.HERMES_WEBUI_CTL_ALLOW_LAUNCHD_CONFLICT)) return null
-  const out = spawnSync('launchctl', ['print', `gui/${String(userInfo().uid)}/${p.launchdLabel}`], { encoding: 'utf8' })
+  for (const label of p.launchdLabels) {
+    const pid = launchdJobPid(label, wantPort)
+    if (pid !== null) return { pid, label }
+  }
+  return null
+}
+
+function launchdJobPid(label: string, wantPort: number): number | null {
+  const out = spawnSync('launchctl', ['print', `gui/${String(userInfo().uid)}/${label}`], { encoding: 'utf8' })
   if (out.error || out.status !== 0) return null
   const m = /^\s*pid = (\d+)/m.exec(out.stdout)
   const pid = m ? Number.parseInt(m[1] ?? '0', 10) : 0
@@ -320,7 +329,7 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
   const existing = currentPid(p, ctx)
   if (existing !== null) {
     const state = readState(p)
-    ctx.log(`[ctl] Hermes WebUI is already running (PID ${String(existing)})`)
+    ctx.log(`[ctl] Talaria Web is already running (PID ${String(existing)})`)
     printCoordinates(ctx, state.HOST ?? binding.host, Number.parseInt(state.PORT ?? '', 10) || binding.port)
     return 0
   }
@@ -333,15 +342,15 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
   }
   ctx.env.HERMES_WEBUI_HOST = binding.host
   ctx.env.HERMES_WEBUI_PORT = String(port)
-  const launchdPid = launchdConflictPid(p, ctx.env, port)
-  if (launchdPid !== null) {
-    ctx.warn(`[ctl] Refusing to start a second Hermes WebUI while launchd job ${p.launchdLabel} is running (PID ${String(launchdPid)}).`)
-    ctx.warn(`[ctl] Use launchctl kickstart -k gui/${String(userInfo().uid)}/${p.launchdLabel} or disable the launchd job before using talaria-web ctl start.`)
+  const launchd = launchdConflictPid(p, ctx.env, port)
+  if (launchd !== null) {
+    ctx.warn(`[ctl] Refusing to start a second Talaria Web while launchd job ${launchd.label} is running (PID ${String(launchd.pid)}).`)
+    ctx.warn(`[ctl] Use launchctl kickstart -k gui/${String(userInfo().uid)}/${launchd.label} or disable the launchd job before using talaria-web ctl start.`)
     return 2
   }
   const systemd = systemdConflict(ctx.env, port)
   if (systemd) {
-    ctx.warn(`[ctl] Refusing to start a second Hermes WebUI: systemd ${systemd}.`)
+    ctx.warn(`[ctl] Refusing to start a second Talaria Web: systemd ${systemd}.`)
     ctx.warn(`[ctl] Manage that instance with systemctl instead, or disable the unit before using talaria-web ctl start. Set HERMES_WEBUI_CTL_ALLOW_SYSTEMD_CONFLICT=1 to override.`)
     return 2
   }
@@ -367,14 +376,14 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
   let grace = Number.parseInt((ctx.env.HERMES_WEBUI_START_GRACE ?? '').trim() || '3', 10)
   if (!Number.isFinite(grace) || grace <= 0) grace = 3
   let healthy = false
-  const failed = (): number => { ctx.warn(`[ctl] Hermes WebUI failed to stay running. Log: ${p.logFile}`); rmSync(p.pidFile, { force: true }); rmSync(p.stateFile, { force: true }); return 1 }
+  const failed = (): number => { ctx.warn(`[ctl] Talaria Web failed to stay running. Log: ${p.logFile}`); rmSync(p.pidFile, { force: true }); rmSync(p.stateFile, { force: true }); return 1 }
   for (let step = 0; step < grace * 4; step += 1) {
     if (!isAlive(pid)) return failed()
     if (await anyHttpAnswer(`http://${probeHost}:${String(port)}/health`) || await anyHttpAnswer(`https://${probeHost}:${String(port)}/health`)) { healthy = true; break }
     await sleep(250)
   }
   if (!isAlive(pid)) return failed()
-  ctx.log(`[ctl] Started Hermes WebUI (PID ${String(pid)})`)
+  ctx.log(`[ctl] Started Talaria Web (PID ${String(pid)})`)
   ctx.log(`[ctl] Bound: ${binding.host}:${String(port)}`)
   ctx.log(`[ctl] Log: ${p.logFile}`)
   printCoordinates(ctx, binding.host, port)
@@ -409,13 +418,13 @@ export async function stopCmd(ctx: CtlContext): Promise<number> {
   ensureHome(p)
   const pid = pidFromFile(p)
   if (pid === null) {
-    ctx.log('[ctl] Hermes WebUI is stopped')
+    ctx.log('[ctl] Talaria Web is stopped')
     await warnIfUnmanaged(ctx, p)
     rmSync(p.pidFile, { force: true }); rmSync(p.stateFile, { force: true })
     return 0
   }
   if (!isAlive(pid) || !isOwnedPid(p, ctx, pid)) { await warnIfUnmanaged(ctx, p); clearStalePid(p, ctx.log); return 0 }
-  ctx.log(`[ctl] Stopping Hermes WebUI (PID ${String(pid)})`)
+  ctx.log(`[ctl] Stopping Talaria Web (PID ${String(pid)})`)
   try { process.kill(pid, 'SIGTERM') } catch { /* gone */ }
   for (let i = 0; i < 50; i += 1) {
     if (!isAlive(pid)) { rmSync(p.pidFile, { force: true }); rmSync(p.stateFile, { force: true }); ctx.log('[ctl] Stopped'); return 0 }
@@ -439,7 +448,7 @@ export async function statusCmd(ctx: CtlContext): Promise<number> {
   const pid = currentPid(p, ctx)
   if (pid !== null) {
     const etime = spawnSync('ps', ['-p', String(pid), '-o', 'etime='], { encoding: 'utf8' }).stdout.trim()
-    ctx.log('● hermes-webui — running')
+    ctx.log('● talaria-web — running')
     ctx.log(`  PID:     ${String(pid)}`)
     ctx.log(`  Uptime:  ${etime || 'unknown'}`)
     ctx.log(`  Bound:   ${host}:${String(port)}`)
@@ -450,7 +459,7 @@ export async function statusCmd(ctx: CtlContext): Promise<number> {
   if (existsSync(p.pidFile)) clearStalePid(p, () => undefined)
   const probeHost = probeTargetHost(host)
   if (await portAnswersHttp(probeHost, port)) {
-    ctx.log('● hermes-webui — running (not managed by talaria-web ctl)')
+    ctx.log('● talaria-web — running (not managed by talaria-web ctl)')
     ctx.log('  PID:     -')
     const diag = listenerDiag(port)
     if (diag) ctx.log(`  Listener: ${diag}`)
@@ -460,7 +469,7 @@ export async function statusCmd(ctx: CtlContext): Promise<number> {
     ctx.log('  Note:    manage it via its own supervisor (systemctl/launchctl) or the process directly.')
     return 0
   }
-  ctx.log('● hermes-webui — stopped')
+  ctx.log('● talaria-web — stopped')
   ctx.log('  PID:     -')
   ctx.log(`  Bound:   ${host}:${String(port)}`)
   ctx.log(`  Log:     ${p.logFile}`)

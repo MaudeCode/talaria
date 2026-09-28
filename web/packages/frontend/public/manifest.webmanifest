@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Hermes",
   "short_name": "Hermes",
-  "description": "Hermes AI Agent Web UI",
+  "description": "Talaria Web, the web interface for Hermes Agent",
   "start_url": "./?source=pwa",
   "scope": "./",
   "display": "standalone",

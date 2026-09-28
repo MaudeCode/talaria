@@ -1,4 +1,4 @@
-# Three-container Docker Compose: Hermes Agent + Dashboard + WebUI
+# Three-container Docker Compose: Hermes Agent + Dashboard + Talaria Web
 #
 # QUICK START:
 #   docker compose -f docker-compose.three-container.yml up -d

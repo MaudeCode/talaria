@@ -454,7 +454,7 @@ export class RelayService {
   private async pairUnlocked(body: unknown, rawProfile: string, operator: boolean): Promise<{ ok: true; publisher_id: string }> {
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new RelayPairingError('Invalid pairing request', 400)
     const b = body as Record<string, unknown>
-    const label = b.label || 'Hermes WebUI'
+    const label = b.label || 'Talaria Web'
     if ([b.relay_url, b.publisher_id, b.publisher_invitation, label].some((v) => typeof v !== 'string')) throw new RelayPairingError('Missing relay pairing fields', 400)
     const invitation = b.publisher_invitation as string
     let relayUrl: string

@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
 import { homeDotenvKeys, loadLauncherDotenv, loadStartupEnv, parseDotenv } from './dotenv.js'
 import { agentDirFromHermesCli, detectSupervisor, parseBootstrapArgs, runBootstrap, waitForHealth } from './launcher.js'
-import { ctlPaths, parseLaunchBinding, portIsBindable, readState, runCtl, type CtlContext } from './ctl.js'
+import { ctlPaths, launchdConflictPid, parseLaunchBinding, portIsBindable, readState, runCtl, type CtlContext } from './ctl.js'
 import { bootTestServer } from '../test/harness.js'
 
 function scratch(): string {
@@ -163,8 +163,9 @@ describe('ctl', () => {
     const home = scratch()
     const ctx = makeCtx(home, ['node'])
     const p = ctlPaths(ctx)
-    expect(p).toMatchObject({ hermesHome: join(home, '.hermes'), pidFile: join(home, '.hermes', 'webui.pid'), logFile: join(home, '.hermes', 'webui.log'), stateFile: join(home, '.hermes', 'webui.ctl.env'), stateDir: join(home, '.hermes', 'webui'), worktreeMode: false })
+    expect(p).toMatchObject({ hermesHome: join(home, '.hermes'), pidFile: join(home, '.hermes', 'webui.pid'), logFile: join(home, '.hermes', 'webui.log'), stateFile: join(home, '.hermes', 'webui.ctl.env'), stateDir: join(home, '.hermes', 'webui'), worktreeMode: false, launchdLabels: ['dev.kil.talaria.web', 'com.parantoux.hermes-webui'] })
     expect(ctlPaths(makeCtx(home, ['node'], { HERMES_WEBUI_LOG_FILE: 'rel.log' })).logFile.startsWith('/')).toBe(true)
+    expect(ctlPaths(makeCtx(home, ['node'], { HERMES_WEBUI_LAUNCHD_LABEL: 'com.example.custom' })).launchdLabels).toEqual(['com.example.custom'])
     expect(parseLaunchBinding(['9001', '--host', '0.0.0.0', '--skip-agent-install', 'x'], {})).toEqual({ host: '0.0.0.0', port: 9001, portExplicit: true, passthrough: ['--skip-agent-install', 'x'] })
     expect(parseLaunchBinding([], { HERMES_WEBUI_CTL_PORT_START: '9100' })).toMatchObject({ port: 9100, portExplicit: false })
   })
@@ -178,7 +179,7 @@ describe('ctl', () => {
     const code = await runCtl(ctx, ['start', String(port)])
     stops.push(async () => { await runCtl(ctx, ['stop']) })
     expect(code).toBe(0)
-    expect(ctx.out.some((l) => l.startsWith('[ctl] Started Hermes WebUI (PID'))).toBe(true)
+    expect(ctx.out.some((l) => l.startsWith('[ctl] Started Talaria Web (PID'))).toBe(true)
     expect(ctx.out).toContain(`HERMES_WEBUI_PORT=${String(port)}`)
     const p = ctlPaths(ctx)
     expect(existsSync(p.pidFile)).toBe(true)
@@ -192,7 +193,7 @@ describe('ctl', () => {
     expect(ctx.out[0]).toMatch(/already running/)
     ctx.out.length = 0
     expect(await runCtl(ctx, ['status'])).toBe(0)
-    expect(ctx.out[0]).toBe('● hermes-webui — running')
+    expect(ctx.out[0]).toBe('● talaria-web — running')
     expect(ctx.out.find((l) => l.startsWith('  Health:'))).toBe('  Health:  ok (1 sessions, 0 active streams)')
     ctx.out.length = 0
     expect(await runCtl(ctx, ['stop'])).toBe(0)
@@ -201,7 +202,7 @@ describe('ctl', () => {
     expect(await portIsBindable('127.0.0.1', port)).toBe(true)
     ctx.out.length = 0
     expect(await runCtl(ctx, ['status'])).toBe(0)
-    expect(ctx.out[0]).toBe('● hermes-webui — stopped')
+    expect(ctx.out[0]).toBe('● talaria-web — stopped')
   })
 
   it('stop, status, and logs resolve the daemon through the checkout .env like start does', async () => {
@@ -220,7 +221,7 @@ describe('ctl', () => {
     const fresh = makeCtx(home, fakeServe(script))
     delete fresh.env.HERMES_HOME
     expect(await runCtl(fresh, ['status'])).toBe(0)
-    expect(fresh.out[0]).toBe('● hermes-webui — running')
+    expect(fresh.out[0]).toBe('● talaria-web — running')
     const stopper = makeCtx(home, fakeServe(script))
     delete stopper.env.HERMES_HOME
     expect(await runCtl(stopper, ['stop'])).toBe(0)
@@ -242,7 +243,27 @@ describe('ctl', () => {
     expect(ctx.err.some((l) => l.includes('NOT managed by talaria-web ctl'))).toBe(true)
     ctx.out.length = 0
     expect(await runCtl(ctx, ['status'])).toBe(0)
-    expect(ctx.out[0]).toBe('● hermes-webui — running (not managed by talaria-web ctl)')
+    expect(ctx.out[0]).toBe('● talaria-web — running (not managed by talaria-web ctl)')
+  })
+
+  it('detects a launchd job still under the legacy default label unless a label override is set', () => {
+    const home = scratch()
+    // Stand-in launchd job (this live test process) on a non-default port. Both host tools are faked so the result does
+    // not depend on which of lsof/ss the machine has: launchctl knows only the legacy label, and lsof reports only that
+    // pid listening on that port.
+    const port = 18787
+    const bin = join(home, 'bin')
+    mkdirSync(bin, { recursive: true })
+    writeFileSync(join(bin, 'launchctl'), `#!/bin/sh\ncase "$2" in */com.parantoux.hermes-webui) printf '\\tpid = ${String(process.pid)}\\n'; exit 0;; esac\nexit 113\n`, { mode: 0o755 })
+    writeFileSync(join(bin, 'lsof'), `#!/bin/sh\ncase " $* " in *" -p ${String(process.pid)} -iTCP:${String(port)} "*) exit 0;; esac\nexit 1\n`, { mode: 0o755 })
+    const savedPath = process.env.PATH
+    process.env.PATH = `${bin}:${savedPath ?? ''}`
+    try {
+      const ctx = makeCtx(home, ['node'])
+      expect(launchdConflictPid(ctlPaths(ctx), ctx.env, port)).toEqual({ pid: process.pid, label: 'com.parantoux.hermes-webui' })
+      const custom = makeCtx(home, ['node'], { HERMES_WEBUI_LAUNCHD_LABEL: 'com.example.custom' })
+      expect(launchdConflictPid(ctlPaths(custom), custom.env, port)).toBeNull()
+    } finally { process.env.PATH = savedPath }
   })
 
   it('reports a server that dies during the startup grace window', async () => {

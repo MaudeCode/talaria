@@ -16,7 +16,7 @@ Or set ``HERMES_WEBUI_FOREGROUND=1`` in the environment. The Web UI will
 auto-detect launchd / systemd / supervisord even without the flag, but being
 explicit is safer.
 
-**Important (launchd on macOS):** if the ``com.parantoux.hermes-webui`` LaunchAgent is enabled, treat launchd as the single source of truth for WebUI lifecycle. Do **not** also run ``talaria-web ctl start`` or ``talaria-web`` against the same state dir/port, or you can create a second WebUI instance and trigger port-8787 restart churn.
+**Important (launchd on macOS):** if the ``dev.kil.talaria.web`` LaunchAgent is enabled, treat launchd as the single source of truth for the Talaria Web lifecycle. Do **not** also run ``talaria-web ctl start`` or ``talaria-web`` against the same state dir/port, or you can create a second Talaria Web instance and trigger port-8787 restart churn. ``talaria-web ctl start`` refuses to start next to a running launchd job with that label; if your plist uses a different label, set ``HERMES_WEBUI_LAUNCHD_LABEL`` to it.
 
 ## Why ``--foreground`` matters
 
@@ -42,7 +42,7 @@ worker (exit code 75) so the tracked PID never changes.
 
 ## launchd (macOS)
 
-``~/Library/LaunchAgents/com.example.hermes-webui.plist``:
+``~/Library/LaunchAgents/dev.kil.talaria.web.plist``:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -50,7 +50,7 @@ worker (exit code 75) so the tracked PID never changes.
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.example.hermes-webui</string>
+    <string>dev.kil.talaria.web</string>
 
     <key>ProgramArguments</key>
     <array>
@@ -92,15 +92,15 @@ worker (exit code 75) so the tracked PID never changes.
 Load:
 
 ```bash
-launchctl load ~/Library/LaunchAgents/com.example.hermes-webui.plist
-launchctl print gui/$(id -u)/com.example.hermes-webui   # check state
+launchctl load ~/Library/LaunchAgents/dev.kil.talaria.web.plist
+launchctl print gui/$(id -u)/dev.kil.talaria.web   # check state
 ```
 
 Reload after editing the plist:
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.example.hermes-webui.plist
-launchctl load   ~/Library/LaunchAgents/com.example.hermes-webui.plist
+launchctl unload ~/Library/LaunchAgents/dev.kil.talaria.web.plist
+launchctl load   ~/Library/LaunchAgents/dev.kil.talaria.web.plist
 ```
 
 launchd sets ``XPC_SERVICE_NAME`` automatically, so even without the
@@ -113,7 +113,7 @@ The flag is still recommended as documentation of intent.
 
 ```ini
 [Unit]
-Description=Hermes Web UI
+Description=Talaria Web
 After=network.target
 
 [Service]
@@ -139,15 +139,18 @@ systemctl --user enable --now hermes-webui.service
 journalctl --user -u hermes-webui.service -f
 ```
 
+``talaria-web ctl start`` refuses to start next to an active ``hermes-webui.service``
+on the same port; set ``HERMES_WEBUI_SYSTEMD_UNIT`` if your unit has another name.
+
 systemd sets ``INVOCATION_ID`` and ``JOURNAL_STREAM`` (when stdio is wired to
 the journal), both of which auto-promote to foreground mode.
 
 ## supervisord (cross-platform)
 
-``/etc/supervisor/conf.d/hermes-webui.conf``:
+``/etc/supervisor/conf.d/talaria-web.conf``:
 
 ```ini
-[program:hermes-webui]
+[program:talaria-web]
 command=/usr/local/bin/talaria-web --foreground --no-browser
 directory=/home/youruser
 user=youruser
@@ -155,8 +158,8 @@ autostart=true
 autorestart=true
 stopsignal=TERM
 stopwaitsecs=10
-stdout_logfile=/var/log/hermes-webui.out.log
-stderr_logfile=/var/log/hermes-webui.err.log
+stdout_logfile=/var/log/talaria-web.out.log
+stderr_logfile=/var/log/talaria-web.err.log
 environment=HOME="/home/youruser",PATH="/usr/local/bin:/usr/bin:/bin"
 ```
 
@@ -165,7 +168,7 @@ Reload + start:
 ```bash
 sudo supervisorctl reread
 sudo supervisorctl update
-sudo supervisorctl status hermes-webui
+sudo supervisorctl status talaria-web
 ```
 
 supervisord sets ``SUPERVISOR_ENABLED``, which auto-promotes to foreground
@@ -251,7 +254,7 @@ is reaching the process.
 process is still listening on the port but request handling is wedged, pair your
 supervisor with an HTTP probe and force a restart when the probe fails.
 
-Hermes Web UI exposes two health levels:
+Talaria Web exposes two health levels:
 
 - ``/health`` — cheap liveness probe with ``active_streams``, uptime, and an
   ``accept_loop`` heartbeat counter.
@@ -264,7 +267,7 @@ Minimal macOS launchd watchdog script:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-LABEL="com.example.hermes-webui"
+LABEL="dev.kil.talaria.web"
 BASE="http://127.0.0.1:8787"
 
 if ! curl -fsS --max-time 10 "$BASE/health?deep=1" >/dev/null; then

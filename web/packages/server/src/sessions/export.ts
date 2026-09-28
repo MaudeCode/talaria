@@ -163,7 +163,7 @@ export function renderSessionHtml(session: Record<string, unknown>, theme = 'dar
 <main>
 ${blocks.join('')}
 </main>
-<footer class="doc-foot">Exported from Hermes WebUI on ${exported}</footer>
+<footer class="doc-foot">Exported from Talaria Web on ${exported}</footer>
 </div>
 </body>
 </html>`

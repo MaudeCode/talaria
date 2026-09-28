@@ -17,7 +17,7 @@ export class PasskeyRateLimitError extends PasskeyError {}
 const CHALLENGE_TTL_S = 90
 const MAX_CHALLENGES = 128
 const MAX_PER_CONTEXT = 8
-const RP_NAME = 'Hermes WebUI'
+const RP_NAME = 'Talaria Web'
 
 const b64u = (b: Buffer): string => b.toString('base64url')
 const b64uDecode = (v: unknown): Buffer => Buffer.from(str(v).trim(), 'base64url')

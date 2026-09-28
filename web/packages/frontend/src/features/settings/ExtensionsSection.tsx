@@ -14,7 +14,7 @@ import { showToast } from '../toast/toast'
 import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
 
-const GUIDE = 'https://github.com/nesquena/hermes-webui/blob/master/docs/architecture/extension-migration-guide.md'
+const GUIDE = 'https://github.com/MaudeCode/talaria/blob/main/web/docs/architecture/extension-migration-guide.md'
 
 /** Installed extensions from the unified manifest list, sidecar consent, gallery install, and the legacy-injection migration notice. */
 export function ExtensionsSection() {
