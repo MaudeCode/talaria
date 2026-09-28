@@ -192,7 +192,7 @@ class RoutingTests(unittest.TestCase):
             self.assertNotEqual(check_diff("--base", "missing-ref").returncode, 0)
 
     def test_gate_rejects_missing_or_skipped_required_checks(self):
-        job_suites = {"app-build": set(), "app-test": {"app", "contracts"}, "app-tooling": {"app_tooling"},
+        job_suites = {"app-build": {"app", "contracts"}, "app-test": {"app", "contracts"}, "app-tooling": {"app_tooling"},
                       "web": {"web_server", "web_frontend"}, "web-docker": {"docker"},
                       "relay": {"relay"}, "contracts": {"contracts"}}
         for selected in (set(), {"web_frontend"}, {"web_server"}, {"app"}, {"tooling"}, ALL):

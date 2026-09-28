@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
+require "yaml"
 
 class TestIOSRunnerTest < Minitest::Test
   def test_disables_slow_xcode_failure_diagnostics
@@ -25,10 +26,11 @@ class TestIOSRunnerTest < Minitest::Test
     )
 
     # Build, test suite and live contract test all target the simulator select-ios-simulator chose or created.
-    assert_equal(2, workflow.scan("simulator_id=$(scripts/select-ios-simulator | cut -f1)").length)
+    assert_equal(1, workflow.scan("simulator_id=$(scripts/select-ios-simulator | cut -f1)").length)
+    assert_includes(workflow, %q(read -r simulator_id runtime device_type <<< "$(scripts/select-ios-simulator)"))
     assert_includes(workflow, "IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     assert_equal(2, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
-    assert_equal(2, workflow.scan('ci/build-for-testing "${SIMULATOR_ID}"').length)
+    assert_equal(1, workflow.scan('ci/build-for-testing "${SIMULATOR_ID}"').length)
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
     assert_includes(build, 'platform=iOS Simulator,id=${simulator_id}')
     refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
@@ -61,15 +63,16 @@ class TestIOSRunnerTest < Minitest::Test
   end
 
   def test_only_shard_zero_waits_for_the_probe_after_its_suite
-    require "yaml"
     jobs = YAML.safe_load_file(File.expand_path("../../.github/workflows/ci.yml", __dir__), aliases: true)["jobs"]
     shard, probe = jobs.fetch("app-test"), jobs.fetch("contracts")
     # Test jobs start with App build and boot their simulator while it builds; the Linux probe is awaited
     # only before the live-fixture test.
     assert_equal("changes", shard["needs"])
-    first_build_step = shard["steps"].index { |step| step["name"] =~ /Build for testing|Wait for App build/ }
-    assert_operator(shard["steps"].index { |step| step["name"] == "Start the simulator" }, :<, first_build_step)
-    assert_includes(shard["steps"].find { |step| step["name"] == "Start the simulator" }["run"], 'xcrun simctl boot "${simulator_id}"')
+    # The boot finishes before the build wait and download, so it competes with neither (TAL-380).
+    boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
+    assert_equal(["Wait for App build", "Download the test build"], shard["steps"][boot + 1, 2].map { |step| step["name"] })
+    assert_match(/simctl boot "\$\{simulator_id\}"\n\s*xcrun simctl bootstatus "\$\{simulator_id\}" -b/, shard["steps"][boot]["run"])
+    refute(shard["steps"].any? { |step| step["name"] == "Build for testing" }, "test jobs never build")
     steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
     names = steps.keys
     suite, wait, fetch, live = [
@@ -114,11 +117,12 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(workflow, 'parallel=(-parallel-testing-enabled YES -parallel-testing-worker-count "${TEST_WORKERS}")')
     # The live contract test never clones the simulator.
     assert_equal(1, workflow.scan("            -parallel-testing-enabled NO \\").length)
-    # Four shards for the full suite; otherwise one job that builds for itself (SEPARATE_BUILD false).
+    # Four shards for the full suite, otherwise one test job; App build runs whenever any test job does.
     full = "(github.event_name == 'push' || inputs.full_ui == true) && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false')"
     assert_includes(workflow, "shard: ${{ fromJSON((#{full}) && '[0,1,2,3]' || '[0]') }}")
-    assert_includes(workflow, "SEPARATE_BUILD: ${{ #{full} }}")
-    assert_includes(workflow, "if: ${{ !cancelled() && #{full} }}")
+    jobs = YAML.safe_load_file(File.expand_path("../../.github/workflows/ci.yml", __dir__), aliases: true)["jobs"]
+    assert_equal(jobs["app-test"]["if"], jobs["app-build"]["if"])
+    assert_equal("changes", jobs["app-build"]["needs"])
     assert_includes(workflow, 'python3 ci/test_shards.py "${options[@]}" > selection.txt')
     assert_equal(26, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
     # CI skips the measurement-only UI classes and the scheduled UI Performance

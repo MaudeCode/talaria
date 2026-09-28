@@ -14,8 +14,7 @@ import sys
 SUITES = {"app", "app_tooling", "web_server", "web_frontend", "docker", "relay", "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "relay", "contracts"}
 WEB_BUILD = {"web_server", "web_frontend", "docker", "contracts"}
-# App build runs only for the full suite, so it is never required on its own; its shards wait for it and fail with it.
-JOBS = {"app-build": set(), "app-test": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend"},
+JOBS = {"app-build": {"app", "contracts"}, "app-test": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
 WORKFLOWS = {
     # CI owns the App jobs and the Web contract probe's fixture handoff.
