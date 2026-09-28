@@ -16,7 +16,8 @@ import { useLogout } from '../auth/useLogout'
 import { decodeCreationOptions, encodeAttestation, passkeysSupported } from '../auth/passkeys'
 import { loadBootstrap } from '../../app/bootstrap'
 import type { z } from 'zod'
-import type { UpdateTargetSchema } from '../../contracts'
+import type { UpdateApplySchema, UpdateTargetSchema } from '../../contracts'
+import { useUpdateProgress } from '../notifications/UpdateNotificationCenter'
 
 export function SystemSection() {
   const bootstrap = useBootstrap()
@@ -57,22 +58,28 @@ export function SystemSection() {
     onSuccess: (d) => qc.setQueryData(keys.updates.check, d),
     onError: fail,
   })
-  const apply = useMutation({
-    mutationFn: async (request: { target: 'webui' | 'agent'; confirmedRevision?: string; agentChannel?: 'stable' | 'experimental' }) => {
+  // The Updating dialog reports each apply; one mutation per target keeps the other target's action available.
+  const progress = useUpdateProgress()
+  const applyTarget = (target: 'webui' | 'agent') => ({
+    mutationFn: async (request: { confirmedRevision?: string; agentChannel?: 'stable' | 'experimental' }) => {
       await waitForSettings()
-      return request.target === 'webui' ? api.applyUpdates('apply', settledChannel() ?? channel, 'webui')
+      return target === 'webui' ? api.applyUpdates('apply', settledChannel() ?? channel, 'webui')
         : api.applyUpdates('apply', undefined, 'agent', { agent_channel: request.agentChannel ?? settledAgentChannel(), ...(request.confirmedRevision ? { confirmed_agent_revision: request.confirmedRevision } : {}) })
     },
-    onSuccess: (r) => {
+    onMutate: () => { progress?.begin(target) },
+    onSuccess: (r: z.infer<typeof UpdateApplySchema>) => {
       if (r.confirmation_required && r.candidate_revision && r.agent_channel) {
+        progress?.dismiss(r.notification_id)
         acceptedAgentConfirmation.current = false
         setAgentConfirmation({ revision: r.candidate_revision, supported: r.supported_revision ?? '—', version: r.supported_version ?? '—', channel: r.agent_channel, ...(r.notification_id ? { notificationId: r.notification_id } : {}) })
-      } else if (r.ok === false) fail(new Error(r.message ?? r.error ?? m.settings_update_check_failed()))
-      else showToast(r.message ?? r.status ?? m.saved())
+      } else progress?.settle(target, r)
       void qc.invalidateQueries({ queryKey: keys.updates.check })
       void qc.invalidateQueries({ queryKey: keys.updateNotifications })
-    }, onError: (error) => { fail(error); void qc.invalidateQueries({ queryKey: keys.updateNotifications }) },
+    },
+    onError: (error: unknown) => { progress?.settle(target, { failure: error }); void qc.invalidateQueries({ queryKey: keys.updateNotifications }) },
   })
+  const applyWeb = useMutation(applyTarget('webui'))
+  const applyAgent = useMutation(applyTarget('agent'))
   const registerPasskey = useMutation({
     mutationFn: async () => {
       const opt = await api.passkeyRegisterOptions()
@@ -112,7 +119,7 @@ export function SystemSection() {
               <option value="stable">{m.settings_update_channel_stable()}</option>
               <option value="experimental">{m.settings_update_channel_experimental()}</option>
             </Select>}
-            action={canManage && canApplyWeb ? <Button variant="primary" onClick={() => apply.mutate({ target: 'webui' })} disabled={apply.isPending}>{apply.isPending && apply.variables?.target === 'webui' ? m.update_updating() : webUpdate?.metadata_repair ? m.system_finish_update() : m.system_apply_web_update()}</Button> : null}
+            action={canManage && canApplyWeb ? <Button variant="primary" onClick={() => applyWeb.mutate({})} disabled={applyWeb.isPending}>{applyWeb.isPending ? m.update_updating() : webUpdate?.metadata_repair ? m.system_finish_update() : m.system_apply_web_update()}</Button> : null}
             manualLink={webUpdate?.manual_update && (webUpdate.error || webUpdate.dirty || webUpdate.behind !== 0)}>
             <FieldRow label={m.settings_label_auto_apply_updates()} hint={m.system_auto_apply_hint()} htmlFor="settingsAutoApplyUpdates" inline><Switch id="settingsAutoApplyUpdates" disabled={!canManage || !bool('check_for_updates', true)} checked={bool('auto_apply_updates')} onCheckedChange={(checked) => set({ auto_apply_updates: checked })} /></FieldRow>
           </UpdatePath>
@@ -121,7 +128,7 @@ export function SystemSection() {
               <option value="stable">{m.settings_update_channel_stable()}</option>
               <option value="experimental">{m.settings_update_channel_experimental()}</option>
             </Select>}
-            action={canManage && canApplyAgent ? <Button variant="primary" onClick={() => apply.mutate({ target: 'agent' })} disabled={apply.isPending}>{apply.isPending && apply.variables?.target === 'agent' ? m.update_updating() : m.system_apply_agent_update()}</Button> : null}
+            action={canManage && canApplyAgent ? <Button variant="primary" onClick={() => applyAgent.mutate({})} disabled={applyAgent.isPending}>{applyAgent.isPending ? m.update_updating() : m.system_apply_agent_update()}</Button> : null}
             warning={canApplyAgent && agentUpdate?.unsupported === true ? m.system_agent_unsupported_warning() : null}>
             <FieldRow label={m.settings_label_ignore_agent_updates()} hint={m.system_agent_manual_hint()} htmlFor="settingsIgnoreAgentUpdates" inline><Switch id="settingsIgnoreAgentUpdates" checked={bool('ignore_agent_updates')} onCheckedChange={(checked) => set({ ignore_agent_updates: checked })} /></FieldRow>
           </UpdatePath>
@@ -184,7 +191,7 @@ export function SystemSection() {
         </section>
       )}
       <ConfirmDialog open={confirmShutdown} onOpenChange={setConfirmShutdown} title={m.system_shutdown()} description={m.system_shutdown_confirm()} confirmLabel={m.system_shutdown()} cancelLabel={m.cancel()} danger onConfirm={() => shutdown.mutate()} />
-      <ConfirmDialog open={agentConfirmation !== null} onOpenChange={(open) => { if (!open && agentConfirmation) { const pending = agentConfirmation; setAgentConfirmation(null); if (acceptedAgentConfirmation.current) { acceptedAgentConfirmation.current = false; return } if (pending.notificationId) void api.cancelUpdateNotification(pending.notificationId).catch(fail).finally(() => qc.invalidateQueries({ queryKey: keys.updateNotifications })) } }} title={m.system_agent_unsupported_title()} description={agentConfirmation ? `${m.system_agent_unsupported_warning()} ${m.system_agent_unsupported_identity({ version: agentConfirmation.version, supported: agentConfirmation.supported.slice(0, 12), candidate: agentConfirmation.revision.slice(0, 12) })}` : ''} confirmLabel={m.system_agent_update_anyway()} cancelLabel={m.cancel()} danger onConfirm={() => { if (agentConfirmation) { const pending = agentConfirmation; acceptedAgentConfirmation.current = true; setAgentConfirmation(null); apply.mutate({ target: 'agent', confirmedRevision: pending.revision, agentChannel: pending.channel }) } }} />
+      <ConfirmDialog open={agentConfirmation !== null} onOpenChange={(open) => { if (!open && agentConfirmation) { const pending = agentConfirmation; setAgentConfirmation(null); if (acceptedAgentConfirmation.current) { acceptedAgentConfirmation.current = false; return } if (pending.notificationId) void api.cancelUpdateNotification(pending.notificationId).catch(fail).finally(() => qc.invalidateQueries({ queryKey: keys.updateNotifications })) } }} title={m.system_agent_unsupported_title()} description={agentConfirmation ? `${m.system_agent_unsupported_warning()} ${m.system_agent_unsupported_identity({ version: agentConfirmation.version, supported: agentConfirmation.supported.slice(0, 12), candidate: agentConfirmation.revision.slice(0, 12) })}` : ''} confirmLabel={m.system_agent_update_anyway()} cancelLabel={m.cancel()} danger onConfirm={() => { if (agentConfirmation) { const pending = agentConfirmation; acceptedAgentConfirmation.current = true; setAgentConfirmation(null); applyAgent.mutate({ confirmedRevision: pending.revision, agentChannel: pending.channel }) } }} />
     </div>
   )
 }

@@ -11,7 +11,7 @@ const Ok = z.object({ ok: z.literal(true) })
 
 
 const AgentOptions = { agent_channel: z.enum(['stable', 'experimental']).optional(), confirmed_agent_revision: z.string().regex(/^[a-f0-9]{40}$/).optional() }
-const Target = z.object({ target: z.string().optional(), channel: z.string().nullable().optional(), ...AgentOptions })
+const Target = z.object({ target: z.string().optional(), channel: z.string().nullable().optional(), ...AgentOptions, tab_id: TabIdSchema.optional() })
 
 export const toolsContract = {
   skills: {

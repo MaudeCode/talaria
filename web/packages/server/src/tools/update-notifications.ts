@@ -30,24 +30,30 @@ interface StoredUpdateNotification {
   acknowledged_action_id: string | null
   verified_revision: string | null
   verified_version: string | null
+  /** The apply's own explanation of a failed or blocked attempt (sanitized, bounded); null in every other phase. */
+  detail: string | null
   performed_action_ids: string[]
   dismissed_at: string | null
   expected_identity: string | null
   tab_id: string | null
+  /** Tabs that started or rejoined this update operation from Settings, with when they last did; each tab's Updating dialog follows the operation it joined most recently. */
+  watchers: UpdateWatcher[]
 }
 
+interface UpdateWatcher { tab: string; at: string }
 export interface UpdateNotificationAction { id: string; label: string; style: 'default' | 'primary' | 'destructive'; acknowledges: boolean }
 export interface UpdateNotificationDestination { key: string; label: string }
 export interface VerifiedUpdateIdentity { revision: string | null; version: string | null }
 
-export type PublicUpdateNotification = Omit<StoredUpdateNotification, 'owner' | 'profile' | 'visibility' | 'dismissed_at' | 'expected_identity' | 'performed_action_ids' | 'tab_id'> & {
+export type PublicUpdateNotification = Omit<StoredUpdateNotification, 'owner' | 'profile' | 'visibility' | 'dismissed_at' | 'expected_identity' | 'performed_action_ids' | 'tab_id' | 'watchers'> & {
   unread: boolean
   active: boolean
   requires_interaction: boolean
   can_dismiss: boolean
 }
 export interface FrontendBuildState { current_build: string | null; loaded_build: string | null; refresh_required: boolean; notification_id: string | null }
-export interface UpdateNotificationList { scope_id: string; notifications: PublicUpdateNotification[]; unread_count: number; clearable_count: number; can_clear: boolean }
+/** `tab_update` is the update operation the requesting tab most recently started or rejoined, even once dismissed; automatic updates never set it. */
+export interface UpdateNotificationList { scope_id: string; notifications: PublicUpdateNotification[]; tab_update: PublicUpdateNotification | null; tab_joined_at: string | null; unread_count: number; clearable_count: number; can_clear: boolean }
 export interface CreateUpdateNotificationInput {
   kind: string
   target?: UpdateNotificationTarget | null
@@ -79,7 +85,7 @@ const copy = (row: StoredUpdateNotification): PublicUpdateNotification => ({
   destination: row.destination,
   title: row.title, message: row.message, created_at: row.created_at, updated_at: row.updated_at, read_at: row.read_at,
   acknowledged_at: row.acknowledged_at, acknowledged_action_id: row.acknowledged_action_id,
-  verified_revision: row.verified_revision, verified_version: row.verified_version,
+  verified_revision: row.verified_revision, verified_version: row.verified_version, detail: row.detail,
   unread: row.read_at === null,
   active: row.kind === 'update' && ['applying', 'restarting'].includes(row.phase),
   requires_interaction: row.requires_acknowledgement && row.acknowledged_at === null,
@@ -153,8 +159,8 @@ export class UpdateNotificationStore {
       actions: [{ id: WEB_REFRESH_ACTION, label: 'Refresh now', style: 'primary', acknowledges: false }],
       destination: null, title: 'Talaria Web was updated', message: 'Refresh this tab to load the new version.',
       created_at: stamp, updated_at: stamp, read_at: null, acknowledged_at: null,
-      acknowledged_action_id: null, verified_revision: null, verified_version: null,
-      performed_action_ids: [], dismissed_at: null, expected_identity: current, tab_id: tab,
+      acknowledged_action_id: null, verified_revision: null, verified_version: null, detail: null,
+      performed_action_ids: [], dismissed_at: null, expected_identity: current, tab_id: tab, watchers: [],
     }
     if (!this.hasProtectedCapacity(row)) return state
     this.rows.push(row)
@@ -166,11 +172,22 @@ export class UpdateNotificationStore {
 
   begin(scope: UpdateNotificationScope, target: UpdateNotificationTarget): PublicUpdateNotification {
     const text = wording(target, 'applying')
-    return this.create(scope, {
+    const created = this.create(scope, {
       kind: 'update', target, phase: 'applying', ...text,
       destination: { key: 'settings.system', label: 'Open System settings' },
       visibility: 'server',
     })
+    this.watch(scope, created.id)
+    return created
+  }
+
+  /** Let the requesting tab follow an update operation it started or rejoined. Watchers live as long as the record; only a server owner's Update click adds one. */
+  watch(scope: UpdateNotificationScope, id: string): void {
+    const tab = scope.tab && TAB_ID.test(scope.tab) ? scope.tab : null
+    const row = this.rows.find((entry) => entry.id === id && entry.kind === 'update' && this.isVisible(entry, scope))
+    if (!tab || !row) return
+    row.watchers = [...row.watchers.filter((watcher) => watcher.tab !== tab), { tab, at: this.now().toISOString() }]
+    this.save()
   }
 
   create(scope: UpdateNotificationScope, input: CreateUpdateNotificationInput): PublicUpdateNotification {
@@ -189,8 +206,8 @@ export class UpdateNotificationStore {
       requires_acknowledgement: input.requiresAcknowledgement === true, actions,
       destination: safeDestination(input.destination), title, message,
       created_at: stamp, updated_at: stamp, read_at: null, acknowledged_at: null,
-      acknowledged_action_id: null, verified_revision: null, verified_version: null,
-      performed_action_ids: [], dismissed_at: null, expected_identity: null, tab_id: null,
+      acknowledged_action_id: null, verified_revision: null, verified_version: null, detail: null,
+      performed_action_ids: [], dismissed_at: null, expected_identity: null, tab_id: null, watchers: [],
     }
     if (!this.hasProtectedCapacity(row)) throw new Error('Update notification protected capacity reached')
     this.rows.push(row)
@@ -203,7 +220,7 @@ export class UpdateNotificationStore {
     return row ? copy(row) : null
   }
 
-  transition(id: string, phase: UpdateNotificationPhase, expectedIdentity?: string | null, verifiedIdentity?: VerifiedUpdateIdentity): PublicUpdateNotification | null {
+  transition(id: string, phase: UpdateNotificationPhase, expectedIdentity?: string | null, verifiedIdentity?: VerifiedUpdateIdentity, detail?: unknown): PublicUpdateNotification | null {
     const row = this.rows.find((entry) => entry.id === id)
     if (!row) return null
     const phaseChanged = row.phase !== phase
@@ -212,6 +229,7 @@ export class UpdateNotificationStore {
     row.updated_at = this.now().toISOString()
     if (phaseChanged) row.read_at = null
     row.expected_identity = expectedIdentity?.trim().slice(0, 160) || null
+    row.detail = phase === 'failed' || phase === 'blocked' ? safeDetail(detail) : null
     if (verifiedIdentity) {
       row.verified_revision = typeof verifiedIdentity.revision === 'string' && REVISION.test(verifiedIdentity.revision) ? verifiedIdentity.revision : null
       row.verified_version = safeText(verifiedIdentity.version, '', 80) || null
@@ -229,7 +247,11 @@ export class UpdateNotificationStore {
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
     const notifications = visible.map(copy)
     const clearableCount = scoped.filter(isDismissible).length
-    return { scope_id: updateNotificationScopeId(scope), notifications, unread_count: visible.filter((row) => row.read_at === null).length, clearable_count: clearableCount, can_clear: clearableCount > 0 }
+    const tab = scope.tab && TAB_ID.test(scope.tab) ? scope.tab : null
+    const joinedAt = (row: StoredUpdateNotification) => row.watchers.find((watcher) => watcher.tab === tab)?.at ?? ''
+    const tabUpdate = tab ? this.rows.filter((row) => row.kind === 'update' && joinedAt(row) !== '' && this.isVisible(row, scope))
+      .sort((a, b) => joinedAt(b).localeCompare(joinedAt(a)) || b.created_at.localeCompare(a.created_at))[0] : undefined
+    return { scope_id: updateNotificationScopeId(scope), notifications, tab_update: tabUpdate ? copy(tabUpdate) : null, tab_joined_at: tabUpdate ? joinedAt(tabUpdate) : null, unread_count: visible.filter((row) => row.read_at === null).length, clearable_count: clearableCount, can_clear: clearableCount > 0 }
   }
 
   clear(scope: UpdateNotificationScope): UpdateNotificationList {
@@ -362,10 +384,12 @@ export class UpdateNotificationStore {
           acknowledged_action_id: typeof row.acknowledged_action_id === 'string' ? row.acknowledged_action_id.slice(0, 64) : null,
           verified_revision: typeof row.verified_revision === 'string' && REVISION.test(row.verified_revision) ? row.verified_revision : null,
           verified_version: safeText(row.verified_version, '', 80) || null,
+          detail: safeDetail(row.detail),
           performed_action_ids: Array.isArray(row.performed_action_ids) ? row.performed_action_ids.map((id) => safeToken(id, '')).filter(Boolean).slice(0, 16) : [],
           dismissed_at: typeof row.dismissed_at === 'string' ? row.dismissed_at : null,
           expected_identity: typeof row.expected_identity === 'string' ? row.expected_identity.slice(0, 160) : null,
           tab_id: typeof row.tab_id === 'string' ? row.tab_id : null,
+          watchers: Array.isArray(row.watchers) ? row.watchers.flatMap((watcher): UpdateWatcher[] => isRecord(watcher) && typeof watcher.tab === 'string' && TAB_ID.test(watcher.tab) && typeof watcher.at === 'string' ? [{ tab: watcher.tab, at: watcher.at }] : []) : [],
         }]
       })
     } catch { return [] }
@@ -400,6 +424,8 @@ export class UpdateNotificationStore {
 const safeToken = (value: unknown, fallback: string): string => typeof value === 'string' && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(value) ? value : fallback
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const safeText = (value: unknown, fallback: string, limit: number): string => typeof value === 'string' && value.trim() ? value.trim().replace(/[\x00-\x1f\x7f]+/g, ' ').slice(0, limit) : fallback
+/** Keeps line breaks (build output, recovery commands); drops other control characters. */
+const safeDetail = (value: unknown): string | null => typeof value === 'string' && value.trim() ? value.trim().replace(/\r\n?/g, '\n').replace(/[\x00-\x09\x0b-\x1f\x7f]+/g, ' ').slice(0, 2000) : null
 const safeActions = (value: unknown): UpdateNotificationAction[] => !Array.isArray(value) ? [] : value.slice(0, 4).flatMap((raw): UpdateNotificationAction[] => {
   if (!raw || typeof raw !== 'object') return []
   const action = raw as Partial<UpdateNotificationAction>

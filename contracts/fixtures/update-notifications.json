@@ -36,6 +36,7 @@
       "acknowledged_action_id": null,
       "verified_revision": null,
       "verified_version": null,
+      "detail": null,
       "unread": true,
       "active": false,
       "requires_interaction": true,
@@ -63,12 +64,15 @@
       "acknowledged_action_id": null,
       "verified_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "verified_version": "web-v1.2.3",
+      "detail": null,
       "unread": false,
       "active": false,
       "requires_interaction": false,
       "can_dismiss": true
     }
   ],
+  "tab_update": null,
+  "tab_joined_at": null,
   "unread_count": 1,
   "clearable_count": 1,
   "can_clear": true

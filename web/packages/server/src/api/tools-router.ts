@@ -72,9 +72,11 @@ async function applyWithNotification(
   target: UpdateNotificationTarget,
   apply: () => Promise<Dict>,
   confirmed = false,
+  tab?: string,
 ): Promise<Dict> {
-  const scope = await updateNotificationScope(ctx)
+  const scope = await updateNotificationScope(ctx, tab)
   const active = ctx.deps.updateNotifications.activeUpdate(scope, target)
+  if (active) ctx.deps.updateNotifications.watch(scope, active.id)
   if (active && (active.phase === 'applying' || active.phase === 'restarting')) {
     return { ok: false, status: 'already_in_progress', message: 'Update already in progress', notification_id: active.id }
   }
@@ -86,14 +88,14 @@ async function applyWithNotification(
       ? { revision: result.verified_revision, version: typeof result.verified_version === 'string' ? result.verified_version : null }
       : undefined
     if (result.confirmation_required === true) ctx.deps.updateNotifications.transition(notification.id, 'awaiting_confirmation', null, verifiedIdentity)
-    else if (result.restart_blocked === true) ctx.deps.updateNotifications.transition(notification.id, 'blocked', null, verifiedIdentity)
-    else if (result.ok !== true) ctx.deps.updateNotifications.transition(notification.id, 'failed', null, verifiedIdentity)
+    else if (result.restart_blocked === true) ctx.deps.updateNotifications.transition(notification.id, 'blocked', null, verifiedIdentity, result.message)
+    else if (result.ok !== true) ctx.deps.updateNotifications.transition(notification.id, 'failed', null, verifiedIdentity, result.message || result.error)
     else if (target === 'webui' && result.restart_scheduled === true) {
       ctx.deps.updateNotifications.transition(notification.id, 'restarting', str(result.sourceRevision || result.candidate_revision), verifiedIdentity)
     } else ctx.deps.updateNotifications.transition(notification.id, 'succeeded', null, verifiedIdentity)
     return { ...result, notification_id: notification.id }
   } catch (error) {
-    ctx.deps.updateNotifications.transition(notification.id, 'failed')
+    ctx.deps.updateNotifications.transition(notification.id, 'failed', null, undefined, error instanceof Error ? error.message : null)
     throw error
   }
 }
@@ -313,9 +315,9 @@ export const toolsRouter = os.router({
       ctx.deps.log(`[updates] checking for updates (force=${String(force)}, channel=${channel})`)
       return (await ctx.deps.updates.check(force, !pyBool(settings.ignore_agent_updates), channel, input.agent_channel)) as never
     })),
-    apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.apply(target, bodyChannel(input.channel), () => true, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined) as never })),
-    force: os.updates.force.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.force(target, bodyChannel(input.channel), { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined) as never })),
-    clearLock: os.updates.clearLock.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.clearLock(target, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined) as never })),
+    apply: os.updates.apply.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.apply(target, bodyChannel(input.channel), () => true, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined, input.tab_id) as never })),
+    force: os.updates.force.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.force(target, bodyChannel(input.channel), { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined, input.tab_id) as never })),
+    clearLock: os.updates.clearLock.handler(({ input, context: { ctx } }) => run(() => { const target = updateTarget(input.target); return applyWithNotification(ctx, target, () => ctx.deps.updates.clearLock(target, { agentChannel: input.agent_channel, confirmedRevision: input.confirmed_agent_revision }), input.confirmed_agent_revision !== undefined, input.tab_id) as never })),
     summary: os.updates.summary.handler(({ input, context: { ctx } }) => run(() => ctx.deps.updates.summarize(input.updates ?? {}, input.target) as never)),
   },
   updateNotifications: {
