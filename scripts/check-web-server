@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Talaria Web server gate: contracts + server lint, strict TypeScript, Vitest,
+# Talaria Web server gate: contracts + server lint, strict TypeScript, Vitest against the built frontend bundle,
 # the committed OpenAPI document, and the sidecar pytest suite against the
 # pinned Hermes Agent when one is available (HERMES_WEBUI_AGENT_DIR or the
 # discovery rules in web/sidecar/tests/conftest.py; otherwise those tests skip).
@@ -11,6 +11,8 @@ mkdir -p "$state/home" "$state/tmp"
 cd "$root/web"
 npm ci --no-audit --no-fund
 npm run build -w packages/contracts
+# The server tests and npm-package checks serve the built frontend bundle, which is not committed (TAL-379).
+npm run build:fast -w packages/frontend
 npm run lint -w packages/contracts
 npm run lint -w packages/server
 npm run typecheck -w packages/contracts

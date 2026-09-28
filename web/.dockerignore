@@ -10,6 +10,8 @@ packages/*/node_modules/
 packages/contracts/dist/
 packages/server/dist/
 packages/frontend/dist/
+# Built inside the image by the frontend-build stage; a local build must not leak into the context.
+static/dist/
 packages/frontend/.tanstack/
 packages/frontend/playwright-report/
 packages/frontend/test-results/

@@ -13,7 +13,7 @@
 import { readCapped } from '../http/capped.js'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { Dict } from '../config/agent-config.js'
 import { dict } from '../config/agent-config.js'
@@ -25,9 +25,6 @@ export const REPOSITORY_URL = `https://github.com/${REPOSITORY}`
 export const API_ROOT = `https://api.github.com/repos/${REPOSITORY}`
 /** Anchored paths work from both the git root and Web's nested working directory. */
 export const WEB_UPDATE_PATHS = [':(top)web/', ':(top)contracts/']
-/** Relative to the git root: the release stamp and the blobs it is verified against. */
-export const RELEASE_STAMP = 'web/_release.json'
-const RELEASE_BLOBS = ['sidecar/agent_dependency.json', 'contract_versions.json']
 export const CACHE_TTL_S = 1800
 export const AUTO_UPDATE_INTERVAL_MS = 5 * 60_000
 export const RESTART_MAX_WAIT_S = 300
@@ -65,15 +62,9 @@ export const runGit: GitRun = (args, cwd, timeoutMs = 10_000) =>
 /** Runs one `npm` command in `cwd`; same outcome shape as `GitRun`. */
 export type BuildRun = (args: string[], cwd: string, timeoutMs: number) => Promise<GitOutcome>
 
-/** The steps a source checkout needs after its files change (README "From a source checkout"), run from `<root>/web`. */
-export const WEB_BUILD_STEPS: readonly string[][] = [
-  ['ci', '--workspace', 'packages/contracts', '--workspace', 'packages/server', '--include=dev'],
-  ['run', 'build', '--workspace', 'packages/contracts'],
-  ['run', 'build', '--workspace', 'packages/server'],
-]
 export const WEB_BUILD_TIMEOUT_MS = 10 * 60_000
-/** The artifact the supervisor re-executes; a build that does not leave it behind did not succeed. */
-export const WEB_SERVER_ENTRY = 'packages/server/dist/bin/talaria-web.js'
+/** Source checkouts are contributor-only: they update with git, and the updater never mutates them (TAL-379). */
+export const CONTRIBUTOR_CHECKOUT_MESSAGE = 'This is a contributor source checkout. Update it with git and rebuild Web (see web/README.md); only npm installs update automatically.'
 
 const runNpmCommand = (args: string[], cwd: string, timeoutMs: number, env: NodeJS.ProcessEnv): Promise<GitOutcome> =>
   new Promise((done) => {
@@ -89,19 +80,7 @@ const runNpmCommand = (args: string[], cwd: string, timeoutMs: number, env: Node
     })
   })
 
-export const runNpm: BuildRun = (args, cwd, timeoutMs) => runNpmCommand(args, cwd, timeoutMs, { ...process.env, NODE_ENV: 'development' })
 export const runPackageNpm: BuildRun = (args, cwd, timeoutMs) => runNpmCommand(args, cwd, timeoutMs, process.env)
-
-/** Install and build the checkout's Web packages; null on success, else the message for the caller. */
-async function buildWeb(root: string, build: BuildRun): Promise<string | null> {
-  const cwd = join(root, 'web')
-  for (const step of WEB_BUILD_STEPS) {
-    const result = await build(step, cwd, WEB_BUILD_TIMEOUT_MS)
-    if (!result.ok) return `\`npm ${step.join(' ')}\` failed: ${result.out || 'unknown error'}`
-  }
-  if (!existsSync(join(cwd, WEB_SERVER_ENTRY))) return `build finished without producing ${WEB_SERVER_ENTRY}`
-  return null
-}
 
 export const isGitLockError = (output: string): boolean => { const l = output.toLowerCase(); return GIT_LOCK_SIGNATURES.some((s) => l.includes(s)) }
 
@@ -127,11 +106,6 @@ async function fetchWithRetry(git: GitRun, args: string[], cwd: string, timeoutM
   if (first.ok || isGitLockError(first.out)) return first
   await new Promise((r) => setTimeout(r, FETCH_RETRY_MS))
   return git(args, cwd, timeoutMs)
-}
-
-function gitFailure(out: string, message: string): Dict {
-  if (isGitLockError(out)) return { ok: false, lock_conflict: true, message: 'Web update is blocked by a repository lock. Wait for the other Git operation or inspect the checkout manually.' }
-  return { ok: false, message }
 }
 
 function normalizeRemoteUrl(remote: string): string {
@@ -404,28 +378,6 @@ async function checkNpmExperimental(result: Dict, installed: NpmInstallInfo, id:
   return { ...result, current_sha: release.sourceRevision, behind: 0, metadata_repair: metadataRepair, ...(metadataRepair ? { message: 'The npm package is current; finish the update to restart with that version.' } : {}) }
 }
 
-/** Python `verify_release_source`: the stamp Web expects for `release`, computed from immutable blobs at its source revision. */
-export async function verifyReleaseSource(root: string, release: PublishedRelease, git: GitRun): Promise<Dict> {
-  const files: Dict = {}
-  for (const name of RELEASE_BLOBS) {
-    const shown = await git(['show', `${release.sourceRevision}:web/${name}`], root)
-    if (!shown.ok) throw new Error('missing release metadata')
-    files[name] = JSON.parse(shown.out) as unknown
-  }
-  const pin = dict(files['sidecar/agent_dependency.json'])
-  const versions = dict(files['contract_versions.json'])
-  const expected = {
-    tag: release.tag,
-    version: release.version,
-    sourceRevision: release.sourceRevision,
-    releaseSet: release.sourceRevision,
-    contracts: { appWeb: [dict(versions.appWeb).fixtureVersion], webRelay: [dict(versions.webRelay).protocolVersion] },
-    compatibleAgent: { ...dict(pin['x-talaria']), image: dict(dict(pin.services)['hermes-agent']).image },
-  }
-  if (!same(expected, release.runtime)) throw new Error('release metadata differs from source')
-  return expected
-}
-
 export interface ReleaseIdentity {
   /** `RELEASE_INFO`: the stamp when it matches the checkout, else development info. */
   release: () => Dict
@@ -435,93 +387,12 @@ export interface ReleaseIdentity {
   runningSourceRevision: () => string | null
 }
 
-const stampPath = (root: string): string => join(root, RELEASE_STAMP)
-const readStamp = (path: string): string | null => {
-  if (!existsSync(path) && !isSymlink(path)) return null
-  if (isSymlink(path)) throw new Error('local release stamp is a symbolic link')
-  return readFileSync(path, 'utf8')
-}
-const isSymlink = (path: string): boolean => { try { return lstatSync(path).isSymbolicLink() } catch { return false } }
-
-/** Python `_verified_release_stamp`: `[expected, installed]`; throws on a modified stamp. */
-async function verifiedReleaseStamp(root: string, release: PublishedRelease, git: GitRun, id: ReleaseIdentity): Promise<[Dict, Dict | null]> {
-  const expected = await verifyReleaseSource(root, release, git)
-  const raw = readStamp(stampPath(root))
-  const installed = raw === null ? null : (JSON.parse(raw) as Dict)
-  if (installed !== null && ![id.release(), id.stamped(), expected].some((c) => same(c, installed))) throw new Error('local release stamp was modified')
-  return [expected, installed]
-}
-
-/** Python `_main_stamp`: the unchanged generated stamp bytes (to discard when leaving a release), else null. */
-function mainStamp(root: string, id: ReleaseIdentity): string | null {
-  const data = readStamp(stampPath(root))
-  if (data !== null && (!id.stamped().tag || !same(JSON.parse(data), id.stamped()))) throw new Error('local release stamp was modified')
-  return data
-}
-
-async function mainRevision(root: string, git: GitRun): Promise<[string | null, string]> {
-  const fetched = await fetchWithRetry(git, ['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main'], root, 30_000)
-  if (!fetched.ok) return [null, fetched.out]
-  // Single-branch clones never receive tags, so `git describe` would name a stale Web release.
-  // Best effort and unforced: a conflicting local tag is kept and never fails the main fetch.
-  await git(['fetch', '--no-tags', 'origin', 'refs/tags/web-v*:refs/tags/web-v*', 'refs/tags/web-exp-v*:refs/tags/web-exp-v*'], root, 30_000)
-  const source = await git(['rev-parse', 'refs/remotes/origin/main^{commit}'], root)
-  return source.ok && SHA.test(source.out) ? [source.out, ''] : [null, '']
-}
-
-async function mainPathsDiffer(root: string, before: string, after: string, git: GitRun): Promise<boolean | null> {
-  const files = await git(['diff', '--no-renames', '--name-only', before, after, '--', ...WEB_UPDATE_PATHS], root)
-  return files.ok ? Boolean(files.out) : null
-}
-
-async function mainChangeCount(root: string, before: string, after: string, git: GitRun): Promise<number | null> {
-  const changed = await mainPathsDiffer(root, before, after, git)
-  if (changed === null) return null
-  if (!changed) return 0
-  const count = await git(['rev-list', '--count', '--full-history', `${before}..${after}`, '--', ...WEB_UPDATE_PATHS], root)
-  const n = Number.parseInt(count.out, 10)
-  return count.ok && /^\d+$/.test(count.out) && n > 0 ? n : null
-}
-
-async function mainRestartPending(root: string, head: string, git: GitRun, id: ReleaseIdentity): Promise<boolean> {
-  const running = id.runningSourceRevision()
-  if (running === head) return false
-  if (!running) return true
-  return (await mainPathsDiffer(root, running, head, git)) !== false
-}
-
-async function checkMainUpdate(root: string | null, result: Dict, git: GitRun, id: ReleaseIdentity): Promise<Dict> {
-  Object.assign(result, { branch: 'origin/main', release_based: false })
-  if (root === null) return { ...result, manual_update: true, message: 'Main updates require an authenticated Talaria source checkout with Web under web/.' }
-  const [source, error] = await mainRevision(root, git)
-  if (source === null) {
-    const detail = sanitizeGitDiagnostic(error)
-    return { ...result, stale_check: true, error: gitFailure(error, detail ? `Could not fetch origin/main: ${detail}` : 'Could not fetch origin/main; check Git read access.').message }
-  }
-  Object.assign(result, { latest_sha: source, latest_version: `main@${source.slice(0, 12)}` })
-  const head = await git(['rev-parse', 'HEAD'], root)
-  const status = await git(['status', '--porcelain', '--untracked-files=all'], root)
-  if (!head.ok || !SHA.test(head.out) || !status.ok) return { ...result, manual_update: true, error: 'Could not verify the source checkout' }
-  Object.assign(result, { installed_sha: head.out, dirty: Boolean(status.out) })
-  const base = await git(['merge-base', head.out, source], root)
-  result.current_sha = base.ok && SHA.test(base.out) ? base.out : null
-  if (result.current_sha) result.compare_url = `${REPOSITORY_URL}/compare/${base.out}...${source}`
-  if (!base.ok || base.out !== head.out) return { ...result, manual_update: true, message: 'This checkout is ahead of or diverged from origin/main; reconcile it manually.' }
-  const count = await mainChangeCount(root, head.out, source, git)
-  if (count === null) return { ...result, error: 'Could not compare the source checkout with origin/main' }
-  try { mainStamp(root, id) } catch { return { ...result, manual_update: true, error: 'Inspect the modified release stamp before updating.' } }
-  Object.assign(result, { behind: count, metadata_repair: count === 0 && (await mainRestartPending(root, head.out, git, id)) })
-  if (status.out) Object.assign(result, { manual_update: true, message: 'Commit or remove local changes before updating; Web updates never discard them.' })
-  else if (result.metadata_repair) result.message = 'Source is current; finish the update to restart with that revision.'
-  return result
-}
-
-/** Python `check_web_update`. */
+/** Python `check_web_update`: npm and packaged installs; a source checkout is contributor-only (TAL-379). */
 export async function checkWebUpdate(webRoot: string | null, currentVersion: string, channel: Channel, git: GitRun, getJson: GetJson, id: ReleaseIdentity, npmRun: BuildRun = runPackageNpm, registry?: ExperimentalRegistry): Promise<Dict> {
   const root = await checkoutRoot(webRoot, git)
   const npmInstall = root === null ? await npmInstallInfo(webRoot, npmRun) : null
   const result: Dict = { name: 'webui', channel, repo_url: REPOSITORY_URL, current_version: currentVersion, behind: null, no_git: root === null }
-  if (channel === 'experimental' && root !== null) return checkMainUpdate(root, result, git, id)
+  if (root !== null) return { ...result, manual_update: true, message: CONTRIBUTOR_CHECKOUT_MESSAGE }
   if (channel === 'experimental' && npmInstall && registry) return checkNpmExperimental(result, npmInstall, id, registry)
   let release: PublishedRelease
   try {
@@ -531,7 +402,7 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
     return { ...result, manual_update: true, error: 'Talaria release metadata is unavailable. Private repositories require TALARIA_RELEASE_TOKEN with Contents read access.' }
   }
   Object.assign(result, { latest_version: release.tag, latest_sha: release.sourceRevision, branch: release.tag, release_based: true, release_url: release.release_url, image: release.image })
-  if (root === null) {
+  {
     if (npmInstall && channel === 'stable' && release.npm && npmInstallChannel(npmInstall, id) === 'experimental') {
       // A channel switch installs the newest Stable package regardless of version order (TAL-343).
       return { ...result, current_sha: id.release().sourceRevision ?? null, behind: 1, no_git: true, install_kind: 'npm', npm: release.npm, manual_update: false, channel_switch: true, message: `Switching to Stable installs npm release ${release.version}.` }
@@ -556,38 +427,6 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
     }
     return { ...result, current_sha: current, behind, no_git: true, manual_update: true, message: 'Use the published Talaria Web image or authenticated monorepo installation; legacy checkouts require migration.' }
   }
-  const head = await git(['rev-parse', 'HEAD'], root)
-  const status = await git(['status', '--porcelain', '--untracked-files=all'], root)
-  if (!head.ok || !SHA.test(head.out) || !status.ok) return { ...result, manual_update: true, error: 'Could not verify the source checkout' }
-  const current = head.out
-  Object.assign(result, { installed_sha: current, dirty: Boolean(status.out) })
-  let base: string
-  let knownBase: boolean
-  if (current === release.sourceRevision) {
-    try {
-      const [expected, installed] = await verifiedReleaseStamp(root, release, git, id)
-      result.behind = 0
-      result.metadata_repair = !same(installed, expected) || !same(id.release(), expected)
-      if (result.metadata_repair) result.message = 'Apply the selected release again to repair its metadata or restart with its recorded identity.'
-    } catch {
-      Object.assign(result, { behind: null, manual_update: true, error: 'Could not verify local release provenance; inspect the release stamp before updating.' })
-    }
-    base = current
-    knownBase = true
-  } else {
-    const contains = await git(['merge-base', '--is-ancestor', release.sourceRevision, current], root)
-    if (contains.ok) return { ...result, behind: null, manual_update: true, current_sha: null, message: 'This checkout is ahead of the selected release. Manage it manually or check out the published release and restart Web.' }
-    result.behind = 1
-    const mb = await git(['merge-base', current, release.sourceRevision], root)
-    base = mb.out
-    knownBase = mb.ok
-    if (knownBase && base !== current) Object.assign(result, { manual_update: true, message: 'Reconcile divergent source history before updating Web.' })
-  }
-  // Local-only commits cannot appear in a GitHub comparison; omit unresolvable links.
-  result.current_sha = knownBase && SHA.test(base) ? base : null
-  if (result.current_sha) result.compare_url = `${REPOSITORY_URL}/compare/${base}...${release.sourceRevision}`
-  if (status.out) Object.assign(result, { manual_update: true, message: 'Commit or remove local changes before updating; Web updates never discard them.' })
-  return result
 }
 
 /** Packaged-install collaborators: the Experimental registry and Web's state dir for channel-switch backups. */
@@ -702,103 +541,11 @@ async function applyNpmWebUpdate(webRoot: string | null, channel: Channel, getJs
     ...(switching ? { channel_switch: true, backup_dir: stores } : {}), message: `Updated Talaria Web to ${target.label}.${stores ? ` Settings were backed up to ${stores}.` : ''}` }
 }
 
-/** Python `apply_web_update`: fast-forward a recognized clean checkout to main or a published Stable tag. */
-export async function applyWebUpdate(webRoot: string | null, channel: Channel, git: GitRun, getJson: GetJson, id: ReleaseIdentity, build: BuildRun = runNpm, npmRun: BuildRun = runPackageNpm, canApply: () => boolean = () => true, packaged: PackagedUpdateOptions = {}): Promise<Dict> {
-  const root = await checkoutRoot(webRoot, git)
-  if (root === null) return applyNpmWebUpdate(webRoot, channel, getJson, id, npmRun, canApply, packaged)
-  const status = await git(['status', '--porcelain', '--untracked-files=all'], root)
-  if (!status.ok || status.out) return { ok: false, dirty: true, message: 'Web update refused: the checkout must be clean, including untracked files.' }
-  for (const marker of ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'BISECT_LOG']) {
-    const path = await git(['rev-parse', '--git-path', marker], root)
-    if (!path.ok || existsSync(resolve(root, path.out))) return { ok: false, message: 'Finish or abort the repository operation before updating Web.' }
-  }
-  const headRes = await git(['rev-parse', 'HEAD'], root)
-  if (!headRes.ok || !SHA.test(headRes.out)) return { ok: false, message: 'Could not verify the current source revision' }
-  const head = headRes.out
-  const main = channel === 'experimental'
-  let source: string
-  let tag: string
-  let release: PublishedRelease | null = null
-  if (main) {
-    const [revision, error] = await mainRevision(root, git)
-    if (revision === null) return gitFailure(error, 'Could not fetch origin/main; check Git read access.')
-    source = revision
-    tag = 'main'
-  } else {
-    try {
-      release = await publishedWebRelease(channel, getJson)
-    } catch {
-      return { ok: false, message: 'Cannot resolve a completed Talaria release. Check private-repository read access.' }
-    }
-    source = release.sourceRevision
-    tag = release.tag
-  }
-  if (head !== source && !main) {
-    // Fetch only this immutable tag; never force-replace a local tag or pull an unrecorded tip.
-    const fetched = await git(['fetch', '--no-tags', 'origin', `refs/tags/${tag}:refs/tags/${tag}`], root, 30_000)
-    if (!fetched.ok) return gitFailure(fetched.out, 'Could not fetch the published Web tag. Check Git credentials or a conflicting local tag.')
-    const resolved = await git(['rev-parse', `refs/tags/${tag}^{commit}`], root)
-    if (!resolved.ok || resolved.out !== source) return { ok: false, message: 'Published Web tag does not match the immutable release manifest' }
-  }
-  if (head !== source) {
-    const forward = await git(['merge-base', '--is-ancestor', head, source], root)
-    if (!forward.ok) {
-      const contains = await git(['merge-base', '--is-ancestor', source, head], root)
-      if (contains.ok) return { ok: false, manual_update: true, target: 'webui', channel, message: 'This checkout is ahead of the selected source. Manage it manually; updates never rewind local work.' }
-      return { ok: false, message: 'Web update refused: source histories diverge; reconcile the checkout manually.' }
-    }
-  }
-  if (main) {
-    const count = await mainChangeCount(root, head, source, git)
-    if (count === null) return { ok: false, message: 'Could not compare Web and contract changes against origin/main.' }
-    if (count === 0) source = head // No checkout mutation for App/Relay-only changes.
-  }
-  // Compare provenance with the immutable incoming files before modifying the checkout.
-  let expected: Dict | null = null
-  let installed: Dict | string | null
-  try {
-    if (main) installed = mainStamp(root, id)
-    else [expected, installed] = await verifiedReleaseStamp(root, release!, git, id)
-  } catch {
-    return { ok: false, message: 'Web update refused: source or local provenance does not match the release manifest.' }
-  }
-  const runtimeCurrent = main ? !(await mainRestartPending(root, head, git, id)) : same(installed, expected) && same(id.release(), expected)
-  if (head === source && runtimeCurrent) return { ok: true, up_to_date: true, target: 'webui', channel, message: main ? 'Web and shared contracts are current on main.' : 'Talaria Web already contains the selected release.' }
-  const again = await git(['rev-parse', 'HEAD'], root)
-  const clean = await git(['status', '--porcelain', '--untracked-files=all'], root)
-  if (!again.ok || again.out !== head || !clean.ok || clean.out) return { ok: false, message: 'The checkout changed during the update; retry after it is clean.' }
-  if (!canApply()) return { ok: false, message: 'Web update deferred because its settings or lifecycle changed.' }
-  if (head !== source) {
-    const merged = await git(['merge', '--ff-only', '--no-stat', '--no-overwrite-ignore', source], root, 30_000)
-    const actual = await git(['rev-parse', 'HEAD'], root)
-    if (!merged.ok || !actual.ok || actual.out !== source) return gitFailure(merged.out, 'Web fast-forward failed; no local changes were discarded.')
-  }
-  // The supervisor re-executes the built artifact, so the checkout is installed and rebuilt before the stamp claims
-  // the new release; a failed build leaves the old stamp (and the running server) truthful.
-  const buildError = await buildWeb(root, build)
-  if (buildError !== null) return { ok: false, build_failed: true, target: 'webui', channel, sourceRevision: source, message: `Source advanced to ${tag}, but the Web build failed: ${buildError}. Run \`npm ci\` and \`npm run build\` in web/ (see README), then restart Web.` }
-  const stamp = stampPath(root)
-  if (main && installed !== null) {
-    try {
-      if (isSymlink(stamp) || readFileSync(stamp, 'utf8') !== installed) throw new Error('release stamp changed during update')
-      unlinkSync(stamp)
-    } catch {
-      return { ok: false, message: 'Source advanced but its release stamp could not be cleared; inspect it before restarting Web.' }
-    }
-  } else if (!main && !same(installed, expected)) {
-    const temporary = join(dirname(stamp), `.release-${String(process.pid)}-${String(Date.now())}`)
-    try {
-      writeFileSync(temporary, `${JSON.stringify(expected, null, 2)}\n`)
-      renameSync(temporary, stamp)
-    } catch {
-      rmSync(temporary, { force: true })
-      return { ok: false, message: 'Source advanced, but release metadata could not be written. Repair file permissions before restarting Web.' }
-    }
-  }
-  return { ok: true, target: 'webui', channel, sourceRevision: source, message: `Updated Talaria Web to ${tag}.` }
+/** Python `apply_web_update`: installs npm releases; a source checkout is never mutated (TAL-379). */
+export async function applyWebUpdate(webRoot: string | null, channel: Channel, git: GitRun, getJson: GetJson, id: ReleaseIdentity, npmRun: BuildRun = runPackageNpm, canApply: () => boolean = () => true, packaged: PackagedUpdateOptions = {}): Promise<Dict> {
+  if (await checkoutRoot(webRoot, git) !== null) return { ok: false, manual_update: true, target: 'webui', channel, message: CONTRIBUTOR_CHECKOUT_MESSAGE }
+  return applyNpmWebUpdate(webRoot, channel, getJson, id, npmRun, canApply, packaged)
 }
-
-// ── Agent checkout: independent Stable releases or Experimental default branch ──
 
 async function releaseTags(path: string, git: GitRun): Promise<string[]> {
   const out = await git(['tag', '--list', AGENT_TAG_GLOB, '--sort=-v:refname'], path)
@@ -1077,8 +824,6 @@ export interface UpdateServiceDeps {
   /** `web/` of this installation (a Talaria checkout has it at `<root>/web`). */
   webRoot: string
   git?: GitRun
-  /** Runs the checkout's npm install/build steps after a source update (default: the npm beside this node). */
-  build?: BuildRun
   /** Runs global npm discovery/install for packaged updates. */
   npm?: BuildRun
   getJson: GetJson
@@ -1287,7 +1032,7 @@ export class UpdateService {
   private async applyInner(target: string, channel: Channel, canApply: () => boolean = () => true, agentOptions: AgentUpdateOptions = {}): Promise<Dict> {
     if (target === 'webui') {
       const lifecycle = this.lifecycle
-      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.build ?? runNpm, this.deps.npm ?? runPackageNpm, canApply, { registry: this.deps.experimental, stateDir: this.deps.stateDir })
+      const result = await applyWebUpdate(this.deps.webRoot, channel, this.git, this.deps.getJson, this.deps.identity, this.deps.npm ?? runPackageNpm, canApply, { registry: this.deps.experimental, stateDir: this.deps.stateDir })
       // Settings can cancel before mutation, but a committed replacement must finish restarting unless shutting down.
       if (result.ok && !result.up_to_date && lifecycle === this.lifecycle) { this.cache.checked_at = 0; this.autoRestartScheduled = true; this.stopAutoApply(); this.deps.scheduleRestart(); result.restart_scheduled = true }
       return result

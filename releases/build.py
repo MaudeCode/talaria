@@ -86,8 +86,8 @@ def main():
         subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=ROOT / "web", check=True)
         subprocess.run(["npm", "run", "build", "-w", "packages/contracts"], cwd=ROOT / "web", check=True)
         subprocess.run(["npm", "run", "build", "-w", "packages/server"], cwd=ROOT / "web", check=True)
-        if experimental:
-            subprocess.run(["npm", "run", "build:fast", "-w", "packages/frontend"], cwd=ROOT / "web", check=True)
+        # The frontend bundle is built for every package; static/dist is not committed (TAL-379).
+        subprocess.run(["npm", "run", "build:fast", "-w", "packages/frontend"], cwd=ROOT / "web", check=True)
         for package in ("packages/contracts", "packages/server"):
             subprocess.run(["npm", "version", component["version"], "--no-git-tag-version", "--allow-same-version", "-w", package], cwd=ROOT / "web", check=True)
         # A published server must resolve the contracts package it was built and tested with, never a newer release.

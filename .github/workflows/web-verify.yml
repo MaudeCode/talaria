@@ -38,6 +38,10 @@ jobs:
       - name: Build contracts
         run: npm run build -w packages/contracts
 
+      # The server tests and npm-package checks serve the built frontend bundle, which is not committed (TAL-379).
+      - name: Build the frontend bundle
+        run: npm run build:fast -w packages/frontend
+
       - name: Contracts and server lint
         run: npm run lint -w packages/contracts && npm run lint -w packages/server
 
@@ -112,16 +116,10 @@ jobs:
       - name: Vitest
         run: npm test -- --maxWorkers=2
 
-      - name: Deterministic production build
+      - name: Production build
         run: npm run build:fast
 
-      - name: Verify committed frontend assets
-        run: |
-          git diff --exit-code -- ../../static/dist
-          test -z "$(git status --porcelain --untracked-files=all -- ../../static/dist)"
-
-  # The e2e suite serves the committed static/dist, which frontend / checks verifies,
-  # so this job only needs the built contracts and server.
+  # The e2e suite serves the frontend bundle, which its setup rebuilds on every run (static/dist is not committed, TAL-379).
   frontend-e2e:
     if: inputs.frontend
     name: frontend / e2e

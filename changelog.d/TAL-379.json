@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web source checkouts no longer update themselves; install the npm package to follow Stable or Experimental automatically.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

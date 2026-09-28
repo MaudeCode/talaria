@@ -77,7 +77,7 @@ for (const name of readdirSync(clientDir).sort()) {
   else cpSync(from, to)
 }
 
-// Manifest of emitted files for the Python packaging test and check-dist.
+// Manifest of emitted files for the packaging tests.
 const files = []
 const walk = (dir, rel) => {
   for (const name of readdirSync(dir).sort()) {

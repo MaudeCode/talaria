@@ -16,7 +16,7 @@ function hermesTheme(): Plugin {
   }
 }
 
-// The Python server serves the committed output from ../static/dist (see
+// The server serves the built output from ../static/dist, which is not committed (see
 // scripts/finalize-dist.mjs). The service worker is built by scripts/build-sw.mjs
 // (workbox injectManifest) after the app build, because the Start builder does
 // not run vite-plugin-pwa's closeBundle for the client environment. Relative base keeps hashed asset URLs valid
@@ -34,6 +34,9 @@ export default defineConfig({
     ? { server: { host: true, proxy: { [PROXY_ROUTE]: { target: devProxy, changeOrigin: true, headers: { origin: devProxy }, rewrite: (path: string) => path.replace(PROXIED, '') } } } }
     : {}),
   resolve: { alias: { '~': new URL('./src', import.meta.url).pathname } },
+  // The SPA prerender fetches the Vite preview server at the URL Vite reports. Where `localhost` resolves to ::1
+  // first (Docker build sandboxes), the default host listens on IPv6 while that URL is 127.0.0.1, so pin IPv4.
+  preview: { host: '127.0.0.1' },
   plugins: [
     paraglideVitePlugin({
       project: './project.inlang',
