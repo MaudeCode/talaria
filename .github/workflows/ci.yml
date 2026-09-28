@@ -1,0 +1,166 @@
+# Pull requests and main pushes run suites selected by the complete changed-path diff. App changes run
+# the unit tests plus a launch smoke test; the full iOS UI suite runs nightly and as a release gate
+# (ui-suite.yml).
+# Release metadata always validates; uncertain classification runs every suite.
+# The always-reporting CI Gate is the required check, including skipped jobs.
+#
+# Every job runs on GitHub-hosted runners and uses no repository secrets (TAL-380); handoffs are
+# Actions artifacts. Only Xcode work runs on hosted macOS: App build plus two test shards
+# (app-tests.yml). A manual run exercises every suite.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || format('{0}-{1}', github.event_name, github.sha) }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: app
+
+jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      app_tooling: ${{ steps.filter.outputs.app_tooling }}
+      web_server: ${{ steps.filter.outputs.web_server }}
+      web_frontend: ${{ steps.filter.outputs.web_frontend }}
+      docker: ${{ steps.filter.outputs.docker }}
+      relay: ${{ steps.filter.outputs.relay }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+      tooling: ${{ steps.filter.outputs.tooling }}
+    steps:
+      # Classification needs history and trees for the merge-base and diff, not every historical blob;
+      # git fetches the few file contents it compares on demand (TAL-317).
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: scripts
+      - name: Classify changed files
+        working-directory: .
+        id: filter
+        env:
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            python3 scripts/changed-components.py --base="$PUSH_BASE" --head="$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            # A manual run proves the whole pipeline: every suite runs.
+            python3 scripts/changed-components.py >> "$GITHUB_OUTPUT"
+          else
+            # Event base.sha can predate a merged parent PR. Checkout fetched
+            # the current base branch, as release-fragment validation also uses.
+            python3 scripts/changed-components.py --base="refs/remotes/origin/${PR_BASE_REF}" --head="$PR_HEAD" --merge-base >> "$GITHUB_OUTPUT"
+          fi
+
+  app-tooling:
+    name: App tooling
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app_tooling != 'false') }}
+    # macOS for shlock and lockf, not Xcode: these tests fake xcrun and xcodebuild.
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test local XCTest admission and synthetic simulator leases
+        run: |
+          scripts/test-test-ios 20
+          scripts/test-ios-simulator-pool
+
+  app:
+    name: App
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || needs.changes.outputs.contracts != 'false') }}
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/app-tests.yml
+    with:
+      mode: ${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && 'pull-request' || 'contracts' }}
+      contracts: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
+
+  tooling:
+    needs: changes
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/repository-tooling.yml
+    with:
+      full: ${{ needs.changes.result != 'success' || needs.changes.outputs.tooling != 'false' }}
+
+  web:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.web_server != 'false' || needs.changes.outputs.web_frontend != 'false') }}
+    uses: ./.github/workflows/web-verify.yml
+    with:
+      server: ${{ needs.changes.result != 'success' || needs.changes.outputs.web_server != 'false' }}
+      frontend: ${{ needs.changes.result != 'success' || needs.changes.outputs.web_frontend != 'false' }}
+
+  web-docker:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.docker != 'false') }}
+    uses: ./.github/workflows/web-docker-smoke.yml
+
+  relay:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.relay != 'false') }}
+    uses: ./.github/workflows/relay-verify.yml
+
+  contracts:
+    name: Web contract probe
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Node for the disposable Web server
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install zsh for the probe script
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh
+      - name: Probe local Web HTTP and SSE contracts and record the live responses
+        run: scripts/validate-upstream-contract --server-only --responses-output "$RUNNER_TEMP/contract-fixture/live-responses.json"
+      # App shard 0 starts without waiting for this job. Before its suite it waits for this job through the
+      # jobs API, downloads this artifact and runs the native live decoding test in the same xcodebuild.
+      - name: Upload the live response fixture
+        uses: actions/upload-artifact@v7
+        with:
+          name: contract-fixture
+          path: ${{ runner.temp }}/contract-fixture/live-responses.json
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
+
+  gate:
+    name: CI Gate
+    needs: [changes, app, app-tooling, tooling, web, web-docker, relay, contracts]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+      - name: Check selected suite results
+        working-directory: .
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/changed-components.py --check-results

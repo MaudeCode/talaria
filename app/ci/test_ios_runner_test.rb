@@ -2,8 +2,13 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
+require "yaml"
 
 class TestIOSRunnerTest < Minitest::Test
+  WORKFLOWS = File.expand_path("../../.github/workflows", __dir__)
+
+  def workflow_text(name) = File.read(File.join(WORKFLOWS, name), encoding: "UTF-8")
+  def workflow_jobs(name) = YAML.safe_load_file(File.join(WORKFLOWS, name), aliases: true)["jobs"]
   def test_disables_slow_xcode_failure_diagnostics
     script = File.read(File.expand_path("../scripts/test-ios", __dir__))
 
@@ -19,13 +24,24 @@ class TestIOSRunnerTest < Minitest::Test
   end
 
   def test_pr_ci_uses_a_unique_simulator_destination
-    workflow = File.read(
-      File.expand_path("../../.github/workflows/pr-ci.yml", __dir__),
-      encoding: "UTF-8"
-    )
+    workflow = workflow_text("app-tests.yml")
 
-    assert_includes(workflow, 'selected["udid"]')
-    assert_equal(3, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
+    # CI boots the image's iPhone 17 with the pinned simulator action and builds for it by name; the local
+    # pool, leases and XCTest admission only run in App tooling's own tests.
+    jobs = workflow_jobs("app-tests.yml")
+    boot = jobs.fetch("app-test")["steps"].find { |step| step["name"] == "Boot the simulator" }
+    assert_match(%r{\Afutureware-tech/simulator-action@[0-9a-f]{40}\z}, boot["uses"])
+    assert_equal(["iPhone 17", "iOS", "~${{ env.XCODE_VERSION }}", false, true, 600],
+                 boot["with"].values_at("model", "os", "os_version", "erase_before_boot", "wait_for_boot", "boot_timeout_seconds"))
+    assert_includes(workflow, "SIMULATOR_ID: ${{ steps.sim.outputs.udid }}")
+    assert_includes(workflow, "BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.XCODE_VERSION }}")
+    %w[scripts/select-ios-simulator scripts/test-ios(?![-\w]) scripts/setup-ios-test-pool scripts/ios-simulator-pool(?![-\w])].each do |local|
+      refute_match(Regexp.new(local), workflow)
+    end
+    assert_equal(1, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
+    assert_equal(1, workflow.scan('ci/build-for-testing "${BUILD_DESTINATION}"').length)
+    build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
+    assert_includes(build, '-destination "${destination}"')
     refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
   end
 
@@ -50,45 +66,90 @@ class TestIOSRunnerTest < Minitest::Test
       assert(test_double, "#{file} builds a ChatViewModel with #{manager || "the default"} Live Activity manager")
     end
 
-    workflow = File.read(File.expand_path("../../.github/workflows/pr-ci.yml", __dir__), encoding: "UTF-8")
-    live_step = workflow[/- name: Run the live Web contract test.*?(?=\n      - name: )/m]
-    refute_includes(live_step, "xcrun simctl")
+    workflow = workflow_text("app-tests.yml")
+    suite_step = workflow[/- name: Test without building.*?(?=\n      - name: )/m]
+    refute_includes(suite_step, "xcrun simctl")
   end
 
-  def test_pr_ci_runs_pr_smoke_without_clones_and_main_ui_with_two_workers
-    workflow = File.read(
-      File.expand_path("../../.github/workflows/pr-ci.yml", __dir__),
-      encoding: "UTF-8"
-    )
-    scheme = File.read(
-      File.expand_path("../Talaria.xcodeproj/xcshareddata/xcschemes/Talaria.xcscheme", __dir__),
-      encoding: "UTF-8"
-    )
+  def test_only_shard_zero_runs_the_live_test_inside_its_suite
+    shard, probe = workflow_jobs("app-tests.yml").fetch("app-test"), workflow_jobs("ci.yml").fetch("contracts")
+    # Test jobs start with App build and boot their simulator while it builds; shard 0 fetches the Linux
+    # probe's fixture before its suite and runs the live decoding test in the same xcodebuild (TAL-380).
+    assert_nil(shard["needs"])
+    # The boot finishes before the build wait and download, so it competes with neither (TAL-380).
+    boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
+    assert_equal(["Wait for App build", "Download the test build"], shard["steps"][boot + 1, 2].map { |step| step["name"] })
+    assert_equal("true", shard["steps"][boot]["with"]["wait_for_boot"].to_s)
+    refute(shard["steps"].any? { |step| step["name"] == "Build for testing" }, "test jobs never build")
+    steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
+    names = steps.keys
+    download, wait, fetch, select, suite = [
+      "Download the test build", "Wait for the Web contract probe", "Download the probe's live response fixture",
+      "Select this shard's tests", "Test without building"
+    ].map { |name| names.index(name) }
+    assert_equal([download + 1, download + 2, download + 3, download + 4], [wait, fetch, select, suite])
+    refute(names.any? { |name| name.to_s.include?("Run the live Web contract test") }, "no second xcodebuild")
+    [wait, fetch].each do |index|
+      assert_equal("env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0", shard["steps"][index]["if"])
+    end
+    # "Re-run failed jobs" keeps an earlier probe, so the newest attempt at or before this one is awaited.
+    assert_equal('ci/wait-for-job "Web contract probe" 1500', steps.fetch(names[wait])["run"])
+    waiter = File.read(File.expand_path("wait-for-job", __dir__), encoding: "UTF-8")
+    ["filter=all", ".run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber)", "(.name == $ENV.WAIT_JOB_NAME or"]
+      .each { |required| assert_includes(waiter, required) }
+    assert_equal("contract-fixture", steps.fetch(names[fetch])["with"]["name"])
+    ['export TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"', '.[0].result == "Passed"',
+     '[[ "${CONTRACTS_SELECTED}" == "true" && "${SHARD}" == "0" ]] && live=true']
+      .each { |required| assert_includes(steps.fetch(names[suite])["run"], required) }
+    # The selection drops only the live test's skip, and only in shard 0 with contracts selected.
+    assert_includes(steps.fetch(names[select])["run"], 'grep -vx -- "-skip-testing:${LIVE_CONTRACT_TEST}" selection.txt')
+    assert_equal(1, workflow_text("app-tests.yml").scan("xcodebuild test-without-building").length)
+    assert_equal('ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"', steps.fetch("Wait for App build")["run"])
+    upload = probe["steps"].find { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }
+    assert_equal("contract-fixture", upload["with"]["name"])
+    # The shard script skips the live test everywhere else.
+    assert_includes(File.read(File.expand_path("test_shards.py", __dir__), encoding: "UTF-8"),
+                    "TalariaTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied")
+  end
+
+  def test_pr_ci_shards_run_one_worker_without_clones
+    workflow = workflow_text("app-tests.yml")
+    shards = File.read(File.expand_path("test_shards.py", __dir__), encoding: "UTF-8")
     ui_tests = File.read(
       File.expand_path("../TalariaUITests/TalariaUITests.swift", __dir__),
       encoding: "UTF-8"
     )
 
-    ui_testable = scheme.scan(/<TestableReference.*?<\/TestableReference>/m).find do |testable|
-      testable.include?('BlueprintName = "TalariaUITests"')
-    end
-
-    assert_includes(workflow, "TEST_WORKER_COUNT: ${{ github.event_name == 'pull_request' && 1 || 2 }}")
-    assert_includes(workflow, "(( TEST_WORKER_COUNT > 1 )) && parallel_testing=YES")
-    assert_includes(workflow, '-parallel-testing-enabled "${parallel_testing}"')
-    assert_includes(ui_testable, 'parallelizable = "YES"')
+    # Every run uses one worker on the job's own booted simulator: clones took minutes to boot on hosted runners.
+    assert_equal(1, workflow.scan("            -parallel-testing-enabled NO \\").length)
+    refute_match(/parallel-testing-enabled YES|parallel-testing-worker-count|test_workers|build_cache|COMPILATION_CACHE|xcode-cache/, workflow)
+    refute_match(/COMPILATION_CACHE|build-cache/, File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8"))
+    # Four shards for the UI suite, two for CI's unit tests and launch smoke, one for contract-only changes.
+    assert_includes(workflow, "shard: ${{ fromJSON(inputs.mode == 'full' && '[0,1,2,3]' || (inputs.mode == 'pull-request' && '[0,1]' || '[0]')) }}")
+    jobs = workflow_jobs("app-tests.yml")
+    assert_equal([nil, nil, nil, nil], jobs.values_at("app-build", "app-test").flat_map { |job| job.values_at("needs", "if") })
+    # Pull requests and main pushes run the same App jobs; the full UI suite is nightly and a release gate.
+    app = workflow_jobs("ci.yml").fetch("app")
+    assert_equal("./.github/workflows/app-tests.yml", app["uses"])
+    assert_equal("${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && 'pull-request' || 'contracts' }}",
+                 app["with"]["mode"])
+    refute_match(/full_ui|mode: full/, workflow_text("ci.yml"))
+    suite = YAML.safe_load_file(File.join(WORKFLOWS, "ui-suite.yml"), aliases: true)
+    assert_equal({"mode" => "full", "ref" => "${{ inputs.ref }}"}, suite["jobs"]["suite"]["with"])
+    assert_equal(%w[schedule workflow_dispatch workflow_call], suite[true].keys)
+    assert_equal(true, suite[true]["workflow_call"]["inputs"]["ref"]["required"])
+    assert_includes(workflow, 'python3 ci/test_shards.py "${options[@]}" > selection.txt')
     assert_equal(26, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
     # CI skips the measurement-only UI classes and the scheduled UI Performance
-    # workflow runs them (TAL-75, TAL-287); the list is one env var in pr-ci.
+    # workflow runs them (TAL-75, TAL-287); the shard script owns the skip list.
     %w[
       SidebarPerformanceUITests
       LaunchPerformanceUITests
       TranscriptPerformanceUITests
       NavigationPerformanceUITests
     ].each do |performance_class|
-      assert_includes(workflow, "TalariaUITests/#{performance_class}")
+      assert_includes(shards, "TalariaUITests/#{performance_class}")
     end
-    assert_includes(workflow, '-skip-testing:${performance_class}')
     assert_includes(workflow, "scripts/report-performance-metrics")
     reporter = File.read(File.expand_path("../scripts/report-performance-metrics", __dir__), encoding: "UTF-8")
     assert_includes(reporter, '"xcresulttool", "get", "test-results", "metrics"')

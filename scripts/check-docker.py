@@ -16,12 +16,12 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def build(image):
-    """Build the Web image, reusing layers from the NAS S3 cache when CI configures one."""
+    """Build the Web image, reusing layers from the BuildKit cache CI configures (TALARIA_DOCKER_CACHE)."""
     cache = os.environ.get("TALARIA_DOCKER_CACHE")
     if not cache:
         subprocess.run(["docker", "build", "-t", image, str(ROOT / "web")], check=True)
         return
-    # Credentials reach BuildKit from AWS_* in the environment, never from these arguments.
+    # A cache backend's credentials reach BuildKit from the environment, never from these arguments.
     subprocess.run(["docker", "buildx", "build", "--load", "-t", image,
                     "--cache-from", cache, "--cache-to", cache + ",mode=max,ignore-error=true", str(ROOT / "web")], check=True)
 
@@ -102,7 +102,15 @@ def smoke(variant, image):
             print(f"PASS Docker {variant} health", flush=True)
         finally:
             subprocess.run([*compose, "logs", "--no-color", "--tail=60"], env=env, check=False)
-            subprocess.run([*compose, "down", "--volumes", "--remove-orphans"], env=env, check=True)
+            try:
+                subprocess.run([*compose, "down", "--volumes", "--remove-orphans"], env=env, check=True)
+            finally:
+                # The containers write bind-mounted state as their own UIDs (1000, 1001, 1024), which the
+                # invoking user cannot delete unless it happens to share one; hand the tree back through the
+                # image so the temporary directory's own cleanup, which stays strict, can remove it.
+                subprocess.run(["docker", "run", "--rm", "--entrypoint", "/bin/sh", "-v", f"{state}:/state", image,
+                                "-c", f"chown -R {os.getuid()}:{os.getgid()} /state && chmod -R u+rwX /state"],
+                               env=env, check=False)
 
 
 if __name__ == "__main__":

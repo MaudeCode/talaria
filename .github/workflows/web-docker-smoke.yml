@@ -2,11 +2,6 @@ name: Talaria Web Docker smoke
 
 on:
   workflow_call:
-    secrets:
-      TALARIA_CI_S3_ACCESS_KEY_ID:
-        required: false
-      TALARIA_CI_S3_SECRET_ACCESS_KEY:
-        required: false
   workflow_dispatch:
 
 permissions:
@@ -14,28 +9,30 @@ permissions:
 
 jobs:
   smoke:
-    name: Smoke Compose variants and container identity
-    runs-on: ["ghar-set-maudecode"]
+    name: Smoke Compose variant ${{ matrix.variant }} and container identity
+    runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [single, two-container, three-container, auto-uid, explicit-uid]
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/docker-plugins
-      - name: Check isolated container variants
+      # BuildKit's GitHub Actions cache reads the runtime token and cache URL, which only action steps receive.
+      - name: Expose the Actions cache service to Buildx
+        uses: actions/github-script@v9
+        with:
+          script: |
+            for (const name of ['ACTIONS_RUNTIME_TOKEN', 'ACTIONS_RESULTS_URL', 'ACTIONS_CACHE_URL', 'ACTIONS_CACHE_SERVICE_V2']) {
+              if (process.env[name]) core.exportVariable(name, process.env[name])
+            }
+      - name: Check the isolated container variant
         env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-ci
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
-          # Buildx hands these to BuildKit for the S3 layer cache; they never appear in arguments.
-          AWS_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
+          VARIANT: ${{ matrix.variant }}
         run: |
           set -euo pipefail
-          if [[ -n "${TALARIA_S3_ACCESS_KEY_ID}" ]]; then
-            # Reuse Web image layers from the NAS (buildcache/ expires after 14 days); the S3 cache needs a container builder.
-            scripts/s3-artifact lifecycle
-            docker buildx create --driver docker-container --use --bootstrap >/dev/null
-            export TALARIA_DOCKER_CACHE="type=s3,region=${TALARIA_S3_REGION},bucket=talaria-ci,endpoint_url=${TALARIA_S3_ENDPOINT},use_path_style=true,prefix=buildcache/,name=web-smoke"
-          fi
-          python3 scripts/check-docker.py
+          # Every variant builds the same image, so they share one layer cache scope; the cache needs a container builder.
+          docker buildx create --driver docker-container --use --bootstrap >/dev/null
+          export TALARIA_DOCKER_CACHE="type=gha,scope=web-smoke"
+          python3 scripts/check-docker.py "${VARIANT}"

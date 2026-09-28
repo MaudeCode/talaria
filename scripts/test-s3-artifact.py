@@ -67,24 +67,24 @@ class HelperTests(unittest.TestCase):
     def test_put_get_use_path_style_sigv4_without_exposing_the_secret_in_arguments(self):
         payload = self.root / "payload.json"
         payload.write_text('{"synthetic":true}\n')
-        result = self.helper("put", "fixtures/pr-ci/123/1/live-responses.json", str(payload))
+        result = self.helper("put", "fixtures/ci/123/1/live-responses.json", str(payload))
         self.assertEqual(result.returncode, 0, result.stderr)
-        stored = self.root / "store/talaria-ci/fixtures/pr-ci/123/1/live-responses.json"
+        stored = self.root / "store/talaria-ci/fixtures/ci/123/1/live-responses.json"
         self.assertEqual(stored.read_text(), '{"synthetic":true}\n')
         log = self.logs()
         self.assertIn("--aws-sigv4\naws:amz:garage:s3\n", log)
-        self.assertIn("https://nas.example.invalid/talaria-ci/fixtures/pr-ci/123/1/live-responses.json", log)
+        self.assertIn("https://nas.example.invalid/talaria-ci/fixtures/ci/123/1/live-responses.json", log)
         self.assertIn('user = "synthetic-key:synthetic-secret-value"', log, "credentials travel in a private config file")
         self.assertNotIn("synthetic-secret-value\n", log.replace('user = "synthetic-key:synthetic-secret-value"\n', ""))
         self.assertNotIn("synthetic-secret", result.stdout + result.stderr)
         self.assertEqual(list(self.root.glob("s3-artifact-*")), [], "the config file is removed")
         fetched = self.root / "fetched/live-responses.json"
-        result = self.helper("get", "fixtures/pr-ci/123/1/live-responses.json", str(fetched))
+        result = self.helper("get", "fixtures/ci/123/1/live-responses.json", str(fetched))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(fetched.read_text(), '{"synthetic":true}\n')
-        result = self.helper("get", "fixtures/pr-ci/123/1/missing.json", str(self.root / "fetched/missing.json"))
+        result = self.helper("get", "fixtures/ci/123/1/missing.json", str(self.root / "fetched/missing.json"))
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("fixtures/pr-ci/123/1/missing.json", result.stderr)
+        self.assertIn("fixtures/ci/123/1/missing.json", result.stderr)
         self.assertFalse((self.root / "fetched/missing.json").exists())
         self.assertNotIn("synthetic-secret", result.stdout + result.stderr)
 
@@ -94,14 +94,14 @@ class HelperTests(unittest.TestCase):
         for name in ("TALARIA_S3_ENDPOINT", "TALARIA_S3_REGION", "TALARIA_S3_BUCKET",
                      "TALARIA_S3_ACCESS_KEY_ID", "TALARIA_S3_SECRET_ACCESS_KEY"):
             env = {key: value for key, value in self.env.items() if key != name}
-            result = self.helper("put", "fixtures/pr-ci/123/1/live-responses.json", str(payload), env=env)
+            result = self.helper("put", "fixtures/ci/123/1/live-responses.json", str(payload), env=env)
             with self.subTest(name=name):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(name, result.stderr)
                 self.assertEqual(self.logs(), "", "no request is made without complete settings")
                 self.assertNotIn("synthetic-secret", result.stdout + result.stderr)
-        for key in ("../escape", "/absolute", "fixtures//double", "fixtures/pr-ci/123/1/bad name",
-                    "fixtures/pr-ci/..", "fixtures/./pr-ci/1"):
+        for key in ("../escape", "/absolute", "fixtures//double", "fixtures/ci/123/1/bad name",
+                    "fixtures/ci/..", "fixtures/./ci/1"):
             result = self.helper("put", key, str(payload))
             with self.subTest(key=key):
                 self.assertNotEqual(result.returncode, 0)

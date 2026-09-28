@@ -169,12 +169,12 @@ read -r maximum < "$state/maximum"
 }
 [[ $(wc -l < "$state/runs" | tr -d ' ') == $(( rounds * 2 )) ]]
 [[ $(sed -n 's/^[^|]*|\([^|]*\)|.*$/\1/p' "$state/runs" | sort -u | wc -l | tr -d ' ') == $(( rounds * 2 )) ]]
-rg -q "Waiting for Talaria XCTest admission: owner PID [0-9]+, elapsed [0-9]+s" "$state"/peer-*.log
+grep -Eq "Waiting for Talaria XCTest admission: owner PID [0-9]+, elapsed [0-9]+s" "$state"/peer-*.log
 
 print 'defaults:\n  simulatorName: "Missing simulator"' > "$repo/.xcodebuildmcp/config.yaml"
 export TALARIA_DEVICE_FIXTURE="$state/fallback-devices"
 IOS_SIMULATOR_ID=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD "$repo/scripts/test-ios" TalariaTests/Fallback > "$state/fallback.log" 2>&1
-rg -q "platform=iOS Simulator,id=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD" "$state/fallback.log"
+grep -Eq "platform=iOS Simulator,id=DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD" "$state/fallback.log"
 export TALARIA_DEVICE_FIXTURE="$state/pool-devices"
 if "$repo/scripts/test-ios" TalariaTests/Failure > "$state/failure.log" 2>&1; then
     print -u2 "Expected the synthetic xcodebuild failure to propagate."
@@ -189,7 +189,7 @@ runs_for() { grep -c -- "$1" "$state/runs" || true; }
 # A pre-test runner hang with no failed test case retries exactly once.
 "$repo/scripts/test-ios" TalariaTests/HangOnce > "$state/hang-once.log" 2>&1
 [[ $(runs_for TalariaTests/HangOnce) == 2 ]]
-rg -q "retrying once" "$state/hang-once.log"
+grep -Eq "retrying once" "$state/hang-once.log"
 [[ $(sed -n 's/^\([^|]*\)|.*HangOnce.*$/\1/p' "$state/runs" | sort -u | wc -l | tr -d ' ') == 1 ]]  # re-leased a pool device
 if "$repo/scripts/test-ios" TalariaTests/HangTwice > "$state/hang-twice.log" 2>&1; then
     print -u2 "Expected a repeated runner hang to fail."
@@ -205,7 +205,7 @@ else
     [[ $? == 65 ]]
 fi
 [[ $(runs_for TalariaTests/HangWithFailure) == 1 ]]
-! rg -q "retrying once" "$state/hang-with-failure.log"
+! grep -Eq "retrying once" "$state/hang-with-failure.log"
 
 common_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)
 sleep 0.01 &
@@ -222,11 +222,11 @@ wait_until_active "$owner"
 "$peer/scripts/test-ios" TalariaTests/CancelledWaiter > "$state/cancelled-waiter.log" 2>&1 &
 waiter=$!
 for _ in {1..200}; do
-    rg -q "Waiting for Talaria XCTest admission: owner PID [0-9]+, elapsed [0-9]+s" "$state/cancelled-waiter.log" && break
+    grep -Eq "Waiting for Talaria XCTest admission: owner PID [0-9]+, elapsed [0-9]+s" "$state/cancelled-waiter.log" && break
     kill -0 "$waiter" 2>/dev/null || break
     sleep 0.01
 done
-rg -q "Waiting for Talaria XCTest admission: owner PID [0-9]+, elapsed [0-9]+s" "$state/cancelled-waiter.log"
+grep -Eq "Waiting for Talaria XCTest admission: owner PID [0-9]+, elapsed [0-9]+s" "$state/cancelled-waiter.log"
 kill -TERM "$waiter"
 if wait "$waiter"; then
     print -u2 "Expected the waiting runner to exit after cancellation."
@@ -251,8 +251,8 @@ read -r active < "$state/active"
 [[ ! -e "$common_dir/talaria-xctest-runner.lock.owner" ]]
 
 "$repo/scripts/test-ios" TalariaTests > "$state/whole-target.log" 2>&1
-rg -Fqx -- '-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests' "$state/last-args"
+grep -Fqx -- '-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests' "$state/last-args"
 "$repo/scripts/test-ios" TalariaTests/UntrustedInputFuzzSoakTests > "$state/explicit-soak.log" 2>&1
-! rg -Fqx -- '-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests' "$state/last-args"
+! grep -Fqx -- '-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests' "$state/last-args"
 
 print "test-ios admission, selection and runner-hang retry checks passed ($rounds concurrent rounds)."

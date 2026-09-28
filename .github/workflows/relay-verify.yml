@@ -12,7 +12,8 @@ defaults:
 
 jobs:
   check:
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -22,6 +23,13 @@ jobs:
         run: |
           npm install --global --prefix "$RUNNER_TEMP/pnpm" "$(node -p 'require("./package.json").packageManager')"
           echo "$RUNNER_TEMP/pnpm/bin" >> "$GITHUB_PATH"
+      - name: Locate the pnpm store
+        id: pnpm
+        run: echo "store=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm.outputs.store }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('relay/pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - name: Validate anonymous local Convex deployment

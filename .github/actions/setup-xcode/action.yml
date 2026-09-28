@@ -1,0 +1,32 @@
+# Interface (stable; ci.yml and the release workflows share it):
+#   uses: ./.github/actions/setup-xcode
+#   with:
+#     xcode-version: "27.0"   # major.minor; optional, defaults to 27.0
+# Selects that Xcode with maxim-lobanov/setup-xcode, then fails unless xcodebuild reports the same major.minor;
+# there is no fallback to another version. It prints `xcodebuild -version` and the simulator runtimes.
+name: Set up Xcode
+description: Select an exact Xcode major.minor on a hosted macOS runner and fail if the image lacks it.
+inputs:
+  xcode-version:
+    description: Xcode major.minor to select, for example 27.0.
+    required: false
+    default: "27.0"
+runs:
+  using: composite
+  steps:
+    - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+      with:
+        xcode-version: ${{ inputs.xcode-version }}
+    - shell: bash
+      env:
+        XCODE_VERSION: ${{ inputs.xcode-version }}
+      run: |
+        set -euo pipefail
+        # Read all output: `| head -n 1` closes the pipe early and xcodebuild aborts on the broken pipe.
+        actual=$(xcodebuild -version)
+        actual=${actual%%$'\n'*}
+        [[ "$actual" == "Xcode ${XCODE_VERSION}" || "$actual" == "Xcode ${XCODE_VERSION}."* ]] \
+          || { echo "::error::Requested Xcode ${XCODE_VERSION} but xcodebuild reports '${actual}'"; exit 1; }
+        echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
+        xcodebuild -version
+        xcrun simctl list runtimes

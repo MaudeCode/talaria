@@ -92,7 +92,14 @@ class RoutingTests(unittest.TestCase):
             ([".github/workflows/release-set.yml"], {"tooling"}),
             ([".github/workflows/web-verify.yml"], {"web_server", "web_frontend", "tooling"}),
             ([".github/workflows/relay-verify.yml"], {"relay", "tooling"}),
-            ([".github/workflows/pr-ci.yml"], {"app", "tooling"}),
+            ([".github/workflows/ci.yml"], {"app", "contracts", "tooling"}),
+            ([".github/workflows/app-tests.yml"], {"app", "contracts", "tooling"}),
+            ([".github/workflows/ui-suite.yml"], {"tooling"}),
+            ([".github/actions/setup-xcode/action.yml"], {"app", "tooling"}),
+            (["app/ci/test_shards.py", "app/ci/test-shard-weights.json"], {"app", "tooling"}),
+            (["app/ci/build-for-testing", "app/ci/wait-for-job"], {"app", "tooling"}),
+            (["app/ci/test_shards_test.py", "app/ci/wait_for_job_test.sh"], {"tooling"}),
+            (["scripts/check-hosted-runners.py", "scripts/test-check-hosted-runners.py"], {"tooling"}),
             (["scripts/changed-components.py"], {"tooling"}),
             (["scripts/new-unknown-tool.py"], ALL),
             (["new-component/runtime.rs"], ALL),
@@ -187,7 +194,7 @@ class RoutingTests(unittest.TestCase):
             self.assertNotEqual(check_diff("--base", "missing-ref").returncode, 0)
 
     def test_gate_rejects_missing_or_skipped_required_checks(self):
-        job_suites = {"test": {"app", "contracts"}, "app-tooling": {"app_tooling"},
+        job_suites = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"},
                       "web": {"web_server", "web_frontend"}, "web-docker": {"docker"},
                       "relay": {"relay"}, "contracts": {"contracts"}}
         for selected in (set(), {"web_frontend"}, {"web_server"}, {"app"}, {"tooling"}, ALL):
@@ -209,10 +216,10 @@ class RoutingTests(unittest.TestCase):
                         routing.check_results(broken)
         # Missing classifier outputs must require the full set, never silently skip.
         needs["changes"]["outputs"] = {}
-        needs["test"]["result"] = "skipped"
+        needs["app"]["result"] = "skipped"
         with self.assertRaises(ValueError):
             routing.check_results(needs)
-        del needs["test"]
+        del needs["app"]
         with self.assertRaises(KeyError):
             routing.check_results(needs)
 
