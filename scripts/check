@@ -30,6 +30,8 @@ case "$component" in
     python3 scripts/test-check-committed-images.py
     python3 scripts/check-committed-images.py
     python3 scripts/test-s3-artifact.py
+    python3 scripts/test-check-hosted-runners.py
+    python3 scripts/check-hosted-runners.py
     scripts/check-releases
     python3 app/ci/release_notes_test.py
     python3 app/ci/load_env_test.py

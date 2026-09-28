@@ -96,6 +96,7 @@ class RoutingTests(unittest.TestCase):
             ([".github/actions/setup-xcode/action.yml"], {"app", "tooling"}),
             (["app/ci/test_shards.py", "app/ci/test-shard-weights.json"], {"app", "tooling"}),
             (["app/ci/test_shards_test.py"], {"tooling"}),
+            (["scripts/check-hosted-runners.py", "scripts/test-check-hosted-runners.py"], {"tooling"}),
             (["scripts/changed-components.py"], {"tooling"}),
             (["scripts/new-unknown-tool.py"], ALL),
             (["new-component/runtime.rs"], ALL),
