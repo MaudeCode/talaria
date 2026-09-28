@@ -37,7 +37,7 @@ class RecoveryTests(unittest.TestCase):
                 for name, conclusion in (("prepare", "success"), ("build-gate", "success"), ("relay-publish", "success"),
                                          ("web-publish", "success"), ("Publish iOS app", "failure"), ("publish-set", "failure"))]
         refs = {name: {"run": "123", "attempt": "1", "source": "a" * 40, "name": name, "sha256": "b" * 64}
-                for name in ("release-plan", "contract-receipts", "agent-receipts", "relay-build", "web-build", "app-build",
+                for name in ("release-plan", "contract-receipts", "previous-app-receipts", "agent-receipts", "relay-build", "web-build", "app-build",
                              "ios-ipa", "ios-dsyms", "relay-publish", "web-publish")}
         needs = {name: {"result": "failure" if name == "app-publish" else "success", "outputs": {}}
                  for name in ("prepare", "build-gate", "relay-publish", "web-publish", "app-publish")}
@@ -83,7 +83,7 @@ class RecoveryTests(unittest.TestCase):
                 recover.authenticate("123", "4", metadata, jobs, text)
 
     def test_restored_files_preserve_original_receipts_and_reject_tampering(self):
-        # The original run's archives are downloaded, never copied from a runner's disk; only their producer
+        # The original run's artifacts are downloaded, never copied from a runner's disk; only their producer
         # digests authorize them, and every archive is checked before any is extracted.
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -91,38 +91,32 @@ class RecoveryTests(unittest.TestCase):
             source.mkdir()
             receipt = b'{"runUrl":"https://github.com/MaudeCode/talaria/actions/runs/123/attempts/1"}\n'
             (source / "receipt.json").write_bytes(receipt)
-            store = {}
+            service, downloads = {}, []
 
-            def transfer(operation, key, path):
-                if operation == "put":
-                    store[key] = Path(path).read_bytes()
-                elif key in store:
-                    Path(path).parent.mkdir(parents=True, exist_ok=True)
-                    Path(path).write_bytes(store[key])
-                else:
-                    raise ValueError("missing object")
+            def listing(run):
+                return [{"name": name, "expired": False, "workflow_run": {"id": int(run), "head_sha": "a" * 40}}
+                        for key, name in service if key == run]
+
+            def download(run, artifact, directory):
+                downloads.append(artifact)
+                directory.mkdir(parents=True)
+                for name, data in service[(run, artifact)].items():
+                    (directory / name).write_bytes(data)
 
             env = {"GITHUB_REPOSITORY": "MaudeCode/talaria", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
-                   "GITHUB_SHA": "a" * 40, "RUNNER_TEMP": str(root),
-                   "GITHUB_WORKFLOW_REF": "MaudeCode/talaria/.github/workflows/production-cutover.yml@refs/heads/main"}
-            with patch.dict(os.environ, env, clear=True), patch.object(artifacts, "transfer", transfer):
-                refs = {name: artifacts.put(name, source) for name in ("app-build", "ios-ipa")}
-            self.assertEqual(set(store), {"handoffs/production-cutover/123/1/app-build.tar", "handoffs/production-cutover/123/1/ios-ipa.tar"})
-            recovery = {**env, "GITHUB_RUN_ID": "456", "RUNNER_TEMP": str(root / "recovery"),
-                        "GITHUB_WORKFLOW_REF": "MaudeCode/talaria/.github/workflows/recover-cutover.yml@refs/heads/main"}
-            downloads = []
-
-            def counted(operation, key, path):
-                downloads.append(key)
-                transfer(operation, key, path)
-
-            with patch.dict(os.environ, recovery, clear=True), patch.object(artifacts, "transfer", counted):
+                   "GITHUB_SHA": "a" * 40, "RUNNER_TEMP": str(root)}
+            with patch.dict(os.environ, env, clear=True):
+                refs, artifact, directory = artifacts.put([("app-build", source), ("ios-ipa", source)])
+            service[("123", artifact)] = {path.name: path.read_bytes() for path in directory.iterdir()}
+            recovery = {**env, "GITHUB_RUN_ID": "456", "GITHUB_SHA": "d" * 40, "RUNNER_TEMP": str(root / "recovery")}
+            with patch.dict(os.environ, recovery, clear=True), patch.object(artifacts, "listing", listing), \
+                    patch.object(artifacts, "download", download):
                 recover.restore(refs, root / "recovered")
-                # Each verified archive is extracted as downloaded; the IPA and dSYMs never cross the NAS twice.
-                self.assertEqual(sorted(downloads), sorted(set(downloads)))
+                # The original run's artifact is downloaded once for all the handoffs it holds.
+                self.assertEqual(downloads, [artifact])
                 self.assertEqual((root / "recovered/app-build/receipt.json").read_bytes(), receipt)
                 self.assertEqual((root / "recovered/ios-ipa/receipt.json").read_bytes(), receipt)
-                store["handoffs/production-cutover/123/1/ios-ipa.tar"] = b"tampered"
+                service[("123", artifact)]["ios-ipa.tar"] = b"tampered"
                 with self.assertRaisesRegex(ValueError, "original producer"):
                     recover.restore(refs, root / "rejected")
                 self.assertFalse((root / "rejected").exists())

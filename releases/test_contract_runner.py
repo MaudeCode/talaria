@@ -65,7 +65,7 @@ class ContractRunnerTests(unittest.TestCase):
                 self.assertEqual(previous.runner_avoids_clones("a" * 40), name == "new")
 
     def test_failing_fixture_gate_prints_its_own_output(self):
-        # The component log reaches only the NAS diagnostics; a failure must show the test's own output in the job log.
+        # The component log reaches only the diagnostics artifact; a failure must show the test's own output in the job log.
         plan = {"components": {"app": {"sourceRevision": "a" * 40}, "web": {"sourceRevision": "b" * 40},
                                "relay": {"sourceRevision": "c" * 40}}, "supportedWebSources": ["b" * 40]}
         with tempfile.TemporaryDirectory() as temporary:

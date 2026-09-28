@@ -22,7 +22,7 @@ concurrency:
 jobs:
   start:
     name: Tag changed components and start the cutover
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     timeout-minutes: 100
     env:
       GH_TOKEN: ${{ github.token }}
@@ -33,7 +33,7 @@ jobs:
           fetch-depth: 0
 
       - uses: ./.github/actions/release-python
-      # app/ci/validate_release_tag parses GitHub tag metadata with Ruby, which the pool image lacks.
+      # app/ci/validate_release_tag parses GitHub tag metadata with Ruby.
       - uses: ./.github/actions/release-ruby
 
       - name: Validate the signed release tag

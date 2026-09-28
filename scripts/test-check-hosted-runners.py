@@ -75,7 +75,29 @@ jobs:
     runs-on: ubuntu-latest
     steps: [{run: "true", env: {KEY: "${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}", URL: "${{ vars.TALARIA_S3_ENDPOINT }}"}}]
 """})
-        self.assertEqual(found, ["ci.yml: references TALARIA_S3_* or TALARIA_CI_S3_* NAS credentials"])
+        self.assertEqual(found, ["ci.yml: references TALARIA_*S3* NAS credentials"])
+        release = self.check({"ci.yml": """
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps: [{run: "true", env: {KEY: "${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}"}}]
+"""})
+        self.assertEqual(release, ["ci.yml: references TALARIA_*S3* NAS credentials"])
+
+    def test_every_workflow_is_checked_by_default(self):
+        with tempfile.TemporaryDirectory(prefix="talaria-hosted-") as temporary:
+            root = Path(temporary)
+            (root / ".github/workflows").mkdir(parents=True)
+            (root / ".github/workflows/ci.yml").write_text("on: push\njobs:\n  a: {runs-on: ubuntu-latest, steps: [{run: x}]}\n")
+            (root / ".github/workflows/nightly.yaml").write_text("on: {schedule: [{cron: '0 0 * * *'}]}\njobs:\n"
+                                                                 "  b: {runs-on: maude-mac, steps: [{run: x}]}\n")
+            (root / ".github/workflows/release.yml").write_text("on: {push: {tags: ['v*']}}\njobs:\n  c: {runs-on: ubuntu-latest, "
+                                                                "steps: [{run: x, env: {K: '${{ vars.TALARIA_S3_ENDPOINT }}'}}]}\n")
+            self.assertEqual(hosted.workflows(root), ["ci.yml", "nightly.yaml", "release.yml"])
+            self.assertEqual(hosted.violations(root), [
+                "nightly.yaml: job b can run on 'maude-mac', which is not a GitHub-hosted runner",
+                "release.yml: references TALARIA_*S3* NAS credentials"])
 
     def test_third_party_actions_must_be_sha_pinned(self):
         with tempfile.TemporaryDirectory(prefix="talaria-hosted-") as temporary:
@@ -111,22 +133,38 @@ jobs:
     def test_missing_scoped_workflow_fails(self):
         self.assertEqual(self.check({}), ["ci.yml: workflow not found"])
 
-    def test_repository_scope_is_hosted(self):
+    def test_repository_is_hosted(self):
         self.assertEqual(hosted.violations(), [])
 
     def test_only_native_jobs_use_macos(self):
         # Hosted macOS allows five concurrent jobs, so each macOS job must still show the native work that
-        # needs it; moving a portable job onto macOS fails here.
+        # needs it; moving a portable job onto macOS fails here. Xcode image jobs select Xcode explicitly.
         native = {("ci.yml", "app-tooling"): "test-ios-simulator-pool", ("app-tests.yml", "app-build"): "ci/build-for-testing",
-                  ("app-tests.yml", "app-test"): "xcodebuild"}
+                  ("app-tests.yml", "app-test"): "xcodebuild",
+                  ("fuzz-soak.yml", "soak"): "xcodebuild", ("ui-performance.yml", "measure"): "xcodebuild",
+                  ("ios-release-build.yml", "build"): "xcodebuild archive",
+                  ("release-set.yml", "contracts"): "check-release-contracts.py --only app",
+                  ("release-set.yml", "previous-app-contracts"): "check-previous-app.py",
+                  ("release-set.yml", "app-dry-build"): "build.py app"}
         found = {}
-        for name in hosted.SCOPE:
+        for name in hosted.workflows():
             for job_name, job in hosted.load(hosted.ROOT / ".github/workflows" / name)["jobs"].items():
-                if any(label.startswith(("macos", "xcode")) for label in hosted.runner_labels(job)):
+                labels = hosted.runner_labels(job) if "steps" in job else []
+                if any(label.startswith(("macos", "xcode")) for label in labels):
                     found[(name, job_name)] = str(job["steps"])
+                if any(label.startswith("xcode") for label in labels):
+                    self.assertIn("./.github/actions/setup-xcode", [step.get("uses") for step in job["steps"]], (name, job_name))
         self.assertEqual(set(found), set(native))
         for job, dependency in native.items():
             self.assertIn(dependency, found[job], job)
+
+    def test_artifacts_expire_within_thirty_days(self):
+        # Actions storage is bounded by retention, never by a paid quota.
+        for name in hosted.workflows():
+            for job_name, job in hosted.load(hosted.ROOT / ".github/workflows" / name)["jobs"].items():
+                for step in job.get("steps", []):
+                    if step.get("uses", "").startswith("actions/upload-artifact@"):
+                        self.assertLessEqual(int(step["with"]["retention-days"]), 30, (name, job_name, step.get("name")))
 
 
 if __name__ == "__main__":

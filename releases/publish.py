@@ -93,7 +93,7 @@ def _web_component(plan, build):
 
 
 def web_npm(plan, build, directory):
-    """npm publication, on the GitHub-hosted runner that npm trusted publishing requires (it cannot reach the NAS).
+    """npm publication, on the GitHub-hosted runner that npm trusted publishing requires, before the GHCR push.
 
     npm is the most failure-prone external publication, so it goes first, as Cove does; an identical retry accepts
     the immutable registry bytes without burning another version.

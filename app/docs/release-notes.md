@@ -8,7 +8,7 @@ fragment identities; edits or deletions of historical fragments still fail.
 Agents add release metadata with each implementation. The root release-set
 workflow validates the selected source and generates component Markdown and
 JSON notes before building. Jobs pass the release plan between runners as a
-digest-checked object on the self-hosted NAS. The completed release set retains
+digest-checked artifact of the release run. The completed release set retains
 component notes and combined notes.
 No release-time writing or LLM call is needed.
 

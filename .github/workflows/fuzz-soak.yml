@@ -28,10 +28,11 @@ defaults:
 jobs:
   soak:
     name: Untrusted input fuzz soak
-    runs-on: maude-mac
+    runs-on: xcode-27
     timeout-minutes: 60
 
     env:
+      XCODE_VERSION: "27.0"
       PROJECT_PATH: Talaria.xcodeproj
       SCHEME: Talaria
       DERIVED_DATA_PATH: DerivedData
@@ -41,38 +42,25 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - uses: ./.github/actions/setup-xcode
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
 
-      - name: Select simulator
+      # As CI: the image's own iPhone 17 on the runtime matching the SDK, booted to completion before the test.
+      - name: Boot the simulator
         id: sim
-        run: |
-          set -euo pipefail
-          simulator_id=$(xcrun simctl list devices available --json | python3 -c '
-          import json, sys
-          data = json.load(sys.stdin)
-          phones = [
-              device
-              for runtime, devices in data["devices"].items()
-              if "iOS" in runtime
-              for device in devices
-              if device.get("isAvailable") and device["name"].startswith("iPhone")
-          ]
-          preferred = "iPhone 17"
-          selected = next((device for device in phones if device["name"] == preferred), phones[0] if phones else None)
-          print(selected["udid"] if selected else "")
-          ')
-          if [[ -z "${simulator_id}" ]]; then
-            echo "No available iPhone simulator found:" >&2
-            xcrun simctl list devices available >&2
-            exit 1
-          fi
-          echo "Using simulator: ${simulator_id}"
-          echo "id=${simulator_id}" >> "$GITHUB_OUTPUT"
+        uses: futureware-tech/simulator-action@e89aa8f93d3aec35083ff49d2854d07f7186f7f5 # v5
+        with:
+          model: iPhone 17
+          os: iOS
+          os_version: ~${{ env.XCODE_VERSION }}
+          erase_before_boot: false
+          wait_for_boot: true
+          boot_timeout_seconds: 600
 
       - name: Run the fuzz soak
         env:
-          SIMULATOR_ID: ${{ steps.sim.outputs.id }}
+          SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
         run: |
           set -euo pipefail
           start_seconds=${SECONDS}
@@ -93,18 +81,11 @@ jobs:
           echo "### Fuzz soak" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Duration: $((SECONDS - start_seconds))s" >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Store results on the NAS on failure
+      - name: Retain the result bundle on failure
         if: failure()
-        env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-ci
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
-        run: |
-          set -euo pipefail
-          [[ -d "${RESULT_BUNDLE_PATH}" ]] || exit 0
-          key="fuzz/fuzz-soak/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${RESULT_BUNDLE_PATH}.tar"
-          tar -cf "${RESULT_BUNDLE_PATH}.tar" "${RESULT_BUNDLE_PATH}"
-          ../scripts/s3-artifact put "$key" "${RESULT_BUNDLE_PATH}.tar"
-          echo "- Result bundle: talaria-ci/$key (expires after 30 days)" >> "${GITHUB_STEP_SUMMARY}"
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-soak-results-${{ github.run_attempt }}
+          path: app/${{ env.RESULT_BUNDLE_PATH }}
+          retention-days: 30
+          if-no-files-found: ignore

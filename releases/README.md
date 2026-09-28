@@ -54,68 +54,96 @@ source-install safety boundaries.
 
 ## Runners and handoffs
 
-The single `maude-mac` runner is reserved for work that needs Xcode, an iOS
-simulator or Apple signing. Every other job runs on the `ghar-set-maudecode`
-Linux pool, except npm trusted publishing, which requires a GitHub-hosted
-`ubuntu-latest` job. `releases/test_publication.py` fails when any other job
-uses the Mac label. Current Mac jobs and their native dependency:
+Every job in every workflow runs on a GitHub-hosted runner; the repository is
+public, so they cost nothing. Jobs that need Xcode, an iOS simulator or Apple
+signing run on `xcode-27` (GitHub's Xcode 27 public-preview image, macOS 27
+arm64) and select Xcode through `.github/actions/setup-xcode`; every other job
+runs on `ubuntu-latest` and installs its tools through the `release-python`,
+`release-node`, `release-ruby` and `docker-plugins` actions.
+`scripts/check-hosted-runners.py` fails when any job, for any event, can resolve
+to another runner, a workflow references the retired NAS credentials, or a
+third-party action (also inside a local composite action) is not pinned to a
+full commit SHA; its test fails when a macOS job appears or loses its native
+dependency:
 
 | Workflow | Job | Native dependency |
 |---|---|---|
+| `ci.yml` | `app-build` | `app/ci/build-for-testing` once, uploaded as the run's `app-build` artifact |
+| `ci.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: two shards for a pull request, four full-suite shards for a main push; shard 0 also runs the live Web contract test |
+| `ci.yml` | `app-tooling` (`macos-latest`) | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
 | `fuzz-soak.yml` | `soak` | `xcodebuild test` in the simulator |
+| `ui-performance.yml` | `measure` | `xcodebuild test` in the simulator |
 | `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
-| `release-set.yml` | `contracts` | compiles and tests the selected and previously released App in the simulator |
+| `release-set.yml` | `contracts` | compiles and tests the selected App in the simulator against every supported Web |
+| `release-set.yml` | `previous-app-contracts` | compiles and tests the previously released App in the simulator |
 | `release-set.yml` | `app-dry-build` | unsigned `xcodebuild archive` |
 
-The Web contract probe, Docker smoke, release-plan preparation, Web/Relay
-fixture suites, Agent verification, Relay/Web builds, publication receipt jobs,
-manifest assembly, TestFlight inspection and cutover recovery run on Linux.
-`ci.yml` runs on GitHub-hosted runners only and hands the Web probe's live responses to the App
-test job as an Actions artifact (see [contract validation](../CONTRACT_TESTS.md) and
-`scripts/check-hosted-runners.py`).
+The organization runs at most five macOS jobs at once. A release that ships the
+App uses eight: the full UI suite (`ui-suite.yml`: one build and four test
+shards on the release source), the two contract gates and one App build. The
+suite's shards wait at most 45 minutes for its build, so `release-set.yml`'s own
+macOS jobs queue only once `ui-suite-started` has seen that build hold a runner;
+the shards then wait no longer than the build, and whichever jobs do not fit
+start as slots free up. Queue time does not count toward a job's timeout. A
+release without App changes skips the suite and the App build. Every simulator job uses the image's
+own iPhone 17 on the runtime matching the selected Xcode's SDK, as `ci.yml`
+does: the fuzz soak and UI performance boot it with the pinned
+`futureware-tech/simulator-action` and run plain `xcodebuild`; the contract
+gates hand its identifier to the tested App's own `scripts/test-ios`
+(`IOS_SIMULATOR_ID`), which boots, uses and shuts down that one device for each
+App/Web pair, so no simulator pool is set up. No macOS job restores a build or
+package cache: CI measured hosted-macOS cache restores slower than cold builds.
 
-The one GitHub-hosted job, npm publication, cannot reach the private NAS. The
-self-hosted `web-build` job hands it only the plan, the build receipt and the npm
-tarballs through the Actions cache, keyed by their SHA-256, which travels in job
-outputs and is checked on restore; the GHCR push and the publication receipt stay
-on the self-hosted `web-publish` job. Both Web jobs run the workflow's own
-`publish.py`, as Relay does, so a publication fix applies to an existing release.
+The signed build imports the distribution certificate into a keychain the job
+creates under `$RUNNER_TEMP` with a random, masked password, searches it first,
+and deletes it in an `always()` step. Provisioning profiles come from
+`apple-actions/download-provisioning-profiles`.
 
-Release handoffs cross runners through the self-hosted NAS S3 endpoint; GitHub
-artifact storage is not used (`test_publication.py` rejects any
-`upload-artifact`/`download-artifact` step). `scripts/s3-artifact` is the
-only transport: curl with `--aws-sigv4`, path-style URLs and credentials in a
-private config file, never on the command line or in logs. Repository
-variables `TALARIA_S3_ENDPOINT` and `TALARIA_S3_REGION` name the endpoint.
-Two buckets each have one owner key, because Garage has no prefix-scoped
-policies: `talaria-release` (secrets `TALARIA_RELEASE_S3_ACCESS_KEY_ID` /
-`TALARIA_RELEASE_S3_SECRET_ACCESS_KEY`) for release-set, iOS build and
-recovery handoffs, and `talaria-ci` (`TALARIA_CI_S3_ACCESS_KEY_ID` /
-`TALARIA_CI_S3_SECRET_ACCESS_KEY`) for the PR contract fixture, test results,
-fuzz and performance objects. Keys reach only the steps that move objects.
-Fork pull requests have no secrets and fail at their first transfer.
+CI's Web contract probe uploads its live responses as the run's
+`contract-fixture` artifact for App shard 0 (see
+[contract validation](../CONTRACT_TESTS.md)); the Web end-to-end suite runs in
+six Playwright shards and the Docker smoke in one job per Compose variant
+(five). Release-plan preparation, Web/Relay fixture suites, Agent verification,
+Relay/Web builds, publication receipt jobs, manifest assembly, TestFlight
+inspection and cutover recovery run on Linux too.
+The Web image build caches its layers in the GitHub Actions cache
+(`type=gha`, scope `talaria-web-release`); `actions/github-script` hands the
+runtime token Buildx needs, masked, to that one build step.
 
-Object keys are `<class>/<workflow>/<run>/<attempt>/<file>`; the class prefix
-selects the expiration the helper applies idempotently before each upload
-(Garage expires by prefix and whole days only): `talaria-release`
-`handoffs/` 30 days (the recovery window); `talaria-ci` `fixtures/` 7 days, `test-results/` 14 days,
-`buildcache/` 14 days, `fuzz/` and `performance-metrics/` 30 days. Jobs print their object keys in
-the step summary so retained results can be fetched from the NAS.
+One `web-publish` job publishes Web: npm first, through the OIDC token npm
+trusted publishing accepts, then the GHCR image once npm's readback matches the
+built tarballs. It runs the workflow's own `publish.py`, as Relay does, so a
+publication fix applies to an existing release.
 
-`artifacts.py put` archives a directory as
-`$RUNNER_TEMP/release-handoffs/<run>/<attempt>/<name>.tar`, uploads it as
-`handoffs/<workflow>/<run>/<attempt>/<name>.tar` and records the SHA-256 with
-the run, attempt and workflow source in the job outputs. `get` fetches only
-archives named by forwarded producer outputs whose run, source and digest
-match and whose attempt is not in the future; the calling workflow's file
-name namespaces every key, so a job addresses only its own run, and recovery
-addresses only the authenticated original `production-cutover` run. Archives
-are extracted with the stdlib `data` filter, so no member can escape. A
-failed transfer fails the job; there is no fallback to GitHub storage. The
-signed IPA and dSYMs are handoffs to the Linux publication job; the dry-run
-App archive stays in the Mac job's temporary directory. Each component still
-has a separate environment and job token. No spending-budget change is
-required.
+Release handoffs are GitHub Actions artifacts of the release run, kept 30 days
+(the recovery window). A run step cannot reach the artifact service, so the
+seam is split: `artifacts.py put NAME DIRECTORY...` archives each directory as
+`$RUNNER_TEMP/release-handoffs/<artifact>/<name>.tar`, where the artifact is
+named `handoffs_<run>_<attempt>_<name>[.<name>...]`, and records the SHA-256
+with the run, attempt and workflow source (`GITHUB_SHA`) in the job outputs;
+the very next step uploads that directory with `actions/upload-artifact` under
+the name `put` reported. A job's last `put` reports every handoff the job
+staged, so the Web image, the IPA and the dSYMs each travel as their own
+artifact and receipt assembly never downloads them. `get` restores only
+forwarded producer outputs whose run and source match the current job and whose
+attempt is not in the future; it finds the one unexpired artifact of that run
+and attempt that holds the name through the REST API, checks that GitHub
+attributes it to the same run and source, downloads it with `gh run download`
+using the job token (`actions: read`) and checks the archive against the
+recorded digest before extracting it with the stdlib `data` filter, so no member
+can escape. A missing, expired, ambiguous or changed handoff fails the job; there
+is no fallback. `releases/test_publication.py` fails when a `put` is not
+uploaded by the next step or a job downloads artifacts without the digest check.
+Recovery addresses only the authenticated original `production-cutover` run.
+
+The repository is public, so any signed-in GitHub user can download its
+artifacts. Handoffs carry only public build outputs and receipts: the plan,
+notes, receipts, npm tarballs, the OCI image that GHCR publishes, and the
+App Store-signed IPA and dSYMs. Credentials never enter a handoff. Diagnostics,
+the candidate and completed manifests, fuzz results (30 days), UI performance
+metrics (30 days) and failed UI performance result bundles (14 days) are plain
+artifacts of their run. Each component still has a separate environment and job
+token.
 
 ## Workflow commands
 
@@ -198,7 +226,8 @@ or stale predecessor once a release set exists. Changed tags must point to
 `sourceRevision`; unchanged tags must match the previous manifest.
 
 The cutover repeats every gate (selected-source and previous-App contracts,
-pinned Agent compatibility, component builds), then deploys Relay, publishes
+the full unit and UI suite on the release source when the App ships, pinned
+Agent compatibility, component builds), then deploys Relay, publishes
 Web and uploads the App in that order, and publishes the manifest last.
 A `release-set.yml` dispatch with `dry_run=true` rehearses the same gates without
 publication credentials when a change to the release tooling needs it.
@@ -206,8 +235,8 @@ Unchanged components skip their build/publication jobs. Required
 jobs that fail, cancel or unexpectedly skip block completion.
 
 Credentials are scoped to jobs: `relay-production` supplies the matching
-production deployment key, `web-release` authorizes the GitHub-hosted OIDC job
-that npm trusts and the job token writes the GHCR image, `testflight` supplies Apple signing/upload credentials, and
+production deployment key, `web-release` authorizes the `web-publish` job whose
+OIDC token npm trusts and whose job token writes the GHCR image, `testflight` supplies Apple signing/upload credentials, and
 `release-set-publication` grants the job's release-write token. These
 environments must allow the trusted `main` workflow.
 
@@ -215,7 +244,7 @@ environments must allow the trusted `main` workflow.
 organization `MaudeCode`, repository `talaria`, workflow
 `production-cutover.yml`, environment `web-release`, with direct publishing
 allowed. Production releases use no long-lived npm token. The caller and
-reusable release jobs both grant `id-token: write`; npm publication stays on a
+reusable release jobs both grant `id-token: write`; npm publication needs a
 GitHub-hosted runner because self-hosted OIDC publishing is unsupported.
 
 The root manifest is published last. Fresh dispatches require unused component
@@ -248,8 +277,8 @@ If a reviewed publishing-tool fix is needed after all three component builds
 and Relay/Web publication succeeded, use the **Recover failed cutover App
 publication** workflow on main. Supply the original production-cutover run and
 attempt, and explicitly confirm publication. It authenticates the original
-GitHub job results, fetches that run's handoff objects from the NAS and checks
-each against its recorded hash, checks that the release is still current, and
+GitHub job results, downloads that run's handoff artifacts with the recovery
+job's token and checks each against its recorded hash, checks that the release is still current, and
 resumes the same IPA/upload using reviewed publishing tools. Release handoffs expire
 after 30 days, so recovery must start within that window.
 Original receipts keep their original run URLs; resumed upload evidence names

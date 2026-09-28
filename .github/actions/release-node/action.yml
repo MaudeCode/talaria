@@ -12,3 +12,12 @@ runs:
         set -euo pipefail
         npm install --global --prefix "$RUNNER_TEMP/release-pnpm" "$(node -p 'require("./relay/package.json").packageManager')"
         echo "$RUNNER_TEMP/release-pnpm/bin" >> "$GITHUB_PATH"
+    - id: pnpm-store
+      shell: bash
+      working-directory: ${{ github.workspace }}/relay
+      run: echo "path=$("$RUNNER_TEMP/release-pnpm/bin/pnpm" store path --silent)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v6
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: pnpm-store-${{ runner.os }}-${{ hashFiles('relay/pnpm-lock.yaml') }}
+        restore-keys: pnpm-store-${{ runner.os }}-

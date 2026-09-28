@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Fail when a job in the scoped workflows, or in a local reusable workflow they call, can run on a runner
-that is not GitHub-hosted for any event, when those workflows reference the NAS S3 credentials, or when they
-(or the local actions they use) call a third-party action by anything but a full commit SHA."""
+"""Fail when a job in any workflow, including a local reusable workflow it calls, can run on a runner that is
+not GitHub-hosted for any event, when a workflow references the retired NAS S3 credentials, or when a workflow
+(or a local action it uses) calls a third-party action by anything but a full commit SHA."""
 
 import argparse
 import json
@@ -11,11 +11,8 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parent.parent
-# Widen to every workflow once the release workflows leave the self-hosted runners (TAL-381).
-SCOPE = ("ci.yml", "app-tests.yml", "ui-suite.yml", "web-verify.yml", "relay-verify.yml", "repository-tooling.yml", "web-docker-smoke.yml",
-         "web-docs.yml")
 HOSTED = re.compile(r"(?:ubuntu|macos|windows)-[a-z0-9.-]+|ubuntu-slim|xcode-\d+")
-NAS_CREDENTIALS = re.compile(r"TALARIA_(?:CI_)?S3_")
+NAS_CREDENTIALS = re.compile(r"TALARIA_\w*S3")
 LITERAL = re.compile(r"'((?:[^']|'')*)'")
 COMPARISON = re.compile(r"(?:==|!=)\s*$")
 # First-party actions/* may float on a major tag; everything else must be immutable.
@@ -73,20 +70,25 @@ def unpinned(root, where, steps, seen):
     return found
 
 
-def violations(root=ROOT, scope=SCOPE):
-    workflows = root / ".github/workflows"
-    found, pending, seen, actions = [], list(scope), set(), set()
+def workflows(root=ROOT):
+    """Every workflow file; each is checked whatever events trigger it."""
+    return sorted(path.name for path in (root / ".github/workflows").glob("*.y*ml"))
+
+
+def violations(root=ROOT, scope=None):
+    workflows_directory = root / ".github/workflows"
+    found, pending, seen, actions = [], list(workflows(root) if scope is None else scope), set(), set()
     while pending:
         name = pending.pop(0)
         if name in seen:
             continue
         seen.add(name)
-        path = workflows / name
+        path = workflows_directory / name
         if not path.is_file():
             found.append(f"{name}: workflow not found")
             continue
         if NAS_CREDENTIALS.search(path.read_text(encoding="utf-8")):
-            found.append(f"{name}: references TALARIA_S3_* or TALARIA_CI_S3_* NAS credentials")
+            found.append(f"{name}: references TALARIA_*S3* NAS credentials")
         for job_name, job in (load(path).get("jobs") or {}).items():
             uses = job.get("uses")
             if uses:
@@ -111,7 +113,7 @@ def main():
         print(violation, file=sys.stderr)
     if found:
         return 1
-    print(f"Hosted runners only: {', '.join(SCOPE)} and the reusable workflows they call.")
+    print(f"Hosted runners only, pinned third-party actions, no NAS credentials: all {len(workflows(args.root))} workflows.")
     return 0
 
 

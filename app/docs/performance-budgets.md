@@ -25,8 +25,8 @@ minutes of relaunching and scrolling, so CI and the UI suite
 (`.github/workflows/app-tests.yml`) skip them on every run through the skip list
 in `ci/test_shards.py`.
 `.github/workflows/ui-performance.yml` runs them daily at 09:00 UTC (or on
-dispatch) serially on the Mac and stores the metrics under
-`talaria-ci/performance-metrics/ui-performance/` on the NAS. Their functional
+dispatch) serially on a GitHub-hosted macOS runner and keeps the metrics as the
+run's `performance-metrics-<attempt>` artifact for 30 days. Their functional
 halves (warm resume, dense session open and dismiss) run once without measuring
 in `TalariaUITests/PerformancePathUITests`, which stays in the nightly UI suite. The
 unit-level budgets are fast and deterministic, so they stay in the pull-request

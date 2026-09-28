@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   authorization:
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     steps:
       - name: Require explicit main-branch cutover authorization
         env:

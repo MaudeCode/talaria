@@ -54,10 +54,8 @@ SCRIPTS = {
     "generate-brand-icons.py": {"web_frontend", "tooling"},
     "check-release-agent.py": {"tooling"},
     "check-releases": {"tooling"},
-    "s3-artifact": {"tooling"},
     "check-hosted-runners.py": {"tooling"},
     "test-check-hosted-runners.py": {"tooling"},
-    "test-s3-artifact.py": {"tooling"},
 }
 
 

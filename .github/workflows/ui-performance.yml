@@ -1,9 +1,9 @@
 # Measurement-only UI performance classes (TAL-75, TAL-287).
 #
 # They assert no behaviour and take several minutes of scrolling and relaunching,
-# so PR and main-push CI skip them. This workflow runs them serially on the Mac,
-# where parallel workers cannot skew the measurements, and keeps the metrics on
-# the NAS so runs can be compared.
+# so PR and main-push CI skip them. This workflow runs them serially on a hosted
+# macOS runner, where parallel workers cannot skew the measurements, and keeps the
+# metrics as run artifacts so runs can be compared.
 #
 # Not a required check.
 name: UI Performance
@@ -27,10 +27,11 @@ defaults:
 jobs:
   measure:
     name: UI performance budgets
-    runs-on: maude-mac
+    runs-on: xcode-27
     timeout-minutes: 60
 
     env:
+      XCODE_VERSION: "27.0"
       PROJECT_PATH: Talaria.xcodeproj
       SCHEME: Talaria
       DERIVED_DATA_PATH: DerivedData
@@ -40,36 +41,25 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - uses: ./.github/actions/setup-xcode
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
 
-      - name: Select simulator
+      # As CI: the image's own iPhone 17 on the runtime matching the SDK, booted to completion before the test.
+      - name: Boot the simulator
         id: sim
-        run: |
-          set -euo pipefail
-          runtime=$(scripts/select-ios-simulator | cut -f2)
-          simulator_id=$(xcrun simctl list devices available --json | RUNTIME="${runtime}" python3 -c '
-          import json, os, sys
-          phones = [
-              device
-              for device in json.load(sys.stdin)["devices"].get(os.environ["RUNTIME"], [])
-              if device.get("isAvailable") and device["name"].startswith("iPhone")
-          ]
-          preferred = "iPhone 17"
-          selected = next((device for device in phones if device["name"] == preferred), phones[0] if phones else None)
-          print(selected["udid"] if selected else "")
-          ')
-          if [[ -z "${simulator_id}" ]]; then
-            echo "No available iPhone simulator found:" >&2
-            xcrun simctl list devices available >&2
-            exit 1
-          fi
-          echo "Using simulator: ${simulator_id} on ${runtime}"
-          echo "id=${simulator_id}" >> "$GITHUB_OUTPUT"
+        uses: futureware-tech/simulator-action@e89aa8f93d3aec35083ff49d2854d07f7186f7f5 # v5
+        with:
+          model: iPhone 17
+          os: iOS
+          os_version: ~${{ env.XCODE_VERSION }}
+          erase_before_boot: false
+          wait_for_boot: true
+          boot_timeout_seconds: 600
 
       - name: Run the UI performance classes
         env:
-          SIMULATOR_ID: ${{ steps.sim.outputs.id }}
+          SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
         run: |
           set -euo pipefail
           start_seconds=${SECONDS}
@@ -101,26 +91,22 @@ jobs:
         if: always()
         run: scripts/report-performance-metrics "${RESULT_BUNDLE_PATH}"
 
-      - name: Store metrics and results on the NAS
+      - name: Retain the performance metrics
         if: always()
-        env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-ci
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
-          JOB_STATUS: ${{ job.status }}
-        run: |
-          set -euo pipefail
-          prefix="performance-metrics/ui-performance/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
-          for file in performance-metrics.json performance-metrics.txt; do
-            [[ -f "$file" ]] || continue
-            ../scripts/s3-artifact put "$prefix/$file" "$file"
-            echo "- Performance metrics: talaria-ci/$prefix/$file" >> "${GITHUB_STEP_SUMMARY}"
-          done
-          if [[ "${JOB_STATUS}" != "success" && -d "${RESULT_BUNDLE_PATH}" ]]; then
-            key="test-results/ui-performance/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${RESULT_BUNDLE_PATH}.tar"
-            tar -cf "${RESULT_BUNDLE_PATH}.tar" "${RESULT_BUNDLE_PATH}"
-            ../scripts/s3-artifact put "$key" "${RESULT_BUNDLE_PATH}.tar"
-            echo "- Result bundle: talaria-ci/$key" >> "${GITHUB_STEP_SUMMARY}"
-          fi
+        uses: actions/upload-artifact@v7
+        with:
+          name: performance-metrics-${{ github.run_attempt }}
+          path: |
+            app/performance-metrics.json
+            app/performance-metrics.txt
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Retain the result bundle unless the run succeeded
+        if: ${{ !success() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-performance-results-${{ github.run_attempt }}
+          path: app/${{ env.RESULT_BUNDLE_PATH }}
+          retention-days: 14
+          if-no-files-found: ignore
