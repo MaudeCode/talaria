@@ -27,10 +27,11 @@ export HERMES_WEBUI_LOG_FILE="$LOG"
 
 mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"
 note() { printf '[%s] %s\n' "$(date '+%F %T')" "$*" >>"$LOG_DIR/autostart.log"; }
+probe() { curl -fsSk --max-time 3 "$1://127.0.0.1:$PORT/health" >/dev/null 2>&1; }
+# With TLS configured, try HTTPS first; the server falls back to HTTP when the cert or key cannot load.
 healthy() {
-  local scheme=http
-  [[ -n "${HERMES_WEBUI_TLS_CERT:-}" && -n "${HERMES_WEBUI_TLS_KEY:-}" ]] && scheme=https
-  curl -fsSk --max-time 3 "$scheme://127.0.0.1:$PORT/health" >/dev/null 2>&1
+  if [[ -n "${HERMES_WEBUI_TLS_CERT:-}" && -n "${HERMES_WEBUI_TLS_KEY:-}" ]] && probe https; then return 0; fi
+  probe http
 }
 alive() { [[ -s "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; }
 
@@ -54,7 +55,7 @@ It honours these variables:
 | `HERMES_WEBUI_HOST` | `127.0.0.1` | Bind address passed to `talaria-web` |
 | `HERMES_WEBUI_PORT` | `8787` | Server and health-check port |
 | `HERMES_WEBUI_LOG_DIR` | `$HOME/.hermes/webui/logs` | `autostart.log`, `talaria-web.log`, and the pid file |
-| `HERMES_WEBUI_TLS_CERT`, `HERMES_WEBUI_TLS_KEY` | unset | When both are set, the health check uses HTTPS |
+| `HERMES_WEBUI_TLS_CERT`, `HERMES_WEBUI_TLS_KEY` | unset | When both are set, the health check tries HTTPS, then HTTP (the server's fallback when the cert or key cannot load) |
 
 Run it once by hand to check it:
 
