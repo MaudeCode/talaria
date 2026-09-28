@@ -412,7 +412,7 @@ class PublicationTests(unittest.TestCase):
                 "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
                 str(root / ".github/workflows" / name)], text=True))
             return next(step.get("with", {}) for step in document["jobs"][job]["steps"] if "actions/checkout" in step.get("uses", ""))
-        changes = checkout("pr-ci.yml", "changes")
+        changes = checkout("ci.yml", "changes")
         self.assertEqual((changes.get("fetch-depth"), changes.get("filter"), changes.get("sparse-checkout")), (0, "blob:none", "scripts"))
         self.assertEqual(checkout("repository-tooling.yml", "tooling").get("filter"), "blob:none")
         for name in ("release-set.yml", "recover-cutover.yml", "ios-release-build.yml", "release.yml"):

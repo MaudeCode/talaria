@@ -62,8 +62,6 @@ uses the Mac label. Current Mac jobs and their native dependency:
 
 | Workflow | Job | Native dependency |
 |---|---|---|
-| `pr-ci.yml` | `test` | `xcodebuild` build/test in the iOS simulator, including the fixture-backed contract classes |
-| `pr-ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
 | `fuzz-soak.yml` | `soak` | `xcodebuild test` in the simulator |
 | `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
 | `release-set.yml` | `contracts` | compiles and tests the selected and previously released App in the simulator |
@@ -72,10 +70,9 @@ uses the Mac label. Current Mac jobs and their native dependency:
 The Web contract probe, Docker smoke, release-plan preparation, Web/Relay
 fixture suites, Agent verification, Relay/Web builds, publication receipt jobs,
 manifest assembly, TestFlight inspection and cutover recovery run on Linux.
-PR Web/contract changes run the disposable Web probe on Linux and store its live
-responses on the NAS; the Mac `test` job fetches them by the key and SHA-256 in
-the probe's annotation and runs the App's live decoding test against them from
-the same build-for-testing (see [contract validation](../CONTRACT_TESTS.md)).
+`ci.yml` runs on GitHub-hosted runners only and hands the Web probe's live responses to the App
+test job as an Actions artifact (see [contract validation](../CONTRACT_TESTS.md) and
+`scripts/check-hosted-runners.py`).
 
 The one GitHub-hosted job, npm publication, cannot reach the private NAS. The
 self-hosted `web-build` job hands it only the plan, the build receipt and the npm

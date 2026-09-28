@@ -1,4 +1,4 @@
-# Interface (stable; PR CI and the release workflows share it):
+# Interface (stable; ci.yml and the release workflows share it):
 #   uses: ./.github/actions/setup-xcode
 #   with:
 #     xcode-version: "27.0"   # major.minor; optional, defaults to 27.0

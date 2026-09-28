@@ -33,7 +33,7 @@ class ArtifactTests(unittest.TestCase):
         self.enterContext(patch.dict(os.environ, {
             "GITHUB_REPOSITORY": "MaudeCode/talaria", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
             "GITHUB_SHA": "a" * 40, "RUNNER_NAME": "synthetic-runner", "RUNNER_TEMP": str(self.temp),
-            "GITHUB_WORKFLOW_REF": "MaudeCode/talaria/.github/workflows/pr-ci.yml@refs/pull/1/merge",
+            "GITHUB_WORKFLOW_REF": "MaudeCode/talaria/.github/workflows/ci.yml@refs/pull/1/merge",
             "GITHUB_OUTPUT": str(self.root / "outputs"),
         }, clear=True))
 
@@ -51,7 +51,7 @@ class ArtifactTests(unittest.TestCase):
     def test_round_trip_keys_are_namespaced_by_workflow_run_and_attempt(self):
         reference = artifacts.put("release-plan", self.source)
         self.assertEqual(set(reference), {"run", "attempt", "source", "name", "sha256"})
-        key = "handoffs/pr-ci/123/1/release-plan.tar"
+        key = "handoffs/ci/123/1/release-plan.tar"
         self.assertEqual(list(self.store), [key])
         self.assertEqual(hashlib.sha256(self.store[key]).hexdigest(), reference["sha256"])
         self.assertFalse((self.root / "home").exists())
@@ -83,14 +83,14 @@ class ArtifactTests(unittest.TestCase):
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 artifacts.get({**reference, key: value}, self.root / "rejected")
             self.assertFalse((self.root / "rejected").exists())
-        self.store["handoffs/pr-ci/123/1/release-plan.tar"] = b"changed after successful producer job"
+        self.store["handoffs/ci/123/1/release-plan.tar"] = b"changed after successful producer job"
         with self.assertRaisesRegex(ValueError, "digest differs"):
             artifacts.get(reference, self.root / "rejected")
         self.assertFalse((self.root / "rejected").exists())
         (self.source / "escape").symlink_to(self.root / "outputs")
         with self.assertRaisesRegex(ValueError, "link escapes"):
             artifacts.put("unsafe", self.source)
-        self.assertNotIn("handoffs/pr-ci/123/1/unsafe.tar", self.store)
+        self.assertNotIn("handoffs/ci/123/1/unsafe.tar", self.store)
 
     def test_crafted_archive_members_cannot_escape_the_destination(self):
         crafted = self.root / "crafted.tar"
@@ -98,7 +98,7 @@ class ArtifactTests(unittest.TestCase):
             member = tarfile.TarInfo("../escape.json")
             member.size = 2
             archive.addfile(member, io.BytesIO(b"{}"))
-        self.store["handoffs/pr-ci/123/1/crafted.tar"] = crafted.read_bytes()
+        self.store["handoffs/ci/123/1/crafted.tar"] = crafted.read_bytes()
         reference = {"run": "123", "attempt": "1", "source": "a" * 40, "name": "crafted",
                      "sha256": hashlib.sha256(crafted.read_bytes()).hexdigest()}
         with self.assertRaises(ValueError):
@@ -170,15 +170,15 @@ class ArtifactTests(unittest.TestCase):
         helper = Path(artifacts.__file__).resolve().parents[1] / "scripts/s3-artifact"
         self.assertTrue(self.real_transfer, "artifacts.transfer must delegate to the shared NAS helper")
         with patch.object(artifacts.subprocess, "run") as run:
-            self.real_transfer("put", "handoffs/pr-ci/123/1/x.tar", self.root / "x.tar")
-        self.assertEqual(run.call_args.args[0], [str(helper), "put", "handoffs/pr-ci/123/1/x.tar", str(self.root / "x.tar")])
+            self.real_transfer("put", "handoffs/ci/123/1/x.tar", self.root / "x.tar")
+        self.assertEqual(run.call_args.args[0], [str(helper), "put", "handoffs/ci/123/1/x.tar", str(self.root / "x.tar")])
         self.assertTrue(run.call_args.kwargs["check"])
         failure = artifacts.subprocess.CalledProcessError(22, ["s3-artifact"])
         with patch.dict(os.environ, {"TALARIA_S3_SECRET_ACCESS_KEY": "synthetic-secret"}), \
                 patch.object(artifacts.subprocess, "run", side_effect=failure), \
                 self.assertRaisesRegex(ValueError, "^((?!synthetic-secret).)*$") as failed:
-            self.real_transfer("get", "handoffs/pr-ci/123/1/x.tar", self.root / "x.tar")
-        self.assertIn("handoffs/pr-ci/123/1/x.tar", str(failed.exception))
+            self.real_transfer("get", "handoffs/ci/123/1/x.tar", self.root / "x.tar")
+        self.assertIn("handoffs/ci/123/1/x.tar", str(failed.exception))
 
 if __name__ == "__main__":
     unittest.main()

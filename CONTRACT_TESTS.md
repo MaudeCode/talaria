@@ -49,12 +49,12 @@ live responses. `scripts/test-validate-upstream-contract` tests the command.
 `scripts/changed-components.py` selects the `contracts` suite for changes to root
 `contracts/`, the Web contracts package, server and sidecar, the App networking,
 model and Live Activity sources, Relay HTTP-facing Convex modules, and the
-contract scripts themselves. In `pr-ci.yml`:
+contract scripts themselves. In `ci.yml`:
 
 - The Linux `Web contract probe` job runs
   `scripts/validate-upstream-contract --server-only --responses-output ...` and
   uploads the live responses as the run's `contract-fixture` artifact.
-- App test shard 0 runs the native contract classes
+- The App test job (shard 0 of the full suite) runs the native contract classes
   (`ContractReadinessTests`, `SharedContractTests`, and the API client, SSE and
   reconnect contract tests), then waits for the probe, downloads that artifact
   and runs

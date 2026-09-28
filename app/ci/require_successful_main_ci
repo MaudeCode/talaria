@@ -13,7 +13,7 @@ require_successful_main_ci() {
     run_id="$(
       gh run list \
         --repo "$repository" \
-        --workflow pr-ci.yml \
+        --workflow ci.yml \
         --branch main \
         --commit "$sha" \
         --event push \

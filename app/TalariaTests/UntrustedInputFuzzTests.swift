@@ -563,7 +563,7 @@ class UntrustedInputFuzzTests: XCTestCase {
 
 /// The scheduled longer run. Same properties, same seed sequence extended, so a
 /// soak failure reproduces by pointing the PR-CI class at the reported seed.
-/// Skipped in PR CI by `.github/workflows/pr-ci.yml`.
+/// Skipped in CI by `app/ci/test_shards.py` (`.github/workflows/ci.yml`).
 final class UntrustedInputFuzzSoakTests: UntrustedInputFuzzTests {
     override class var iterations: Int { 500_000 }
 }

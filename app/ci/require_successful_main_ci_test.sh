@@ -8,7 +8,7 @@ export GITHUB_SHA="0123456789abcdef"
 
 gh() {
   [[ "$*" == *"--repo MaudeCode/talaria"* ]]
-  [[ "$*" == *"--workflow pr-ci.yml"* ]]
+  [[ "$*" == *"--workflow ci.yml"* ]]
   [[ "$*" == *"--branch main"* ]]
   [[ "$*" == *"--commit 0123456789abcdef"* ]]
   [[ "$*" == *"--event push"* ]]

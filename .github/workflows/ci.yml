@@ -4,14 +4,10 @@
 # The always-reporting CI Gate is the required check, including skipped jobs.
 #
 # Every job runs on GitHub-hosted runners and uses no repository secrets (TAL-380); handoffs are
-# Actions artifacts. Hosted macOS allows five concurrent jobs, so only Xcode work runs there: one
-# build, then two unit-test shards for a pull request or four full-suite shards for a main push.
-# A manual run with full_ui proves the main-push path on any branch before merge.
-#
-# Builds are signed ad hoc (CODE_SIGN_IDENTITY=-), which needs no certificate,
-# no profile and no secrets, but does embed entitlements. Without them the app
-# group is unavailable, so the share extension cannot hand anything to the app
-# and ShareExtensionUITests would be testing nothing (TAL-81).
+# Actions artifacts. Hosted macOS allows five concurrent jobs, so only Xcode work runs there: one job
+# that builds and tests for a pull request, or one build plus four full-suite shards for a main push.
+# A manual run with full_ui proves the main-push path on any branch before merge. App builds are
+# signed ad hoc by app/ci/build-for-testing.
 
 name: CI
 
@@ -35,7 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-ci-${{ github.event.pull_request.number || format('{0}-{1}', github.event_name, github.sha) }}
+  group: ci-${{ github.event.pull_request.number || format('{0}-{1}', github.event_name, github.sha) }}
   cancel-in-progress: true
 
 defaults:
@@ -103,47 +99,18 @@ jobs:
 
   app-build:
     name: App build
-    # Runs for App changes and for Web/contract changes; Web/contract-only
-    # changes run just the native contract classes in one shard.
+    # Only the full suite (main pushes, full_ui dispatches) builds separately for its four shards. The shards
+    # start with it and boot their simulators while it builds.
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || needs.changes.outputs.contracts != 'false') }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || inputs.full_ui == true) && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') }}
     runs-on: xcode-27
     timeout-minutes: 45
-    outputs:
-      shards: ${{ steps.plan.outputs.shards }}
-      app_tests: ${{ steps.plan.outputs.app_tests }}
-      ui: ${{ steps.plan.outputs.ui }}
-    env:
-      APP_TESTS_REQUIRED: ${{ needs.changes.result != 'success' || needs.changes.outputs.app != 'false' }}
-      # PRs run the unit tests plus one launch smoke test; the full UI suite runs on main pushes (TAL-332).
-      APP_UI_REQUIRED: ${{ github.event_name == 'push' || inputs.full_ui == true }}
     steps:
-      - name: Plan the test shards
-        id: plan
-        # Runs before checkout, so app/ does not exist yet.
-        working-directory: .
-        run: |
-          set -euo pipefail
-          if [[ "${APP_TESTS_REQUIRED}" == "false" ]]; then
-            shards='[0]'
-          elif [[ "${APP_UI_REQUIRED}" == "true" ]]; then
-            shards='[0,1,2,3]'
-          else
-            shards='[0,1]'
-          fi
-          { echo "shards=${shards}"; echo "app_tests=${APP_TESTS_REQUIRED}"; echo "ui=${APP_UI_REQUIRED}"; } >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-xcode
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
-
-      - name: Restore SwiftPM checkouts
-        uses: actions/cache@v6
-        with:
-          path: app/DerivedData/SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
 
       - name: Select simulator
         id: sim
@@ -154,30 +121,20 @@ jobs:
           export IOS_SIMULATOR_RUNTIME="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
           export IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-17
           simulator_id=$(scripts/select-ios-simulator | cut -f1)
-          echo "Using simulator ${simulator_id} on ${IOS_SIMULATOR_RUNTIME}"
           echo "id=${simulator_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore SwiftPM checkouts
+        uses: actions/cache@v6
+        with:
+          path: app/DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
 
       - name: Build for testing
         env:
           SIMULATOR_ID: ${{ steps.sim.outputs.id }}
         run: |
           set -euo pipefail
-          start_seconds=${SECONDS}
-          xcodebuild build-for-testing \
-            -project Talaria.xcodeproj \
-            -scheme Talaria \
-            -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
-            -derivedDataPath DerivedData \
-            -disableAutomaticPackageResolution \
-            -showBuildTimingSummary \
-            APP_IDENTIFIER_SUFFIX=.xctest \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGN_STYLE=Manual \
-            PROVISIONING_PROFILE_SPECIFIER= \
-            COMPILER_INDEX_STORE_ENABLE=NO
-          echo "- Build for testing: $((SECONDS - start_seconds))s" >> "${GITHUB_STEP_SUMMARY}"
+          ci/build-for-testing "${SIMULATOR_ID}"
           # Artifacts drop file modes; a tar keeps the bundles' executables and signatures intact.
           tar -C DerivedData/Build -cf "${RUNNER_TEMP}/app-build.tar" Products
 
@@ -191,26 +148,31 @@ jobs:
           if-no-files-found: error
 
   app-test:
+    # Pull requests and contract-only changes: one job that boots its simulator while it builds. The full
+    # suite: four shards that boot while App build runs, then wait for its artifact.
     name: App tests (shard ${{ matrix.shard }})
-    needs: [changes, app-build]
-    if: ${{ !cancelled() && needs.app-build.result == 'success' }}
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || needs.changes.outputs.contracts != 'false') }}
     runs-on: xcode-27
     timeout-minutes: 60
     permissions:
       contents: read
-      # Reads this run's job list to wait for the Web contract probe.
+      # Reads this run's job list to wait for App build and the Web contract probe.
       actions: read
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(needs.app-build.outputs.shards) }}
+        shard: ${{ fromJSON(((github.event_name == 'push' || inputs.full_ui == true) && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false')) && '[0,1,2,3]' || '[0]') }}
     env:
       SHARD: ${{ matrix.shard }}
       SHARD_COUNT: ${{ strategy.job-total }}
+      APP_TESTS_REQUIRED: ${{ needs.changes.result != 'success' || needs.changes.outputs.app != 'false' }}
+      # PRs run the unit tests plus one launch smoke test; the full UI suite runs on main pushes (TAL-332).
+      APP_UI_REQUIRED: ${{ github.event_name == 'push' || inputs.full_ui == true }}
+      # The same condition as App build: when it is false this job builds for itself.
+      SEPARATE_BUILD: ${{ (github.event_name == 'push' || inputs.full_ui == true) && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') }}
       # The one knob for in-shard parallelism: pushes and PRs use 1 until a dispatch proves 2 is faster and stable.
       TEST_WORKERS: ${{ inputs.test_workers || '1' }}
-      APP_TESTS_REQUIRED: ${{ needs.app-build.outputs.app_tests }}
-      APP_UI_REQUIRED: ${{ needs.app-build.outputs.ui }}
       CONTRACTS_SELECTED: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
       RESULT_BUNDLE_PATH: TestResults.xcresult
       LAUNCH_SMOKE_TEST: TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList
@@ -232,7 +194,9 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
-      - name: Select or create the shard simulator
+      # A fresh simulator's first boot (data migration) takes three to four minutes on a hosted runner, so it
+      # starts first and overlaps the build; the test step waits for it with bootstatus.
+      - name: Start the simulator
         id: sim
         run: |
           set -euo pipefail
@@ -240,22 +204,46 @@ jobs:
           export IOS_SIMULATOR_RUNTIME="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
           export IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-17
           simulator_id=$(scripts/select-ios-simulator | cut -f1)
-          # The test step boots it: a first boot's data migration starved a concurrent artifact download on
-          # the three-core hosted runner (four minutes for 82 MB).
-          echo "Using simulator ${simulator_id} on ${IOS_SIMULATOR_RUNTIME}"
+          xcrun simctl boot "${simulator_id}" || echo "Boot deferred to bootstatus in the test step"
+          echo "Booting simulator ${simulator_id} on ${IOS_SIMULATOR_RUNTIME}"
           echo "id=${simulator_id}" >> "$GITHUB_OUTPUT"
 
+      - name: Restore SwiftPM checkouts
+        if: env.SEPARATE_BUILD == 'false'
+        uses: actions/cache@v6
+        with:
+          path: app/DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+
+      - name: Build for testing
+        if: env.SEPARATE_BUILD == 'false'
+        env:
+          SIMULATOR_ID: ${{ steps.sim.outputs.id }}
+        run: |
+          set -euo pipefail
+          ci/build-for-testing "${SIMULATOR_ID}"
+          ln -s DerivedData/Build Build
+
+      - name: Wait for App build
+        if: env.SEPARATE_BUILD == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ci/wait-for-job "App build" 2700
+
       - name: Download the test build
+        if: env.SEPARATE_BUILD == 'true'
         uses: actions/download-artifact@v8
         with:
           name: app-build
           path: ${{ runner.temp }}
 
-      - name: Unpack the build and select this shard's tests
+      - name: Select this shard's tests
         run: |
           set -euo pipefail
-          mkdir -p Build
-          tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
+          if [[ "${SEPARATE_BUILD}" == "true" ]]; then
+            mkdir -p Build
+            tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
+          fi
           if [[ "${APP_TESTS_REQUIRED}" == "false" ]]; then
             # Web/contract-only change: the fixture-backed native contract classes are the whole selection.
             for contract_class in ${CONTRACT_TEST_CLASSES}; do echo "-only-testing:${contract_class}"; done > selection.txt
@@ -274,14 +262,16 @@ jobs:
           SIMULATOR_ID: ${{ steps.sim.outputs.id }}
         run: |
           set -euo pipefail
+          boot_start=${SECONDS}
+          xcrun simctl bootstatus "${SIMULATOR_ID}" -b >/dev/null
+          echo "- Simulator boot wait after the build: $((SECONDS - boot_start))s" >> "${GITHUB_STEP_SUMMARY}"
           if (( TEST_WORKERS > 1 )); then
-            # Xcode boots one clone per worker from the shut-down simulator; booting it too would only cost memory.
+            # Xcode clones the shut-down simulator per worker. The finished first boot above leaves a
+            # migrated data container, so the clones boot quickly instead of each repeating it.
+            xcrun simctl shutdown "${SIMULATOR_ID}"
             parallel=(-parallel-testing-enabled YES -parallel-testing-worker-count "${TEST_WORKERS}")
           else
             # One worker runs on the shard's own simulator: no clones.
-            boot_start=${SECONDS}
-            xcrun simctl bootstatus "${SIMULATOR_ID}" -b >/dev/null
-            echo "- Simulator boot: $((SECONDS - boot_start))s" >> "${GITHUB_STEP_SUMMARY}"
             parallel=(-parallel-testing-enabled NO)
           fi
           start_seconds=${SECONDS}
@@ -314,22 +304,7 @@ jobs:
         if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # Wait for this run's newest probe at or before this attempt. "Re-run failed jobs"
-          # keeps an earlier successful probe, whose artifact belongs to the whole run.
-          deadline=$((SECONDS + 1500))
-          while :; do
-            # shellcheck disable=SC2016 # jq, not the shell, expands $ENV.
-            probes=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=all&per_page=100" \
-              --jq '.jobs[] | select(.name == "Web contract probe" and .run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber)) | "\(.run_attempt) \(.id) \(.status) \(.conclusion)"' \
-              | sort -rn)
-            read -r _ _ newest_status newest_conclusion _ <<< "$(head -n 1 <<< "${probes}") - - - -"
-            [[ "${newest_status}" == "completed" ]] && break
-            (( SECONDS < deadline )) || { echo "Timed out waiting for the Web contract probe (${probes:-missing})" >&2; exit 1; }
-            sleep 15
-          done
-          [[ "${newest_conclusion}" == "success" ]] || { echo "Web contract probe finished ${newest_conclusion}" >&2; exit 1; }
+        run: ci/wait-for-job "Web contract probe" 1500
 
       - name: Download the probe's live response fixture
         if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0

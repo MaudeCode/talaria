@@ -21,7 +21,7 @@ enough to assert on; a path whose cost is the rendered app is measured in
 | Sidebar close hitch | `TalariaUITests/SidebarPerformanceUITests` | daily UI Performance workflow, full local suite |
 
 The UI classes repeat each path under `measure` and together add several
-minutes of relaunching and scrolling, so `.github/workflows/pr-ci.yml` skips
+minutes of relaunching and scrolling, so `.github/workflows/ci.yml` skips
 them on every run through the skip list in `ci/test_shards.py`.
 `.github/workflows/ui-performance.yml` runs them daily at 09:00 UTC (or on
 dispatch) serially on the Mac and stores the metrics under

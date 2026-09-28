@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Usage: ci/build-for-testing SIMULATOR_ID
+# CI's build-for-testing into app/DerivedData. Builds are signed ad hoc (CODE_SIGN_IDENTITY=-): no certificate,
+# profile or secret, but the entitlements are embedded, so the app group works and ShareExtensionUITests can
+# hand content to the app (TAL-81). No index store: nothing in CI reads it.
+set -euo pipefail
+
+simulator_id=${1:?usage: ci/build-for-testing SIMULATOR_ID}
+cd "$(dirname "$0")/.."
+start_seconds=${SECONDS}
+xcodebuild build-for-testing \
+  -project Talaria.xcodeproj \
+  -scheme Talaria \
+  -destination "platform=iOS Simulator,id=${simulator_id}" \
+  -derivedDataPath DerivedData \
+  -disableAutomaticPackageResolution \
+  -showBuildTimingSummary \
+  APP_IDENTIFIER_SUFFIX=.xctest \
+  CODE_SIGNING_ALLOWED=YES \
+  CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGN_IDENTITY=- \
+  CODE_SIGN_STYLE=Manual \
+  PROVISIONING_PROFILE_SPECIFIER= \
+  COMPILER_INDEX_STORE_ENABLE=NO
+echo "- Build for testing: $((SECONDS - start_seconds))s" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
