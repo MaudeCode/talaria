@@ -1,11 +1,8 @@
 name: Release Ruby
-description: Ruby for the App Store Connect helpers on the Linux pool.
+description: Ruby for the App Store Connect and release-tag helpers.
 runs:
   using: composite
   steps:
-    - if: runner.os != 'macOS'
-      shell: bash
-      run: sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
     - uses: ruby/setup-ruby@v1
       with:
         ruby-version: "3.3"

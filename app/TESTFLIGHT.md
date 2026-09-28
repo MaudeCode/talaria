@@ -19,7 +19,8 @@ used once. The `Release` workflow (`release.yml`) validates the tag, waits for
 that commit's main CI, tags the changed components (`app-vX.Y.Z`, `web-vX.Y.Z`,
 `relay-vX.Y.Z`) and starts `Production cutover` (`production-cutover.yml`) on
 `main`. The cutover repeats every gate, deploys Relay, publishes Web, builds and
-uploads the App through `ios-release-build.yml`, waits for App Store Connect
+uploads the App through `ios-release-build.yml` (a GitHub-hosted Xcode 27 runner
+that signs from a keychain the job creates and deletes), waits for App Store Connect
 processing, and publishes the release-set manifest last. Unchanged components are
 not rebuilt. The [release procedure](../releases/README.md) has the details, and
 `$talaria-release` is the agent runbook.
@@ -39,7 +40,8 @@ For the App:
 A failed or partial run is incomplete. Inspect its side effects before retrying,
 and ship a code fix as the next patch version. If Relay and Web published but the
 App upload failed, rerun the failed job, or use `Recover failed cutover App
-publication` (`recover-cutover.yml`) within 30 days to resume the same IPA.
+publication` (`recover-cutover.yml`) within 30 days, while the original run's
+handoff artifacts are retained, to resume the same IPA.
 `Inspect existing TestFlight upload` (`inspect-testflight.yml`) reads an existing
 build's metadata without changing it.
 

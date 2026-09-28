@@ -124,7 +124,7 @@ def main():
             raise ValueError("npm pack must produce the contracts and server tarballs")
         values["npm"] = f"@maudecode/talaria-web@{component['version']}"
         metadata = output / "image-metadata.json"
-        # The release workflow points this at the NAS S3 layer cache; BuildKit reads its credentials from AWS_*.
+        # The release workflow points this at the GitHub Actions layer cache (type=gha); Buildx reads its token from the environment.
         cache = os.environ.get("TALARIA_DOCKER_CACHE")
         cache_args = ["--cache-from", cache, "--cache-to", cache + ",mode=max,ignore-error=true"] if cache else []
         subprocess.run([

@@ -1,9 +1,9 @@
 # Measurement-only UI performance classes (TAL-75, TAL-287).
 #
 # They assert no behaviour and take several minutes of scrolling and relaunching,
-# so PR and main-push CI skip them. This workflow runs them serially on the Mac,
-# where parallel workers cannot skew the measurements, and keeps the metrics on
-# the NAS so runs can be compared.
+# so PR and main-push CI skip them. This workflow runs them serially on a hosted
+# macOS runner, where parallel workers cannot skew the measurements, and keeps the
+# metrics as run artifacts so runs can be compared.
 #
 # Not a required check.
 name: UI Performance
@@ -27,7 +27,7 @@ defaults:
 jobs:
   measure:
     name: UI performance budgets
-    runs-on: maude-mac
+    runs-on: xcode-27
     timeout-minutes: 60
 
     env:
@@ -40,8 +40,14 @@ jobs:
       - name: Check out
         uses: actions/checkout@v7
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - uses: ./.github/actions/setup-xcode
+
+      - name: Cache Swift packages
+        uses: actions/cache@v6
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: swiftpm-${{ runner.os }}-
 
       - name: Select simulator
         id: sim
@@ -101,26 +107,22 @@ jobs:
         if: always()
         run: scripts/report-performance-metrics "${RESULT_BUNDLE_PATH}"
 
-      - name: Store metrics and results on the NAS
+      - name: Retain the performance metrics
         if: always()
-        env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-ci
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
-          JOB_STATUS: ${{ job.status }}
-        run: |
-          set -euo pipefail
-          prefix="performance-metrics/ui-performance/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
-          for file in performance-metrics.json performance-metrics.txt; do
-            [[ -f "$file" ]] || continue
-            ../scripts/s3-artifact put "$prefix/$file" "$file"
-            echo "- Performance metrics: talaria-ci/$prefix/$file" >> "${GITHUB_STEP_SUMMARY}"
-          done
-          if [[ "${JOB_STATUS}" != "success" && -d "${RESULT_BUNDLE_PATH}" ]]; then
-            key="test-results/ui-performance/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${RESULT_BUNDLE_PATH}.tar"
-            tar -cf "${RESULT_BUNDLE_PATH}.tar" "${RESULT_BUNDLE_PATH}"
-            ../scripts/s3-artifact put "$key" "${RESULT_BUNDLE_PATH}.tar"
-            echo "- Result bundle: talaria-ci/$key" >> "${GITHUB_STEP_SUMMARY}"
-          fi
+        uses: actions/upload-artifact@v7
+        with:
+          name: performance-metrics-${{ github.run_attempt }}
+          path: |
+            app/performance-metrics.json
+            app/performance-metrics.txt
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Retain the result bundle unless the run succeeded
+        if: ${{ !success() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-performance-results-${{ github.run_attempt }}
+          path: app/${{ env.RESULT_BUNDLE_PATH }}
+          retention-days: 14
+          if-no-files-found: ignore

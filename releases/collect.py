@@ -7,7 +7,7 @@ from pathlib import Path
 from cli import load, write
 
 
-RECEIPT_DIRECTORIES = ("contract-receipts", "agent-receipts")
+RECEIPT_DIRECTORIES = ("contract-receipts", "previous-app-receipts", "agent-receipts")
 BUILD_RECEIPTS = ("app-build", "web-build", "relay-build", "app-publish", "web-publish", "relay-publish")
 # The handoffs assembly reads: the plan (with its receipts and notes), receipts, and web-build's npm tarballs.
 HANDOFFS = ("release-plan", *RECEIPT_DIRECTORIES, *BUILD_RECEIPTS)

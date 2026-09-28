@@ -74,7 +74,7 @@ def main():
                             (checkout / "contracts/fixtures/publisher-snapshot.json").write_bytes(data)
                             subprocess.run(["pnpm", "exec", "vitest", "run", "tests/sharedContracts.test.ts"], cwd=checkout / "relay", env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
             except subprocess.CalledProcessError:
-                # The log otherwise reaches only the NAS diagnostics; show the failing tool's own account (TAL-325).
+                # The log otherwise reaches only the diagnostics artifact; show the failing tool's own account (TAL-325).
                 print(f"{name} contract log (last 80 lines):", file=sys.stderr)
                 print("".join(log_path.read_text(errors="replace").splitlines(keepends=True)[-80:]), end="", file=sys.stderr)
                 raise

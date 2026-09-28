@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  actions: read # download this run's release-plan artifact
 
 defaults:
   run:
@@ -27,7 +28,7 @@ jobs:
   build:
     name: Build signed iOS release
     if: github.ref == 'refs/heads/main' && github.workflow_ref == 'MaudeCode/talaria/.github/workflows/production-cutover.yml@refs/heads/main'
-    runs-on: maude-mac
+    runs-on: xcode-27
     environment: testflight
     timeout-minutes: 60
     env:
@@ -45,16 +46,14 @@ jobs:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
 
+      - uses: ./.github/actions/setup-xcode
+
       - uses: ./.github/actions/release-python
 
       - name: Restore verified release plan
         working-directory: .
         env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-release
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+          GH_TOKEN: ${{ github.token }}
         run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
 
       - name: Verify production build authority
@@ -134,9 +133,6 @@ jobs:
           echo "BUILD_NUMBER=${build_number}" >> "${GITHUB_ENV}"
           echo "Building ${MARKETING_VERSION} (${build_number}) from ${{ inputs.ref }}."
 
-      - name: Show Xcode version
-        run: xcodebuild -version
-
       - name: Stamp the selected release identity
         working-directory: .
         env:
@@ -152,22 +148,44 @@ jobs:
             -scheme "${SCHEME}" \
             -disableAutomaticPackageResolution
 
-      - name: Install Apple signing intermediates
+      - name: Import the distribution certificate into a job-owned keychain
+        env:
+          IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
         run: |
-          for certificate in \
-            /Applications/Xcode.app/Contents/SharedFrameworks/DVTFoundation.framework/Versions/A/Resources/AppleWWDRCA-2030.cer \
-            /Applications/Xcode.app/Contents/SharedFrameworks/DVTFoundation.framework/Versions/A/Resources/AppleWWDRCAG6.cer
-          do
-            if [[ -f "${certificate}" ]]; then
-              security import "${certificate}" -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign || true
+          set -euo pipefail
+          keychain="${RUNNER_TEMP}/talaria-signing.keychain-db"
+          certificate="${RUNNER_TEMP}/talaria-distribution.p12"
+          password="$(openssl rand -hex 32)"
+          echo "::add-mask::${password}"
+          echo "SIGNING_KEYCHAIN=${keychain}" >> "${GITHUB_ENV}"
+          trap 'rm -f "${certificate}"' EXIT
+          security create-keychain -p "${password}" "${keychain}"
+          security set-keychain-settings -lut 21600 "${keychain}"
+          security unlock-keychain -p "${password}" "${keychain}"
+          (umask 077 && printf '%s' "${IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64}" | base64 --decode > "${certificate}")
+          security import "${certificate}" -k "${keychain}" -f pkcs12 -P "${IOS_DISTRIBUTION_CERTIFICATE_PASSWORD}" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          # Apple's intermediates ship with the selected Xcode; codesign needs the chain in a searched keychain.
+          resources="$(xcode-select -p)/../SharedFrameworks/DVTFoundation.framework/Versions/A/Resources"
+          for intermediate in AppleWWDRCA-2030.cer AppleWWDRCAG6.cer; do
+            if [[ -f "${resources}/${intermediate}" ]]; then
+              security import "${resources}/${intermediate}" -k "${keychain}" || true
             fi
           done
-
-      - name: Import iOS distribution certificate
-        uses: apple-actions/import-codesign-certs@v7
-        with:
-          p12-file-base64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
-          p12-password: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${password}" "${keychain}" >/dev/null
+          # Search the job keychain first; the runner's own keychains stay listed and untouched.
+          existing=()
+          while IFS= read -r line; do
+            line="${line#"${line%%[![:space:]]*}"}"
+            existing+=("${line//\"/}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "${keychain}" "${existing[@]}"
+          identities="$(security find-identity -p codesigning "${keychain}")"
+          [[ "${identities}" == *"Apple Distribution"* ]] || {
+            echo "The distribution certificate did not import an Apple Distribution identity." >&2
+            exit 1
+          }
 
       - name: Download app provisioning profile
         id: app-profile
@@ -289,29 +307,50 @@ jobs:
           "$RELEASE_PYTHON" releases/publish.py build-app-receipt --plan "$RUNNER_TEMP/release-plan/plan.json" \
             --directory "$EXPORT_PATH" --build-number "$BUILD_NUMBER" --output "$RUNNER_TEMP/app-build/receipt.json"
 
-      - name: Stage the verified signed artifacts for the publication runner
+      # Three artifacts, so publication downloads the IPA without the dSYMs and receipt assembly neither.
+      - name: Stage the verified build receipt
+        id: store-receipt
+        working-directory: .
+        run: '"$RELEASE_PYTHON" releases/artifacts.py put app-build "$RUNNER_TEMP/app-build"'
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.store-receipt.outputs.handoff_name }}
+          path: ${{ steps.store-receipt.outputs.handoff_path }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Stage the verified signed IPA
+        id: store-ipa
+        working-directory: .
+        run: '"$RELEASE_PYTHON" releases/artifacts.py put ios-ipa "$EXPORT_PATH"'
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.store-ipa.outputs.handoff_name }}
+          path: ${{ steps.store-ipa.outputs.handoff_path }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Stage the dSYMs
         id: store
         working-directory: .
-        env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-release
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
-        run: |
-          set -euo pipefail
-          "$RELEASE_PYTHON" releases/artifacts.py put app-build "$RUNNER_TEMP/app-build" ios-ipa "$EXPORT_PATH" ios-dsyms "$ARCHIVE_PATH/dSYMs"
-          workflow="${GITHUB_WORKFLOW_REF#*/.github/workflows/}"
-          {
-            echo "### Signed build objects (bucket talaria-release, expire after 30 days)"
-            for name in ios-ipa ios-dsyms; do
-              echo "- handoffs/${workflow%%.*}/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${name}.tar"
-            done
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: '"$RELEASE_PYTHON" releases/artifacts.py put ios-dsyms "$ARCHIVE_PATH/dSYMs"'
 
-      - name: Remove App Store Connect key
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.store.outputs.handoff_name }}
+          path: ${{ steps.store.outputs.handoff_path }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Remove App Store Connect key and the signing keychain
         if: always()
         run: |
           if [[ -n "${APP_STORE_CONNECT_KEY_PATH:-}" ]]; then
             rm -f "${APP_STORE_CONNECT_KEY_PATH}"
+          fi
+          if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then
+            security delete-keychain "${SIGNING_KEYCHAIN}" || true
+            rm -f "${SIGNING_KEYCHAIN}"
           fi

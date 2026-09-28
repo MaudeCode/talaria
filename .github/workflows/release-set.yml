@@ -36,9 +36,13 @@ permissions:
 concurrency:
   group: talaria-release-set
   cancel-in-progress: false
+# Handoffs are this run's Actions artifacts: `artifacts.py put` stages and digests them, the next step uploads
+# them, and `artifacts.py get` (job token, actions: read) downloads only forwarded producer outputs whose run,
+# attempt, source and SHA-256 match. Every gate and build starts as soon as prepare has the plan; build-gate
+# joins them all before anything publishes, and publication stays ordered Relay, Web, App, manifest.
 jobs:
   prepare:
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
       source: ${{ steps.plan.outputs.source }}
@@ -63,7 +67,7 @@ jobs:
       with:
         fetch-depth: 0
     - uses: ./.github/actions/release-python
-    # app/ci/validate_release_tag parses GitHub tag metadata with Ruby, which the pool image lacks.
+    # app/ci/validate_release_tag parses GitHub tag metadata with Ruby.
     - uses: ./.github/actions/release-ruby
     - name: Resolve and validate immutable release plan
       id: plan
@@ -83,95 +87,134 @@ jobs:
         fi
         if [[ "$DRY_RUN" == true ]]; then options+=(--dry-run); fi
         "$RELEASE_PYTHON" releases/cli.py prepare --request "$RUNNER_TEMP/request.json" --output "$RUNNER_TEMP/release-plan" "${options[@]}"
-    - name: Stage release-plan for other runners
+    - name: Stage release-plan for other jobs
       id: store
-      env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put release-plan "$RUNNER_TEMP/release-plan"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store.outputs.handoff_name }}
+        path: ${{ steps.store.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   contracts:
-    # Mac: compiles and tests the selected and previously released App in the iOS simulator.
+    # macOS: compiles the selected App and tests it in the iOS simulator against every supported Web source.
     needs: prepare
-    runs-on: maude-mac
+    runs-on: xcode-27
     timeout-minutes: 120
     steps:
     - uses: actions/checkout@v7
       with:
         ref: ${{ needs.prepare.outputs.source }}
         fetch-depth: 0
+    - uses: ./.github/actions/setup-xcode
     - uses: ./.github/actions/release-python
     - uses: ./.github/actions/release-node
+    - name: Cache Swift packages
+      uses: actions/cache@v6
+      with:
+        path: ~/Library/Caches/org.swift.swiftpm
+        key: swiftpm-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+        restore-keys: swiftpm-${{ runner.os }}-
     - name: Restore release-plan
       env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+        GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
-    # One simulator per concurrent gate: the selected App (its Web pairs share one warm checkout, so they run
-    # in turn) and the previously released App.
     - name: Prepare simulator pool
       env:
-        IOS_SIMULATOR_POOL_SIZE: '2'
+        IOS_SIMULATOR_POOL_SIZE: '1'
       run: app/scripts/setup-ios-test-pool
-    - name: Verify the selected and previously released App against the Web sources
+    - name: Verify the selected App against the Web sources
+      env:
+        TALARIA_TEST_WORKER_COUNT: '1'
+      run: |
+        "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name currentContracts --output "$RUNNER_TEMP/contract-receipts/currentContracts.json" -- \
+          "$RELEASE_PYTHON" scripts/check-release-contracts.py --only app --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/current-contracts"
+    - name: Stage contract-receipts for other jobs
+      id: store
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put contract-receipts "$RUNNER_TEMP/contract-receipts"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store.outputs.handoff_name }}
+        path: ${{ steps.store.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
+    - name: Retain sanitized App contract diagnostics
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-contract-diagnostics-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/current-contracts
+        retention-days: 30
+        if-no-files-found: ignore
+    env:
+      RELEASE_NEEDS: ${{ toJSON(needs) }}
+    outputs:
+      artifacts: ${{ steps.store.outputs.artifacts }}
+  previous-app-contracts:
+    # macOS: compiles the previously released App from Git and tests it against the selected Web. It runs beside
+    # `contracts` on its own runner rather than sharing one runner's cores and simulators.
+    needs: prepare
+    runs-on: xcode-27
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.prepare.outputs.source }}
+        fetch-depth: 0
+    - uses: ./.github/actions/setup-xcode
+    - uses: ./.github/actions/release-python
+    - uses: ./.github/actions/release-node
+    - name: Cache Swift packages
+      uses: actions/cache@v6
+      with:
+        path: ~/Library/Caches/org.swift.swiftpm
+        key: swiftpm-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+        restore-keys: swiftpm-${{ runner.os }}-
+    - name: Restore release-plan
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
+    - name: Prepare simulator pool
+      env:
+        IOS_SIMULATOR_POOL_SIZE: '1'
+      run: app/scripts/setup-ios-test-pool
+    - name: Verify the previously released App against the selected Web
       env:
         TALARIA_TEST_WORKER_COUNT: '1'
       run: |
         set -euo pipefail
         plan="$RUNNER_TEMP/release-plan/plan.json"
-        previous=$(/usr/bin/plutil -extract previousAppSource raw "$plan")
-        web=$(/usr/bin/plutil -extract components.web.sourceRevision raw "$plan")
-        # The gates are independent; run them together and fail if either fails.
-        "$RELEASE_PYTHON" releases/cli.py gate --plan "$plan" --name currentContracts --output "$RUNNER_TEMP/contract-receipts/currentContracts.json" -- \
-          "$RELEASE_PYTHON" scripts/check-release-contracts.py --only app --plan "$plan" --output "$RUNNER_TEMP/current-contracts" &
-        current=$!
-        "$RELEASE_PYTHON" releases/cli.py gate --plan "$plan" --name previousAppContracts --output "$RUNNER_TEMP/contract-receipts/previousAppContracts.json" -- \
-          "$RELEASE_PYTHON" scripts/check-previous-app.py --app-ref "$previous" --web-ref "$web" --output "$RUNNER_TEMP/previous-app" &
-        prior=$!
-        status=0
-        wait "$current" || status=1
-        wait "$prior" || status=1
-        exit "$status"
-    - name: Stage contract-receipts for other runners
+        previous=$(jq -er .previousAppSource "$plan")
+        web=$(jq -er .components.web.sourceRevision "$plan")
+        "$RELEASE_PYTHON" releases/cli.py gate --plan "$plan" --name previousAppContracts --output "$RUNNER_TEMP/previous-app-receipts/previousAppContracts.json" -- \
+          "$RELEASE_PYTHON" scripts/check-previous-app.py --app-ref "$previous" --web-ref "$web" --output "$RUNNER_TEMP/previous-app"
+    - name: Stage previous-app-receipts for other jobs
       id: store
-      env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
-      run: '"$RELEASE_PYTHON" releases/artifacts.py put contract-receipts "$RUNNER_TEMP/contract-receipts"'
-    - name: Retain sanitized App contract diagnostics
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put previous-app-receipts "$RUNNER_TEMP/previous-app-receipts"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store.outputs.handoff_name }}
+        path: ${{ steps.store.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
+    - name: Retain sanitized previous App diagnostics
       if: always()
-      continue-on-error: true
-      env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
-      run: |
-        set -euo pipefail
-        mkdir -p "$RUNNER_TEMP/release-contract-diagnostics"
-        for part in current-contracts previous-app; do
-          if [[ -d "$RUNNER_TEMP/$part" ]]; then mv "$RUNNER_TEMP/$part" "$RUNNER_TEMP/release-contract-diagnostics/"; fi
-        done
-        "$RELEASE_PYTHON" releases/artifacts.py put release-contract-diagnostics "$RUNNER_TEMP/release-contract-diagnostics"
+      uses: actions/upload-artifact@v7
+      with:
+        name: previous-app-contract-diagnostics-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/previous-app
+        retention-days: 30
+        if-no-files-found: ignore
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
   component-contracts:
-    # Linux pool: the Web contracts package suite and Relay publisher fixtures at their selected refs.
+    # The Web contracts package suite and Relay publisher fixtures at their selected refs.
     needs: prepare
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
     - uses: actions/checkout@v7
@@ -182,29 +225,23 @@ jobs:
     - uses: ./.github/actions/release-node
     - name: Restore release-plan
       env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+        GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - name: Verify selected Web and Relay fixture contracts
       run: '"$RELEASE_PYTHON" scripts/check-release-contracts.py --only fixtures --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/component-contracts"'
     - name: Retain component contract diagnostics
       if: always()
-      continue-on-error: true
-      env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
-      run: '"$RELEASE_PYTHON" releases/artifacts.py put component-contract-diagnostics "$RUNNER_TEMP/component-contracts"'
+      uses: actions/upload-artifact@v7
+      with:
+        name: component-contract-diagnostics-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/component-contracts
+        retention-days: 30
+        if-no-files-found: ignore
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   agent:
     needs: prepare
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
     - uses: actions/checkout@v7
@@ -216,25 +253,21 @@ jobs:
       run: python3 -m pip install --disable-pip-version-check "uv==0.11.3"
     - name: Restore release-plan
       env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+        GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - name: Verify recorded Web and Agent identity
       run: |
         "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name agentCompatibility --output "$RUNNER_TEMP/agent-receipts/agentCompatibility.json" -- \
           "$RELEASE_PYTHON" scripts/check-release-agent.py --plan "$RUNNER_TEMP/release-plan/plan.json"
-    - name: Stage agent-receipts for other runners
+    - name: Stage agent-receipts for other jobs
       id: store
-      env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put agent-receipts "$RUNNER_TEMP/agent-receipts"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store.outputs.handoff_name }}
+        path: ${{ steps.store.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -244,7 +277,7 @@ jobs:
     # joins every gate and build before anything publishes (TAL-319).
     needs: prepare
     if: needs.prepare.outputs.relay_changed == 'true'
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
     - uses: actions/checkout@v7
@@ -255,22 +288,18 @@ jobs:
     - uses: ./.github/actions/release-node
     - name: Restore release-plan
       env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+        GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - run: '"$RELEASE_PYTHON" releases/build.py relay --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/relay-build"'
-    - name: Stage relay-build for other runners
+    - name: Stage relay-build for other jobs
       id: store
-      env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put relay-build "$RUNNER_TEMP/relay-build"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store.outputs.handoff_name }}
+        path: ${{ steps.store.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -280,7 +309,7 @@ jobs:
     # joins every gate and build before anything publishes (TAL-319).
     needs: prepare
     if: needs.prepare.outputs.web_changed == 'true'
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
     - uses: actions/checkout@v7
@@ -292,102 +321,98 @@ jobs:
       uses: actions/setup-node@v7
       with:
         node-version-file: web/.nvmrc
+        cache: npm
+        cache-dependency-path: web/package-lock.json
     - uses: ./.github/actions/docker-plugins
       with:
         multi-platform: "true"
     - name: Restore release-plan
       env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+        GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
+    - name: Read the Actions cache service identity for Buildx
+      # A run step cannot see the runtime token BuildKit's gha cache needs; hand it, masked, to the build step only.
+      id: cache-service
+      uses: actions/github-script@v9
+      with:
+        script: |
+          core.setSecret(process.env.ACTIONS_RUNTIME_TOKEN);
+          core.setOutput('token', process.env.ACTIONS_RUNTIME_TOKEN);
+          core.setOutput('url', process.env.ACTIONS_RESULTS_URL);
     - name: Build the npm packages and the multi-platform image
       env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
-        # Buildx hands these to BuildKit for the S3 layer cache; they never appear in arguments.
-        AWS_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
-      run: |
-        set -euo pipefail
-        # Reuse Web image layers from the NAS (buildcache/ expires after 14 days); docker-plugins made a container builder.
-        scripts/s3-artifact lifecycle
-        export TALARIA_DOCKER_CACHE="type=s3,region=${TALARIA_S3_REGION},bucket=talaria-release,endpoint_url=${TALARIA_S3_ENDPOINT},use_path_style=true,prefix=buildcache/,name=web-release"
-        "$RELEASE_PYTHON" releases/build.py web --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/web-build"
+        # Web image layers come from and go to the GitHub Actions cache; docker-plugins made a container builder.
+        TALARIA_DOCKER_CACHE: type=gha,scope=talaria-web-release,version=2
+        ACTIONS_RUNTIME_TOKEN: ${{ steps.cache-service.outputs.token }}
+        ACTIONS_RESULTS_URL: ${{ steps.cache-service.outputs.url }}
+        ACTIONS_CACHE_SERVICE_V2: 'true'
+      run: '"$RELEASE_PYTHON" releases/build.py web --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/web-build"'
     - name: Separate the large OCI archive from the receipt and npm handoff
       run: |
         set -euo pipefail
         mkdir "$RUNNER_TEMP/web-image"
         mv "$RUNNER_TEMP/web-build/web.oci.tar" "$RUNNER_TEMP/web-image/"
-    - name: Stage web-build and web-image for other runners
-      id: store
-      env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
-      run: '"$RELEASE_PYTHON" releases/artifacts.py put web-build "$RUNNER_TEMP/web-build" web-image "$RUNNER_TEMP/web-image"'
-    - name: Stage the npm handoff for the GitHub-hosted publisher
-      id: npm
-      run: |
-        set -euo pipefail
-        # npm trusted publishing needs a GitHub-hosted runner, which cannot reach the NAS. It gets only the plan,
-        # the build receipt and the npm tarballs, through the Actions cache; this digest travels in job outputs.
-        mkdir web-npm-handoff
-        cp "$RUNNER_TEMP/release-plan/plan.json" "$RUNNER_TEMP/web-build/receipt.json" web-npm-handoff/
-        cp -R "$RUNNER_TEMP/web-build/npm" web-npm-handoff/
-        tar -cf web-npm-handoff.tar web-npm-handoff
-        echo "sha256=$(sha256sum web-npm-handoff.tar | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-    - uses: actions/cache/save@v6
+    # Two artifacts: receipt assembly and npm publication download web-build without the OCI archive.
+    - name: Stage web-build for other jobs
+      id: store-build
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put web-build "$RUNNER_TEMP/web-build"'
+    - uses: actions/upload-artifact@v7
       with:
-        path: web-npm-handoff.tar
-        key: talaria-web-npm-${{ github.run_id }}-${{ steps.npm.outputs.sha256 }}
+        name: ${{ steps.store-build.outputs.handoff_name }}
+        path: ${{ steps.store-build.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
+    - name: Stage web-image for other jobs
+      id: store
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put web-image "$RUNNER_TEMP/web-image"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store.outputs.handoff_name }}
+        path: ${{ steps.store.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
-      npm_handoff_sha256: ${{ steps.npm.outputs.sha256 }}
   app-dry-build:
-    # Builds consume only the release plan, so they run alongside the gates and each other; build-gate
-    # joins every gate and build before anything publishes (TAL-319).
+    # macOS: unsigned xcodebuild archive. Builds consume only the release plan, so they run alongside the gates
+    # and each other; build-gate joins every gate and build before anything publishes (TAL-319).
     needs: prepare
     if: inputs.dry_run && needs.prepare.outputs.app_changed == 'true'
-    runs-on: maude-mac
+    runs-on: xcode-27
     timeout-minutes: 90
     steps:
     - uses: actions/checkout@v7
       with:
         ref: ${{ needs.prepare.outputs.source }}
         fetch-depth: 0
+    - uses: ./.github/actions/setup-xcode
     - uses: ./.github/actions/release-python
+    - name: Cache Swift packages
+      uses: actions/cache@v6
+      with:
+        path: ~/Library/Caches/org.swift.swiftpm
+        key: swiftpm-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+        restore-keys: swiftpm-${{ runner.os }}-
     - name: Restore release-plan
       env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+        GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - run: '"$RELEASE_PYTHON" releases/build.py app --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/app-build"'
-    - name: Stage app-build receipt for other runners
+    - name: Stage app-build receipt for other jobs
       id: store
-      env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: |
         set -euo pipefail
         mkdir "$RUNNER_TEMP/app-build-receipt"
         cp "$RUNNER_TEMP"/app-build/*.json "$RUNNER_TEMP/app-build-receipt/"
         "$RELEASE_PYTHON" releases/artifacts.py put app-build "$RUNNER_TEMP/app-build-receipt"
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store.outputs.handoff_name }}
+        path: ${{ steps.store.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -397,7 +422,7 @@ jobs:
     - prepare
     - build-gate
     if: ${{ !cancelled() && inputs.dry_run && needs.build-gate.result == 'success' }}
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v7
@@ -406,11 +431,7 @@ jobs:
     - uses: ./.github/actions/release-python
     - name: Restore verified release handoffs
       env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+        GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/release-results" --receipts'
     - name: Assemble candidate from successful job outputs
       run: |
@@ -432,18 +453,14 @@ jobs:
         } >> "$GITHUB_STEP_SUMMARY"
         cat "$RUNNER_TEMP/candidate/release-set.json"
     - name: Retain release-set-candidate
-      id: store
-      env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
-      run: '"$RELEASE_PYTHON" releases/artifacts.py put release-set-candidate "$RUNNER_TEMP/candidate"'
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-set-candidate-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/candidate
+        retention-days: 30
+        if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
-    outputs:
-      artifacts: ${{ steps.store.outputs.artifacts }}
   app-signed-build:
     # Builds consume only the release plan, so they run alongside the gates and each other; build-gate
     # joins every gate and build before anything publishes (TAL-319).
@@ -460,7 +477,7 @@ jobs:
     - prepare
     - build-gate
     if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.relay_changed == 'true' && needs.build-gate.result == 'success' }}
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     environment: relay-production
     concurrency:
       group: talaria-relay-production
@@ -475,11 +492,7 @@ jobs:
     - uses: ./.github/actions/release-node
     - name: Restore release-plan
       env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+        GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
     - name: Deploy the existing Relay and verify readiness/provenance
       env:
@@ -491,26 +504,26 @@ jobs:
         git show "${GITHUB_WORKFLOW_SHA}:releases/publish.py" > "$RUNNER_TEMP/publish.py"
         PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" relay \
           --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/relay-publish/receipt.json"
-    - name: Stage relay-publish for other runners
+    - name: Stage relay-publish for other jobs
       id: store
-      env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put relay-publish "$RUNNER_TEMP/relay-publish"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store.outputs.handoff_name }}
+        path: ${{ steps.store.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
-  web-publication:
-    # npm first, on the GitHub-hosted runner npm trusted publishing requires (it cannot reach the NAS).
+  web-publish:
+    # npm first (trusted publishing needs this GitHub-hosted job's OIDC token), then GHCR once npm's readback
+    # matches the built tarballs. A retry accepts npm versions already published with identical bytes.
     needs:
     - prepare
     - build-gate
     - relay-publish
-    - web-build
     if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.web_changed == 'true' && needs.build-gate.result == 'success' && (needs.relay-publish.result
       == 'success' || (needs.prepare.outputs.relay_changed == 'false' && needs.relay-publish.result == 'skipped')) }}
     runs-on: ubuntu-latest
@@ -519,63 +532,11 @@ jobs:
       contents: read
       actions: read
       id-token: write
+      packages: write
     concurrency:
       group: talaria-web-publication
       cancel-in-progress: false
-    timeout-minutes: 30
-    steps:
-    - uses: actions/checkout@v7
-      with:
-        ref: ${{ needs.prepare.outputs.source }}
-        fetch-depth: 0
-    - uses: ./.github/actions/release-python
-    - name: Restore the npm handoff
-      uses: actions/cache/restore@v6
-      with:
-        path: web-npm-handoff.tar
-        key: talaria-web-npm-${{ github.run_id }}-${{ needs.web-build.outputs.npm_handoff_sha256 }}
-        fail-on-cache-miss: true
-    - name: Verify the npm handoff against the build job's digest
-      env:
-        EXPECTED: ${{ needs.web-build.outputs.npm_handoff_sha256 }}
-      run: |
-        set -euo pipefail
-        [[ "$EXPECTED" =~ ^[a-f0-9]{64}$ ]]
-        echo "$EXPECTED  web-npm-handoff.tar" | sha256sum --check
-        tar -xf web-npm-handoff.tar -C "$RUNNER_TEMP"
-    - name: Set up Node for npm trusted publishing
-      uses: actions/setup-node@v7
-      with:
-        node-version-file: web/.nvmrc
-        registry-url: https://registry.npmjs.org
-    - name: Require an npm CLI with trusted-publishing support
-      run: npm install --global npm@latest
-    - name: Publish the built npm packages and verify the readback
-      run: |
-        set -euo pipefail
-        # The reviewed workflow owns publication code; component tags stay immutable.
-        git show "${GITHUB_WORKFLOW_SHA}:releases/publish.py" > "$RUNNER_TEMP/publish.py"
-        PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" web-npm --plan "$RUNNER_TEMP/web-npm-handoff/plan.json" \
-          --build "$RUNNER_TEMP/web-npm-handoff/receipt.json" --directory "$RUNNER_TEMP/web-npm-handoff"
-  web-publish:
-    # Then GHCR on the self-hosted pool, which reaches the NAS for the OCI archive; it confirms npm's readback first.
-    needs:
-    - prepare
-    - build-gate
-    - web-build
-    - web-publication
-    if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.web_changed == 'true' && needs.build-gate.result == 'success' && needs.web-publication.result
-      == 'success' }}
-    runs-on: ["ghar-set-maudecode"]
-    environment: web-release
-    permissions:
-      contents: read
-      actions: read
-      packages: write
-    concurrency:
-      group: talaria-web-publication-image
-      cancel-in-progress: false
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v7
       with:
@@ -584,38 +545,49 @@ jobs:
     - uses: ./.github/actions/release-python
     - name: Restore release-plan, web-build and web-image
       env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         "$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan web-build web-image
         mv "$RUNNER_TEMP/web-image/web.oci.tar" "$RUNNER_TEMP/web-build/"
-    - name: Set up Node for the npm readback
+    - name: Set up Node for npm trusted publishing
       uses: actions/setup-node@v7
       with:
         node-version-file: web/.nvmrc
+        registry-url: https://registry.npmjs.org
+    - name: Require an npm CLI with trusted-publishing support and skopeo
+      run: |
+        set -euo pipefail
+        npm install --global npm@latest
+        if ! command -v skopeo >/dev/null; then
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+        fi
+        skopeo --version
+    - name: Publish the built npm packages and verify the readback
+      run: |
+        set -euo pipefail
+        # The reviewed workflow owns publication code; component tags stay immutable.
+        git show "${GITHUB_WORKFLOW_SHA}:releases/publish.py" > "$RUNNER_TEMP/publish.py"
+        PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" web-npm --plan "$RUNNER_TEMP/release-plan/plan.json" \
+          --build "$RUNNER_TEMP/web-build/receipt.json" --directory "$RUNNER_TEMP/web-build"
     - name: Confirm the npm readback, publish the OCI bytes and verify their readback
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
-        # The reviewed workflow owns publication code; component tags stay immutable.
-        git show "${GITHUB_WORKFLOW_SHA}:releases/publish.py" > "$RUNNER_TEMP/publish.py"
         PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" web --plan "$RUNNER_TEMP/release-plan/plan.json" \
           --build "$RUNNER_TEMP/web-build/receipt.json" --directory "$RUNNER_TEMP/web-build" \
           --output "$RUNNER_TEMP/web-publish/receipt.json"
-    - name: Stage web-publish for other runners
+    - name: Stage web-publish for other jobs
       id: store
-      env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put web-publish "$RUNNER_TEMP/web-publish"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store.outputs.handoff_name }}
+        path: ${{ steps.store.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -630,7 +602,7 @@ jobs:
     if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.app_changed == 'true' && needs.build-gate.result == 'success' && (needs.relay-publish.result
       == 'success' || (needs.prepare.outputs.relay_changed == 'false' && needs.relay-publish.result == 'skipped')) && (needs.web-publish.result
       == 'success' || (needs.prepare.outputs.web_changed == 'false' && needs.web-publish.result == 'skipped')) }}
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     environment: testflight
     concurrency:
       group: talaria-testflight-publication
@@ -644,11 +616,7 @@ jobs:
     - uses: ./.github/actions/release-ruby
     - name: Restore release-plan, app-build and ios-ipa
       env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+        GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan app-build ios-ipa'
     - name: Upload or recover the verified TestFlight build
       env:
@@ -659,15 +627,15 @@ jobs:
         "$RELEASE_PYTHON" releases/publish.py app --plan "$RUNNER_TEMP/release-plan/plan.json" \
           --build "$RUNNER_TEMP/app-build/receipt.json" --directory "$RUNNER_TEMP/ios-ipa" \
           --output "$RUNNER_TEMP/app-publish/receipt.json"
-    - name: Stage app-publish for other runners
+    - name: Stage app-publish for other jobs
       id: store
-      env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py put app-publish "$RUNNER_TEMP/app-publish"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store.outputs.handoff_name }}
+        path: ${{ steps.store.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
@@ -680,7 +648,7 @@ jobs:
     - web-publish
     - app-publish
     if: ${{ !cancelled() && !inputs.dry_run && needs.build-gate.result == 'success' }}
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     environment: release-set-publication
     permissions:
       contents: write
@@ -697,11 +665,7 @@ jobs:
       run: python3 releases/check_results.py publication
     - name: Restore verified release handoffs
       env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+        GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/release-results" --receipts'
     - name: Assemble and publish only the completed set
       env:
@@ -731,19 +695,19 @@ jobs:
         } >> "$GITHUB_STEP_SUMMARY"
         cat "$RUNNER_TEMP/completed/release-set.json"
     - name: Retain release-set-complete
-      env:
-        TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-        TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-        TALARIA_S3_BUCKET: talaria-release
-        TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-        TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
-      run: '"$RELEASE_PYTHON" releases/artifacts.py put release-set-complete "$RUNNER_TEMP/completed"'
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-set-complete-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/completed
+        retention-days: 30
+        if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   build-gate:
     needs:
     - prepare
     - contracts
+    - previous-app-contracts
     - component-contracts
     - agent
     - relay-build
@@ -751,7 +715,7 @@ jobs:
     - app-dry-build
     - app-signed-build
     if: always()
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
       with:

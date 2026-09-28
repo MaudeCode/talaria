@@ -28,7 +28,7 @@ concurrency:
 jobs:
   app:
     if: github.ref == 'refs/heads/main' && inputs.confirm_publication
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     environment: testflight
     concurrency:
       group: talaria-testflight-publication
@@ -43,16 +43,11 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/release-python
       - uses: ./.github/actions/release-ruby
-      # Only the authenticated original run's job outputs name which NAS objects
-      # of that run may be fetched, and each must match its recorded digest.
+      # Only the authenticated original run's job outputs name which artifacts
+      # of that run may be downloaded, and each must match its recorded digest.
       - name: Authenticate original run and restore immutable handoffs
         id: restore
         env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-release
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
           GH_TOKEN: ${{ github.token }}
           ORIGINAL_RUN: ${{ inputs.original_run }}
           ORIGINAL_ATTEMPT: ${{ inputs.original_attempt }}
@@ -81,23 +76,23 @@ jobs:
             --output "$RUNNER_TEMP/recovered/app-publish/receipt.json"
       - name: Stage verified handoffs with actual recovery-run identity
         id: store
-        env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-release
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
           paths=()
           # The IPA and dSYMs were consumed above; finalization reads only these receipt handoffs.
-          for name in release-plan contract-receipts agent-receipts relay-build web-build app-build relay-publish web-publish app-publish; do
+          for name in release-plan contract-receipts previous-app-receipts agent-receipts relay-build web-build app-build relay-publish web-publish app-publish; do
             paths+=("$name" "$RUNNER_TEMP/recovered/$name")
           done
           "$RELEASE_PYTHON" releases/artifacts.py put "${paths[@]}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.store.outputs.handoff_name }}
+          path: ${{ steps.store.outputs.handoff_path }}
+          retention-days: 30
+          if-no-files-found: error
   publish-set:
     needs: app
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     environment: release-set-publication
     permissions:
       contents: write
@@ -113,11 +108,7 @@ jobs:
       - uses: ./.github/actions/release-python
       - name: Restore verified recovery handoffs
         env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-release
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
+          GH_TOKEN: ${{ github.token }}
         run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP/recovered" --receipts'
       - name: Assemble and publish the completed original release set
         env:
@@ -138,14 +129,12 @@ jobs:
           PYTHONPATH="$PWD/releases" "$RELEASE_PYTHON" "$RUNNER_TEMP/publish.py" finalize \
             --plan "$RUNNER_TEMP/recovered/release-plan/plan.json" --manifest "$RUNNER_TEMP/completed/release-set.json" \
             --directory "$RUNNER_TEMP/recovered" "${options[@]}"
+      - name: Record the completed manifest
+        run: cat "$RUNNER_TEMP/completed/release-set.json"
       - name: Retain the completed manifest
-        env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-release
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_RELEASE_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_RELEASE_S3_SECRET_ACCESS_KEY }}
-        run: |
-          set -euo pipefail
-          cat "$RUNNER_TEMP/completed/release-set.json"
-          "$RELEASE_PYTHON" releases/artifacts.py put release-set-complete "$RUNNER_TEMP/completed"
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-set-complete-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/completed
+          retention-days: 30
+          if-no-files-found: error

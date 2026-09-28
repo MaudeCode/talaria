@@ -59,7 +59,7 @@ def authenticate(run, attempt, metadata, jobs, log):
             references[key] = reference
     # Recovery republishes only the App; the Web OCI image is authenticated above but never restored.
     references.pop("web-image", None)
-    required = {"release-plan", "contract-receipts", "agent-receipts", "relay-build", "web-build",
+    required = {"release-plan", "contract-receipts", "previous-app-receipts", "agent-receipts", "relay-build", "web-build",
                 "app-build", "ios-ipa", "ios-dsyms", "relay-publish", "web-publish"}
     outputs = needs["prepare"]["outputs"]
     if (set(references) != required or any(outputs.get(name + "_changed") != "true" for name in ("app", "web", "relay"))
@@ -68,19 +68,13 @@ def authenticate(run, attempt, metadata, jobs, log):
     return outputs["source"], references
 
 
-ORIGINAL_WORKFLOW = "production-cutover"
-
-
 def restore(references, destination):
-    # The authenticated original run's objects are checked against every producer digest before any is extracted.
-    verified = {}
-    for name, reference in references.items():
-        try:
-            verified[name] = artifacts.stored(reference, ORIGINAL_WORKFLOW)
-        except ValueError as error:
-            raise ValueError("retained handoff differs from its original producer") from error
-    # Extract the archives just verified rather than downloading the IPA and dSYMs a second time.
-    for name, path in verified.items():
+    # The authenticated original run's archives are checked against every producer digest before any is extracted.
+    try:
+        paths = artifacts.stored(*references.values())
+    except ValueError as error:
+        raise ValueError("retained handoff differs from its original producer") from error
+    for name, path in zip(references, paths):
         artifacts.extract(path, destination / name)
 
 
