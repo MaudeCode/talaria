@@ -162,16 +162,15 @@ echo "Running live HTTP/SSE probe at $candidate_sha"
 
 if (( run_swift_tests )); then
   echo "Running Talaria request and SSE contract tests"
-  encoded_responses="base64:$(base64 < "$responses_file" | tr -d '\n')"
   (
     cd "$repo_root"
-    TALARIA_UPSTREAM_CONTRACT_RESPONSES="$encoded_responses" scripts/test-ios \
+    # TalariaKit's contract classes and the live decoding test run on macOS without a simulator (TAL-399).
+    TALARIA_LIVE_CONTRACT_RESPONSES="$responses_file" swift test --package-path TalariaKit \
+      --filter '^TalariaKitTests\.(APIClientSessionListTests|APIClientSessionMutationTests|SSEClientTests)/'
+    scripts/test-ios \
       TalariaTests/ContractReadinessTests \
       TalariaTests/SharedContractTests \
       TalariaTests/APIClientAuthAndErrorTests \
-      TalariaTests/APIClientSessionListTests \
-      TalariaTests/APIClientSessionMutationTests \
-      TalariaTests/SSEClientTests \
       TalariaTests/StreamReconnectContractTests
   ) 2>&1 | tee "$run_dir/swift-tests.log"
 else

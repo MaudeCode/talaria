@@ -99,16 +99,6 @@ TALARIA_TEST_WORKER_COUNT=${TALARIA_TEST_WORKER_COUNT:-4}
 parallel_testing=NO
 (( TALARIA_TEST_WORKER_COUNT > 1 )) && parallel_testing=YES
 
-typeset -a contract_settings
-if [[ -n "${TALARIA_UPSTREAM_CONTRACT_RESPONSES:-}" ]]; then
-    # The generated test Info.plist only carries known INFOPLIST_KEY settings.
-    # Its test-only display name transports the synthetic live-response manifest.
-    contract_settings+=(
-        "INFOPLIST_KEY_CFBundleDisplayName=$TALARIA_UPSTREAM_CONTRACT_RESPONSES"
-        'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) TALARIA_LIVE_CONTRACT'
-    )
-fi
-
 cd "$repo_root"
 # Clear first: a recording run killed before its EXIT trap would otherwise leave
 # the marker behind and silently turn the next ordinary run into a re-record.
@@ -138,7 +128,6 @@ while true; do
         -collect-test-diagnostics never \
         -resultBundlePath "$result_bundle" \
         APP_IDENTIFIER_SUFFIX=.xctest \
-        "${contract_settings[@]}" \
         "${test_filters[@]}" &
     xcodebuild_pid=$!
     if wait "$xcodebuild_pid"; then

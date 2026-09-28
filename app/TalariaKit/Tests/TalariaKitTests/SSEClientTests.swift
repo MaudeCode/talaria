@@ -1,6 +1,5 @@
 import LDSwiftEventSource
 import XCTest
-@testable import Talaria
 @testable import TalariaKit
 
 @MainActor

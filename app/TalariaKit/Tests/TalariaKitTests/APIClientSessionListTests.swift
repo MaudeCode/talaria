@@ -1,5 +1,4 @@
 import XCTest
-@testable import Talaria
 @testable import TalariaKit
 
 final class APIClientSessionListTests: APIClientTestCase {
@@ -20,28 +19,12 @@ final class APIClientSessionListTests: APIClientTestCase {
     }
 
     func testLiveUpstreamContractResponsesDecodeWhenSupplied() throws {
-        let manifestData: Data
-        if let path = ProcessInfo.processInfo.environment["TALARIA_LIVE_CONTRACT_RESPONSES"] {
-            // PR CI supplies the Linux probe's digest-checked fixture at test time
-            // (TEST_RUNNER_ prefix), so the build never waits for the probe.
-            manifestData = try Data(contentsOf: URL(fileURLWithPath: path))
-        } else {
-            let encoded = Bundle(for: APIClientSessionListTests.self)
-                .object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-#if TALARIA_LIVE_CONTRACT
-            guard let encoded, encoded.hasPrefix("base64:")
-            else {
-                XCTFail("The contract runner did not provide live upstream responses")
-                return
-            }
-#else
-            guard let encoded, encoded.hasPrefix("base64:")
-            else {
-                throw XCTSkip("No live upstream responses were supplied")
-            }
-#endif
-            manifestData = try XCTUnwrap(Data(base64Encoded: String(encoded.dropFirst(7))))
+        // CI and the contract runners supply the Linux probe's fixture at test time, so the build never waits for
+        // the probe; they require this test to pass rather than skip.
+        guard let path = ProcessInfo.processInfo.environment["TALARIA_LIVE_CONTRACT_RESPONSES"] else {
+            throw XCTSkip("No live upstream responses were supplied")
         }
+        let manifestData = try Data(contentsOf: URL(fileURLWithPath: path))
         let manifest = try XCTUnwrap(
             JSONSerialization.jsonObject(with: manifestData) as? [String: Any]
         )

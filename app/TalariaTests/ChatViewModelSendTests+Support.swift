@@ -7,15 +7,6 @@ import UniformTypeIdentifiers
 @testable import Talaria
 @testable import TalariaKit
 
-extension XCTestCase {
-    /// Lets every main-actor task queued before this call run.
-    @MainActor
-    func drainMainActor() async {
-        for _ in 0..<3 { await Task.yield() }
-        await Task { @MainActor in }.value
-    }
-}
-
 @MainActor
 extension ChatViewModelSendTests {
     /// A `503 {"error": ...}` for `/api/tts` — the canonical "server TTS refused,

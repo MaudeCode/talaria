@@ -129,6 +129,41 @@ class ContractRunnerTests(unittest.TestCase):
                     self.assertEqual(len(ran), 1)
                     self.assertIn(expected, ran[0])
 
+    def test_packaged_contract_classes_run_with_swift_test_and_require_the_live_pass(self):
+        # From TAL-399 an App revision tests TalariaKit's classes with `swift test`; older revisions host them all.
+        spec = importlib.util.spec_from_file_location("previous_app", Path(__file__).resolve().parents[1] / "scripts/check-previous-app.py")
+        previous = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(previous)
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary)
+            self.assertEqual(previous.package_classes(app, previous.TESTS), [])
+            tests = app / "TalariaKit/Tests/TalariaKitTests"
+            (tests / "Support").mkdir(parents=True)
+            (tests / "APIClientSessionListTests.swift").write_text("final class APIClientSessionListTests: APIClientTestCase {}\n")
+            (tests / "SSEClientTests.swift").write_text("@MainActor\nfinal class SSEClientTests: XCTestCase {}\n")
+            (tests / "Support/APITestSupport.swift").write_text("class APIClientTestCase: XCTestCase {}\n")
+            packaged = previous.package_classes(app, previous.TESTS)
+            self.assertEqual(packaged, ["APIClientSessionListTests", "SSEClientTests"])
+            live = f"Test Case '-[TalariaKitTests.{previous.LIVE_CLASS} {previous.LIVE_TEST}]'"
+            for outcome, error in (("passed", None), ("skipped", "live Web fixtures")):
+                with self.subTest(outcome=outcome):
+                    commands = []
+
+                    def run(command, **kwargs):
+                        commands.append((command, kwargs["env"]["TALARIA_LIVE_CONTRACT_RESPONSES"]))
+                        kwargs["stdout"].write("Test Suite 'APIClientSessionListTests' passed\nTest Suite 'SSEClientTests' passed\n"
+                                               f"{live} {outcome} (0.001 seconds).\n")
+
+                    with patch.object(previous.subprocess, "run", side_effect=run):
+                        if error:
+                            with self.assertRaisesRegex(ValueError, error):
+                                previous.run_package_tests(app, packaged, app / "responses.json", app)
+                        else:
+                            previous.run_package_tests(app, packaged, app / "responses.json", app)
+                    self.assertEqual(commands, [(["swift", "test", "--package-path", str(app / "TalariaKit"), "--filter",
+                                                  "^TalariaKitTests\\.(APIClientSessionListTests|SSEClientTests)/"],
+                                                 str(app / "responses.json"))])
+
     def test_only_selector_splits_native_app_runs_from_portable_fixture_suites(self):
         plan = {"components": {"app": {"sourceRevision": "a" * 40}, "web": {"sourceRevision": "b" * 40},
                                "relay": {"sourceRevision": "c" * 40}}, "supportedWebSources": ["b" * 40, "d" * 40]}

@@ -1,5 +1,4 @@
 import XCTest
-@testable import Talaria
 @testable import TalariaKit
 
 /// Decoding contract for `GET /api/providers` (#26). The primary fixture mirrors

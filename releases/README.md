@@ -183,7 +183,10 @@ changed artifact identities, and attempted completion of dry-run plans fail.
 For previous-App verification, root `scripts/check-previous-app.py --app-ref REF
 --web-ref REF --output NEW_DIRECTORY` starts the selected Web in isolated state,
 exports live responses, and compiles the actual older App from Git. It verifies
-the fixtures reached the test bundle and retains structured XCTest results.
+the fixtures reached the test bundle and retains structured XCTest results. For an
+App revision with the TalariaKit package (TAL-399), the contract classes that live
+there run with `swift test` against the same responses, and the live decoding test
+must pass there instead.
 
 ## Root workflow
 

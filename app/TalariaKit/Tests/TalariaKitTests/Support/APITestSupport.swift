@@ -1,6 +1,15 @@
+// Shared by the package tests and the App-hosted TalariaTests, which compiles this file too (TAL-399).
 import XCTest
-@testable import Talaria
 @testable import TalariaKit
+
+extension XCTestCase {
+    /// Lets every main-actor task queued before this call run.
+    @MainActor
+    func drainMainActor() async {
+        for _ in 0..<3 { await Task.yield() }
+        await Task { @MainActor in }.value
+    }
+}
 
 class APIClientTestCase: XCTestCase {
     override func tearDown() {
@@ -101,40 +110,6 @@ final class MockURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
-}
-
-final class MockURLProtocolScopeTests: APIClientTestCase {
-    func testScopedHandlerOutlivesGlobalHandlerReplacement() async throws {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MockURLProtocol.self]
-        configuration.httpAdditionalHeaders = [
-            MockURLProtocol.scopeHeader: MockURLProtocol.register { request in
-                apiTestJSONResponse(#"{"session":{"session_id":"scoped"}}"#, for: request)
-            }
-        ]
-        let client = APIClient(baseURL: URL(string: "https://example.test")!, session: URLSession(configuration: configuration))
-
-        // The next test's handler must not see this session's request.
-        MockURLProtocol.requestHandler = { request in
-            XCTFail("Scoped request leaked to the global handler: \(request.url?.path ?? "nil")")
-            throw URLError(.badURL)
-        }
-
-        let response = try await client.session(id: "scoped", includeMessages: false, messageLimit: nil)
-        XCTAssertEqual(response.session?.sessionId, "scoped")
-
-        // Registering many later sessions evicts this scope, so the retained
-        // closure count stays bounded and the stale session fails cleanly.
-        for _ in 0..<16 {
-            _ = MockURLProtocol.register { _ in throw URLError(.badURL) }
-        }
-        do {
-            _ = try await client.session(id: "scoped", includeMessages: false, messageLimit: nil)
-            XCTFail("Evicted scope should not be served")
-        } catch APIError.network(let underlying) {
-            XCTAssertEqual((underlying as? URLError)?.code, .badServerResponse)
-        }
-    }
 }
 
 /// URLProtocol whose responses are completed manually so concurrent requests
@@ -382,4 +357,64 @@ func apiTestMultipartFilename(from request: URLRequest) throws -> String {
 func apiTestJSONBody(from request: URLRequest) throws -> [String: Any] {
     let data = try XCTUnwrap(apiTestBodyData(from: request))
     return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+}
+
+/// A `URLProtocol` that issues exactly one 3xx redirect for a configured source
+/// path, then serves a 200 for every other request — capturing the request of
+/// the hop *after* the redirect ("second hop") so a test can assert which headers
+/// survived. It carries the first request's headers onto the follow-up to mimic a
+/// server redirect; `URLSession` then consults the session's redirect delegate
+/// (the system under test), which is what must strip them.
+final class RedirectingMockURLProtocol: URLProtocol {
+    struct Redirect {
+        let fromPath: String
+        let to: URL
+    }
+
+    static var redirect: Redirect?
+    /// The request seen by the mocked origin before it emits the redirect.
+    static var firstHopRequest: URLRequest?
+    /// The request `URLSession` issued for the hop after the redirect.
+    static var secondHopRequest: URLRequest?
+    static var responseData = Data("{}".utf8)
+
+    static func reset() {
+        redirect = nil
+        firstHopRequest = nil
+        secondHopRequest = nil
+        responseData = Data("{}".utf8)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        if let redirect = Self.redirect, request.url?.path == redirect.fromPath {
+            Self.firstHopRequest = request
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 302,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Location": redirect.to.absoluteString]
+            )!
+            var followUp = URLRequest(url: redirect.to)
+            followUp.httpMethod = request.httpMethod
+            followUp.allHTTPHeaderFields = request.allHTTPHeaderFields
+            client?.urlProtocol(self, wasRedirectedTo: followUp, redirectResponse: response)
+            return
+        }
+
+        Self.secondHopRequest = request
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: nil
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Self.responseData)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

@@ -23,6 +23,11 @@ let package = Package(
             ],
             swiftSettings: [.enableExperimentalFeature("StrictConcurrency=targeted")]
         ),
+        .testTarget(
+            name: "TalariaKitTests",
+            dependencies: ["TalariaKit"],
+            swiftSettings: [.enableExperimentalFeature("StrictConcurrency=targeted")]
+        ),
     ],
     swiftLanguageModes: [.v5]
 )

@@ -1,5 +1,4 @@
 import XCTest
-@testable import Talaria
 @testable import TalariaKit
 
 /// The in-chat "N files changed" recap (issue #316, Slice D) over the server's per-turn
