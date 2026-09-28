@@ -29,7 +29,7 @@ export interface CtlContext {
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase())
 const sleep = (ms: number): Promise<void> => new Promise((r) => { setTimeout(r, ms) })
 
-export interface CtlPaths { hermesHome: string; runtimeRoot: string; runtimeBase: string | null; worktreeMode: boolean; pidFile: string; logFile: string; stateFile: string; stateDir: string; launchdLabel: string }
+export interface CtlPaths { hermesHome: string; runtimeRoot: string; runtimeBase: string | null; worktreeMode: boolean; pidFile: string; logFile: string; stateFile: string; stateDir: string; launchdLabels: string[] }
 
 function gitPath(webRoot: string, flag: string): string {
   const r = spawnSync('git', ['-C', webRoot, 'rev-parse', '--path-format=absolute', flag], { encoding: 'utf8' })
@@ -73,7 +73,8 @@ export function ctlPaths(ctx: CtlContext): CtlPaths {
     logFile,
     stateFile: (env.HERMES_WEBUI_CTL_STATE_FILE ?? '').trim() || join(runtimeRoot, 'webui.ctl.env'),
     stateDir: (env.HERMES_WEBUI_STATE_DIR ?? '').trim() || join(runtimeRoot, 'webui'),
-    launchdLabel: (env.HERMES_WEBUI_LAUNCHD_LABEL ?? '').trim() || 'dev.kil.talaria.web',
+    // An override names the only job to probe; otherwise the current default, then the label upgraded installs still carry.
+    launchdLabels: (env.HERMES_WEBUI_LAUNCHD_LABEL ?? '').trim() ? [(env.HERMES_WEBUI_LAUNCHD_LABEL ?? '').trim()] : ['dev.kil.talaria.web', 'com.parantoux.hermes-webui'],
   }
 }
 
@@ -226,10 +227,18 @@ function pidListensOnPort(pid: number, port: number): 0 | 1 | 2 {
   return rows.some((r) => r.includes('pid=')) ? 1 : 2
 }
 
-/** Python `_launchd_webui_pid`: a launchd job with our label listening on the wanted port blocks a second instance. */
-export function launchdConflictPid(p: CtlPaths, env: Record<string, string | undefined>, wantPort: number): number | null {
+/** Python `_launchd_webui_pid`: a launchd job with one of our labels listening on the wanted port blocks a second instance. */
+export function launchdConflictPid(p: CtlPaths, env: Record<string, string | undefined>, wantPort: number): { pid: number; label: string } | null {
   if (truthy(env.HERMES_WEBUI_CTL_ALLOW_LAUNCHD_CONFLICT)) return null
-  const out = spawnSync('launchctl', ['print', `gui/${String(userInfo().uid)}/${p.launchdLabel}`], { encoding: 'utf8' })
+  for (const label of p.launchdLabels) {
+    const pid = launchdJobPid(label, wantPort)
+    if (pid !== null) return { pid, label }
+  }
+  return null
+}
+
+function launchdJobPid(label: string, wantPort: number): number | null {
+  const out = spawnSync('launchctl', ['print', `gui/${String(userInfo().uid)}/${label}`], { encoding: 'utf8' })
   if (out.error || out.status !== 0) return null
   const m = /^\s*pid = (\d+)/m.exec(out.stdout)
   const pid = m ? Number.parseInt(m[1] ?? '0', 10) : 0
@@ -333,10 +342,10 @@ export async function startCmd(ctx: CtlContext, argv: string[]): Promise<number>
   }
   ctx.env.HERMES_WEBUI_HOST = binding.host
   ctx.env.HERMES_WEBUI_PORT = String(port)
-  const launchdPid = launchdConflictPid(p, ctx.env, port)
-  if (launchdPid !== null) {
-    ctx.warn(`[ctl] Refusing to start a second Talaria Web while launchd job ${p.launchdLabel} is running (PID ${String(launchdPid)}).`)
-    ctx.warn(`[ctl] Use launchctl kickstart -k gui/${String(userInfo().uid)}/${p.launchdLabel} or disable the launchd job before using talaria-web ctl start.`)
+  const launchd = launchdConflictPid(p, ctx.env, port)
+  if (launchd !== null) {
+    ctx.warn(`[ctl] Refusing to start a second Talaria Web while launchd job ${launchd.label} is running (PID ${String(launchd.pid)}).`)
+    ctx.warn(`[ctl] Use launchctl kickstart -k gui/${String(userInfo().uid)}/${launchd.label} or disable the launchd job before using talaria-web ctl start.`)
     return 2
   }
   const systemd = systemdConflict(ctx.env, port)
