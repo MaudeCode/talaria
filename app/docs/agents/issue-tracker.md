@@ -13,8 +13,7 @@ requests are the review and merge record for `MaudeCode/talaria`.
 - Push and open a ready PR only with the authorization defined by the active
   workflow. Merge still needs human approval.
 - Pass `--repo MaudeCode/talaria` to every repository-scoped `gh` command.
-- Keep upstream request and response evidence in the Kaneo task or PR. The
-  machine-readable feature-gap table stays free of tracker and branch data.
+- Keep API request and response evidence in the Kaneo task or PR.
 
 External GitHub reports may provide intake, but a maintainer links or creates
 the canonical Kaneo task before implementation.

@@ -137,7 +137,6 @@ as does a range containing only explicit skips.
 `release-notes.md` has a version heading and the target commit's UTC date,
 Featured highlights, and non-empty categories in Added, Changed, Fixed, Security
 order. Entries sort by numeric ticket number and then their authored array order.
-`CHANGELOG.md` and its manually curated history stay intact.
 
 `release-notes.json` is the versioned contract for the app's What's New work:
 

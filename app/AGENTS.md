@@ -4,8 +4,7 @@ Commands and source paths below are relative to `app/`. Root policy is in
 `../AGENTS.md`; shared workflow files stay in `../.github/`.
 
 Talaria is a native SwiftUI iPhone client for a self-hosted Talaria Web server
-(`../web/`). Inherited documentation describes this project only where Talaria has
-explicitly adopted it.
+(`../web/`).
 
 ## Scope and issue tracking
 
@@ -18,11 +17,10 @@ explicitly adopted it.
 - Implement only the human-selected task or task batch. Do not pick another issue
   or invent backlog work. If selected work has no Kaneo issue, create one before
   coding.
-- Read only the `PROJECT_SPEC.md` sections relevant to the task. Treat the spec as
-  product intent; code, tests, configuration, and
-  `../CONTRACT_TESTS.md` describe implemented behavior. `UPSTREAM_*` files retain
-  historical standalone provenance; current app contracts use local `../web/`.
-- Stop and ask when selected work conflicts with adopted product intent or an
+- Code, tests, configuration, and `../CONTRACT_TESTS.md` describe implemented
+  behavior; app contracts are checked against the local `../web/`. `CONTEXT.md`
+  defines the domain vocabulary.
+- Stop and ask when selected work conflicts with product direction or an
   unresolved product question.
 
 ## Workflow boundaries

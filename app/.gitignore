@@ -13,50 +13,13 @@ Package.resolved
 !Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 .swiftpm/
 
-# macOS
-.DS_Store
-
-# Local secrets
-.env
-.env.local
-.env.*
-
 # Per-machine signing overrides (see DEVELOPMENT.md)
 Config/Local.xcconfig
-
-# Local reference material
-UPDATES.md
-.obsidian/
-
-# Local agent tooling (per-machine caches and session state)
-node_modules/
-.codex-tmp/
-.agents/*
-!.agents/skills/
-!.agents/skills/**
-.sc/
-.claude/
-.cursor/
 
 # App packaging
 *.ipa
 *.dSYM.zip
 *.dSYM
 
-# Fastlane
-fastlane/report.xml
-fastlane/Preview.html
-fastlane/screenshots/**/*.png
-fastlane/test_output/
-
-# Pi tooling artifacts (review outputs, fix plans, etc.)
-.pi/
-
-# Editor swap/temp files
-*.swp
-*.swo
-*~
-
-# Retired per-session progress log (removed in #224; history lives in git log / merged PRs)
-/PROGRESS.md
+# Visual-reference re-record marker (scripts/test-ios)
 TalariaTests/VisualReferences/.record
