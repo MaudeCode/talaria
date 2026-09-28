@@ -19,7 +19,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
-    "pretest": "test -f ../../static/dist/index.html || npm --prefix ../frontend run build:fast",
+    "pretest": "(test -f ../contracts/dist/index.js || npm --prefix ../contracts run build) && (test -f ../../static/dist/index.html || npm --prefix ../frontend run build:fast)",
     "test": "vitest run",
     "prepack": "node scripts/prepack.mjs",
     "postpack": "node scripts/prepack.mjs --clean"
