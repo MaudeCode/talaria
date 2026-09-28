@@ -119,7 +119,7 @@ jobs:
       - name: Production build
         run: npm run build:fast
 
-  # The e2e suite serves the frontend bundle, which it builds here: static/dist is not committed (TAL-379).
+  # The e2e suite serves the frontend bundle, which its setup rebuilds on every run (static/dist is not committed, TAL-379).
   frontend-e2e:
     if: inputs.frontend
     name: frontend / e2e
@@ -142,8 +142,8 @@ jobs:
         run: npm ci --no-audit --no-fund
         working-directory: web
 
-      - name: Build contracts, server and the frontend bundle
-        run: npm run build:fast
+      - name: Build contracts and server
+        run: npm run build -w packages/contracts && npm run build -w packages/server
         working-directory: web
 
       # check-web-browser installs Chromium itself; the runner image already bakes it.

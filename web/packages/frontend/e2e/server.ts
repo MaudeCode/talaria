@@ -6,19 +6,20 @@ import { join, resolve } from 'node:path'
 /** `web/` (the npm workspaces root). */
 export const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..')
 const SERVER_BIN = join(REPO_ROOT, 'packages', 'server', 'dist', 'bin', 'talaria-web.js')
-const SHELL = join(REPO_ROOT, 'static', 'dist', 'index.html')
+
+let bundleBuilt = false
 
 /**
- * The TS server ships as a built bin and serves the frontend bundle, which is not committed (TAL-379); build each
- * once when a fresh checkout lacks it. The bundle imports the contracts package, which the server build also needs.
+ * The TS server ships as a built bin (built once when a fresh checkout has no `dist/`) and serves the frontend
+ * bundle, which is not committed (TAL-379). The bundle is rebuilt once per run, so a leftover build from another
+ * checkout state can never pass Playwright against stale source. It imports the contracts package, built first.
  */
 function ensureServerBuilt(): void {
-  const server = !existsSync(SERVER_BIN)
-  const shell = !existsSync(SHELL)
-  if (!server && !shell) return
+  if (bundleBuilt) return
   execFileSync('npm', ['run', 'build', '-w', 'packages/contracts'], { cwd: REPO_ROOT, stdio: 'inherit' })
-  if (server) execFileSync('npm', ['run', 'build', '-w', 'packages/server'], { cwd: REPO_ROOT, stdio: 'inherit' })
-  if (shell) execFileSync('npm', ['run', 'build:fast', '-w', 'packages/frontend'], { cwd: REPO_ROOT, stdio: 'inherit' })
+  if (!existsSync(SERVER_BIN)) execFileSync('npm', ['run', 'build', '-w', 'packages/server'], { cwd: REPO_ROOT, stdio: 'inherit' })
+  execFileSync('npm', ['run', 'build:fast', '-w', 'packages/frontend'], { cwd: REPO_ROOT, stdio: 'inherit' })
+  bundleBuilt = true
 }
 const STATE_FILE = join(tmpdir(), `hermes-e2e-${process.env.HERMES_E2E_PORT ?? '8797'}.json`)
 /**
