@@ -8,6 +8,11 @@
 #     ref: <commit SHA>   # required for workflow_call
 #   No outputs: the calling job's result is the suite's result. Its jobs are named "UI suite build" and
 #   "UI suite tests (shard N)", and its build artifact is ui-suite-build.
+#
+# A manual run can scope and repeat the suite instead (TAL-401), for example 10 runs in a row of one flaky test:
+#   gh workflow run ui-suite.yml --repo MaudeCode/talaria --ref <branch> \
+#     -f only_testing="TalariaUITests/SettingsInfoRoutingUITests" -f test_iterations=10
+# only_testing runs those identifiers in one shard; test_iterations above 1 stops at the first failing iteration.
 
 name: UI suite
 
@@ -20,6 +25,14 @@ on:
         description: Optional branch, tag or commit to test; defaults to the selected branch's head.
         type: string
         required: false
+      only_testing:
+        description: Optional space-separated test identifiers (Target/Class[/method]) to run in one shard instead of the suite.
+        type: string
+        required: false
+      test_iterations:
+        description: Runs of each selected test; above 1 stops at the first failure.
+        type: number
+        default: 1
   workflow_call:
     inputs:
       ref:
@@ -40,3 +53,5 @@ jobs:
     with:
       mode: full
       ref: ${{ inputs.ref }}
+      only_testing: ${{ inputs.only_testing }}
+      test_iterations: ${{ inputs.test_iterations || 1 }}

@@ -7,6 +7,8 @@
 #     contracts: true | false  - shard 0 also waits for this run's "Web contract probe" job and runs the live
 #       decoding test against its contract-fixture artifact, inside the same xcodebuild as its suite.
 #     ref: optional commit to check out (default: the triggering commit).
+#     only_testing: optional space-separated test identifiers; one shard runs exactly these (ui-suite.yml dispatch).
+#     test_iterations: runs of each selected test (default 1); above 1 stops at the first failing iteration.
 #   No outputs: the calling job's result is the suite's result.
 # Jobs are named "App build"/"App tests (shard N)", or "UI suite build"/"UI suite tests (shard N)" in full
 # mode, and the build artifact is app-build or ui-suite-build, so both suites can run in one workflow run.
@@ -27,6 +29,12 @@ on:
       ref:
         type: string
         default: ""
+      only_testing:
+        type: string
+        default: ""
+      test_iterations:
+        type: number
+        default: 1
 
 permissions:
   contents: read
@@ -94,12 +102,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(inputs.mode == 'full' && '[0,1,2,3]' || (inputs.mode == 'pull-request' && '[0,1]' || '[0]')) }}
+        shard: ${{ fromJSON(inputs.only_testing != '' && '[0]' || (inputs.mode == 'full' && '[0,1,2,3]' || (inputs.mode == 'pull-request' && '[0,1]' || '[0]'))) }}
     env:
       SHARD: ${{ matrix.shard }}
       SHARD_COUNT: ${{ strategy.job-total }}
       MODE: ${{ inputs.mode }}
       CONTRACTS_SELECTED: ${{ inputs.contracts }}
+      ONLY_TESTING: ${{ inputs.only_testing }}
+      TEST_ITERATIONS: ${{ inputs.test_iterations }}
       RESULT_BUNDLE_PATH: TestResults.xcresult
       LAUNCH_SMOKE_TEST: TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList
       LIVE_CONTRACT_TEST: TalariaTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied
@@ -184,7 +194,9 @@ jobs:
           set -euo pipefail
           mkdir -p Build
           tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
-          if [[ "${MODE}" == "contracts" ]]; then
+          if [[ -n "${ONLY_TESTING}" ]]; then
+            for test_identifier in ${ONLY_TESTING}; do echo "-only-testing:${test_identifier}"; done > selection.txt
+          elif [[ "${MODE}" == "contracts" ]]; then
             # Web/contract-only change: the fixture-backed native contract classes are the whole selection.
             for contract_class in ${CONTRACT_TEST_CLASSES}; do echo "-only-testing:${contract_class}"; done > selection.txt
             echo "-skip-testing:${LIVE_CONTRACT_TEST}" >> selection.txt
@@ -218,6 +230,7 @@ jobs:
           start_seconds=${SECONDS}
           selection=()
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
+          if (( TEST_ITERATIONS > 1 )); then selection+=(-test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure); fi
           xctestrun=(Build/Products/*.xctestrun)
           xcodebuild test-without-building \
             -xctestrun "${xctestrun[0]}" \
