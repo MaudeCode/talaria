@@ -129,9 +129,9 @@ final class ContractReadinessTests: APIClientTestCase {
             .init(name: "workspaces", endpoint: .workspaces, path: "/api/workspaces"),
             .init(
                 name: "workspace suggestions",
-                endpoint: .workspaceSuggestions(prefix: "/Users/uzair"),
+                endpoint: .workspaceSuggestions(prefix: "/Users/tester"),
                 path: "/api/workspaces/suggest",
-                query: ["prefix": "/Users/uzair"]
+                query: ["prefix": "/Users/tester"]
             ),
             .init(name: "workspace add", endpoint: .workspaceAdd, path: "/api/workspaces/add"),
             .init(name: "workspace remove", endpoint: .workspaceRemove, path: "/api/workspaces/remove"),

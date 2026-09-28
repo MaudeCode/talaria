@@ -985,19 +985,19 @@ extension ChatViewModelSendTests {
                   "done": true,
                   "is_error": false,
                   "duration": 0.3,
-                  "result": "/Users/uzair/project"
+                  "result": "/Users/tester/project"
                 }
               ]
             },
             {
               "role": "tool",
-              "content": "/Users/uzair/project",
+              "content": "/Users/tester/project",
               "message_id": "tool-1",
               "tool_call_id": "call-1"
             },
             {
               "role": "assistant",
-              "content": "The workspace is /Users/uzair/project.",
+              "content": "The workspace is /Users/tester/project.",
               "message_id": "assistant-final"
             }
           ]
@@ -1012,7 +1012,7 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.completedToolCallGroups.first?.anchorMessageID, "assistant-tool")
         XCTAssertEqual(viewModel.completedToolCallGroups.first?.activityTitle, "Activity: 1 tool")
         XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.name, "terminal")
-        XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.preview, "/Users/uzair/project")
+        XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.preview, "/Users/tester/project")
         XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.args?["command"], .string("pwd"))
         XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.duration, 0.3)
         XCTAssertEqual(viewModel.completedToolCallGroups.first?.toolCalls.first?.isError, false)
