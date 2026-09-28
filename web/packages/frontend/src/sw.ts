@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 /**
- * Hermes WebUI service worker (HWEB-100). Built by scripts/build-sw.mjs with
+ * Talaria Web service worker (HWEB-100). Built by scripts/build-sw.mjs with
  * the workbox injectManifest strategy: the shell precache list is injected at
  * build time.
  *

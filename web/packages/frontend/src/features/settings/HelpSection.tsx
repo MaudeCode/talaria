@@ -7,9 +7,8 @@ export function HelpSection() {
       <section>
         <h2 className="mb-1 font-semibold text-text">{m.help_docs()}</h2>
         <ul className="list-disc pl-5 text-muted">
-          <li><a className="text-accent-text underline" href="https://github.com/nesquena/hermes-webui#readme" target="_blank" rel="noopener noreferrer">README</a></li>
-          <li><a className="text-accent-text underline" href="https://github.com/nesquena/hermes-webui/blob/master/docs/troubleshooting.md" target="_blank" rel="noopener noreferrer">Troubleshooting</a></li>
-          <li><a className="text-accent-text underline" href="https://github.com/nesquena/hermes-webui/issues" target="_blank" rel="noopener noreferrer">{m.help_report()}</a></li>
+          <li><a className="text-accent-text underline" href="https://github.com/MaudeCode/talaria/blob/main/web/README.md" target="_blank" rel="noopener noreferrer">README</a></li>
+          <li><a className="text-accent-text underline" href="https://github.com/MaudeCode/talaria/blob/main/web/docs/troubleshooting.md" target="_blank" rel="noopener noreferrer">Troubleshooting</a></li>
         </ul>
       </section>
       <section>
