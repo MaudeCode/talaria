@@ -2,9 +2,11 @@
 
 Oar, Talaria and future iOS projects share `iOS Test 1` through `iOS Test 6`.
 These are disposable synthetic-test devices, not signed-in development phones.
-The current local pool uses iPhone 17 Pro on iOS 27.0. CI selects its
-`iPhone 17` device from the newest released runtime installed on the runner,
-so it tracks whatever the runner has (`maude` currently offers iOS 26.5).
+The current local pool uses iPhone 17 Pro on iOS 27.0. CI runs on GitHub-hosted
+macOS runners, which have no pool: each App job asks `scripts/select-ios-simulator`
+for an `iPhone 17` on the runtime matching the selected Xcode's SDK
+(`IOS_SIMULATOR_RUNTIME` and `IOS_SIMULATOR_DEVICE_TYPE`), and the script creates
+that device with `xcrun simctl create` when the image has none.
 
 ```sh
 scripts/setup-ios-test-pool
@@ -17,7 +19,10 @@ Prerelease runtimes are skipped, identified by Apple's seed build numbering
 (`24A5408d` for the iOS 27 beta against `23E254a` for 26.4), so installing a
 beta SDK never silently changes what local runs and CI test against. Select any
 runtime explicitly, including a beta, with
-`IOS_SIMULATOR_RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-26-4`.
+`IOS_SIMULATOR_RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-26-4`, and a model
+with `IOS_SIMULATOR_DEVICE_TYPE`. When no available iPhone matches, selection
+creates one on the newest matching runtime (the newest supported iPhone unless a
+model is requested) instead of failing.
 `IOS_SIMULATOR_POOL_SIZE` defaults to six. `--refresh` recreates the entire shared
 pool and refuses to run while any pool device is leased or booted. Refresh affects
 all adopting projects. It does not copy accounts or app data.

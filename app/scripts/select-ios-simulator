@@ -2,33 +2,69 @@
 
 set -euo pipefail
 
+# Prints "<udid>\t<runtime>\t<device type>" for an iPhone simulator. IOS_SIMULATOR_RUNTIME and
+# IOS_SIMULATOR_DEVICE_TYPE narrow the choice; when no existing device matches (a fresh hosted
+# runner image), an iPhone is created on the newest matching runtime.
 runtimes_json=$(xcrun simctl list runtimes --json)
+requested_runtime=${IOS_SIMULATOR_RUNTIME:-}
+requested_type=${IOS_SIMULATOR_DEVICE_TYPE:-}
+
+# Apple numbers seed builds from 5000 in the field after the letter
+# (27.0 beta is 24A5408d); released builds stay far below it (23E254a).
+# Betas are skipped so an installed prerelease SDK does not silently
+# become the default test runtime. Request one explicitly with
+# IOS_SIMULATOR_RUNTIME.
+# ponytail: build-number heuristic, revisit if Apple renumbers builds.
+prerelease=$(print -r -- "$runtimes_json" | /usr/bin/jq -c '
+    [.runtimes[] | select(.buildversion | test("^[0-9]+[A-Z][5-9][0-9]{3}")) | .identifier]')
+eligible='select(if $requested == "" then ([.] | inside($prerelease) | not) else . == $requested end)'
+newest_first='sort_by(split("iOS-")[1] | split("-") | map(tonumber)) | reverse'
 
 selection=$(
     xcrun simctl list devices available --json |
-        /usr/bin/jq -r --arg requested "${IOS_SIMULATOR_RUNTIME:-}" \
-            --argjson runtimes "$runtimes_json" '
-            # Apple numbers seed builds from 5000 in the field after the letter
-            # (27.0 beta is 24A5408d); released builds stay far below it (23E254a).
-            # Betas are skipped so an installed prerelease SDK does not silently
-            # become the default test runtime. Request one explicitly with
-            # IOS_SIMULATOR_RUNTIME.
-            # ponytail: build-number heuristic, revisit if Apple renumbers builds.
-            [$runtimes.runtimes[] |
-             select(.buildversion | test("^[0-9]+[A-Z][5-9][0-9]{3}")) |
-             .identifier] as $prerelease |
+        /usr/bin/jq -r --arg requested "$requested_runtime" --arg type "$requested_type" \
+            --argjson prerelease "$prerelease" "
             first(
-                .devices | to_entries |
-                map(select(.key | startswith("com.apple.CoreSimulator.SimRuntime.iOS-"))) |
-                sort_by(.key | split("iOS-")[1] | split("-") | map(tonumber)) | reverse[] |
-                select(if $requested == "" then ([.key] | inside($prerelease) | not) else .key == $requested end) |
-                .key as $runtime |
-                .value[] |
-                select(.deviceTypeIdentifier | contains(".iPhone-")) |
-                [.udid, $runtime, .deviceTypeIdentifier] | @tsv
+                .devices as \$devices |
+                .devices | keys |
+                map(select(startswith(\"com.apple.CoreSimulator.SimRuntime.iOS-\"))) |
+                $newest_first | .[] | $eligible |
+                . as \$runtime |
+                \$devices[\$runtime][] |
+                select(.deviceTypeIdentifier | contains(\".iPhone-\")) |
+                select(\$type == \"\" or .deviceTypeIdentifier == \$type) |
+                [.udid, \$runtime, .deviceTypeIdentifier] | @tsv
             ) // empty
-        '
+        "
 )
+
+if [[ -z "$selection" ]]; then
+    # supportedDeviceTypes lists the newest models first.
+    target=$(
+        print -r -- "$runtimes_json" |
+            /usr/bin/jq -r --arg requested "$requested_runtime" --arg type "$requested_type" \
+                --argjson prerelease "$prerelease" "
+                first(
+                    .runtimes as \$runtimes |
+                    [\$runtimes[] | select(.isAvailable != false) | .identifier |
+                     select(startswith(\"com.apple.CoreSimulator.SimRuntime.iOS-\"))] |
+                    $newest_first | .[] | $eligible |
+                    . as \$runtime |
+                    \$runtimes[] | select(.identifier == \$runtime) |
+                    .supportedDeviceTypes[]? |
+                    select(.productFamily == \"iPhone\") |
+                    select(\$type == \"\" or .identifier == \$type) |
+                    [\$runtime, .identifier, .name] | @tsv
+                ) // empty
+            "
+    )
+    if [[ -n "$target" ]]; then
+        IFS=$'\t' read -r runtime_id device_type_id device_name <<< "$target"
+        udid=$(xcrun simctl create "$device_name" "$device_type_id" "$runtime_id")
+        print -u2 "Created $device_name ($udid) on $runtime_id."
+        selection="$udid"$'\t'"$runtime_id"$'\t'"$device_type_id"
+    fi
+fi
 
 [[ -n "$selection" ]] || {
     print -u2 "No available iPhone simulator was found."

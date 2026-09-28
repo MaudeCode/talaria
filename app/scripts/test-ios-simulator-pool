@@ -35,6 +35,9 @@ elif [[ "$1 $2 $3" == "simctl list runtimes" ]]; then
     cat "$POOL_RUNTIMES"
 elif [[ "$1 $2" == "simctl delete" ]]; then
     print "$3" >> "$POOL_DELETIONS"
+elif [[ "$1 $2" == "simctl create" ]]; then
+    print -r -- "$3|$4|$5" >> "$POOL_CREATIONS"
+    print 00000000-0000-0000-0000-00000000c0de
 elif [[ "$1 $2" == "simctl erase" ]]; then
     print "$3" >> "$POOL_ERASURES"
     [[ ! -e "$POOL_ERASE_FAIL" ]] || exit 1
@@ -48,9 +51,9 @@ fi
     env = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}',
                IOS_SIMULATOR_POOL_DIR=str(work / 'leases'), POOL_FIXTURE=str(fixture),
                POOL_RUNTIMES=str(runtimes),
-               POOL_DELETIONS=str(work / 'deletions'), POOL_ERASURES=str(work / 'erasures'),
+               POOL_DELETIONS=str(work / 'deletions'), POOL_CREATIONS=str(work / 'creations'), POOL_ERASURES=str(work / 'erasures'),
                POOL_ERASE_FAIL=str(work / 'erase-fail'))
-    for key in ('IOS_SIMULATOR_ID', 'IOS_SIMULATOR_RUNTIME'):
+    for key in ('IOS_SIMULATOR_ID', 'IOS_SIMULATOR_RUNTIME', 'IOS_SIMULATOR_DEVICE_TYPE'):
         env.pop(key, None)
     processes = []
     def invoke(project='two', expected=0, **overrides):
@@ -96,6 +99,34 @@ fi
         ipad = dict(released, deviceTypeIdentifier='com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4')
         selector_fixture(ipad, beta)
         assert select(expected=69) == 'No available iPhone simulator was found.'
+        assert not (work / 'creations').exists()
+        # A fresh hosted image may have no matching device: create one on the newest released runtime,
+        # newest supported iPhone first unless a device type is requested.
+        phone = lambda name: dict(identifier='com.apple.CoreSimulator.SimDeviceType.' + name.replace(' ', '-'),
+                                  name=name, productFamily='iPhone')
+        catalog = [phone('iPhone 18 Pro'), phone('iPhone 17'),
+                   dict(identifier='com.apple.CoreSimulator.SimDeviceType.iPad-Air', name='iPad Air', productFamily='iPad')]
+        runtimes.write_text(json.dumps({'runtimes': [
+            dict(identifier='com.apple.CoreSimulator.SimRuntime.iOS-26-4', buildversion='23E254a', supportedDeviceTypes=catalog),
+            dict(identifier='com.apple.CoreSimulator.SimRuntime.iOS-27-0', buildversion='24A5408d', supportedDeviceTypes=catalog),
+            dict(identifier='com.apple.CoreSimulator.SimRuntime.iOS-26-5', buildversion='23F77', isAvailable=False,
+                 supportedDeviceTypes=catalog)]}))
+        created = '00000000-0000-0000-0000-00000000c0de'
+        assert select() == [created, 'com.apple.CoreSimulator.SimRuntime.iOS-26-4', catalog[0]['identifier']]
+        # An existing phone of another model does not satisfy a requested device type.
+        selector_fixture(released, beta)
+        assert select(IOS_SIMULATOR_DEVICE_TYPE=catalog[1]['identifier'],
+                      IOS_SIMULATOR_RUNTIME='com.apple.CoreSimulator.SimRuntime.iOS-27-0') == [
+            created, 'com.apple.CoreSimulator.SimRuntime.iOS-27-0', catalog[1]['identifier']]
+        assert select(IOS_SIMULATOR_DEVICE_TYPE=personal['deviceTypeIdentifier'])[0] == released['udid']
+        assert (work / 'creations').read_text().splitlines() == [
+            'iPhone 18 Pro|com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro|com.apple.CoreSimulator.SimRuntime.iOS-26-4',
+            'iPhone 17|com.apple.CoreSimulator.SimDeviceType.iPhone-17|com.apple.CoreSimulator.SimRuntime.iOS-27-0']
+        # An unavailable or unsupported target still fails clearly instead of creating anything.
+        assert select(expected=69, IOS_SIMULATOR_DEVICE_TYPE='com.apple.CoreSimulator.SimDeviceType.iPad-Air') \
+            == 'No available iPhone simulator was found.'
+        assert select(expected=69, IOS_SIMULATOR_RUNTIME='com.apple.CoreSimulator.SimRuntime.iOS-26-5') \
+            == 'No available iPhone simulator was found.'
         save()
         first, child = owner()
         assert invoke() == devices[1]['udid']  # Independent checkout chooses another slot.
@@ -180,4 +211,4 @@ fi
             if process.poll() is None:
                 process.terminate()
                 process.wait(timeout=10)
-print('Shared pool checks passed: released-runtime selection, independent callers, explicit IDs, exhaustion, runtime, refresh, erase on release, cancellation, crash, repeated acquire/release and exit status.')
+print('Shared pool checks passed: released-runtime selection, creation on fresh images, independent callers, explicit IDs, exhaustion, runtime, refresh, erase on release, cancellation, crash, repeated acquire/release and exit status.')
