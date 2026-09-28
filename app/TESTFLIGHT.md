@@ -1,755 +1,103 @@
-# External TestFlight Launch Runbook
+# Releases and TestFlight
 
 Run commands in this document from `app/`. Workflows live in `../.github/`.
 
-> **Maintainer-only ops.** Everything in this file requires the maintainer's Apple Developer account, App Store Connect access, and signing credentials. Contributors never need this runbook to build, test, or contribute to the app.
+> **Maintainer only.** This needs the maintainer's Apple Developer account, App
+> Store Connect access and signing credentials. Contributors never need it.
 
-This is the maintainer runbook for Talaria's existing App Store Connect record.
+## Release
 
-Goal: invite external testers only after a clean release-candidate build has been uploaded, owner-verified internally on device, submitted to Beta App Review, and approved.
-
-## Supported release path
-
-- Follow the [root release procedure](../releases/README.md) from clean,
-  validated `main`. Signed `app-vX.Y.Z` tags run validation only.
-- Run the root dry-run workflow, then the separately authorized
-  `production-cutover.yml` dispatch. The App tag supplies the marketing version;
-  App Store Connect supplies the next build number. After the server publication
-  gates, the workflow uploads the verified external-capable IPA and awaits processing.
-- Root dry runs build an unsigned archive without publication credentials.
-- App Store Connect agreements, processing or compliance prompts, tester-group
-  assignment, external tester selection, and Beta App Review remain manual.
-
-The dated launch checklist below records prior releases. Where it names retired
-manual workflows, this section is authoritative until TAL-22 removes that
-history.
-
-## Current Readiness Snapshot
-
-As of 2026-08-30:
-
-- Signed semantic-version tags are the supported release trigger.
-- Version `1.4` is the approved App Store release; App Store Connect has closed the `1.4` pre-release train, so external-capable uploads now require a higher marketing version (this forced the bump to `1.5` in #223).
-- The last verified external-capable upload remains version `1.5`, build `1`.
-- Verified workflow evidence: run `30888612331` / `External TestFlight from master` completed successfully from `master` at `a4adf347b00a925b168245287e80a0f2b889cc55`.
-- Run `30888612331` selected build number `1`, used `ci/ExternalTestFlightExportOptions.plist`, archived successfully, and uploaded to App Store Connect successfully.
-- Owner still needs to wait for App Store Connect processing, confirm build `1.5 (1)` appears and is not internal-only, and resolve any compliance prompts before using it for external testing or App Review replacement.
-- The share extension's automatic app-launch workaround remains the highest Beta/App Store Review code risk until removed or explicitly accepted.
-- Full local XCTest passed on iPhone 17 Simulator for the latest code validation, but every RC should be validated again before submission.
-
-## Stop Conditions
-
-Do not invite external testers if any of these are true:
-
-- `git status --short --branch` is not clean on the RC branch.
-- The intended RC commit has not been pushed to `origin/main`.
-- Full `xcodebuild test` has not passed on the intended RC commit.
-- The owner has not installed and manually smoke-tested the exact RC build from internal TestFlight on a physical iPhone.
-- App Store Connect TestFlight test information is incomplete.
-- Privacy policy URL is missing.
-- The backend server or demo credentials for Beta App Review are not available.
-- The build in App Store Connect is marked internal-only.
-
-## Optimal Order
-
-### 1. Resolve Outstanding Repo State
-
-Purpose: make sure the source tree has one clear release candidate.
-
-Owner/Codex tasks:
-
-1. Review `codex/i-013-record-permission-deprecation`.
-2. Either merge it into local `main` after review, or explicitly defer it and leave it out of the RC.
-3. Confirm paused issues remain unreproduced:
-   - `I-002`: active session can show blank transcript after sleep/return.
-   - `I-004`: thinking card spacing inconsistency.
-   - `I-005`: pin can return `HTTP 404 Session not found`.
-4. Do not start new feature/polish work unless it fixes an external TestFlight blocker.
-
-Validation:
+A release is one signed tag on a green `main` commit:
 
 ```zsh
-git switch main
-git status --short --branch
-git log --oneline --decorate --max-count=12
+git tag -s vX.Y.Z <main-commit> -m "Talaria X.Y.Z"
+git push origin vX.Y.Z
 ```
 
-Exit criteria:
-
-- `main` contains the selected RC fixes.
-- `git status --short --branch` is clean.
-- Any excluded issue is intentionally deferred or paused in GitHub Issues.
-
-Current result as of 2026-05-15:
-
-- Complete. `codex/i-013-record-permission-deprecation` is merged into the release branch.
-- `I-002`, `I-004`, and `I-005` remain paused (legacy tracker notes; see GitHub Issues).
-- The release branch was ahead of its remote; do not upload or invite testers until the intended RC is validated and pushed.
-
-### 2. Reconcile Handoff Docs Before RC
-
-Purpose: make sure future sessions and the owner see the real RC state.
-
-Codex tasks:
-
-1. Confirm `README.md`, `DEVELOPMENT.md`, `PROJECT_SPEC.md`, and this file agree about the RC candidate state and any merged readiness slice:
-   - whether `I-013` is done;
-   - whether external TestFlight is still pending;
-   - the current tested WebUI pin;
-   - privacy policy status;
-   - internal-only versus external-capable upload path.
-
-Validation:
-
-```zsh
-git diff --check
-rg -n "I-013|external TestFlight|internal-only|testFlightInternalTestingOnly|privacy policy|UPSTREAM_TESTED_SHA" README.md DEVELOPMENT.md PROJECT_SPEC.md TESTFLIGHT.md
-```
-
-Exit criteria:
-
-- Handoff docs accurately describe the release candidate and remaining external-launch tasks.
-
-### 3. Add An External-Capable Upload Path
-
-Purpose: create a safe way to upload a build that can be submitted to external TestFlight.
-
-Current state:
-
-- `.github/workflows/internal-testflight.yml` uses `ci/TestFlightExportOptions.plist`.
-- `ci/TestFlightExportOptions.plist` sets `testFlightInternalTestingOnly = true`.
-- Apple marks those builds internal-only; they cannot be submitted for external testing or customers.
-
-Preferred implementation:
-
-1. Keep the existing internal-only workflow unchanged for quick owner smoke builds.
-2. Add a separate external-capable export options plist, for example `ci/ExternalTestFlightExportOptions.plist`, with:
-   - `method = app-store-connect`
-   - `destination = upload`
-   - `signingStyle = automatic`
-   - `teamID = Q28NF3NH3D`
-   - `uploadSymbols = true`
-   - no `testFlightInternalTestingOnly` key
-3. Add a separate manual workflow, for example `.github/workflows/external-testflight.yml`, with stronger gates:
-   - only runs on `main`;
-   - requires an explicit input such as `confirm_external_review = EXTERNAL_REVIEW`;
-   - uses a separate GitHub environment such as `external-testflight`;
-   - does not auto-invite testers;
-   - logs the commit SHA and build number clearly;
-   - uses the external export options file.
-4. Document that this workflow only uploads the build. Adding it to an external group and submitting to Beta App Review remains manual in App Store Connect.
-
-Validation:
-
-```zsh
-plutil -lint ci/ExternalTestFlightExportOptions.plist
-ruby -e 'require "yaml"; YAML.load_file(".github/workflows/external-testflight.yml"); puts "YAML OK"'
-rg -n "testFlightInternalTestingOnly|EXTERNAL_REVIEW|external-testflight" ci .github/workflows DEVELOPMENT.md TESTFLIGHT.md
-xcodebuild -project Talaria.xcodeproj -scheme Talaria -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
-git diff --check
-```
-
-Exit criteria:
-
-- There is a clearly separate, manually gated external-capable upload path.
-- The internal-only path still exists and remains internal-only.
-
-Current result as of 2026-05-15:
-
-- Complete locally on `codex/testflight-doc-reconcile`.
-- `.github/workflows/external-testflight.yml` adds a manually gated `External TestFlight` upload workflow with `confirm_external_review = EXTERNAL_REVIEW`, `external-testflight` environment gating, `main`-only enforcement, and no tester invites.
-- `ci/ExternalTestFlightExportOptions.plist` uploads to App Store Connect without `testFlightInternalTestingOnly`.
-- The existing `Internal TestFlight` workflow and `ci/TestFlightExportOptions.plist` remain internal-only.
-
-### 4. Confirm Apple Developer Portal Capabilities
-
-Purpose: prevent archive/upload failures caused by missing identifiers or entitlements.
-
-Owner task in Apple Developer / App Store Connect:
-
-1. Confirm app bundle ID exists:
-   - `dev.kil.talaria`
-2. Confirm share extension bundle ID exists:
-   - `dev.kil.talaria.shareextension`
-3. Confirm App Group exists:
-   - `group.dev.kil.talaria`
-4. Confirm the App Group is enabled for both the app and share-extension bundle IDs.
-5. Confirm the Live Activity widget bundle ID exists:
-   - `dev.kil.talaria.liveactivitywidget`
-6. Confirm Sign in with Apple and iCloud (CloudKit, container `iCloud.dev.kil.talaria`) are enabled on the app bundle ID and the CloudKit schema is deployed to Production; see [`docs/icloud-sync-setup.md`](docs/icloud-sync-setup.md).
-7. Confirm an active App Store provisioning profile using the CI distribution certificate exists for all three targets.
-8. Confirm Apple Developer Program agreements are accepted.
-9. Confirm App Store Connect API key used by GitHub has enough access for upload/provisioning.
-
-Local validation:
-
-```zsh
-plutil -p Talaria/Resources/Talaria.entitlements
-plutil -p TalariaShareExtension/Resources/TalariaShareExtension.entitlements
-xcodebuild -showBuildSettings -project Talaria.xcodeproj -scheme Talaria -configuration Release | rg "PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_ENTITLEMENTS|CODE_SIGN_STYLE"
-```
-
-Exit criteria:
-
-- App and extension archive/export signing can succeed without manual project setting changes.
-
-Current local result as of 2026-05-15:
-
-- Local validation passed on `codex/testflight-doc-reconcile`.
-- App target Release settings use automatic signing, Team ID `Q28NF3NH3D`, bundle ID `dev.kil.talaria`, and `Talaria/Resources/Talaria.entitlements`.
-- Share extension Release settings use automatic signing, Team ID `Q28NF3NH3D`, bundle ID `dev.kil.talaria.shareextension`, and `TalariaShareExtension/Resources/TalariaShareExtension.entitlements`.
-- Both entitlement files include `group.dev.kil.talaria`.
-- Owner confirmed the Apple Developer Portal and App Store Connect API key items on 2026-05-15.
-
-Current Step 4 status:
-
-- Complete.
-
-### 5. Finish App Store Connect Metadata Required For Beta Review
-
-Purpose: avoid Beta App Review rejection for incomplete metadata or missing reviewer access.
-
-Owner task in App Store Connect:
-
-1. TestFlight > Test Information:
-   - Beta App Description.
-   - Feedback Email.
-   - Contact Information.
-   - Beta App Review Information.
-   - Notes for Review.
-2. Provide reviewer access:
-   - server URL: `https://<your-server>`
-   - reviewer password or demo credential;
-   - a short path to verify the app: sign in, open sessions, send a message, view files/panels, use share extension if appropriate.
-3. Make sure the backend service is awake and available for the review window.
-4. Explain the app in review notes:
-   - native iOS client for a user-controlled/self-hosted Hermes developer-agent server;
-   - password auth is against the user-configured server;
-   - no in-app account creation;
-   - no purchases;
-   - camera capture is not implemented;
-   - shared files/photos/PDFs are staged locally, then uploaded only to the configured Hermes server for composer attachment import;
-   - user must explicitly send the message after import.
-5. Enter a public privacy policy URL.
-6. Review App Privacy answers:
-   - no tracking;
-   - no third-party analytics unless one is later added;
-   - voice, photo, file, and shared content behavior is described accurately;
-   - if using the owner's server for external testers, be conservative and disclose data the developer/server operator can access as needed.
-7. Confirm age rating/category are accurate for a developer productivity app.
-8. Confirm support URL and marketing URL fields if App Store Connect requires them for the current app state.
-
-Exit criteria:
-
-- TestFlight test information is complete.
-- Privacy policy URL is saved.
-- Reviewer can access the backend without asking for more info.
-
-Draft App Store Connect metadata:
-
-Beta App Description:
-
-```text
-Talaria is a native iOS client for a self-hosted Hermes Web UI developer-agent server. Use it to sign in to your configured server, browse sessions, send messages with composer options and attachments, stream responses, view workspace files, and open read-only Tasks, Skills, Memory, and Usage Analytics panels.
-```
-
-What to Test:
-
-```text
-Test core Talaria workflows: sign in to a self-hosted Hermes Web UI server, browse sessions, open existing conversations, send messages with model/reasoning/workspace options, stream responses, attach photos/files, use share extension import, browse workspace files, and view read-only Tasks, Skills, Memory, and Usage Analytics.
-```
-
-Beta App Review Information:
-
-```text
-Review server:
-https://<your-server>
-
-Review password:
-<provide current password in App Store Connect, not in git>
-
-Suggested review path:
-1. Launch the app.
-2. Enter the review server URL and password.
-3. Open Sessions and select an existing session.
-4. Send a short message and watch the streamed response.
-5. Open Files, Tasks, Skills, Memory, and Usage Analytics from the Sessions screen.
-6. Optional: use the iOS share sheet from Safari/Notes/Files/Photos to import content into a new Talaria draft. The app stages shared content locally, uploads selected attachments to the configured Hermes server, and does not send a chat message until the user taps Send.
-
-Notes:
-- There is no in-app account creation or purchase flow.
-- The server is self-hosted and password protected.
-- Camera capture is not implemented in this build.
-- Microphone and speech recognition are used only for explicit composer dictation.
-- Photo/file access is used only when the user selects attachments or shares content into the app.
-```
-
-Current Step 5 status as of 2026-05-15:
-
-- Draft metadata is prepared in this runbook.
-- Owner confirmed the metadata was entered and saved in App Store Connect, the private review password was supplied there, the public privacy policy URL was saved, and App Privacy answers were confirmed.
-
-Current Step 5 status:
-
-- Complete.
-
-### 6. Decide On Share Extension Auto-Launch Risk
-
-Purpose: choose the safest external-review posture before the RC upload.
-
-Current behavior:
-
-- The share extension stages a draft/attachment in the App Group.
-- It then attempts to open the containing app through a dynamic `UIApplication`/`openURL:` workaround because iOS share extensions do not provide a clean containing-app launcher.
-
-Decision options:
-
-1. Keep the workaround for external TestFlight.
-   - Pros: best current user experience.
-   - Cons: highest Beta App Review risk; dynamic use may be rejected even though it builds.
-   - Required: explain the share flow clearly in Notes for Review and be ready to remove it quickly if rejected.
-2. Replace with a review-safer flow before external submission.
-   - Pros: lower review risk.
-   - Cons: less automatic UX; may require user to open Talaria manually after sharing.
-   - Required: implement, test Safari/Notes/Files/Photos share cases, and update docs.
-
-Recommended path:
-
-- Decide this before uploading the external-capable build. Do not submit one build and then change this behavior unless you are willing to restart the review cycle for a new build.
-
-Current code note as of 2026-05-15:
-
-- The extension saves the pending draft/attachment import to the App Group before attempting to open Talaria.
-- The automatic launch path uses responder-chain and dynamic `UIApplication` URL-opening fallbacks to open `talaria://share`.
-- If automatic launch fails, the App Group import fallback still lets Talaria import the pending share when the app is next opened or foregrounded.
-- The review-safer alternative is to remove automatic launch and show a saved status, requiring the user to open Talaria manually.
-
-Exit criteria:
-
-- The owner explicitly chooses keep or revert.
-- The exact RC behavior is covered in manual regression.
-- App Store Connect review notes match the chosen behavior.
-
-Current Step 6 status as of 2026-05-15:
-
-- Complete. Owner chose to keep the automatic app-launch workaround for external TestFlight.
-- App Store Connect review notes include the share import flow.
-- Manual regression should cover Safari/Notes/Files/Photos share import and fallback behavior before external submission.
-
-### 7. Run Local RC Validation
-
-Purpose: prove the code is buildable/testable before spending App Store Connect cycles.
-
-Commands:
-
-```zsh
-xcrun simctl list devices available
-git status --short --branch
-git diff --check
-plutil -lint Talaria/Resources/Info.plist Talaria/Resources/PrivacyInfo.xcprivacy TalariaShareExtension/Resources/Info.plist TalariaShareExtension/Resources/PrivacyInfo.xcprivacy
-xcodebuild test -project Talaria.xcodeproj -scheme Talaria -destination 'platform=iOS Simulator,name=iPhone 17'
-xcodebuild -project Talaria.xcodeproj -scheme Talaria -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
-```
-
-If simulator launch is stale:
-
-```zsh
-xcrun simctl shutdown all
-xcodebuild test -project Talaria.xcodeproj -scheme Talaria -destination 'platform=iOS Simulator,name=iPhone 17'
-```
-
-Exit criteria:
-
-- `git status --short --branch` is clean.
-- `git diff --check` passes.
-- plist lint passes.
-- full XCTest passes.
-- generic iOS Release build passes.
-
-Current Step 7 status as of 2026-05-15 (pre-target-rename evidence):
-
-- Complete on `codex/testflight-doc-reconcile`.
-- iPhone 17 Simulator is available.
-- `git diff --check` passed.
-- plist lint passed for app/share-extension Info.plist and privacy manifests.
-- `xcodebuild test -project HermesMobile.xcodeproj -scheme HermesMobile -destination 'platform=iOS Simulator,name=iPhone 17'` completed with `TEST SUCCEEDED`.
-- XCTest result bundle: `~/Library/Developer/Xcode/DerivedData/HermesMobile-dodyrzzipcxecicrwnfmjwjkqngb/Logs/Test/Test-HermesMobile-2026.05.14_22-45-59--0400.xcresult`.
-- `xcodebuild -project HermesMobile.xcodeproj -scheme HermesMobile -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` completed with `BUILD SUCCEEDED`.
-
-### 8. Run Live Authenticated Server Smoke
-
-Purpose: catch issues that mock tests and endpoint-shape tests cannot catch.
-
-Owner/Codex task:
-
-Use the owner server and credentials. Do not mutate real data unnecessarily; use a disposable session where state-changing checks are needed.
-
-Minimum smoke:
-
-1. `GET /health` is reachable.
-2. Sign in from the app.
-3. Load sessions.
-4. Open at least one WebUI-created session.
-5. Create a new session.
-6. Send a normal message and watch stream completion.
-7. Stop a streaming response.
-8. Background/foreground during an active stream.
-9. Upload one image and one file/PDF attachment.
-10. Open Files, preview text, preview image, and view unsupported binary state.
-11. Open Tasks list/detail/output.
-12. Open Skills list/search/detail/linked file.
-13. Open Memory.
-14. Open Usage Analytics and switch timeframes.
-15. Exercise paused-risk repros:
-    - active session sleep/return;
-    - pin/unpin on multiple sessions;
-    - thinking/tool card spacing in long sessions.
-
-Exit criteria:
-
-- No crash.
-- No unexplained auth/logout issue.
-- No blank transcript after reload/foreground.
-- No destructive action affects non-disposable data.
-- Any issue found is captured in GitHub Issues and either fixed or explicitly accepted before external launch.
-
-Current Step 8 status as of 2026-05-16:
-
-- Complete on iPhone 17 Simulator `A6ACE4D8-B20A-4E1C-AB21-4F92B862337A` against `https://<your-server>`.
-- `GET https://<your-server>/health` returned HTTP 200 with `status: ok`.
-- Owner entered credentials directly in the Simulator; no server password or reviewer password was committed.
-- Sessions loaded, one WebUI-created session opened, and two disposable Step 8 sessions were created for state-changing checks.
-- Normal send, stream completion, stop streaming, and background/foreground during an active stream passed without crash, logout, or blank transcript.
-- Image and PDF attachment upload passed in a disposable session.
-- Files text preview, image preview, and unsupported binary `No Preview` state passed.
-- Tasks list/detail/output, Skills list/search/detail/linked file, Memory, and Usage Analytics timeframe switching passed.
-- Paused-risk checks passed or remained known issues:
-  - active session sleep/return did not reproduce `I-002`;
-  - pin/unpin on multiple disposable sessions passed and did not reproduce `I-005`;
-  - existing long-session Thinking-card duplication/spacing issues were observed again under `I-004`/`I-015`.
-- New polish issue captured: `I-016`, Skills linked-file sheets need an obvious visible close/dismiss control.
-
-### 9. Push The RC Commit
-
-Purpose: ensure the upload workflow uses the audited source.
-
-Owner task:
-
-```zsh
-git switch main
-git status --short --branch
-git push origin main
-```
-
-Exit criteria:
-
-- `origin/main` points to the intended RC commit.
-- App Store Connect upload workflow will build the audited source, not an older commit.
-
-Current Step 9 status as of 2026-05-17:
-
-- Complete. The release branch was pushed for the internal TestFlight RC path.
-- The latest local and remote commit before this Step 11 handoff was `cebdb38` (`Issues: Capture owner-observed polish items`).
-
-### 10. Upload Fresh Internal TestFlight Build
-
-Purpose: test the exact RC through Apple's distribution path before external review.
-
-Use the existing internal-only workflow:
-
-1. Run `Internal TestFlight` from GitHub Actions.
-2. Select `main`.
-3. Set `confirm_internal_only = INTERNAL`.
-4. Leave `build_number` blank so the workflow selects the next App Store Connect build number for the current marketing version.
-5. Wait for App Store Connect processing.
-6. Add the build to the internal TestFlight group.
-7. Install from TestFlight on the owner's physical iPhone.
-
-Exit criteria:
-
-- The owner installs the internal RC build from TestFlight.
-- The installed build number is recorded in this file or the review notes.
-- Internal smoke passes before any external-capable upload.
-
-Current Step 10 status as of 2026-05-17:
-
-- Complete. Owner installed internal TestFlight build `1.0 (7)` on a physical iPhone for Step 11 manual regression.
-
-### 11. Owner Device Manual Regression
-
-Purpose: verify real-device behavior that simulator and unit tests cannot cover.
-
-Use the full checklist in `DEVELOPMENT.md`, with extra attention to:
-
-- onboarding and wrong-password errors;
-- server/tunnel down messaging;
-- background audio does not pause until voice recording starts;
-- voice permission allowed and denied;
-- notification permission behavior;
-- haptics;
-- large Dynamic Type;
-- VoiceOver core path;
-- physical share sheet behavior from Safari, Notes/Mail, Photos, Files/PDF;
-- attachment upload progress and failure recovery;
-- long streaming response over two minutes;
-- background/foreground stream recovery;
-- app icon and launch screen;
-- landscape and portrait.
-
-Exit criteria:
-
-- 30 minutes of normal iPhone use without crashes.
-- Full checklist has no unresolved P0/P1.
-- Accepted known risks are written down in GitHub Issues or review notes.
-
-Current Step 11 status as of 2026-05-17:
-
-- Complete. Owner completed the physical iPhone manual regression on internal TestFlight build `1.0 (7)`.
-- Step 11.7 Server Panels passed in Simulator before the device pass:
-  - Files list/search;
-  - text file preview;
-  - image preview;
-  - unsupported binary preview;
-  - Tasks list/detail/output;
-  - Skills list/search/detail;
-  - Memory notes/profile;
-  - Usage Analytics timeframe switching.
-- Polish/Launch checks passed:
-  - light mode;
-  - dark mode;
-  - portrait;
-  - landscape on owner iPhone;
-  - largest Dynamic Type on owner iPhone;
-  - app icon/display name;
-  - relaunch;
-  - launch screen;
-  - VoiceOver core path;
-  - privacy prompts;
-  - TestFlight path;
-  - share sheet behavior.
-- Owner documented newly observed issues in the tracker; there are no open P0/P1 blockers.
-- Accepted non-blocking risks for external beta include `I-014`, `I-015`, `I-016`, `I-017`, `I-018`, `I-019`, `I-020`, `I-024`, `I-025`, `I-026`, and `I-027`.
-
-### 12. Upload External-Capable Build
-
-Purpose: create the build that can be submitted to Beta App Review.
-
-Use the new external-capable workflow or manual Xcode upload. The build must not be marked internal-only.
-
-Version-train rule (bitten 2026-06-02 with `1.0` → `1.0.1` and 2026-08-04 with `1.4` → `1.5`): once a version is approved for the App Store, Apple closes its pre-release train and rejects any upload with that `CFBundleShortVersionString` (ASC errors 90186/90062). Two defenses:
-
-- Choose a signed release tag whose semantic version is above the approved App Store version.
-- The workflow preflights that tag-derived version against App Store Connect before archiving (`ENFORCE_OPEN_TRAIN` in `ci/select_testflight_build_number.rb`) and fails in seconds with a higher-tag instruction if the train is closed.
-
-Current workflow path:
-
-1. Create and push an authorized signed `app-vX.Y.Z` tag on clean, validated `main`.
-2. Follow the root dry-run and production-cutover procedure linked above, including
-   the selected Web/Relay identities and latest completed predecessor.
-3. Verify App Store Connect processing and the completed release-set manifest.
-
-Exit criteria:
-
-- Build appears in App Store Connect and is not marked internal-only.
-- Build has compliance information resolved.
-- dSYMs/symbols are uploaded.
-
-Current Step 12 status as of 2026-05-17:
-
-- External upload workflow was dispatched from `master` at commit `a6767f4`.
-- First run `25979198228` failed during App Store Connect upload because the default external workflow run number selected bundle version `1`, and App Store Connect already had uploaded build `7`.
-- Retried as run `25979270377` / `External TestFlight #8 from master` with explicit `build_number = 8`.
-- Run `25979270377` completed successfully:
-  - manual gate passed;
-  - required App Store Connect secrets were present;
-  - archive succeeded;
-  - upload to App Store Connect succeeded.
-- Owner still needs to wait for App Store Connect processing, confirm build `1.0 (8)` appears and is not marked internal-only, and resolve any compliance prompts before Step 13.
-
-Current Step 12 update as of 2026-05-27:
-
-- Owner reran `External TestFlight` from GitHub Actions after repairing the Apple signing/upload path.
-- Run `26485474969` completed successfully from `master` at commit `8ebafc8fb8e4d30414be120b4194140322da53bb`.
-- Verified run/job metadata:
-  - workflow: `External TestFlight`;
-  - display title: `External TestFlight from master`;
-  - conclusion: `success`;
-  - job: `Archive and Upload`, conclusion `success`;
-  - marketing version: `1.0`;
-  - build number: `30`;
-  - export options: `ci/ExternalTestFlightExportOptions.plist`;
-  - archive and App Store Connect upload succeeded.
-- Current uploaded RC candidate is build `1.0 (30)`.
-- Owner reported App Store Connect looks good for build `1.0 (30)`. Next owner decision is whether to submit build `1.0 (30)` for Beta App Review or hold it for internal/external stabilization first.
-
-Current Step 12 update as of 2026-05-30:
-
-- After issue #23 merged, GitHub Actions `External TestFlight` run `26674733144` completed successfully from `master` at commit `70d818fba2dced6eb3e37188c900ec79734fbb8c`.
-- Verified run/job metadata:
-  - workflow: `External TestFlight`;
-  - display title: `External TestFlight from master`;
-  - conclusion: `success`;
-  - job: `Archive and Upload`, conclusion `success`;
-  - marketing version: `1.0`;
-  - build number: `33`;
-  - export options: `ci/ExternalTestFlightExportOptions.plist`;
-  - archive and App Store Connect upload succeeded.
-- Current uploaded external-capable build is `1.0 (33)`.
-- The workflow upload did not assign external tester groups, submit Beta App Review, replace the existing App Review build, invite testers, or release the app.
-- Owner still needs to wait for App Store Connect processing, confirm build `1.0 (33)` appears and is not internal-only, resolve any compliance prompts, and manually choose whether to use build `1.0 (33)` for external testing and/or App Review replacement.
-
-Current Step 12 update as of 2026-06-02:
-
-- After issue #50 merged, GitHub Actions `External TestFlight` run `26831954965` was dispatched from `master` at commit `720105514823354f8c1988095596c9cb611e9c84`.
-- Run `26831954965` selected build `1.0 (34)` and archived successfully, but App Store Connect rejected the upload because the `1.0` pre-release train is closed after the previously approved `1.0` version.
-- Owner approved bumping `MARKETING_VERSION` to `1.0.1`.
-- GitHub Actions `External TestFlight` retry run `26833031469` completed successfully from `master` at commit `9e8078215586643eb11c519bf9c73dfa103070ea`.
-- Verified run/job metadata:
-  - workflow: `External TestFlight`;
-  - display title: `External TestFlight from master`;
-  - conclusion: `success`;
-  - job: `Archive and Upload`, conclusion `success`;
-  - marketing version: `1.0.1`;
-  - build number: `1`;
-  - export options: `ci/ExternalTestFlightExportOptions.plist`;
-  - archive and App Store Connect upload succeeded.
-- Current uploaded external-capable build is `1.0.1 (1)`.
-- The workflow upload did not assign external tester groups, submit Beta App Review, replace the existing App Review build, invite testers, or release the app.
-- Owner still needs to wait for App Store Connect processing, confirm build `1.0.1 (1)` appears and is not internal-only, resolve any compliance prompts, and manually choose whether to use build `1.0.1 (1)` for external testing and/or App Review replacement.
-
-### 13. Submit Beta App Review
-
-Purpose: get the first external build approved by Apple.
-
-Owner task in App Store Connect:
-
-1. Create an external tester group, for example `External Beta`.
-2. Add the external-capable build to that group.
-3. Fill `What to Test` with concise tester instructions.
-4. Submit for review.
-5. Monitor App Store Connect review status and email.
-6. If rejected, capture the rejection in GitHub Issues or review notes, fix only the rejection scope, upload a new external-capable build, and resubmit.
-
-Suggested `What to Test`:
-
-```text
-Test core Talaria workflows: sign in to a self-hosted Hermes Web UI server, browse sessions, open existing conversations, send messages with model/reasoning/workspace options, stream responses, attach photos/files, use share extension import, browse workspace files, and view read-only Tasks, Skills, Memory, and Usage Analytics.
-```
-
-Exit criteria:
-
-- External build is approved for TestFlight beta testing.
-
-Historical Step 13 status as of 2026-05-17:
-
-- Owner submitted external-capable build `1.0 (8)` for Beta App Review in App Store Connect.
-- App Store Connect status is `Waiting for Review`.
-- External testers have not been invited yet. Continue to wait for Beta App Review approval before Step 14.
-
-Current Step 13 status as of 2026-05-30:
-
-- Repo-local evidence records App Review submission for build `1.0 (32)`, not build `1.0 (33)`.
-- No repo-local evidence has been recorded yet that build `1.0 (33)` was submitted for Beta App Review, assigned to external testers, or selected as an App Review replacement.
-- Use build `1.0 (33)` for the next external review/stabilization decision unless the owner intentionally uploads a newer RC.
-
-### 14. Invite External Testers
-
-Purpose: start the external beta with controlled scope.
-
-Recommended rollout:
-
-1. Start with a small private external group, not a public link.
-2. Add testers by email first.
-3. Include:
-   - TestFlight install instructions;
-   - server setup requirements;
-   - known limitations;
-   - feedback email;
-   - request for screenshots/screen recordings when reporting issues;
-   - warning not to connect the app to sensitive production workspaces unless they understand server exposure and local cache behavior.
-4. Watch TestFlight feedback and crash reports daily for the first few days.
-5. Disable public links or pause expansion if P0/P1 issues appear.
-
-Exit criteria:
-
-- External testers can install and sign in.
-- Feedback collection path is working.
-- No immediate crash spike or install blocker.
-
-### 15. Post-Launch Monitoring And Triage
-
-Purpose: keep the beta useful without destabilizing the RC.
-
-Daily during first week:
-
-1. Review TestFlight feedback.
-2. Review crash reports in App Store Connect/Xcode Organizer.
-3. Check server health and logs if testers report connection issues.
-4. Capture actionable reports in the project tracker.
-5. Triage:
-   - P0: fix immediately, upload new external-capable build, resubmit if required.
-   - P1: fix before widening tester pool.
-   - P2/P3: batch unless they block trust or core workflows.
-
-Before each new external build:
-
-```zsh
-git status --short --branch
-git diff --check
-xcodebuild test -project Talaria.xcodeproj -scheme Talaria -destination 'platform=iOS Simulator,name=iPhone 17'
-xcodebuild -project Talaria.xcodeproj -scheme Talaria -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
-```
-
-## App Store Connect Review Notes Template
-
-Use this as a starting point and keep it accurate for the exact submitted build.
-
-```text
-Talaria is a native iOS client for a user-controlled Hermes Web UI developer-agent server.
-
-Review server:
-https://<your-server>
-
-Review password:
-<provide current password in App Store Connect, not in git>
-
-Suggested review path:
-1. Launch the app.
-2. Enter the review server URL and password.
-3. Open Sessions and select an existing session.
-4. Send a short message and watch the streamed response.
-5. Open Files, Tasks, Skills, Memory, and Usage Analytics from the Sessions screen.
-6. Optional: use the iOS share sheet from Safari/Notes/Files/Photos to import content into a new Talaria draft. The app stages shared content locally, uploads selected attachments to the configured Hermes server, and does not send a chat message until the user taps Send.
-
-Notes:
-- There is no in-app account creation or purchase flow.
-- The server is self-hosted and password protected.
-- Camera capture is not implemented in this build.
-- Microphone and speech recognition are used only for explicit composer dictation.
-- Photo/file access is used only when the user selects attachments or shares content into the app.
-```
-
-## Known Risk Register For External Beta
-
-Track these during launch:
-
-- Share extension automatic app launch may be rejected by Beta App Review.
-- Upstream API has no stability guarantee; current pin is recorded in `UPSTREAM_TESTED_SHA`.
-- The disposable fork-server contract command and full XCTest suite are the current gate.
-- Cloudflare long-stream behavior can still fail if no bytes are emitted for longer than Cloudflare's idle tolerance.
-- Owner-hosted backend availability affects review and tester experience.
-- Privacy policy and App Store Connect privacy answers must stay aligned with share/import behavior.
-
-## Definition Of External TestFlight Ready
-
-External TestFlight is ready when all are true:
-
-- `main` is clean, validated, and pushed.
-- A fresh internal TestFlight RC from that commit passed owner device regression.
-- An external-capable build from the same approved RC is uploaded and not marked internal-only.
-- Privacy policy URL is live and entered in App Store Connect.
-- TestFlight test information and Beta App Review notes are complete.
-- Reviewer server URL/password are valid and the server is awake.
-- Share extension auto-launch risk is consciously accepted or removed.
-- No open P0/P1 issue blocks normal use.
-- Beta App Review approves the build.
+Pick one version that exceeds every component's published version; a version is
+used once. The `Release` workflow (`release.yml`) validates the tag, waits for
+that commit's main CI, tags the changed components (`app-vX.Y.Z`, `web-vX.Y.Z`,
+`relay-vX.Y.Z`) and starts `Production cutover` (`production-cutover.yml`) on
+`main`. The cutover repeats every gate, deploys Relay, publishes Web, builds and
+uploads the App through `ios-release-build.yml`, waits for App Store Connect
+processing, and publishes the release-set manifest last. Unchanged components are
+not rebuilt. The [release procedure](../releases/README.md) has the details, and
+`$talaria-release` is the agent runbook.
+
+For the App:
+
+- The tag supplies the marketing version; App Store Connect supplies the next
+  build number. Repository version fields are development defaults.
+- The build is preflighted against App Store Connect: once a version is approved
+  for the App Store, Apple closes its TestFlight train, and the run fails fast.
+  Release the next version instead.
+- The signed IPA contains the app, the share extension and the widget extension.
+  One external-capable build serves internal and external testing.
+- Release notes come from `../changelog.d/`; see
+  [release-note authoring](docs/release-notes.md).
+
+A failed or partial run is incomplete. Inspect its side effects before retrying,
+and ship a code fix as the next patch version. If Relay and Web published but the
+App upload failed, rerun the failed job, or use `Recover failed cutover App
+publication` (`recover-cutover.yml`) within 30 days to resume the same IPA.
+`Inspect existing TestFlight upload` (`inspect-testflight.yml`) reads an existing
+build's metadata without changing it.
+
+## Credentials
+
+The `testflight` environment holds `APP_STORE_CONNECT_KEY_ID`,
+`APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_PRIVATE_KEY`,
+`IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64` and
+`IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`, and must allow the trusted `main`
+workflow. The Apple Distribution identity belongs to team `Q28NF3NH3D`.
+
+The Apple Developer portal needs the App IDs `dev.kil.talaria`,
+`dev.kil.talaria.shareextension` and `dev.kil.talaria.liveactivitywidget`, the
+App Group `group.dev.kil.talaria` on all three, and Sign in with
+Apple plus iCloud on the app ([iCloud sync setup](docs/icloud-sync-setup.md)).
+
+## After upload
+
+These are owner actions in App Store Connect:
+
+1. Wait for processing and answer any compliance prompt. `Info.plist` declares
+   `ITSAppUsesNonExemptEncryption = NO`.
+2. Add the build to the internal group and check it on a physical iPhone:
+   sign-in, chat streaming, sessions, attachments and share import, Kanban,
+   Tasks, Git, Live Activities and widgets, and Relay and iCloud sync after
+   Sign in with Apple.
+3. For external testers, add the build to an external group and submit it for
+   Beta App Review. Keep the review server URL and password in App Store Connect,
+   never in git, and keep the server awake during review.
+
+## Branch TestFlight builds
+
+When the owner asks to **"push to branch testflight"**, upload the current
+feature branch to the side-by-side `Talaria Branch` app. This is a TestFlight
+upload, not a Git push; never touch the production app unless asked. The branch
+app uses bundle ID `dev.kil.talaria.branch` (extensions
+`dev.kil.talaria.branch.shareextension` and
+`dev.kil.talaria.branch.liveactivitywidget`), App Group
+`group.dev.kil.talaria.branch`, URL scheme `talaria-branch` and display name
+`Talaria Branch`.
+
+1. Validate the branch: at least `git diff --check` and a simulator build.
+2. Archive with a unique build number, for example `YYYYMMDDHHMM`:
+
+   ```zsh
+   xcodebuild -project Talaria.xcodeproj -scheme Talaria -configuration Release \
+     -destination 'generic/platform=iOS' -archivePath build/TalariaBranch.xcarchive \
+     -xcconfig Config/BranchTestFlight.xcconfig CURRENT_PROJECT_VERSION=<unique-build-number> \
+     archive -allowProvisioningUpdates
+   ```
+
+3. Upload:
+
+   ```zsh
+   xcodebuild -exportArchive -archivePath build/TalariaBranch.xcarchive \
+     -exportOptionsPlist Config/BranchTestFlightExportOptions.plist \
+     -exportPath build/TalariaBranchExport -allowProvisioningUpdates
+   ```
+
+4. Report the version and build number; App Store Connect needs time to process
+   it before it reaches the phone.
