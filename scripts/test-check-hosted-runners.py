@@ -141,6 +141,8 @@ jobs:
         # needs it; moving a portable job onto macOS fails here. Xcode image jobs select Xcode explicitly.
         native = {("ci.yml", "app-tooling"): "test-ios-simulator-pool", ("app-tests.yml", "app-build"): "ci/build-for-testing",
                   ("app-tests.yml", "app-test"): "xcodebuild",
+                  # TalariaKit links Apple frameworks (SwiftData, WidgetKit) that Linux lacks (TAL-399).
+                  ("app-tests.yml", "package-test"): "swift test --package-path TalariaKit",
                   ("fuzz-soak.yml", "soak"): "xcodebuild", ("ui-performance.yml", "measure"): "xcodebuild",
                   ("ios-release-build.yml", "build"): "xcodebuild archive",
                   ("release-set.yml", "contracts"): "check-release-contracts.py --only app",

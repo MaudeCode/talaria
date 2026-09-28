@@ -77,8 +77,8 @@ def app_ui_required(paths, scene_unchanged=False, metadata_only_plists=()):
                 return True
         elif path.startswith(("app/Talaria/Networking/", "app/Talaria/Models/", "app/Talaria/Config/",
                               "app/Talaria/Persistence/", "app/Talaria/Sync/", "app/Talaria/LiveActivities/",
-                              "app/TalariaTests/", "app/ci/", "app/scripts/", "app/docs/", "app/changelog.d/",
-                              "app/Talaria.xcodeproj/")):
+                              "app/TalariaKit/", "app/TalariaTests/", "app/ci/", "app/scripts/", "app/docs/",
+                              "app/changelog.d/", "app/Talaria.xcodeproj/")):
             continue
         elif path in metadata_only_plists or (path.count("/") == 1 and path.endswith(".md")):
             continue
@@ -103,9 +103,15 @@ def path_suites(path):
     # Runtime resources and test fixtures can be Markdown too; never classify
     # them as documentation just because of their extension.
     if (component == "app" and local.startswith(("Talaria", "Packages/", "Config/"))):
-        # The live Web fixture test runs only in PR CI's contracts step, so it selects contracts too.
+        # The live Web fixture test runs only in PR CI's contracts step, so it selects contracts too. TalariaKit
+        # (TAL-399) holds the networking and models, and its package job runs that test.
         return {"app", "contracts"} if local.startswith(("Talaria/Networking/", "Talaria/Models/", "Talaria/LiveActivities/",
-                                                          "TalariaTests/APIClientSessionListTests.swift")) else {"app"}
+                                                          "TalariaTests/APIClientSessionListTests.swift", "TalariaKit/Package.",
+                                                          "TalariaKit/Sources/TalariaKit/Networking/",
+                                                          "TalariaKit/Sources/TalariaKit/Models/",
+                                                          "TalariaKit/Sources/TalariaKit/LiveActivities/",
+                                                          "TalariaKit/Tests/TalariaKitTests/APIClientSessionListTests.swift",
+                                                          "TalariaKit/Tests/TalariaKitTests/Support/")) else {"app"}
     if path.startswith("web/sidecar/tests/"):
         return {"web_server"}
     if path.startswith("relay/tests/"):

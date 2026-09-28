@@ -16,15 +16,16 @@ import sys
 APP = Path(__file__).resolve().parent.parent
 WEIGHTS = Path(__file__).resolve().with_name("test-shard-weights.json")
 TARGETS = ("TalariaTests", "TalariaUITests")
-# Owned elsewhere: the scheduled Fuzz Soak (TAL-85) and UI Performance (TAL-287) workflows, and the live
-# Web contract test, which runs after the suite against the probe's fixture.
+# Source directories per target. TalariaTests also compiles the TalariaKit package's shared test support, which
+# declares base classes such as APIClientTestCase; the package's own tests run with `swift test` (TAL-399).
+SOURCES = {"TalariaTests": ("TalariaTests", "TalariaKit/Tests/TalariaKitTests/Support"), "TalariaUITests": ("TalariaUITests",)}
+# Owned elsewhere: the scheduled Fuzz Soak (TAL-85) and UI Performance (TAL-287) workflows.
 SKIPPED = (
     "TalariaTests/UntrustedInputFuzzSoakTests",
     "TalariaUITests/SidebarPerformanceUITests",
     "TalariaUITests/LaunchPerformanceUITests",
     "TalariaUITests/TranscriptPerformanceUITests",
     "TalariaUITests/NavigationPerformanceUITests",
-    "TalariaTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied",
 )
 DECLARATION = re.compile(
     r"^[ \t]*(?:@\w+(?:\([^)\n]*\))?\s+)*(?:(?:final|public|internal|private|fileprivate|open|nonisolated)\s+)*"
@@ -39,7 +40,7 @@ def discover(app=APP, targets=TARGETS, measured=()):
     found = []
     for target in targets:
         bases = {}
-        for source in sorted((app / target).rglob("*.swift")):
+        for source in sorted(path for directory in SOURCES[target] for path in (app / directory).rglob("*.swift")):
             bases.update(DECLARATION.findall(source.read_text(encoding="utf-8")))
 
         def is_test(name, seen=()):
