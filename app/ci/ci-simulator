@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Usage: ci/ci-simulator [preinstalled|fresh]
+# Print the UDID of an iPhone 17 on the iOS runtime matching the selected Xcode's simulator SDK, with plain
+# simctl: CI runners are disposable, so there is no local pool, lease or admission. preinstalled picks the
+# image's own device and creates one only if the image has none; fresh always creates one.
+set -euo pipefail
+
+mode=${1:-preinstalled}
+[[ "${mode}" == preinstalled || "${mode}" == fresh ]] || { echo "usage: ci/ci-simulator [preinstalled|fresh]" >&2; exit 64; }
+device_type=com.apple.CoreSimulator.SimDeviceType.iPhone-17
+sdk_version=$(xcrun --sdk iphonesimulator --show-sdk-version)
+runtime="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
+udid=""
+if [[ "${mode}" == preinstalled ]]; then
+  udid=$(xcrun simctl list devices available --json | jq -r --arg runtime "${runtime}" --arg type "${device_type}" \
+    'first(.devices[$runtime][]? | select(.deviceTypeIdentifier == $type) | .udid) // empty')
+fi
+if [[ -z "${udid}" ]]; then
+  udid=$(xcrun simctl create "Talaria CI iPhone 17" "${device_type}" "${runtime}")
+  echo "Created ${udid} on ${runtime}" >&2
+fi
+echo "${udid}"

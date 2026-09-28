@@ -33,6 +33,11 @@ on:
         type: choice
         options: [alternate, preinstalled, fresh]
         default: alternate
+      build_cache:
+        description: Restore main's package and compilation cache before the build (off measures a cold build).
+        type: choice
+        options: ["on", "off"]
+        default: "on"
 
 permissions:
   contents: read
@@ -120,33 +125,19 @@ jobs:
 
       - name: Select simulator
         id: sim
-        run: |
-          set -euo pipefail
-          # A build destination only; nothing boots on this runner. The runtime matches the selected
-          # Xcode's SDK, on the model the pool and references use.
-          sdk_version=$(xcrun --sdk iphonesimulator --show-sdk-version)
-          export IOS_SIMULATOR_RUNTIME="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
-          export IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-17
-          simulator_id=$(scripts/select-ios-simulator | cut -f1)
-          echo "id=${simulator_id}" >> "$GITHUB_OUTPUT"
+        # A build destination only; nothing boots on this runner.
+        run: echo "id=$(ci/ci-simulator)" >> "$GITHUB_OUTPUT"
 
-      # Dispatch-only measurement (TAL-380): a clean package resolve, to compare with the cache restore step in
-      # the same uncontended job. It resolves into a scratch directory the build does not use.
-      - name: Measure a clean SwiftPM resolve
-        if: github.event_name == 'workflow_dispatch'
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-          start_seconds=${SECONDS}
-          xcodebuild -resolvePackageDependencies -project Talaria.xcodeproj -scheme Talaria \
-            -clonedSourcePackagesDirPath "${RUNNER_TEMP}/spm-probe" -disableAutomaticPackageResolution >/dev/null
-          echo "- Clean SwiftPM resolve: $((SECONDS - start_seconds))s" | tee -a "${GITHUB_STEP_SUMMARY}"
-
-      - name: Restore SwiftPM checkouts
-        uses: actions/cache@v6
+      # Packages and Xcode's content-keyed compilation cache (app/.build-cache). Main builds cold and saves
+      # one entry per commit, so an entry holds exactly one build's objects and never accumulates; pull
+      # requests and dispatches restore main's newest entry and replay unchanged compilations from it.
+      - name: Restore main's build cache
+        if: github.event_name != 'push' && inputs.build_cache != 'off'
+        uses: actions/cache/restore@v6
         with:
-          path: app/DerivedData/SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          path: app/.build-cache
+          key: xcode-build-v1-${{ env.XCODE_VERSION }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ github.sha }}
+          restore-keys: xcode-build-v1-${{ env.XCODE_VERSION }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-
 
       - name: Build for testing
         env:
@@ -154,8 +145,22 @@ jobs:
         run: |
           set -euo pipefail
           ci/build-for-testing "${SIMULATOR_ID}"
-          # Artifacts drop file modes; a tar keeps the bundles' executables and signatures intact.
-          tar -C DerivedData/Build -cf "${RUNNER_TEMP}/app-build.tar" Products
+          # Only what test-without-building reads: the xctestrun and the products it names (about 180 of
+          # 232 MB; module files, objects and bundle copies stay behind). Artifacts drop file modes, so a tar
+          # keeps the bundles' executables and signatures intact.
+          cd DerivedData/Build
+          products=(Products/*.xctestrun)
+          for product in Talaria.app TalariaUITests-Runner.app TalariaLiveActivityWidget.appex TalariaShareExtension.appex; do
+            products+=("Products/Debug-iphonesimulator/${product}")
+          done
+          tar -cf "${RUNNER_TEMP}/app-build.tar" "${products[@]}"
+
+      - name: Save the build cache from main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: app/.build-cache
+          key: xcode-build-v1-${{ env.XCODE_VERSION }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ github.sha }}
 
       - name: Upload the test build
         uses: actions/upload-artifact@v7
@@ -218,34 +223,35 @@ jobs:
         id: sim
         run: |
           set -euo pipefail
-          sdk_version=$(xcrun --sdk iphonesimulator --show-sdk-version)
-          export IOS_SIMULATOR_RUNTIME="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
-          export IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-17
-          # Preinstalled selects the image's own device (select-ios-simulator creates one only if it has none).
-          IFS=$'\t' read -r simulator_id runtime device_type <<< "$(scripts/select-ios-simulator)"
           source=${SIMULATOR_SOURCE}
           if [[ "${source}" == alternate ]]; then
             if (( SHARD % 2 == 0 )); then source=preinstalled; else source=fresh; fi
           fi
-          if [[ "${source}" == fresh ]]; then
-            simulator_id=$(xcrun simctl create "Talaria CI" "${device_type}" "${runtime}")
-          fi
+          simulator_id=$(ci/ci-simulator "${source}")
           boot_start=${SECONDS}
           xcrun simctl boot "${simulator_id}"
           xcrun simctl bootstatus "${simulator_id}" -b >/dev/null
-          echo "- Simulator boot (${source} ${simulator_id} on ${runtime}): $((SECONDS - boot_start))s" | tee -a "${GITHUB_STEP_SUMMARY}"
+          echo "- Simulator boot (${source} ${simulator_id}): $((SECONDS - boot_start))s" | tee -a "${GITHUB_STEP_SUMMARY}"
           echo "id=${simulator_id}" >> "$GITHUB_OUTPUT"
 
       - name: Wait for App build
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ci/wait-for-job "App build" 2700
+        # Returns once the build artifact exists; the job's own completion reaches the API about a minute later.
+        run: ci/wait-for-job "App build" 2700 app-build
 
+      # curl, not actions/download-artifact, which fetched this 82 MB artifact at about 1 MB/s on hosted macOS.
       - name: Download the test build
-        uses: actions/download-artifact@v8
-        with:
-          name: app-build
-          path: ${{ runner.temp }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          start_seconds=${SECONDS}
+          url=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=app-build" --jq '.artifacts[0].archive_download_url')
+          # The redirect to blob storage drops the Authorization header (curl sends it to the API host only).
+          curl -fsSL --retry 3 -H "Authorization: Bearer ${GH_TOKEN}" -o "${RUNNER_TEMP}/app-build.zip" "${url}"
+          unzip -q -o "${RUNNER_TEMP}/app-build.zip" -d "${RUNNER_TEMP}"
+          echo "- Test build download: $((SECONDS - start_seconds))s ($(du -h "${RUNNER_TEMP}/app-build.zip" | cut -f1))" | tee -a "${GITHUB_STEP_SUMMARY}"
 
       - name: Select this shard's tests
         run: |

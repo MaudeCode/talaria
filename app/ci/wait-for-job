@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# Usage: ci/wait-for-job JOB_NAME [TIMEOUT_SECONDS]
+# Usage: ci/wait-for-job JOB_NAME [TIMEOUT_SECONDS [ARTIFACT]]
 # Wait for the newest record of JOB_NAME in this workflow run at or before this attempt and fail unless it
 # succeeded. "Re-run failed jobs" keeps an earlier successful job and copies its record into the new attempt,
-# so earlier attempts count. Needs GH_TOKEN with actions: read and the GITHUB_REPOSITORY/RUN_ID/RUN_ATTEMPT env.
+# so earlier attempts count. With ARTIFACT, return as soon as that run artifact exists and the job has not
+# failed: a job's completion reaches the jobs API a minute or more after its last step. Needs GH_TOKEN with
+# actions: read and the GITHUB_REPOSITORY/RUN_ID/RUN_ATTEMPT env.
 set -euo pipefail
 
-name=${1:?usage: ci/wait-for-job JOB_NAME [TIMEOUT_SECONDS]}
+name=${1:?usage: ci/wait-for-job JOB_NAME [TIMEOUT_SECONDS [ARTIFACT]]}
 deadline=$((SECONDS + ${2:-1500}))
+artifact=${3:-}
 while :; do
   # shellcheck disable=SC2016 # jq, not the shell, expands $ENV.
   records=$(WAIT_JOB_NAME="${name}" gh api --paginate \
@@ -15,8 +18,12 @@ while :; do
     | sort -rn)
   read -r attempt _ status conclusion _ <<< "$(head -n 1 <<< "${records}") - - - -"
   [[ "${status}" == "completed" ]] && break
+  if [[ -n "${artifact}" ]] && (( $(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=${artifact}" --jq '.total_count') > 0 )); then
+    echo "${name} uploaded ${artifact} (attempt ${attempt})."
+    exit 0
+  fi
   (( SECONDS < deadline )) || { echo "Timed out waiting for ${name} (${records:-missing})" >&2; exit 1; }
-  sleep "${WAIT_FOR_JOB_POLL_SECONDS:-15}"
+  sleep "${WAIT_FOR_JOB_POLL_SECONDS:-10}"
 done
 [[ "${conclusion}" == "success" ]] || { echo "${name} finished ${conclusion} (attempt ${attempt})" >&2; exit 1; }
 echo "${name} succeeded (attempt ${attempt})."

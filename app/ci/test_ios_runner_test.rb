@@ -25,15 +25,39 @@ class TestIOSRunnerTest < Minitest::Test
       encoding: "UTF-8"
     )
 
-    # Build, test suite and live contract test all target the simulator select-ios-simulator chose or created.
-    assert_equal(1, workflow.scan("simulator_id=$(scripts/select-ios-simulator | cut -f1)").length)
-    assert_includes(workflow, %q(read -r simulator_id runtime device_type <<< "$(scripts/select-ios-simulator)"))
-    assert_includes(workflow, "IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-17")
+    # CI picks its simulator with plain simctl (ci/ci-simulator); the local pool, leases and XCTest admission
+    # only run in App tooling's own tests.
+    assert_includes(workflow, 'echo "id=$(ci/ci-simulator)"')
+    assert_includes(workflow, 'simulator_id=$(ci/ci-simulator "${source}")')
+    %w[scripts/select-ios-simulator scripts/test-ios(?![-\w]) scripts/setup-ios-test-pool scripts/ios-simulator-pool(?![-\w])].each do |local|
+      refute_match(Regexp.new(local), workflow)
+    end
+    simulator = File.read(File.expand_path("ci-simulator", __dir__), encoding: "UTF-8")
+    assert_includes(simulator, "device_type=com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     assert_equal(2, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
     assert_equal(1, workflow.scan('ci/build-for-testing "${SIMULATOR_ID}"').length)
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
     assert_includes(build, 'platform=iOS Simulator,id=${simulator_id}')
     refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
+  end
+
+  def test_only_main_saves_the_build_cache_and_pull_requests_restore_it
+    jobs = YAML.safe_load_file(File.expand_path("../../.github/workflows/ci.yml", __dir__), aliases: true)["jobs"]
+    steps = jobs.fetch("app-build")["steps"].to_h { |step| [step["name"], step] }
+    restore, save = steps.fetch("Restore main's build cache"), steps.fetch("Save the build cache from main")
+    assert_equal("github.event_name != 'push' && inputs.build_cache != 'off'", restore["if"])
+    assert_equal("github.event_name == 'push' && github.ref == 'refs/heads/main'", save["if"])
+    assert_equal(restore["with"]["path"], save["with"]["path"])
+    assert_equal(restore["with"]["key"], save["with"]["key"])
+    assert(restore["with"]["key"].end_with?("${{ github.sha }}"))
+    assert_equal(restore["with"]["key"].delete_suffix("${{ github.sha }}"), restore["with"]["restore-keys"])
+    names = steps.keys
+    assert_operator(names.index("Restore main's build cache"), :<, names.index("Build for testing"))
+    assert_operator(names.index("Build for testing"), :<, names.index("Save the build cache from main"))
+    build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
+    ['-clonedSourcePackagesDirPath "${cache}/SourcePackages"', "COMPILATION_CACHE_ENABLE_CACHING=YES",
+     'COMPILATION_CACHE_CAS_PATH="${cache}/cas"', "cache=${PWD}/.build-cache"].each { |setting| assert_includes(build, setting) }
+    assert_equal("app/.build-cache", save["with"]["path"])
   end
 
   def test_unit_tests_never_request_real_live_activities

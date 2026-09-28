@@ -9,6 +9,7 @@ build/
 
 # Swift Package Manager
 .build/
+.build-cache/
 Package.resolved
 !Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 .swiftpm/
