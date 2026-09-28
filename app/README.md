@@ -19,7 +19,7 @@ Run commands in this document from `app/`. Workflows live in `../.github/`.
 Talaria is a native SwiftUI iPhone app for a self-hosted [Talaria Web](../web/README.md) server, a mobile cockpit for an AI agent that runs on a machine **you** control. The phone is the control plane, not the compute plane: the agent, its tools, and your data stay on your own hardware.
 
 - **Free.** No subscriptions, no in-app purchases.
-- **Private.** No analytics or tracking. Chats, files, and credentials go only to your server.
+- **Private.** No analytics or tracking. Chats and files go only to your server. Optional iCloud sync stores server setups, passwords included, encrypted in your private iCloud database, and optional Relay sees only session titles and run status.
 - **Native.** SwiftUI for iOS 18+, not a web wrapper.
 
 ## Features
@@ -34,11 +34,11 @@ Talaria is a native SwiftUI iPhone app for a self-hosted [Talaria Web](../web/RE
 - **Workspace and Git**: browse and preview workspace files; view status and diffs, stage, commit, switch branches, and fetch, pull, or push.
 - **Memory**: read and edit the agent's notes, user profile, and soul.
 - **Insights**: usage analytics and provider quotas.
-- **Live Activities and notifications**: follow a run on the Lock Screen and in the Dynamic Island. With the optional [Talaria Relay](../relay/README.md) (Sign in with Apple), runs update Live Activities and notifications while the app is closed. Relay receives bounded run status only, never transcripts, commands, or credentials.
+- **Live Activities and notifications**: follow a run on the Lock Screen and in the Dynamic Island. With the optional [Talaria Relay](../relay/README.md) (Sign in with Apple), runs update Live Activities and notifications while the app is closed. Relay receives your server's address, each run's session title and status, and this iPhone's push tokens; never transcripts, commands, or server passwords.
 - **Widgets**: Home Screen and Lock Screen widgets for provider quotas and pace.
 - **Share extension**: send text, links, images, and files from any app into a new chat draft.
 - **Siri and Shortcuts**: start a new chat, a voice chat, or a chat in a chosen profile.
-- **iCloud sync**: after Sign in with Apple, your server setup and selected preferences sync through your private iCloud database.
+- **iCloud sync**: after Sign in with Apple, turn on sync to keep your servers (including saved passwords and custom headers) and selected preferences the same on every iPhone, stored encrypted in your private iCloud database.
 
 <div align="center">
 <table>
