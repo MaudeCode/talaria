@@ -34,9 +34,9 @@ on:
         options: [alternate, preinstalled, fresh]
         default: alternate
       build_cache:
-        description: Restore main's package and compilation cache before the build (off measures a cold build).
+        description: Restore the newest package and compilation cache before the build (off builds cold; seed builds cold and saves it for this branch).
         type: choice
-        options: ["on", "off"]
+        options: ["on", "off", "seed"]
         default: "on"
 
 permissions:
@@ -130,9 +130,10 @@ jobs:
 
       # Packages and Xcode's content-keyed compilation cache (app/.build-cache). Main builds cold and saves
       # one entry per commit, so an entry holds exactly one build's objects and never accumulates; pull
-      # requests and dispatches restore main's newest entry and replay unchanged compilations from it.
-      - name: Restore main's build cache
-        if: github.event_name != 'push' && inputs.build_cache != 'off'
+      # requests and dispatches restore the newest entry they can see (main's, or their branch's from a seed
+      # dispatch) and replay unchanged compilations from it.
+      - name: Restore the build cache
+        if: github.event_name != 'push' && inputs.build_cache != 'off' && inputs.build_cache != 'seed'
         uses: actions/cache/restore@v6
         with:
           path: app/.build-cache
@@ -155,8 +156,10 @@ jobs:
           done
           tar -cf "${RUNNER_TEMP}/app-build.tar" "${products[@]}"
 
-      - name: Save the build cache from main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      # Main saves for every pull request. A seed dispatch saves under its own branch's scope, which that
+      # branch's later dispatches can restore (pull requests only see their own and main's caches).
+      - name: Save the build cache
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.build_cache == 'seed'
         uses: actions/cache/save@v6
         with:
           path: app/.build-cache

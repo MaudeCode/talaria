@@ -44,16 +44,17 @@ class TestIOSRunnerTest < Minitest::Test
   def test_only_main_saves_the_build_cache_and_pull_requests_restore_it
     jobs = YAML.safe_load_file(File.expand_path("../../.github/workflows/ci.yml", __dir__), aliases: true)["jobs"]
     steps = jobs.fetch("app-build")["steps"].to_h { |step| [step["name"], step] }
-    restore, save = steps.fetch("Restore main's build cache"), steps.fetch("Save the build cache from main")
-    assert_equal("github.event_name != 'push' && inputs.build_cache != 'off'", restore["if"])
-    assert_equal("github.event_name == 'push' && github.ref == 'refs/heads/main'", save["if"])
+    restore, save = steps.fetch("Restore the build cache"), steps.fetch("Save the build cache")
+    # Pushes and seed dispatches build cold; only main pushes and seed dispatches save.
+    assert_equal("github.event_name != 'push' && inputs.build_cache != 'off' && inputs.build_cache != 'seed'", restore["if"])
+    assert_equal("(github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.build_cache == 'seed'", save["if"])
     assert_equal(restore["with"]["path"], save["with"]["path"])
     assert_equal(restore["with"]["key"], save["with"]["key"])
     assert(restore["with"]["key"].end_with?("${{ github.sha }}"))
     assert_equal(restore["with"]["key"].delete_suffix("${{ github.sha }}"), restore["with"]["restore-keys"])
     names = steps.keys
-    assert_operator(names.index("Restore main's build cache"), :<, names.index("Build for testing"))
-    assert_operator(names.index("Build for testing"), :<, names.index("Save the build cache from main"))
+    assert_operator(names.index("Restore the build cache"), :<, names.index("Build for testing"))
+    assert_operator(names.index("Build for testing"), :<, names.index("Save the build cache"))
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
     ['-clonedSourcePackagesDirPath "${cache}/SourcePackages"', "COMPILATION_CACHE_ENABLE_CACHING=YES",
      'COMPILATION_CACHE_CAS_PATH="${cache}/cas"', "cache=${PWD}/.build-cache"].each { |setting| assert_includes(build, setting) }
