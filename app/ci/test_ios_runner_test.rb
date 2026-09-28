@@ -86,7 +86,13 @@ class TestIOSRunnerTest < Minitest::Test
     refute(shard["steps"].any? { |step| step["name"] == "Build for testing" }, "test jobs never build")
     steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
     assert_equal(1, workflow_text("app-tests.yml").scan("xcodebuild test-without-building").length)
-    assert_equal('ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"', steps.fetch("Wait for the build")["run"])
+    # The build poll starts in the background before the setup and the boot, whose aftermath starves this runner,
+    # and the step after the boot collects its result (TAL-405).
+    start = shard["steps"].index { |step| step["name"] == "Start waiting for the build" }
+    assert_equal(["actions/checkout@v7", "./.github/actions/setup-xcode"], [start - 1, start + 1].map { |index| shard["steps"][index]["uses"] })
+    assert_includes(steps.fetch("Start waiting for the build")["run"],
+                    %(nohup bash -c 'ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"; echo $? >))
+    assert_includes(steps.fetch("Wait for the build")["run"], 'exit "$(cat "${status}")"')
     # Every native contract class and the live test run in the package job; hosted shards never read the probe's
     # fixture (TAL-399).
     refute_match(/contract-fixture|LIVE_CONTRACT|CONTRACT_TEST_CLASSES|CONTRACTS_SELECTED/, shard.to_yaml)

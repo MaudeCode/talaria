@@ -18,7 +18,8 @@
 # "UI suite package tests" in full mode, and the build artifact is app-build or ui-suite-build, so both suites can
 # run in one workflow run.
 # Test shards boot their simulator while the build runs on another runner (TAL-380): hosted macOS allows five
-# concurrent jobs, and a simulator's first boot beside a build on one three-core runner slowed both.
+# concurrent jobs, and a simulator's first boot beside a build on one three-core runner slowed both. Each shard
+# polls the jobs API for the build's upload from before its boot (TAL-405).
 # The simulator-hosted remainder (UIKit views, App Intents and widget configuration types, visual references,
 # performance budgets, App bundle resources) runs in the full suite, nightly and as a release gate.
 
@@ -160,9 +161,9 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
   app-test:
-    # Each shard boots its simulator to completion while the build runs on another runner, then waits for and
-    # downloads the build. Pull requests run one shard with only the launch smoke test; the hosted unit tests
-    # and the UI tests run in the full suite (TAL-399).
+    # Each shard boots its simulator to completion while the build runs on another runner and a background poll
+    # watches for the build's upload, then downloads the build. Pull requests run one shard with only the launch
+    # smoke test; the hosted unit tests and the UI tests run in the full suite (TAL-399).
     name: ${{ inputs.mode == 'full' && format('UI suite tests (shard {0})', matrix.shard) || 'App launch smoke' }}
     if: inputs.mode != 'contracts'
     runs-on: xcode-27
@@ -190,6 +191,18 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
 
+      # Right after the simulator's first boot this runner is starved: a poll started then took 30 to 150 s per gh
+      # call, the first the slowest, and saw an upload that had finished before it began only minutes later
+      # (TAL-405). Polling from before the boot keeps that behind the boot; "Wait for the build" collects the result.
+      - name: Start waiting for the build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # shellcheck disable=SC2016 # The background shell expands these.
+          nohup bash -c 'ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"; echo $? > "${RUNNER_TEMP}/build-wait.tmp"
+            mv "${RUNNER_TEMP}/build-wait.tmp" "${RUNNER_TEMP}/build-wait.status"' > "${RUNNER_TEMP}/build-wait.log" 2>&1 < /dev/null &
+          echo $! > "${RUNNER_TEMP}/build-wait.pid"
+
       - uses: ./.github/actions/setup-xcode
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
@@ -207,12 +220,19 @@ jobs:
           wait_for_boot: true
           boot_timeout_seconds: 600
 
+      # Returns once the background poll has seen the build's upload step succeed; fails once it sees the build fail
+      # or get cancelled, or if the poll stopped without a result.
       - name: Wait for the build
-        env:
-          GH_TOKEN: ${{ github.token }}
-        # Returns once the build's upload step has succeeded; the job's own completion, and in run 36446521579
-        # the artifact list too, reached the API one to two minutes later.
-        run: ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"
+        run: |
+          set -euo pipefail
+          status="${RUNNER_TEMP}/build-wait.status"
+          while [[ ! -f "${status}" ]]; do
+            kill -0 "$(cat "${RUNNER_TEMP}/build-wait.pid")" 2>/dev/null || [[ -f "${status}" ]] ||
+              { cat "${RUNNER_TEMP}/build-wait.log"; echo "The build wait stopped without a result" >&2; exit 1; }
+            sleep 1
+          done
+          cat "${RUNNER_TEMP}/build-wait.log"
+          exit "$(cat "${status}")"
 
       # curl, not actions/download-artifact, which fetched this 82 MB artifact at about 1 MB/s on hosted macOS.
       - name: Download the test build
@@ -221,6 +241,7 @@ jobs:
         run: |
           set -euo pipefail
           start_seconds=${SECONDS}
+          start_epoch=$(date +%s)
           # The artifact list can trail the upload step, so look it up for up to two minutes; gh-api-poll rides out
           # transient API errors.
           url=""
@@ -235,6 +256,16 @@ jobs:
           curl -fsSL --retry 3 -H "Authorization: Bearer ${GH_TOKEN}" -o "${RUNNER_TEMP}/app-build.zip" "${url}"
           unzip -q -o "${RUNNER_TEMP}/app-build.zip" -d "${RUNNER_TEMP}"
           echo "- Test build download: $((SECONDS - start_seconds))s ($(du -h "${RUNNER_TEMP}/app-build.zip" | cut -f1))" | tee -a "${GITHUB_STEP_SUMMARY}"
+          # The handoff latency (TAL-405): the newest upload at or before this attempt, to this step's start.
+          # shellcheck disable=SC2016 # jq, not the shell, expands $ENV.
+          uploaded=$(ci/gh-api-poll --paginate -H "Cache-Control: no-cache" \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=all&per_page=100&poll=${SECONDS}" \
+            --jq '.jobs[] | select((.name == $ENV.BUILD_JOB or (.name | endswith(" / " + $ENV.BUILD_JOB))) and .run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber))
+              | .steps[]? | select(.name == "Upload the test build" and .completed_at) | .completed_at | fromdate' |
+            sort -n | tail -n 1) || uploaded=""
+          handoff="unknown"
+          [[ -z "${uploaded}" ]] || handoff="$((start_epoch - uploaded)) s"
+          echo "- Build upload → download start: ${handoff}" | tee -a "${GITHUB_STEP_SUMMARY}"
 
       - name: Select this shard's tests
         run: |
