@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import notify
 
 /// Deterministic Tasks, Kanban, Skills, Memory and Insights payloads for the agent-panel
 /// smoke journeys (TAL-71). Without one of these arguments the fixture keeps serving the
@@ -11,13 +12,17 @@ enum UITestPanelScenario: String, CaseIterable {
     /// through Try Again; every later request serves the `populated` payload.
     case failing = "--ui-test-panels-error"
 
+    /// Posted by the UI test once it has seen a panel's loading state; `populated` holds each
+    /// panel's first load until then.
+    static let releaseLoadsNotification = "dev.kil.talaria.ui-test.release-panel-loads"
+
     static var current: Self? {
         let arguments = ProcessInfo.processInfo.arguments
         return allCases.first { arguments.contains($0.rawValue) }
     }
 }
 
-/// Fixture-owned panel state: which loads already failed or stalled once, which Skills the
+/// Fixture-owned panel state: which loads already failed or were held once, which Skills the
 /// journey disabled, and which Memory sections it saved.
 final class UITestPanelFixtureState: @unchecked Sendable {
     static let shared = UITestPanelFixtureState()
@@ -25,6 +30,9 @@ final class UITestPanelFixtureState: @unchecked Sendable {
     private let lock = NSLock()
     private var failedPaths: Set<String> = []
     private var delayedPaths: Set<String> = []
+    private var heldLoads: [() -> Void] = []
+    private var loadsReleased = false
+    private var releaseToken: Int32 = 0
     private var analyticsFallbackFails = false
     private var disabledSkills: Set<String> = ["fixture-archivist"]
     private var memoryOverrides: [String: String] = [:]
@@ -34,9 +42,35 @@ final class UITestPanelFixtureState: @unchecked Sendable {
         lock.withLock { failedPaths.insert(path).inserted }
     }
 
+    /// Registers at launch, before any panel can render the loading state the test answers.
+    func listenForLoadRelease() {
+        notify_register_dispatch(UITestPanelScenario.releaseLoadsNotification, &releaseToken, .global()) { [weak self] _ in
+            self?.releaseLoads()
+        }
+    }
+
     /// True once per path, so only a panel's first load renders its loading state.
     func consumeDelay(for path: String) -> Bool {
         lock.withLock { delayedPaths.insert(path).inserted }
+    }
+
+    /// Runs `send` once the UI test releases panel loads. The release is sticky: the loading
+    /// state can render before its request reaches the fixture, so a late load runs at once.
+    func hold(_ send: @escaping () -> Void) {
+        let released = lock.withLock {
+            if !loadsReleased { heldLoads.append(send) }
+            return loadsReleased
+        }
+        if released { send() }
+    }
+
+    private func releaseLoads() {
+        let loads = lock.withLock {
+            loadsReleased = true
+            defer { heldLoads = [] }
+            return heldLoads
+        }
+        loads.forEach { $0() }
     }
 
     /// Insights falls back to `/api/sessions` when analytics fail, so the fallback has to
@@ -85,8 +119,8 @@ extension UITestFixtureURLProtocol {
         "/api/kanban/board"
     ]
 
-    /// Panel loads that stall once so their loading state is observable. `/api/crons/status`
-    /// is excluded: it resolves with `/api/crons`, and stalling both only doubles the wait.
+    /// Panel loads held once so their loading state is observable. `/api/crons/status` is
+    /// excluded: it resolves with `/api/crons`, and holding both only doubles the wait.
     private static let panelDelayPaths: Set<String> = [
         "/api/crons",
         "/api/skills",
@@ -94,8 +128,6 @@ extension UITestFixtureURLProtocol {
         "/api/insights",
         "/api/kanban/board"
     ]
-
-    private static let panelLoadingDelay: TimeInterval = 3
 
     static func panelRequestFailure(for url: URL) -> Error? {
         guard UITestPanelScenario.current == .failing else { return nil }
@@ -121,14 +153,13 @@ extension UITestFixtureURLProtocol {
         }
     }
 
-    /// Delays a panel's first load so its loading state is reachable without a live server.
-    static func panelResponseDelay(for url: URL) -> TimeInterval? {
-        guard UITestPanelScenario.current == .populated,
-              panelDelayPaths.contains(url.path),
-              url.query?.contains("since=") != true,
-              UITestPanelFixtureState.shared.consumeDelay(for: url.path)
-        else { return nil }
-        return panelLoadingDelay
+    /// Whether to hold a panel's first load until the UI test has seen its loading state
+    /// (TAL-401); a fixed stall let a slow runner miss it.
+    static func holdsPanelLoad(for url: URL) -> Bool {
+        UITestPanelScenario.current == .populated
+            && panelDelayPaths.contains(url.path)
+            && url.query?.contains("since=") != true
+            && UITestPanelFixtureState.shared.consumeDelay(for: url.path)
     }
 
     static func panelResponseData(for request: URLRequest, url: URL) -> Data? {

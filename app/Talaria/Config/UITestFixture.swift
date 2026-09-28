@@ -54,6 +54,9 @@ struct UITestFixtureEnvironment {
             UITestChatFixtureState.shared.startChat()
             initialDrafts[.session(server: serverURL, sessionID: UITestFixtureURLProtocol.sessionID)] = ChatDraft(text: "Ordinary fixture draft")
         }
+        if UITestPanelScenario.current == .populated {
+            UITestPanelFixtureState.shared.listenForLoadRelease()
+        }
         // Theme is a standard-defaults preference a test can change, so every fixture
         // launch starts from the same appearance even if a previous run left it switched.
         UserDefaults.standard.set(AppTheme.system.rawValue, forKey: AppTheme.storageKey)
@@ -353,8 +356,15 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
 
-        if let delay = Self.panelResponseDelay(for: url)
-            ?? Self.workspaceResponseDelay(for: url)
+        if Self.holdsPanelLoad(for: url) {
+            UITestPanelFixtureState.shared.hold { [weak self] in
+                guard let self, !self.isStopped else { return }
+                self.sendResponse(for: url)
+            }
+            return
+        }
+
+        if let delay = Self.workspaceResponseDelay(for: url)
             ?? Self.chatResponseDelay(for: url) {
             DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, !self.isStopped else { return }

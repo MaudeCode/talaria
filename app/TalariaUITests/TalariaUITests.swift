@@ -1196,80 +1196,93 @@ class AdaptiveLayoutUITestCase: TalariaUITestCase {
     }
 }
 
+/// One test per variant: a single test walking all three launches ran past five minutes on a
+/// GitHub-hosted runner, and a failure in one variant no longer hides the others (TAL-401).
 final class AdaptiveLayoutAppUITests: AdaptiveLayoutUITestCase {
-    func testCoreScreensPassAccessibilityAuditsAcrossVariants() throws {
-        for variant in Self.variants {
-            try XCTContext.runActivity(named: variant.name) { _ in
-                launchFixture(variant: variant)
-                let openNavigation = app.buttons["Open navigation"]
-                XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
-                XCTAssertTrue(fixtureSessionButton.waitForExistence(timeout: 15), "Missing deterministic session fixture")
-                if variant.isRightToLeft {
-                    XCTAssertGreaterThan(
-                        openNavigation.frame.midX, app.frame.midX,
-                        "Leading toolbar item should mirror under RTL [\(variant.name)]"
-                    )
-                }
-                try audit("Chats dense list", variant: variant)
+    func testCoreScreensPassAccessibilityAuditsInPortraitLight() throws {
+        try auditCoreScreens(Self.variants[0])
+    }
 
-                tapFixtureSession(fixtureSessionButton)
-                XCTAssertNotNil(waitForComposer(timeout: 15), "Composer missing [\(variant.name)]")
-                try audit("Chat transcript and composer", variant: variant)
-                app.buttons["BackButton"].tap()
+    func testCoreScreensPassAccessibilityAuditsInPortraitDarkRTLAccessibilityXXXL() throws {
+        try auditCoreScreens(Self.variants[1])
+    }
 
-                openSettings()
-                // The account rows above the category directory (User Profile,
-                // Apple Account) can fill the screen at accessibility sizes and in
-                // landscape, and a List does not create rows below the fold, so
-                // scroll until the directory renders.
-                let firstCategory = app.buttons["settings-category-appearance"]
-                if !firstCategory.waitForExistence(timeout: 3) {
-                    for _ in 0..<10 where !firstCategory.exists {
-                        scrollSettingsRoot(up: true)
-                    }
-                }
-                XCTAssertTrue(firstCategory.waitForExistence(timeout: 3), "Settings categories missing [\(variant.name)]")
-                try audit("Settings root", variant: variant)
+    func testCoreScreensPassAccessibilityAuditsInLandscapeDarkReduceMotion() throws {
+        try auditCoreScreens(Self.variants[2])
+    }
 
-                tapSettingsCategory(id: "servers", title: "Servers")
-                let addServer = app.descendants(matching: .any)
-                    .matching(NSPredicate(format: "label BEGINSWITH %@", "Add Server"))
-                    .firstMatch
-                XCTAssertTrue(addServer.waitForExistence(timeout: 3), "Add Server row missing [\(variant.name)]")
-                for _ in 0..<6 where addServer.frame.maxY > app.frame.maxY {
-                    app.swipeUp()
-                }
-                let serverRow = app.descendants(matching: .any)
-                    .matching(NSPredicate(format: "label CONTAINS %@", "ui-test.talaria.invalid"))
-                    .firstMatch
-                XCTAssertTrue(serverRow.exists, "Fixture server row missing [\(variant.name)]")
-                let coveredRowCenter = serverRow.frame.center
-                tap(at: addServer.frame.center)
-                let editor = app.navigationBars["Add Server"]
-                XCTAssertTrue(editor.waitForExistence(timeout: 5), "Add Server editor missing [\(variant.name)]")
-                try audit("Add Server editor", variant: variant)
-                // Modal isolation: a tap where the server row sits must not reach it.
-                tap(at: coveredRowCenter)
-                XCTAssertTrue(editor.exists, "Editor dismissed by a tap behind it [\(variant.name)]")
-                editor.buttons["Cancel"].tap()
-                XCTAssertTrue(editor.waitForNonExistence(timeout: 5), "Editor did not dismiss [\(variant.name)]")
-                XCTAssertTrue(
-                    app.navigationBars["Servers"].exists && addServer.waitForExistence(timeout: 3),
-                    "Dismissing the editor must return to its launching screen [\(variant.name)]"
+    private func auditCoreScreens(_ variant: Variant) throws {
+        XCTAssertEqual(Self.variants.count, 3, "Give every adaptive layout variant its own core-screen audit test")
+        try XCTContext.runActivity(named: variant.name) { _ in
+            launchFixture(variant: variant)
+            let openNavigation = app.buttons["Open navigation"]
+            XCTAssertTrue(openNavigation.waitForExistence(timeout: 15), "Missing deterministic app fixture")
+            XCTAssertTrue(fixtureSessionButton.waitForExistence(timeout: 15), "Missing deterministic session fixture")
+            if variant.isRightToLeft {
+                XCTAssertGreaterThan(
+                    openNavigation.frame.midX, app.frame.midX,
+                    "Leading toolbar item should mirror under RTL [\(variant.name)]"
                 )
-
-                app.navigationBars["Servers"].buttons["Settings"].tap()
-                XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
-                openSidebarDestination("Kanban")
-                XCTAssertTrue(app.navigationBars["Kanban"].waitForExistence(timeout: 5))
-                XCTAssertTrue(app.staticTexts["Loading Kanban"].waitForNonExistence(timeout: 15))
-                XCTAssertTrue(
-                    app.descendants(matching: .any)["KanbanStatusSelector"].waitForExistence(timeout: 5),
-                    "Kanban Board did not load [\(variant.name)]"
-                )
-                try audit("Kanban board", variant: variant)
-                app.terminate()
             }
+            try audit("Chats dense list", variant: variant)
+
+            tapFixtureSession(fixtureSessionButton)
+            XCTAssertNotNil(waitForComposer(timeout: 15), "Composer missing [\(variant.name)]")
+            try audit("Chat transcript and composer", variant: variant)
+            app.buttons["BackButton"].tap()
+
+            openSettings()
+            // The account rows above the category directory (User Profile,
+            // Apple Account) can fill the screen at accessibility sizes and in
+            // landscape, and a List does not create rows below the fold, so
+            // scroll until the directory renders.
+            let firstCategory = app.buttons["settings-category-appearance"]
+            if !firstCategory.waitForExistence(timeout: 3) {
+                for _ in 0..<10 where !firstCategory.exists {
+                    scrollSettingsRoot(up: true)
+                }
+            }
+            XCTAssertTrue(firstCategory.waitForExistence(timeout: 3), "Settings categories missing [\(variant.name)]")
+            try audit("Settings root", variant: variant)
+
+            tapSettingsCategory(id: "servers", title: "Servers")
+            let addServer = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH %@", "Add Server"))
+                .firstMatch
+            XCTAssertTrue(addServer.waitForExistence(timeout: 3), "Add Server row missing [\(variant.name)]")
+            for _ in 0..<6 where addServer.frame.maxY > app.frame.maxY {
+                app.swipeUp()
+            }
+            let serverRow = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS %@", "ui-test.talaria.invalid"))
+                .firstMatch
+            XCTAssertTrue(serverRow.exists, "Fixture server row missing [\(variant.name)]")
+            let coveredRowCenter = serverRow.frame.center
+            tap(at: addServer.frame.center)
+            let editor = app.navigationBars["Add Server"]
+            XCTAssertTrue(editor.waitForExistence(timeout: 5), "Add Server editor missing [\(variant.name)]")
+            try audit("Add Server editor", variant: variant)
+            // Modal isolation: a tap where the server row sits must not reach it.
+            tap(at: coveredRowCenter)
+            XCTAssertTrue(editor.exists, "Editor dismissed by a tap behind it [\(variant.name)]")
+            editor.buttons["Cancel"].tap()
+            XCTAssertTrue(editor.waitForNonExistence(timeout: 5), "Editor did not dismiss [\(variant.name)]")
+            XCTAssertTrue(
+                app.navigationBars["Servers"].exists && addServer.waitForExistence(timeout: 3),
+                "Dismissing the editor must return to its launching screen [\(variant.name)]"
+            )
+
+            app.navigationBars["Servers"].buttons["Settings"].tap()
+            XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+            openSidebarDestination("Kanban")
+            XCTAssertTrue(app.navigationBars["Kanban"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["Loading Kanban"].waitForNonExistence(timeout: 15))
+            XCTAssertTrue(
+                app.descendants(matching: .any)["KanbanStatusSelector"].waitForExistence(timeout: 5),
+                "Kanban Board did not load [\(variant.name)]"
+            )
+            try audit("Kanban board", variant: variant)
+            app.terminate()
         }
     }
 }
@@ -1451,6 +1464,11 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
 }
 
 class TalariaUITestCase: XCTestCase {
+    /// Bound for the shared helpers' waits on a destination or control. A wait returns as soon
+    /// as its element appears, so a passing run pays nothing for the margin; a 3-core
+    /// GitHub-hosted runner took over four seconds for one sidebar query (TAL-401).
+    static let navigationTimeout: TimeInterval = 20
+
     var app: XCUIApplication!
 
     fileprivate var fixtureLaunchArguments: [String] {
@@ -1505,7 +1523,7 @@ fileprivate extension ChatUITestCase {
         }
         input.typeText(message)
         let send = app.buttons["Send"]
-        XCTAssertTrue(send.waitForExistence(timeout: 3))
+        XCTAssertTrue(send.waitForExistence(timeout: Self.navigationTimeout))
         tapCenter(of: send)
     }
 
@@ -1546,7 +1564,7 @@ extension TalariaUITestCase {
     func openSidebarDestination(_ destination: String) {
         app.buttons["Open navigation"].tap()
         let sidebar = app.descendants(matching: .any)["app-sidebar"]
-        XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
+        XCTAssertTrue(sidebar.waitForExistence(timeout: Self.navigationTimeout))
         sidebar.descendants(matching: .any)[destination].firstMatch.tap()
     }
 
@@ -1581,7 +1599,7 @@ extension TalariaUITestCase {
         for category in categories {
             tapSettingsCategory(id: category.id, title: category.title)
             app.navigationBars[category.title].buttons["Settings"].tap()
-            XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+            XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: Self.navigationTimeout))
         }
     }
 
@@ -1591,14 +1609,18 @@ extension TalariaUITestCase {
         openNavigation.tap()
 
         let sidebar = app.descendants(matching: .any)["app-sidebar"]
-        XCTAssertTrue(sidebar.waitForExistence(timeout: 3))
+        XCTAssertTrue(sidebar.waitForExistence(timeout: Self.navigationTimeout))
         sidebar.descendants(matching: .any)["Settings"].firstMatch.tap()
-        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: Self.navigationTimeout))
+        // The sidebar stays in the tree once closed, so its closing is the loss of hittability.
         let sidebarHidden = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "isHittable == false"),
             object: sidebar
         )
-        XCTAssertEqual(XCTWaiter.wait(for: [sidebarHidden], timeout: 3), .completed)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [sidebarHidden], timeout: Self.navigationTimeout), .completed,
+            "The sidebar stayed open over Settings"
+        )
     }
 
     /// Drags in the lower half of the screen: in landscape a horizontal card sits at the
@@ -1615,7 +1637,7 @@ extension TalariaUITestCase {
     /// where they are drawn instead. A missing element has a zero frame, which would tap the
     /// screen corner; the assertions keep that from passing as a silent stray tap.
     func tapCenter(of element: XCUIElement) {
-        XCTAssertTrue(element.waitForExistence(timeout: 5), "Missing tap target")
+        XCTAssertTrue(element.waitForExistence(timeout: Self.navigationTimeout), "Missing tap target")
         let frame = element.frame
         XCTAssertTrue(frame.width > 0 && frame.height > 0, "Tap target has no frame")
         app.coordinate(withNormalizedOffset: CGVector(
@@ -1656,7 +1678,7 @@ extension TalariaUITestCase {
         for _ in 0..<10 where !category.exists {
             scrollSettingsRoot(up: true)
         }
-        XCTAssertTrue(category.waitForExistence(timeout: 3), "Missing Settings category: \(title)")
+        XCTAssertTrue(category.waitForExistence(timeout: Self.navigationTimeout), "Missing Settings category: \(title)")
         let viewportTop = app.navigationBars["Settings"].frame.maxY
         for _ in 0..<10
             where category.frame.minY < viewportTop || category.frame.maxY > app.frame.maxY {
@@ -1669,7 +1691,7 @@ extension TalariaUITestCase {
             dx: category.frame.midX / app.frame.width,
             dy: ((visibleTop + visibleBottom) / 2) / app.frame.height
         )).tap()
-        XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: Self.navigationTimeout))
     }
 }
 
@@ -1730,7 +1752,7 @@ fileprivate extension TalariaUITestCase {
 fileprivate extension QuotaWidgetUITestCase {
     func assertPreviewVisible(identifier: String) {
         XCTAssertTrue(
-            app.descendants(matching: .any)[identifier].waitForExistence(timeout: 3)
+            app.descendants(matching: .any)[identifier].waitForExistence(timeout: Self.navigationTimeout)
         )
     }
 }
@@ -1781,13 +1803,9 @@ fileprivate extension AdaptiveLayoutUITestCase {
             screenshot.lifetime = .deleteOnSuccess
             activity.add(screenshot)
 
-            // Contrast is unreliable over blurred glass surfaces; the text-clipping audit
-            // predicts from `lineLimit` instead of measuring the rendered variant; element
-            // detection scans pixels and names no element to fix.
             var issues: [String] = []
             var unlocated: [String] = []
-            let auditTypes: XCUIAccessibilityAuditType = .all.subtracting([.contrast, .textClipped, .elementDetection])
-            try app.performAccessibilityAudit(for: auditTypes) { issue in
+            let handleIssue = { (issue: XCUIAccessibilityAuditIssue) -> Bool in
                 // A finding with no element names nothing to fix; keep it visible, not fatal.
                 guard issue.element != nil else {
                     unlocated.append("\(issue.compactDescription) — \(issue.detailedDescription)")
@@ -1813,6 +1831,25 @@ fileprivate extension AdaptiveLayoutUITestCase {
                 } ?? "no element"
                 issues.append("\(issue.compactDescription) — \(issue.detailedDescription) — \(element)")
                 return true
+            }
+            // XCTest gives each audit call 15 seconds, and one call covering every type overran
+            // it on a 3-core GitHub-hosted runner (TAL-401), so each type gets its own call.
+            // These are every iOS audit type except three: contrast is unreliable over blurred
+            // glass surfaces; the text-clipping audit predicts from `lineLimit` instead of
+            // measuring the rendered variant; element detection scans pixels and names no
+            // element to fix.
+            for auditType: XCUIAccessibilityAuditType in [.dynamicType, .hitRegion, .sufficientElementDescription, .trait] {
+                // A call that runs out of time reports nothing, and one right after a slow
+                // launch did so under CPU load, so a timed-out type runs again, up to 3 times.
+                for attempt in 1...3 {
+                    do {
+                        try app.performAccessibilityAudit(for: auditType, handleIssue)
+                        break
+                    } catch let error as NSError
+                        where error.domain == "com.apple.xcode.xctest.accessibilityAudit" && error.code == -56 && attempt < 3 {
+                        activity.add(XCTAttachment(string: "Audit type \(auditType.rawValue) timed out on attempt \(attempt)"))
+                    }
+                }
             }
             if !unlocated.isEmpty {
                 let note = XCTAttachment(string: unlocated.joined(separator: "\n"))
@@ -1859,7 +1896,7 @@ fileprivate extension SettingsUITestCase {
     func openArchivedChats() {
         tapSettingsCategory(id: "chats", title: "Chats")
         tapSettingsRow(label: "Archived Chats")
-        XCTAssertTrue(app.navigationBars["Archived Chats"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Archived Chats"].waitForExistence(timeout: Self.navigationTimeout))
     }
 }
 
@@ -1886,7 +1923,7 @@ fileprivate extension WorkspaceUITestCase {
 
     func tapGitMenuPush() {
         let push = app.buttons["Push"]
-        XCTAssertTrue(push.waitForExistence(timeout: 5), "Missing the Push action")
+        XCTAssertTrue(push.waitForExistence(timeout: Self.navigationTimeout), "Missing the Push action")
         push.tap()
     }
 
