@@ -246,16 +246,16 @@ describe('ctl', () => {
     expect(ctx.out[0]).toBe('● talaria-web — running (not managed by talaria-web ctl)')
   })
 
-  it('detects a launchd job still under the legacy default label unless a label override is set', async () => {
+  it('detects a launchd job still under the legacy default label unless a label override is set', () => {
     const home = scratch()
-    // Stand-in launchd job: this test process listens on the wanted port; a fake launchctl knows only the legacy label.
-    const listener = createServer()
-    await new Promise<void>((done) => listener.listen(0, '127.0.0.1', done))
-    stops.push(() => new Promise<void>((done) => listener.close(() => { done() })))
-    const port = (listener.address() as { port: number }).port
+    // Stand-in launchd job (this live test process) on a non-default port. Both host tools are faked so the result does
+    // not depend on which of lsof/ss the machine has: launchctl knows only the legacy label, and lsof reports only that
+    // pid listening on that port.
+    const port = 18787
     const bin = join(home, 'bin')
     mkdirSync(bin, { recursive: true })
     writeFileSync(join(bin, 'launchctl'), `#!/bin/sh\ncase "$2" in */com.parantoux.hermes-webui) printf '\\tpid = ${String(process.pid)}\\n'; exit 0;; esac\nexit 113\n`, { mode: 0o755 })
+    writeFileSync(join(bin, 'lsof'), `#!/bin/sh\ncase " $* " in *" -p ${String(process.pid)} -iTCP:${String(port)} "*) exit 0;; esac\nexit 1\n`, { mode: 0o755 })
     const savedPath = process.env.PATH
     process.env.PATH = `${bin}:${savedPath ?? ''}`
     try {
