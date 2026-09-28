@@ -49,7 +49,9 @@ and how to re-record a reference on purpose.
 models, networking (API client, SSE, contract types), persistence and sync, and
 the view models and presentation logic behind every screen (chat, sessions,
 Kanban, settings, workspace, auth). The App, the share extension and the Live
-Activity widget link it. Its tests run on macOS without a simulator:
+Activity widget link it. Its tests run on macOS without a simulator; CI runs
+them on every App change, beside the App build and the launch smoke test, while
+the simulator-hosted `TalariaTests` run nightly and as a release gate:
 
 ```zsh
 swift test --package-path TalariaKit

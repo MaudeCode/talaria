@@ -149,22 +149,30 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal(1, workflow.scan("            -parallel-testing-enabled NO \\").length)
     refute_match(/parallel-testing-enabled YES|parallel-testing-worker-count|test_workers|build_cache|COMPILATION_CACHE|xcode-cache/, workflow)
     refute_match(/COMPILATION_CACHE|build-cache/, File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8"))
-    # Pull requests boot no simulator: the package tests plus the App build for testing. The simulator-hosted
-    # remainder and every UI test run in the full suite's four shards (TAL-399), or in one for a scoped UI suite
-    # dispatch (TAL-401).
+    # Pull requests run the package tests, the App build for testing and the launch smoke test on one simulator.
+    # The simulator-hosted unit tests and every UI test run in the full suite's four shards (TAL-399), or in one
+    # for a scoped UI suite dispatch (TAL-401).
     assert_includes(workflow, "timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 360 || 60 }}")
     # Dispatch inputs arrive as strings, so the reusable workflow's input is a string too.
     app_tests = YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)
     assert_equal({"type" => "string", "default" => "1"}, app_tests[true]["workflow_call"]["inputs"]["test_iterations"])
     assert_includes(workflow, 'if (( TEST_ITERATIONS > 1 )); then selection+=(-test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure); fi')
     jobs = workflow_jobs("app-tests.yml")
-    assert_equal("${{ fromJSON(inputs.only_testing != '' && '[0]' || '[0,1,2,3]') }}", jobs.fetch("app-test")["strategy"]["matrix"]["shard"])
-    assert_equal("inputs.mode == 'full'", jobs.fetch("app-test")["if"])
-    assert_equal("inputs.mode != 'contracts'", jobs.fetch("app-build")["if"])
+    shard = jobs.fetch("app-test")
+    assert_equal("${{ fromJSON(inputs.mode == 'full' && inputs.only_testing == '' && '[0,1,2,3]' || '[0]') }}",
+                 shard["strategy"]["matrix"]["shard"])
+    # A contract-only change has no App build, so no smoke either; the package job runs its contract classes.
+    assert_equal(["inputs.mode != 'contracts'"] * 2, [shard["if"], jobs.fetch("app-build")["if"]])
     assert_equal([nil] * 4, jobs.values_at("app-build", "app-test", "package-test").map { |job| job["needs"] } + [jobs.fetch("package-test")["if"]])
-    build = jobs.fetch("app-build")["steps"].find { |step| step["name"] == "Build for testing" }["run"]
-    assert_includes(build, '[[ "${MODE}" == "full" ]] || exit 0')
-    assert_equal("inputs.mode == 'full'", jobs.fetch("app-build")["steps"].find { |step| step["name"] == "Upload the test build" }["if"])
+    # Every mode with a build uploads it for the test jobs.
+    assert_nil(jobs.fetch("app-build")["steps"].find { |step| step["name"] == "Upload the test build" }["if"])
+    refute_includes(jobs.fetch("app-build")["steps"].find { |step| step["name"] == "Build for testing" }["run"], "exit 0")
+    # Outside the full suite the one shard selects only the launch smoke test, which must execute and pass.
+    assert_equal("TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList", shard["env"]["LAUNCH_SMOKE_TEST"])
+    select = shard["steps"].find { |step| step["name"] == "Select this shard's tests" }["run"]
+    assert_includes(select, %(elif [[ "${MODE}" != "full" ]]; then\n  echo "-only-testing:${LAUNCH_SMOKE_TEST}" > selection.txt))
+    reject = shard["steps"].find { |step| step["name"] == "Reject skipped UI tests" }["run"]
+    assert_includes(reject, '[[ "${MODE}" == "full" ]] || options+=(--require-launch-smoke)')
     # Pull requests and main pushes run the same App jobs; the full UI suite is nightly and a release gate.
     app = workflow_jobs("ci.yml").fetch("app")
     assert_equal("./.github/workflows/app-tests.yml", app["uses"])
