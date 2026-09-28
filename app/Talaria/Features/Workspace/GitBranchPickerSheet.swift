@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct GitBranchPickerSheet: View {
     let branches: GitBranches?

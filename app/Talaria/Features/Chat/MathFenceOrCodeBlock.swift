@@ -4,6 +4,7 @@ import OSLog
 import Splash
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct MathFenceOrCodeBlock: View {
     let language: String?

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct GitBranchPickerButton: View {
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true

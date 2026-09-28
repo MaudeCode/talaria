@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct OnboardingTailscalePage: View {
     @Environment(\.openURL) private var openURL

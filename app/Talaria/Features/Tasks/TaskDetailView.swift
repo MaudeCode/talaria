@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct TaskDetailView: View {
     let server: URL

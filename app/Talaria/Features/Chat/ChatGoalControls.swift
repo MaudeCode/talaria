@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct GoalControlsMenu: View {
     let currentGoal: SubmittedGoal?

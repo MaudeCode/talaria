@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct ComposerModelMenu: View {
     let modelGroups: [ModelCatalogGroup]

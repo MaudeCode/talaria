@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct GroupedSessionsView: View {
     let title: String

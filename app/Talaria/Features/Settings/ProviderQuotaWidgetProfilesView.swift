@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ProviderQuotaWidgetProfilesView: View {
     @Environment(\.dismiss) private var dismiss

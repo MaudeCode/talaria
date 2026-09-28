@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ActiveProfilePickerRow: View {
     let profile: ProfileSummary

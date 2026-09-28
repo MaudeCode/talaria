@@ -16,6 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TESTS = ["ContractReadinessTests", "APIClientAuthAndErrorTests", "APIClientSessionListTests",
          "APIClientSessionMutationTests", "SSEClientTests", "StreamReconnectContractTests"]
+LIVE_CLASS, LIVE_TEST = "APIClientSessionListTests", "testLiveUpstreamContractResponsesDecodeWhenSupplied"
 
 
 def commit(ref):
@@ -47,6 +48,76 @@ def disable_simulator_clones(app):
     if "-parallel-testing-enabled YES" not in script:
         raise ValueError("older App runner no longer declares -parallel-testing-enabled YES; update the TAL-323 shim")
     runner.write_text(script.replace("-parallel-testing-enabled YES", "-parallel-testing-enabled NO"))
+
+
+def package_classes(app, tests):
+    """The selected classes this App revision tests with `swift test` in its TalariaKit package (TAL-399).
+
+    Older revisions have no package and host every class in TalariaTests."""
+    directory = app / "TalariaKit/Tests/TalariaKitTests"
+    declared = {name for path in directory.rglob("*.swift")
+                for name in re.findall(r"^\s*(?:final\s+)?class\s+(\w+)\s*:", path.read_text(), re.MULTILINE)}
+    return [name for name in tests if name in declared]
+
+
+def run_package_tests(app, classes, responses, output):
+    """Run the package's contract classes on macOS against the live fixture; every class and the live test must pass."""
+    log_path = output / "app-package-tests.log"
+    with log_path.open("w") as log:
+        subprocess.run(["swift", "test", "--package-path", str(app / "TalariaKit"),
+                        "--filter", "^TalariaKitTests\\.(" + "|".join(classes) + ")/"],
+                       cwd=app, env={**os.environ, "TALARIA_LIVE_CONTRACT_RESPONSES": str(responses)},
+                       stdout=log, stderr=subprocess.STDOUT, check=True)
+    text = log_path.read_text()
+    for name in classes:
+        if f"Test Suite '{name}' passed" not in text:
+            raise ValueError(f"package gate did not execute {name}")
+    if LIVE_CLASS in classes and f"Test Case '-[TalariaKitTests.{LIVE_CLASS} {LIVE_TEST}]' passed" not in text:
+        raise ValueError("previous App did not decode the live Web fixtures")
+
+
+def verify_hosted(app, hosted, responses, output):
+    """Run the simulator-hosted contract classes with the App's own test-ios; each class and the live test must pass."""
+    env = {**os.environ, "_TALARIA_ENV_LOADED": "1",
+           "TALARIA_UPSTREAM_CONTRACT_RESPONSES": "base64:" + base64.b64encode(responses.read_bytes()).decode()}
+    with (output / "app-tests.log").open("w") as log:
+        subprocess.run([str(app / "scripts/test-ios"), *("TalariaTests/" + name for name in hosted)],
+                       cwd=app, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+    result_path = re.search(r"^Result bundle: (.+)$", (output / "app-tests.log").read_text(), re.MULTILINE)
+    if result_path is None:
+        raise ValueError("native runner did not identify its result bundle")
+    evidence = {}
+    for kind in ("summary", "tests"):
+        payload = json.loads(subprocess.check_output([
+            "xcrun", "xcresulttool", "get", "test-results", kind, "--path", result_path[1], "--compact",
+        ]))
+        (output / f"app-{kind}.json").write_text(json.dumps(payload, indent=2) + "\n")
+        evidence[kind] = payload
+    if evidence["summary"].get("result") != "Passed" or evidence["summary"].get("failedTests"):
+        raise ValueError("native contract tests did not pass")
+    cases = {}
+
+    def collect(node):
+        if isinstance(node, dict):
+            if node.get("nodeType") == "Test Case":
+                cases[node["nodeIdentifier"]] = node["result"]
+            for value in node.values():
+                collect(value)
+        elif isinstance(node, list):
+            for value in node:
+                collect(value)
+
+    collect(evidence["tests"])
+    for name in hosted:
+        if not any(key.startswith(name + "/") and result == "Passed" for key, result in cases.items()):
+            raise ValueError(f"native gate did not execute {name}")
+    if LIVE_CLASS in hosted:
+        if cases.get(f"{LIVE_CLASS}/{LIVE_TEST}()") != "Passed":
+            raise ValueError("previous App did not decode the live Web fixtures")
+        products = app / ".codex-tmp/xctest/derived-data/Build/Products"
+        plists = list(products.glob("**/TalariaTests.xctest/Info.plist"))
+        if not any(plistlib.loads(path.read_bytes()).get("CFBundleDisplayName") == env["TALARIA_UPSTREAM_CONTRACT_RESPONSES"] for path in plists):
+            raise ValueError("live fixtures were not embedded in the executed App test bundle")
 
 
 def probe_web(web_sha, responses, log):
@@ -97,46 +168,14 @@ def main():
         if args.shared_contracts:
             web_fixture = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{web_sha}:contracts/fixtures/web-session.json"])
             (checkout / "contracts/fixtures/web-session.json").write_bytes(web_fixture)
-        env = {**os.environ, "_TALARIA_ENV_LOADED": "1",
-               "TALARIA_UPSTREAM_CONTRACT_RESPONSES": "base64:" + base64.b64encode(responses.read_bytes()).decode()}
-        with (output / "app-tests.log").open("w") as log:
-            subprocess.run([str(app / "scripts/test-ios"), *("TalariaTests/" + name for name in tests)],
-                           cwd=app, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-        result_path = re.search(r"^Result bundle: (.+)$", (output / "app-tests.log").read_text(), re.MULTILINE)
-        if result_path is None:
-            raise ValueError("native runner did not identify its result bundle")
-        evidence = {}
-        for kind in ("summary", "tests"):
-            payload = json.loads(subprocess.check_output([
-                "xcrun", "xcresulttool", "get", "test-results", kind, "--path", result_path[1], "--compact",
-            ]))
-            (output / f"app-{kind}.json").write_text(json.dumps(payload, indent=2) + "\n")
-            evidence[kind] = payload
-        if evidence["summary"].get("result") != "Passed" or evidence["summary"].get("failedTests"):
-            raise ValueError("native contract tests did not pass")
-        cases = {}
-
-        def collect(node):
-            if isinstance(node, dict):
-                if node.get("nodeType") == "Test Case":
-                    cases[node["nodeIdentifier"]] = node["result"]
-                for value in node.values():
-                    collect(value)
-            elif isinstance(node, list):
-                for value in node:
-                    collect(value)
-
-        collect(evidence["tests"])
-        for name in tests:
-            if not any(key.startswith(name + "/") and result == "Passed" for key, result in cases.items()):
-                raise ValueError(f"native gate did not execute {name}")
-        live = "APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied()"
-        if cases.get(live) != "Passed":
-            raise ValueError("previous App did not decode the live Web fixtures")
-        products = app / ".codex-tmp/xctest/derived-data/Build/Products"
-        plists = list(products.glob("**/TalariaTests.xctest/Info.plist"))
-        if not any(plistlib.loads(path.read_bytes()).get("CFBundleDisplayName") == env["TALARIA_UPSTREAM_CONTRACT_RESPONSES"] for path in plists):
-            raise ValueError("live fixtures were not embedded in the executed App test bundle")
+        packaged = package_classes(app, tests)
+        if packaged:
+            run_package_tests(app, packaged, responses, output)
+        hosted = [name for name in tests if name not in packaged]
+        # A revision whose package holds every selected class needs no simulator; test-ios with no class would run
+        # the whole hosted suite.
+        if hosted:
+            verify_hosted(app, hosted, responses, output)
     record = {"appSourceRevision": app_sha, "webSourceRevision": web_sha, "result": "success",
               "fixturesSha256": hashlib.sha256(responses.read_bytes()).hexdigest(), "testClasses": tests}
     (output / "verification.json").write_text(json.dumps(record, indent=2) + "\n")

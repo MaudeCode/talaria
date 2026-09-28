@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct CronJobRowView: View {
     let job: CronJob

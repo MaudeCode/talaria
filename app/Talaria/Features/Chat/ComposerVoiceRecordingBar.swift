@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ComposerVoiceRecordingBar: View {
     let elapsed: TimeInterval

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct InsightsView: View {
     let server: URL

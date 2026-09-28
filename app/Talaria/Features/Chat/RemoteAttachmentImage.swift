@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct RemoteAttachmentImage: View {
     let path: String

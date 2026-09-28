@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SettingsStatusPill: View {
     let label: String

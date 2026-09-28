@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct GitFileCard: View {
     let file: GitFile

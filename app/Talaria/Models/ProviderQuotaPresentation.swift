@@ -2,40 +2,7 @@ import AppIntents
 import Foundation
 import SwiftUI
 import WidgetKit
-
-enum ProviderQuotaDisplaySettings {
-    static let aliasesKey = "providerQuota.providerAliases"
-
-    static func aliases(from data: Data) -> [String: String] {
-        (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
-    }
-
-    static func data(
-        byRenaming providerID: String,
-        to name: String,
-        in data: Data
-    ) -> Data {
-        let providerID = providerID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !providerID.isEmpty else { return data }
-        var aliases = aliases(from: data)
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if name.isEmpty {
-            aliases.removeValue(forKey: providerID)
-        } else {
-            aliases[providerID] = String(name.prefix(64))
-        }
-        return (try? JSONEncoder().encode(aliases)) ?? data
-    }
-
-    static func displayName(
-        providerID: String?,
-        fallback: String,
-        aliasesData: Data
-    ) -> String {
-        guard let providerID else { return fallback }
-        return aliases(from: aliasesData)[providerID.lowercased()] ?? fallback
-    }
-}
+import TalariaKit
 
 enum ProviderQuotaWidgetSelection {
     static func sourceIDs(slotIDs: [String?], capacity: Int) -> [String] {
@@ -51,15 +18,6 @@ enum ProviderQuotaWidgetSelection {
     ) -> [ProviderQuotaWidgetSource?] {
         let byID = Dictionary(uniqueKeysWithValues: (snapshot?.sources ?? []).map { ($0.sourceID, $0) })
         return sourceIDs.map { byID[$0] }
-    }
-}
-
-enum ProviderQuotaDateParser {
-    static func date(from value: String?) -> Date? {
-        guard let value else { return nil }
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions.insert(.withFractionalSeconds)
-        return ISO8601DateFormatter().date(from: value) ?? fractional.date(from: value)
     }
 }
 

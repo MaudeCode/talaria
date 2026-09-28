@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct KanbanFiltersView: View {
     @Environment(\.dismiss) private var dismiss

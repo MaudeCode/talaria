@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct CreateProfileSheet: View {
     let server: URL

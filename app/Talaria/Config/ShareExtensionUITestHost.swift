@@ -3,6 +3,7 @@ import Combine
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import TalariaKit
 
 /// DEBUG-only host that pushes synthetic content into the real system share sheet, so
 /// `ShareExtensionUITests` can drive the installed Talaria share extension end to end

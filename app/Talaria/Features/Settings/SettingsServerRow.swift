@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SettingsServerRow: View {
     let account: ServerAccount

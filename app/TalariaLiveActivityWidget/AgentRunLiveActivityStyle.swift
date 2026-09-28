@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 enum AgentRunLiveActivityTheme {
     static let background = Color(red: 0.025, green: 0.028, blue: 0.038)

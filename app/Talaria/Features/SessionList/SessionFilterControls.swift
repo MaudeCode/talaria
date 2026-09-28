@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SessionFilterControls: View {
     let viewModel: SessionListViewModel

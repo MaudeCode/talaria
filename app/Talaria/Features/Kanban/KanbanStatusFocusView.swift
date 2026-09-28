@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct KanbanStatusFocusView: View {
     @Environment(\.scenePhase) private var scenePhase

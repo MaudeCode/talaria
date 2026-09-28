@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 /// Newest-first paged run list under the task's recent output.
 struct TaskRunHistorySection: View {

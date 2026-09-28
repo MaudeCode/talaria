@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SkillsView: View {
     let server: URL

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SessionListRowsSection: View {
     let viewModel: SessionListViewModel

@@ -22,19 +22,23 @@ use the contract skill.
 
 ## XCTest
 
-Run local XCTest only through `scripts/test-ios [test-identifier ...]`.
+App logic that needs no app host lives in the `TalariaKit` package; its tests
+run on macOS without a simulator: `swift test --package-path TalariaKit
+[--filter <Class>]`. Run them for any `TalariaKit/` change; they take seconds.
+
+Run simulator-hosted XCTest only through `scripts/test-ios [test-identifier ...]`.
 
 1. Run the smallest focused test identifier that covers the change.
 2. Wait for it to finish.
-3. For non-UI App changes, run `scripts/test-ios TalariaTests TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList` before review or commit. HTTP/SSE changes also require the contract checks. Run `scripts/test-ios` for UI changes or uncertain scope.
+3. For non-UI App changes, run `swift test --package-path TalariaKit` and `scripts/test-ios TalariaTests TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList` before review or commit. HTTP/SSE changes also require the contract checks. Run `scripts/test-ios` for UI changes or uncertain scope.
 
-CI (pull requests and main pushes) runs only the focused set for every App
-change, so run the UI suite locally for UI changes before review: CI does not
-run it before merge (TAL-332). Every selected App run still builds all targets
-once, then splits the tests across two hosted simulators with
-`ci/test_shards.py`. The launch smoke test must execute and pass; absence or
-skipping fails CI. The full UI suite runs in four shards nightly and as a
-release gate (`.github/workflows/ui-suite.yml`).
+CI (pull requests and main pushes) runs, for every App change, `swift test` for
+TalariaKit, the App build for testing (App, extensions and both test bundles),
+and the launch smoke test on one simulator, which must execute and pass
+(TAL-399). The simulator-hosted unit tests and the UI suite run in four shards
+plus the package job nightly and as a release gate
+(`.github/workflows/ui-suite.yml`), not before merge, so run step 3 locally, and
+the UI suite for UI changes, before review (TAL-332).
 
 The script serializes runs within one worktree and leases pooled simulators across
 worktrees. Let the current run finish instead of starting an overlapping run.

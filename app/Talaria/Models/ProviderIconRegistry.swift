@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ProviderIconDescriptor: Equatable, Sendable {
     let assetName: String?
@@ -6,23 +7,6 @@ struct ProviderIconDescriptor: Equatable, Sendable {
     let hasOriginalColor: Bool
     let alwaysUsesOriginalRendering: Bool
     let fallbackInitials: String
-}
-
-enum ProviderIconStyle: String, CaseIterable, Identifiable {
-    case color
-    case silhouette
-
-    static let storageKey = "providerIcons.style"
-    static let defaultValue = ProviderIconStyle.color
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .color: String(localized: "Color")
-        case .silhouette: String(localized: "Silhouette")
-        }
-    }
 }
 
 enum ProviderIconRegistry {

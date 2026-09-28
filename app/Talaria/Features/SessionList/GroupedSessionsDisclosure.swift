@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct GroupedSessionsDisclosure: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct AppIconChoicePreview: View {
     @Environment(\.colorScheme) private var colorScheme

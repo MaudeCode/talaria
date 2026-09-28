@@ -68,13 +68,14 @@ dependency:
 
 | Workflow | Job | Native dependency |
 |---|---|---|
-| `ci.yml` | `app-build` | `app/ci/build-for-testing` once, uploaded as the run's `app-build` artifact |
-| `ci.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: two shards for a pull request, four full-suite shards for a main push; shard 0 also runs the live Web contract test |
-| `ci.yml` | `app-tooling` (`macos-latest`) | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
-| `fuzz-soak.yml` | `soak` | `xcodebuild test` in the simulator |
+| `app-tests.yml` | `app-build` | `app/ci/build-for-testing` once; the UI suite uploads it as the `ui-suite-build` artifact |
+| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: a pull request's launch smoke test, or the UI suite's four shards (hosted unit tests, launch smoke, UI tests) |
+| `app-tests.yml` | `package-test` | `swift test` for TalariaKit (every native contract class and the live Web contract test) |
+| `ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
+| `fuzz-soak.yml` | `soak` | `swift test` for TalariaKit's fuzz soak class |
 | `ui-performance.yml` | `measure` | `xcodebuild test` in the simulator |
 | `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
-| `release-set.yml` | `contracts` | compiles and tests the selected App in the simulator against every supported Web |
+| `release-set.yml` | `contracts` | tests the selected App against every supported Web: `swift test`, or the simulator for an App from before TAL-399 |
 | `release-set.yml` | `previous-app-contracts` | compiles and tests the previously released App in the simulator |
 | `release-set.yml` | `app-dry-build` | unsigned `xcodebuild archive` |
 
@@ -183,7 +184,10 @@ changed artifact identities, and attempted completion of dry-run plans fail.
 For previous-App verification, root `scripts/check-previous-app.py --app-ref REF
 --web-ref REF --output NEW_DIRECTORY` starts the selected Web in isolated state,
 exports live responses, and compiles the actual older App from Git. It verifies
-the fixtures reached the test bundle and retains structured XCTest results.
+the fixtures reached the test bundle and retains structured XCTest results. For an
+App revision with the TalariaKit package (TAL-399), the contract classes that live
+there run with `swift test` against the same responses, and the live decoding test
+must pass there instead.
 
 ## Root workflow
 

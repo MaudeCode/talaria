@@ -1,13 +1,14 @@
-# The full iOS unit and UI suite on GitHub-hosted runners: App build plus four shards (app-tests.yml, full
-# mode). It is too long for every main push (about an hour of hosted test time), so it runs nightly, on
-# demand, and as a release gate.
+# The full iOS unit and UI suite on GitHub-hosted runners: App build plus four simulator shards (the hosted unit
+# tests, the launch smoke and every UI test) and the TalariaKit package tests (app-tests.yml, full mode). It is
+# too long for every main push (about an hour of hosted test time), so it runs nightly, on demand, and as a
+# release gate.
 #
 # Interface (stable; TAL-381's release graph calls it on the release commit):
 #   uses: ./.github/workflows/ui-suite.yml   (the caller grants contents: read and actions: read)
 #   with:
 #     ref: <commit SHA>   # required for workflow_call
-#   No outputs: the calling job's result is the suite's result. Its jobs are named "UI suite build" and
-#   "UI suite tests (shard N)", and its build artifact is ui-suite-build.
+#   No outputs: the calling job's result is the suite's result. Its jobs are named "UI suite build",
+#   "UI suite tests (shard N)" and "UI suite package tests", and its build artifact is ui-suite-build.
 #
 # A manual run can scope and repeat the suite instead (TAL-401), for example 10 runs in a row of one flaky test:
 #   gh workflow run ui-suite.yml --repo MaudeCode/talaria --ref <branch> \

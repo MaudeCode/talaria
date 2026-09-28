@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct ComposerSecondaryControlsView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize

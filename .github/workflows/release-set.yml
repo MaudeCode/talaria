@@ -99,8 +99,8 @@ jobs:
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   ui-suite:
-    # The full unit and UI suite (TAL-380's ui-suite.yml: a build plus four macOS test shards) on the release
-    # source, beside every other gate; build-gate, and so every publication, requires it when the App ships.
+    # The full unit and UI suite (TAL-380's ui-suite.yml: a build, four macOS test shards and the package tests) on
+    # the release source, beside every other gate; build-gate, and so every publication, requires it when the App ships.
     needs: prepare
     if: needs.prepare.outputs.app_changed == 'true'
     permissions:
@@ -127,7 +127,8 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: app/ci/wait-for-job "UI suite build" 3600 "Set up job"
   contracts:
-    # macOS: compiles the selected App and tests it in the iOS simulator against every supported Web source.
+    # macOS: tests the selected App against every supported Web source: TalariaKit's contract classes with `swift test`,
+    # and an App revision from before TAL-399 in the iOS simulator.
     needs:
     - prepare
     - ui-suite-started

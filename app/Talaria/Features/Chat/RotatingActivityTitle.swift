@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct RotatingActivityTitle: View {
     let fallback: String

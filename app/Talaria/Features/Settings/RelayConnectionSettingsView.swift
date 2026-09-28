@@ -1,5 +1,6 @@
 import AuthenticationServices
 import SwiftUI
+import TalariaKit
 
 struct RelayConnectionManagementView: View {
     private enum UnenrollmentScope {

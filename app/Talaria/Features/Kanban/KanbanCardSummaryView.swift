@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct KanbanCardSummaryView: View {
     let card: KanbanCard

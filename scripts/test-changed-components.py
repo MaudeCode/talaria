@@ -21,6 +21,10 @@ CONSUMERS = {"app", "web_server", "web_frontend", "relay", "contracts"}
 class RoutingTests(unittest.TestCase):
     def test_app_ui_scope(self):
         assert not routing.app_ui_required(["app/Talaria/Networking/APIClient.swift"])
+        assert not routing.app_ui_required(["app/TalariaKit/Sources/TalariaKit/Networking/APIClient.swift"])
+        assert not routing.app_ui_required(["app/TalariaKit/Tests/TalariaKitTests/SSEClientTests.swift"])
+        assert routing.app_ui_required(["app/TalariaKit/Sources/TalariaKit/Features/Chat/ChatViewModel.swift"])
+        assert routing.app_ui_required(["app/TalariaKit/Sources/TalariaKit/Platform/PlatformHooks.swift"])
         assert not routing.app_ui_required(["app/Talaria/Resources/Info.plist"], metadata_only_plists=["app/Talaria/Resources/Info.plist"])
         assert routing.app_ui_required(["app/Talaria/Resources/Info.plist"])
         assert routing.same_plist_ui(plistlib.dumps({}), plistlib.dumps({"TalariaRelease": {"version": "1.0.0"}}))
@@ -43,6 +47,12 @@ class RoutingTests(unittest.TestCase):
             (["changelog.d/TAL-123.json"], set()),
             # The live-fixture test runs only in the contracts step, so editing it must select contracts.
             (["app/TalariaTests/APIClientSessionListTests.swift"], {"app", "contracts"}),
+            (["app/TalariaKit/Tests/TalariaKitTests/APIClientSessionListTests.swift"], {"app", "contracts"}),
+            # TalariaKit's networking, models and resolved dependencies feed the live contract test (TAL-399).
+            (["app/TalariaKit/Sources/TalariaKit/Networking/SSEClient.swift"], {"app", "contracts"}),
+            (["app/TalariaKit/Package.swift", "app/TalariaKit/Package.resolved"], {"app", "contracts"}),
+            (["app/TalariaKit/Sources/TalariaKit/Persistence/CacheStore.swift"], {"app"}),
+            (["app/TalariaKit/Tests/TalariaKitTests/ChatDraftStoreTests.swift"], {"app"}),
             # The Docker plugin action sets up Compose/Buildx for the smoke, so it runs the smoke too.
             ([".github/actions/docker-plugins/action.yml"], {"docker", "tooling"}),
             ([".github/workflows/ui-performance.yml"], {"app", "tooling"}),

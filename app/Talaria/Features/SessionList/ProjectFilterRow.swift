@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ProjectFilterRow: View {
     let project: ProjectSummary

@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct ComposerProfileSelectorMenu: View {
     let profileOptions: [ProfileSummary]

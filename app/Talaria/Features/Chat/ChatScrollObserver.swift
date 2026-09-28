@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 /// Reports the transcript's scroll geometry and the gesture events that drive
 /// the follow latch (`ChatScrollPolicy.FollowEvent`). Metrics arrive on every

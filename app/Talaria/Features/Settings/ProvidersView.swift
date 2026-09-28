@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 /// Read-only provider status screen (#26): which providers the server knows
 /// about, whether each has a credential (and where it came from), which one is

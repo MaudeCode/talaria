@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ChatActiveRunStatusView: View {
     let presentation: ChatActiveRunStatusPresentation

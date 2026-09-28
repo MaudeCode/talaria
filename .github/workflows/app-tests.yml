@@ -2,18 +2,25 @@
 #   uses: ./.github/workflows/app-tests.yml   (the caller grants contents: read and actions: read)
 #   with:
 #     mode: pull-request | contracts | full
-#       pull-request: unit tests and the launch smoke in two shards; contracts: the native contract
-#       classes in one shard; full: every unit and UI test in four shards (the UI suite).
-#     contracts: true | false  - shard 0 also waits for this run's "Web contract probe" job and runs the live
-#       decoding test against its contract-fixture artifact, inside the same xcodebuild as its suite.
+#       Every mode runs the TalariaKit package tests with `swift test` on macOS, without a simulator: about
+#       94% of the unit tests, including every native contract class (TAL-399).
+#       pull-request: plus the App build for testing (App, extensions and both test bundles) and the launch smoke
+#       test on one simulator.
+#       contracts: the package tests alone; a contract-only change leaves the App sources alone.
+#       full: plus every simulator-hosted unit and UI test in four shards (the UI suite), launch smoke included.
+#     contracts: true | false  - the package job also waits for this run's "Web contract probe" job and runs the
+#       live decoding test against its contract-fixture artifact.
 #     ref: optional commit to check out (default: the triggering commit).
 #     only_testing: optional space-separated test identifiers; one shard runs exactly these (ui-suite.yml dispatch).
 #     test_iterations: runs of each selected test (default 1); above 1 stops at the first failing iteration.
 #   No outputs: the calling job's result is the suite's result.
-# Jobs are named "App build"/"App tests (shard N)", or "UI suite build"/"UI suite tests (shard N)" in full
-# mode, and the build artifact is app-build or ui-suite-build, so both suites can run in one workflow run.
-# Test jobs boot their simulator while the build runs on another runner (TAL-380): hosted macOS allows five
+# Jobs are named "App build"/"App launch smoke"/"App package tests", or "UI suite build"/"UI suite tests (shard N)"/
+# "UI suite package tests" in full mode, and the build artifact is app-build or ui-suite-build, so both suites can
+# run in one workflow run.
+# Test shards boot their simulator while the build runs on another runner (TAL-380): hosted macOS allows five
 # concurrent jobs, and a simulator's first boot beside a build on one three-core runner slowed both.
+# The simulator-hosted remainder (UIKit views, App Intents and widget configuration types, visual references,
+# performance budgets, App bundle resources) runs in the full suite, nightly and as a release gate.
 
 name: App tests
 
@@ -52,7 +59,9 @@ env:
 jobs:
   app-build:
     name: ${{ inputs.mode == 'full' && 'UI suite build' || 'App build' }}
-    # Builds on its own runner; the test jobs boot their simulators meanwhile.
+    # Builds on its own runner; the test jobs boot their simulators meanwhile. A contract-only
+    # change leaves the App sources alone, so its package tests are the whole check.
+    if: inputs.mode != 'contracts'
     runs-on: xcode-27
     timeout-minutes: 45
     steps:
@@ -90,40 +99,92 @@ jobs:
           overwrite: true
           if-no-files-found: error
 
+  package-test:
+    # TalariaKit (models, networking, persistence, sync, view models) tests on macOS with `swift test`: no
+    # simulator and no app host (TAL-399). It runs beside the build; only the live contract test waits for the
+    # Web probe. The fuzz soak class belongs to the scheduled Fuzz Soak workflow.
+    name: ${{ inputs.mode == 'full' && 'UI suite' || 'App' }} package tests
+    runs-on: xcode-27
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Reads this run's job list to wait for the Web contract probe.
+      actions: read
+    env:
+      CONTRACTS_SELECTED: ${{ inputs.contracts }}
+      LIVE_CONTRACT_TEST: TalariaKitTests.APIClientSessionListTests testLiveUpstreamContractResponsesDecodeWhenSupplied
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - uses: ./.github/actions/setup-xcode
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      # The committed Package.resolved pins the App's revisions; resolution never drifts from it.
+      - name: Build the package tests
+        run: swift build --package-path TalariaKit --build-tests --only-use-versions-from-resolved-file
+
+      - name: Wait for the Web contract probe
+        if: env.CONTRACTS_SELECTED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ci/wait-for-job "Web contract probe" 1500
+
+      - name: Download the probe's live response fixture
+        if: env.CONTRACTS_SELECTED == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: contract-fixture
+          path: ${{ runner.temp }}/contract-fixture
+
+      - name: Test the package
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/contract-fixture/live-responses.json"
+          if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
+            [[ -s "${fixture}" ]] || { echo "The probe artifact has no live-responses.json" >&2; exit 1; }
+            export TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"
+          fi
+          start_seconds=${SECONDS}
+          swift test --package-path TalariaKit --skip-build --skip UntrustedInputFuzzSoakTests 2>&1 | tee package-tests.log
+          if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
+            # A missing fixture makes the live test skip, so require an explicit pass.
+            grep -qF -- "Test Case '-[${LIVE_CONTRACT_TEST}]' passed" package-tests.log ||
+              { echo "The live Web contract test did not pass against the fixture" >&2; exit 1; }
+          fi
+          {
+            echo "### Package tests"
+            echo "- swift test: $((SECONDS - start_seconds))s, $(grep -oE 'Executed [0-9]+ tests' package-tests.log | tail -1)"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
   app-test:
-    # Each shard boots its simulator to completion while the build runs on another runner, then waits for
-    # and downloads the build.
-    name: ${{ inputs.mode == 'full' && 'UI suite' || 'App' }} tests (shard ${{ matrix.shard }})
+    # Each shard boots its simulator to completion while the build runs on another runner, then waits for and
+    # downloads the build. Pull requests run one shard with only the launch smoke test; the hosted unit tests
+    # and the UI tests run in the full suite (TAL-399).
+    name: ${{ inputs.mode == 'full' && format('UI suite tests (shard {0})', matrix.shard) || 'App launch smoke' }}
+    if: inputs.mode != 'contracts'
     runs-on: xcode-27
     # An iterated dispatch repeats minutes-long UI tests, so it gets the hosted job maximum.
     timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 360 || 60 }}
     permissions:
       contents: read
-      # Reads this run's job list to wait for the build and the Web contract probe.
+      # Reads this run's job list to wait for the build.
       actions: read
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(inputs.only_testing != '' && '[0]' || (inputs.mode == 'full' && '[0,1,2,3]' || (inputs.mode == 'pull-request' && '[0,1]' || '[0]'))) }}
+        # Four UI suite shards; one for a pull request's launch smoke or a scoped UI suite dispatch (TAL-401).
+        shard: ${{ fromJSON(inputs.mode == 'full' && inputs.only_testing == '' && '[0,1,2,3]' || '[0]') }}
     env:
       SHARD: ${{ matrix.shard }}
       SHARD_COUNT: ${{ strategy.job-total }}
       MODE: ${{ inputs.mode }}
-      CONTRACTS_SELECTED: ${{ inputs.contracts }}
+      LAUNCH_SMOKE_TEST: TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList
       ONLY_TESTING: ${{ inputs.only_testing }}
       TEST_ITERATIONS: ${{ inputs.test_iterations }}
       RESULT_BUNDLE_PATH: TestResults.xcresult
-      LAUNCH_SMOKE_TEST: TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList
-      LIVE_CONTRACT_TEST: TalariaTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied
-      # Pinned to shard 0, which also runs the live contract test, so one shard proves them all.
-      CONTRACT_TEST_CLASSES: >-
-        TalariaTests/ContractReadinessTests
-        TalariaTests/SharedContractTests
-        TalariaTests/APIClientAuthAndErrorTests
-        TalariaTests/APIClientSessionListTests
-        TalariaTests/APIClientSessionMutationTests
-        TalariaTests/SSEClientTests
-        TalariaTests/StreamReconnectContractTests
     steps:
       - uses: actions/checkout@v7
         with:
@@ -146,7 +207,7 @@ jobs:
           wait_for_boot: true
           boot_timeout_seconds: 600
 
-      - name: Wait for App build
+      - name: Wait for the build
         env:
           GH_TOKEN: ${{ github.token }}
         # Returns once the build's upload step has succeeded; the job's own completion, and in run 36446521579
@@ -175,22 +236,6 @@ jobs:
           unzip -q -o "${RUNNER_TEMP}/app-build.zip" -d "${RUNNER_TEMP}"
           echo "- Test build download: $((SECONDS - start_seconds))s ($(du -h "${RUNNER_TEMP}/app-build.zip" | cut -f1))" | tee -a "${GITHUB_STEP_SUMMARY}"
 
-      # The probe finishes about a minute into the run, long before the build, so shard 0 fetches its fixture
-      # here and runs the live decoding test inside the same xcodebuild as its suite: a second invocation spent
-      # over two minutes preparing the destination again before it ran one test.
-      - name: Wait for the Web contract probe
-        if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ci/wait-for-job "Web contract probe" 1500
-
-      - name: Download the probe's live response fixture
-        if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
-        uses: actions/download-artifact@v8
-        with:
-          name: contract-fixture
-          path: ${{ runner.temp }}/contract-fixture
-
       - name: Select this shard's tests
         run: |
           set -euo pipefail
@@ -198,21 +243,10 @@ jobs:
           tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
           if [[ -n "${ONLY_TESTING}" ]]; then
             for test_identifier in ${ONLY_TESTING}; do echo "-only-testing:${test_identifier}"; done > selection.txt
-          elif [[ "${MODE}" == "contracts" ]]; then
-            # Web/contract-only change: the fixture-backed native contract classes are the whole selection.
-            for contract_class in ${CONTRACT_TEST_CLASSES}; do echo "-only-testing:${contract_class}"; done > selection.txt
-            echo "-skip-testing:${LIVE_CONTRACT_TEST}" >> selection.txt
+          elif [[ "${MODE}" != "full" ]]; then
+            echo "-only-testing:${LAUNCH_SMOKE_TEST}" > selection.txt
           else
-            options=(--shards "${SHARD_COUNT}" --shard "${SHARD}")
-            # CI: unit tests and one launch smoke test; the UI suite runs every UI test.
-            [[ "${MODE}" == "full" ]] || options+=(--targets TalariaTests --add "${LAUNCH_SMOKE_TEST}")
-            for contract_class in ${CONTRACT_TEST_CLASSES}; do options+=(--pin "${contract_class}"); done
-            python3 ci/test_shards.py "${options[@]}" > selection.txt
-          fi
-          if [[ "${CONTRACTS_SELECTED}" == "true" && "${SHARD}" == "0" ]]; then
-            # Shard 0 holds the live test's class (pinned) or the whole target; only its skip goes.
-            grep -vx -- "-skip-testing:${LIVE_CONTRACT_TEST}" selection.txt > selection.live.txt
-            mv selection.live.txt selection.txt
+            python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" > selection.txt
           fi
           echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries"
 
@@ -221,14 +255,6 @@ jobs:
           SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
         run: |
           set -euo pipefail
-          live=false
-          [[ "${CONTRACTS_SELECTED}" == "true" && "${SHARD}" == "0" ]] && live=true
-          fixture="${RUNNER_TEMP}/contract-fixture/live-responses.json"
-          if [[ "${live}" == "true" ]]; then
-            [[ -s "${fixture}" ]] || { echo "The probe artifact has no live-responses.json" >&2; exit 1; }
-            # xcodebuild strips TEST_RUNNER_ and hands the path to the simulator test process.
-            export TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"
-          fi
           start_seconds=${SECONDS}
           selection=()
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
@@ -245,20 +271,6 @@ jobs:
             -parallel-testing-enabled NO \
             "${selection[@]}"
           duration_seconds=$((SECONDS - start_seconds))
-          if [[ "${live}" == "true" ]]; then
-            # Every native contract class must have passed.
-            xcrun xcresulttool get test-results tests --path "${RESULT_BUNDLE_PATH}" --compact > contract-results.json
-            for contract_class in ${CONTRACT_TEST_CLASSES}; do
-              /usr/bin/jq -e --arg prefix "test://com.apple.xcode/Talaria/${contract_class}/" '
-                any(.. | objects; .nodeType? == "Test Case" and .result? == "Passed" and ((.nodeIdentifierURL? // "") | startswith($prefix)))
-              ' contract-results.json >/dev/null || { echo "Native contract class ${contract_class} did not pass" >&2; exit 1; }
-            done
-            # A missing fixture makes the live test skip, so require an explicit pass.
-            /usr/bin/jq -e --arg id "test://com.apple.xcode/Talaria/${LIVE_CONTRACT_TEST}" '
-              [.. | objects | select(.nodeType? == "Test Case" and ((.nodeIdentifierURL? // "") | startswith($id)))]
-              | length == 1 and .[0].result == "Passed"
-            ' contract-results.json >/dev/null || { echo "The live Web contract test did not pass against the fixture" >&2; exit 1; }
-          fi
           echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
 
@@ -313,8 +325,8 @@ jobs:
       - name: Reject skipped UI tests
         run: |
           options=()
-          # Exactly one pull-request shard owns the launch smoke test, and it must pass there.
-          if grep -qx -- "-only-testing:${LAUNCH_SMOKE_TEST}" selection.txt; then options+=(--require-launch-smoke); fi
+          # A pull request's only test is the launch smoke, and it must execute and pass.
+          [[ "${MODE}" == "full" ]] || options+=(--require-launch-smoke)
           scripts/assert-no-skipped-ui-tests "${RESULT_BUNDLE_PATH}" "${options[@]}"
 
       # Performance budgets are only useful against previous runs, so every run

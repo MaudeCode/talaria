@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ArchivedSessionsView: View {
     let server: URL

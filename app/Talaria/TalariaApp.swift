@@ -3,6 +3,7 @@ import SwiftUI
 import SwiftData
 import UIKit
 import UserNotifications
+import TalariaKit
 
 final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(
@@ -111,6 +112,7 @@ struct TalariaApp: App {
     #endif
 
     init() {
+        PlatformBridges.install()
         AppConfig.logReleaseIdentity()
         let arguments = ProcessInfo.processInfo.arguments
 

@@ -3,6 +3,7 @@ import AVKit
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import TalariaKit
 
 struct TranscriptMediaResolvedRemoteView: View {
     let reference: TranscriptMediaReference

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct KanbanCardDetailContent: View {
     let featureModel: KanbanFeatureState

@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 
 @MainActor
@@ -37,44 +38,6 @@ struct SessionListRowActions {
     let export: (SessionSummary, SessionExportFormat) -> Void
 }
 
-enum SessionRowActionPolicy {
-    static func offersMutationActions(for session: SessionSummary) -> Bool {
-        !session.isSessionReadOnly
-    }
-
-    /// The server's own gates (TAL-312); an older server that omits them keeps the earlier rules.
-    static func canPin(_ session: SessionSummary) -> Bool {
-        session.canPin ?? offersMutationActions(for: session)
-    }
-
-    static func canArchive(_ session: SessionSummary) -> Bool {
-        session.canArchive ?? offersMutationActions(for: session)
-    }
-
-    static func canDuplicate(_ session: SessionSummary) -> Bool {
-        session.canDuplicate ?? (offersMutationActions(for: session) && !session.isExternalSourceSession)
-    }
-
-    static func canExport(_ session: SessionSummary, isViewingCachedData: Bool) -> Bool {
-        !isViewingCachedData && hasServerSessionID(session)
-    }
-
-    static func deepLinkURL(
-        for session: SessionSummary,
-        isViewingCachedData: Bool,
-        isMutating: Bool
-    ) -> URL? {
-        guard !isMutating,
-              canExport(session, isViewingCachedData: isViewingCachedData),
-              let sessionID = session.sessionId
-        else {
-            return nil
-        }
-
-        return TalariaDeepLink.sessionURL(sessionID: sessionID)
-    }
-}
-
 enum SessionListMotion {
     static func disclosureAnimation(reduceMotion: Bool) -> Animation? {
         reduceMotion ? nil : .smooth(duration: 0.28, extraBounce: 0)
@@ -94,68 +57,6 @@ enum SessionListMotion {
 
     static func disclosureContentTransition(reduceMotion: Bool) -> AnyTransition {
         reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))
-    }
-}
-
-/// Which of the session list's optional navigation rows are shown, so a user can
-/// hide the parts of the app they never use (issue #189).
-struct SidebarSectionVisibility: Equatable {
-    var tasks: Bool
-    var kanban: Bool
-    var skills: Bool
-    var memory: Bool
-    var insights: Bool
-    var activeProfile: Bool
-    var projects: Bool
-
-    /// Show every row, primarily for previews and tests.
-    static let showAll = SidebarSectionVisibility(
-        tasks: true,
-        kanban: true,
-        skills: true,
-        memory: true,
-        insights: true,
-        activeProfile: true,
-        projects: true
-    )
-
-    /// The five plain links share one List row, so that row is dropped entirely
-    /// once all of them are hidden rather than leaving an empty padded gap.
-    var showsAnyUtilityLink: Bool {
-        tasks || kanban || skills || memory || insights
-    }
-}
-
-/// Pure, testable backing model for the session-list avatar's long-press server
-/// switcher (#283). Maps `AuthManager.servers` + the active server id into the
-/// rows the context menu renders, deriving each row's display name the same way
-/// the Settings server list does, so the menu's contents — and which server is
-/// marked active — are unit-testable without standing up the view.
-struct AvatarServerSwitcherModel: Equatable {
-    struct Entry: Identifiable, Equatable {
-        let id: String
-        let account: ServerAccount
-        let displayName: String
-        let isActive: Bool
-    }
-
-    let entries: [Entry]
-
-    /// The id of the entry marked active, or nil when the active id matches no
-    /// configured server (a defensive transient, e.g. mid-removal).
-    var activeID: String? { entries.first(where: \.isActive)?.id }
-
-    init(servers: [ServerAccount], activeServerID: String?) {
-        entries = servers.map { account in
-            let hostFallback = URL(string: account.urlString)?.host ?? account.urlString
-            let displayName = account.displayName.isEmpty ? hostFallback : account.displayName
-            return Entry(
-                id: account.id,
-                account: account,
-                displayName: displayName,
-                isActive: account.id == activeServerID
-            )
-        }
     }
 }
 
@@ -202,14 +103,6 @@ struct SessionExportShareItem: Identifiable {
 /// `onDismiss`, which runs after the activity UI is gone in both the
 /// completed and cancelled paths.
 
-func hasServerSessionID(_ session: SessionSummary) -> Bool {
-    guard let sessionID = session.sessionId?.trimmingCharacters(in: .whitespacesAndNewlines) else {
-        return false
-    }
-
-    return !sessionID.isEmpty
-}
-
 struct SessionListFloatingChatButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
@@ -228,53 +121,6 @@ struct SessionListFloatingChatButtonStyle: ButtonStyle {
             .animation(SessionListMotion.pressAnimation(reduceMotion: reduceMotion), value: isPressed)
     }
 }
-
-
-
-enum AppSidebarDestination: Hashable {
-    case chats
-    case tasks
-    case kanban
-    case skills
-    case memory
-    case insights
-    case quota(String)
-    case settings
-}
-
-enum AppSidebarGesturePolicy {
-    static let edgeActivationWidth: CGFloat = 28
-
-    static func accepts(
-        isPresented: Bool,
-        startX: CGFloat,
-        containerWidth: CGFloat,
-        translation: CGSize,
-        isRightToLeft: Bool
-    ) -> Bool {
-        guard abs(translation.width) > abs(translation.height) else { return false }
-        guard !isPresented else { return true }
-
-        return isRightToLeft
-            ? startX >= containerWidth - edgeActivationWidth
-            : startX <= edgeActivationWidth
-    }
-
-    static func progress(
-        isPresented: Bool,
-        translationWidth: CGFloat,
-        revealWidth: CGFloat,
-        isRightToLeft: Bool
-    ) -> CGFloat {
-        guard revealWidth > 0 else { return 0 }
-        let direction: CGFloat = isRightToLeft ? -1 : 1
-        let currentOffset = isPresented ? revealWidth : 0
-        return min(max((currentOffset + translationWidth * direction) / revealWidth, 0), 1)
-    }
-}
-
-
-
 
 
 

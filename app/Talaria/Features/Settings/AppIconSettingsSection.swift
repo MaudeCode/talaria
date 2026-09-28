@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct AppIconSettingsSection: View {
     @Environment(\.scenePhase) private var scenePhase

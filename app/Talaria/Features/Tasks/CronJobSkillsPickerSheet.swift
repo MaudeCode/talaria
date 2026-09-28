@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 /// The task editor's multi-select skills picker. Each toggle writes straight
 /// to the draft, so the sheet stays open while rows are toggled.
@@ -84,33 +85,10 @@ struct CronJobSkillsPickerSheet: View {
     }
 
     private var listedSkills: [SkillSummary] {
-        Self.filteredSkills(
-            Self.skillsIncludingSelection(skills, selection: selection),
+        CronJobSkillsSelection.filteredSkills(
+            CronJobSkillsSelection.skillsIncludingSelection(skills, selection: selection),
             query: searchText
         )
-    }
-
-    /// The server's list, plus a row for every selected skill it does not
-    /// offer, so a saved selection is always visible and always removable.
-    static func skillsIncludingSelection(
-        _ skills: [SkillSummary],
-        selection: [String]
-    ) -> [SkillSummary] {
-        let known = Set(skills.compactMap(\.name))
-        let missing = selection.filter { !known.contains($0) }
-        return missing.map { SkillSummary(name: $0, category: nil, description: nil, path: nil) } + skills
-    }
-
-    /// A skill is findable by every string its row shows.
-    static func filteredSkills(_ skills: [SkillSummary], query: String) -> [SkillSummary] {
-        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return skills }
-
-        return skills.filter { skill in
-            (skill.name?.localizedCaseInsensitiveContains(query) ?? false)
-                || (skill.category?.localizedCaseInsensitiveContains(query) ?? false)
-                || (skill.description?.localizedCaseInsensitiveContains(query) ?? false)
-        }
     }
 
     private func skillRow(_ skill: SkillSummary) -> some View {

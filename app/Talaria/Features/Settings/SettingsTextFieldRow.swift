@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct SettingsTextFieldRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize

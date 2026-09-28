@@ -1,5 +1,6 @@
 import ActivityKit
 import Foundation
+import TalariaKit
 
 struct PerSessionRelayContext {
     let credentials: TalariaRelayCredentials

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SettingsAccessoryRow: View {
     let title: String

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SettingsView: View {
     @Bindable var authManager: AuthManager

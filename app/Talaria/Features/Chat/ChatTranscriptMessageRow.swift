@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ChatTranscriptMessageRow: View {
     let message: ChatMessage

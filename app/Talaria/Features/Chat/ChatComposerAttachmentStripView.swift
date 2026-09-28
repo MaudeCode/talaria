@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct ComposerAttachmentStripView: View {
     let attachments: [PendingAttachment]

@@ -43,6 +43,36 @@ live in `TalariaTests/VisualReferences`. See
 [`docs/visual-references.md`](docs/visual-references.md) for how to read a diff
 and how to re-record a reference on purpose.
 
+## TalariaKit package
+
+`TalariaKit/` is a local Swift package with the App logic that needs no app host:
+models, networking (API client, SSE, contract types), persistence and sync, and
+the view models and presentation logic behind every screen (chat, sessions,
+Kanban, settings, workspace, auth). The App, the share extension and the Live
+Activity widget link it. Its tests run on macOS without a simulator; CI runs
+them on every App change, beside the App build and the launch smoke test, while
+the simulator-hosted `TalariaTests` run nightly and as a release gate:
+
+```zsh
+swift test --package-path TalariaKit
+swift test --package-path TalariaKit --filter SSEClientTests
+```
+
+Code that needs UIKit, ActivityKit, App Intents metadata, the app host, Keychain
+entitlements or app resources stays in the App targets, and so do its tests in
+`TalariaTests`. App Intents types (`AppEnum`, `AppEntity`, widget configuration
+intents) stay in the App or widget: their metadata names the module, so moving
+one changes saved widget and shortcut configurations. When package code needs a
+platform API, it calls a hook in `TalariaKit/Sources/TalariaKit/Platform/`
+(`PlatformHooks`, `HapticEmitter.perform`), which `Talaria/PlatformBridges.swift`
+installs at launch; under `swift test` the hooks keep their inert defaults. The
+App sees only `public` TalariaKit declarations; add `public` only where App code
+needs it. `TalariaTests` also compiles
+`TalariaKit/Tests/TalariaKitTests/Support/`, so both test targets share the API
+test doubles. Strings that TalariaKit localizes resolve in the host bundle, so
+add new ones to the App's `Localizable.xcstrings` by hand: Xcode does not extract
+package strings into it.
+
 ## Local Validation With XcodeBuildMCP
 
 XcodeBuildMCP is the preferred local validation path for feature and bug-fix slices. The config lives at the repository root in `../.xcodebuildmcp/config.yaml` and sets:
@@ -129,8 +159,8 @@ Recognized variables:
 
 - `IOS_SIMULATOR_POOL_SIZE` — simulator count for `scripts/setup-ios-test-pool`.
 - `IOS_SIMULATOR_ID` — shared simulator selection, with `TALARIA_SIMULATOR_ID` as an alias for `scripts/test-ios`.
-- `TALARIA_TEST_WORKER_COUNT` — parallel test workers for `scripts/test-ios` (default `4`; CI instead splits the suite across simulators with `ci/test_shards.py`, one worker each). Xcode clones the leased simulator per worker. Unfiltered runs also skip the measurement-only performance UI classes, as PR CI does; name a class to run it.
-- `TALARIA_UPSTREAM_CONTRACT_RESPONSES` — test-only manifest supplied by `scripts/validate-upstream-contract`, not a persistent local setting.
+- `TALARIA_TEST_WORKER_COUNT` — parallel test workers for `scripts/test-ios` (default `4`; CI instead splits the suite across simulators with `ci/test_shards.py`, one worker each). Xcode clones the leased simulator per worker. Unfiltered runs also skip the measurement-only performance UI classes, as CI does; name a class to run it.
+- `TALARIA_LIVE_CONTRACT_RESPONSES` — path to a live-response manifest for the TalariaKit live decoding test, supplied by `scripts/validate-upstream-contract` and CI, not a persistent local setting.
 - `TALARIA_DEVICE_ID` — physical iPhone selection for `scripts/run-ios-device`,
   as either the hardware UDID or the CoreDevice identifier from
   `xcrun devicectl list devices`.
@@ -179,7 +209,10 @@ scripts/test-ios
 ```
 
 Review and commit the resulting `Package.resolved` diff with the code changes
-needed for the new versions. Do not hand-edit the lockfile.
+needed for the new versions. Do not hand-edit the lockfile. For a package that
+TalariaKit also uses, run `swift package update --package-path TalariaKit` too, so
+`TalariaKit/Package.resolved` pins the same revisions; the tooling tests
+compare the two.
 
 ## Swift File-Size Policy
 

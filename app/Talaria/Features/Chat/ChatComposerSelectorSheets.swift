@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ComposerModelPickerSheet: View {
     let modelGroups: [ModelCatalogGroup]
@@ -392,25 +393,10 @@ struct ComposerModelPickerSheet: View {
     }
 
     private var customOption: ModelCatalogOption? {
-        Self.customOption(
+        ComposerCustomModelOption.customOption(
             modelID: customModelID,
             providerID: customProviderID,
             requiresProviderID: requiresCustomProviderID
-        )
-    }
-
-    static func customOption(
-        modelID: String,
-        providerID: String,
-        requiresProviderID: Bool
-    ) -> ModelCatalogOption? {
-        let modelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
-        let providerID = providerID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !modelID.isEmpty, !providerID.isEmpty || !requiresProviderID else { return nil }
-        return ModelCatalogOption(
-            id: modelID,
-            displayName: modelID,
-            providerID: providerID.isEmpty ? nil : providerID
         )
     }
 
@@ -485,12 +471,5 @@ extension Array where Element == WorkspacePickerRow {
     func deduplicated() -> [WorkspacePickerRow] {
         var seen = Set<String>()
         return filter { seen.insert($0.path).inserted }
-    }
-}
-
-extension String {
-    var lastPathComponentFallback: String {
-        let component = (self as NSString).lastPathComponent
-        return component.isEmpty ? self : component
     }
 }

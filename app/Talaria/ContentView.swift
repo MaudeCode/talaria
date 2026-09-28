@@ -1,5 +1,6 @@
 import AuthenticationServices
 import SwiftUI
+import TalariaKit
 
 struct ContentView: View {
     @Bindable var authManager: AuthManager

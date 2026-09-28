@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct FileBrowserRow: View {
     let entry: WorkspaceEntry

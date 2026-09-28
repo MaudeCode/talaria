@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ProviderRow: View {
     let provider: ProviderSummary

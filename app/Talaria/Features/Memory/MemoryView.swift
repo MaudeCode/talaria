@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct MemoryView: View {
     let server: URL

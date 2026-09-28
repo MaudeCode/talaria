@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct GitAheadBehindBadges: View {
     let ahead: Int

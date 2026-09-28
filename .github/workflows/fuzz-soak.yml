@@ -4,6 +4,8 @@
 # `UntrustedInputFuzzSoakTests`; this workflow runs the soak class on its own so
 # a wide seed sweep never slows a pull request. Both classes share one seed
 # sequence, so a soak failure names a seed the PR class reproduces directly.
+# Both live in the TalariaKit package and run with `swift test`, without a
+# simulator (TAL-399).
 #
 # Not a required check. A failure means a new minimized regression test and a
 # fix belong on a branch, not that main is broken.
@@ -33,10 +35,6 @@ jobs:
 
     env:
       XCODE_VERSION: "27.0"
-      PROJECT_PATH: Talaria.xcodeproj
-      SCHEME: Talaria
-      DERIVED_DATA_PATH: DerivedData
-      RESULT_BUNDLE_PATH: FuzzSoakResults.xcresult
 
     steps:
       - name: Check out
@@ -46,46 +44,10 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
-      # As CI: the image's own iPhone 17 on the runtime matching the SDK, booted to completion before the test.
-      - name: Boot the simulator
-        id: sim
-        uses: futureware-tech/simulator-action@e89aa8f93d3aec35083ff49d2854d07f7186f7f5 # v5
-        with:
-          model: iPhone 17
-          os: iOS
-          os_version: ~${{ env.XCODE_VERSION }}
-          erase_before_boot: false
-          wait_for_boot: true
-          boot_timeout_seconds: 600
-
       - name: Run the fuzz soak
-        env:
-          SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
         run: |
           set -euo pipefail
           start_seconds=${SECONDS}
-          xcodebuild test \
-            -project "${PROJECT_PATH}" \
-            -scheme "${SCHEME}" \
-            -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
-            -testLanguage en \
-            -testRegion US \
-            -derivedDataPath "${DERIVED_DATA_PATH}" \
-            -resultBundlePath "${RESULT_BUNDLE_PATH}" \
-            -disableAutomaticPackageResolution \
-            -parallel-testing-enabled NO \
-            -enableCodeCoverage NO \
-            -only-testing:TalariaTests/UntrustedInputFuzzSoakTests \
-            APP_IDENTIFIER_SUFFIX=.xctest \
-            CODE_SIGNING_ALLOWED=NO
+          swift test --package-path TalariaKit --only-use-versions-from-resolved-file --filter UntrustedInputFuzzSoakTests
           echo "### Fuzz soak" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Duration: $((SECONDS - start_seconds))s" >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Retain the result bundle on failure
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: fuzz-soak-results-${{ github.run_attempt }}
-          path: app/${{ env.RESULT_BUNDLE_PATH }}
-          retention-days: 30
-          if-no-files-found: ignore

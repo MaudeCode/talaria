@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ProviderQuotaBarsView: View {
     let providerID: String?

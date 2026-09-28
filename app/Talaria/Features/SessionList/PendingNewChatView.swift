@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import TalariaKit
 
 struct PendingNewChatView: View {
     @Environment(\.modelContext) private var modelContext

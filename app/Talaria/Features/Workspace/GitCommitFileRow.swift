@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct GitCommitFileRow: View {
     let file: GitFile

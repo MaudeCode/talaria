@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct KanbanView: View {
     @State private var model: KanbanFeatureState

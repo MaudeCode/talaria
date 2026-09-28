@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SkillRow: View {
     let skill: SkillSummary

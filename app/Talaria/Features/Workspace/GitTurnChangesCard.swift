@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 /// Turn-end "File changes" recap card shown under the latest assistant turn for git
 /// workspaces (issue #316, Slice D, surface B). The per-file list is the server's

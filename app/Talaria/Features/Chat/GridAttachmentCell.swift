@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct GridAttachmentCell: View {
     let attachment: MessageAttachment

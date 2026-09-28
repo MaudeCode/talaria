@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 private enum ProviderQuotaWidgetPreviewState: String, CaseIterable, Identifiable {
     case healthy

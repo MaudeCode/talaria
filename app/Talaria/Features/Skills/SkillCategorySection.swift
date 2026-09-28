@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SkillCategorySection: View {
     let category: String

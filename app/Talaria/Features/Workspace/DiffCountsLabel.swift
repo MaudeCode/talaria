@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct DiffCountsLabel: View {
     let additions: Int

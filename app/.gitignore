@@ -11,6 +11,8 @@ build/
 .build/
 Package.resolved
 !Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+# TalariaKit's pins match the App's, so `swift test` builds the same revisions (TAL-399).
+!TalariaKit/Package.resolved
 .swiftpm/
 
 # Per-machine signing overrides (see DEVELOPMENT.md)

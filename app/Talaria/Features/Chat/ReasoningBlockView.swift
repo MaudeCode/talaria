@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ReasoningBlockView: View {
     let text: String
@@ -85,16 +86,4 @@ struct ReasoningBlockView: View {
         ReasoningTitleMetadata.normalize(titles)
     }
 
-}
-
-enum ReasoningTitleRotation {
-    static func shouldRotate(isActive: Bool, reduceMotion: Bool, titleCount: Int) -> Bool {
-        isActive && !reduceMotion && titleCount > 1
-    }
-
-    static func displayedTitle(titles: [String], index: Int, isActive: Bool) -> String? {
-        guard !titles.isEmpty else { return nil }
-        guard isActive else { return titles.last }
-        return titles[min(max(0, index), titles.count - 1)]
-    }
 }

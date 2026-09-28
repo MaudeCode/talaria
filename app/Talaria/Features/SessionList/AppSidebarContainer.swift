@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct AppSidebarContainer<Sidebar: View, Content: View>: View {
     @Environment(\.colorScheme) private var colorScheme

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ProjectRenameSheet: View {
     let project: ProjectSummary

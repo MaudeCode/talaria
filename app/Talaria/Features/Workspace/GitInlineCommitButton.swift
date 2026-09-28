@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 /// Presentation inputs for the inline turn-end "Commit & Push" button. When the chat
 /// computes a non-nil value, the transcript renders the button under the latest assistant

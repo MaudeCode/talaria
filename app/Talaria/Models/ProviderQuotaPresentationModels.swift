@@ -2,6 +2,7 @@ import AppIntents
 import Foundation
 import SwiftUI
 import WidgetKit
+import TalariaKit
 
 struct ProviderQuotaEvaluationSettings: Equatable {
     let percentageMode: ProviderQuotaPercentageMode
