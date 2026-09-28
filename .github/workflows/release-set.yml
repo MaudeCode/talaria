@@ -111,20 +111,21 @@ jobs:
     - uses: ./.github/actions/setup-xcode
     - uses: ./.github/actions/release-python
     - uses: ./.github/actions/release-node
-    - name: Cache Swift packages
-      uses: actions/cache@v6
-      with:
-        path: ~/Library/Caches/org.swift.swiftpm
-        key: swiftpm-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
-        restore-keys: swiftpm-${{ runner.os }}-
     - name: Restore release-plan
       env:
         GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
-    - name: Prepare simulator pool
-      env:
-        IOS_SIMULATOR_POOL_SIZE: '1'
-      run: app/scripts/setup-ios-test-pool
+    - name: Select the image's iPhone 17
+      run: |
+        set -euo pipefail
+        # The App's own scripts/test-ios leases, boots and shuts down exactly this simulator (IOS_SIMULATOR_ID; it
+        # never erases a named device), so no pool is set up. The runtime matches the selected Xcode's SDK, as in CI.
+        sdk_version=$(xcrun --sdk iphonesimulator --show-sdk-version)
+        runtime="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
+        udid=$(xcrun simctl list devices available --json |
+          jq -er --arg runtime "$runtime" 'first(.devices[$runtime][]? | select(.name == "iPhone 17") | .udid)')
+        echo "Using iPhone 17 ${udid} on ${runtime}"
+        printf 'IOS_SIMULATOR_ID=%s\nIOS_SIMULATOR_RUNTIME=%s\n' "$udid" "$runtime" >> "$GITHUB_ENV"
     - name: Verify the selected App against the Web sources
       env:
         TALARIA_TEST_WORKER_COUNT: '1'
@@ -166,20 +167,21 @@ jobs:
     - uses: ./.github/actions/setup-xcode
     - uses: ./.github/actions/release-python
     - uses: ./.github/actions/release-node
-    - name: Cache Swift packages
-      uses: actions/cache@v6
-      with:
-        path: ~/Library/Caches/org.swift.swiftpm
-        key: swiftpm-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
-        restore-keys: swiftpm-${{ runner.os }}-
     - name: Restore release-plan
       env:
         GH_TOKEN: ${{ github.token }}
       run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
-    - name: Prepare simulator pool
-      env:
-        IOS_SIMULATOR_POOL_SIZE: '1'
-      run: app/scripts/setup-ios-test-pool
+    - name: Select the image's iPhone 17
+      run: |
+        set -euo pipefail
+        # The App's own scripts/test-ios leases, boots and shuts down exactly this simulator (IOS_SIMULATOR_ID; it
+        # never erases a named device), so no pool is set up. The runtime matches the selected Xcode's SDK, as in CI.
+        sdk_version=$(xcrun --sdk iphonesimulator --show-sdk-version)
+        runtime="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
+        udid=$(xcrun simctl list devices available --json |
+          jq -er --arg runtime "$runtime" 'first(.devices[$runtime][]? | select(.name == "iPhone 17") | .udid)')
+        echo "Using iPhone 17 ${udid} on ${runtime}"
+        printf 'IOS_SIMULATOR_ID=%s\nIOS_SIMULATOR_RUNTIME=%s\n' "$udid" "$runtime" >> "$GITHUB_ENV"
     - name: Verify the previously released App against the selected Web
       env:
         TALARIA_TEST_WORKER_COUNT: '1'
@@ -389,12 +391,6 @@ jobs:
         fetch-depth: 0
     - uses: ./.github/actions/setup-xcode
     - uses: ./.github/actions/release-python
-    - name: Cache Swift packages
-      uses: actions/cache@v6
-      with:
-        path: ~/Library/Caches/org.swift.swiftpm
-        key: swiftpm-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
-        restore-keys: swiftpm-${{ runner.os }}-
     - name: Restore release-plan
       env:
         GH_TOKEN: ${{ github.token }}

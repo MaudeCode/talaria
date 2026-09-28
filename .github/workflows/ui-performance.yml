@@ -31,6 +31,7 @@ jobs:
     timeout-minutes: 60
 
     env:
+      XCODE_VERSION: "27.0"
       PROJECT_PATH: Talaria.xcodeproj
       SCHEME: Talaria
       DERIVED_DATA_PATH: DerivedData
@@ -41,41 +42,24 @@ jobs:
         uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-xcode
-
-      - name: Cache Swift packages
-        uses: actions/cache@v6
         with:
-          path: ~/Library/Caches/org.swift.swiftpm
-          key: swiftpm-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
-          restore-keys: swiftpm-${{ runner.os }}-
+          xcode-version: ${{ env.XCODE_VERSION }}
 
-      - name: Select simulator
+      # As CI: the image's own iPhone 17 on the runtime matching the SDK, booted to completion before the test.
+      - name: Boot the simulator
         id: sim
-        run: |
-          set -euo pipefail
-          runtime=$(scripts/select-ios-simulator | cut -f2)
-          simulator_id=$(xcrun simctl list devices available --json | RUNTIME="${runtime}" python3 -c '
-          import json, os, sys
-          phones = [
-              device
-              for device in json.load(sys.stdin)["devices"].get(os.environ["RUNTIME"], [])
-              if device.get("isAvailable") and device["name"].startswith("iPhone")
-          ]
-          preferred = "iPhone 17"
-          selected = next((device for device in phones if device["name"] == preferred), phones[0] if phones else None)
-          print(selected["udid"] if selected else "")
-          ')
-          if [[ -z "${simulator_id}" ]]; then
-            echo "No available iPhone simulator found:" >&2
-            xcrun simctl list devices available >&2
-            exit 1
-          fi
-          echo "Using simulator: ${simulator_id} on ${runtime}"
-          echo "id=${simulator_id}" >> "$GITHUB_OUTPUT"
+        uses: futureware-tech/simulator-action@e89aa8f93d3aec35083ff49d2854d07f7186f7f5 # v5
+        with:
+          model: iPhone 17
+          os: iOS
+          os_version: ~${{ env.XCODE_VERSION }}
+          erase_before_boot: false
+          wait_for_boot: true
+          boot_timeout_seconds: 600
 
       - name: Run the UI performance classes
         env:
-          SIMULATOR_ID: ${{ steps.sim.outputs.id }}
+          SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
         run: |
           set -euo pipefail
           start_seconds=${SECONDS}
