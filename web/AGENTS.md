@@ -71,8 +71,9 @@ Follow that checklist's safety rules:
 - Do not edit `CHANGELOG.md` in ordinary contributor PRs. The release workflow
   owns changelog updates through release commits. If a change is release-note
   worthy, include concise release-note wording in the PR body instead.
-- For UI or UX changes, include before/after evidence and test relevant
-  desktop, narrow, and mobile states.
+- For UI or UX changes, include before/after evidence in the PR description
+  (uploaded attachments, never committed files) and test relevant desktop,
+  narrow, and mobile states.
 - For behavior changes, add or update automated tests where practical and list
   the manual verification performed.
 - For runtime, streaming, recovery, replay, compression, or sidebar metadata

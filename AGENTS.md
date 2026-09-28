@@ -37,6 +37,10 @@ verified commits, and Done only after its commit is verified on `main`.
 Use `<type>/TAL-<number>-<slug>` branches and `TAL-<number>:` commit/PR subjects.
 Keep coherent verified slices separate. Add `changelog.d/TAL-<number>.json`
 following `app/docs/release-notes.md` for every tracked change.
+Screenshots and other validation evidence go in the PR description as uploaded
+attachments, never in git. Images are committed only as shipped or tested assets
+(asset catalogs, `web/static/brand/`, App README images, snapshot-test
+references); `scripts/check-committed-images.py` enforces this on every PR.
 
 Pushing, PR publication/updates, merging, releases, deployments, TestFlight
 uploads, repository administration, and archival retain explicit human gates.
