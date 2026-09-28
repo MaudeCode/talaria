@@ -2,11 +2,10 @@
 
 Oar, Talaria and future iOS projects share `iOS Test 1` through `iOS Test 6`.
 These are disposable synthetic-test devices, not signed-in development phones.
-The current local pool uses iPhone 17 Pro on iOS 27.0. CI runs on GitHub-hosted
-macOS runners, which have no pool: each App job asks `scripts/select-ios-simulator`
-for an `iPhone 17` on the runtime matching the selected Xcode's SDK
-(`IOS_SIMULATOR_RUNTIME` and `IOS_SIMULATOR_DEVICE_TYPE`), and the script creates
-that device with `xcrun simctl create` when the image has none.
+The current local pool uses iPhone 17 Pro on iOS 27.0. CI does not use the pool:
+its disposable GitHub-hosted runners boot the image's own `iPhone 17` for the
+selected Xcode's runtime with `futureware-tech/simulator-action` (see
+`.github/workflows/ci.yml`).
 
 ```sh
 scripts/setup-ios-test-pool

@@ -25,19 +25,22 @@ class TestIOSRunnerTest < Minitest::Test
       encoding: "UTF-8"
     )
 
-    # CI picks its simulator with plain simctl (ci/ci-simulator); the local pool, leases and XCTest admission
-    # only run in App tooling's own tests.
-    assert_includes(workflow, 'echo "id=$(ci/ci-simulator)"')
-    assert_includes(workflow, 'simulator_id=$(ci/ci-simulator "${source}")')
+    # CI boots the image's iPhone 17 with the pinned simulator action and builds for it by name; the local
+    # pool, leases and XCTest admission only run in App tooling's own tests.
+    jobs = YAML.safe_load_file(File.expand_path("../../.github/workflows/ci.yml", __dir__), aliases: true)["jobs"]
+    boot = jobs.fetch("app-test")["steps"].find { |step| step["name"] == "Boot the simulator" }
+    assert_match(%r{\Afutureware-tech/simulator-action@[0-9a-f]{40}\z}, boot["uses"])
+    assert_equal(["iPhone 17", "iOS", "~${{ env.XCODE_VERSION }}", true, 600],
+                 boot["with"].values_at("model", "os", "os_version", "wait_for_boot", "boot_timeout_seconds"))
+    assert_includes(workflow, "SIMULATOR_ID: ${{ steps.sim.outputs.udid }}")
+    assert_includes(workflow, "BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.XCODE_VERSION }}")
     %w[scripts/select-ios-simulator scripts/test-ios(?![-\w]) scripts/setup-ios-test-pool scripts/ios-simulator-pool(?![-\w])].each do |local|
       refute_match(Regexp.new(local), workflow)
     end
-    simulator = File.read(File.expand_path("ci-simulator", __dir__), encoding: "UTF-8")
-    assert_includes(simulator, "device_type=com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     assert_equal(2, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
-    assert_equal(1, workflow.scan('ci/build-for-testing "${SIMULATOR_ID}"').length)
+    assert_equal(1, workflow.scan('ci/build-for-testing "${BUILD_DESTINATION}"').length)
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
-    assert_includes(build, 'platform=iOS Simulator,id=${simulator_id}')
+    assert_includes(build, '-destination "${destination}"')
     refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
   end
 
@@ -46,7 +49,7 @@ class TestIOSRunnerTest < Minitest::Test
     steps = jobs.fetch("app-build")["steps"].to_h { |step| [step["name"], step] }
     restore, save = steps.fetch("Restore the build cache"), steps.fetch("Save the build cache")
     # Pushes and seed dispatches build cold; only main pushes and seed dispatches save.
-    assert_equal("github.event_name != 'push' && inputs.build_cache != 'off' && inputs.build_cache != 'seed'", restore["if"])
+    assert_equal("github.event_name != 'push' && inputs.build_cache != 'off' && inputs.build_cache != 'seed' && inputs.build_cache != 'xcode-cache'", restore["if"])
     assert_equal("(github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.build_cache == 'seed'", save["if"])
     assert_equal(restore["with"]["path"], save["with"]["path"])
     assert_equal(restore["with"]["key"], save["with"]["key"])
@@ -56,7 +59,7 @@ class TestIOSRunnerTest < Minitest::Test
     assert_operator(names.index("Restore the build cache"), :<, names.index("Build for testing"))
     assert_operator(names.index("Build for testing"), :<, names.index("Save the build cache"))
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
-    ['-clonedSourcePackagesDirPath "${cache}/SourcePackages"', "COMPILATION_CACHE_ENABLE_CACHING=YES",
+    ['-clonedSourcePackagesDirPath "${cache}/SourcePackages"', %q(COMPILATION_CACHE_ENABLE_CACHING="${TALARIA_COMPILATION_CACHE:-YES}"),
      'COMPILATION_CACHE_CAS_PATH="${cache}/cas"', "cache=${PWD}/.build-cache"].each { |setting| assert_includes(build, setting) }
     assert_equal("app/.build-cache", save["with"]["path"])
   end
@@ -96,7 +99,7 @@ class TestIOSRunnerTest < Minitest::Test
     # The boot finishes before the build wait and download, so it competes with neither (TAL-380).
     boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
     assert_equal(["Wait for App build", "Download the test build"], shard["steps"][boot + 1, 2].map { |step| step["name"] })
-    assert_match(/simctl boot "\$\{simulator_id\}"\n\s*xcrun simctl bootstatus "\$\{simulator_id\}" -b/, shard["steps"][boot]["run"])
+    assert_equal("true", shard["steps"][boot]["with"]["wait_for_boot"].to_s)
     refute(shard["steps"].any? { |step| step["name"] == "Build for testing" }, "test jobs never build")
     steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
     names = steps.keys

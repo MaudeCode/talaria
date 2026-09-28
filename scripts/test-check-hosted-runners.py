@@ -77,6 +77,37 @@ jobs:
 """})
         self.assertEqual(found, ["ci.yml: references TALARIA_S3_* or TALARIA_CI_S3_* NAS credentials"])
 
+    def test_third_party_actions_must_be_sha_pinned(self):
+        with tempfile.TemporaryDirectory(prefix="talaria-hosted-") as temporary:
+            root = Path(temporary)
+            (root / ".github/workflows").mkdir(parents=True)
+            (root / ".github/actions/wrap").mkdir(parents=True)
+            (root / ".github/actions/wrap/action.yml").write_text(
+                "runs:\n  using: composite\n  steps:\n    - uses: example/inner@v2\n"
+                "    - uses: example/inner@0123456789abcdef0123456789abcdef01234567\n")
+            (root / ".github/workflows/ci.yml").write_text("""
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache/restore@v6
+      - uses: example/pinned@0123456789abcdef0123456789abcdef01234567
+      - uses: example/tagged@v1
+      - uses: example/short@0123456
+      - uses: docker://alpine:3
+      - uses: ./.github/actions/wrap
+      - run: "true"
+""")
+            found = hosted.violations(root, ("ci.yml",))
+        self.assertEqual(found, [
+            "ci.yml: job test: example/tagged@v1 is not pinned to a full commit SHA",
+            "ci.yml: job test: example/short@0123456 is not pinned to a full commit SHA",
+            "ci.yml: job test: docker://alpine:3 is not pinned to a full commit SHA",
+            "./.github/actions/wrap: example/inner@v2 is not pinned to a full commit SHA",
+        ])
+
     def test_missing_scoped_workflow_fails(self):
         self.assertEqual(self.check({}), ["ci.yml: workflow not found"])
 

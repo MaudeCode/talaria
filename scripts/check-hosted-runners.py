@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fail when a job in the scoped workflows, or in a local reusable workflow they call, can run on a runner
-that is not GitHub-hosted for any event, or when those workflows reference the NAS S3 credentials."""
+that is not GitHub-hosted for any event, when those workflows reference the NAS S3 credentials, or when they
+(or the local actions they use) call a third-party action by anything but a full commit SHA."""
 
 import argparse
 import json
@@ -17,6 +18,8 @@ HOSTED = re.compile(r"(?:ubuntu|macos|windows)-[a-z0-9.-]+|ubuntu-slim|xcode-\d+
 NAS_CREDENTIALS = re.compile(r"TALARIA_(?:CI_)?S3_")
 LITERAL = re.compile(r"'((?:[^']|'')*)'")
 COMPARISON = re.compile(r"(?:==|!=)\s*$")
+# First-party actions/* may float on a major tag; everything else must be immutable.
+PINNED = re.compile(r"(?:\./.+|actions/[\w.-]+(?:/[\w./-]+)?@[\w.-]+|[\w.-]+/[\w./-]+@[0-9a-f]{40})")
 
 
 def load(path):
@@ -53,9 +56,26 @@ def runner_labels(job):
     return [value for label in runs_on for value in candidates(label, job)]
 
 
+def unpinned(root, where, steps, seen):
+    """Third-party uses in these steps, and in the local composite actions they call, that are not SHA-pinned."""
+    found = []
+    for step in steps or []:
+        uses = step.get("uses")
+        if not uses:
+            continue
+        if not PINNED.fullmatch(uses):
+            found.append(f"{where}: {uses} is not pinned to a full commit SHA")
+        elif uses.startswith("./") and uses not in seen:
+            seen.add(uses)
+            action = root / uses / "action.yml"
+            if action.is_file():
+                found += unpinned(root, uses, (load(action).get("runs") or {}).get("steps"), seen)
+    return found
+
+
 def violations(root=ROOT, scope=SCOPE):
     workflows = root / ".github/workflows"
-    found, pending, seen = [], list(scope), set()
+    found, pending, seen, actions = [], list(scope), set(), set()
     while pending:
         name = pending.pop(0)
         if name in seen:
@@ -75,6 +95,7 @@ def violations(root=ROOT, scope=SCOPE):
                 else:
                     found.append(f"{name}: job {job_name} calls {uses}, which this check cannot follow")
                 continue
+            found += unpinned(root, f"{name}: job {job_name}", job.get("steps"), actions)
             for label in runner_labels(job):
                 if not HOSTED.fullmatch(label):
                     found.append(f"{name}: job {job_name} can run on {label!r}, which is not a GitHub-hosted runner")

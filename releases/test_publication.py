@@ -489,8 +489,8 @@ class PublicationTests(unittest.TestCase):
                 runs = "\n".join(step.get("run", "") for step in job["steps"])
                 if any(marker in runs for marker in needs_ruby):
                     with self.subTest(workflow=path.name, job=name):
-                        uses = {step.get("uses") for step in job["steps"]}
-                        self.assertTrue(uses & {"./.github/actions/release-ruby", "ruby/setup-ruby@v1"}, uses)
+                        uses = {step.get("uses", "").split("@")[0] for step in job["steps"]}
+                        self.assertTrue(uses & {"./.github/actions/release-ruby", "ruby/setup-ruby"}, uses)
 
     def test_selected_jobs_must_succeed(self):
         for dry, app, web, relay_changed in product((False, True), repeat=4):

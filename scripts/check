@@ -44,7 +44,6 @@ case "$component" in
     ruby app/ci/test_ios_runner_test.rb
     app/ci/require_successful_main_ci_test.sh
     app/ci/wait_for_job_test.sh
-    app/ci/ci_simulator_test.sh
     app/ci/validate_release_tag_test.sh
     actionlint
     git diff --check

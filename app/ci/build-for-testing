@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
-# Usage: ci/build-for-testing SIMULATOR_ID
+# Usage: ci/build-for-testing DESTINATION
 # CI's build-for-testing into app/DerivedData. Builds are signed ad hoc (CODE_SIGN_IDENTITY=-): no certificate,
 # profile or secret, but the entitlements are embedded, so the app group works and ShareExtensionUITests can
 # hand content to the app (TAL-81). No index store: nothing in CI reads it.
 #
 # Packages and Xcode's content-keyed compilation cache live at fixed paths under app/.build-cache, which CI
 # restores from main's latest build: cache keys cover inputs, not file times, so a fresh checkout still hits.
+# TALARIA_COMPILATION_CACHE=NO turns it off (the irgaly/xcode-cache benchmark caches DerivedData instead).
 set -euo pipefail
 
-simulator_id=${1:?usage: ci/build-for-testing SIMULATOR_ID}
+destination=${1:?usage: ci/build-for-testing DESTINATION}
 cd "$(dirname "$0")/.."
 cache=${PWD}/.build-cache
 start_seconds=${SECONDS}
 xcodebuild build-for-testing \
   -project Talaria.xcodeproj \
   -scheme Talaria \
-  -destination "platform=iOS Simulator,id=${simulator_id}" \
+  -destination "${destination}" \
   -derivedDataPath DerivedData \
   -clonedSourcePackagesDirPath "${cache}/SourcePackages" \
   -disableAutomaticPackageResolution \
@@ -27,7 +28,7 @@ xcodebuild build-for-testing \
   CODE_SIGN_STYLE=Manual \
   PROVISIONING_PROFILE_SPECIFIER= \
   COMPILER_INDEX_STORE_ENABLE=NO \
-  COMPILATION_CACHE_ENABLE_CACHING=YES \
+  COMPILATION_CACHE_ENABLE_CACHING="${TALARIA_COMPILATION_CACHE:-YES}" \
   COMPILATION_CACHE_CAS_PATH="${cache}/cas" \
   COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES \
   | tee "${RUNNER_TEMP:-/tmp}/build-for-testing.log"

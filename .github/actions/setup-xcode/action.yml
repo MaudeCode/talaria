@@ -2,8 +2,8 @@
 #   uses: ./.github/actions/setup-xcode
 #   with:
 #     xcode-version: "27.0"   # major.minor; optional, defaults to 27.0
-# Selects that exact Xcode on a GitHub-hosted macOS runner with xcode-select and DEVELOPER_DIR, or fails.
-# There is no fallback to another version. It prints `xcodebuild -version` and the simulator runtimes.
+# Selects that Xcode with maxim-lobanov/setup-xcode, then fails unless xcodebuild reports the same major.minor;
+# there is no fallback to another version. It prints `xcodebuild -version` and the simulator runtimes.
 name: Set up Xcode
 description: Select an exact Xcode major.minor on a hosted macOS runner and fail if the image lacks it.
 inputs:
@@ -14,38 +14,19 @@ inputs:
 runs:
   using: composite
   steps:
+    - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+      with:
+        xcode-version: ${{ inputs.xcode-version }}
     - shell: bash
       env:
         XCODE_VERSION: ${{ inputs.xcode-version }}
       run: |
         set -euo pipefail
-        [[ "$XCODE_VERSION" =~ ^[0-9]+\.[0-9]+$ ]] || { echo "::error::xcode-version must be major.minor, not '${XCODE_VERSION}'"; exit 1; }
-        version_of() { /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$1/Contents/Info.plist" 2>/dev/null || true; }
-        matches() { local version; version=$(version_of "$1"); [[ "$version" == "$XCODE_VERSION" || "$version" == "$XCODE_VERSION".* ]]; }
-        # Hosted images install Xcode_<version>.app; prefer that name, else the newest matching app by its own
-        # version, a release over a beta (the loop keeps the last match, so betas are listed first).
-        selected=""
-        if [[ -d "/Applications/Xcode_${XCODE_VERSION}.app" ]] && matches "/Applications/Xcode_${XCODE_VERSION}.app"; then
-          selected="/Applications/Xcode_${XCODE_VERSION}.app"
-        else
-          apps=$(find /Applications -maxdepth 1 -name 'Xcode*.app' -type d | sort -V)
-          while IFS= read -r app; do
-            if [[ -n "$app" ]] && matches "$app"; then selected="$app"; fi
-          done < <(grep -i beta <<< "$apps" || true; grep -iv beta <<< "$apps" || true)
-        fi
-        if [[ -z "$selected" ]]; then
-          echo "::error::Xcode ${XCODE_VERSION} is not installed on this runner image. Installed:"
-          for app in /Applications/Xcode*.app; do echo "  ${app} ($(version_of "$app"))"; done
-          exit 1
-        fi
-        sudo xcode-select -s "${selected}/Contents/Developer"
-        echo "DEVELOPER_DIR=${selected}/Contents/Developer" >> "$GITHUB_ENV"
-        export DEVELOPER_DIR="${selected}/Contents/Developer"
         # Read all output: `| head -n 1` closes the pipe early and xcodebuild aborts on the broken pipe.
         actual=$(xcodebuild -version)
         actual=${actual%%$'\n'*}
         [[ "$actual" == "Xcode ${XCODE_VERSION}" || "$actual" == "Xcode ${XCODE_VERSION}."* ]] \
-          || { echo "::error::Selected ${selected} but xcodebuild reports '${actual}'"; exit 1; }
-        echo "Selected ${selected}"
+          || { echo "::error::Requested Xcode ${XCODE_VERSION} but xcodebuild reports '${actual}'"; exit 1; }
+        echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
         xcodebuild -version
         xcrun simctl list runtimes
