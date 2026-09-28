@@ -128,7 +128,8 @@ class TestIOSRunnerTest < Minitest::Test
     refute_match(/COMPILATION_CACHE|build-cache/, File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8"))
     # Four shards for the full suite, otherwise one test job; App build runs whenever any test job does.
     full = "(github.event_name == 'push' || inputs.full_ui == true) && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false')"
-    assert_includes(workflow, "shard: ${{ fromJSON((#{full}) && '[0,1,2,3]' || '[0]') }}")
+    app = "(needs.changes.result != 'success' || needs.changes.outputs.app != 'false')"
+    assert_includes(workflow, "shard: ${{ fromJSON((#{full}) && '[0,1,2,3]' || (#{app} && '[0,1]' || '[0]')) }}")
     jobs = YAML.safe_load_file(File.expand_path("../../.github/workflows/ci.yml", __dir__), aliases: true)["jobs"]
     assert_equal(jobs["app-test"]["if"], jobs["app-build"]["if"])
     assert_equal("changes", jobs["app-build"]["needs"])

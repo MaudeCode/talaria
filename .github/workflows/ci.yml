@@ -5,7 +5,7 @@
 #
 # Every job runs on GitHub-hosted runners and uses no repository secrets (TAL-380); handoffs are
 # Actions artifacts. Hosted macOS allows five concurrent jobs, so only Xcode work runs there: App build
-# plus one test job for a pull request, or plus four full-suite shards for a main push. Test jobs start
+# plus two test shards for a pull request, or plus four full-suite shards for a main push. Test jobs start
 # with the build on their own runners and boot their simulator while it builds: a simulator's first boot
 # beside a build on one three-core runner slowed the build, cache and artifact transfers alike.
 # A manual run with full_ui proves the main-push path on any branch before merge. App builds are
@@ -135,7 +135,7 @@ jobs:
           if-no-files-found: error
 
   app-test:
-    # One job for a pull request or contract-only change, four shards for the full suite. Each boots its
+    # Two shards for a pull request, one for a contract-only change, four for the full suite. Each boots its
     # simulator to completion while App build runs on another runner, then waits for and downloads the build.
     name: App tests (shard ${{ matrix.shard }})
     needs: changes
@@ -149,7 +149,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(((github.event_name == 'push' || inputs.full_ui == true) && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false')) && '[0,1,2,3]' || '[0]') }}
+        # Four full-suite shards; two for a pull request's unit tests and launch smoke; one for contract-only changes.
+        shard: ${{ fromJSON(((github.event_name == 'push' || inputs.full_ui == true) && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false')) && '[0,1,2,3]' || ((needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && '[0,1]' || '[0]')) }}
     env:
       SHARD: ${{ matrix.shard }}
       SHARD_COUNT: ${{ strategy.job-total }}

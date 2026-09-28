@@ -106,7 +106,8 @@ class ShardTests(unittest.TestCase):
         self.assertIn("TalariaTests/LightTests", buckets[0])
         self.assertFalse(any(item.startswith("TalariaUITests/") and item != smoke for bucket in buckets for item in bucket))
         options = [shards.selection(index, buckets, ("TalariaTests",)) for index in range(2)]
-        self.assertEqual(sum(f"-only-testing:{smoke}" in shard for shard in options), 1)
+        self.assertEqual([f"-only-testing:{smoke}" in shard for shard in options], [False, True])
+        self.assertEqual(buckets[1][-1:], [smoke])
         self.assertEqual([shard.count("-only-testing:TalariaTests") for shard in options], [0, 1])
 
     def test_committed_weights_are_valid(self):

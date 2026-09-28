@@ -56,14 +56,16 @@ def weight_of(identifier, weights):
     return float(weights["classes"].get(identifier, weights["default"][identifier.split("/", 1)[0]]))
 
 
-def assign(items, shards, weights, pinned=()):
-    """Greedy longest-first assignment; pinned items always go to shard 0. Ties break by name and index."""
+def assign(items, shards, weights, pinned=(), last=()):
+    """Greedy longest-first assignment; pinned items go to shard 0 and last items to the last shard first, so the
+    greedy pass balances around them. Ties break by name and index."""
     buckets = [[] for _ in range(shards)]
     loads = [0.0] * shards
-    for item in pinned:
-        buckets[0].append(item)
-        loads[0] += weight_of(item, weights)
-    for item in sorted(set(items) - set(pinned), key=lambda item: (-weight_of(item, weights), item)):
+    for index, fixed in ((0, pinned), (shards - 1, last)):
+        for item in fixed:
+            buckets[index].append(item)
+            loads[index] += weight_of(item, weights)
+    for item in sorted(set(items) - set(pinned) - set(last), key=lambda item: (-weight_of(item, weights), item)):
         index = min(range(shards), key=lambda index: (loads[index], index))
         buckets[index].append(item)
         loads[index] += weight_of(item, weights)
@@ -85,8 +87,10 @@ def selection(shard, buckets, targets):
 def plan(shards, targets, extra=(), pinned=(), weights=None, app=APP):
     weights = weights or json.loads(WEIGHTS.read_text())
     skipped_classes = {item for item in SKIPPED if item.count("/") == 1}
-    items = [item for item in discover(app, targets, weights["classes"]) if item not in skipped_classes] + list(extra)
-    return assign(items, shards, weights, pinned)
+    items = [item for item in discover(app, targets, weights["classes"]) if item not in skipped_classes]
+    # Tests added outside --targets (the PR launch smoke) run in the last shard, away from shard 0's pinned
+    # contract classes and live test.
+    return assign(items, shards, weights, pinned, extra)
 
 
 def main():
@@ -94,7 +98,7 @@ def main():
     parser.add_argument("--shards", type=int, required=True)
     parser.add_argument("--shard", type=int, help="print this shard's xcodebuild options")
     parser.add_argument("--targets", default=",".join(TARGETS), help="comma-separated test targets to split")
-    parser.add_argument("--add", action="append", default=[], help="also assign this test outside --targets")
+    parser.add_argument("--add", action="append", default=[], help="also run this test outside --targets, in the last shard")
     parser.add_argument("--pin", action="append", default=[], help="always run this class in shard 0")
     args = parser.parse_args()
     targets = tuple(args.targets.split(","))
