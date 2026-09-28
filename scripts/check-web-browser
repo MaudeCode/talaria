@@ -19,10 +19,10 @@ const probe = (p) => new Promise((resolve) => { const s = net.createServer(); s.
 })()')
 cd "$root/web/packages/frontend"
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$root/web/.codex-tmp/playwright}"
-install_options=()
 # Hosted Linux CI runners lack Chromium's system libraries; Playwright installs them with apt (sudo).
-if [[ -n "${CI:-}" && "$(uname -s)" == Linux ]]; then install_options+=(--with-deps); fi
-npx playwright install "${install_options[@]}" chromium
+with_deps=""
+if [[ -n "${CI:-}" && "$(uname -s)" == Linux ]]; then with_deps=--with-deps; fi
+npx playwright install ${with_deps:+"$with_deps"} chromium
 run_env=(env -i PATH="$(dirname "$node_bin"):$PATH" HOME="$state" TMPDIR="$state" \
   PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" HERMES_E2E_PORT="$port")
 if [[ -n "${HERMES_WEBUI_AGENT_DIR:-}" ]]; then

@@ -232,8 +232,8 @@ jobs:
           export IOS_SIMULATOR_RUNTIME="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
           export IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-17
           simulator_id=$(scripts/select-ios-simulator | cut -f1)
-          # Boots while the build downloads; the test step waits for it to finish booting.
-          xcrun simctl boot "${simulator_id}"
+          # Boots while the build downloads; the test step's bootstatus -b finishes (or retries) the boot.
+          xcrun simctl boot "${simulator_id}" || echo "Boot deferred to the test step"
           echo "Using simulator ${simulator_id} on ${IOS_SIMULATOR_RUNTIME}"
           echo "id=${simulator_id}" >> "$GITHUB_OUTPUT"
 
