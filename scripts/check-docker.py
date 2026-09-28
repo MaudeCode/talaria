@@ -102,7 +102,15 @@ def smoke(variant, image):
             print(f"PASS Docker {variant} health", flush=True)
         finally:
             subprocess.run([*compose, "logs", "--no-color", "--tail=60"], env=env, check=False)
-            subprocess.run([*compose, "down", "--volumes", "--remove-orphans"], env=env, check=True)
+            try:
+                subprocess.run([*compose, "down", "--volumes", "--remove-orphans"], env=env, check=True)
+            finally:
+                # The containers write bind-mounted state as their own UIDs (1000, 1001, 1024), which the
+                # invoking user cannot delete unless it happens to share one; hand the tree back through the
+                # image so the temporary directory's own cleanup, which stays strict, can remove it.
+                subprocess.run(["docker", "run", "--rm", "--entrypoint", "/bin/sh", "-v", f"{state}:/state", image,
+                                "-c", f"chown -R {os.getuid()}:{os.getgid()} /state && chmod -R u+rwX /state"],
+                               env=env, check=False)
 
 
 if __name__ == "__main__":
