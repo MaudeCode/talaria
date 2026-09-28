@@ -25,6 +25,11 @@ on:
         description: Run the main-push App suite (build plus four full unit and UI shards).
         type: boolean
         default: true
+      test_workers:
+        description: Simulator clones per App shard (1 runs on the shard's own simulator).
+        type: choice
+        options: ["1", "2"]
+        default: "2"
 
 permissions:
   contents: read
@@ -170,7 +175,8 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGN_STYLE=Manual \
-            PROVISIONING_PROFILE_SPECIFIER=
+            PROVISIONING_PROFILE_SPECIFIER= \
+            COMPILER_INDEX_STORE_ENABLE=NO
           echo "- Build for testing: $((SECONDS - start_seconds))s" >> "${GITHUB_STEP_SUMMARY}"
           # Artifacts drop file modes; a tar keeps the bundles' executables and signatures intact.
           tar -C DerivedData/Build -cf "${RUNNER_TEMP}/app-build.tar" Products
@@ -201,6 +207,8 @@ jobs:
     env:
       SHARD: ${{ matrix.shard }}
       SHARD_COUNT: ${{ strategy.job-total }}
+      # The one knob for in-shard parallelism: pushes and PRs use 1 until a dispatch proves 2 is faster and stable.
+      TEST_WORKERS: ${{ inputs.test_workers || '1' }}
       APP_TESTS_REQUIRED: ${{ needs.app-build.outputs.app_tests }}
       APP_UI_REQUIRED: ${{ needs.app-build.outputs.ui }}
       CONTRACTS_SELECTED: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
@@ -266,12 +274,20 @@ jobs:
           SIMULATOR_ID: ${{ steps.sim.outputs.id }}
         run: |
           set -euo pipefail
-          xcrun simctl bootstatus "${SIMULATOR_ID}" -b >/dev/null
+          if (( TEST_WORKERS > 1 )); then
+            # Xcode boots one clone per worker from the shut-down simulator; booting it too would only cost memory.
+            parallel=(-parallel-testing-enabled YES -parallel-testing-worker-count "${TEST_WORKERS}")
+          else
+            # One worker runs on the shard's own simulator: no clones.
+            boot_start=${SECONDS}
+            xcrun simctl bootstatus "${SIMULATOR_ID}" -b >/dev/null
+            echo "- Simulator boot: $((SECONDS - boot_start))s" >> "${GITHUB_STEP_SUMMARY}"
+            parallel=(-parallel-testing-enabled NO)
+          fi
           start_seconds=${SECONDS}
           selection=()
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
           xctestrun=(Build/Products/*.xctestrun)
-          # One worker on the shard's own simulator: no clones.
           xcodebuild test-without-building \
             -xctestrun "${xctestrun[0]}" \
             -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
@@ -279,7 +295,7 @@ jobs:
             -testRegion US \
             -resultBundlePath "${RESULT_BUNDLE_PATH}" \
             -collect-test-diagnostics never \
-            -parallel-testing-enabled NO \
+            "${parallel[@]}" \
             "${selection[@]}"
           duration_seconds=$((SECONDS - start_seconds))
           if [[ "${CONTRACTS_SELECTED}" == "true" && "${SHARD}" == "0" ]]; then
@@ -292,7 +308,7 @@ jobs:
             done
           fi
           echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
-          echo "- Test without building (1 worker): ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Test without building (${TEST_WORKERS} workers): ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Wait for the Web contract probe
         if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0

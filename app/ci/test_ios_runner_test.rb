@@ -99,9 +99,12 @@ class TestIOSRunnerTest < Minitest::Test
       encoding: "UTF-8"
     )
 
-    # Every shard owns one simulator and runs one worker on it; the scheme stays parallelizable for local runs.
-    assert_equal(2, workflow.scan("-parallel-testing-enabled NO").length)
-    refute_includes(workflow, "-parallel-testing-enabled YES")
+    # Pushes and PRs run one worker on each shard's own simulator; only a dispatch's test_workers input clones it.
+    assert_includes(workflow, "TEST_WORKERS: ${{ inputs.test_workers || '1' }}")
+    assert_includes(workflow, 'parallel=(-parallel-testing-enabled NO)')
+    assert_includes(workflow, 'parallel=(-parallel-testing-enabled YES -parallel-testing-worker-count "${TEST_WORKERS}")')
+    # The live contract test never clones the simulator.
+    assert_equal(1, workflow.scan("            -parallel-testing-enabled NO \\").length)
     assert_includes(workflow, "shards='[0,1,2,3]'")
     assert_includes(workflow, "shards='[0,1]'")
     assert_includes(workflow, 'python3 ci/test_shards.py "${options[@]}" > selection.txt')
