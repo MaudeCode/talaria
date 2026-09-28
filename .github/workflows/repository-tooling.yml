@@ -114,7 +114,7 @@ jobs:
         if: inputs.full
         run: |
           set -euo pipefail
-          bash -n ci/build-for-testing ci/wait-for-job ci/wait_for_job_test.sh ci/require_successful_main_ci ci/require_successful_main_ci_test.sh ci/validate_release_tag ci/validate_release_tag_test.sh scripts/check-swift-file-sizes scripts/webui-json ../scripts/s3-artifact
+          bash -n ci/build-for-testing ci/wait-for-job ci/wait_for_job_test.sh ci/require_successful_main_ci ci/require_successful_main_ci_test.sh ci/validate_release_tag ci/validate_release_tag_test.sh scripts/check-swift-file-sizes scripts/webui-json
           zsh -n ci/verify_bundle_versions scripts/assert-no-skipped-ui-tests scripts/run-ios scripts/run-ios-device scripts/ios-simulator-pool scripts/select-ios-simulator scripts/setup-ios-test-pool scripts/test-ios scripts/test-test-ios scripts/validate-upstream-contract
-          PYTHONPYCACHEPREFIX="${RUNNER_TEMP}/pycache" python3 -m py_compile ci/release_notes.py ci/release_notes_test.py scripts/select-ios-device scripts/test-ios-device-selection scripts/test-ios-simulator-pool ci/load_env_test.py scripts/load-env scripts/upstream-contract-probe scripts/report-performance-metrics scripts/test-validate-upstream-contract ../scripts/critical-markdown-check.py ../scripts/check-agent-compatibility.py ../scripts/stamp-release.py ../scripts/test-s3-artifact.py
+          PYTHONPYCACHEPREFIX="${RUNNER_TEMP}/pycache" python3 -m py_compile ci/release_notes.py ci/release_notes_test.py scripts/select-ios-device scripts/test-ios-device-selection scripts/test-ios-simulator-pool ci/load_env_test.py scripts/load-env scripts/upstream-contract-probe scripts/report-performance-metrics scripts/test-validate-upstream-contract ../scripts/critical-markdown-check.py ../scripts/check-agent-compatibility.py ../scripts/stamp-release.py
           for file in ci/*.rb; do ruby -c "${file}"; done

@@ -29,7 +29,6 @@ case "$component" in
     python3 scripts/test-critical-markdown-check.py
     python3 scripts/test-check-committed-images.py
     python3 scripts/check-committed-images.py
-    python3 scripts/test-s3-artifact.py
     python3 scripts/test-check-hosted-runners.py
     python3 scripts/check-hosted-runners.py
     scripts/check-releases
