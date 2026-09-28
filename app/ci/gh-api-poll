@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Usage: ci/gh-api-poll GH_API_ARGS...
+# `gh api` for CI polls that must outlast a network blip. A network error, HTTP 5xx, 429 or rate limit is logged
+# with a timestamp and retried every 5 seconds; 12 in a row (about a minute) fail with a clear message, as does
+# reaching GH_API_POLL_DEADLINE (epoch seconds) when it is set. Any other HTTP 4xx, such as a 404 or 401, is
+# definitive and fails at once. Prints only a successful response, so a failed page never leaks into it.
+set -uo pipefail
+
+error=$(mktemp)
+trap 'rm -f "${error}"' EXIT
+for failures in $(seq 12); do
+  if output=$(gh api "$@" 2>"${error}"); then
+    [[ -z "${output}" ]] || printf '%s\n' "${output}"
+    exit 0
+  fi
+  message=$(paste -sd ' ' "${error}")
+  if grep -Eq 'HTTP 4[0-9]{2}' "${error}" && ! grep -Eiq 'HTTP 429|rate limit' "${error}"; then
+    echo "GitHub API request failed: ${message}" >&2
+    exit 1
+  fi
+  echo "$(date -u +%H:%M:%S) GitHub API error ${failures}/12: ${message}" >&2
+  if [[ -n "${GH_API_POLL_DEADLINE:-}" ]] && (( $(date +%s) >= GH_API_POLL_DEADLINE )); then
+    echo "Timed out after ${failures} consecutive GitHub API errors." >&2
+    exit 1
+  fi
+  (( failures == 12 )) || sleep "${GH_API_POLL_SECONDS:-5}"
+done
+echo "Giving up after 12 consecutive GitHub API errors." >&2
+exit 1
