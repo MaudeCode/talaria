@@ -224,7 +224,7 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
-      - name: Create and boot simulator
+      - name: Select or create the shard simulator
         id: sim
         run: |
           set -euo pipefail
@@ -232,8 +232,8 @@ jobs:
           export IOS_SIMULATOR_RUNTIME="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
           export IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-17
           simulator_id=$(scripts/select-ios-simulator | cut -f1)
-          # Boots while the build downloads; the test step's bootstatus -b finishes (or retries) the boot.
-          xcrun simctl boot "${simulator_id}" || echo "Boot deferred to the test step"
+          # The test step boots it: a first boot's data migration starved a concurrent artifact download on
+          # the three-core hosted runner (four minutes for 82 MB).
           echo "Using simulator ${simulator_id} on ${IOS_SIMULATOR_RUNTIME}"
           echo "id=${simulator_id}" >> "$GITHUB_OUTPUT"
 
@@ -270,10 +270,10 @@ jobs:
           start_seconds=${SECONDS}
           selection=()
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
-          xctestrun=$(find Build/Products -maxdepth 1 -name '*.xctestrun' | head -n 1)
+          xctestrun=(Build/Products/*.xctestrun)
           # One worker on the shard's own simulator: no clones.
           xcodebuild test-without-building \
-            -xctestrun "${xctestrun}" \
+            -xctestrun "${xctestrun[0]}" \
             -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
             -testLanguage en \
             -testRegion US \
@@ -331,10 +331,10 @@ jobs:
           start_seconds=${SECONDS}
           fixture="${RUNNER_TEMP}/contract-fixture/live-responses.json"
           [[ -s "${fixture}" ]] || { echo "The probe artifact has no live-responses.json" >&2; exit 1; }
-          xctestrun=$(find Build/Products -maxdepth 1 -name '*.xctestrun' | head -n 1)
+          xctestrun=(Build/Products/*.xctestrun)
           # xcodebuild strips TEST_RUNNER_ and hands the path to the simulator test process.
           TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}" xcodebuild test-without-building \
-            -xctestrun "${xctestrun}" \
+            -xctestrun "${xctestrun[0]}" \
             -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
             -resultBundlePath "${LIVE_CONTRACT_RESULT_BUNDLE_PATH}" \
             -collect-test-diagnostics never \

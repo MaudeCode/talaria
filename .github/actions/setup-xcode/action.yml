@@ -41,7 +41,9 @@ runs:
         sudo xcode-select -s "${selected}/Contents/Developer"
         echo "DEVELOPER_DIR=${selected}/Contents/Developer" >> "$GITHUB_ENV"
         export DEVELOPER_DIR="${selected}/Contents/Developer"
-        actual=$(xcodebuild -version | head -n 1)
+        # Read all output: `| head -n 1` closes the pipe early and xcodebuild aborts on the broken pipe.
+        actual=$(xcodebuild -version)
+        actual=${actual%%$'\n'*}
         [[ "$actual" == "Xcode ${XCODE_VERSION}" || "$actual" == "Xcode ${XCODE_VERSION}."* ]] \
           || { echo "::error::Selected ${selected} but xcodebuild reports '${actual}'"; exit 1; }
         echo "Selected ${selected}"
