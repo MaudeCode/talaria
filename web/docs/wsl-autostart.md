@@ -1,118 +1,118 @@
 # Windows / WSL auto-start
 
-Talaria Web runs well under WSL2, but native Windows login does not automatically start Linux user processes. This guide covers two supported options:
+Talaria Web runs well under WSL2, but Windows login does not start Linux user
+processes. This guide installs a small launcher script inside WSL and runs it
+either when a WSL shell opens or at Windows logon.
 
-1. **WSL session startup** — simple and low-risk. WebUI starts the next time you open a WSL shell.
-2. **Windows Task Scheduler** — true Windows logon startup. Windows invokes `wsl.exe`, which runs the WSL launch script.
+It assumes a global npm install inside WSL (`npm install -g
+@maudecode/talaria-web`), so `talaria-web` is on `PATH`.
 
-Both paths use the same WSL launch script:
+## The launcher script
 
-```text
-scripts/wsl/hermes_webui_autostart.sh
+Save this as `~/.local/bin/talaria-web-autostart` inside WSL and make it
+executable (`chmod +x ~/.local/bin/talaria-web-autostart`):
+
+```bash
+#!/usr/bin/env bash
+# Start Talaria Web once: a lock, a /health check, and a pid file prevent duplicates.
+set -euo pipefail
+
+PORT="${HERMES_WEBUI_PORT:-8787}"
+LOG_DIR="${HERMES_WEBUI_LOG_DIR:-$HOME/.hermes/webui/logs}"
+PID_FILE="$LOG_DIR/talaria-web.pid"
+LOG="$LOG_DIR/talaria-web.log"
+export HERMES_WEBUI_HOST="${HERMES_WEBUI_HOST:-127.0.0.1}" HERMES_WEBUI_PORT="$PORT"
+# Lets the server size-bound the log it writes to.
+export HERMES_WEBUI_LOG_FILE="$LOG"
+
+mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"
+note() { printf '[%s] %s\n' "$(date '+%F %T')" "$*" >>"$LOG_DIR/autostart.log"; }
+probe() { curl -fsSk --max-time 3 "$1://127.0.0.1:$PORT/health" >/dev/null 2>&1; }
+# With TLS configured, try HTTPS first; the server falls back to HTTP when the cert or key cannot load.
+healthy() {
+  if [[ -n "${HERMES_WEBUI_TLS_CERT:-}" && -n "${HERMES_WEBUI_TLS_KEY:-}" ]] && probe https; then return 0; fi
+  probe http
+}
+alive() { [[ -s "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; }
+
+exec 9>"/tmp/talaria-web-autostart.lock"
+flock -n 9 || { note "another autostart holds the lock"; exit 0; }
+if healthy || alive; then note "already running"; exit 0; fi
+
+note "starting talaria-web on port $PORT"
+nohup talaria-web --foreground --no-browser >>"$LOG" 2>&1 &
+echo $! >"$PID_FILE"
+sleep 2
+if healthy || alive; then note "started (pid $(cat "$PID_FILE"))"; exit 0; fi
+note "talaria-web exited; see $LOG"
+exit 1
 ```
 
-The script is safe to call repeatedly. It uses a lock file, checks the `/health` endpoint, checks a pid file, and writes logs before starting `talaria-web --foreground --no-browser` in the background. It does not hardcode a user path; by default it derives the repository root from its own location.
-
-## Script settings
-
-The WSL launcher supports these environment variables:
+It honours these variables:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `HERMES_WEBUI_REPO` | repo containing the script | Web checkout to start (`web/`); leave unset with a global `npm install -g @maudecode/talaria-web` |
-| `HERMES_WEBUI_BIN` | `talaria-web` on `PATH`, else `packages/server/dist/bin/talaria-web.js` in the repo | Launcher to run |
-| `HERMES_WEBUI_LOG_DIR` | `$HOME/.hermes/webui/logs` | Autostart and WebUI logs |
-| `HERMES_WEBUI_HOST` | `127.0.0.1` | Host passed through to `talaria-web` |
-| `HERMES_WEBUI_PORT` | `8787` | WebUI port and health-check port |
-| `HERMES_WEBUI_HEALTH_URL` | `http://127.0.0.1:$HERMES_WEBUI_PORT/health` | URL used to decide whether WebUI is already running |
-| `HERMES_WEBUI_PID_FILE` | `$HERMES_WEBUI_LOG_DIR/hermes-webui.pid` | pid file used for duplicate prevention |
-| `HERMES_WEBUI_REQUIRE_AGENT_PROCESS` | `0` | Optional: set to `1` only if your local setup requires a separate Hermes process before WebUI starts |
+| `HERMES_WEBUI_HOST` | `127.0.0.1` | Bind address passed to `talaria-web` |
+| `HERMES_WEBUI_PORT` | `8787` | Server and health-check port |
+| `HERMES_WEBUI_LOG_DIR` | `$HOME/.hermes/webui/logs` | `autostart.log`, `talaria-web.log`, and the pid file |
+| `HERMES_WEBUI_TLS_CERT`, `HERMES_WEBUI_TLS_KEY` | unset | When both are set, the health check tries HTTPS, then HTTP (the server's fallback when the cert or key cannot load) |
 
-Make the script executable once inside WSL:
+Run it once by hand to check it:
 
 ```bash
-cd /path/to/talaria/web
-chmod +x scripts/wsl/hermes_webui_autostart.sh
-```
-
-Run it manually to verify your paths and logs:
-
-```bash
-scripts/wsl/hermes_webui_autostart.sh
+~/.local/bin/talaria-web-autostart
 curl -fsS http://127.0.0.1:8787/health
-```
-
-Logs are written to:
-
-```text
-$HOME/.hermes/webui/logs/webui_autostart.log
-$HOME/.hermes/webui/logs/hermes_webui.log
 ```
 
 ## Option 1: WSL session startup
 
-This starts WebUI when your WSL login shell starts. It is the easiest option if you already open WSL during your day.
-
-Add this to `~/.profile` or `~/.bashrc` inside WSL, adjusting the repo path:
+Starts Talaria Web when your WSL login shell starts. Add this to `~/.profile`
+or `~/.bashrc` inside WSL:
 
 ```bash
-if [ -x "$HOME/talaria/web/scripts/wsl/hermes_webui_autostart.sh" ]; then
-  HERMES_WEBUI_REPO="$HOME/talaria/web" \
-    "$HOME/talaria/web/scripts/wsl/hermes_webui_autostart.sh" >/dev/null 2>&1 &
+if [ -x "$HOME/.local/bin/talaria-web-autostart" ]; then
+  "$HOME/.local/bin/talaria-web-autostart" >/dev/null 2>&1 &
 fi
 ```
 
-Open a new WSL terminal and check:
-
-```bash
-curl -fsS http://127.0.0.1:8787/health
-```
-
-If you open several WSL terminals, the launcher should still start only one WebUI process because the lock, health check, and pid file all converge on "already running".
+Opening several WSL terminals still starts one server: the lock, health check,
+and pid file all converge on "already running".
 
 ## Option 2: Windows Task Scheduler startup
 
-Use this if you want WebUI to start automatically at Windows logon even before you open a WSL terminal.
-
-Register a logon task that runs the WSL launch script through `wsl.exe`. From an
-elevated-free Windows PowerShell (adjust the distro and path):
+Starts Talaria Web at Windows logon, before you open a WSL terminal. From a
+non-elevated Windows PowerShell (adjust the distro and user):
 
 ```powershell
-$action  = New-ScheduledTaskAction -Execute "wsl.exe" -Argument '-d Ubuntu -- /home/your-user/talaria/web/scripts/wsl/hermes_webui_autostart.sh'
+$action  = New-ScheduledTaskAction -Execute "wsl.exe" -Argument '-d Ubuntu -- bash -lc ~/.local/bin/talaria-web-autostart'
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-Register-ScheduledTask -TaskName HermesWebUIAutoStart -Action $action -Trigger $trigger -RunLevel Limited -Force
+Register-ScheduledTask -TaskName TalariaWebAutoStart -Action $action -Trigger $trigger -RunLevel Limited -Force
 ```
 
-Notes:
-
 - Omit `-d Ubuntu` to use your default WSL distro.
-- `-Force` updates an existing task instead of creating duplicates.
-- The task runs as the current Windows user at logon with least privilege.
+- `bash -lc` loads your login profile, so the npm global `bin` is on `PATH`.
+- `-Force` updates an existing task instead of creating a duplicate.
 - Native Windows (outside WSL2) is not supported.
 
-To inspect or remove the task later:
+To inspect or remove the task:
 
 ```powershell
-Get-ScheduledTask -TaskName HermesWebUIAutoStart
-Unregister-ScheduledTask -TaskName HermesWebUIAutoStart -Confirm:$false
+Get-ScheduledTask -TaskName TalariaWebAutoStart
+Unregister-ScheduledTask -TaskName TalariaWebAutoStart -Confirm:$false
 ```
 
 ## Troubleshooting
 
-Check the WSL logs first:
-
 ```bash
-tail -n 80 "$HOME/.hermes/webui/logs/webui_autostart.log"
-tail -n 80 "$HOME/.hermes/webui/logs/hermes_webui.log"
+tail -n 80 "$HOME/.hermes/webui/logs/autostart.log"
+tail -n 80 "$HOME/.hermes/webui/logs/talaria-web.log"
 ```
-
-Common causes:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Task exists but WebUI is not reachable | WSL script path is wrong for the selected distro | Re-register the task with the correct script path and `-d <distro>` |
-| WebUI starts only after opening WSL | You used the WSL session startup option, not Task Scheduler | Install the Windows scheduled task |
-| Multiple login events happen quickly | Normal Windows startup behavior | The WSL script should log `already running` and avoid duplicate processes |
-| Health check fails but pid exists | WebUI is still booting or the port differs | Check `HERMES_WEBUI_PORT` and `hermes_webui.log` |
+| Task exists but the server is not reachable | Wrong distro, or `talaria-web` not on the login `PATH` | Re-register with `-d <distro>`; check `bash -lc 'command -v talaria-web'` |
+| Server starts only after opening WSL | You used option 1 | Install the scheduled task |
+| Health check fails but the pid exists | Still booting, or a different port | Check `HERMES_WEBUI_PORT` and `talaria-web.log` |
 
-If you want WSL2 systemd integration instead, see `docs/supervisor.md` for foreground process-supervisor guidance and adapt the Linux `systemd --user` pattern to your distro.
+For WSL2 with systemd, `talaria-web ctl` and the `systemd --user` pattern in
+[`supervisor.md`](supervisor.md) are an alternative.

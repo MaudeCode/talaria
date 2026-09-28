@@ -1,10 +1,8 @@
 # Live-to-Final Assistant Replies for Long-Running Agent Sessions
 
-- **Status:** Accepted (parent contract; implementation tracked in [#3400](https://github.com/nesquena/hermes-webui/issues/3400))
-- **Author:** @franksong2702
+- **Status:** Implemented (product contract for the assistant reply lifecycle)
 - **Created:** 2026-06-03
-- **Updated:** 2026-07-16
-- **Tracking issue:** [#3400](https://github.com/nesquena/hermes-webui/issues/3400)
+- **Updated:** 2026-09-27
 
 ## Background: Long-Running Sessions Are The Anchor
 
@@ -35,8 +33,7 @@ supporting activity, terminal outcome, and final answer.
 
 ## Product Problem
 
-Hermes WebUI currently uses one chat surface to represent several different
-meanings:
+One chat surface represents several different meanings:
 
 - the assistant's live process text while work is still running,
 - tool activity and lifecycle status that support that work,
@@ -49,8 +46,14 @@ long-running sessions feel noisy, some look silent while the agent is working,
 some recover into a different shape after reconnect, and some terminal edge
 cases can appear completed even when no final answer was produced.
 
-This RFC defines the product semantics that implementation PRs and follow-up
-RFCs should preserve.
+This RFC defines the product semantics every change to reply rendering must
+preserve. The server owns them: it stamps every message with its turn's
+`_turn_id`, attaches each completed turn's `activity_scene_v1` (ordered rows
+under "Worked", `final_answer`, `terminal_state`, `expanded_by_default`, and
+`file_changes`) to session detail and terminal payloads, and every terminal
+chat frame (`done`, `apperror`/`error`, `cancel`) carries the same
+`terminal_state` (`TurnTerminalStateSchema` in `packages/contracts`). Web and
+iOS render those fields and derive none of them.
 
 ## Scope
 
@@ -63,8 +66,6 @@ RFCs should preserve.
 - Long-running edge-case semantics for Auto Compression, no-final answers,
   tool/iteration limits, cancel/interruption, replay/reconnect/session switch,
   produced artifacts/output handoff, and sidebar/session ownership.
-- The classification of work into implemented slices, active PRs, confirmed
-  follow-ups, and child RFCs.
 
 ### This RFC does not own
 
@@ -76,37 +77,12 @@ RFCs should preserve.
   editing surfaces. This RFC only owns how produced artifacts remain findable
   from the reply lifecycle.
 - The full command semantics for Queue, Steer, Stop-and-send, and Interrupt.
-  Those belong to the pending-intent control-surface contract tracked by
-  [#3058](https://github.com/nesquena/hermes-webui/issues/3058) and
-  [#3061](https://github.com/nesquena/hermes-webui/pull/3061).
-
-## Public Inventory
-
-This inventory groups representative public issues and PRs by the
-long-running-session concern they expose. It is not a claim that every linked
-item is solved by this RFC. The classification column records durable scope,
-not current open/merged/superseded state: for live status, the tracking issue
-[#3400](https://github.com/nesquena/hermes-webui/issues/3400) is authoritative.
-
-| Concern | Representative signals | Current classification |
-| --- | --- | --- |
-| Live work vs final answer boundary | [#536](https://github.com/nesquena/hermes-webui/issues/536), [#3400](https://github.com/nesquena/hermes-webui/issues/3400), [#3464](https://github.com/nesquena/hermes-webui/pull/3464) | Main product scope. #3464 landed the first RFC; this document is the parent contract for follow-up slices. |
-| First live-to-final reply implementation | [#3401](https://github.com/nesquena/hermes-webui/pull/3401), [#3014](https://github.com/nesquena/hermes-webui/issues/3014), [#3015](https://github.com/nesquena/hermes-webui/pull/3015) | First implementation slice. It should keep using `Refs #3400`; it does not close the umbrella. |
-| Auto Compression visibility and context pressure | [#469](https://github.com/nesquena/hermes-webui/issues/469), [#2973](https://github.com/nesquena/hermes-webui/issues/2973), [#3079](https://github.com/nesquena/hermes-webui/issues/3079), [#3315](https://github.com/nesquena/hermes-webui/issues/3315), [#3316](https://github.com/nesquena/hermes-webui/pull/3316) | Supporting edge case. Running compression is live lifecycle status; compression-exhausted/no-final finalization is a terminal-state follow-up. |
-| Replay, reconnect, session switch, and reattach | [#2283](https://github.com/nesquena/hermes-webui/pull/2283), [#2924](https://github.com/nesquena/hermes-webui/issues/2924), [#3391](https://github.com/nesquena/hermes-webui/pull/3391) | Supporting recovery infrastructure. The product requirement is same lifecycle after replay, or an explicit degraded/restoring state. |
-| Tool, activity, thinking, and visible progress | [#1298](https://github.com/nesquena/hermes-webui/issues/1298), [#3014](https://github.com/nesquena/hermes-webui/issues/3014), [#3015](https://github.com/nesquena/hermes-webui/pull/3015) | Main reply-rendering concern. Process prose stays primary; tool/reasoning/debug detail stays supporting. |
-| No-final and terminal failure outcomes | [#3315](https://github.com/nesquena/hermes-webui/issues/3315), [#3316](https://github.com/nesquena/hermes-webui/pull/3316) | Confirmed follow-up / active PR scope. A tool-tail or compression-exhausted run must not settle as normal completion without a real final answer. |
-| Cancellation and stream ownership | [#3344](https://github.com/nesquena/hermes-webui/issues/3344), [#3345](https://github.com/nesquena/hermes-webui/pull/3345), [#3475](https://github.com/nesquena/hermes-webui/issues/3475), [#3476](https://github.com/nesquena/hermes-webui/pull/3476) | Supporting cancel/recovery scope. Early-cancel worker reconciliation is addressed by [#3476](https://github.com/nesquena/hermes-webui/pull/3476); frontend cancel owner-guard hardening is the remaining follow-up. |
-| Produced artifacts and output handoff | [#2655](https://github.com/nesquena/hermes-webui/issues/2655), [#2673](https://github.com/nesquena/hermes-webui/pull/2673), [#2881](https://github.com/nesquena/hermes-webui/issues/2881), [#2938](https://github.com/nesquena/hermes-webui/pull/2938), [#3329](https://github.com/nesquena/hermes-webui/pull/3329), [#3348](https://github.com/nesquena/hermes-webui/pull/3348), [#3528](https://github.com/nesquena/hermes-webui/issues/3528) | Supporting session-output concern. Existing Artifacts and `workspace://` surfaces make produced files findable; long-running replay/cancel/terminal paths must not lose the tool metadata needed to recover that handoff. |
-| Sidebar/session ownership and active-session awareness | [#856](https://github.com/nesquena/hermes-webui/issues/856), [#1370](https://github.com/nesquena/hermes-webui/pull/1370), [#1436](https://github.com/nesquena/hermes-webui/issues/1436) | Confirmed follow-up scope when sidebar/session metadata contradicts the visible active turn. |
-| User intervention during live work | [#720](https://github.com/nesquena/hermes-webui/issues/720), [#965](https://github.com/nesquena/hermes-webui/pull/965), [#1062](https://github.com/nesquena/hermes-webui/pull/1062), [#3058](https://github.com/nesquena/hermes-webui/issues/3058), [#3061](https://github.com/nesquena/hermes-webui/pull/3061) | Child RFC scope. This parent RFC only requires that controls preserve ownership, replay, and terminal honesty. |
 
 ## Product Model
 
 ### Lifecycle flow
 
-The lifecycle below is a product-state model, not a backend schema or
-wire-event contract. At settle time, the visible reply state should be derived
+The lifecycle below is a product-state model. At settle time, the visible reply state should be derived
 from durable transcript truth, available terminal evidence, and reply
 ownership. A turn should not be marked `completed` only because live activity
 or partial assistant prose existed earlier.
@@ -229,7 +205,8 @@ assistant-turn activity data:
   "Worked" summary from the live turn's height.
 - **Transparent Stream** is opt-in and renders the same ordered activity as
   chronological rows. It does not create a second live or settled owner.
-- **Final answer only** is opt-in (`hide_all_activity` in persisted settings).
+- **Final answer only** is opt-in (`chat_activity_display_mode:
+  hide_all_activity`).
   It suppresses activity rows without deleting the persisted Anchor scene or
   changing the final-answer owner.
 
@@ -242,10 +219,9 @@ outcome. The current disclosure error family is `error`, `no_response`,
 outcome keep their separate semantics. An explicit user disclosure choice wins
 over these defaults and may be restored across a render rebuild.
 
-`degraded` and `connection_lost` are Anchor-level reconstruction/transport
-outcomes defined in
-[`stable-assistant-turn-anchors.md`](stable-assistant-turn-anchors.md), not
-additional canonical product states in the table below. In this parent
+`degraded` and `connection_lost` are scene-level reconstruction/transport
+outcomes (`packages/server/src/sessions/anchor.ts`), not additional canonical
+product states in the table below. In this parent
 contract, `connection_lost` is the transport-specific Anchor form of an
 interruption, while `degraded` is the explicit recovery-state counterpart to the
 restoring/degraded path. They use error-family disclosure only because they can
@@ -292,10 +268,9 @@ Required product states:
 | `no_response` | The provider or runtime returned no usable assistant final content. |
 | `error` | Fallback for failures that do not fit the above states. |
 
-These identifiers name product states, not a wire/enum or persisted schema
-contract; consistent with Scope, this RFC does not mandate a backend field or
-event shape for them. Copy can evolve, but these semantic distinctions should
-stay stable in live rendering, settled rendering, and replay.
+The server ships these as `terminal_state` (`TurnTerminalStateSchema`). Copy
+can evolve, but these semantic distinctions stay stable in live rendering,
+settled rendering, and replay.
 
 When more than one terminal condition applies, the more specific condition
 should win over the generic fallback. For example, `cancelled`,
@@ -325,14 +300,6 @@ Expected behavior:
   was pruned; that remains a runtime/context invariant covered by the run-state
   consistency contract.
 
-Confirmed follow-up scope:
-
-- Add or standardize an explicit per-pass compression completion event if the
-  UI otherwise has to infer completion from later stream events.
-- Keep compression-exhausted/no-final handling aligned with
-  [#3315](https://github.com/nesquena/hermes-webui/issues/3315) and
-  [#3316](https://github.com/nesquena/hermes-webui/pull/3316).
-
 ### Tool-call, retry, and iteration ceilings
 
 Long-running sessions can exhaust tool-call limits, retry budgets, or
@@ -347,7 +314,7 @@ Expected behavior:
 - Internal continuation or control prompts used by the runtime must not persist
   as ordinary user-authored transcript content.
 - The product state should not depend on whether the limit came from provider
-  policy, Hermes Agent iteration budget, or WebUI adapter/runtime policy.
+  policy, Hermes Agent iteration budget, or server runtime policy.
 
 ### No-final answer and provider failure
 
@@ -380,16 +347,6 @@ Expected behavior:
 - A network or worker interruption should settle as `interrupted` or restoring,
   not as normal completion.
 
-Classification:
-
-- The early startup cancel race tracked by
-  [#3475](https://github.com/nesquena/hermes-webui/issues/3475) is addressed by
-  [#3476](https://github.com/nesquena/hermes-webui/pull/3476).
-- The owner-aware browser cancel cleanup tracked by
-  [#3344](https://github.com/nesquena/hermes-webui/issues/3344) and
-  [#3345](https://github.com/nesquena/hermes-webui/pull/3345) remains a
-  focused follow-up.
-
 ### Reconnect and session switch
 
 Long-running work often outlives one browser attachment.
@@ -403,14 +360,6 @@ Expected behavior:
   session.
 - Replay should use the same visible lifecycle as live rendering rather than a
   flattened alternate presentation.
-
-Confirmed follow-up scope:
-
-- A clearer restoring/degraded state during slow reattach.
-- Native `Last-Event-ID` or equivalent reconnect cursor support when it is
-  ready to replace or complement the current replay cursor path.
-- Additional tests that prove live and replay use the same lifecycle for
-  process prose, tool rows, compression status, and terminal states.
 
 ### Tool-only or low-prose runs
 
@@ -463,18 +412,6 @@ Expected behavior:
   workspace/artifact preview model instead of being expanded into the main chat
   transcript by default.
 
-Confirmed follow-up scope:
-
-- Keep artifact recoverability aligned with the session-scoped Artifacts tab
-  work in [#2655](https://github.com/nesquena/hermes-webui/issues/2655) and
-  [#2673](https://github.com/nesquena/hermes-webui/pull/2673).
-- Keep final-answer artifact links aligned with the `workspace://` preview
-  path from [#2881](https://github.com/nesquena/hermes-webui/issues/2881) and
-  [#2938](https://github.com/nesquena/hermes-webui/pull/2938).
-- Treat interrupted/cancelled tool-history loss, such as
-  [#3528](https://github.com/nesquena/hermes-webui/issues/3528), as a
-  live-to-final recoverability bug when it prevents artifact reconstruction.
-
 ### Sidebar and session ownership
 
 Long-running sessions are not only a chat-pane concern. The sidebar and session
@@ -499,68 +436,15 @@ direction, or stop the run and send a replacement.
 Expected behavior:
 
 - These controls should not corrupt the live-to-final reply lifecycle.
-- Queue/Steer/Stop-and-send/Interrupt command semantics should be defined in a
-  separate control-surface contract.
 - This RFC only requires that live-session controls preserve clear ownership,
   terminal outcomes, and replayable state.
 
-The current child contract is tracked by
-[#3058](https://github.com/nesquena/hermes-webui/issues/3058) and
-[#3061](https://github.com/nesquena/hermes-webui/pull/3061). That child RFC
-should own questions such as:
+## Relationship to other contracts
 
-- whether Queue is browser-backed or server-backed in each slice,
-- when Queue can upgrade to Steer,
-- what Stop-and-send means,
-- how delivered vs applied Steer is represented,
-- what happens to leftover Steer after the run ends.
-
-## Delivery And Follow-Up Map
-
-Use this map to keep implementation PRs and child RFCs scoped. The "vehicle"
-column names a durable track, not live merge state; the tracking issue
-[#3400](https://github.com/nesquena/hermes-webui/issues/3400) is authoritative
-for current open/merged/superseded status.
-
-| Track | Scope | Current vehicle |
-| --- | --- | --- |
-| Parent product RFC | Define the long-running live-to-final assistant reply lifecycle and review checklist. | This RFC; tracking issue [#3400](https://github.com/nesquena/hermes-webui/issues/3400). |
-| First reply lifecycle implementation | Live process prose, quiet tool activity, settled activity summary above final answer, replay/reattach consistency, live-only compression status, supporting stream ownership fixes. | [#3401](https://github.com/nesquena/hermes-webui/pull/3401), absorbed through [#3741](https://github.com/nesquena/hermes-webui/pull/3741). |
-| Activity display projections | Compact Worklog by default, opt-in Transparent Stream, and opt-in Final answer only over the same assistant-turn data. | [#3820](https://github.com/nesquena/hermes-webui/issues/3820), [`transparent-stream-activity-mode.md`](transparent-stream-activity-mode.md), tracking issue [#3400](https://github.com/nesquena/hermes-webui/issues/3400). |
-| Assistant-turn presentation ownership | Normalize live, settled, replayed, and recovered activity into one Anchor / `activity_scene_v1`, with legacy rendering limited to historical or non-anchor compatibility. | [#3926](https://github.com/nesquena/hermes-webui/issues/3926), [`stable-assistant-turn-anchors.md`](stable-assistant-turn-anchors.md); core implementation shipped through the #4411/#4564 and #5242/#5243 capstones. |
-| Terminal/no-final stabilization | Compression exhausted, tool-tail/no-final transcript shape, context-compaction marker suppression, terminal error routing. | [#3315](https://github.com/nesquena/hermes-webui/issues/3315), [#3316](https://github.com/nesquena/hermes-webui/pull/3316). |
-| Cancel ownership hardening | Frontend cancel should close its own SSE source and clear only its own busy state. | [#3344](https://github.com/nesquena/hermes-webui/issues/3344), [#3345](https://github.com/nesquena/hermes-webui/pull/3345). |
-| Early-cancel startup race | Backend cancel should still interrupt the worker when the SSE registry detached before startup fully settled. | [#3475](https://github.com/nesquena/hermes-webui/issues/3475), [#3476](https://github.com/nesquena/hermes-webui/pull/3476). |
-| Pending-intent control surface | Queue, Steer, Stop-and-send, Interrupt, delivered/applied/leftover semantics. | [#3058](https://github.com/nesquena/hermes-webui/issues/3058), [#3061](https://github.com/nesquena/hermes-webui/pull/3061). |
-| Reattach and replay polish | Slow rebuild degraded state, replay/body timing, native cursor support, same lifecycle through replay. | Follow-up issue/PR or child RFC if protocol semantics expand. |
-| Tool-limit and max-iteration terminal state | Limit reached state, control prompt visibility, no fake final answer. | Follow-up issue/PR; may involve Hermes Agent if the runtime owns the limit signal. |
-| Artifact handoff and recoverability | Preserve the link between final/terminal replies and workspace artifacts created or edited during the turn. | Existing Artifacts and `workspace://` surfaces; follow-up issue/PR when replay, cancel, or terminal paths lose artifact metadata. |
-| Sidebar/session ownership | Active/terminal state in session rows, stale spinner repair, session-list disappearance, background terminal feedback. | Follow-up issue/PR under session/runtime contracts. |
-| Very long final answer ergonomics | Optional navigation/outline/preview affordances that preserve the final answer as normal prose. | Open product discussion; no implementation vehicle yet. |
-
-## Relationship To Existing Contracts
-
-This RFC sits above the current runtime, recovery, and adapter contracts:
-
-- [`webui-run-state-consistency-contract.md`](webui-run-state-consistency-contract.md)
-  defines how transcript, context, stream, replay, compression, and session
-  metadata stay coherent.
-- [`canonical-session-resolution.md`](canonical-session-resolution.md) defines
-  how URL, local browser state, sidebar rows, and compression lineage resolve
-  to one visible session target.
-- [`turn-journal.md`](turn-journal.md) defines crash-safe submitted-turn and
-  interrupted-turn recovery semantics.
-- [`hermes-run-adapter-contract.md`](hermes-run-adapter-contract.md) defines
-  longer-term event/control ownership and migration gates.
-
-This RFC defines the product meaning those lower-level contracts need to
+[`webui-run-state-consistency-contract.md`](webui-run-state-consistency-contract.md)
+defines how transcript, context, stream, replay, compression, and session
+metadata stay coherent. This RFC defines the product meaning those layers
 preserve for long-running assistant replies.
-
-The pending-intent control-surface RFC tracked by
-[#3058](https://github.com/nesquena/hermes-webui/issues/3058) and
-[#3061](https://github.com/nesquena/hermes-webui/pull/3061) should be treated
-as a child contract: it can define user intervention semantics without
-redefining the live-to-final reply lifecycle.
 
 ## Review Checklist
 
@@ -580,13 +464,10 @@ Use this checklist when reviewing PRs against this RFC:
 - Does sidebar/session state agree with the visible active or terminal turn?
 - Is the PR's slice clear: lifecycle, terminal/recovery, cancel ownership,
   live controls, sidebar/session ownership, or protocol integration?
-- If the change belongs to Queue/Steer/Stop-and-send/Interrupt, is it routed to
-  the child control-surface RFC instead of being hidden inside this parent RFC?
 
 ## Open Questions
 
-Open questions are limited to product choices that are not already decided by
-this RFC, an active implementation PR, or a child RFC.
+Open questions are product choices this RFC does not decide yet.
 
 - Should very long final answers gain additional navigation, outline, or
   preview affordances beyond standard chat transcript behavior? If yes, what

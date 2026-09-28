@@ -1,5 +1,5 @@
-// Post-processes the TanStack Start SPA build into the committed, Python-served
-// layout under ../static/dist.
+// Post-processes the TanStack Start SPA build into the layout the server serves
+// from ../static/dist (built, not committed).
 //
 // Input : dist/client/_shell.html + dist/client/assets/* (+ sw.js, manifest)
 // Output: ../static/dist/index.html with request-time placeholders, relative
@@ -7,7 +7,7 @@
 //
 // Why: the Start prerender emits two inline framework scripts (scroll
 // restoration and the SSR hydration barrier) and absolute "/./assets" URLs.
-// The Python shell is served under an arbitrary mount prefix with a CSP that
+// The server serves the shell under an arbitrary mount prefix with a CSP that
 // has no 'unsafe-inline' for scripts, and the client entry mounts with
 // createRoot rather than hydrating SSR output, so neither inline script is
 // needed. Everything here is deterministic: no timestamps, sorted file order.
@@ -32,7 +32,7 @@ html = html.replace(/<script(?![^>]*\ssrc=)[^>]*>[\s\S]*?<\/script>/g, '')
 html = html.replace(/<!--\$-->|<!--\/\$-->|<!--\$\?-->|<!--\$!-->/g, '')
 // 3. Relative asset URLs: "/./assets/x" and "/assets/x" -> "./assets/x".
 html = html.replace(/(href|src)="\/(?:\.\/)?assets\//g, '$1="./assets/')
-// 4. Request-time placeholders substituted by api/spa_shell.py.
+// 4. Request-time placeholders substituted by the server (packages/server/src/spa.ts).
 html = html.replace(/<html lang="[^"]*"/, '<html lang="__LANG__"')
 if (!html.includes('<base ')) {
   html = html.replace('<head>', '<head><base href="__BASE_HREF__">')

@@ -2,8 +2,8 @@ import { z } from 'zod'
 import { ClarifyStepSchema, ToolDisplayFields, TurnTerminalStateSchema } from './views.js'
 
 /**
- * Wire events of `GET /api/chat/stream` as emitted by api/streaming.py
- * (docs/rfcs/session-sse-contract-v1.md, "Authoritative emitted events"),
+ * Wire events of `GET /api/chat/stream` and the per-session relay
+ * (docs/rfcs/session-sse-contract-v1.md, "Chat stream events"),
  * modelled as a discriminated union on the SSE `event:` name. Payloads are
  * loose objects: the reducer reads the named fields and preserves the rest.
  */
@@ -75,7 +75,7 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
 ])
 export type ChatEvent = z.infer<typeof ChatEventSchema>
 
-/** Relay close set: stop draining after these (api.run_journal.SSE_RELAY_CLOSE_EVENTS). */
+/** Relay close set: stop draining after these (the server's `SSE_RELAY_CLOSE_EVENTS`). */
 export const RELAY_CLOSE_EVENTS: ReadonlySet<ChatEventName> = new Set(['stream_end', 'cancel', 'apperror', 'error'])
 
 /** `GET /api/sessions/events` (global session list invalidation; `/api/session/stream` is the per-session channel). */

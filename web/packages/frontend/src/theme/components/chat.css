@@ -1,6 +1,5 @@
 /* chat: component rules for this feature, in @layer app (after utilities). Colours, radii and
-   fonts come from the token vocabulary in src/theme/skins.ts; no rule mentions a skin or a theme. Origin:
-   the legacy stylesheet, converted by scripts/css-convert.mjs (see docs/architecture/css-conversion-ledger.md). */
+   fonts come from the token vocabulary in src/theme/skins.ts; no rule mentions a skin or a theme. */
 @layer app{
 :root[data-font-size="small"] .msg-body{font-size:12px}
 :root[data-font-size="large"] .msg-body{font-size:16px}

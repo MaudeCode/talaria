@@ -9,9 +9,6 @@ __pycache__/
 *.swp
 *.swo
 
-# Archive directory (pre-git backups, kept on disk but not tracked)
-archive/
-
 # Local environment and secrets (but keep the example templates)
 .env
 .env.*
@@ -34,8 +31,6 @@ full-UI.png
 # either way so they never sneak into a commit.
 .playwright-mcp/
 final-check.png
-
-# Version file written by Docker/CI build — generated, never committed
 
 # OS files
 .DS_Store
@@ -63,14 +58,6 @@ docs/.windsurfrules
 AGENT_TRACE.yaml
 EXECUTION_LOG.md
 
-# Local-only PR review harness: rendering drivers, sample bank, fixtures.
-# Used by Claude during deep reviews; never shared in the repo.
-.local-review/
-.review-crops/
-graphify-out/
-.graphify_cached.json
-.graphify_uncached.txt
-
 .venv/
 
 # Node tooling. The workspace lockfile web/package-lock.json is authoritative and committed (TAL-245).
@@ -83,15 +70,13 @@ packages/frontend/test-results/
 packages/frontend/.tanstack/
 docs/ui-ux/review-shots/
 
-# Python build metadata (never commit generated egg-info)
-
-# Local WebUI runtime data and credentials
-.webui_password
+# Local runtime data
 attachments/
 
-# Python package build outputs
-build/
-dist/
+# Build outputs
+packages/contracts/dist/
+packages/server/dist/
+static/dist/
 
 # Immutable release provenance is stamped into artifacts, never source commits.
 _release.json

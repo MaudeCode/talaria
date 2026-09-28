@@ -1,164 +1,3 @@
-/*
- * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
- *   web/tests/test_issue1013_handoff_dock.py
- *   web/tests/test_issue1096_copy_buttons.py
- *   web/tests/test_issue1144_session_time_sync.py
- *   web/tests/test_issue1217_transcript_compaction.py
- *   web/tests/test_issue1431_toolsets_chip_responsive.py
- *   web/tests/test_issue1436_context_indicator_load_path.py
- *   web/tests/test_issue1438_fence_anchoring.py
- *   web/tests/test_issue1446_glued_heading_lift.py
- *   web/tests/test_issue1560_password_env_var_lock.py
- *   web/tests/test_issue1579_whats_new_link_404.py
- *   web/tests/test_issue1617_tps_message_header.py
- *   web/tests/test_issue1623_sse_heartbeat_alignment.py
- *   web/tests/test_issue1625_local_server_model_id_preservation.py
- *   web/tests/test_issue1680_codex_spark.py
- *   web/tests/test_issue1765_codex_quota.py
- *   web/tests/test_issue1800_file_html_interactions.py
- *   web/tests/test_issue1823_kanban_not_found.py
- *   web/tests/test_issue1867_upload_size_preflight.py
- *   web/tests/test_issue1879_cross_container_gateway_liveness.py
- *   web/tests/test_issue1880_profile_scoped_skills.py
- *   web/tests/test_issue1896_context_length_fallback_args.py
- *   web/tests/test_issue1897_profile_switch_agent_cache.py
- *   web/tests/test_issue1908_docker_hardening.py
- *   web/tests/test_issue1909_csp_report_only.py
- *   web/tests/test_issue1909_csrf_token.py
- *   web/tests/test_issue1910_login_attempt_persistence.py
- *   web/tests/test_issue1955_worktree_sessions.py
- *   web/tests/test_issue1955_worktree_ui_static.py
- *   web/tests/test_issue1968_mcp_profile_discovery.py
- *   web/tests/test_issue2057_worktree_ui_static.py
- *   web/tests/test_issue2157_sessions_list_stale_stream_state.py
- *   web/tests/test_issue2211_workspace_panel_reopen.py
- *   web/tests/test_issue2237_docker_chown_git_objects.py
- *   web/tests/test_issue2472_fork_from_here_messaging.py
- *   web/tests/test_issue2508_session_pin_cap.py
- *   web/tests/test_issue2513_custom_provider_remote_models.py
- *   web/tests/test_issue2540_models_endpoint_error.py
- *   web/tests/test_issue2542_anonymous_custom_endpoint.py
- *   web/tests/test_issue2572_csrf_diagnostics.py
- *   web/tests/test_issue2655_frontend.py
- *   web/tests/test_issue2661_2629_frontend.py
- *   web/tests/test_issue2698_isolated_hermes_home.py
- *   web/tests/test_issue2768_workspace_links.py
- *   web/tests/test_issue2785_gateway_cron_guidance.py
- *   web/tests/test_issue2823_large_markdown_preview.py
- *   web/tests/test_issue2841_show_cron_sessions_toggle.py
- *   web/tests/test_issue2914_truncation_watermark.py
- *   web/tests/test_issue2929_settings_max_tokens.py
- *   web/tests/test_issue2965_streaming_sessiondb_profile_home.py
- *   web/tests/test_issue3012_3006_docker_docs.py
- *   web/tests/test_issue3019_cron_project_sessions.py
- *   web/tests/test_issue3023_safe_session_id_validators.py
- *   web/tests/test_issue3066_disabled_read_profile.py
- *   web/tests/test_issue3066_profile_skill_disabled_state.py
- *   web/tests/test_issue3103_sse_no_connection_close.py
- *   web/tests/test_issue3225_rename_sync.py
- *   web/tests/test_issue3238_orphaned_cli_sidecar_prune.py
- *   web/tests/test_issue3283_profiles_config_import_order.py
- *   web/tests/test_issue3340_persistent_state_toasts.py
- *   web/tests/test_issue3402_workspace_tree_move.py
- *   web/tests/test_issue3405_profile_provider_resolution.py
- *   web/tests/test_issue3429_uri_scheme_model_ids.py
- *   web/tests/test_issue3460_cron_session_unread.py
- *   web/tests/test_issue3510_elevenlabs_tts.py
- *   web/tests/test_issue357.py
- *   web/tests/test_issue3571_saved_prompts.py
- *   web/tests/test_issue3582_tts_content_length.py
- *   web/tests/test_issue3587_intermediate_reasoning.py
- *   web/tests/test_issue3595_activity_default_expanded.py
- *   web/tests/test_issue3717_context_length_provider_overrides.py
- *   web/tests/test_issue3718_live_models_custom_probe.py
- *   web/tests/test_issue3797_kanban_cli_parity.py
- *   web/tests/test_issue3800_compaction_summary_length.py
- *   web/tests/test_issue3825_oidc_auth.py
- *   web/tests/test_issue3831_watermark_clear.py
- *   web/tests/test_issue3929_credential_pool_classification.py
- *   web/tests/test_issue3947_tasks_cross_profile_visibility.py
- *   web/tests/test_issue3959_model_suffix_dedup.py
- *   web/tests/test_issue3987_imported_session_titles.py
- *   web/tests/test_issue3994_materialize_session.py
- *   web/tests/test_issue4006_auto_scroll_follow_default.py
- *   web/tests/test_issue4053_external_skill_categories.py
- *   web/tests/test_issue4067_import_cli_cross_profile_guard.py
- *   web/tests/test_issue4164_bound_non_git_project_context_walk.py
- *   web/tests/test_issue4183_regenerate_materialize.py
- *   web/tests/test_issue4300_gateway_approval_notice.py
- *   web/tests/test_issue4346_vscroll_footer_jitter.py
- *   web/tests/test_issue4346_vscroll_recycled_anchor_jumpback.py
- *   web/tests/test_issue4385_cron_archive_reappears.py
- *   web/tests/test_issue4465_builtin_personalities.py
- *   web/tests/test_issue4470_kanban_task_editor_fields.py
- *   web/tests/test_issue4490_presession_toolsets.py
- *   web/tests/test_issue4536_service_tier.py
- *   web/tests/test_issue4685_post_compression_context_metering.py
- *   web/tests/test_issue470.py
- *   web/tests/test_issue4714_claude_code_visibility_toggle.py
- *   web/tests/test_issue4729_reasoning_sse_coalesce.py
- *   web/tests/test_issue4749_steer_reason_and_recovery.py
- *   web/tests/test_issue4759_parallel_sidebar_boot_fetch.py
- *   web/tests/test_issue4766_sidebar_source_pushdown.py
- *   web/tests/test_issue4768_cron_module_missing.py
- *   web/tests/test_issue477.py
- *   web/tests/test_issue4775_sidebar_hidden_zero_message_pushdown.py
- *   web/tests/test_issue4836_manual_compression_recovery.py
- *   web/tests/test_issue4842_cli_sessions_streaming_freeze.py
- *   web/tests/test_issue484_json_tree_viewer.py
- *   web/tests/test_issue486_487.py
- *   web/tests/test_issue487b.py
- *   web/tests/test_issue492_workspace_reorder.py
- *   web/tests/test_issue4982_openai_tts.py
- *   web/tests/test_issue4985_orphaned_webui_zero_message.py
- *   web/tests/test_issue5127_process_wakeup_bare_model.py
- *   web/tests/test_issue5130_cron_profile_snapshot.py
- *   web/tests/test_issue5204_redactor_memoization_contract.py
- *   web/tests/test_issue5269_gateway_approval_docs.py
- *   web/tests/test_issue5270_cli_webui_continuity.py
- *   web/tests/test_issue5311_opencode_go_static_models.py
- *   web/tests/test_issue5334_verification_stop_leak.py
- *   web/tests/test_issue5339_restart_stale_user_dedup.py
- *   web/tests/test_issue5345_clarify_toast_and_interrupt_provenance.py
- *   web/tests/test_issue538_mcp_management.py
- *   web/tests/test_issue5420_profile_switch_session_new.py
- *   web/tests/test_issue5532_clear_truncation_watermark.py
- *   web/tests/test_issue5532_session_clear_state_db_replay.py
- *   web/tests/test_issue5572_messaging_clear_semantics.py
- *   web/tests/test_issue5578_login_next_nesting.py
- *   web/tests/test_issue5686_completed_output_text.py
- *   web/tests/test_issue569_579.py
- *   web/tests/test_issue5731_session_model_provider_repair.py
- *   web/tests/test_issue5749_transparent_stream_prefix_dedupe.py
- *   web/tests/test_issue5940_terminal_error_surfaced.py
- *   web/tests/test_issue5941_errored_turn_response_visible.py
- *   web/tests/test_issue6006_ttft_instrumentation.py
- *   web/tests/test_issue6022_worktree_config_default.py
- *   web/tests/test_issue6066_workspace_sort.py
- *   web/tests/test_issue6066_workspace_sort_api_payload.py
- *   web/tests/test_issue6066_workspace_sort_layout.py
- *   web/tests/test_issue609.py
- *   web/tests/test_issue616.py
- *   web/tests/test_issue6174_public_share_media_embed.py
- *   web/tests/test_issue617_cron_profile_selector.py
- *   web/tests/test_issue634.py
- *   web/tests/test_issue646.py
- *   web/tests/test_issue6481_verification_evidence_phantom.py
- *   web/tests/test_issue6498_memory_config_gates.py
- *   web/tests/test_issue6571_identical_retry_settlement.py
- *   web/tests/test_issue6722_provider_qualified_model_leak.py
- *   web/tests/test_issue673.py
- *   web/tests/test_issue6751_api_content_agent_replay.py
- *   web/tests/test_issue6757_redaction_and_runner_sse_fixes.py
- *   web/tests/test_issue6853_docker_agents_context.py
- *   web/tests/test_issue6892_sync_title_coverage.py
- *   web/tests/test_issue6964_title_dedup.py
- *   web/tests/test_issue697_mcp_tool_inventory.py
- *   web/tests/test_issue716_agent_heartbeat.py
- *   web/tests/test_issue7228_model_picker_search.py
- *   web/tests/test_issue7426_skill_not_found_listing_truncation.py
- * (issues #357, #470, #477, #484, #486, #487, #492, #538, #569, #609, #616, #617, #634, #646, #673, #697, #716, #1013, #1096, #1144, #1217, #1431, #1436, #1438, #1446, #1560, #1579, #1617, #1623, #1625, #1680, #1765, #1800, #1823, #1867, #1879, #1880, #1896, #1897, #1908, #1909, #1910, #1955, #1968, #2057, #2157, #2211, #2237, #2472, #2508, #2513, #2540, #2542, #2572, #2655, #2661, #2698, #2768, #2785, #2823, #2841, #2914, #2929, #2965, #3012, #3019, #3023, #3066, #3103, #3225, #3238, #3283, #3340, #3402, #3405, #3429, #3460, #3510, #3571, #3582, #3587, #3595, #3717, #3718, #3797, #3800, #3825, #3831, #3929, #3947, #3959, #3987, #3994, #4006, #4053, #4067, #4164, #4183, #4300, #4346, #4385, #4465, #4470, #4490, #4536, #4685, #4714, #4729, #4749, #4759, #4766, #4768, #4775, #4836, #4842, #4982, #4985, #5127, #5130, #5204, #5269, #5270, #5311, #5334, #5339, #5345, #5420, #5532, #5572, #5578, #5686, #5731, #5749, #5940, #5941, #6006, #6022, #6066, #6174, #6481, #6498, #6571, #6722, #6751, #6757, #6853, #6892, #6964, #7228, #7426) is covered here; see docs/architecture/regression-port-ledger.md.
- */
 import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -255,7 +94,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     expect(existsSync(join(outside, 'victim-skill', 'SKILL.md'))).toBe(true)
   })
 
-  it('reads and writes memory files, honours config flags, and reports project context [py:test_issue4164_bound_non_git_project_context_walk.py::test_non_git_workspace_still_reads_in_workspace_context]', async () => {
+  it('reads and writes memory files, honours config flags, and reports project context', async () => {
     const ws = join(s.state, 'workspace')
     mkdirSync(ws, { recursive: true })
     writeFileSync(join(ws, 'AGENTS.md'), '---\ntitle: x\n---\n\n# Rules\nsk-live-1234567890abcdefghij')
@@ -591,7 +430,7 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
-  it('transcribe proxies multipart audio to the sidecar; tts proxies openai and rate limits [py:test_issue2931_edge_tts_endpoint.py::test_tts_requires_text] [py:test_issue2931_edge_tts_endpoint.py::test_tts_rate_limits_second_immediate_request] [py:test_issue4982_openai_tts.py::test_openai_tts_no_key_returns_503]', async () => {
+  it('transcribe proxies multipart audio to the sidecar; tts proxies openai and rate limits', async () => {
     sidecar.respond('stt.transcribe', (params) => ({ transcript: `heard ${String(Buffer.from(params.audio_b64, 'base64').length)} bytes${params.suffix ?? ''}` }))
     const boundary = 'abc'
     const body = [`--${boundary}`, 'Content-Disposition: form-data; name="file"; filename="clip.webm"', 'Content-Type: audio/webm', '', 'audio-bytes', `--${boundary}--`, ''].join('\r\n')

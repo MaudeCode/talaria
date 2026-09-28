@@ -1,15 +1,3 @@
-/*
- * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
- *   web/tests/test_issue1909_csrf_token.py
- *   web/tests/test_issue2572_csrf_diagnostics.py
- *   web/tests/test_issue2929_settings_max_tokens.py
- *   web/tests/test_issue3510_elevenlabs_tts.py
- *   web/tests/test_issue3582_tts_content_length.py
- *   web/tests/test_issue3825_oidc_auth.py
- *   web/tests/test_issue4982_openai_tts.py
- *   web/tests/test_issue5578_login_next_nesting.py
- * (issues #1909, #2572, #2929, #3510, #3582, #3825, #4982, #5578) is covered here; see docs/architecture/regression-port-ledger.md.
- */
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -76,7 +64,7 @@ describe('Python byte compatibility', () => {
     expect(await store.hashPassword(PASSWORD, SIGNING_KEY)).toBe(PY.legacyHash)
   })
 
-  it('signs session tokens, CSRF tokens, and profile cookies with the Python HMAC layout [py:test_issue1909_csrf_token.py::test_csrf_token_is_bound_to_auth_session]', () => {
+  it('signs session tokens, CSRF tokens, and profile cookies with the Python HMAC layout', () => {
     const store = makeStore()
     store.sessionTable[PY.token] = now + 60
     expect(store.signToken(PY.token)).toBe(PY.sig)
@@ -107,7 +95,7 @@ describe('Python byte compatibility', () => {
     expect(parseCookieHeader('bad name=1; ok=2').get('ok')).toBe('2')
   })
 
-  it('reads the Python-written .sessions.json and .login_attempts.json and keeps them 0600 [py:test_issue1910_login_attempt_persistence.py::test_login_attempts_persist_failed_attempts] [py:test_issue1910_login_attempt_persistence.py::test_login_attempts_load_prunes_expired_entries]', async () => {
+  it('reads the Python-written .sessions.json and .login_attempts.json and keeps them 0600', async () => {
     writeFileSync(join(dir, '.sessions.json'), JSON.stringify({
       live: now + 100,
       typed: { expiry: now + 100, auth_type: 'trusted', username: 'kim', bound_profile: 'work', oidc_owner: true, oidc_stale_evidence: 'x' },

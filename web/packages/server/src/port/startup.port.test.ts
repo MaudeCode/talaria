@@ -1,8 +1,7 @@
 /**
- * One-to-one ports of the Python startup/environment regression cases
- * (TAL-245): `.env` handling, provider key detection from environment
- * variables and config, and the password env-var lock. Markers
- * `[py:<file>::<case>]` are verified by scripts/check-regression-port.py.
+ * Startup and environment regressions: `.env` handling, provider key
+ * detection from environment variables and config, and the password env-var
+ * lock.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -20,7 +19,7 @@ const post = (s: TestServer, path: string, body: unknown, headers: Record<string
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 
 describe('.env writer', () => {
-  it('[py:test_issue1164_env_file_corruption.py::test_empty_file_handled_gracefully] writing to a missing .env creates it with exactly the new key', () => {
+  it('writing to a missing .env creates it with exactly the new key', () => {
     const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-env-${String(process.pid)}-${String(Date.now())}`)
     mkdirSync(dir, { recursive: true })
     const path = join(dir, '.env')
@@ -50,17 +49,17 @@ describe('provider key detection', () => {
   const provider = async (id: string): Promise<Provider | undefined> => (await providers()).find((p) => p.id === id)
   const clearEnv = (): void => { const current = loadEnvFile(join(s.state, '.env')); setEnv(Object.fromEntries(Object.keys(current).map((k) => [k, null]))) }
 
-  it('[py:test_issue1420_lmstudio_provider_env_var.py::test_lmstudio_in_provider_env_var_dict] LM Studio reads LM_API_KEY with LMSTUDIO_API_KEY as an alias', () => {
+  it('LM Studio reads LM_API_KEY with LMSTUDIO_API_KEY as an alias', () => {
     expect(PROVIDER_ENV_VAR.lmstudio).toBe('LM_API_KEY')
     expect(PROVIDER_ENV_VAR_ALIASES.lmstudio).toContain('LMSTUDIO_API_KEY')
   })
 
-  it('[py:test_issue1500_lmstudio_env_var_alignment.py::test_onboarding_supported_provider_setup_uses_lm_api_key] the onboarding setup for LM Studio names the canonical variable and its alias', () => {
+  it('the onboarding setup for LM Studio names the canonical variable and its alias', () => {
     expect(SUPPORTED_PROVIDER_SETUPS.lmstudio?.env_var).toBe('LM_API_KEY')
     expect(SUPPORTED_PROVIDER_SETUPS.lmstudio?.env_var_aliases).toContain('LMSTUDIO_API_KEY')
   })
 
-  it('[py:test_issue1420_lmstudio_provider_env_var.py::test_lmstudio_has_key_true_when_env_var_set] LM_API_KEY marks LM Studio as keyed and configurable', async () => {
+  it('LM_API_KEY marks LM Studio as keyed and configurable', async () => {
     setConfig({ model: { provider: 'lmstudio', default: 'gpt-4o-mini' } })
     setEnv({ LM_API_KEY: 'lm-studio' })
     const lm = await provider('lmstudio')
@@ -68,7 +67,7 @@ describe('provider key detection', () => {
     expect(['env_file', 'env_var']).toContain(lm?.key_source)
   })
 
-  it('[py:test_issue1420_lmstudio_provider_env_var.py::test_lmstudio_does_not_collide_with_other_providers] only LM_API_KEY keys LM Studio and no other API-key provider', async () => {
+  it('only LM_API_KEY keys LM Studio and no other API-key provider', async () => {
     clearEnv()
     setEnv({ LM_API_KEY: 'lm-studio' })
     const all = await providers()
@@ -76,19 +75,19 @@ describe('provider key detection', () => {
     for (const p of all) if (p.id !== 'lmstudio' && !p.is_oauth && !OAUTH_PROVIDERS.has(p.id) && !p.id.startsWith('custom:')) expect(p.has_key, p.id).toBe(false)
   })
 
-  it('[py:test_issue1420_lmstudio_provider_env_var.py::test_lmstudio_has_key_true_via_config_yaml] providers.lmstudio.api_key in config.yaml counts as a key from config', async () => {
+  it('providers.lmstudio.api_key in config.yaml counts as a key from config', async () => {
     clearEnv()
     setConfig({ model: { provider: 'lmstudio' }, providers: { lmstudio: { api_key: 'cfg-key' } } })
     expect(await provider('lmstudio')).toMatchObject({ has_key: true, key_source: 'config_yaml' })
   })
 
-  it('[py:test_issue1420_lmstudio_provider_env_var.py::test_lmstudio_has_key_false_when_no_signal] LM Studio stays listed and configurable without any key', async () => {
+  it('LM Studio stays listed and configurable without any key', async () => {
     clearEnv()
     setConfig({})
     expect(await provider('lmstudio')).toMatchObject({ has_key: false, configurable: true })
   })
 
-  it('[py:test_issue1500_lmstudio_env_var_alignment.py::test_legacy_lmstudio_env_var_still_detected] the legacy LMSTUDIO_API_KEY alone still counts', async () => {
+  it('the legacy LMSTUDIO_API_KEY alone still counts', async () => {
     clearEnv()
     setEnv({ LMSTUDIO_API_KEY: 'legacy' })
     const lm = await provider('lmstudio')
@@ -96,13 +95,13 @@ describe('provider key detection', () => {
     expect(['env_file', 'env_var']).toContain(lm?.key_source)
   })
 
-  it('[py:test_issue1500_lmstudio_env_var_alignment.py::test_canonical_takes_precedence_over_legacy] both variables set keeps LM Studio keyed and configurable', async () => {
+  it('both variables set keeps LM Studio keyed and configurable', async () => {
     clearEnv()
     setEnv({ LM_API_KEY: 'canonical', LMSTUDIO_API_KEY: 'legacy' })
     expect(await provider('lmstudio')).toMatchObject({ has_key: true, configurable: true })
   })
 
-  it('[py:test_issue1500_lmstudio_env_var_alignment.py::test_provider_api_key_present_reads_aliases] key presence honours the alias but not unrelated keys', async () => {
+  it('key presence honours the alias but not unrelated keys', async () => {
     clearEnv()
     setEnv({ OPENAI_API_KEY: 'sk-openai-1234' })
     expect((await provider('lmstudio'))?.has_key).toBe(false)
@@ -110,21 +109,21 @@ describe('provider key detection', () => {
     expect((await provider('lmstudio'))?.has_key).toBe(true)
   })
 
-  it('[py:test_issue2025_xiaomi_env_key.py::test_xiaomi_provider_settings_detects_env_key] XIAOMI_API_KEY keys the Xiaomi provider', async () => {
+  it('XIAOMI_API_KEY keys the Xiaomi provider', async () => {
     expect(PROVIDER_ENV_VAR.xiaomi).toBe('XIAOMI_API_KEY')
     clearEnv()
     setEnv({ XIAOMI_API_KEY: 'xm-1234' })
     expect((await provider('xiaomi'))?.has_key).toBe(true)
   })
 
-  it('[py:test_issue2025_xiaomi_env_key.py::test_onboarding_lists_xiaomi_api_key_help] the onboarding setup for Xiaomi names the variable, base URL, and MiMo model', () => {
+  it('the onboarding setup for Xiaomi names the variable, base URL, and MiMo model', () => {
     const setup = SUPPORTED_PROVIDER_SETUPS.xiaomi
     expect(setup?.env_var).toBe('XIAOMI_API_KEY')
     expect(setup?.default_base_url).toBe('https://api.xiaomimimo.com/v1')
     expect(JSON.stringify(setup)).toContain('mimo-v2.5-pro')
   })
 
-  it('[py:test_issue2025_xiaomi_env_key.py::test_xiaomi_api_key_env_var_detects_model_group] a Xiaomi key surfaces a Xiaomi model group in /api/models', async () => {
+  it('a Xiaomi key surfaces a Xiaomi model group in /api/models', async () => {
     clearEnv()
     setEnv({ XIAOMI_API_KEY: 'xm-1234' })
     // Python forced the Agent import to fail so the static table answered; here the live id lookup fails the same way.
@@ -136,7 +135,7 @@ describe('provider key detection', () => {
     expect(xiaomi?.models.some((m) => m.id.includes('mimo-v2.5-pro'))).toBe(true)
   })
 
-  it('[py:test_issue_neuralwatt_env_key.py::test_neuralwatt_env_var_mapping] NeuralWatt reads NEURALWATT_API_KEY', () => {
+  it('NeuralWatt reads NEURALWATT_API_KEY', () => {
     expect(PROVIDER_ENV_VAR.neuralwatt).toBe('NEURALWATT_API_KEY')
   })
 
@@ -146,18 +145,18 @@ describe('provider key detection', () => {
     return catalog.providerHasKey(pid, await s.deps.agentConfig.read(s.state), loadEnvFile(join(s.state, '.env')), s.state)
   }
 
-  it('[py:test_issue_neuralwatt_env_key.py::test_neuralwatt_provider_has_key_when_env_set] NEURALWATT_API_KEY keys the provider', async () => {
+  it('NEURALWATT_API_KEY keys the provider', async () => {
     clearEnv()
     setEnv({ NEURALWATT_API_KEY: 'nw-1234' })
     expect(await hasKey('neuralwatt')).toBe(true)
   })
 
-  it('[py:test_issue_neuralwatt_env_key.py::test_neuralwatt_provider_has_key_false_without_env] without the variable NeuralWatt has no key', async () => {
+  it('without the variable NeuralWatt has no key', async () => {
     clearEnv()
     expect(await hasKey('neuralwatt')).toBe(false)
   })
 
-  it('[py:test_issue_neuralwatt_env_key.py::test_neuralwatt_model_group_appears_with_models_in_config] a NeuralWatt key plus configured models yields a model group', async () => {
+  it('a NeuralWatt key plus configured models yields a model group', async () => {
     clearEnv()
     setEnv({ NEURALWATT_API_KEY: 'nw-1234' })
     setConfig({ providers: { neuralwatt: { models: ['nw-alpha', 'nw-beta'] } } })
@@ -183,13 +182,13 @@ describe('password env var lock', () => {
   afterAll(() => s.close())
   const headers = (): Record<string, string> => ({ cookie, origin: s.base, host: s.base.replace('http://', ''), 'X-Hermes-CSRF-Token': csrf })
 
-  it('[py:test_issue1560_password_env_var_lock.py::test_post_settings_refuses_set_password_when_env_var_shadowed] setting a password while HERMES_WEBUI_PASSWORD is set answers 409 naming the variable', async () => {
+  it('setting a password while HERMES_WEBUI_PASSWORD is set answers 409 naming the variable', async () => {
     const res = await post(s, '/api/settings', { _set_password: 'another-secret' }, headers())
     expect(res.status).toBe(409)
     expect(String((await json(res)).error)).toContain('HERMES_WEBUI_PASSWORD')
   })
 
-  it('[py:test_issue1560_password_env_var_lock.py::test_post_settings_refuses_clear_password_when_env_var_shadowed] clearing the password is refused the same way', async () => {
+  it('clearing the password is refused the same way', async () => {
     const res = await post(s, '/api/settings', { _clear_password: true }, headers())
     expect(res.status).toBe(409)
     expect(String((await json(res)).error)).toContain('HERMES_WEBUI_PASSWORD')

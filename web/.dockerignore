@@ -24,4 +24,3 @@ sidecar/tests/
 .codex-tmp/
 build/
 dist/
-api/_version.py

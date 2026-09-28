@@ -2,9 +2,7 @@
 
 Talaria Web is a TypeScript server on Node 24 plus a React frontend. Everything that needs Hermes Agent
 Python code runs in one Web-owned sidecar process. This document describes the shipped layout; the
-subsystem contracts it references live in [docs/CONTRACTS.md](docs/CONTRACTS.md), and the row-by-row
-inventory of what moved where during the rewrite is
-[docs/architecture/backend-parity-matrix.md](docs/architecture/backend-parity-matrix.md).
+subsystem contracts it references live in [docs/CONTRACTS.md](docs/CONTRACTS.md).
 
 ## 1. Components
 
@@ -67,8 +65,7 @@ hand-written endpoint schemas.
 | CLI | `cli/launcher.ts`, `ctl.ts`, `dotenv.ts`, `supervise.ts`, `bin/*` | `talaria-web` bootstrap, `ctl`, `.env` precedence, the serve supervisor, `talaria-web-mcp` |
 
 State ownership: WebUI-owned files (sessions, settings, auth records, journals, shares, drafts, relay
-config, extension state) are written only by the server, in the same formats the Python backend used, so
-an existing installation upgrades without migration. Agent-owned files (`config.yaml`, `.env`, profiles,
+config, extension state) are written only by the server. Agent-owned files (`config.yaml`, `.env`, profiles,
 skills, memories) are read and written as file formats by the server; `state.db` writes and the
 `delete_cli_session` transaction go through the sidecar.
 

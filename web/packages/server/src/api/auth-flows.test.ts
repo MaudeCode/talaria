@@ -1,15 +1,3 @@
-/*
- * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
- *   web/tests/test_issue1909_csrf_token.py
- *   web/tests/test_issue2572_csrf_diagnostics.py
- *   web/tests/test_issue2929_settings_max_tokens.py
- *   web/tests/test_issue3510_elevenlabs_tts.py
- *   web/tests/test_issue3582_tts_content_length.py
- *   web/tests/test_issue3825_oidc_auth.py
- *   web/tests/test_issue4982_openai_tts.py
- *   web/tests/test_issue5578_login_next_nesting.py
- * (issues #1909, #2572, #2929, #3510, #3582, #3825, #4982, #5578) is covered here; see docs/architecture/regression-port-ledger.md.
- */
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign as cryptoSign } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -81,13 +69,13 @@ describe('OIDC browser login', () => {
   })
   afterAll(() => s.close())
 
-  it('reports OIDC as the enabled auth method and gates the API [py:test_issue3825_oidc_auth.py::test_auth_status_reports_oidc_capability_without_regressing_passkey_fields]', async () => {
+  it('reports OIDC as the enabled auth method and gates the API', async () => {
     const status = await json(await s.get('/api/auth/status'))
     expect(status).toMatchObject({ auth_enabled: true, oidc_enabled: true, oidc_native_handoff_enabled: true, logged_in: false, password_auth_enabled: false })
     expect((await s.get('/api/sessions')).status).toBe(401)
   })
 
-  it('start → provider → callback establishes a typed oidc session [py:test_issue3825_oidc_auth.py::test_oidc_start_redirects_with_pkce_state_and_nonce] [py:test_issue3825_oidc_auth.py::test_oidc_callback_exchanges_code_and_sets_existing_session_cookie] [py:test_issue3825_oidc_auth.py::test_auth_status_reports_bound_oidc_identity]', async () => {
+  it('start → provider → callback establishes a typed oidc session', async () => {
     const start = await s.get('/api/auth/oidc/start?next=%2Fsettings')
     expect(start.status).toBe(302)
     expect(start.headers.get('cache-control')).toBe('no-store')
@@ -107,7 +95,7 @@ describe('OIDC browser login', () => {
     }
   })
 
-  it('grants owner authority only from the owner allowlist and revokes it when the policy fingerprint changes [py:test_issue3825_oidc_auth.py::test_oidc_session_is_revoked_when_profile_mapping_changes]', async () => {
+  it('grants owner authority only from the owner allowlist and revokes it when the policy fingerprint changes', async () => {
     idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-2', email: 'own@example.com', groups: ['admins', 'owners'], exp: now() + 300, nonce })
     const start = await s.get('/api/auth/oidc/start')
     const { state, code } = providerCode(start.headers.get('location') ?? '')
@@ -154,7 +142,7 @@ describe('OIDC browser login', () => {
     }
   })
 
-  it('rejects identities outside the allowlist, bad state, and provider errors [py:test_issue3825_oidc_auth.py::test_oidc_callback_rejects_invalid_state_without_setting_session_cookie] [py:test_issue3825_oidc_auth.py::test_oidc_callback_rejects_allowlist_failure_without_setting_session_cookie]', async () => {
+  it('rejects identities outside the allowlist, bad state, and provider errors', async () => {
     idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-3', groups: ['guests'], exp: now() + 300, nonce })
     const start = await s.get('/api/auth/oidc/start')
     const { state, code } = providerCode(start.headers.get('location') ?? '')
@@ -396,7 +384,7 @@ describe('auth helpers', () => {
     expect(decoded.get(-2)).toEqual(Buffer.from('ab'))
     expect(decoded.get('s')).toBe('x')
   })
-  it('safeNextPath and validatedRequestHost mirror the Python guards [py:test_issue5578_login_next_nesting.py::test_preserves_real_session_path] [py:test_issue5578_login_next_nesting.py::test_preserves_root_and_plain_paths] [py:test_issue5578_login_next_nesting.py::test_still_rejects_open_redirect_classics]', () => {
+  it('safeNextPath and validatedRequestHost mirror the Python guards', () => {
     expect(safeNextPath('/x')).toBe('/x')
     expect(safeNextPath('//evil')).toBe('/')
     expect(safeNextPath('/a b')).toBe('/')
@@ -416,7 +404,7 @@ describe('auth helpers', () => {
   })
 })
 
-describe('OIDC profile binding (TAL-245 ports)', () => {
+describe('OIDC profile binding', () => {
   let s: TestServer
   let idp: Idp
   const now = () => Date.now() / 1000
@@ -435,7 +423,7 @@ describe('OIDC profile binding (TAL-245 ports)', () => {
     return s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
   }
 
-  it('[py:test_issue3825_oidc_auth.py::test_oidc_callback_binds_identity_to_profile] a mapped identity gets a session bound to its profile and a signed profile cookie', async () => {
+  it('a mapped identity gets a session bound to its profile and a signed profile cookie', async () => {
     const cb = await callback()
     expect(cb.status).toBe(302)
     const cookies = cb.headers.getSetCookie()
@@ -445,7 +433,7 @@ describe('OIDC profile binding (TAL-245 ports)', () => {
     expect(await json(await s.get('/api/auth/status', { headers: { cookie: session } }))).toMatchObject({ logged_in: true, auth_type: 'oidc', bound_profile: 'work' })
   })
 
-  it('[py:test_issue3825_oidc_auth.py::test_bound_oidc_session_rehydrates_missing_profile_cookie] a request carrying only the bound session cookie re-issues the profile cookie', async () => {
+  it('a request carrying only the bound session cookie re-issues the profile cookie', async () => {
     const cb = await callback()
     const session = cb.headers.getSetCookie().find((c) => c.startsWith('hermes_session='))?.split(';')[0] ?? ''
     const res = await s.get('/api/bootstrap', { headers: { cookie: session } })
@@ -454,14 +442,14 @@ describe('OIDC profile binding (TAL-245 ports)', () => {
     expect(((await json(res)).profile as Json).name).toBe('work')
   })
 
-  it('[py:test_issue3825_oidc_auth.py::test_oidc_profile_mapping_fails_closed_for_unmapped_identity] an identity outside the map is refused', async () => {
+  it('an identity outside the map is refused', async () => {
     idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-9', email: 'nobody@example.com', groups: ['admins'], exp: now() + 300, iat: now(), nonce })
     const cb = await callback()
     expect(cb.status).toBe(403)
     expect(await cb.text()).toContain('not assigned to a profile')
   })
 
-  it('[py:test_issue3825_oidc_auth.py::test_oidc_profile_mapping_rejects_missing_profile] a map target whose home does not exist is a configuration error', async () => {
+  it('a map target whose home does not exist is a configuration error', async () => {
     idp.claimsFor = (nonce) => ({ iss: ISSUER, aud: 'web-client', sub: 'user-8', email: 'ghost@example.com', groups: ['admins'], exp: now() + 300, iat: now(), nonce })
     const cb = await callback()
     expect(cb.status).toBeGreaterThanOrEqual(400)
@@ -470,7 +458,7 @@ describe('OIDC profile binding (TAL-245 ports)', () => {
 })
 
 describe('OIDC enablement', () => {
-  it('[py:test_issue3825_oidc_auth.py::test_oidc_enablement_requires_explicit_allowlist] issuer and client id alone do not enable OIDC', async () => {
+  it('issuer and client id alone do not enable OIDC', async () => {
     const s = await bootTestServer({ env: { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client' } })
     try {
       expect(await json(await s.get('/api/auth/status'))).toMatchObject({ oidc_enabled: false })

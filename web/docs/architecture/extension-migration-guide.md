@@ -1,8 +1,8 @@
 # Migrating an extension to protocol v1
 
-HWEB-100 removed injected scripts and stylesheets, `window.hermesExt`,
+Talaria Web has no injected scripts or stylesheets, `window.hermesExt`,
 `window.registerHermesSkin`, `window.registerHermesTtsEngine`, session-open
-handlers, and the dashboard-plugin IIFE loader. This guide maps each legacy
+handlers, or the dashboard-plugin IIFE loader. This guide maps each legacy
 integration to the sandboxed protocol described in
 [`extension-protocol-v1.md`](extension-protocol-v1.md).
 

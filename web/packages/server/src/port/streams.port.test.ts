@@ -1,7 +1,5 @@
 /**
- * One-to-one ports of the Python chat-stream, cancel, journal, projection,
- * and persistence regression cases (TAL-245). Markers `[py:<file>::<case>]`
- * are verified by scripts/check-regression-port.py.
+ * Chat-stream, cancel, journal, projection, and persistence regressions.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -38,7 +36,7 @@ describe('run journal deletion', () => {
   afterAll(() => s.close())
   const write = (sid: string, run: string): void => { const w = s.deps.journal.writer(sid, run); w.appendSseEvent('token', { text: 'x' }); w.close() }
 
-  it('[py:test_issue3802_delete_session_journals.py::test_delete_run_journal_removes_session_directory] deleting a session journal removes its directory and its events', () => {
+  it('deleting a session journal removes its directory and its events', () => {
     write('sess-a', 'run-a1')
     expect(existsSync(join(s.deps.journal.root(), 'sess-a'))).toBe(true)
     expect(s.deps.journal.deleteSession('sess-a')).toBe(true)
@@ -46,20 +44,20 @@ describe('run journal deletion', () => {
     expect(s.deps.journal.readRunEvents('sess-a', 'run-a1')).toEqual([])
   })
 
-  it('[py:test_issue3802_delete_session_journals.py::test_delete_run_journal_leaves_other_sessions_intact] other sessions keep their journals', () => {
+  it('other sessions keep their journals', () => {
     write('sess-b', 'run-b1')
     write('sess-c', 'run-c1')
     expect(s.deps.journal.deleteSession('sess-b')).toBe(true)
     expect(existsSync(join(s.deps.journal.root(), 'sess-c'))).toBe(true)
   })
 
-  it('[py:test_issue3802_delete_session_journals.py::test_delete_run_journal_noop_on_missing_or_invalid] missing, traversal, and empty ids are refused', () => {
+  it('missing, traversal, and empty ids are refused', () => {
     expect(s.deps.journal.deleteSession('never-existed')).toBe(false)
     expect(s.deps.journal.deleteSession('../sess-c')).toBe(false)
     expect(s.deps.journal.deleteSession('')).toBe(false)
   })
 
-  it('[py:test_issue3802_delete_session_journals.py::test_delete_journals_reject_dot_traversal_ids] dot ids are refused and legitimate journals survive', () => {
+  it('dot ids are refused and legitimate journals survive', () => {
     expect(s.deps.journal.deleteSession('.')).toBe(false)
     expect(s.deps.journal.deleteSession('..')).toBe(false)
     expect(existsSync(join(s.deps.journal.root(), 'sess-c'))).toBe(true)
@@ -76,38 +74,38 @@ describe('run journal deletion', () => {
 describe('public projections strip internal replay fields', () => {
   const message = { role: 'assistant', content: { text: 'visible', api_content: 'nested stays' }, api_content: 'provider only', _state_db_row_id: 7, _db_row_id: 8, state_db_row_id: 9 }
 
-  it('[py:test_issue6751_api_content_agent_replay.py::test_issue6751_public_message_projection_strips_internal_replay_fields] redaction strips api_content and row-id aliases from messages', () => {
+  it('redaction strips api_content and row-id aliases from messages', () => {
     const out = redactSessionData({ session_id: 'x', messages: [message] }, false)
     const m = (out.messages as Json[])[0]!
     expect(m).not.toHaveProperty('api_content')
     for (const k of ['_state_db_row_id', '_db_row_id', 'state_db_row_id']) expect(m).not.toHaveProperty(k)
   })
 
-  it('[py:test_issue6751_api_content_agent_replay.py::test_issue6751_public_session_projection_strips_context_aliases] the aliases are stripped from context_messages and the runtime journal snapshot too', () => {
+  it('the aliases are stripped from context_messages and the runtime journal snapshot too', () => {
     const out = redactSessionData({ session_id: 'x', messages: [message], context_messages: [message], runtime_journal_snapshot: { messages: [message] } }, false)
     expect((out.context_messages as Json[])[0]).not.toHaveProperty('api_content')
     expect(((out.runtime_journal_snapshot as Json).messages as Json[])[0]).not.toHaveProperty('_state_db_row_id')
   })
 
-  it('[py:test_issue6751_api_content_agent_replay.py::test_issue6751_public_projection_preserves_non_message_alias_keys] alias-named keys inside message content survive while session tool_calls are scrubbed', () => {
+  it('alias-named keys inside message content survive while session tool_calls are scrubbed', () => {
     const out = redactSessionData({ session_id: 'x', messages: [message], tool_calls: [{ name: 't', api_content: 'gone', _state_db_row_id: 1 }] }, false)
     expect(((out.messages as Json[])[0]!.content as Json).api_content).toBe('nested stays')
     expect((out.tool_calls as Json[])[0]).not.toHaveProperty('api_content')
   })
 
-  it('[py:test_issue6751_api_content_agent_replay.py::test_issue6751_schema_scrubber_preserves_tool_argument_business_payload] function arguments and args payloads are opaque to the scrubber', () => {
+  it('function arguments and args payloads are opaque to the scrubber', () => {
     const args = JSON.stringify({ api_content: 'business', messages: [{ api_content: 'still business' }] })
     const out = stripPublicInternalFields({ messages: [{ role: 'assistant', content: '', tool_calls: [{ id: 'c', type: 'function', function: { name: 'f', arguments: args } }] }], runtime_journal_snapshot: { messages: [{ role: 'tool', args: { messages: [{ api_content: 'kept' }] } }] } }) as Json
     expect(((((out.messages as Json[])[0]!.tool_calls as Json[])[0]!.function as Json).arguments)).toBe(args)
   })
 
-  it('[py:test_issue6757_redaction_and_runner_sse_fixes.py::test_redact_session_data_preserves_credential_shaped_workspace_path] workspace paths stay verbatim while api_content is stripped', () => {
+  it('workspace paths stay verbatim while api_content is stripped', () => {
     const out = redactSessionData({ session_id: 'x', workspace: '/home/u/sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz0123-project', messages: [message] }, true)
     expect(out.workspace).toContain('sk-ant-api03-')
     expect((out.messages as Json[])[0]).not.toHaveProperty('api_content')
   })
 
-  it('[py:test_issue6757_redaction_and_runner_sse_fixes.py::test_redact_session_data_still_strips_api_content_from_messages] redaction strips the aliases from messages and context while keeping visible content', () => {
+  it('redaction strips the aliases from messages and context while keeping visible content', () => {
     const out = redactSessionData({ session_id: 'x', messages: [{ ...message, content: 'visible' }], context_messages: [{ ...message, content: 'ctx' }] }, true)
     expect((out.messages as Json[])[0]).toMatchObject({ content: 'visible' })
     expect((out.messages as Json[])[0]).not.toHaveProperty('api_content')
@@ -121,7 +119,7 @@ describe('session persistence and streaming flags', () => {
   beforeAll(async () => { s = await bootTestServer() })
   afterAll(() => s.close())
 
-  it('[py:test_issue765_streaming_persistence.py::test_save_writes_json_file] save writes the session JSON with its id and messages', async () => {
+  it('save writes the session JSON with its id and messages', async () => {
     const sid = await newSession(s)
     const session = s.deps.sessionStore.get(sid)
     session.messages = [{ role: 'user', content: 'persist me' }]
@@ -131,7 +129,7 @@ describe('session persistence and streaming flags', () => {
     expect((raw.messages as Json[])[0]).toMatchObject({ role: 'user', content: 'persist me' })
   })
 
-  it('[py:test_issue765_streaming_persistence.py::test_save_without_skip_index_creates_index] a default save creates the sidebar index containing the id', async () => {
+  it('a default save creates the sidebar index containing the id', async () => {
     const sid = await newSession(s)
     const session = s.deps.sessionStore.get(sid)
     session.messages = [{ role: 'user', content: 'indexed' }]
@@ -139,7 +137,7 @@ describe('session persistence and streaming flags', () => {
     expect(readFileSync(join(s.state, 'sessions', '_index.json'), 'utf8')).toContain(sid)
   })
 
-  it('[py:test_issue765_streaming_persistence.py::test_pending_message_survives_simulated_restart] pending prompt, start time, and stream id survive a reload from disk', async () => {
+  it('pending prompt, start time, and stream id survive a reload from disk', async () => {
     const sid = await newSession(s)
     const session = s.deps.sessionStore.get(sid)
     session.pending_user_message = 'still pending'
@@ -151,7 +149,7 @@ describe('session persistence and streaming flags', () => {
     expect(reloaded).toMatchObject({ pending_user_message: 'still pending', pending_started_at: 1234.5, active_stream_id: 'stream-restart' })
   })
 
-  it('[py:test_issue856_session_streaming_state.py::test_all_sessions_marks_indexed_and_in_memory_streaming_sessions] live stream ids mark both indexed and in-memory sessions as streaming', async () => {
+  it('live stream ids mark both indexed and in-memory sessions as streaming', async () => {
     const indexed = await newSession(s)
     const inMemory = await newSession(s)
     for (const [sid, stream] of [[indexed, 'live-1'], [inMemory, 'live-2']] as const) {
@@ -169,7 +167,7 @@ describe('session persistence and streaming flags', () => {
     s.deps.registry.liveIds.delete('live-2')
   })
 
-  it('[py:test_issue856_session_streaming_state.py::test_all_sessions_marks_streaming_false_when_stream_is_not_active] a stale stream id is not streaming until the registry holds it', async () => {
+  it('a stale stream id is not streaming until the registry holds it', async () => {
     const sid = await newSession(s)
     const session = s.deps.sessionStore.get(sid)
     session.messages = [{ role: 'user', content: 'hi' }]
@@ -182,7 +180,7 @@ describe('session persistence and streaming flags', () => {
     expect(allSessions(s.deps.sessionStore).find((r) => r.session_id === sid)?.is_streaming).toBe(false)
   })
 
-  it('[py:test_issue856_session_streaming_state.py::test_all_sessions_does_not_report_streaming_after_restart_without_active_registry] a persisted stream id does not resurrect streaming after a restart', async () => {
+  it('a persisted stream id does not resurrect streaming after a restart', async () => {
     const sid = await newSession(s)
     const session = s.deps.sessionStore.get(sid)
     session.messages = [{ role: 'user', content: 'hi' }]
@@ -194,7 +192,7 @@ describe('session persistence and streaming flags', () => {
     expect(row?.is_streaming).toBe(false)
   })
 
-  it('[py:test_issue2157_sessions_list_stale_stream_state.py::test_sessions_list_reconciles_stale_stream_state_before_serializing] the HTTP list repairs a stale stream id before serialising', async () => {
+  it('the HTTP list repairs a stale stream id before serialising', async () => {
     const sid = await newSession(s)
     const session = s.deps.sessionStore.get(sid)
     session.messages = [{ role: 'user', content: 'hi' }]
@@ -204,7 +202,7 @@ describe('session persistence and streaming flags', () => {
     expect(rows.find((r) => r.session_id === sid)).toMatchObject({ active_stream_id: null, is_streaming: false })
   })
 
-  it('[py:test_issue5532_session_clear_state_db_replay.py::test_session_clear_persists_empty_context_and_blocks_state_db_replay] clear persists empty transcript, context, and tool calls with a clear generation', async () => {
+  it('clear persists empty transcript, context, and tool calls with a clear generation', async () => {
     const sid = await newSession(s)
     const session = s.deps.sessionStore.get(sid)
     session.messages = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'yo' }]
@@ -253,7 +251,7 @@ describe('chat streams, cancel, and error settlement', () => {
     return { streamId, frames: out }
   }
 
-  it('[py:test_issue_1584_multitab_sse.py::test_same_stream_in_two_tabs_receives_identical_token_sequence] two subscribers to one stream receive the identical token sequence', async () => {
+  it('two subscribers to one stream receive the identical token sequence', async () => {
     const sid = await newSession(s)
     let release: () => void = () => undefined
     sidecar.respond('chat.start', (params, emit) => new Promise((resolve) => {
@@ -270,7 +268,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(tokens(b)).toEqual(tokens(a))
   })
 
-  it('[py:test_issue4948_local_stale_approval.py::test_stale_id_while_different_approval_live_still_blocked] a stale approval id while another approval is live answers ok:false and leaves it pending', async () => {
+  it('a stale approval id while another approval is live answers ok:false and leaves it pending', async () => {
     const sid = await newSession(s)
     sidecar.respond('approval.respond', () => ({ ok: true, resolved: 1, choice: 'once' }))
     sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
@@ -289,7 +287,7 @@ describe('chat streams, cancel, and error settlement', () => {
     await frames(streamId, (f) => f.event === 'cancel')
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_cancel_with_reasoning_only_preserves_reasoning] cancel after reasoning only persists a partial carrying the reasoning', async () => {
+  it('cancel after reasoning only persists a partial carrying the reasoning', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'reasoning', data: { text: 'deep thought' } }])
     await cancelTurn(sid)
@@ -298,14 +296,14 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(String(partial?.reasoning)).toContain('deep thought')
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_reasoning_only_creates_partial_message] reasoning with empty text still yields a partial message', async () => {
+  it('reasoning with empty text still yields a partial message', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'reasoning', data: { text: 'just reasoning' } }])
     await cancelTurn(sid)
     expect((await messagesOf(s, sid)).some((m) => m._partial)).toBe(true)
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_cancel_with_reasoning_and_partial_tokens_preserves_both] reasoning and visible tokens both survive on the partial', async () => {
+  it('reasoning and visible tokens both survive on the partial', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'reasoning', data: { text: 'why' } }, { event: 'token', data: { text: 'visible part' } }])
     await cancelTurn(sid)
@@ -314,7 +312,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(String(partial?.reasoning)).toContain('why')
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_cancel_with_tool_calls_preserves_tools] live tool calls survive on the partial', async () => {
+  it('live tool calls survive on the partial', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'tool', data: { event_type: 'tool.started', name: 'terminal', preview: null, args: { command: 'ls' }, tid: 'call-1' } }, { event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'a b', args: { command: 'ls' }, tid: 'call-1', is_error: false } }])
     await cancelTurn(sid)
@@ -323,14 +321,14 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(JSON.stringify(partial)).toContain('terminal')
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_tools_only_creates_partial_message] tools with no text still yield a partial', async () => {
+  it('tools with no text still yield a partial', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', preview: null, args: { path: 'x' }, tid: 'call-2' } }])
     await cancelTurn(sid)
     expect((await messagesOf(s, sid)).some((m) => m._partial)).toBe(true)
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_cancel_with_tools_and_text_preserves_both] tools plus partial text both survive', async () => {
+  it('tools plus partial text both survive', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'tool', data: { event_type: 'tool.started', name: 'read_file', preview: null, args: { path: 'x' }, tid: 'call-3' } }, { event: 'token', data: { text: 'after tool' } }])
     await cancelTurn(sid)
@@ -339,7 +337,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(JSON.stringify(partial)).toContain('read_file')
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_no_reasoning_no_tools_no_partial] cancel with nothing streamed leaves one cancel marker and no partial', async () => {
+  it('cancel with nothing streamed leaves one cancel marker and no partial', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'status', data: { text: 'starting' } }])
     await cancelTurn(sid)
@@ -352,7 +350,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(stops[0]?._anchor_activity_scene).toMatchObject({ terminal_state: 'cancelled', final_answer: '' })
   })
 
-  it('[py:test_issue893_cancel_preserves_partial.py::test_cancel_stream_with_no_partial_text_still_saves_cancel_marker] an empty partial buffer saves only the cancel marker', async () => {
+  it('an empty partial buffer saves only the cancel marker', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'status', data: { text: 'starting' } }])
     await cancelTurn(sid)
@@ -361,7 +359,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)).toMatchObject({ _error: true })
   })
 
-  it('[py:test_issue893_cancel_preserves_partial.py::test_cancel_stream_strips_thinking_markup_from_partial] a closed think block is stripped from the persisted partial', async () => {
+  it('a closed think block is stripped from the persisted partial', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'token', data: { text: '<think>hidden</think>shown' } }])
     await cancelTurn(sid)
@@ -370,7 +368,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(String(partial?.content)).not.toContain('hidden')
   })
 
-  it('[py:test_issue893_cancel_preserves_partial.py::test_cancel_stream_strips_unclosed_think_tag] an unclosed think block leaves nothing visible, so no partial is saved', async () => {
+  it('an unclosed think block leaves nothing visible, so no partial is saved', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'token', data: { text: '<think>still thinking' } }])
     await cancelTurn(sid)
@@ -379,7 +377,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)).toMatchObject({ _error: true })
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_cancel_event_payload_includes_partial_session_snapshot] the terminal cancel frame carries the settled session snapshot', async () => {
+  it('the terminal cancel frame carries the settled session snapshot', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'reasoning', data: { text: 'r' } }, { event: 'token', data: { text: 'partial text' } }])
     const { frames: out } = await cancelTurn(sid)
@@ -390,7 +388,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(String(last?.reasoning)).toContain('r')
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_cancel_stream_does_not_duplicate_existing_worker_cancel_marker] a second cancel does not add a second marker', async () => {
+  it('a second cancel does not add a second marker', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'token', data: { text: 'p' } }])
     const { streamId } = await cancelTurn(sid)
@@ -400,7 +398,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.findIndex((m) => m._partial)).toBeLessThan(messages.findIndex((m) => m._error))
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_late_cancel_after_worker_finalized_does_not_add_cancel_marker] cancelling a finished turn changes nothing', async () => {
+  it('cancelling a finished turn changes nothing', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'finished' }]))
     const streamId = await start(sid, 'quick')
@@ -439,7 +437,7 @@ describe('chat streams, cancel, and error settlement', () => {
     { event: 'tool_complete', data: { event_type: 'tool.completed', name: 'terminal', preview: 'worker-2 CrashLoopBackOff', args: { command: 'kubectl get pods' }, tid: 'call-rollout', is_error: false } },
   ]
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_cancel_preserves_agent_tool_history_for_next_turn_and_browser] Stop keeps the completed tool work and unfinished prose in the next model request (TAL-364)', async () => {
+  it('Stop keeps the completed tool work and unfinished prose in the next model request (TAL-364)', async () => {
     const sid = await newSession(s)
     const earlier = await earlierTurn(sid)
     let prompt = ''
@@ -459,7 +457,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(JSON.stringify(history)).not.toMatch(/Task cancelled|Stopped|private chain of thought/)
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_cancel_keeps_unfinished_streamed_prose_in_next_turn_context] Stop during streamed prose keeps the prompt and the prose when the Agent has no checkpoint yet (TAL-364)', async () => {
+  it('Stop during streamed prose keeps the prompt and the prose when the Agent has no checkpoint yet (TAL-364)', async () => {
     const sid = await newSession(s)
     const earlier = await earlierTurn(sid)
     sidecar.respond('chat.interrupt', () => ({ ok: true }))
@@ -476,7 +474,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect((await nextHistory(sid)).slice(0, history.length)).toEqual(history)
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_detached_cancel_preserves_cached_agents_canonical_history] Stop with no stream subscriber still checkpoints the Agent\'s canonical work (TAL-364)', async () => {
+  it('Stop with no stream subscriber still checkpoints the Agent\'s canonical work (TAL-364)', async () => {
     const sid = await newSession(s)
     const earlier = await earlierTurn(sid)
     let prompt = ''
@@ -775,7 +773,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect((await messagesOf(s, sid)).filter((m) => m._error)).toHaveLength(1)
   })
 
-  it('[py:test_issue1298_cancel_and_activity.py::test_cancel_no_pending_user_message_does_nothing_extra] cancel without a pending prompt adds no phantom user turn', async () => {
+  it('cancel without a pending prompt adds no phantom user turn', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'token', data: { text: 'p' } }])
     await cancelTurn(sid, 'only prompt')
@@ -784,7 +782,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(users[0]).toMatchObject({ content: 'only prompt' })
   })
 
-  it('[py:test_issue1298_cancel_and_activity.py::test_cancel_does_not_double_append_when_streaming_thread_already_merged] a user turn the worker already merged is not appended twice on cancel', async () => {
+  it('a user turn the worker already merged is not appended twice on cancel', async () => {
     const sid = await newSession(s)
     const session = s.deps.sessionStore.get(sid)
     session.messages = [{ role: 'user', content: 'merged already', timestamp: Date.now() / 1000 + 5 }]
@@ -794,7 +792,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect((await messagesOf(s, sid)).filter((m) => m.role === 'user' && m.content === 'merged already')).toHaveLength(1)
   })
 
-  it('[py:test_issue1298_cancel_and_activity.py::test_cancel_synthesizes_when_prior_turn_content_is_substring_of_pending] an older substring turn does not suppress the new user turn', async () => {
+  it('an older substring turn does not suppress the new user turn', async () => {
     const sid = await newSession(s)
     const session = s.deps.sessionStore.get(sid)
     session.messages = [{ role: 'user', content: 'ok', timestamp: 1 }, { role: 'assistant', content: 'sure', timestamp: 2 }]
@@ -804,7 +802,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect((await messagesOf(s, sid)).filter((m) => m.role === 'user')).toHaveLength(2)
   })
 
-  it('[py:test_issue1298_cancel_and_activity.py::test_cancel_synthesized_user_message_carries_attachments] the synthesized user turn carries the pending attachments', async () => {
+  it('the synthesized user turn carries the pending attachments', async () => {
     const sid = await newSession(s)
     cancellable([{ event: 'token', data: { text: 'p' } }])
     sidecar.respond('chat.interrupt', () => ({ ok: true }))
@@ -818,7 +816,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(JSON.stringify(user?.attachments)).toContain('notes.txt')
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_stream_error_materializes_pending_user_turn_before_clearing_runtime_state] a failed start materialises the pending prompt with its timestamp before the error row', async () => {
+  it('a failed start materialises the pending prompt with its timestamp before the error row', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', () => { throw new SidecarError('boom', { condition: 'sidecar_error' }) })
     const streamId = await start(sid, 'will fail')
@@ -830,7 +828,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect((await detail(s, sid)).active_stream_id).toBeNull()
   })
 
-  it('[py:test_issue1361_cancel_data_loss.py::test_stale_stream_cleanup_materializes_pending_turn_before_clearing_state] loading a session with a dead stream repairs it: user turn plus an error row', async () => {
+  it('loading a session with a dead stream repairs it: user turn plus an error row', async () => {
     const sid = await newSession(s)
     const session = s.deps.sessionStore.get(sid)
     session.active_stream_id = 'dead-stream'
@@ -869,7 +867,7 @@ describe('chat streams, cancel, and error settlement', () => {
     return { frames: out, apperror: out.find((f) => f.event === 'apperror')?.data as Json | undefined, messages: await messagesOf(s, sid) }
   }
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_auth_401_after_partial_preserves_partial_then_error] a 401 after streamed text keeps the partial before the error row', async () => {
+  it('a 401 after streamed text keeps the partial before the error row', async () => {
     const sid = await newSession(s)
     failing('401 authentication_error: invalid api key', { partial: 'Partial auth text' })
     const { frames: out, apperror, messages } = await settle(sid)
@@ -881,7 +879,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(partialIdx).toBeLessThan(errorIdx)
   })
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_auth_401_seeded_multi_turn_partial_persists_error_turn] with a prior turn the earlier answer, the partial, the user row, and the error all persist', async () => {
+  it('with a prior turn the earlier answer, the partial, the user row, and the error all persist', async () => {
     const sid = await seeded()
     failing('401 authentication_error', { partial: 'partial two' })
     const { frames: out, apperror, messages } = await settle(sid, 'second question')
@@ -893,7 +891,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)).toMatchObject({ _error: true })
   })
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_auth_401_seeded_replayed_assistant_does_not_satisfy_current_turn] a replayed prior answer next to a 401 does not count as this turn', async () => {
+  it('a replayed prior answer next to a 401 does not count as this turn', async () => {
     const sid = await seeded()
     failing('401 authentication_error', { replay: 'earlier answer' })
     const { frames: out, apperror, messages } = await settle(sid, 'new question')
@@ -903,7 +901,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)).toMatchObject({ _error: true })
   })
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_captured_terminal_http_400_beats_structured_final_answer] a captured non-retryable HTTP 400 wins over a structured final answer', async () => {
+  it('a captured non-retryable HTTP 400 wins over a structured final answer', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params, emit) => {
       emit({ event: 'status', data: { kind: 'terminal_error', message: 'Non-retryable error (HTTP 400): invalid model format or no credentials' } })
@@ -916,7 +914,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)).toMatchObject({ _error: true })
   })
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_success_repeated_assistant_text_stays_successful_current_turn] an answer identical to the previous one is still a success', async () => {
+  it('an answer identical to the previous one is still a success', async () => {
     const sid = await seeded()
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'earlier answer' }]))
     const { frames: out, apperror, messages } = await settle(sid, 'again?')
@@ -926,7 +924,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.some((m) => m._error)).toBe(false)
   })
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_success_repeated_assistant_text_ignores_empty_error_field] the same success with error null', async () => {
+  it('the same success with error null', async () => {
     const sid = await seeded()
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'earlier answer' }], { error: null }))
     const { frames: out, apperror, messages } = await settle(sid, 'again')
@@ -935,7 +933,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.some((m) => m._error)).toBe(false)
   })
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_live_settlement_empty_hint_does_not_append_empty_emphasis] a hard failure persists exactly the error text with no empty emphasis', async () => {
+  it('a hard failure persists exactly the error text with no empty emphasis', async () => {
     const sid = await newSession(s)
     failing('synthetic hard failure')
     const { apperror, messages } = await settle(sid)
@@ -944,7 +942,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)?.content).toBe('**Error:** synthetic hard failure')
   })
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_completed_assistant_answer_with_stale_partial_flag_settles_done] a completed answer flagged partial still settles as done', async () => {
+  it('a completed answer flagged partial still settles as done', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'complete answer' }], { result_status: 'partial' }))
     const { frames: out, apperror, messages } = await settle(sid)
@@ -953,7 +951,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)).toMatchObject({ content: 'complete answer' })
   })
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_stale_partial_with_unfinished_tool_call_still_reports_no_response] an unfinished tool call with no answer is no_response', async () => {
+  it('an unfinished tool call with no answer is no_response', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'x', arguments: '{}' } }] }], { result_status: 'partial', final_response: '', token_sent: false }))
     const { frames: out, apperror, messages } = await settle(sid)
@@ -962,7 +960,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)).toMatchObject({ _error: true })
   })
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_stale_partial_repeated_prompt_replay_still_reports_no_response] a partial that only replays the prompt is no_response', async () => {
+  it('a partial that only replays the prompt is no_response', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params, emit) => { emit({ event: 'token', data: { text: 'echo' } }); return completed([{ role: 'user', content: str(params.user_message) }], { result_status: 'partial', final_response: '', token_sent: false }) })
     const { frames: out, apperror, messages } = await settle(sid)
@@ -971,7 +969,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)).toMatchObject({ _error: true })
   })
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_hard_failure_with_completed_answer_still_reports_no_response] a failed status with an empty error and a complete answer is no_response', async () => {
+  it('a failed status with an empty error and a complete answer is no_response', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'looks complete' }], { status: 'error', error: '', token_sent: false }))
     const { frames: out, apperror, messages } = await settle(sid)
@@ -980,7 +978,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)).toMatchObject({ _error: true })
   })
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_non_auth_partial_delivery_persists_error_turn] a silent failure after streamed text keeps the partial and appends the error row', async () => {
+  it('a silent failure after streamed text keeps the partial and appends the error row', async () => {
     const sid = await newSession(s)
     failing('', { partial: 'Partial text before failure' })
     const { apperror, messages } = await settle(sid)
@@ -989,7 +987,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)).toMatchObject({ _error: true })
   })
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_non_auth_seeded_multi_turn_partial_persists_error_turn] with a seeded prior turn the earlier answer and the partial both survive', async () => {
+  it('with a seeded prior turn the earlier answer and the partial both survive', async () => {
     const sid = await seeded()
     failing('', { partial: 'partial later' })
     const { frames: out, apperror, messages } = await settle(sid, 'next')
@@ -1000,7 +998,7 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)).toMatchObject({ _error: true })
   })
 
-  it('[py:test_issue5121_provider_auth_terminal_error.py::test_non_auth_seeded_replayed_assistant_does_not_satisfy_current_turn] a replayed prior answer with an empty error is no_response', async () => {
+  it('a replayed prior answer with an empty error is no_response', async () => {
     const sid = await seeded()
     failing('', { replay: 'earlier answer' })
     const { frames: out, apperror, messages } = await settle(sid, 'fresh')

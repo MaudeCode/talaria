@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Shared, TLS-aware /health probe used by every shell launcher (start.sh,
-# ctl.sh, the WSL autostart helper) and the Docker HEALTHCHECK.
+# TLS-aware /health probe used by the Docker HEALTHCHECK.
 #
-# The WebUI serves HTTPS when both HERMES_WEBUI_TLS_CERT and
-# HERMES_WEBUI_TLS_KEY are set (see api/config.py:TLS_ENABLED). The probe must
+# The server serves HTTPS when both HERMES_WEBUI_TLS_CERT and
+# HERMES_WEBUI_TLS_KEY are set (packages/server/src/config.ts). The probe must
 # mirror that scheme, otherwise an http:// probe against an https listener (or
 # vice-versa) reports a healthy server as down.
 #
@@ -11,10 +10,9 @@
 #   1. Verified HTTPS.
 #   2. Self-signed fallback: if verification fails, retry without verification
 #      and print a one-line "self-signed certificate" warning (once).
-#   3. Plain HTTP: server.py intentionally falls back to serving HTTP when the
-#      cert/key are present but unloadable (tests/test_tls_support.py::
-#      test_tls_startup_failure_fallback_to_http). Probe HTTP last so that
-#      contract is honored instead of polling HTTPS forever.
+#   3. Plain HTTP: the server falls back to serving HTTP when the cert/key are
+#      present but unloadable (packages/server/src/server.ts). Probe HTTP last
+#      so that fallback is found instead of polling HTTPS forever.
 #
 # HERMES_WEBUI_TLS_INSECURE_PROBE=1 is an explicit opt-in that skips verified
 # HTTPS and goes straight to the unverified attempt. By contract this is
@@ -25,7 +23,7 @@
 #   bash scripts/lib/health_probe.sh <host> <port> [path] [max_time]
 # On success it prints the response body to stdout and exits 0.
 #
-# Kept bash 3.2 compatible under `set -u` (ctl.sh sources this).
+# Kept bash 3.2 compatible under `set -u`.
 
 # Guard so the self-signed warning is printed at most once per process even
 # when the probe is retried in a wait loop.
@@ -105,7 +103,7 @@ _hermes_webui_http_get() {
 #
 # Side effect: sets the global _HERMES_WEBUI_PROBE_SCHEME to the scheme that
 # actually answered ("https" or "http"). Callers that print a ready/already-up
-# URL should prefer this over the configured scheme, because server.py falls
+# URL should prefer this over the configured scheme, because the server falls
 # back to plain HTTP when the cert/key are unloadable — so the configured
 # scheme can be https:// while the live server speaks http://.
 hermes_webui_probe_health() {
@@ -150,7 +148,7 @@ hermes_webui_probe_health() {
     fi
   fi
 
-  # 3) server.py may have fallen back to plain HTTP (cert/key unloadable).
+  # 3) The server may have fallen back to plain HTTP (cert/key unloadable).
   if body="$(_hermes_webui_http_get "${http_url}" "${max_time}" "" "${direct}")"; then
     _HERMES_WEBUI_PROBE_SCHEME="http"
     printf '%s' "${body}"

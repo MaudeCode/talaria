@@ -11,7 +11,6 @@ on:
       - 'web/**/*.markdown'
       - 'web/**/*.rst'
       - 'web/docs/**'
-      - 'web/CHANGELOG*'
       - 'web/**/README*'
   push:
     branches: [main]
@@ -20,7 +19,6 @@ on:
       - 'web/**/*.markdown'
       - 'web/**/*.rst'
       - 'web/docs/**'
-      - 'web/CHANGELOG*'
       - 'web/**/README*'
 
 # Read-only; no secrets needed. Fork PRs already get a read-only token, but pin it.

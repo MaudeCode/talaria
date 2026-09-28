@@ -1,8 +1,5 @@
 /**
- * One-to-one ports of the Python worktree regression cases (TAL-245). Each
- * `it` title carries `[py:<file>::<case>]`; the ledger checker
- * (`scripts/check-regression-port.py`) requires the marker for every case the
- * ledger marks `asserted`.
+ * Worktree session regressions.
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -62,7 +59,7 @@ describe('worktree-backed sessions', () => {
   afterAll(() => s.close())
   const setConfig = (cfg: Json): void => { configs.set(s.state, cfg); s.deps.agentConfig.invalidate() }
 
-  it('[py:test_issue1955_worktree_sessions.py::test_session_new_route_creates_worktree_backed_session] session/new with worktree:true answers the worktree as the workspace', async () => {
+  it('session/new with worktree:true answers the worktree as the workspace', async () => {
     const res = await post(s, '/api/session/new', { workspace: ws, worktree: true, profile: 'default' })
     expect(res.status).toBe(200)
     const session = (await json(res)).session as Json
@@ -71,7 +68,7 @@ describe('worktree-backed sessions', () => {
     expect(session.worktree_branch).toBe('hermes/wt')
   })
 
-  it('[py:test_issue1955_worktree_sessions.py::test_worktree_metadata_round_trips_through_session_file] the four worktree keys persist in the session file and reload through the API', async () => {
+  it('the four worktree keys persist in the session file and reload through the API', async () => {
     const created = (await json(await post(s, '/api/session/new', { workspace: ws, worktree: true }))).session as Json
     const sid = String(created.session_id)
     const raw = JSON.parse(readFileSync(join(s.state, 'sessions', `${sid}.json`), 'utf8')) as Json
@@ -81,14 +78,14 @@ describe('worktree-backed sessions', () => {
     expect(detail).toMatchObject({ worktree_path: created.worktree_path, worktree_branch: 'hermes/wt', worktree_repo_root: ws })
   })
 
-  it('[py:test_issue1955_worktree_sessions.py::test_new_session_with_worktree_info_persists_immediately] a worktree session is written at creation, not on first message', async () => {
+  it('a worktree session is written at creation, not on first message', async () => {
     const created = (await json(await post(s, '/api/session/new', { workspace: ws, worktree: true }))).session as Json
     expect(existsSync(join(s.state, 'sessions', `${String(created.session_id)}.json`))).toBe(true)
     const plain = (await json(await post(s, '/api/session/new', { workspace: ws }))).session as Json
     expect(existsSync(join(s.state, 'sessions', `${String(plain.session_id)}.json`))).toBe(false)
   })
 
-  it('[py:test_issue1955_worktree_sessions.py::test_empty_worktree_session_remains_visible_in_sidebar] the sidebar index keeps a zero-message worktree session', async () => {
+  it('the sidebar index keeps a zero-message worktree session', async () => {
     const created = (await json(await post(s, '/api/session/new', { workspace: ws, worktree: true }))).session as Json
     const plain = (await json(await post(s, '/api/session/new', { workspace: ws }))).session as Json
     // Python `all_sessions()`: the empty-draft filter exempts worktree-backed sessions (the HTTP list additionally applies visible_only in both backends).
@@ -97,7 +94,7 @@ describe('worktree-backed sessions', () => {
     expect(ids).not.toContain(plain.session_id)
   })
 
-  it('[py:test_issue1955_worktree_sessions.py::test_session_new_worktree_fallback_workspace_is_resolved] worktree:true without a workspace falls back to the last workspace', async () => {
+  it('worktree:true without a workspace falls back to the last workspace', async () => {
     await post(s, '/api/session/new', { workspace: ws })
     const res = await post(s, '/api/session/new', { worktree: true })
     expect(res.status).toBe(200)
@@ -106,14 +103,14 @@ describe('worktree-backed sessions', () => {
     expect(session.workspace).toBe(join(ws, '.worktrees', 'hermes-wt'))
   })
 
-  it('[py:test_issue6022_worktree_config_default.py::test_absent_key_with_config_default_off_creates_plain_session] no worktree key and config off is a plain session without worktree_skipped', async () => {
+  it('no worktree key and config off is a plain session without worktree_skipped', async () => {
     setConfig({})
     const body = await json(await post(s, '/api/session/new', { workspace: ws, profile: 'default' }))
     expect((body.session as Json).worktree_path ?? null).toBeNull()
     expect('worktree_skipped' in body).toBe(false)
   })
 
-  it('[py:test_issue6022_worktree_config_default.py::test_absent_key_with_config_default_on_creates_worktree_session] config worktree:true creates a worktree when the key is absent', async () => {
+  it('config worktree:true creates a worktree when the key is absent', async () => {
     setConfig({ worktree: true })
     const session = (await json(await post(s, '/api/session/new', { workspace: ws, profile: 'default' }))).session as Json
     expect(session.worktree_path).toBe(join(ws, '.worktrees', 'hermes-wt'))
@@ -121,7 +118,7 @@ describe('worktree-backed sessions', () => {
     expect(session.worktree_branch).toBe('hermes/wt')
   })
 
-  it('[py:test_issue6022_worktree_config_default.py::test_explicit_false_beats_config_default_true] worktree:false wins over the config default', async () => {
+  it('worktree:false wins over the config default', async () => {
     setConfig({ worktree: true })
     const before = sidecar.calls.filter((c) => c.method === 'worktree.create').length
     const session = (await json(await post(s, '/api/session/new', { workspace: ws, profile: 'default', worktree: false }))).session as Json
@@ -129,19 +126,19 @@ describe('worktree-backed sessions', () => {
     expect(sidecar.calls.filter((c) => c.method === 'worktree.create').length).toBe(before)
   })
 
-  it('[py:test_issue6022_worktree_config_default.py::test_explicit_null_beats_config_default_true] sending worktree:null is explicit and never falls through to the config', async () => {
+  it('sending worktree:null is explicit and never falls through to the config', async () => {
     setConfig({ worktree: true })
     const session = (await json(await post(s, '/api/session/new', { workspace: ws, profile: 'default', worktree: null }))).session as Json
     expect(session.worktree_path ?? null).toBeNull()
   })
 
-  it('[py:test_issue6022_worktree_config_default.py::test_explicit_true_with_config_default_off_creates_worktree] worktree:true wins over a config default of off', async () => {
+  it('worktree:true wins over a config default of off', async () => {
     setConfig({ worktree: false })
     const session = (await json(await post(s, '/api/session/new', { workspace: ws, profile: 'default', worktree: true }))).session as Json
     expect(session.worktree_path).toBe(join(ws, '.worktrees', 'hermes-wt'))
   })
 
-  it('[py:test_issue6022_worktree_config_default.py::test_config_default_on_non_git_workspace_falls_back_to_plain_session] the config default degrades to a plain session with worktree_skipped outside git', async () => {
+  it('the config default degrades to a plain session with worktree_skipped outside git', async () => {
     setConfig({ worktree: true })
     const plainDir = join(ws, 'plain-ws')
     mkdirSync(plainDir, { recursive: true })
@@ -150,7 +147,7 @@ describe('worktree-backed sessions', () => {
     expect(String(body.worktree_skipped)).toContain('not inside a git repository')
   })
 
-  it('[py:test_issue6022_worktree_config_default.py::test_explicit_true_on_non_git_workspace_still_hard_400] an explicit worktree request outside git is a hard 400', async () => {
+  it('an explicit worktree request outside git is a hard 400', async () => {
     setConfig({})
     const plainDir = join(ws, 'plain-ws2')
     mkdirSync(plainDir, { recursive: true })
@@ -159,7 +156,7 @@ describe('worktree-backed sessions', () => {
     expect(String((await json(res)).error)).toContain('not inside a git repository')
   })
 
-  it('[py:test_issue6022_worktree_config_default.py::test_remote_profile_config_default_skips_host_worktree] a remote-terminal profile skips the host worktree and reports worktree_skipped', async () => {
+  it('a remote-terminal profile skips the host worktree and reports worktree_skipped', async () => {
     setConfig({ worktree: true, terminal: { backend: 'remote', cwd: ws } })
     const res = await post(s, '/api/session/new', { workspace: ws, profile: 'default' })
     const body = await json(res)
@@ -169,7 +166,7 @@ describe('worktree-backed sessions', () => {
     setConfig({})
   })
 
-  it('[py:test_issue6022_worktree_config_default.py::test_remote_profile_explicit_worktree_fails_closed] an explicit worktree on a remote-terminal profile answers 400 remote_workspace_unsupported', async () => {
+  it('an explicit worktree on a remote-terminal profile answers 400 remote_workspace_unsupported', async () => {
     setConfig({ terminal: { backend: 'remote', cwd: ws } })
     const before = sidecar.calls.filter((c) => c.method === 'worktree.create').length
     const res = await post(s, '/api/session/new', { workspace: ws, profile: 'default', worktree: true })
@@ -179,7 +176,7 @@ describe('worktree-backed sessions', () => {
     setConfig({})
   })
 
-  it('[py:test_issue2057_worktree_lifecycle.py::test_delete_worktree_session_reports_retained_worktree_without_cleanup] deleting a worktree session keeps the worktree and reports it', async () => {
+  it('deleting a worktree session keeps the worktree and reports it', async () => {
     setConfig({})
     const created = (await json(await post(s, '/api/session/new', { workspace: ws, worktree: true }))).session as Json
     const sid = String(created.session_id)
@@ -191,7 +188,7 @@ describe('worktree-backed sessions', () => {
     expect(existsSync(String(created.worktree_path))).toBe(true)
   })
 
-  it('[py:test_issue2057_worktree_lifecycle.py::test_archive_worktree_session_reports_retained_worktree_without_cleanup] archiving a worktree session keeps the worktree and reports it', async () => {
+  it('archiving a worktree session keeps the worktree and reports it', async () => {
     const created = (await json(await post(s, '/api/session/new', { workspace: ws, worktree: true }))).session as Json
     const res = await post(s, '/api/session/archive', { session_id: created.session_id, archived: true })
     expect(res.status).toBe(200)
@@ -201,7 +198,7 @@ describe('worktree-backed sessions', () => {
     expect(existsSync(String(created.worktree_path))).toBe(true)
   })
 
-  it('[py:test_issue2057_worktree_lifecycle.py::test_delete_refuses_live_worker_before_mutating_sidecar_or_index] delete answers 409 while a run is live and leaves the files alone', async () => {
+  it('delete answers 409 while a run is live and leaves the files alone', async () => {
     const created = (await json(await post(s, '/api/session/new', { workspace: ws, worktree: true }))).session as Json
     const sid = String(created.session_id)
     s.deps.registry.registerActiveRun({ stream_id: 'live-run-1', session_id: sid, phase: 'cancelling', started_at: Date.now() / 1000 } as never)
@@ -217,7 +214,7 @@ describe('worktree-backed sessions', () => {
     expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
   })
 
-  it('[py:test_issue2057_worktree_lifecycle.py::test_delete_sidecar_unlink_failure_is_non_destructive_and_non_success] an unlink failure answers 500 and prunes nothing', async () => {
+  it('an unlink failure answers 500 and prunes nothing', async () => {
     const created = (await json(await post(s, '/api/session/new', { workspace: ws, worktree: true }))).session as Json
     const sid = String(created.session_id)
     const dir = join(s.state, 'sessions')
@@ -255,11 +252,11 @@ describe('worktree status against a real git worktree', () => {
   afterAll(() => s.close())
   const status = async (): Promise<Json> => (await json(await s.get(`/api/session/worktree/status?session_id=${sid}`))).status as Json
 
-  it('[py:test_issue2057_worktree_status.py::test_worktree_status_reports_clean_existing_worktree] a clean listed worktree with an upstream reports zero ahead/behind', async () => {
+  it('a clean listed worktree with an upstream reports zero ahead/behind', async () => {
     expect(await status()).toMatchObject({ path: worktree, exists: true, listed: true, dirty: false, untracked_count: 0, ahead_behind: { available: true, ahead: 0, behind: 0 }, locked_by_stream: false, locked_by_terminal: false })
   })
 
-  it('[py:test_issue2057_worktree_status.py::test_worktree_status_reports_dirty_untracked_and_ahead] edits, untracked files, and local commits show as dirty, untracked, and ahead', async () => {
+  it('edits, untracked files, and local commits show as dirty, untracked, and ahead', async () => {
     writeFileSync(join(worktree, 'README.md'), 'changed\n')
     writeFileSync(join(worktree, 'new.txt'), 'new\n')
     expect(await status()).toMatchObject({ dirty: true, untracked_count: 1, ahead_behind: { available: true, ahead: 0 } })
@@ -267,7 +264,7 @@ describe('worktree status against a real git worktree', () => {
     expect(await status()).toMatchObject({ dirty: true, untracked_count: 1, ahead_behind: { available: true, ahead: 1, behind: 0 } })
   })
 
-  it('[py:test_issue2057_worktree_status.py::test_worktree_status_uses_live_stream_registry] locked_by_stream follows the live stream registry', async () => {
+  it('locked_by_stream follows the live stream registry', async () => {
     const session = s.deps.sessionStore.get(sid)
     session.active_stream_id = 'stream-live'
     s.deps.sessionStore.save(session)

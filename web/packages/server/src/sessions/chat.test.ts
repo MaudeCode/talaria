@@ -1,44 +1,3 @@
-/*
- * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
- *   web/tests/test_issue1217_transcript_compaction.py
- *   web/tests/test_issue1913_workspace_prefix_sentinel.py
- *   web/tests/test_issue2028_compression_anchor_helpers.py
- *   web/tests/test_issue2592_partial_dedupe.py
- *   web/tests/test_issue2914_truncation_watermark.py
- *   web/tests/test_issue3293_title_language_drift.py
- *   web/tests/test_issue3405_profile_provider_resolution.py
- *   web/tests/test_issue3455_think_block_extraction.py
- *   web/tests/test_issue3468_duplicate_after_compression.py
- *   web/tests/test_issue3548_sessiondb_self_heal.py
- *   web/tests/test_issue3583_orphaned_tool_calls.py
- *   web/tests/test_issue3599_inline_thinking_extraction.py
- *   web/tests/test_issue3800_compaction_summary_length.py
- *   web/tests/test_issue3802_delete_session_journals.py
- *   web/tests/test_issue3831_watermark_clear.py
- *   web/tests/test_issue3875_recovery_anchor_dedup.py
- *   web/tests/test_issue3929_error_preserves_partial.py
- *   web/tests/test_issue3929_partial_work_recovery.py
- *   web/tests/test_issue4283_recovered_context_replay.py
- *   web/tests/test_issue4685_post_compression_context_metering.py
- *   web/tests/test_issue4928_tool_arg_content_cap.py
- *   web/tests/test_issue5121_provider_auth_terminal_error.py
- *   web/tests/test_issue5139_gateway_approval_offline_notice.py
- *   web/tests/test_issue5141_terminal_failure_transcript_evaluator.py
- *   web/tests/test_issue5270_cli_webui_continuity.py
- *   web/tests/test_issue5339_restart_stale_user_dedup.py
- *   web/tests/test_issue5871_redaction_awareness_prompt.py
- *   web/tests/test_issue607.py
- *   web/tests/test_issue6611_regeneration_authority.py
- *   web/tests/test_issue6722_provider_qualified_model_leak.py
- *   web/tests/test_issue6751_api_content_agent_replay.py
- *   web/tests/test_issue6935_persist_user_timestamp_kwarg.py
- *   web/tests/test_issue7396_key_cmd_cache.py
- *   web/tests/test_issue7543_title_first_exchange.py
- *   web/tests/test_issue_progress_echo_dedupe.py
- *   web/tests/test_issue_raw_pending_approval_id.py
- *   web/tests/test_issues_853_857.py
- * (issues #607, #1217, #1913, #2028, #2592, #2914, #3293, #3405, #3455, #3468, #3548, #3583, #3599, #3800, #3802, #3831, #3875, #3929, #4283, #4685, #4928, #5121, #5139, #5141, #5270, #5339, #5871, #6611, #6722, #6751, #6935, #7396, #7543) is covered here; see docs/architecture/regression-port-ledger.md.
- */
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { CANCEL_UNWIND_CEILING_S } from './streams.js'
 import { join } from 'node:path'
@@ -458,7 +417,7 @@ describe('chat turns through the sidecar', () => {
     relayPhase.mockRestore()
   })
 
-  it('relays approval and clarify prompts and resolves them through the sidecar [py:test_issue4771_local_approval_regression.py::test_local_mirrored_approval_resolves_not_409] [py:test_issue4948_local_stale_approval.py::test_stale_card_click_clears_not_dead_ends] [py:test_issue4948_local_stale_approval.py::test_fresh_local_approval_still_resolves] [py:test_issue5345_clarify_toast_and_interrupt_provenance.py::test_clarify_pending_never_404s]', async () => {
+  it('relays approval and clarify prompts and resolves them through the sidecar', async () => {
     const sid = await newSession(s)
     let releaseApproval: (choice: string) => void = () => undefined
     let releaseClarify: (answer: string) => void = () => undefined
@@ -515,7 +474,7 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'deny', approval_id: 'old' }))).toEqual({ ok: true, choice: 'deny', stale_cleared: true })
   })
 
-  it('cancels a running turn, persists the partial, and refuses a second concurrent start [py:test_issue1298_cancel_and_activity.py::test_cancel_synthesizes_user_message_when_messages_empty] [py:test_issue893_cancel_preserves_partial.py::test_cancel_stream_saves_partial_text_to_session]', async () => {
+  it('cancels a running turn, persists the partial, and refuses a second concurrent start', async () => {
     const sid = await newSession(s)
     let interrupted = false
     sidecar.respond('chat.interrupt', () => { interrupted = true; return { ok: true } })
@@ -623,7 +582,7 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
-  it('turns sidecar failures into apperror frames and a persisted error bubble [py:test_issue5121_provider_auth_terminal_error.py::test_auth_401_without_delivery_persists_error_turn] [py:test_issue5121_provider_auth_terminal_error.py::test_non_auth_silent_failure_still_uses_no_response]', async () => {
+  it('turns sidecar failures into apperror frames and a persisted error bubble', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', () => { throw new SidecarError('No credentials found for provider openai', { condition: 'credential_missing' }) })
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'broken' }))

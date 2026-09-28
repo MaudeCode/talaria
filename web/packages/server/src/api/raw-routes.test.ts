@@ -1,69 +1,3 @@
-/*
- * Regression ports (TAL-245): behaviour previously guarded by the Python cases in
- *   web/tests/test_issue1013_handoff_dock.py
- *   web/tests/test_issue1217_transcript_compaction.py
- *   web/tests/test_issue1436_context_indicator_load_path.py
- *   web/tests/test_issue1896_context_length_fallback_args.py
- *   web/tests/test_issue1909_csp_report_only.py
- *   web/tests/test_issue1909_csrf_token.py
- *   web/tests/test_issue1955_worktree_sessions.py
- *   web/tests/test_issue2157_sessions_list_stale_stream_state.py
- *   web/tests/test_issue2472_fork_from_here_messaging.py
- *   web/tests/test_issue2508_session_pin_cap.py
- *   web/tests/test_issue2572_csrf_diagnostics.py
- *   web/tests/test_issue2698_isolated_hermes_home.py
- *   web/tests/test_issue2841_show_cron_sessions_toggle.py
- *   web/tests/test_issue2914_truncation_watermark.py
- *   web/tests/test_issue2929_settings_max_tokens.py
- *   web/tests/test_issue3019_cron_project_sessions.py
- *   web/tests/test_issue3023_safe_session_id_validators.py
- *   web/tests/test_issue3066_disabled_read_profile.py
- *   web/tests/test_issue3238_orphaned_cli_sidecar_prune.py
- *   web/tests/test_issue3402_workspace_tree_move.py
- *   web/tests/test_issue3405_profile_provider_resolution.py
- *   web/tests/test_issue3460_cron_session_unread.py
- *   web/tests/test_issue3510_elevenlabs_tts.py
- *   web/tests/test_issue3582_tts_content_length.py
- *   web/tests/test_issue3717_context_length_provider_overrides.py
- *   web/tests/test_issue3800_compaction_summary_length.py
- *   web/tests/test_issue3825_oidc_auth.py
- *   web/tests/test_issue3831_watermark_clear.py
- *   web/tests/test_issue3947_tasks_cross_profile_visibility.py
- *   web/tests/test_issue3987_imported_session_titles.py
- *   web/tests/test_issue3994_materialize_session.py
- *   web/tests/test_issue4067_import_cli_cross_profile_guard.py
- *   web/tests/test_issue4164_bound_non_git_project_context_walk.py
- *   web/tests/test_issue4385_cron_archive_reappears.py
- *   web/tests/test_issue4490_presession_toolsets.py
- *   web/tests/test_issue4685_post_compression_context_metering.py
- *   web/tests/test_issue4714_claude_code_visibility_toggle.py
- *   web/tests/test_issue4766_sidebar_source_pushdown.py
- *   web/tests/test_issue4775_sidebar_hidden_zero_message_pushdown.py
- *   web/tests/test_issue4836_manual_compression_recovery.py
- *   web/tests/test_issue492_workspace_reorder.py
- *   web/tests/test_issue4982_openai_tts.py
- *   web/tests/test_issue4985_orphaned_webui_zero_message.py
- *   web/tests/test_issue5127_process_wakeup_bare_model.py
- *   web/tests/test_issue5130_cron_profile_snapshot.py
- *   web/tests/test_issue5270_cli_webui_continuity.py
- *   web/tests/test_issue5339_restart_stale_user_dedup.py
- *   web/tests/test_issue538_mcp_management.py
- *   web/tests/test_issue5420_profile_switch_session_new.py
- *   web/tests/test_issue5532_clear_truncation_watermark.py
- *   web/tests/test_issue5532_session_clear_state_db_replay.py
- *   web/tests/test_issue5572_messaging_clear_semantics.py
- *   web/tests/test_issue5578_login_next_nesting.py
- *   web/tests/test_issue5731_session_model_provider_repair.py
- *   web/tests/test_issue6022_worktree_config_default.py
- *   web/tests/test_issue617_cron_profile_selector.py
- *   web/tests/test_issue6498_memory_config_gates.py
- *   web/tests/test_issue6722_provider_qualified_model_leak.py
- *   web/tests/test_issue6751_api_content_agent_replay.py
- *   web/tests/test_issue6757_redaction_and_runner_sse_fixes.py
- *   web/tests/test_issue697_mcp_tool_inventory.py
- *   web/tests/test_issue7426_skill_not_found_listing_truncation.py
- * (issues #492, #538, #617, #697, #1013, #1217, #1436, #1896, #1909, #1955, #2157, #2472, #2508, #2572, #2698, #2841, #2914, #2929, #3019, #3023, #3066, #3238, #3402, #3405, #3460, #3510, #3582, #3717, #3800, #3825, #3831, #3947, #3987, #3994, #4067, #4164, #4385, #4490, #4685, #4714, #4766, #4775, #4836, #4982, #4985, #5127, #5130, #5270, #5339, #5420, #5532, #5572, #5578, #5731, #6022, #6498, #6722, #6751, #6757, #7426) is covered here; see docs/architecture/regression-port-ledger.md.
- */
 import { spawnSync } from 'node:child_process'
 import { readZip } from '../workspace/unzip.js'
 import { folderZipMaxBytes, folderZipMaxFiles } from './raw-routes.js'
@@ -437,7 +371,7 @@ describe('raw byte routes', () => {
     expect((await s.get('/api/rollback/list')).status).toBe(400)
   })
 
-  it('reports worktree status for a worktree-backed session [py:test_issue2057_worktree_status.py::test_worktree_status_handles_missing_path_without_git_mutation] [py:test_issue2057_worktree_status.py::test_worktree_status_endpoint_returns_session_owned_status] [py:test_issue2057_worktree_status.py::test_worktree_status_endpoint_rejects_non_worktree_session]', async () => {
+  it('reports worktree status for a worktree-backed session', async () => {
     const res = await s.get(`/api/session/worktree/status?session_id=${sid}`)
     expect(res.status).toBe(400)
     expect((await json(res)).error).toBe('Session is not worktree-backed')
