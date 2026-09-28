@@ -22,7 +22,7 @@ enough to assert on; a path whose cost is the rendered app is measured in
 
 The UI classes repeat each path under `measure` and together add several
 minutes of relaunching and scrolling, so `.github/workflows/pr-ci.yml` skips
-them on every run through `PERFORMANCE_UI_TEST_CLASSES`.
+them on every run through the skip list in `ci/test_shards.py`.
 `.github/workflows/ui-performance.yml` runs them daily at 09:00 UTC (or on
 dispatch) serially on the Mac and stores the metrics under
 `talaria-ci/performance-metrics/ui-performance/` on the NAS. Their functional

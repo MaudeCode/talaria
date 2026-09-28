@@ -34,8 +34,8 @@ defaults:
 jobs:
   tooling:
     name: Repository Tooling
-    runs-on: ["ghar-set-maudecode"]
-    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -45,9 +45,9 @@ jobs:
           # History without historical blobs; git fetches old file contents on demand (TAL-317).
           filter: blob:none
 
-      - name: Prepare tooling runtime
+      - name: Install zsh for the App script checks
         if: inputs.full
-        run: sudo install -d -o "$(id -u)" -g "$(id -g)" /opt/hostedtoolcache
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh
 
       - name: Set up Ruby
         if: inputs.full

@@ -24,7 +24,9 @@ class TestIOSRunnerTest < Minitest::Test
       encoding: "UTF-8"
     )
 
-    assert_includes(workflow, 'selected["udid"]')
+    # Build, shard suite and live contract test all target the simulator select-ios-simulator chose or created.
+    assert_equal(2, workflow.scan("simulator_id=$(scripts/select-ios-simulator | cut -f1)").length)
+    assert_includes(workflow, "IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     assert_equal(3, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
     refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
   end
@@ -55,40 +57,34 @@ class TestIOSRunnerTest < Minitest::Test
     refute_includes(live_step, "xcrun simctl")
   end
 
-  def test_pr_ci_runs_pr_smoke_without_clones_and_main_ui_with_two_workers
+  def test_pr_ci_shards_run_one_worker_without_clones
     workflow = File.read(
       File.expand_path("../../.github/workflows/pr-ci.yml", __dir__),
       encoding: "UTF-8"
     )
-    scheme = File.read(
-      File.expand_path("../Talaria.xcodeproj/xcshareddata/xcschemes/Talaria.xcscheme", __dir__),
-      encoding: "UTF-8"
-    )
+    shards = File.read(File.expand_path("test_shards.py", __dir__), encoding: "UTF-8")
     ui_tests = File.read(
       File.expand_path("../TalariaUITests/TalariaUITests.swift", __dir__),
       encoding: "UTF-8"
     )
 
-    ui_testable = scheme.scan(/<TestableReference.*?<\/TestableReference>/m).find do |testable|
-      testable.include?('BlueprintName = "TalariaUITests"')
-    end
-
-    assert_includes(workflow, "TEST_WORKER_COUNT: ${{ github.event_name == 'pull_request' && 1 || 2 }}")
-    assert_includes(workflow, "(( TEST_WORKER_COUNT > 1 )) && parallel_testing=YES")
-    assert_includes(workflow, '-parallel-testing-enabled "${parallel_testing}"')
-    assert_includes(ui_testable, 'parallelizable = "YES"')
+    # Every shard owns one simulator and runs one worker on it; the scheme stays parallelizable for local runs.
+    assert_equal(2, workflow.scan("-parallel-testing-enabled NO").length)
+    refute_includes(workflow, "-parallel-testing-enabled YES")
+    assert_includes(workflow, "shards='[0,1,2,3]'")
+    assert_includes(workflow, "shards='[0,1]'")
+    assert_includes(workflow, 'python3 ci/test_shards.py "${options[@]}" > selection.txt')
     assert_equal(26, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
     # CI skips the measurement-only UI classes and the scheduled UI Performance
-    # workflow runs them (TAL-75, TAL-287); the list is one env var in pr-ci.
+    # workflow runs them (TAL-75, TAL-287); the shard script owns the skip list.
     %w[
       SidebarPerformanceUITests
       LaunchPerformanceUITests
       TranscriptPerformanceUITests
       NavigationPerformanceUITests
     ].each do |performance_class|
-      assert_includes(workflow, "TalariaUITests/#{performance_class}")
+      assert_includes(shards, "TalariaUITests/#{performance_class}")
     end
-    assert_includes(workflow, '-skip-testing:${performance_class}')
     assert_includes(workflow, "scripts/report-performance-metrics")
     reporter = File.read(File.expand_path("../scripts/report-performance-metrics", __dir__), encoding: "UTF-8")
     assert_includes(reporter, '"xcresulttool", "get", "test-results", "metrics"')

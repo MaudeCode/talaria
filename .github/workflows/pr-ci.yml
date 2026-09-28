@@ -3,9 +3,10 @@
 # Release metadata always validates; uncertain classification runs every suite.
 # The always-reporting CI Gate is the required check, including skipped jobs.
 #
-# The only repository secrets used are the talaria-ci NAS bucket key for the
-# contract fixture and result objects; PRs from forks have no secrets and fail
-# clearly at the first NAS transfer instead of silently passing.
+# Every job runs on GitHub-hosted runners and uses no repository secrets (TAL-380); handoffs are
+# Actions artifacts. Hosted macOS allows five concurrent jobs, so only Xcode work runs there: one
+# build, then two unit-test shards for a pull request or four full-suite shards for a main push.
+# A manual run with full_ui proves the main-push path on any branch before merge.
 #
 # Builds are signed ad hoc (CODE_SIGN_IDENTITY=-), which needs no certificate,
 # no profile and no secrets, but does embed entitlements. Without them the app
@@ -18,26 +19,31 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      full_ui:
+        description: Run the main-push App suite (build plus four full unit and UI shards).
+        type: boolean
+        default: true
 
 permissions:
   contents: read
-  pull-requests: read
-  # The Mac test job reads the probe job's status and fixture annotation.
-  actions: read
-  checks: read
 
 concurrency:
-  group: pr-ci-${{ github.event.pull_request.number || github.sha }}
+  group: pr-ci-${{ github.event.pull_request.number || format('{0}-{1}', github.event_name, github.sha) }}
   cancel-in-progress: true
 
 defaults:
   run:
     working-directory: app
 
+env:
+  XCODE_VERSION: "27.0"
+
 jobs:
   changes:
     name: Detect changed paths
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       app: ${{ steps.filter.outputs.app }}
@@ -67,6 +73,9 @@ jobs:
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
             python3 scripts/changed-components.py --base="$PUSH_BASE" --head="$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            # A manual run proves the whole pipeline: every suite runs.
+            python3 scripts/changed-components.py >> "$GITHUB_OUTPUT"
           else
             # Event base.sha can predate a merged parent PR. Checkout fetched
             # the current base branch, as release-fragment validation also uses.
@@ -77,7 +86,8 @@ jobs:
     name: App tooling
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app_tooling != 'false') }}
-    runs-on: maude-mac
+    # macOS for shlock and lockf, not Xcode: these tests fake xcrun and xcodebuild.
+    runs-on: macos-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -85,85 +95,59 @@ jobs:
         run: |
           scripts/test-test-ios 20
           scripts/test-ios-simulator-pool
-          python3 scripts/test-validate-upstream-contract
 
-  test:
-    name: Build and Test
+  app-build:
+    name: App build
     # Runs for App changes and for Web/contract changes; Web/contract-only
-    # changes run just the native contract classes. It starts without waiting
-    # for the Linux probe: the one live-fixture test runs last, against the
-    # probe's digest-checked fixture, and a failed probe fails that step.
+    # changes run just the native contract classes in one shard.
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || needs.changes.outputs.contracts != 'false') }}
-    runs-on: maude-mac
-    timeout-minutes: 90
-
+    runs-on: xcode-27
+    timeout-minutes: 45
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+      app_tests: ${{ steps.plan.outputs.app_tests }}
+      ui: ${{ steps.plan.outputs.ui }}
     env:
-      PROJECT_PATH: Talaria.xcodeproj
-      SCHEME: Talaria
-      DERIVED_DATA_PATH: DerivedData
-      RESULT_BUNDLE_PATH: TestResults.xcresult
-      # PRs run the unit tests and launch smoke without simulator clones; main's full UI suite uses two workers.
-      TEST_WORKER_COUNT: ${{ github.event_name == 'pull_request' && 1 || 2 }}
       APP_TESTS_REQUIRED: ${{ needs.changes.result != 'success' || needs.changes.outputs.app != 'false' }}
       # PRs run the unit tests plus one launch smoke test; the full UI suite runs on main pushes (TAL-332).
-      APP_UI_REQUIRED: ${{ github.event_name != 'pull_request' }}
-      CONTRACTS_SELECTED: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
-      LIVE_CONTRACT_TEST: TalariaTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied
-      LIVE_CONTRACT_RESULT_BUNDLE_PATH: LiveContractResults.xcresult
-      CONTRACT_TEST_CLASSES: >-
-        TalariaTests/ContractReadinessTests
-        TalariaTests/SharedContractTests
-        TalariaTests/APIClientAuthAndErrorTests
-        TalariaTests/APIClientSessionListTests
-        TalariaTests/APIClientSessionMutationTests
-        TalariaTests/SSEClientTests
-        TalariaTests/StreamReconnectContractTests
-      # Measurement-only UI classes (TAL-75). They assert no behaviour and add
-      # several minutes of scrolling and relaunching, so CI skips them and the
-      # scheduled ui-performance.yml runs them serially (TAL-287). The unit-level
-      # budgets (replay catch-up, dense Kanban, image preview) are fast and
-      # deterministic, so they stay in the suite.
-      PERFORMANCE_UI_TEST_CLASSES: >-
-        TalariaUITests/SidebarPerformanceUITests
-        TalariaUITests/LaunchPerformanceUITests
-        TalariaUITests/TranscriptPerformanceUITests
-        TalariaUITests/NavigationPerformanceUITests
-
+      APP_UI_REQUIRED: ${{ github.event_name == 'push' || inputs.full_ui == true }}
     steps:
-      - name: Check out
-        uses: actions/checkout@v7
+      - name: Plan the test shards
+        id: plan
+        run: |
+          set -euo pipefail
+          if [[ "${APP_TESTS_REQUIRED}" == "false" ]]; then
+            shards='[0]'
+          elif [[ "${APP_UI_REQUIRED}" == "true" ]]; then
+            shards='[0,1,2,3]'
+          else
+            shards='[0,1]'
+          fi
+          { echo "shards=${shards}"; echo "app_tests=${APP_TESTS_REQUIRED}"; echo "ui=${APP_UI_REQUIRED}"; } >> "$GITHUB_OUTPUT"
 
-      - name: Test CI helpers
-        run: ci/require_successful_main_ci_test.sh
+      - uses: actions/checkout@v7
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - uses: ./.github/actions/setup-xcode
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - name: Restore SwiftPM checkouts
+        uses: actions/cache@v6
+        with:
+          path: app/DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
 
       - name: Select simulator
         id: sim
         run: |
           set -euo pipefail
-          # scripts/select-ios-simulator picks the newest *released* runtime
-          # (docs/ios-simulator-pool.md); within it prefer the pool's phone model.
-          runtime=$(scripts/select-ios-simulator | cut -f2)
-          simulator_id=$(xcrun simctl list devices available --json | RUNTIME="${runtime}" python3 -c '
-          import json, os, sys
-          phones = [
-              device
-              for device in json.load(sys.stdin)["devices"].get(os.environ["RUNTIME"], [])
-              if device.get("isAvailable") and device["name"].startswith("iPhone")
-          ]
-          preferred = "iPhone 17"
-          selected = next((device for device in phones if device["name"] == preferred), phones[0] if phones else None)
-          print(selected["udid"] if selected else "")
-          ')
-          if [[ -z "${simulator_id}" ]]; then
-            echo "No available iPhone simulator found:" >&2
-            xcrun simctl list devices available >&2
-            exit 1
-          fi
-          echo "Using simulator: ${simulator_id} on ${runtime}"
+          # The simulator runtime matching the selected Xcode's SDK, on the model the pool and references use.
+          sdk_version=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          export IOS_SIMULATOR_RUNTIME="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
+          export IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-17
+          simulator_id=$(scripts/select-ios-simulator | cut -f1)
+          echo "Using simulator ${simulator_id} on ${IOS_SIMULATOR_RUNTIME}"
           echo "id=${simulator_id}" >> "$GITHUB_OUTPUT"
 
       - name: Build for testing
@@ -173,10 +157,10 @@ jobs:
           set -euo pipefail
           start_seconds=${SECONDS}
           xcodebuild build-for-testing \
-            -project "${PROJECT_PATH}" \
-            -scheme "${SCHEME}" \
+            -project Talaria.xcodeproj \
+            -scheme Talaria \
             -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
-            -derivedDataPath "${DERIVED_DATA_PATH}" \
+            -derivedDataPath DerivedData \
             -disableAutomaticPackageResolution \
             -showBuildTimingSummary \
             APP_IDENTIFIER_SUFFIX=.xctest \
@@ -185,56 +169,118 @@ jobs:
             CODE_SIGN_IDENTITY=- \
             CODE_SIGN_STYLE=Manual \
             PROVISIONING_PROFILE_SPECIFIER=
-          duration_seconds=$((SECONDS - start_seconds))
-          echo "Build-for-testing duration: ${duration_seconds}s"
-          echo "### PR CI timing" >> "${GITHUB_STEP_SUMMARY}"
-          echo "- Build for testing: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Build for testing: $((SECONDS - start_seconds))s" >> "${GITHUB_STEP_SUMMARY}"
+          # Artifacts drop file modes; a tar keeps the bundles' executables and signatures intact.
+          tar -C DerivedData/Build -cf "${RUNNER_TEMP}/app-build.tar" Products
+
+      - name: Upload the test build
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-build
+          path: ${{ runner.temp }}/app-build.tar
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
+
+  app-test:
+    name: App tests (shard ${{ matrix.shard }})
+    needs: [changes, app-build]
+    if: ${{ !cancelled() && needs.app-build.result == 'success' }}
+    runs-on: xcode-27
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      # Reads this run's job list to wait for the Web contract probe.
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.app-build.outputs.shards) }}
+    env:
+      SHARD: ${{ matrix.shard }}
+      SHARD_COUNT: ${{ strategy.job-total }}
+      APP_TESTS_REQUIRED: ${{ needs.app-build.outputs.app_tests }}
+      APP_UI_REQUIRED: ${{ needs.app-build.outputs.ui }}
+      CONTRACTS_SELECTED: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
+      RESULT_BUNDLE_PATH: TestResults.xcresult
+      LAUNCH_SMOKE_TEST: TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList
+      LIVE_CONTRACT_TEST: TalariaTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied
+      LIVE_CONTRACT_RESULT_BUNDLE_PATH: LiveContractResults.xcresult
+      # Pinned to shard 0, which also runs the live contract test, so one shard proves them all.
+      CONTRACT_TEST_CLASSES: >-
+        TalariaTests/ContractReadinessTests
+        TalariaTests/SharedContractTests
+        TalariaTests/APIClientAuthAndErrorTests
+        TalariaTests/APIClientSessionListTests
+        TalariaTests/APIClientSessionMutationTests
+        TalariaTests/SSEClientTests
+        TalariaTests/StreamReconnectContractTests
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-xcode
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - name: Create and boot simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          sdk_version=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          export IOS_SIMULATOR_RUNTIME="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
+          export IOS_SIMULATOR_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-17
+          simulator_id=$(scripts/select-ios-simulator | cut -f1)
+          # Boots while the build downloads; the test step waits for it to finish booting.
+          xcrun simctl boot "${simulator_id}"
+          echo "Using simulator ${simulator_id} on ${IOS_SIMULATOR_RUNTIME}"
+          echo "id=${simulator_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Download the test build
+        uses: actions/download-artifact@v8
+        with:
+          name: app-build
+          path: ${{ runner.temp }}
+
+      - name: Unpack the build and select this shard's tests
+        run: |
+          set -euo pipefail
+          mkdir -p Build
+          tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
+          if [[ "${APP_TESTS_REQUIRED}" == "false" ]]; then
+            # Web/contract-only change: the fixture-backed native contract classes are the whole selection.
+            for contract_class in ${CONTRACT_TEST_CLASSES}; do echo "-only-testing:${contract_class}"; done > selection.txt
+            echo "-skip-testing:${LIVE_CONTRACT_TEST}" >> selection.txt
+          else
+            options=(--shards "${SHARD_COUNT}" --shard "${SHARD}")
+            # A pull request: unit tests and one launch smoke test; main runs every UI test.
+            [[ "${APP_UI_REQUIRED}" == "true" ]] || options+=(--targets TalariaTests --add "${LAUNCH_SMOKE_TEST}")
+            for contract_class in ${CONTRACT_TEST_CLASSES}; do options+=(--pin "${contract_class}"); done
+            python3 ci/test_shards.py "${options[@]}" > selection.txt
+          fi
+          echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries"
 
       - name: Test without building
         env:
           SIMULATOR_ID: ${{ steps.sim.outputs.id }}
         run: |
           set -euo pipefail
+          xcrun simctl bootstatus "${SIMULATOR_ID}" -b >/dev/null
           start_seconds=${SECONDS}
-          # The fuzz soak class reruns the PR fuzz properties at a far larger
-          # seed budget; the scheduled Fuzz Soak workflow owns it (TAL-85).
-          test_options=("-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests" "-skip-testing:${LIVE_CONTRACT_TEST}")
-          if [[ "${APP_TESTS_REQUIRED}" == "false" ]]; then
-            # Web/contract-only change: the fixture-backed native contract classes are the whole selection.
-            for contract_class in ${CONTRACT_TEST_CLASSES}; do
-              test_options+=("-only-testing:${contract_class}")
-            done
-          elif [[ "${APP_UI_REQUIRED}" == "false" ]]; then
-            # A pull request: unit tests and one launch smoke test; main runs every UI test.
-            test_options+=("-only-testing:TalariaTests" "-only-testing:TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList")
-          fi
-          # The scheduled UI Performance workflow owns the measurement-only classes (TAL-287).
-          for performance_class in ${PERFORMANCE_UI_TEST_CLASSES}; do
-            test_options+=("-skip-testing:${performance_class}")
-          done
-          parallel_testing=NO
-          (( TEST_WORKER_COUNT > 1 )) && parallel_testing=YES
+          selection=()
+          while IFS= read -r option; do selection+=("${option}"); done < selection.txt
+          xctestrun=$(find Build/Products -maxdepth 1 -name '*.xctestrun' | head -n 1)
+          # One worker on the shard's own simulator: no clones.
           xcodebuild test-without-building \
-            -project "${PROJECT_PATH}" \
-            -scheme "${SCHEME}" \
+            -xctestrun "${xctestrun}" \
             -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
             -testLanguage en \
             -testRegion US \
-            -derivedDataPath "${DERIVED_DATA_PATH}" \
             -resultBundlePath "${RESULT_BUNDLE_PATH}" \
-            -disableAutomaticPackageResolution \
             -collect-test-diagnostics never \
-            -parallel-testing-enabled "${parallel_testing}" \
-            -parallel-testing-worker-count "${TEST_WORKER_COUNT}" \
-            "${test_options[@]}" \
-            APP_IDENTIFIER_SUFFIX=.xctest \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGN_STYLE=Manual \
-            PROVISIONING_PROFILE_SPECIFIER=
+            -parallel-testing-enabled NO \
+            "${selection[@]}"
           duration_seconds=$((SECONDS - start_seconds))
-          if [[ "${CONTRACTS_SELECTED}" == "true" ]]; then
+          if [[ "${CONTRACTS_SELECTED}" == "true" && "${SHARD}" == "0" ]]; then
             # Every native contract class must have passed.
             xcrun xcresulttool get test-results tests --path "${RESULT_BUNDLE_PATH}" --compact > contract-results.json
             for contract_class in ${CONTRACT_TEST_CLASSES}; do
@@ -243,27 +289,17 @@ jobs:
               ' contract-results.json >/dev/null || { echo "Native contract class ${contract_class} did not pass" >&2; exit 1; }
             done
           fi
-          echo "Test-without-building duration: ${duration_seconds}s"
-          echo "- Test without building (${TEST_WORKER_COUNT} workers): ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
-          echo "- Performance UI budgets: scheduled UI Performance workflow" >> "${GITHUB_STEP_SUMMARY}"
+          echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Test without building (1 worker): ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Run the live Web contract test against the probe fixture
-        if: env.CONTRACTS_SELECTED == 'true'
+      - name: Wait for the Web contract probe
+        if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
         env:
-          SIMULATOR_ID: ${{ steps.sim.outputs.id }}
           GH_TOKEN: ${{ github.token }}
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-ci
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
-          start_seconds=${SECONDS}
           # Wait for this run's newest probe at or before this attempt. "Re-run failed jobs"
-          # keeps an earlier successful probe and copies its record, without annotations,
-          # into the new attempt, so the annotation (written only by the probe job that ran)
-          # is searched newest-first across the successful probe records.
+          # keeps an earlier successful probe, whose artifact belongs to the whole run.
           deadline=$((SECONDS + 1500))
           while :; do
             # shellcheck disable=SC2016 # jq, not the shell, expands $ENV.
@@ -276,46 +312,39 @@ jobs:
             sleep 15
           done
           [[ "${newest_conclusion}" == "success" ]] || { echo "Web contract probe finished ${newest_conclusion}" >&2; exit 1; }
-          notice=""
-          while read -r _ id status conclusion; do
-            [[ "${status}" == "completed" && "${conclusion}" == "success" ]] || continue
-            notice=$(gh api "repos/${GITHUB_REPOSITORY}/check-runs/${id}/annotations" \
-              --jq '[.[] | select(.title == "contract-fixture") | .message] | if length == 1 then .[0] else "" end')
-            [[ -n "${notice}" ]] && break
-          done <<< "${probes}"
-          [[ "${notice}" =~ ^key=(fixtures/pr-ci/${GITHUB_RUN_ID}/[0-9]+/live-responses\.json)\ sha256=([a-f0-9]{64})$ ]] \
-            || { echo "The probe did not publish exactly one valid fixture annotation" >&2; exit 1; }
-          fixture_key=${BASH_REMATCH[1]}
-          fixture_sha256=${BASH_REMATCH[2]}
-          fixture="$RUNNER_TEMP/contract-fixture/live-responses.json"
-          ../scripts/s3-artifact get "${fixture_key}" "${fixture}"
-          echo "${fixture_sha256}  ${fixture}" | shasum -a 256 --check
+
+      - name: Download the probe's live response fixture
+        if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
+        uses: actions/download-artifact@v8
+        with:
+          name: contract-fixture
+          path: ${{ runner.temp }}/contract-fixture
+
+      - name: Run the live Web contract test against the probe fixture
+        if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
+        env:
+          SIMULATOR_ID: ${{ steps.sim.outputs.id }}
+        run: |
+          set -euo pipefail
+          start_seconds=${SECONDS}
+          fixture="${RUNNER_TEMP}/contract-fixture/live-responses.json"
+          [[ -s "${fixture}" ]] || { echo "The probe artifact has no live-responses.json" >&2; exit 1; }
+          xctestrun=$(find Build/Products -maxdepth 1 -name '*.xctestrun' | head -n 1)
           # xcodebuild strips TEST_RUNNER_ and hands the path to the simulator test process.
-          # The scheme is parallelizable, so without -parallel-testing-enabled NO this single
-          # test would clone the simulator while the main run's clones are still torn down.
           TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}" xcodebuild test-without-building \
-            -project "${PROJECT_PATH}" \
-            -scheme "${SCHEME}" \
+            -xctestrun "${xctestrun}" \
             -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
-            -derivedDataPath "${DERIVED_DATA_PATH}" \
             -resultBundlePath "${LIVE_CONTRACT_RESULT_BUNDLE_PATH}" \
-            -disableAutomaticPackageResolution \
             -collect-test-diagnostics never \
             -parallel-testing-enabled NO \
-            -only-testing:"${LIVE_CONTRACT_TEST}" \
-            APP_IDENTIFIER_SUFFIX=.xctest \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGN_STYLE=Manual \
-            PROVISIONING_PROFILE_SPECIFIER=
+            -only-testing:"${LIVE_CONTRACT_TEST}"
           # A missing fixture makes the test skip, so require an explicit pass.
           xcrun xcresulttool get test-results tests --path "${LIVE_CONTRACT_RESULT_BUNDLE_PATH}" --compact \
             | /usr/bin/jq -e --arg id "test://com.apple.xcode/Talaria/${LIVE_CONTRACT_TEST}" '
                 [.. | objects | select(.nodeType? == "Test Case" and ((.nodeIdentifierURL? // "") | startswith($id)))]
                 | length == 1 and .[0].result == "Passed"
               ' >/dev/null || { echo "The live Web contract test did not pass against the fixture" >&2; exit 1; }
-          echo "- Live Web contract test: ${fixture_key} (${fixture_sha256}), $((SECONDS - start_seconds))s including the probe wait" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Live Web contract test: $((SECONDS - start_seconds))s including the probe wait" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Report slowest tests
         if: always()
@@ -368,7 +397,8 @@ jobs:
       - name: Reject skipped UI tests
         run: |
           options=()
-          if [[ "${APP_TESTS_REQUIRED}" == "true" && "${APP_UI_REQUIRED}" == "false" ]]; then options+=(--require-launch-smoke); fi
+          # Exactly one pull-request shard owns the launch smoke test, and it must pass there.
+          if grep -qx -- "-only-testing:${LAUNCH_SMOKE_TEST}" selection.txt; then options+=(--require-launch-smoke); fi
           scripts/assert-no-skipped-ui-tests "${RESULT_BUNDLE_PATH}" "${options[@]}"
 
       # Performance budgets are only useful against previous runs, so every run
@@ -378,40 +408,31 @@ jobs:
         continue-on-error: true
         run: scripts/report-performance-metrics "${RESULT_BUNDLE_PATH}"
 
-      - name: Store performance metrics on the NAS
+      - name: Upload performance metrics
         if: always()
         continue-on-error: true
-        env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-ci
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
-        run: |
-          set -euo pipefail
-          prefix="performance-metrics/pr-ci/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
-          for file in performance-metrics.json performance-metrics.txt; do
-            [[ -f "$file" ]] || continue
-            ../scripts/s3-artifact put "$prefix/$file" "$file"
-            echo "- Performance metrics: talaria-ci/$prefix/$file (expires after 30 days)" >> "${GITHUB_STEP_SUMMARY}"
-          done
+        uses: actions/upload-artifact@v7
+        with:
+          name: performance-metrics-shard-${{ matrix.shard }}
+          path: |
+            app/performance-metrics.json
+            app/performance-metrics.txt
+          retention-days: 30
+          overwrite: true
+          if-no-files-found: ignore
 
-      - name: Store test results on the NAS on failure
+      - name: Upload test results on failure
         if: failure()
         continue-on-error: true
-        env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-ci
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
-        run: |
-          set -euo pipefail
-          [[ -d "${RESULT_BUNDLE_PATH}" ]] || exit 0
-          key="test-results/pr-ci/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${RESULT_BUNDLE_PATH}.tar"
-          tar -cf "${RESULT_BUNDLE_PATH}.tar" "${RESULT_BUNDLE_PATH}"
-          ../scripts/s3-artifact put "$key" "${RESULT_BUNDLE_PATH}.tar"
-          echo "- Result bundle: talaria-ci/$key (expires after 14 days)" >> "${GITHUB_STEP_SUMMARY}"
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-shard-${{ matrix.shard }}
+          path: |
+            app/TestResults.xcresult
+            app/LiveContractResults.xcresult
+          retention-days: 14
+          overwrite: true
+          if-no-files-found: ignore
 
   tooling:
     needs: changes
@@ -432,9 +453,6 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.docker != 'false') }}
     uses: ./.github/workflows/web-docker-smoke.yml
-    secrets:
-      TALARIA_CI_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
-      TALARIA_CI_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
 
   relay:
     needs: changes
@@ -445,11 +463,8 @@ jobs:
     name: Web contract probe
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false') }}
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
-    outputs:
-      fixture: ${{ steps.fixture.outputs.name }}
-      fixture_sha256: ${{ steps.fixture.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v7
       - name: Set up Node for the disposable Web server
@@ -458,38 +473,31 @@ jobs:
           node-version-file: web/.nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Install zsh for the probe script
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh
       - name: Probe local Web HTTP and SSE contracts and record the live responses
         run: scripts/validate-upstream-contract --server-only --responses-output "$RUNNER_TEMP/contract-fixture/live-responses.json"
-      # The Build and Test job on the Mac runner starts without waiting for this
-      # job. After its own suite it reads the key and digest from this job's
-      # annotation, which only this job can write, and runs the native live
-      # decoding test against the fixture, so Web changes need no separate Mac job.
-      - name: Store the live response fixture on the NAS
-        id: fixture
-        env:
-          TALARIA_S3_ENDPOINT: ${{ vars.TALARIA_S3_ENDPOINT }}
-          TALARIA_S3_REGION: ${{ vars.TALARIA_S3_REGION }}
-          TALARIA_S3_BUCKET: talaria-ci
-          TALARIA_S3_ACCESS_KEY_ID: ${{ secrets.TALARIA_CI_S3_ACCESS_KEY_ID }}
-          TALARIA_S3_SECRET_ACCESS_KEY: ${{ secrets.TALARIA_CI_S3_SECRET_ACCESS_KEY }}
-        run: |
-          set -euo pipefail
-          fixture="$RUNNER_TEMP/contract-fixture/live-responses.json"
-          key="fixtures/pr-ci/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/live-responses.json"
-          ../scripts/s3-artifact put "$key" "$fixture"
-          sha256=$(sha256sum "$fixture" | cut -d' ' -f1)
-          echo "name=$key" >> "$GITHUB_OUTPUT"
-          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
-          echo "::notice title=contract-fixture::key=$key sha256=$sha256"
+      # App shard 0 starts without waiting for this job. After its own suite it waits for this job
+      # through the jobs API, downloads this artifact and runs the native live decoding test against it.
+      - name: Upload the live response fixture
+        uses: actions/upload-artifact@v7
+        with:
+          name: contract-fixture
+          path: ${{ runner.temp }}/contract-fixture/live-responses.json
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
 
   gate:
     name: CI Gate
-    needs: [changes, test, app-tooling, tooling, web, web-docker, relay, contracts]
+    needs: [changes, app-build, app-test, app-tooling, tooling, web, web-docker, relay, contracts]
     if: always()
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
       - name: Check selected suite results
         working-directory: .
         env:

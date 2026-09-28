@@ -53,13 +53,14 @@ contract scripts themselves. In `pr-ci.yml`:
 
 - The Linux `Web contract probe` job runs
   `scripts/validate-upstream-contract --server-only --responses-output ...` and
-  stores the live responses on the NAS as the run's contract fixture.
-- The Mac `Build and Test` job runs the native contract classes
+  uploads the live responses as the run's `contract-fixture` artifact.
+- App test shard 0 runs the native contract classes
   (`ContractReadinessTests`, `SharedContractTests`, and the API client, SSE and
-  reconnect contract tests), then runs
+  reconnect contract tests), then waits for the probe, downloads that artifact
+  and runs
   `APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied`
-  against that fixture after checking its SHA-256. A missing fixture skips the
-  test, so the job requires an explicit pass.
+  against it. A missing fixture skips the test, so the job requires an explicit
+  pass.
 
 Releases repeat the gate in `release-set.yml`: `scripts/check-release-contracts.py`
 checks the selected App against the selected and still-supported Web sources and

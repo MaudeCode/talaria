@@ -2,3 +2,8 @@ self-hosted-runner:
   labels:
     - ghar-set-maudecode
     - maude-mac
+paths:
+  .github/workflows/*.yml:
+    ignore:
+      # GitHub's hosted Xcode 27 image label, newer than this actionlint's runner-label table.
+      - 'label "xcode-27" is unknown'

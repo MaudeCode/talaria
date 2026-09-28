@@ -14,10 +14,11 @@ import sys
 SUITES = {"app", "app_tooling", "web_server", "web_frontend", "docker", "relay", "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "relay", "contracts"}
 WEB_BUILD = {"web_server", "web_frontend", "docker", "contracts"}
-JOBS = {"test": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend"},
+JOBS = {"app-build": {"app", "contracts"}, "app-test": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
 WORKFLOWS = {
-    "pr-ci.yml": {"app", "tooling"},
+    # PR CI owns the App jobs and the Web contract probe's fixture handoff.
+    "pr-ci.yml": {"app", "contracts", "tooling"},
     "web-verify.yml": {"web_server", "web_frontend", "tooling"},
     "web-docker-smoke.yml": {"docker", "tooling"},
     "relay-verify.yml": {"relay", "tooling"},
@@ -119,12 +120,16 @@ def path_suites(path):
         return WORKFLOWS.get(local.removeprefix("workflows/"), SUITES)
     if path == ".github/actions/docker-plugins/action.yml":
         return {"docker", "tooling"}  # Compose/Buildx setup for the Docker smoke.
+    if path == ".github/actions/setup-xcode/action.yml":
+        return {"app", "tooling"}  # Xcode selection for the App build and test shards.
     if path.startswith((".github/actions/", "releases/")) or path in (
             ".github/actionlint.yaml", ".github/dependabot.yml", ".github/CODEOWNERS"):
         return {"tooling"}
     if component == "scripts":
         return SCRIPTS.get(local, SUITES)
     if component == "app":
+        if local in ("ci/test_shards.py", "ci/test-shard-weights.json"):
+            return {"app", "tooling"}  # They choose which App tests each CI shard runs.
         if local.startswith("ci/"):
             return {"tooling"}
         if local in ("scripts/validate-upstream-contract", "scripts/upstream-contract-probe"):

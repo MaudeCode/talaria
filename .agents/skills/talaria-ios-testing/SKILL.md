@@ -30,7 +30,9 @@ Run local XCTest only through `scripts/test-ios [test-identifier ...]`.
 
 PR CI runs only the focused set for every App change, so run the UI suite
 locally for UI changes before review: CI no longer does it before merge (TAL-332).
-Every selected App job still builds all targets. The launch smoke test must
+Every selected App run still builds all targets once, then CI splits the tests
+across hosted simulators with `ci/test_shards.py` (two shards for a PR, four for
+the full main suite). The launch smoke test must
 execute and pass; absence or skipping fails CI. Main pushes run the full UI suite.
 
 The script serializes runs within one worktree and leases pooled simulators across

@@ -129,7 +129,7 @@ Recognized variables:
 
 - `IOS_SIMULATOR_POOL_SIZE` — simulator count for `scripts/setup-ios-test-pool`.
 - `IOS_SIMULATOR_ID` — shared simulator selection, with `TALARIA_SIMULATOR_ID` as an alias for `scripts/test-ios`.
-- `TALARIA_TEST_WORKER_COUNT` — parallel test workers for `scripts/test-ios` (default `4`, matching PR CI). Xcode clones the leased simulator per worker. Unfiltered runs also skip the measurement-only performance UI classes, as PR CI does; name a class to run it.
+- `TALARIA_TEST_WORKER_COUNT` — parallel test workers for `scripts/test-ios` (default `4`; CI instead splits the suite across simulators with `ci/test_shards.py`, one worker each). Xcode clones the leased simulator per worker. Unfiltered runs also skip the measurement-only performance UI classes, as PR CI does; name a class to run it.
 - `TALARIA_UPSTREAM_CONTRACT_RESPONSES` — test-only manifest supplied by `scripts/validate-upstream-contract`, not a persistent local setting.
 - `TALARIA_DEVICE_ID` — physical iPhone selection for `scripts/run-ios-device`,
   as either the hardware UDID or the CoreDevice identifier from

@@ -20,7 +20,7 @@ defaults:
 jobs:
   server:
     if: inputs.server
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -59,7 +59,7 @@ jobs:
   sidecar:
     if: inputs.server
     name: Sidecar pytest against the pinned Agent
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
@@ -68,6 +68,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.13'
+          cache: pip
+          cache-dependency-path: web/sidecar/agent_dependency.json
 
       - name: Install uv (the Agent's locked dependency resolver)
         run: python3 -m pip install --disable-pip-version-check "uv==0.11.3"
@@ -81,7 +83,7 @@ jobs:
   frontend-checks:
     if: inputs.frontend
     name: frontend / checks
-    runs-on: ["ghar-set-maudecode"]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -120,11 +122,16 @@ jobs:
         run: npm run build:fast
 
   # The e2e suite serves the frontend bundle, which its setup rebuilds on every run (static/dist is not committed, TAL-379).
+  # Playwright splits the spec files across the shards; each shard runs both projects for its files.
   frontend-e2e:
     if: inputs.frontend
-    name: frontend / e2e
-    runs-on: ["ghar-set-maudecode"]
+    name: frontend / e2e (${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     defaults:
       run:
         working-directory: web/packages/frontend
@@ -146,6 +153,12 @@ jobs:
         run: npm run build -w packages/contracts && npm run build -w packages/server
         working-directory: web
 
-      # check-web-browser installs Chromium itself; the runner image already bakes it.
+      # check-web-browser installs Chromium into this directory and, in CI on Linux, its system libraries.
+      - name: Restore the Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: web/.codex-tmp/playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+
       - name: Playwright end-to-end on the Node server with the fixture replay sidecar (desktop + mobile)
-        run: ../../../scripts/check-web-browser
+        run: ../../../scripts/check-web-browser --shard=${{ matrix.shard }}/3
