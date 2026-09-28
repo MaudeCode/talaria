@@ -112,10 +112,7 @@ struct TalariaApp: App {
     #endif
 
     init() {
-        #if DEBUG
-        // TalariaKit builds the URL sessions; the UI-test fixture must reach them before any exists.
-        UITestURLSessionHook.configure = UITestFixtureURLProtocol.configure
-        #endif
+        PlatformBridges.install()
         AppConfig.logReleaseIdentity()
         let arguments = ProcessInfo.processInfo.arguments
 

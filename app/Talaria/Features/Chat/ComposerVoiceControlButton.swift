@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ComposerVoiceControlButton: View {
     let isListening: Bool

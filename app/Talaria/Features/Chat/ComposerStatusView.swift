@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ComposerStatusView: View {
     let text: String

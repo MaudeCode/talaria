@@ -1,5 +1,6 @@
 #if DEBUG
 import SwiftUI
+import TalariaKit
 
 /// Debug-only Streaming Lab (issue #234): replays a canned markdown fixture
 /// through the real display pipeline (`MarkdownRenderer(content:isStreaming:)`

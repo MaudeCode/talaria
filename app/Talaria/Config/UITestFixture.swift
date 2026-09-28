@@ -6,8 +6,8 @@ import TalariaKit
 
 @MainActor
 struct UITestFixtureEnvironment {
-    nonisolated static let launchArgument = "--ui-test-fixture"
-    nonisolated static let relayConnectedArgument = "--ui-test-relay-connected"
+    nonisolated static let launchArgument = UITestFixtureLaunch.launchArgument
+    nonisolated static let relayConnectedArgument = UITestFixtureLaunch.relayConnectedArgument
     nonisolated static let reauthenticationArgument = "--ui-test-reauthentication"
     nonisolated static let trustedReauthenticationArgument = "--ui-test-reauthentication-trusted"
     /// Launches with no saved server so the fixture lands on onboarding.
@@ -28,21 +28,8 @@ struct UITestFixtureEnvironment {
     nonisolated static var isDense: Bool {
         ProcessInfo.processInfo.arguments.contains(denseArgument)
     }
-    nonisolated static let serverURL = URL(string: "https://ui-test.talaria.invalid")!
-    nonisolated static var relayCredentials: TalariaRelayCredentials {
-        TalariaRelayCredentials(
-            baseURL: URL(string: "https://relay.ui-test.invalid")!,
-            deviceID: "device-ui-fixture",
-            userID: "user-ui-fixture",
-            appleUserID: "apple-ui-fixture",
-            sessionToken: "session-ui-fixture",
-            expiresAt: .distantFuture,
-            pairedPublisherIDs: [
-                TalariaRelayClient.originURL(serverURL)!.absoluteString,
-                "https://removed.ui-test.invalid"
-            ]
-        )
-    }
+    nonisolated static let serverURL = UITestFixtureLaunch.serverURL
+    nonisolated static var relayCredentials: TalariaRelayCredentials { UITestFixtureLaunch.relayCredentials }
 
     let authManager: AuthManager
     let client: APIClient

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 /// Collapsible card for context-compaction marker messages, replacing the user
 /// bubble they would otherwise render as. Mirrors the web UI's collapsed cards

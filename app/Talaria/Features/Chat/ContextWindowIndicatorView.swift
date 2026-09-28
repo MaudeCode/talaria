@@ -1,23 +1,6 @@
 import SwiftUI
 import TalariaKit
 
-struct ContextWindowIndicatorPresentation: Equatable {
-    let percentage: Double?
-
-    init(snapshot: ContextWindowSnapshot?) {
-        percentage = snapshot?.percentage
-    }
-
-    var percentageLabel: String {
-        guard let percentage else { return "–" }
-        return "\(Int(percentage * 100))"
-    }
-
-    var isInteractive: Bool {
-        percentage != nil
-    }
-}
-
 struct ContextWindowIndicatorView: View {
     let snapshot: ContextWindowSnapshot?
 

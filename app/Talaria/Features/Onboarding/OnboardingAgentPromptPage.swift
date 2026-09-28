@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct OnboardingAgentPromptPage: View {
     @Binding var hasCopiedAgentPrompt: Bool

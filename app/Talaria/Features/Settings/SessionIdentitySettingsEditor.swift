@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SessionIdentitySettingsEditor: View {
     @ScaledMetric(relativeTo: .caption) private var avatarPreviewSize: CGFloat = 36

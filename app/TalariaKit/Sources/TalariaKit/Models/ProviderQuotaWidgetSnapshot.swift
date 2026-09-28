@@ -109,7 +109,7 @@ public struct ProviderQuotaWidgetSnapshot: Codable, Equatable, Sendable {
 public struct ProviderQuotaWidgetSnapshotStore {
     public static let widgetKind = "ProviderQuotaWidget"
     public static let paceWidgetKind = "ProviderQuotaPaceWidget"
-    static let storageKey = "providerQuotaWidgetSnapshot.v1"
+    public static let storageKey = "providerQuotaWidgetSnapshot.v1"
 
     private let defaults: UserDefaults?
 

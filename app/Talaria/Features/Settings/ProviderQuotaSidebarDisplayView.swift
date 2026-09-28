@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ProviderQuotaSidebarDisplayView: View {
     @AppStorage(ProviderQuotaSidebarSettings.detailKey)

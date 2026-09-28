@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SettingsValueRow<Trailing: View>: View {
     let title: String

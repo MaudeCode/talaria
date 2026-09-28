@@ -1,108 +1,15 @@
 import AppIntents
 import Foundation
+import TalariaKit
 import SwiftUI
 import WidgetKit
-
-enum ProviderQuotaPercentageMode: String, CaseIterable, Identifiable {
-    case used
-    case remaining
-
-    static let storageKey = "providerQuota.percentageMode"
-    static let defaultValue = ProviderQuotaPercentageMode.used
-
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .used: String(localized: "Used")
-        case .remaining: String(localized: "Remaining")
-        }
-    }
-}
-
-enum ProviderQuotaWidgetArcColor: String, CaseIterable, Identifiable {
-    case automatic
-    case accent
-    case blue
-    case cyan
-    case green
-    case indigo
-    case mint
-    case orange
-    case pink
-    case purple
-    case red
-    case teal
-    case yellow
-    case brown
-    case gray
-    case custom
-
-    static let storageKey = "providerQuota.widgetArcColor"
-    static let defaultValue = ProviderQuotaWidgetArcColor.automatic
-
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .automatic: String(localized: "Automatic")
-        case .accent: String(localized: "Accent")
-        case .blue: String(localized: "Blue")
-        case .cyan: String(localized: "Cyan")
-        case .green: String(localized: "Green")
-        case .indigo: String(localized: "Indigo")
-        case .mint: String(localized: "Mint")
-        case .orange: String(localized: "Orange")
-        case .pink: String(localized: "Pink")
-        case .purple: String(localized: "Purple")
-        case .red: String(localized: "Red")
-        case .teal: String(localized: "Teal")
-        case .yellow: String(localized: "Yellow")
-        case .brown: String(localized: "Brown")
-        case .gray: String(localized: "Gray")
-        case .custom: String(localized: "Custom")
-        }
-    }
-}
-
-enum ProviderQuotaWidgetArcWeight: String, CaseIterable, Identifiable {
-    case thin
-    case regular
-    case bold
-
-    static let storageKey = "providerQuota.widgetArcWeight"
-    static let defaultValue = ProviderQuotaWidgetArcWeight.regular
-
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .thin: String(localized: "Thin")
-        case .regular: String(localized: "Regular")
-        case .bold: String(localized: "Bold")
-        }
-    }
-}
-
-enum ProviderQuotaWidgetColorBasis: String, CaseIterable, Identifiable {
-    case pace
-    case overall
-
-    static let storageKey = "providerQuota.widgetColorBasis"
-    static let defaultValue = ProviderQuotaWidgetColorBasis.pace
-
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .pace: String(localized: "Pace")
-        case .overall: String(localized: "Overall Percentage")
-        }
-    }
-}
 
 enum ProviderQuotaWidgetWindowSelection: String, AppEnum {
     case automatic
     case session
     case weekly
 
-    static let storageKey = "providerQuota.widgetWindowSelection"
+    static let storageKey = ProviderQuotaWidgetStorageKeys.windowSelection
     static let defaultValue = ProviderQuotaWidgetWindowSelection.automatic
 
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Quota Window")
@@ -119,7 +26,7 @@ enum ProviderQuotaWidgetStatusText: String, AppEnum, CaseIterable, Identifiable 
     case pace
     case hidden
 
-    static let storageKey = "providerQuota.widgetStatusText"
+    static let storageKey = ProviderQuotaWidgetStorageKeys.statusText
     static let defaultValue = ProviderQuotaWidgetStatusText.percentage
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Status Text")
     static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
@@ -146,7 +53,7 @@ enum ProviderQuotaWidgetResetDisplay: String, AppEnum, CaseIterable, Identifiabl
     case compact
     case exact
 
-    static let storageKey = "providerQuota.widgetResetDisplay"
+    static let storageKey = ProviderQuotaWidgetStorageKeys.resetDisplay
     static let defaultValue = ProviderQuotaWidgetResetDisplay.compact
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Reset Display")
     static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
@@ -175,7 +82,7 @@ enum ProviderQuotaWidgetTapAction: String, AppEnum, CaseIterable, Identifiable {
     case openApp
     case newChatWithProvider
 
-    static let storageKey = "providerQuota.widgetTapAction"
+    static let storageKey = ProviderQuotaWidgetStorageKeys.tapAction
     static let defaultValue = ProviderQuotaWidgetTapAction.insights
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Tap Action")
     static var caseDisplayRepresentations: [Self: DisplayRepresentation] = [
@@ -209,9 +116,9 @@ enum ProviderQuotaWidgetBackground: String, AppEnum, CaseIterable, Identifiable 
     case light
     case custom
 
-    static let storageKey = "providerQuota.widgetBackground"
-    static let customColorHexKey = "providerQuota.widgetCustomBackgroundColorHex"
-    static let opacityPercentKey = "providerQuota.widgetBackgroundOpacityPercent"
+    static let storageKey = ProviderQuotaWidgetStorageKeys.background
+    static let customColorHexKey = ProviderQuotaWidgetStorageKeys.backgroundCustomColorHex
+    static let opacityPercentKey = ProviderQuotaWidgetStorageKeys.backgroundOpacityPercent
     static let defaultValue = ProviderQuotaWidgetBackground.system
     static let defaultCustomColorHex = "#1C1C1E"
     static let defaultOpacityPercent = 100
@@ -357,87 +264,4 @@ enum ProviderQuotaWidgetPaceMarkerOverride: String, AppEnum {
         case .hidden: false
         }
     }
-}
-
-enum ProviderQuotaWidgetAppearanceSettings {
-    static let showsProviderIconKey = "providerQuota.widgetShowsProviderIcon"
-    static let providerIconStyleKey = "providerQuota.widgetProviderIconStyle"
-    static let healthyColorKey = "providerQuota.widgetHealthyColor"
-    static let warningColorKey = "providerQuota.widgetWarningColor"
-    static let criticalColorKey = "providerQuota.widgetCriticalColor"
-    static let staleColorKey = "providerQuota.widgetStaleColor"
-    static let unavailableColorKey = "providerQuota.widgetUnavailableColor"
-    static let warningRemainingPercentKey = "providerQuota.widgetWarningRemainingPercent"
-    static let criticalRemainingPercentKey = "providerQuota.widgetCriticalRemainingPercent"
-    static let paceTolerancePercentKey = "providerQuota.widgetPaceTolerancePercent"
-    static let paceWarningBurnRatePercentKey = "providerQuota.widgetPaceWarningBurnRatePercent"
-    static let paceCriticalBurnRatePercentKey = "providerQuota.widgetPaceCriticalBurnRatePercent"
-    static let paceMinimumElapsedHoursKey = "providerQuota.widgetPaceMinimumElapsedHours"
-    static let showsPaceMarkerKey = "providerQuota.widgetShowsPaceMarker"
-    static let trackColorKey = "providerQuota.widgetTrackColor"
-    static let trackOpacityPercentKey = "providerQuota.widgetTrackOpacityPercent"
-    static let customArcColorHexKey = "providerQuota.widgetCustomArcColorHex"
-    static let customTrackColorHexKey = "providerQuota.widgetCustomTrackColorHex"
-    static let customHealthyColorHexKey = "providerQuota.widgetCustomHealthyColorHex"
-    static let customWarningColorHexKey = "providerQuota.widgetCustomWarningColorHex"
-    static let customCriticalColorHexKey = "providerQuota.widgetCustomCriticalColorHex"
-    static let customStaleColorHexKey = "providerQuota.widgetCustomStaleColorHex"
-    static let customUnavailableColorHexKey = "providerQuota.widgetCustomUnavailableColorHex"
-
-    static let defaultShowsProviderIcon = true
-    static let defaultProviderIconStyle = ProviderIconStyle.color
-    static let defaultHealthyColor = ProviderQuotaWidgetArcColor.accent
-    static let defaultWarningColor = ProviderQuotaWidgetArcColor.orange
-    static let defaultCriticalColor = ProviderQuotaWidgetArcColor.red
-    static let defaultStaleColor = ProviderQuotaWidgetArcColor.orange
-    static let defaultUnavailableColor = ProviderQuotaWidgetArcColor.orange
-    static let defaultWarningRemainingPercent = 25
-    static let defaultCriticalRemainingPercent = 10
-    static let defaultPaceTolerancePercent = 3
-    static let defaultPaceWarningBurnRatePercent = 125
-    static let defaultPaceCriticalBurnRatePercent = 175
-    static let defaultPaceMinimumElapsedHours = 12
-    static let defaultShowsPaceMarker = true
-    static let defaultTrackColor = ProviderQuotaWidgetArcColor.automatic
-    static let defaultTrackOpacityPercent = 18
-    static let defaultCustomArcColorHex = "#0A84FF"
-    static let defaultCustomTrackColorHex = "#8E8E93"
-    static let defaultCustomHealthyColorHex = "#0A84FF"
-    static let defaultCustomWarningColorHex = "#FF9F0A"
-    static let defaultCustomCriticalColorHex = "#FF453A"
-    static let defaultCustomStaleColorHex = "#8E8E93"
-    static let defaultCustomUnavailableColorHex = "#8E8E93"
-}
-
-enum ProviderQuotaLockScreenPaceDetail: String, CaseIterable, Identifiable {
-    case burnAndForecast
-    case burn
-    case forecast
-
-    static let defaultValue = ProviderQuotaLockScreenPaceDetail.burnAndForecast
-
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .burnAndForecast: String(localized: "Burn + Forecast")
-        case .burn: String(localized: "Burn Rate")
-        case .forecast: String(localized: "Forecast")
-        }
-    }
-}
-
-enum ProviderQuotaLockScreenSettings {
-    static let showsProviderIconKey = "providerQuota.lockScreenShowsProviderIcon"
-    static let showsResetKey = "providerQuota.lockScreenShowsReset"
-    static let showsWindowKey = "providerQuota.lockScreenShowsWindow"
-    static let paceDetailKey = "providerQuota.lockScreenPaceDetail"
-
-    static let defaultShowsProviderIcon = true
-    static let defaultShowsReset = true
-    static let defaultShowsWindow = true
-}
-
-enum ProviderQuotaAlertSettings {
-    static let isEnabledKey = "providerQuota.alertsEnabled"
-    static let stateKey = "providerQuota.alertStates"
 }

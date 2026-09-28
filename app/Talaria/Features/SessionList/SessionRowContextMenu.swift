@@ -14,7 +14,7 @@ struct SessionRowContextMenu: View {
     let actions: SessionListRowActions
 
     var body: some View {
-        let fullTitle = SessionRowView.displayTitle(for: session)
+        let fullTitle = SessionRowPresentation.displayTitle(for: session)
 
         Section("Full Title") {
             Text(fullTitle)

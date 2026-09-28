@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SessionRowStateBadge: View {
     let badge: SessionRowStateBadgeKind

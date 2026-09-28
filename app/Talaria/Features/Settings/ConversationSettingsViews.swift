@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ChatsSettingsView: View {
     @Bindable var authManager: AuthManager

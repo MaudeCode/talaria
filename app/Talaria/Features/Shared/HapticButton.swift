@@ -1,40 +1,11 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
-enum HapticButtonFeedbackStyle: Equatable {
-    case light
-    case medium
-}
-
-enum AppHapticFeedback: Equatable {
-    case lightImpact
-    case mediumImpact
-    case selection
-    case success
-    case warning
-}
-
-@MainActor
-enum HapticEmitter {
-    static func emit(
-        _ feedback: AppHapticFeedback,
-        isEnabled: Bool,
-        performer: (@MainActor (AppHapticFeedback) -> Void)? = nil
-    ) {
-        emit(feedback, isEnabled: isEnabled, performer: performer, defaultPerformer: perform)
-    }
-
-    static func emit<Feedback>(
-        _ feedback: Feedback,
-        isEnabled: Bool,
-        performer: (@MainActor (Feedback) -> Void)?,
-        defaultPerformer: @escaping @MainActor (Feedback) -> Void
-    ) {
-        guard isEnabled else { return }
-        (performer ?? defaultPerformer)(feedback)
-    }
-
-    private static func perform(_ feedback: AppHapticFeedback) {
+/// UIKit feedback generators behind TalariaKit's haptic hooks; `PlatformBridges` installs them at launch.
+enum UIKitHaptics {
+    @MainActor
+    static func perform(_ feedback: AppHapticFeedback) {
         switch feedback {
         case .lightImpact:
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -48,25 +19,8 @@ enum HapticEmitter {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
         }
     }
-}
 
-@MainActor
-enum HapticButtonHaptics {
-    typealias Performer = @MainActor (HapticButtonFeedbackStyle) -> Void
-
-    static func tap(
-        style: HapticButtonFeedbackStyle = .light,
-        isEnabled: Bool,
-        performer: Performer? = nil
-    ) {
-        HapticEmitter.emit(
-            style,
-            isEnabled: isEnabled,
-            performer: performer,
-            defaultPerformer: perform
-        )
-    }
-
+    @MainActor
     static func perform(_ style: HapticButtonFeedbackStyle) {
         switch style {
         case .light:

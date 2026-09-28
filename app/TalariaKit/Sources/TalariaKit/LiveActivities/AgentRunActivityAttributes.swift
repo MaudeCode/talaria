@@ -42,9 +42,9 @@ public struct AgentRunActivityAttributes: Codable {
     }
 
     public var sessionID: String
-    var sessionTitle: String
+    public var sessionTitle: String
     public var streamID: String?
-    var startedAt: Date
+    public var startedAt: Date
     public var relayPublisherID: String?
 
     public init(

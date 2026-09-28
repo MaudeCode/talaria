@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SettingsCard<Content: View>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency

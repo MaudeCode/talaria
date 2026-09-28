@@ -1,9 +1,5 @@
 import SwiftUI
-
-enum AdaptiveReadableContentWidth {
-    static let secondaryDestination: CGFloat = 800
-    static let workspace: CGFloat = 1_000
-}
+import TalariaKit
 
 private struct AdaptiveReadableContentModifier: ViewModifier {
     let maxWidth: CGFloat
@@ -65,69 +61,6 @@ private struct AdaptiveSecondaryNavigationTitleModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.navigationBarTitleDisplayMode(horizontalSizeClass == .regular ? .inline : .automatic)
-    }
-}
-
-enum GlassPreference {
-    static let isEnabledKey = "adaptiveGlass.isEnabled"
-    static let defaultIsEnabled = true
-
-    static var isLiquidGlassSupported: Bool {
-        if #available(iOS 26, *) {
-            return true
-        }
-
-        return false
-    }
-
-    static func isEnabled(in defaults: UserDefaults = .standard) -> Bool {
-        guard defaults.object(forKey: isEnabledKey) != nil else {
-            return defaultIsEnabled
-        }
-
-        return defaults.bool(forKey: isEnabledKey)
-    }
-}
-
-enum AdaptiveGlassStyle: Equatable {
-    case regular
-}
-
-enum AdaptiveGlassSurface: Equatable {
-    case liquidGlass
-    case material
-    case opaque
-
-    static func resolve(
-        liquidGlassAvailable: Bool,
-        isGlassEnabled: Bool,
-        reduceTransparency: Bool
-    ) -> AdaptiveGlassSurface {
-        if reduceTransparency {
-            return .opaque
-        }
-
-        guard liquidGlassAvailable, isGlassEnabled else {
-            return .material
-        }
-
-        return .liquidGlass
-    }
-}
-
-enum AdaptiveScrollEdgeTreatment: Equatable {
-    case soft
-    case disabled
-
-    static func resolve(
-        softScrollEdgesAvailable: Bool,
-        reduceTransparency: Bool
-    ) -> AdaptiveScrollEdgeTreatment {
-        guard softScrollEdgesAvailable, !reduceTransparency else {
-            return .disabled
-        }
-
-        return .soft
     }
 }
 

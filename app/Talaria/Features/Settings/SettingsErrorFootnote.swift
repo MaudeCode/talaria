@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SettingsErrorFootnote: View {
     let text: String

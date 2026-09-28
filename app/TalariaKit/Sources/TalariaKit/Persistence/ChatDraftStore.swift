@@ -9,7 +9,7 @@ public struct ChatDraftAttachment: Equatable, Sendable {
     public let id: UUID
     public let name: String
     let mime: String
-    let size: Int?
+    public let size: Int?
     public let isImage: Bool
     public let file: String?
 }
@@ -32,7 +32,7 @@ public struct ChatDraftSettings: Equatable, Sendable {
         self.workspacePath = workspacePath
     }
 
-    var isEmpty: Bool {
+    public var isEmpty: Bool {
         let normalized = normalized()
         return normalized.modelID == nil
             && normalized.modelProviderID == nil

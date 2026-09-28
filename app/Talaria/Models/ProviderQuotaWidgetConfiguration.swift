@@ -11,8 +11,8 @@ struct ProviderQuotaWidgetSavedProfile: Codable, Equatable, Identifiable, Sendab
 
 enum ProviderQuotaWidgetProfileStore {
     static let defaultProfileID = "default"
-    static let storageKey = "providerQuota.widgetProfiles.v1"
-    static let selectedDefaultProfileKey = "providerQuota.widgetDefaultProfileID"
+    static let storageKey = ProviderQuotaWidgetStorageKeys.profiles
+    static let selectedDefaultProfileKey = ProviderQuotaWidgetStorageKeys.selectedDefaultProfile
 
     static func profiles(
         defaults: UserDefaults = ProviderQuotaWidgetSnapshotStore.appGroupDefaults

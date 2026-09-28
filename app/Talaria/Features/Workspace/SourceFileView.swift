@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 /// Read-only source viewer: lazy numbered rows, syntax colour prepared off the
 /// main actor when the grammar is known, a wrap toggle owned by the caller, and
@@ -23,12 +24,6 @@ struct SourceFileView: View {
         let content: String
         let language: String?
         let isDark: Bool
-    }
-
-    /// The target line within the file, or nil when there is no target or file.
-    static func clampedTargetLine(_ targetLine: Int?, lineCount: Int) -> Int? {
-        guard let targetLine, lineCount > 0 else { return nil }
-        return min(max(targetLine, 1), lineCount)
     }
 
     var body: some View {
@@ -73,7 +68,7 @@ struct SourceFileView: View {
     }
 
     private var highlightedLine: Int? {
-        Self.clampedTargetLine(targetLine, lineCount: lines.count)
+        SourceFileNavigation.clampedTargetLine(targetLine, lineCount: lines.count)
     }
 
     private var gutterWidth: CGFloat {

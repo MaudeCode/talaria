@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 enum OnboardingConnectField: Hashable {
     case serverURL

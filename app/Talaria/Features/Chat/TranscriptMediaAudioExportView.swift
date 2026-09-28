@@ -3,6 +3,7 @@ import AVKit
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import TalariaKit
 
 struct TranscriptMediaAudioExportView: View {
     let reference: TranscriptMediaReference

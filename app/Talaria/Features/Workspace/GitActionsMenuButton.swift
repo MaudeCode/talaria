@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct GitActionsMenuButton: View {
     let presentation: GitToolbarPresentation

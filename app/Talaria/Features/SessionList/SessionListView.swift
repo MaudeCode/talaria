@@ -178,7 +178,7 @@ struct SessionListView: View {
             }
             .sheet(item: $sessionPendingRename) { session in
                 SessionRenameSheet(
-                    initialTitle: SessionRowView.displayTitle(for: session),
+                    initialTitle: SessionRowPresentation.displayTitle(for: session),
                     isSaving: viewModel.isRenamingSession
                 ) {
                     sessionPendingRename = nil
@@ -1113,7 +1113,7 @@ struct SessionListView: View {
     }
 
     private var activeSessionMonitorTaskID: ActiveSessionMonitorTaskID {
-        let activeSessions = visibleSessions.filter(SessionRowView.isActiveStreaming)
+        let activeSessions = visibleSessions.filter(SessionRowPresentation.isActiveStreaming)
         return ActiveSessionMonitorTaskID(
             streamIDs: SessionListViewModel.activeStreamIDs(in: activeSessions),
             hasActiveRows: !activeSessions.isEmpty,

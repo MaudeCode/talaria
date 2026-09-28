@@ -113,7 +113,7 @@ public struct ProfileSummary: Decodable, Equatable, Hashable, Identifiable, Send
     public var id: String { name ?? path ?? UUID().uuidString }
 
     public let name: String?
-    let path: String?
+    public let path: String?
     public let isDefault: Bool?
     public let isActive: Bool?
     let gatewayRunning: Bool?

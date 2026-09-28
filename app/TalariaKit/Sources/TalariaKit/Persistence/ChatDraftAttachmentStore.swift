@@ -62,7 +62,7 @@ public actor ChatDraftAttachmentStore: ChatDraftAttachmentStoring {
     private let fileManager: FileManager
     private let directoryURL: URL
 
-    init(
+    public init(
         fileManager: FileManager = .default,
         directoryURL: URL? = nil
     ) {

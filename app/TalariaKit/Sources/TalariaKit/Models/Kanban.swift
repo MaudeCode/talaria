@@ -206,7 +206,7 @@ public struct KanbanCard: Decodable, Equatable, Sendable {
         case workerID = "workerPid"
     }
 
-    init(
+    public init(
         cardID: String?,
         title: String?,
         status: KanbanStatus?,

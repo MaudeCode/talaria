@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SettingsButton: View {
     let title: String

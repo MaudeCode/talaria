@@ -1,6 +1,7 @@
 @preconcurrency import LinkPresentation
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct TranscriptLinkPreviewView: View {
     let url: URL

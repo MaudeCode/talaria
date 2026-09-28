@@ -19,7 +19,7 @@ public enum AgentLiveActivityEvent: Equatable {
 public struct OrphanedLiveActivity: Equatable {
     public let streamID: String
     public let sessionID: String
-    let updatedAt: Date
+    public let updatedAt: Date
 
     public init(streamID: String, sessionID: String, updatedAt: Date) {
         self.streamID = streamID

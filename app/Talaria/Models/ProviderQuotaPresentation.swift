@@ -4,40 +4,6 @@ import SwiftUI
 import WidgetKit
 import TalariaKit
 
-enum ProviderQuotaDisplaySettings {
-    static let aliasesKey = "providerQuota.providerAliases"
-
-    static func aliases(from data: Data) -> [String: String] {
-        (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
-    }
-
-    static func data(
-        byRenaming providerID: String,
-        to name: String,
-        in data: Data
-    ) -> Data {
-        let providerID = providerID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !providerID.isEmpty else { return data }
-        var aliases = aliases(from: data)
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if name.isEmpty {
-            aliases.removeValue(forKey: providerID)
-        } else {
-            aliases[providerID] = String(name.prefix(64))
-        }
-        return (try? JSONEncoder().encode(aliases)) ?? data
-    }
-
-    static func displayName(
-        providerID: String?,
-        fallback: String,
-        aliasesData: Data
-    ) -> String {
-        guard let providerID else { return fallback }
-        return aliases(from: aliasesData)[providerID.lowercased()] ?? fallback
-    }
-}
-
 enum ProviderQuotaWidgetSelection {
     static func sourceIDs(slotIDs: [String?], capacity: Int) -> [String] {
         slotIDs.prefix(max(0, min(capacity, 4))).compactMap { raw in

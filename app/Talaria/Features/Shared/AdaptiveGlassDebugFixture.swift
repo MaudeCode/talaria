@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 #if DEBUG
 private enum AdaptiveGlassPreviewDefaults {

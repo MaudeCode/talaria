@@ -80,7 +80,7 @@ public struct GitFile: Decodable, Equatable, Identifiable {
     public let workspacePath: String?
     /// Raw git status code (`M/A/D/R/C/T/U`, `"??"`, two-char conflicts, or `"Ignored"`).
     /// Prefer the booleans below for display; treat this as a fallback label.
-    let status: String?
+    public let status: String?
     public let staged: Bool?
     let unstaged: Bool?
     public let untracked: Bool?
@@ -242,7 +242,7 @@ public struct GitCheckoutTarget: Equatable, Identifiable {
     }
 
     public var id: String { "\(mode.rawValue):\(ref):\(newBranch ?? "")" }
-    var displayName: String { newBranch ?? ref }
+    public var displayName: String { newBranch ?? ref }
 }
 
 public struct GitRemoteActionResponse: Decodable, Equatable {

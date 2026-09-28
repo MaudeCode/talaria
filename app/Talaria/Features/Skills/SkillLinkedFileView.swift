@@ -36,31 +36,3 @@ struct SkillLinkedFileView: View {
         }
     }
 }
-
-/// Sheet state for one linked skill file. Responses carry the file name they
-/// were requested for, so a slow request cannot land in a later presentation.
-struct SkillLinkedFileSelection: Identifiable, Equatable {
-    let fileName: String
-    private(set) var content: String?
-
-    var id: String { fileName }
-    var isLoading: Bool { content == nil }
-
-    init(fileName: String) {
-        self.fileName = fileName
-    }
-
-    /// Applies a response only when it belongs to the presented file.
-    mutating func apply(_ response: String, for fileName: String) {
-        guard self.fileName == fileName else { return }
-        content = response
-    }
-
-    static func load(fileName: String, skill: String, client: APIClient) async -> String {
-        do {
-            return try await client.skillContent(name: skill, file: fileName).content ?? ""
-        } catch {
-            return String(localized: "Could not load file: \(error.localizedDescription)")
-        }
-    }
-}

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct DiffLineRow: View {
     let line: DiffLine
