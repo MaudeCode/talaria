@@ -115,6 +115,8 @@ jobs:
     steps:
       - name: Plan the test shards
         id: plan
+        # Runs before checkout, so app/ does not exist yet.
+        working-directory: .
         run: |
           set -euo pipefail
           if [[ "${APP_TESTS_REQUIRED}" == "false" ]]; then
