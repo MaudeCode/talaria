@@ -19,7 +19,9 @@
     "lint": "eslint .",
     "test": "vitest run",
     "openapi": "node scripts/generate-openapi.mjs",
-    "fixtures": "node scripts/export-fixtures.mjs"
+    "fixtures": "node scripts/export-fixtures.mjs",
+    "prepack": "node -e \"require('node:fs').copyFileSync('../../LICENSE', 'LICENSE')\"",
+    "postpack": "node -e \"require('node:fs').rmSync('LICENSE', { force: true })\""
   },
   "dependencies": {
     "@orpc/contract": "1.15.2",

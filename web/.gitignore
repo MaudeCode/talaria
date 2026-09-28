@@ -99,3 +99,6 @@ packages/server/static/
 packages/server/sidecar/
 packages/server/contract_versions.json
 packages/server/_release.json
+
+# Pack-time copies of web/LICENSE (TAL-389).
+packages/*/LICENSE
