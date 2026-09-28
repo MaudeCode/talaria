@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 struct ActiveChatStreamSnapshot: Equatable {
     let messages: [ChatMessage]

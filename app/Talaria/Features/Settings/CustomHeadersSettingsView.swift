@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct CustomHeadersSettingsView: View {
     @Bindable var authManager: AuthManager

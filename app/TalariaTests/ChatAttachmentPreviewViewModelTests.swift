@@ -1,6 +1,7 @@
 import UIKit
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 final class ChatAttachmentPreviewViewModelTests: APIClientTestCase {
     @MainActor

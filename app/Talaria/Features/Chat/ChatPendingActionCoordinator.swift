@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import OSLog
+import TalariaKit
 
 private let chatPendingActionCoordinatorLogger = Logger(
     subsystem: Bundle.main.bundleIdentifier ?? "Talaria",

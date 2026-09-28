@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// Seeded property checks over the narrow boundaries where untrusted server
 /// bytes first become Talaria values: SSE frames, session/message JSON,

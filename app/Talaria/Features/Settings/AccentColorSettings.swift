@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct AccentColorSettings: View {
     @Binding var selectedHex: String

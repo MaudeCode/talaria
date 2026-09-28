@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 class APIClientTestCase: XCTestCase {
     override func tearDown() {

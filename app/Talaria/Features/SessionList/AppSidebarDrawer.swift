@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct AppSidebarDrawer: View {
     @AccessibilityFocusState private var closeNavigationIsFocused: Bool

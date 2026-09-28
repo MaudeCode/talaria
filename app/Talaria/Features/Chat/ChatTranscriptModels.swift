@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 struct AssistantActivityRow: Identifiable, Equatable {
     struct Reasoning: Equatable {

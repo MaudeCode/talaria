@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// Contract tests for the riskiest streaming paths: disconnect → reconnect
 /// with replayed tokens, server restart mid-stream, and replay of content the

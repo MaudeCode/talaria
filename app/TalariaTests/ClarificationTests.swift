@@ -1,6 +1,7 @@
 import XCTest
 import Observation
 @testable import Talaria
+@testable import TalariaKit
 
 final class ClarificationTests: APIClientTestCase {
     func testServerStepsOnlyFramesRenderEveryStep() throws {

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct FileBrowserView: View {
     let onAPIError: (Error) -> Void

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ServerIdentityEditor: View {
     @Binding var displayName: String

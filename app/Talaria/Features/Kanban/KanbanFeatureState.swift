@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import TalariaKit
 
 /// Server-bound Kanban browsing state. Each instance owns one server's Board
 /// choice, filters, selection, and snapshots; nothing is shared across servers.

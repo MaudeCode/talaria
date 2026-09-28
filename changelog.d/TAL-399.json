@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Reorganized the app's internals so its automated checks run faster; nothing changes in how Talaria looks or works.",
+      "highlight": false
+    }
+  ]
+}

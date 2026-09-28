@@ -1,5 +1,6 @@
 import ActivityKit
 import Foundation
+import TalariaKit
 
 @MainActor
 final class TalariaAggregateLiveActivityManager {

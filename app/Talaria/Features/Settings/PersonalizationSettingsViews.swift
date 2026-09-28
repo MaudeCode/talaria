@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import UserNotifications
+import TalariaKit
 
 struct AppearanceSettingsView: View {
     @Bindable var authManager: AuthManager

@@ -4,6 +4,7 @@ import UIKit
 import UniformTypeIdentifiers
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 @MainActor
 final class TranscriptMediaPreviewViewModelTests: XCTestCase {

@@ -1,6 +1,7 @@
 import XCTest
 import Security
 @testable import Talaria
+@testable import TalariaKit
 
 final class ProviderQuotaWidgetTests: XCTestCase {
     func testSnapshotRoundTripContainsOnlySanitizedDisplayFields() throws {

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ComposerWorkspacePickerSheet: View {
     let workspaceRoots: [WorkspaceRoot]

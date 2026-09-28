@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 /// The task editor's multi-select skills picker. Each toggle writes straight
 /// to the draft, so the sheet stays open while rows are toggled.

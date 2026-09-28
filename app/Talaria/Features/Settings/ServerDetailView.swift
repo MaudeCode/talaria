@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ServerDetailView: View {
     @Bindable var authManager: AuthManager

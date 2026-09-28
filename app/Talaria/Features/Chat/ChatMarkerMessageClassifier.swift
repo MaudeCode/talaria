@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 /// Marker messages the agent emits around context compaction. The server sends
 /// them as plain role-based messages with no structured flag, so — like the web

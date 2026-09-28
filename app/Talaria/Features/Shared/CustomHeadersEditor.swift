@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 /// Add/remove editor for custom request headers, shared by the onboarding connect
 /// screen (dark theme) and Settings (standard theme). Binds directly to the header

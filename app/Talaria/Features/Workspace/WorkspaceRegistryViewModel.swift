@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import TalariaKit
 
 /// Drives the workspace-registry management sheet (issue #22): add, remove,
 /// rename, and reorder entries via the undocumented `/api/workspaces/*`

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ToolCallCardView: View {
     let toolCall: ToolCall

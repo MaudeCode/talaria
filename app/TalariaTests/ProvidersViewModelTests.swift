@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 final class ProvidersViewModelTests: APIClientTestCase {
     private static let serverURL = URL(string: "https://example.test")!

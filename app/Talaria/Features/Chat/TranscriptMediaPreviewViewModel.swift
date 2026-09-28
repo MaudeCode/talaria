@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import SwiftUI
+import TalariaKit
 
 @MainActor
 @Observable

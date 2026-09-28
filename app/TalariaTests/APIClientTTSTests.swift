@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 final class APIClientTTSTests: APIClientTestCase {
     func testSynthesizeSpeechPostsJSONAndReturnsRawAudioBytes() async throws {

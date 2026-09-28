@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import TalariaKit
 
 /// The model catalog, profile list, and skill list behind the task editor's
 /// Configuration section. Owned by `CronJobEditorSheet` and loaded from its

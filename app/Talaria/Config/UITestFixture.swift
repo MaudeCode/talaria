@@ -2,6 +2,7 @@
 import AppIntents
 import Foundation
 import UIKit
+import TalariaKit
 
 @MainActor
 struct UITestFixtureEnvironment {

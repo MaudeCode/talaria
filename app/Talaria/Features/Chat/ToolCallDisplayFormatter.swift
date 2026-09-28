@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 struct ToolCallDisplayContent: Equatable {
     let argumentRows: [ToolCallArgumentDisplay]

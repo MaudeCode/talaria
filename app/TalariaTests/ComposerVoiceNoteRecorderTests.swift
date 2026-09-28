@@ -1,6 +1,7 @@
 import AVFoundation
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 final class ComposerVoiceNoteRecorderTests: XCTestCase {
     // MARK: - Filename

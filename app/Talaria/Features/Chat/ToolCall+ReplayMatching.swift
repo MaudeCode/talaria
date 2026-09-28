@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 extension ToolCall {
     func matchesStableToolID(_ stableID: String) -> Bool {

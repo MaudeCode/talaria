@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct DefaultProfileSelection: Equatable {
     let name: String

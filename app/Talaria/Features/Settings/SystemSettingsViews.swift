@@ -1,6 +1,7 @@
 import SwiftData
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct LiveActivitiesWidgetsSettingsView: View {
     @AppStorage(AgentRunLiveActivityPrivacy.showsResponseExcerptsKey)

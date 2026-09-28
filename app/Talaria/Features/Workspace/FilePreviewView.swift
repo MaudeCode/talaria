@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import TalariaKit
 
 struct FilePreviewView: View {
     let onAPIError: (Error) -> Void

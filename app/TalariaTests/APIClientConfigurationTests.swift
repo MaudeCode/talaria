@@ -1,6 +1,7 @@
 import XCTest
 import os
 @testable import Talaria
+@testable import TalariaKit
 
 final class APIClientConfigurationTests: APIClientTestCase {
     func testReasoningDisplayPrefersStructuredThinkingAndStripsVisibleAnswerEcho() {

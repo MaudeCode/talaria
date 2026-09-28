@@ -1,6 +1,7 @@
 import SwiftData
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 final class ChatStreamCoordinatorTests: APIClientTestCase {
     @MainActor

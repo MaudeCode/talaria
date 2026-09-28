@@ -1,5 +1,6 @@
 import Foundation
 import UniformTypeIdentifiers
+import TalariaKit
 
 struct ShareInput {
     var textSnippets: [String] = []

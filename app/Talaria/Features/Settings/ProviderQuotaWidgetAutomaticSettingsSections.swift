@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ProviderQuotaWidgetAutomaticSettingsSections: View {
     @AppStorage(ProviderQuotaWidgetColorBasis.storageKey, store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults)

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SkillLinkedFileView: View {
     let fileName: String

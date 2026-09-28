@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 #if DEBUG
 enum KanbanLabScenario: String, CaseIterable, Identifiable {

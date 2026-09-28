@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct UserProfileSettingsRow: View {
     let server: URL

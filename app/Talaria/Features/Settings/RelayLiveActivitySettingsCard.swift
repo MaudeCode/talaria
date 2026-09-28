@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct RelayLiveActivitySettingsCard: View {
     @AppStorage(TalariaLiveActivityMode.storageKey) private var modeRawValue = TalariaLiveActivityMode.perSession.rawValue

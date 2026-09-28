@@ -1,5 +1,6 @@
 import AuthenticationServices
 import SwiftUI
+import TalariaKit
 
 /// The one account row above the Settings category directory: Sign in with
 /// Apple for both iCloud Sync (TAL-91) and Talaria Relay (TAL-97).

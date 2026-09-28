@@ -1,6 +1,7 @@
 import XCTest
 import UniformTypeIdentifiers
 @testable import Talaria
+@testable import TalariaKit
 
 /// Coverage for the share extension's attacker-facing input parser.
 ///

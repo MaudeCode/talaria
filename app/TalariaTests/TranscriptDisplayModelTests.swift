@@ -6,6 +6,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 @testable import Talaria
+@testable import TalariaKit
 
 final class TranscriptMessageTests: XCTestCase {
     func testOnlyTheCurrentAssistantTurnOwnsASeparateActiveStream() throws {

@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 enum TranscriptLinkPreviewExtractor {
     static func firstWebURL(in text: String) -> URL? {

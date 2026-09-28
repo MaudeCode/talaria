@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 enum KanbanCompatibilityState: Equatable {
     case idle

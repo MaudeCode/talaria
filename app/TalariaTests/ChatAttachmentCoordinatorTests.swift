@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 @testable import Talaria
+@testable import TalariaKit
 
 @MainActor
 final class ChatAttachmentCoordinatorTests: APIClientTestCase {

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct HeaderLogoColorPresetButton: View {
     let preset: HeaderLogoColorPreset

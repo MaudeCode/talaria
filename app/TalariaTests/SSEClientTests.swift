@@ -1,6 +1,7 @@
 import LDSwiftEventSource
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 @MainActor
 final class SSEClientTests: XCTestCase {

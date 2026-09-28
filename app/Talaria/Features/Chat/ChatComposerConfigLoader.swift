@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 struct ChatComposerConfigState: Equatable, Sendable {
     var currentWorkspace: String?

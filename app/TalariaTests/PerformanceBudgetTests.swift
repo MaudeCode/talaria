@@ -1,6 +1,7 @@
 import UIKit
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 extension XCTestCase {
     /// `measure` takes a synchronous body, but the paths worth budgeting here

@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// Request construction + tolerant decoding for the read-only workspace-git endpoints
 /// (issue #312, Slice A). Mirrors `APIClientWorkspaceFileTests`.

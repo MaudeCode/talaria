@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// Gives each test its own empty defaults suite so the persisted Board choice
 /// never leaks between tests or runs.

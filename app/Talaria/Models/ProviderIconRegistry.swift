@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ProviderIconDescriptor: Equatable, Sendable {
     let assetName: String?

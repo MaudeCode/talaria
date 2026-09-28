@@ -1,6 +1,7 @@
 import ActivityKit
 import SwiftUI
 import WidgetKit
+import TalariaKit
 
 struct AgentRunStatusDot: View {
     let status: AgentRunActivityStatus

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ReauthenticationSheet: View {
     @Bindable var authManager: AuthManager

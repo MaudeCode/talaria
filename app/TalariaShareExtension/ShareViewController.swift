@@ -1,4 +1,5 @@
 import UIKit
+import TalariaKit
 
 @MainActor
 final class ShareViewController: UIViewController {

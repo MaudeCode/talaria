@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ReasoningBlockView: View {
     let text: String

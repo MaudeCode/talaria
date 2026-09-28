@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// Chat link destinations that name a workspace file, resolved to the
 /// workspace-relative path and one-based line the source viewer opens (TAL-169).

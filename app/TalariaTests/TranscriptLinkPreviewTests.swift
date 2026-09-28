@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 final class TranscriptLinkPreviewTests: XCTestCase {
     func testExtractsFirstValidWebURL() throws {

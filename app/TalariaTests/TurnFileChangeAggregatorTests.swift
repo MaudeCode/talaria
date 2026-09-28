@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// The in-chat "N files changed" recap (issue #316, Slice D) over the server's per-turn
 /// `file_changes` (TAL-355): scene decoding, rename handling, and the `git/status` join for

@@ -1,0 +1,24 @@
+{
+  "originHash" : "822f658f74077ed3b0a57c6d6c41b50a5016a8d72c6e3b8edd37ae0a9bcb9a81",
+  "pins" : [
+    {
+      "identity" : "keychainaccess",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kishikawakatsumi/KeychainAccess.git",
+      "state" : {
+        "revision" : "84e546727d66f1adc5439debad16270d0fdd04e7",
+        "version" : "4.2.2"
+      }
+    },
+    {
+      "identity" : "swift-eventsource",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/LaunchDarkly/swift-eventsource.git",
+      "state" : {
+        "revision" : "57051701c58a93603ffa2051f8e9cf0c8cff7814",
+        "version" : "3.3.0"
+      }
+    }
+  ],
+  "version" : 3
+}

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SessionActionConfirmations: ViewModifier {
     @Bindable var viewModel: SessionListViewModel

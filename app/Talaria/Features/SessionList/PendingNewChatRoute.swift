@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 struct PendingNewChatRoute: Identifiable, Hashable {
     let id = UUID()

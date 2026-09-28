@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import TalariaKit
 
 /// One configured server as it travels through the user's private CloudKit
 /// database (TAL-91). The whole struct is the *encrypted* payload of a

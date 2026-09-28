@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 struct ClarificationPromptState: Equatable, Identifiable {
     var requestID: String { "\(sessionID)-\(pending.id)" }

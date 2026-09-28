@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ComposerSecondaryControlsState: Equatable {
     struct GitBranch: Equatable {

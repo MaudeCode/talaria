@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ComposerModelPickerSheet: View {
     let modelGroups: [ModelCatalogGroup]

@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import SwiftData
 import SwiftUI
+import TalariaKit
 
 struct ScheduledSessionGroups: Equatable {
     let ordinary: [SessionSummary]

@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct ChatAttachmentPreviewItem: Identifiable, Equatable {
     let id = UUID()

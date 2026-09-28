@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ServerAvatarBadge: View {
     let initials: String

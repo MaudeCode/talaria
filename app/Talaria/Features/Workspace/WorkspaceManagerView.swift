@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 /// Workspace-registry management sheet (issue #22): add, rename, reorder, and
 /// remove registered workspaces. Removal only unregisters a path from the

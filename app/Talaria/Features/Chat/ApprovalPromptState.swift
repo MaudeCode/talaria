@@ -1,3 +1,5 @@
+import TalariaKit
+
 struct ApprovalPromptState: Equatable, Identifiable {
     var id: String {
         "\(sessionID)-\(pending.id)"

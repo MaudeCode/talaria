@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// A scripted, multi-connection mock of `SSEStreamingClient` for driving full
 /// disconnect → reconnect → replay sequences through `ChatStreamCoordinator`.

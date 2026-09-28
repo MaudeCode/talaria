@@ -1,3 +1,5 @@
+import TalariaKit
+
 typealias ChatHapticFeedback = AppHapticFeedback
 
 @MainActor

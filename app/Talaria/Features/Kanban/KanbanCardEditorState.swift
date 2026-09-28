@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import TalariaKit
 
 enum KanbanCardEditorMode: Equatable, Sendable {
     case create

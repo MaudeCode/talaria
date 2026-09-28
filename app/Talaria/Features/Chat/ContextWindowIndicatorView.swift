@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ContextWindowIndicatorPresentation: Equatable {
     let percentage: Double?

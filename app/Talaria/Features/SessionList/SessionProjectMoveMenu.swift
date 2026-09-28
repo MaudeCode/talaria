@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SessionProjectMoveMenu: View {
     let session: SessionSummary

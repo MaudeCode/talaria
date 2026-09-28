@@ -1,5 +1,6 @@
 import SwiftUI
 import WidgetKit
+import TalariaKit
 
 struct ProviderQuotaTimelineEntry: TimelineEntry {
     let date: Date

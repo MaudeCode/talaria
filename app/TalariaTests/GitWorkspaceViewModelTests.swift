@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// View-model behaviour + diff parsing for the workspace-git feature (issue #312, Slice A).
 final class GitWorkspaceViewModelTests: APIClientTestCase {

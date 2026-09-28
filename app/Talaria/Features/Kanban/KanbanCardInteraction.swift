@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 enum KanbanCardAction: Equatable {
     case move(String)

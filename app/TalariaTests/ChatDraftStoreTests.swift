@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 @MainActor
 final class ChatDraftStoreTests: XCTestCase {

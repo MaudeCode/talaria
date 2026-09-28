@@ -9,8 +9,6 @@
 /* Begin PBXBuildFile section */
 		AA1900000000000000000001 /* ReauthenticationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1900000000000000000002 /* ReauthenticationSheet.swift */; };
 		D81000000000000000000021 /* ShareExtensionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000022 /* ShareExtensionUITests.swift */; };
-		D81000000000000000000013 /* ShareOpenFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000012 /* ShareOpenFixture.swift */; };
-		D81000000000000000000011 /* ShareOpenFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000012 /* ShareOpenFixture.swift */; };
 		D81000000000000000000001 /* ShareExtensionUITestHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000002 /* ShareExtensionUITestHost.swift */; };
 		05814DEA5DE4690F730B1E15 /* InsightsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 931EC010A2D940B0E42287A4 /* InsightsViewModel.swift */; };
 		26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F1 /* ProvidersViewModel.swift */; };
@@ -18,9 +16,7 @@
 		26AB000000000000000000B3 /* APIClientProvidersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F3 /* APIClientProvidersTests.swift */; };
 		A06100000000000000000003 /* ProviderQuotaWidgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */; };
 		26AB000000000000000000B4 /* ProvidersViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F4 /* ProvidersViewModelTests.swift */; };
-		1A2B3C4D5E6F700000000300 /* ServerAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000301 /* ServerAccount.swift */; };
 		B5A1000000000000000000A0 /* ServerRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A1000000000000000000A1 /* ServerRegistryTests.swift */; };
-		C0DE512E0000000000000202 /* InsightsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE512E0000000000000201 /* InsightsModels.swift */; };
 		C0DE512E0000000000000204 /* InsightsRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE512E0000000000000203 /* InsightsRows.swift */; };
 		0D82B28493C6401D98DA9C0E /* SlashCommandExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6809B8F1391248A4AA77C453 /* SlashCommandExecutorTests.swift */; };
 		1A2B3C4D5E6F700000000001 /* TalariaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000011 /* TalariaApp.swift */; };
@@ -42,7 +38,6 @@
 		1A2B3C4D5E6F700000000007 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 1A2B3C4D5E6F700000000097 /* Highlightr */; };
 		1A2B3C4D5E6F700000000008 /* KeychainAccess in Frameworks */ = {isa = PBXBuildFile; productRef = 1A2B3C4D5E6F700000000098 /* KeychainAccess */; };
 		5417A7400000000000000092 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 5417A7400000000000000091 /* SwiftMath */; };
-		1A2B3C4D5E6F7000000000A0 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B0 /* KeychainStore.swift */; };
 		C10D00000000000000000011 /* ConfigurationSyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D00000000000000000001 /* ConfigurationSyncModels.swift */; };
 		C10D00000000000000000012 /* ConfigurationSyncStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D00000000000000000002 /* ConfigurationSyncStore.swift */; };
 		C10D00000000000000000013 /* ConfigurationSyncMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D00000000000000000003 /* ConfigurationSyncMerge.swift */; };
@@ -51,20 +46,6 @@
 		C10D00000000000000000016 /* AppleAccountSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D00000000000000000006 /* AppleAccountSettingsView.swift */; };
 		C10D00000000000000000017 /* ConfigurationSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10D00000000000000000007 /* ConfigurationSyncTests.swift */; };
 		1A2B3C4D5E6F7000000000A1 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B1 /* AuthManager.swift */; };
-		B11200000000000000000001 /* ServerCookieStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11200000000000000000002 /* ServerCookieStore.swift */; };
-		1A2B3C4D5E6F7000000000A2 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B2 /* APIClient.swift */; };
-		C04000000000000000000001 /* APIClient+Sessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04000000000000000000011 /* APIClient+Sessions.swift */; };
-		C04000000000000000000002 /* APIClient+Projects.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04000000000000000000012 /* APIClient+Projects.swift */; };
-		C04000000000000000000003 /* APIClient+Chat.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04000000000000000000013 /* APIClient+Chat.swift */; };
-		C04000000000000000000004 /* APIClient+Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04000000000000000000014 /* APIClient+Workspace.swift */; };
-		C04000000000000000000005 /* APIClient+ServerPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04000000000000000000015 /* APIClient+ServerPanels.swift */; };
-		C04000000000000000000006 /* APIClient+Cron.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04000000000000000000016 /* APIClient+Cron.swift */; };
-		C04000000000000000000007 /* APIClient+Memory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04000000000000000000017 /* APIClient+Memory.swift */; };
-		C04000000000000000000008 /* APIClient+Skills.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04000000000000000000018 /* APIClient+Skills.swift */; };
-		C04000000000000000000009 /* APIClient+Upload.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04000000000000000000019 /* APIClient+Upload.swift */; };
-		1A2B3C4D5E6F7000000000A3 /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B3 /* APIError.swift */; };
-		C04400000000000000000001 /* CacheFallbackPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04400000000000000000002 /* CacheFallbackPolicy.swift */; };
-		1A2B3C4D5E6F7000000000A4 /* ServerInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B4 /* ServerInfo.swift */; };
 		1A2B3C4D5E6F7000000000A5 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B5 /* OnboardingView.swift */; };
 		1A2B3C4D5E6F70000000410 /* OnboardingComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000411 /* OnboardingComponents.swift */; };
 		1A2B3C4D5E6F7000000000A6 /* OnboardingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B6 /* OnboardingViewModel.swift */; };
@@ -76,10 +57,6 @@
 		C107V0000000000000000003 /* NewChatRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000103 /* NewChatRequest.swift */; };
 		C107V0000000000000000004 /* PendingNewChatRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000104 /* PendingNewChatRoute.swift */; };
 		C107V0000000000000000005 /* SessionListUtilityDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107V0000000000000000105 /* SessionListUtilityDestination.swift */; };
-		1A2B3C4D5E6F7000000000A8 /* Endpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B8 /* Endpoints.swift */; };
-		1A2B3C4D5E6F7000000000A9 /* JSONValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000B9 /* JSONValue.swift */; };
-		1A2B3C4D5E6F7000000000AA /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000BA /* ChatMessage.swift */; };
-		1A2B3C4D5E6F7000000000AB /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000BB /* Session.swift */; };
 		1A2B3C4D5E6F7000000000AC /* APIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000BC /* APIClientTests.swift */; };
 		C0FF000000000000000000C1 /* CustomHeaderInjectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FF000000000000000000C2 /* CustomHeaderInjectionTests.swift */; };
 		C03910000000000000000001 /* APIClientSessionListTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000001 /* APIClientSessionListTests.swift */; };
@@ -156,14 +133,6 @@
 		C04700000000000000000001 /* ChatPendingActionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04700000000000000000002 /* ChatPendingActionCoordinator.swift */; };
 		C04800000000000000000001 /* ChatAttachmentCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04800000000000000000002 /* ChatAttachmentCoordinator.swift */; };
 		C04800000000000000000003 /* ChatAttachmentCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04800000000000000000004 /* ChatAttachmentCoordinatorTests.swift */; };
-		1A2B3C4D5E6F7000000000AD /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000BD /* Workspace.swift */; };
-		1A2B3C4D5E6F7000000000AE /* ServerCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000BE /* ServerCatalog.swift */; };
-		C107G000000000000000001 /* ChatControlResponses.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107G000000000000000011 /* ChatControlResponses.swift */; };
-		C107G000000000000000002 /* ServerSettingsUpdates.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107G000000000000000012 /* ServerSettingsUpdates.swift */; };
-		C107G000000000000000003 /* ServerProfiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107G000000000000000013 /* ServerProfiles.swift */; };
-		C107G000000000000000004 /* ModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107G000000000000000014 /* ModelCatalog.swift */; };
-		A06100000000000000000001 /* ProviderQuota.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000002 /* ProviderQuota.swift */; };
-		A06100000000000000000005 /* ProviderQuota.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000002 /* ProviderQuota.swift */; };
 		A06100000000000000000006 /* ProviderQuotaWidgetSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000007 /* ProviderQuotaWidgetSettings.swift */; };
 		C107W0000000000000000001 /* ProviderQuotaPresentationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000101 /* ProviderQuotaPresentationModels.swift */; };
 		C107W0000000000000000002 /* ProviderQuotaWidgetLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000102 /* ProviderQuotaWidgetLayout.swift */; };
@@ -202,10 +171,6 @@
 		C107W0000000000000000012 /* ProviderQuotaWidgetLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000102 /* ProviderQuotaWidgetLayout.swift */; };
 		C107W0000000000000000013 /* ProviderQuotaPace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000103 /* ProviderQuotaPace.swift */; };
 		C107W0000000000000000014 /* ProviderQuotaPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107W0000000000000000104 /* ProviderQuotaPresentation.swift */; };
-		C107F000000000000000001 /* ProviderQuotaWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */; };
-		C107F000000000000000002 /* ProviderQuotaWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */; };
-		C107F000000000000000003 /* ProviderQuotaWidgetRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107F000000000000000012 /* ProviderQuotaWidgetRefresh.swift */; };
-		C107F000000000000000004 /* ProviderQuotaWidgetRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107F000000000000000012 /* ProviderQuotaWidgetRefresh.swift */; };
 		A10700000000000000000001 /* ProviderQuotaWidgetConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10700000000000000000003 /* ProviderQuotaWidgetConfiguration.swift */; };
 		A10700000000000000000002 /* ProviderQuotaWidgetConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10700000000000000000003 /* ProviderQuotaWidgetConfiguration.swift */; };
 		A06300000000000000000001 /* ProviderIconRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06300000000000000000011 /* ProviderIconRegistry.swift */; };
@@ -254,16 +219,11 @@
 		C107K0000000000000000024 /* OfflineCacheBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107K0000000000000000124 /* OfflineCacheBanner.swift */; };
 		A10900000000000000000001 /* SessionNavigationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10900000000000000000011 /* SessionNavigationState.swift */; };
 		A04300000000000000000002 /* SessionListActionConfirmations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04300000000000000000012 /* SessionListActionConfirmations.swift */; };
-		A04300000000000000000003 /* SessionMutator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04300000000000000000013 /* SessionMutator.swift */; };
 		A040C0DE0000000000000001 /* ProjectCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A040C0DE0000000000000002 /* ProjectCreationSheet.swift */; };
 		A048C0DE0000000000000001 /* SessionRenameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A048C0DE0000000000000002 /* SessionRenameSheet.swift */; };
-		A04200000000000000000001 /* Approval.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04200000000000000000002 /* Approval.swift */; };
 		A04200000000000000000003 /* ApprovalRequestOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04200000000000000000004 /* ApprovalRequestOverlay.swift */; };
-		C1A042000000000000000001 /* Clarification.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A042000000000000000002 /* Clarification.swift */; };
 		C1A042000000000000000003 /* ClarificationRequestOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A042000000000000000004 /* ClarificationRequestOverlay.swift */; };
 		C1A042000000000000000005 /* ClarificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A042000000000000000006 /* ClarificationTests.swift */; };
-		A02400000000000000000001 /* Goal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02400000000000000000002 /* Goal.swift */; };
-		C04600000000000000000001 /* ChatStreamCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04600000000000000000002 /* ChatStreamCoordinator.swift */; };
 		C04600000000000000000003 /* ChatStreamCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04600000000000000000004 /* ChatStreamCoordinatorTests.swift */; };
 		C22600000000000000000001 /* ScriptedSSEStreamFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000002 /* ScriptedSSEStreamFixture.swift */; };
 		C22600000000000000000003 /* StreamReconnectContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22600000000000000000004 /* StreamReconnectContractTests.swift */; };
@@ -273,15 +233,12 @@
 		C107T0000000000000000001 /* ApprovalPromptState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000101 /* ApprovalPromptState.swift */; };
 		C107T0000000000000000002 /* ProfileSwitchOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000102 /* ProfileSwitchOutcome.swift */; };
 		C107T0000000000000000003 /* ChatPollingIntervals.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000103 /* ChatPollingIntervals.swift */; };
-		C107T0000000000000000004 /* ActiveStreamRecoveryState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000104 /* ActiveStreamRecoveryState.swift */; };
 		C107T0000000000000000005 /* ActiveChatStreamSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000105 /* ActiveChatStreamSnapshotStore.swift */; };
 		C107T0000000000000000006 /* QueuedSlashMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000106 /* QueuedSlashMessage.swift */; };
 		C107T0000000000000000007 /* ToolCall+ReplayMatching.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000107 /* ToolCall+ReplayMatching.swift */; };
 		C107T0000000000000000008 /* ClarificationPromptState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107T0000000000000000108 /* ClarificationPromptState.swift */; };
 		C107R0000000000000000001 /* ChatTranscriptModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107R0000000000000000101 /* ChatTranscriptModels.swift */; };
 		C107C000000000000000001 /* ChatListenPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107C000000000000000011 /* ChatListenPlayback.swift */; };
-		1A2B3C4D5E6F7000000000D6 /* SSEClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D7 /* SSEClient.swift */; };
-		C0FF000000000000000000A1 /* CustomHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FF000000000000000000A2 /* CustomHeader.swift */; };
 		1A2B3C4D5E6F7000000000D8 /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */; };
 		BEEF02400000000000000001 /* ChatAttachmentPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEEF02400000000000000002 /* ChatAttachmentPreviewView.swift */; };
 		1A2B3C4D5E6F7000000000DA /* MarkdownRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000DB /* MarkdownRenderer.swift */; };
@@ -339,7 +296,6 @@
 		C0DE3400000000000000000B /* TranscriptMediaPreviewViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE3400000000000000000C /* TranscriptMediaPreviewViewModelTests.swift */; };
 		C0DE12000000000000000003 /* TranscriptLinkPreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE12000000000000000004 /* TranscriptLinkPreviewTests.swift */; };
 		1A2B3C4D5E6F7000000000DC /* SSEClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000DD /* SSEClientTests.swift */; };
-		1A2B3C4D5E6F7000000000DE /* ToolCall.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000DF /* ToolCall.swift */; };
 		C12800000000000000000001 /* ToolActivityGroupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12800000000000000000002 /* ToolActivityGroupView.swift */; };
 		1A2B3C4D5E6F7000000000E0 /* ToolCallCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */; };
 		C12800000000000000000003 /* ChatTimelineAccessorySurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12800000000000000000004 /* ChatTimelineAccessorySurface.swift */; };
@@ -354,13 +310,8 @@
 		7A16900000000000000000A2 /* SourceFileHighlighter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A16900000000000000000F2 /* SourceFileHighlighter.swift */; };
 		7A16900000000000000000A3 /* SourceFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A16900000000000000000F3 /* SourceFileView.swift */; };
 		BEEF02600000000000000001 /* FileExportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEEF02600000000000000002 /* FileExportSupport.swift */; };
-		1A2B3C4D5E6F7000000000EC /* CachedSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000EE /* CachedSession.swift */; };
-		1A2B3C4D5E6F7000000000ED /* CachedMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000EF /* CachedMessage.swift */; };
-		1A2B3C4D5E6F7000000000F1 /* CacheStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F3 /* CacheStore.swift */; };
 		1A2B3C4D5E6F7000000000F2 /* CacheStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F4 /* CacheStoreTests.swift */; };
-		C28702000000000000000001 /* ChatDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28702000000000000000002 /* ChatDraftStore.swift */; };
 		C28702000000000000000003 /* ChatDraftStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28702000000000000000004 /* ChatDraftStoreTests.swift */; };
-		C28702000000000000000005 /* ChatDraftAttachmentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28702000000000000000006 /* ChatDraftAttachmentStore.swift */; };
 		C28702000000000000000007 /* ChatDraftAttachmentStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C28702000000000000000008 /* ChatDraftAttachmentStoreTests.swift */; };
 		C04400000000000000000003 /* CacheFallbackPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04400000000000000000004 /* CacheFallbackPolicyTests.swift */; };
 		1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */; };
@@ -400,7 +351,6 @@
 		A09700000000000000000001 /* RelayLiveActivitySettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */; };
 		C100A0000000000000000001 /* RelayConnectionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C100A0000000000000000101 /* RelayConnectionSettingsView.swift */; };
 		C09200000000000000000001 /* AppFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09200000000000000000002 /* AppFont.swift */; };
-		1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000101 /* AppTheme.swift */; };
 		C107O0000000000000000001 /* ChatScrollObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000101 /* ChatScrollObserver.swift */; };
 		C107O0000000000000000002 /* ChatVerticalScrollAxisGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */; };
 		C107O0000000000000000003 /* AssistantTypingIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */; };
@@ -500,15 +450,11 @@
 		C107D000000000000000002 /* ChatActiveRunStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000012 /* ChatActiveRunStatus.swift */; };
 		C107D000000000000000003 /* ResponseCompletionNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000013 /* ResponseCompletionNotifications.swift */; };
 		C107D000000000000000004 /* ComposerBehavior.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107D000000000000000014 /* ComposerBehavior.swift */; };
-		A20300000000000000000001 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */; };
-		1A2B3C4D5E6F7000000000F8 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */; };
 		C06900000000000000000001 /* UITestFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000002 /* UITestFixture.swift */; };
 		C06900000000000000000003 /* UITestFixture+Kanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000004 /* UITestFixture+Kanban.swift */; };
 		C06900000000000000000005 /* UITestFixture+Panels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000006 /* UITestFixture+Panels.swift */; };
 		C06900000000000000000007 /* UITestFixture+Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06900000000000000000008 /* UITestFixture+Workspace.swift */; };
 		C012400000000000000002 /* AppIconChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = C012400000000000000001 /* AppIconChoice.swift */; };
-		C03120000000000000B001 /* GitWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F001 /* GitWorkspace.swift */; };
-		C03120000000000000B002 /* APIClient+Git.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F002 /* APIClient+Git.swift */; };
 		C03120000000000000B003 /* GitWorkspaceViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F003 /* GitWorkspaceViewModel.swift */; };
 		22AB000000000000000000B1 /* WorkspaceRegistryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AB000000000000000000F1 /* WorkspaceRegistryViewModel.swift */; };
 		22AB000000000000000000B2 /* WorkspaceManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AB000000000000000000F2 /* WorkspaceManagerView.swift */; };
@@ -518,21 +464,14 @@
 		C03180000000000000B002 /* GitActionToastOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03180000000000000F002 /* GitActionToastOverlay.swift */; };
 		C03180000000000000B003 /* GitInlineCommitButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03180000000000000F003 /* GitInlineCommitButton.swift */; };
 		C03180000000000000B004 /* GitCommitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03180000000000000F004 /* GitCommitView.swift */; };
-		C03180000000000000B005 /* TurnFileChangeSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03180000000000000F005 /* TurnFileChangeSummary.swift */; };
 		C03180000000000000B007 /* GitTurnChangesCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03180000000000000F007 /* GitTurnChangesCard.swift */; };
 		C03120000000000000B008 /* TurnFileChangeAggregatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03120000000000000F008 /* TurnFileChangeAggregatorTests.swift */; };
-		C03190000000000000B001 /* AttachmentAudioDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03190000000000000F001 /* AttachmentAudioDetection.swift */; };
 		C03190000000000000B002 /* InlineAudioPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03190000000000000F002 /* InlineAudioPlayerView.swift */; };
 		C03190000000000000B003 /* AttachmentAudioDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03190000000000000F003 /* AttachmentAudioDetectionTests.swift */; };
-		C03250000000000000B101 /* TranscribeResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03250000000000000F101 /* TranscribeResponse.swift */; };
-		C03250000000000000B102 /* APIClient+Transcribe.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03250000000000000F102 /* APIClient+Transcribe.swift */; };
-		C03250000000000000B103 /* MultipartFormData.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03250000000000000F103 /* MultipartFormData.swift */; };
 		C03250000000000000B104 /* ComposerVoiceNoteRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03250000000000000F104 /* ComposerVoiceNoteRecorder.swift */; };
 		C03250000000000000B105 /* APIClientTranscribeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03250000000000000F105 /* APIClientTranscribeTests.swift */; };
 		C03250000000000000B106 /* ComposerVoiceNoteRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03250000000000000F106 /* ComposerVoiceNoteRecorderTests.swift */; };
 		C13811000000000000000001 /* ComposerVoiceServerRecordingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C13810000000000000000001 /* ComposerVoiceServerRecordingTests.swift */; };
-		C03260000000000000B101 /* APIClient+TTS.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03260000000000000F101 /* APIClient+TTS.swift */; };
-		C03270000000000000B101 /* APIClient+SessionExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03270000000000000F101 /* APIClient+SessionExport.swift */; };
 		C03260000000000000B102 /* APIClientTTSTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03260000000000000F102 /* APIClientTTSTests.swift */; };
 		C03270000000000000B102 /* APIClientSessionExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03270000000000000F102 /* APIClientSessionExportTests.swift */; };
 		C03140000000000000B001 /* GitBranchPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03140000000000000F001 /* GitBranchPickerView.swift */; };
@@ -558,23 +497,15 @@
 		C107B000000000000000003 /* ModelPickerButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000013 /* ModelPickerButton.swift */; };
 		C107B000000000000000004 /* CreateProfileSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000014 /* CreateProfileSheet.swift */; };
 		C107B000000000000000005 /* ProfileStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000015 /* ProfileStatusBadge.swift */; };
-		1A2B3C4D5E6F70000000130 /* ContextWindowSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000120 /* ContextWindowSnapshot.swift */; };
 		1A2B3C4D5E6F70000000131 /* ContextWindowIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000121 /* ContextWindowIndicatorView.swift */; };
 		1A2B3C4D5E6F70000000132 /* ContextWindowIndicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000122 /* ContextWindowIndicatorTests.swift */; };
-		1A2B3C4D5E6F70000000140 /* ModelFavoritesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000142 /* ModelFavoritesStore.swift */; };
 		1A2B3C4D5E6F70000000141 /* ModelFavoritesStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000143 /* ModelFavoritesStoreTests.swift */; };
-		1A2B3C4D5E6F70000000150 /* UploadResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000151 /* UploadResponse.swift */; };
-		1A2B3C4D5E6F70000000152 /* MessageAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000153 /* MessageAttachment.swift */; };
-		1A2B3C4D5E6F70000000200 /* Memory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000201 /* Memory.swift */; };
 		1A2B3C4D5E6F70000000202 /* MemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000203 /* MemoryView.swift */; };
 		1A2B3C4D5E6F70000000204 /* MemoryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000205 /* MemoryViewModel.swift */; };
-		1A2B3C4D5E6F70000000210 /* Skills.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000211 /* Skills.swift */; };
 		1A2B3C4D5E6F70000000212 /* SkillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000213 /* SkillsView.swift */; };
 		1A2B3C4D5E6F70000000214 /* SkillsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000215 /* SkillsViewModel.swift */; };
 		1A2B3C4D5E6F70000000300 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000301 /* PrivacyInfo.xcprivacy */; };
 		9E2A653D968A4ACDA19A8142 /* ThirdPartyNotices in Resources */ = {isa = PBXBuildFile; fileRef = 488791F556304AD2AC59BC5D /* ThirdPartyNotices */; };
-		B5A100000000000000000001 /* SharedDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000010 /* SharedDraftStore.swift */; };
-		B5A100000000000000000002 /* SharedDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000010 /* SharedDraftStore.swift */; };
 		B5A100000000000000000003 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000011 /* ShareViewController.swift */; };
 		B5A100000000000000000007 /* ShareInputReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000018 /* ShareInputReader.swift */; };
 		B5A100000000000000000008 /* ShareInputReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000018 /* ShareInputReader.swift */; };
@@ -593,11 +524,6 @@
 		C23400000000000000000001 /* StreamingLabReplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23400000000000000000002 /* StreamingLabReplay.swift */; };
 		C23400000000000000000003 /* StreamingLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23400000000000000000004 /* StreamingLabView.swift */; };
 		C23400000000000000000005 /* StreamingLabReplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C23400000000000000000006 /* StreamingLabReplayTests.swift */; };
-		C14900000000000000000001 /* Kanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000002 /* Kanban.swift */; };
-		C107H000000000000000001 /* KanbanRequests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107H000000000000000011 /* KanbanRequests.swift */; };
-		C107H000000000000000002 /* KanbanCardDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107H000000000000000012 /* KanbanCardDetails.swift */; };
-		C107H000000000000000003 /* KanbanCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107H000000000000000013 /* KanbanCompatibility.swift */; };
-		C14900000000000000000003 /* APIClient+Kanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000004 /* APIClient+Kanban.swift */; };
 		C14900000000000000000005 /* KanbanFeatureState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000006 /* KanbanFeatureState.swift */; };
 		C107S0000000000000000001 /* KanbanFeatureStateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107S0000000000000000101 /* KanbanFeatureStateModels.swift */; };
 		C14900000000000000000007 /* KanbanLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14900000000000000000008 /* KanbanLabView.swift */; };
@@ -616,7 +542,6 @@
 		C107Z0000000000000000003 /* KanbanFeatureStateCardMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000103 /* KanbanFeatureStateCardMutationTests.swift */; };
 		C107Z0000000000000000004 /* KanbanFeatureStateBulkActionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000104 /* KanbanFeatureStateBulkActionTests.swift */; };
 		C107Z0000000000000000005 /* KanbanFeatureStateBoardManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107Z0000000000000000105 /* KanbanFeatureStateBoardManagementTests.swift */; };
-		C15100000000000000000001 /* KanbanEventStreamClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15100000000000000000002 /* KanbanEventStreamClient.swift */; };
 		C15100000000000000000003 /* KanbanEventStreamClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15100000000000000000004 /* KanbanEventStreamClientTests.swift */; };
 		C15100000000000000000005 /* KanbanLiveUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15100000000000000000006 /* KanbanLiveUpdateTests.swift */; };
 		C15400000000000000000001 /* KanbanCardDetailState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15400000000000000000002 /* KanbanCardDetailState.swift */; };
@@ -630,14 +555,11 @@
 		B5A100000000000000000004 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000014 /* PrivacyInfo.xcprivacy */; };
 		B5A100000000000000000005 /* SharedDraftStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000016 /* SharedDraftStoreTests.swift */; };
 		B5A100000000000000000006 /* TalariaShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B5A100000000000000000017 /* TalariaShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		A04500000000000000000001 /* AgentRunActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000010 /* AgentRunActivityAttributes.swift */; };
 		A04500000000000000000002 /* TalariaDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000011 /* TalariaDeepLink.swift */; };
 		A04500000000000000000003 /* AgentLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000012 /* AgentLiveActivityManager.swift */; };
 		C100B0000000000000000001 /* PerSessionRelayActivityRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = C100B0000000000000000101 /* PerSessionRelayActivityRegistration.swift */; };
 		C107E000000000000000001 /* TalariaRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107E000000000000000011 /* TalariaRelay.swift */; };
 		C107E000000000000000002 /* TalariaAggregateLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107E000000000000000012 /* TalariaAggregateLiveActivityManager.swift */; };
-		C107E000000000000000003 /* LiveActivityReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107E000000000000000013 /* LiveActivityReconciler.swift */; };
-		A04500000000000000000004 /* AgentRunActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000010 /* AgentRunActivityAttributes.swift */; };
 		A04500000000000000000005 /* TalariaDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000011 /* TalariaDeepLink.swift */; };
 		A04500000000000000000006 /* AgentRunLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04500000000000000000013 /* AgentRunLiveActivityWidget.swift */; };
 		A04500000000000000000007 /* TalariaLiveActivityWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A04500000000000000000017 /* TalariaLiveActivityWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -646,7 +568,6 @@
 		2BE8F2B38F094C4C9EB18301 /* SkillsViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE8F2B38F094C4C9EB18300 /* SkillsViewModelTests.swift */; };
 		22AB000000000000000000B3 /* WorkspaceRegistryViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AB000000000000000000F3 /* WorkspaceRegistryViewModelTests.swift */; };
 		36CD9EF0B0734E5F8C28BB92 /* SlashCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DA59130ED4141049177576C /* SlashCommand.swift */; };
-		3F91D2A54B9A4F66A2C01001 /* Cron.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F91D2A54B9A4F66A2C01011 /* Cron.swift */; };
 		3F91D2A54B9A4F66A2C01002 /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F91D2A54B9A4F66A2C01012 /* TasksView.swift */; };
 		3F91D2A54B9A4F66A2C01003 /* TasksViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F91D2A54B9A4F66A2C01013 /* TasksViewModel.swift */; };
 		3F91D2A54B9A4F66A2C01004 /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F91D2A54B9A4F66A2C01014 /* TaskDetailView.swift */; };
@@ -685,6 +606,10 @@
 		D74A00000000000000000020 /* LiveActivityVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */; };
 		D74A00000000000000000021 /* AppScreenVisualReferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74A00000000000000000005 /* AppScreenVisualReferenceTests.swift */; };
 		A19000000000000000000111 /* PerformanceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000112 /* PerformanceUITests.swift */; };
+		DF70F1E3194F55301886A523 /* LiveActivityReconciler+App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EC8D639E3A5818B98398993 /* LiveActivityReconciler+App.swift */; };
+		D399000000000000000000B1 /* TalariaKit in Frameworks */ = {isa = PBXBuildFile; productRef = D399000000000000000000A1 /* TalariaKit */; };
+		D399000000000000000000B2 /* TalariaKit in Frameworks */ = {isa = PBXBuildFile; productRef = D399000000000000000000A2 /* TalariaKit */; };
+		D399000000000000000000B3 /* TalariaKit in Frameworks */ = {isa = PBXBuildFile; productRef = D399000000000000000000A3 /* TalariaKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -736,11 +661,9 @@
 /* Begin PBXFileReference section */
 		AA1900000000000000000002 /* ReauthenticationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReauthenticationSheet.swift; sourceTree = "<group>"; };
 		D81000000000000000000022 /* ShareExtensionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareExtensionUITests.swift; sourceTree = "<group>"; };
-		D81000000000000000000012 /* ShareOpenFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareOpenFixture.swift; sourceTree = "<group>"; };
 		D81000000000000000000002 /* ShareExtensionUITestHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareExtensionUITestHost.swift; sourceTree = "<group>"; };
 		0485E1E1FFB64A24BB729CD4 /* SlashCommandTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommandTests.swift; sourceTree = "<group>"; };
 		351C0F1600000000000000A1 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Shared.xcconfig; path = Config/Shared.xcconfig; sourceTree = "<group>"; };
-		1A2B3C4D5E6F700000000301 /* ServerAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerAccount.swift; sourceTree = "<group>"; };
 		B5A1000000000000000000A1 /* ServerRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerRegistryTests.swift; sourceTree = "<group>"; };
 		0D1CE5F12B9E4D4D9E5A01C1 /* SlashCommandExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommandExecutor.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F700000000010 /* Talaria.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Talaria.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -763,7 +686,6 @@
 		A19000000000000000000104 /* AppEntryPointUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEntryPointUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000112 /* PerformanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceUITests.swift; sourceTree = "<group>"; };
 		A19000000000000000000003 /* TalariaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TalariaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		1A2B3C4D5E6F7000000000B0 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		C10D00000000000000000001 /* ConfigurationSyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSyncModels.swift; sourceTree = "<group>"; };
 		C10D00000000000000000002 /* ConfigurationSyncStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSyncStore.swift; sourceTree = "<group>"; };
 		C10D00000000000000000003 /* ConfigurationSyncMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSyncMerge.swift; sourceTree = "<group>"; };
@@ -772,20 +694,6 @@
 		C10D00000000000000000006 /* AppleAccountSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleAccountSettingsView.swift; sourceTree = "<group>"; };
 		C10D00000000000000000007 /* ConfigurationSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationSyncTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B1 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
-		B11200000000000000000002 /* ServerCookieStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerCookieStore.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000B2 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
-		C04000000000000000000011 /* APIClient+Sessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Sessions.swift"; sourceTree = "<group>"; };
-		C04000000000000000000012 /* APIClient+Projects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Projects.swift"; sourceTree = "<group>"; };
-		C04000000000000000000013 /* APIClient+Chat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Chat.swift"; sourceTree = "<group>"; };
-		C04000000000000000000014 /* APIClient+Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Workspace.swift"; sourceTree = "<group>"; };
-		C04000000000000000000015 /* APIClient+ServerPanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+ServerPanels.swift"; sourceTree = "<group>"; };
-		C04000000000000000000016 /* APIClient+Cron.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Cron.swift"; sourceTree = "<group>"; };
-		C04000000000000000000017 /* APIClient+Memory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Memory.swift"; sourceTree = "<group>"; };
-		C04000000000000000000018 /* APIClient+Skills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Skills.swift"; sourceTree = "<group>"; };
-		C04000000000000000000019 /* APIClient+Upload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Upload.swift"; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000B3 /* APIError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIError.swift; sourceTree = "<group>"; };
-		C04400000000000000000002 /* CacheFallbackPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheFallbackPolicy.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000B4 /* ServerInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerInfo.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B5 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000411 /* OnboardingComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingComponents.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000B6 /* OnboardingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingViewModel.swift; sourceTree = "<group>"; };
@@ -797,10 +705,6 @@
 		C107V0000000000000000103 /* NewChatRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewChatRequest.swift; sourceTree = "<group>"; };
 		C107V0000000000000000104 /* PendingNewChatRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingNewChatRoute.swift; sourceTree = "<group>"; };
 		C107V0000000000000000105 /* SessionListUtilityDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListUtilityDestination.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000B8 /* Endpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Endpoints.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000B9 /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000BA /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000BB /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000BC /* APIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientTests.swift; sourceTree = "<group>"; };
 		C0FF000000000000000000C2 /* CustomHeaderInjectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomHeaderInjectionTests.swift; sourceTree = "<group>"; };
 		C03900000000000000000001 /* APIClientSessionListTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSessionListTests.swift; sourceTree = "<group>"; };
@@ -877,13 +781,6 @@
 		C04700000000000000000002 /* ChatPendingActionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPendingActionCoordinator.swift; sourceTree = "<group>"; };
 		C04800000000000000000002 /* ChatAttachmentCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachmentCoordinator.swift; sourceTree = "<group>"; };
 		C04800000000000000000004 /* ChatAttachmentCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachmentCoordinatorTests.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000BD /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000BE /* ServerCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerCatalog.swift; sourceTree = "<group>"; };
-		C107G000000000000000011 /* ChatControlResponses.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatControlResponses.swift; sourceTree = "<group>"; };
-		C107G000000000000000012 /* ServerSettingsUpdates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSettingsUpdates.swift; sourceTree = "<group>"; };
-		C107G000000000000000013 /* ServerProfiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerProfiles.swift; sourceTree = "<group>"; };
-		C107G000000000000000014 /* ModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCatalog.swift; sourceTree = "<group>"; };
-		A06100000000000000000002 /* ProviderQuota.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuota.swift; sourceTree = "<group>"; };
 		A06100000000000000000007 /* ProviderQuotaWidgetSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSettings.swift; sourceTree = "<group>"; };
 		C107W0000000000000000101 /* ProviderQuotaPresentationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaPresentationModels.swift; sourceTree = "<group>"; };
 		C107W0000000000000000102 /* ProviderQuotaWidgetLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetLayout.swift; sourceTree = "<group>"; };
@@ -912,8 +809,6 @@
 		C107M0000000000000000221 /* AgentRunProgressRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunProgressRail.swift; sourceTree = "<group>"; };
 		C107M0000000000000000222 /* AgentRunTimerPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunTimerPill.swift; sourceTree = "<group>"; };
 		C107M0000000000000000223 /* AgentRunElapsedTimerText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunElapsedTimerText.swift; sourceTree = "<group>"; };
-		C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetSnapshot.swift; sourceTree = "<group>"; };
-		C107F000000000000000012 /* ProviderQuotaWidgetRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetRefresh.swift; sourceTree = "<group>"; };
 		A10700000000000000000003 /* ProviderQuotaWidgetConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetConfiguration.swift; sourceTree = "<group>"; };
 		A06300000000000000000011 /* ProviderIconRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderIconRegistry.swift; sourceTree = "<group>"; };
 		A06300000000000000000012 /* ProviderIcons.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = ProviderIcons.xcassets; sourceTree = "<group>"; };
@@ -958,16 +853,11 @@
 		C107K0000000000000000124 /* OfflineCacheBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineCacheBanner.swift; sourceTree = "<group>"; };
 		A10900000000000000000011 /* SessionNavigationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionNavigationState.swift; sourceTree = "<group>"; };
 		A04300000000000000000012 /* SessionListActionConfirmations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListActionConfirmations.swift; sourceTree = "<group>"; };
-		A04300000000000000000013 /* SessionMutator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMutator.swift; sourceTree = "<group>"; };
 		A040C0DE0000000000000002 /* ProjectCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectCreationSheet.swift; sourceTree = "<group>"; };
 		A048C0DE0000000000000002 /* SessionRenameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRenameSheet.swift; sourceTree = "<group>"; };
-		A04200000000000000000002 /* Approval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Approval.swift; sourceTree = "<group>"; };
 		A04200000000000000000004 /* ApprovalRequestOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalRequestOverlay.swift; sourceTree = "<group>"; };
-		C1A042000000000000000002 /* Clarification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Clarification.swift; sourceTree = "<group>"; };
 		C1A042000000000000000004 /* ClarificationRequestOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClarificationRequestOverlay.swift; sourceTree = "<group>"; };
 		C1A042000000000000000006 /* ClarificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClarificationTests.swift; sourceTree = "<group>"; };
-		A02400000000000000000002 /* Goal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Goal.swift; sourceTree = "<group>"; };
-		C04600000000000000000002 /* ChatStreamCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStreamCoordinator.swift; sourceTree = "<group>"; };
 		C04600000000000000000004 /* ChatStreamCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStreamCoordinatorTests.swift; sourceTree = "<group>"; };
 		C22600000000000000000002 /* ScriptedSSEStreamFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptedSSEStreamFixture.swift; sourceTree = "<group>"; };
 		C22600000000000000000004 /* StreamReconnectContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamReconnectContractTests.swift; sourceTree = "<group>"; };
@@ -977,15 +867,12 @@
 		C107T0000000000000000101 /* ApprovalPromptState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalPromptState.swift; sourceTree = "<group>"; };
 		C107T0000000000000000102 /* ProfileSwitchOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSwitchOutcome.swift; sourceTree = "<group>"; };
 		C107T0000000000000000103 /* ChatPollingIntervals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPollingIntervals.swift; sourceTree = "<group>"; };
-		C107T0000000000000000104 /* ActiveStreamRecoveryState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveStreamRecoveryState.swift; sourceTree = "<group>"; };
 		C107T0000000000000000105 /* ActiveChatStreamSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveChatStreamSnapshotStore.swift; sourceTree = "<group>"; };
 		C107T0000000000000000106 /* QueuedSlashMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuedSlashMessage.swift; sourceTree = "<group>"; };
 		C107T0000000000000000107 /* ToolCall+ReplayMatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ToolCall+ReplayMatching.swift"; sourceTree = "<group>"; };
 		C107T0000000000000000108 /* ClarificationPromptState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClarificationPromptState.swift; sourceTree = "<group>"; };
 		C107R0000000000000000101 /* ChatTranscriptModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptModels.swift; sourceTree = "<group>"; };
 		C107C000000000000000011 /* ChatListenPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatListenPlayback.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000D7 /* SSEClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEClient.swift; sourceTree = "<group>"; };
-		C0FF000000000000000000A2 /* CustomHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomHeader.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000D9 /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleView.swift; sourceTree = "<group>"; };
 		BEEF02400000000000000002 /* ChatAttachmentPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachmentPreviewView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000DB /* MarkdownRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderer.swift; sourceTree = "<group>"; };
@@ -1043,7 +930,6 @@
 		C0DE3400000000000000000C /* TranscriptMediaPreviewViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaPreviewViewModelTests.swift; sourceTree = "<group>"; };
 		C0DE12000000000000000004 /* TranscriptLinkPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptLinkPreviewTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000DD /* SSEClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEClientTests.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000DF /* ToolCall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCall.swift; sourceTree = "<group>"; };
 		C12800000000000000000002 /* ToolActivityGroupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolActivityGroupView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCallCardView.swift; sourceTree = "<group>"; };
 		C12800000000000000000004 /* ChatTimelineAccessorySurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTimelineAccessorySurface.swift; sourceTree = "<group>"; };
@@ -1058,13 +944,8 @@
 		7A16900000000000000000F2 /* SourceFileHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceFileHighlighter.swift; sourceTree = "<group>"; };
 		7A16900000000000000000F3 /* SourceFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceFileView.swift; sourceTree = "<group>"; };
 		BEEF02600000000000000002 /* FileExportSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExportSupport.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000EE /* CachedSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedSession.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000EF /* CachedMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedMessage.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000F3 /* CacheStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheStore.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000F4 /* CacheStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheStoreTests.swift; sourceTree = "<group>"; };
-		C28702000000000000000002 /* ChatDraftStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDraftStore.swift; sourceTree = "<group>"; };
 		C28702000000000000000004 /* ChatDraftStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDraftStoreTests.swift; sourceTree = "<group>"; };
-		C28702000000000000000006 /* ChatDraftAttachmentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDraftAttachmentStore.swift; sourceTree = "<group>"; };
 		C28702000000000000000008 /* ChatDraftAttachmentStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDraftAttachmentStoreTests.swift; sourceTree = "<group>"; };
 		C04400000000000000000004 /* CacheFallbackPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheFallbackPolicyTests.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -1104,7 +985,6 @@
 		A09700000000000000000002 /* RelayLiveActivitySettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayLiveActivitySettingsCard.swift; sourceTree = "<group>"; };
 		C100A0000000000000000101 /* RelayConnectionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayConnectionSettingsView.swift; sourceTree = "<group>"; };
 		C09200000000000000000002 /* AppFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFont.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F700000000101 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		C107O0000000000000000101 /* ChatScrollObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollObserver.swift; sourceTree = "<group>"; };
 		C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatVerticalScrollAxisGuard.swift; sourceTree = "<group>"; };
 		C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantTypingIndicatorView.swift; sourceTree = "<group>"; };
@@ -1204,14 +1084,11 @@
 		C107D000000000000000012 /* ChatActiveRunStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatActiveRunStatus.swift; sourceTree = "<group>"; };
 		C107D000000000000000013 /* ResponseCompletionNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponseCompletionNotifications.swift; sourceTree = "<group>"; };
 		C107D000000000000000014 /* ComposerBehavior.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerBehavior.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		C06900000000000000000002 /* UITestFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestFixture.swift; sourceTree = "<group>"; };
 		C06900000000000000000004 /* UITestFixture+Kanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Kanban.swift"; sourceTree = "<group>"; };
 		C06900000000000000000006 /* UITestFixture+Panels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Panels.swift"; sourceTree = "<group>"; };
 		C06900000000000000000008 /* UITestFixture+Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UITestFixture+Workspace.swift"; sourceTree = "<group>"; };
 		C012400000000000000001 /* AppIconChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconChoice.swift; sourceTree = "<group>"; };
-		C03120000000000000F001 /* GitWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitWorkspace.swift; sourceTree = "<group>"; };
-		C03120000000000000F002 /* APIClient+Git.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Git.swift"; sourceTree = "<group>"; };
 		C03120000000000000F003 /* GitWorkspaceViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitWorkspaceViewModel.swift; sourceTree = "<group>"; };
 		22AB000000000000000000F1 /* WorkspaceRegistryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceRegistryViewModel.swift; sourceTree = "<group>"; };
 		22AB000000000000000000F2 /* WorkspaceManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceManagerView.swift; sourceTree = "<group>"; };
@@ -1221,21 +1098,14 @@
 		C03180000000000000F002 /* GitActionToastOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitActionToastOverlay.swift; sourceTree = "<group>"; };
 		C03180000000000000F003 /* GitInlineCommitButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitInlineCommitButton.swift; sourceTree = "<group>"; };
 		C03180000000000000F004 /* GitCommitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitCommitView.swift; sourceTree = "<group>"; };
-		C03180000000000000F005 /* TurnFileChangeSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnFileChangeSummary.swift; sourceTree = "<group>"; };
 		C03180000000000000F007 /* GitTurnChangesCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitTurnChangesCard.swift; sourceTree = "<group>"; };
 		C03120000000000000F008 /* TurnFileChangeAggregatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnFileChangeAggregatorTests.swift; sourceTree = "<group>"; };
-		C03190000000000000F001 /* AttachmentAudioDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentAudioDetection.swift; sourceTree = "<group>"; };
 		C03190000000000000F002 /* InlineAudioPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineAudioPlayerView.swift; sourceTree = "<group>"; };
 		C03190000000000000F003 /* AttachmentAudioDetectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentAudioDetectionTests.swift; sourceTree = "<group>"; };
-		C03250000000000000F101 /* TranscribeResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscribeResponse.swift; sourceTree = "<group>"; };
-		C03250000000000000F102 /* APIClient+Transcribe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Transcribe.swift"; sourceTree = "<group>"; };
-		C03250000000000000F103 /* MultipartFormData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultipartFormData.swift; sourceTree = "<group>"; };
 		C03250000000000000F104 /* ComposerVoiceNoteRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceNoteRecorder.swift; sourceTree = "<group>"; };
 		C03250000000000000F105 /* APIClientTranscribeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientTranscribeTests.swift; sourceTree = "<group>"; };
 		C03250000000000000F106 /* ComposerVoiceNoteRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceNoteRecorderTests.swift; sourceTree = "<group>"; };
 		C13810000000000000000001 /* ComposerVoiceServerRecordingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceServerRecordingTests.swift; sourceTree = "<group>"; };
-		C03260000000000000F101 /* APIClient+TTS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+TTS.swift"; sourceTree = "<group>"; };
-		C03270000000000000F101 /* APIClient+SessionExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+SessionExport.swift"; sourceTree = "<group>"; };
 		C03260000000000000F102 /* APIClientTTSTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientTTSTests.swift; sourceTree = "<group>"; };
 		C03270000000000000F102 /* APIClientSessionExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientSessionExportTests.swift; sourceTree = "<group>"; };
 		C03140000000000000F001 /* GitBranchPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitBranchPickerView.swift; sourceTree = "<group>"; };
@@ -1261,17 +1131,11 @@
 		C107B000000000000000013 /* ModelPickerButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPickerButton.swift; sourceTree = "<group>"; };
 		C107B000000000000000014 /* CreateProfileSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateProfileSheet.swift; sourceTree = "<group>"; };
 		C107B000000000000000015 /* ProfileStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileStatusBadge.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F70000000120 /* ContextWindowSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextWindowSnapshot.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000121 /* ContextWindowIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextWindowIndicatorView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000122 /* ContextWindowIndicatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextWindowIndicatorTests.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F70000000142 /* ModelFavoritesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelFavoritesStore.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000143 /* ModelFavoritesStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelFavoritesStoreTests.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F70000000151 /* UploadResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadResponse.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F70000000153 /* MessageAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageAttachment.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F70000000201 /* Memory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Memory.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000203 /* MemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000205 /* MemoryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryViewModel.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F70000000211 /* Skills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Skills.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000213 /* SkillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000215 /* SkillsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsViewModel.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F70000000301 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -1279,14 +1143,12 @@
 		2BE8F2B38F094C4C9EB18300 /* SkillsViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsViewModelTests.swift; sourceTree = "<group>"; };
 		22AB000000000000000000F3 /* WorkspaceRegistryViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceRegistryViewModelTests.swift; sourceTree = "<group>"; };
 		1AB43F55AB4F4262963E6A6E /* SlashCommandCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommandCatalog.swift; sourceTree = "<group>"; };
-		3F91D2A54B9A4F66A2C01011 /* Cron.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cron.swift; sourceTree = "<group>"; };
 		3F91D2A54B9A4F66A2C01012 /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
 		3F91D2A54B9A4F66A2C01013 /* TasksViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksViewModel.swift; sourceTree = "<group>"; };
 		3F91D2A54B9A4F66A2C01014 /* TaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailView.swift; sourceTree = "<group>"; };
 		C166A0000000000000000101 /* TaskRunHistoryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRunHistoryViews.swift; sourceTree = "<group>"; };
 		3F91D2A54B9A4F66A2C01015 /* TaskDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailViewModel.swift; sourceTree = "<group>"; };
 		57B5FD09B6B5937573B5F9A4 /* InsightsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
-		C0DE512E0000000000000201 /* InsightsModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InsightsModels.swift; sourceTree = "<group>"; };
 		C0DE512E0000000000000203 /* InsightsRows.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InsightsRows.swift; sourceTree = "<group>"; };
 		5DA59130ED4141049177576C /* SlashCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommand.swift; sourceTree = "<group>"; };
 		6809B8F1391248A4AA77C453 /* SlashCommandExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommandExecutorTests.swift; sourceTree = "<group>"; };
@@ -1298,7 +1160,6 @@
 		26AB000000000000000000F4 /* ProvidersViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersViewModelTests.swift; sourceTree = "<group>"; };
 		A710739233F64F4FA4C2B710 /* ComposerVoiceInputController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceInputController.swift; sourceTree = "<group>"; };
 		A710739233F64F4FA4C2B711 /* ComposerVoiceDraftComposerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceDraftComposerTests.swift; sourceTree = "<group>"; };
-		B5A100000000000000000010 /* SharedDraftStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedDraftStore.swift; sourceTree = "<group>"; };
 		B5A100000000000000000011 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		B5A100000000000000000018 /* ShareInputReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInputReader.swift; sourceTree = "<group>"; };
 		B5A100000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -1322,11 +1183,6 @@
 		C23400000000000000000002 /* StreamingLabReplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingLabReplay.swift; sourceTree = "<group>"; };
 		C23400000000000000000004 /* StreamingLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingLabView.swift; sourceTree = "<group>"; };
 		C23400000000000000000006 /* StreamingLabReplayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingLabReplayTests.swift; sourceTree = "<group>"; };
-		C14900000000000000000002 /* Kanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Kanban.swift; sourceTree = "<group>"; };
-		C107H000000000000000011 /* KanbanRequests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanRequests.swift; sourceTree = "<group>"; };
-		C107H000000000000000012 /* KanbanCardDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardDetails.swift; sourceTree = "<group>"; };
-		C107H000000000000000013 /* KanbanCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCompatibility.swift; sourceTree = "<group>"; };
-		C14900000000000000000004 /* APIClient+Kanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Kanban.swift"; sourceTree = "<group>"; };
 		C14900000000000000000006 /* KanbanFeatureState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureState.swift; sourceTree = "<group>"; };
 		C107S0000000000000000101 /* KanbanFeatureStateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateModels.swift; sourceTree = "<group>"; };
 		C14900000000000000000008 /* KanbanLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanLabView.swift; sourceTree = "<group>"; };
@@ -1345,7 +1201,6 @@
 		C107Z0000000000000000103 /* KanbanFeatureStateCardMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateCardMutationTests.swift; sourceTree = "<group>"; };
 		C107Z0000000000000000104 /* KanbanFeatureStateBulkActionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateBulkActionTests.swift; sourceTree = "<group>"; };
 		C107Z0000000000000000105 /* KanbanFeatureStateBoardManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanFeatureStateBoardManagementTests.swift; sourceTree = "<group>"; };
-		C15100000000000000000002 /* KanbanEventStreamClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanEventStreamClient.swift; sourceTree = "<group>"; };
 		C15100000000000000000004 /* KanbanEventStreamClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanEventStreamClientTests.swift; sourceTree = "<group>"; };
 		C15100000000000000000006 /* KanbanLiveUpdateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanLiveUpdateTests.swift; sourceTree = "<group>"; };
 		C15400000000000000000002 /* KanbanCardDetailState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardDetailState.swift; sourceTree = "<group>"; };
@@ -1356,13 +1211,11 @@
 		C15400000000000000000006 /* KanbanCardDetailStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KanbanCardDetailStateTests.swift; sourceTree = "<group>"; };
 		B5A220000000000000000006 /* ChatMarkerMessageClassifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkerMessageClassifierTests.swift; sourceTree = "<group>"; };
 		B5A100000000000000000017 /* TalariaShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TalariaShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		A04500000000000000000010 /* AgentRunActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunActivityAttributes.swift; sourceTree = "<group>"; };
 		A04500000000000000000011 /* TalariaDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaDeepLink.swift; sourceTree = "<group>"; };
 		A04500000000000000000012 /* AgentLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLiveActivityManager.swift; sourceTree = "<group>"; };
 		C100B0000000000000000101 /* PerSessionRelayActivityRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerSessionRelayActivityRegistration.swift; sourceTree = "<group>"; };
 		C107E000000000000000011 /* TalariaRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaRelay.swift; sourceTree = "<group>"; };
 		C107E000000000000000012 /* TalariaAggregateLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TalariaAggregateLiveActivityManager.swift; sourceTree = "<group>"; };
-		C107E000000000000000013 /* LiveActivityReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityReconciler.swift; sourceTree = "<group>"; };
 		A04500000000000000000013 /* AgentRunLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunLiveActivityWidget.swift; sourceTree = "<group>"; };
 		A04500000000000000000014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A04500000000000000000017 /* TalariaLiveActivityWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TalariaLiveActivityWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1379,6 +1232,7 @@
 		D74A00000000000000000003 /* VisualReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualReference.swift; sourceTree = "<group>"; };
 		D74A00000000000000000004 /* LiveActivityVisualReferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityVisualReferenceTests.swift; sourceTree = "<group>"; };
 		D74A00000000000000000005 /* AppScreenVisualReferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppScreenVisualReferenceTests.swift; sourceTree = "<group>"; };
+		9EC8D639E3A5818B98398993 /* LiveActivityReconciler+App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LiveActivityReconciler+App.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1386,6 +1240,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D399000000000000000000B1 /* TalariaKit in Frameworks */,
 				1A2B3C4D5E6F700000000004 /* LDSwiftEventSource in Frameworks */,
 				1A2B3C4D5E6F700000000005 /* MarkdownUI in Frameworks */,
 				1A2B3C4D5E6F700000000006 /* Splash in Frameworks */,
@@ -1407,6 +1262,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D399000000000000000000B2 /* TalariaKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1414,6 +1270,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D399000000000000000000B3 /* TalariaKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1449,9 +1306,7 @@
 				1A2B3C4D5E6F700000000339 /* AppIntents */,
 				A04500000000000000000020 /* LiveActivities */,
 				1A2B3C4D5E6F7000000000C0 /* Auth */,
-				1A2B3C4D5E6F7000000000C1 /* Networking */,
 				1A2B3C4D5E6F7000000000C2 /* Models */,
-				1A2B3C4D5E6F7000000000F0 /* Persistence */,
 				C10D00000000000000000F00 /* Sync */,
 				1A2B3C4D5E6F7000000000C3 /* Features */,
 				1A2B3C4D5E6F700000000033 /* Resources */,
@@ -1649,8 +1504,6 @@
 			children = (
 				1A2B3C4D5E6F7000000000B1 /* AuthManager.swift */,
 				AA1900000000000000000002 /* ReauthenticationSheet.swift */,
-				1A2B3C4D5E6F7000000000B0 /* KeychainStore.swift */,
-				B11200000000000000000002 /* ServerCookieStore.swift */,
 			);
 			path = Auth;
 			sourceTree = "<group>";
@@ -1667,49 +1520,9 @@
 			path = Sync;
 			sourceTree = "<group>";
 		};
-		1A2B3C4D5E6F7000000000C1 /* Networking */ = {
-			isa = PBXGroup;
-			children = (
-				1A2B3C4D5E6F7000000000B2 /* APIClient.swift */,
-				C04000000000000000000011 /* APIClient+Sessions.swift */,
-				C04000000000000000000012 /* APIClient+Projects.swift */,
-				C04000000000000000000013 /* APIClient+Chat.swift */,
-				C04000000000000000000014 /* APIClient+Workspace.swift */,
-				C03120000000000000F002 /* APIClient+Git.swift */,
-				C04000000000000000000015 /* APIClient+ServerPanels.swift */,
-				C04000000000000000000016 /* APIClient+Cron.swift */,
-				C04000000000000000000017 /* APIClient+Memory.swift */,
-				C04000000000000000000018 /* APIClient+Skills.swift */,
-				C04000000000000000000019 /* APIClient+Upload.swift */,
-				C14900000000000000000004 /* APIClient+Kanban.swift */,
-				C15100000000000000000002 /* KanbanEventStreamClient.swift */,
-				1A2B3C4D5E6F7000000000B8 /* Endpoints.swift */,
-				C03250000000000000F102 /* APIClient+Transcribe.swift */,
-				C03260000000000000F101 /* APIClient+TTS.swift */,
-				C03270000000000000F101 /* APIClient+SessionExport.swift */,
-				C03250000000000000F103 /* MultipartFormData.swift */,
-				1A2B3C4D5E6F7000000000D7 /* SSEClient.swift */,
-				C0FF000000000000000000A2 /* CustomHeader.swift */,
-				1A2B3C4D5E6F7000000000B3 /* APIError.swift */,
-				C04400000000000000000002 /* CacheFallbackPolicy.swift */,
-			);
-			path = Networking;
-			sourceTree = "<group>";
-		};
 		1A2B3C4D5E6F7000000000C2 /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				1A2B3C4D5E6F7000000000B4 /* ServerInfo.swift */,
-				1A2B3C4D5E6F7000000000BB /* Session.swift */,
-				1A2B3C4D5E6F7000000000BA /* ChatMessage.swift */,
-				1A2B3C4D5E6F7000000000BD /* Workspace.swift */,
-				C03120000000000000F001 /* GitWorkspace.swift */,
-				1A2B3C4D5E6F7000000000BE /* ServerCatalog.swift */,
-				C107G000000000000000011 /* ChatControlResponses.swift */,
-				C107G000000000000000012 /* ServerSettingsUpdates.swift */,
-				C107G000000000000000013 /* ServerProfiles.swift */,
-				C107G000000000000000014 /* ModelCatalog.swift */,
-				A06100000000000000000002 /* ProviderQuota.swift */,
 				A06100000000000000000007 /* ProviderQuotaWidgetSettings.swift */,
 				C107W0000000000000000101 /* ProviderQuotaPresentationModels.swift */,
 				C107W0000000000000000102 /* ProviderQuotaWidgetLayout.swift */,
@@ -1720,30 +1533,8 @@
 				C107M0000000000000000203 /* ProviderQuotaLockScreenPercentageView.swift */,
 				C107M0000000000000000204 /* ProviderQuotaLockScreenPaceView.swift */,
 				C107M0000000000000000205 /* ProviderQuotaForecastView.swift */,
-				C107F000000000000000011 /* ProviderQuotaWidgetSnapshot.swift */,
-				C107F000000000000000012 /* ProviderQuotaWidgetRefresh.swift */,
 				A10700000000000000000003 /* ProviderQuotaWidgetConfiguration.swift */,
 				A06300000000000000000011 /* ProviderIconRegistry.swift */,
-				1A2B3C4D5E6F70000000142 /* ModelFavoritesStore.swift */,
-				1A2B3C4D5E6F700000000301 /* ServerAccount.swift */,
-				1A2B3C4D5E6F7000000000DF /* ToolCall.swift */,
-				C03180000000000000F005 /* TurnFileChangeSummary.swift */,
-				1A2B3C4D5E6F7000000000B9 /* JSONValue.swift */,
-				1A2B3C4D5E6F70000000120 /* ContextWindowSnapshot.swift */,
-				1A2B3C4D5E6F70000000151 /* UploadResponse.swift */,
-				C03250000000000000F101 /* TranscribeResponse.swift */,
-				1A2B3C4D5E6F70000000153 /* MessageAttachment.swift */,
-				C03190000000000000F001 /* AttachmentAudioDetection.swift */,
-				A04200000000000000000002 /* Approval.swift */,
-				C1A042000000000000000002 /* Clarification.swift */,
-				A02400000000000000000002 /* Goal.swift */,
-				3F91D2A54B9A4F66A2C01011 /* Cron.swift */,
-				1A2B3C4D5E6F70000000201 /* Memory.swift */,
-				1A2B3C4D5E6F70000000211 /* Skills.swift */,
-				C14900000000000000000002 /* Kanban.swift */,
-				C107H000000000000000011 /* KanbanRequests.swift */,
-				C107H000000000000000012 /* KanbanCardDetails.swift */,
-				C107H000000000000000013 /* KanbanCompatibility.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -1757,7 +1548,6 @@
 				1A2B3C4D5E6F7000000000C6 /* Chat */,
 				1A2B3C4D5E6F7000000000C7 /* Workspace */,
 				1A2B3C4D5E6F7000000000F7 /* Settings */,
-				B5A100000000000000000050 /* Share */,
 				3F91D2A54B9A4F66A2C01020 /* Tasks */,
 				1A2B3C4D5E6F70000000216 /* Skills */,
 				1A2B3C4D5E6F70000000206 /* Memory */,
@@ -1877,7 +1667,6 @@
 				C107K0000000000000000124 /* OfflineCacheBanner.swift */,
 				A10900000000000000000011 /* SessionNavigationState.swift */,
 				A04300000000000000000012 /* SessionListActionConfirmations.swift */,
-				A04300000000000000000013 /* SessionMutator.swift */,
 				C08800000000000000000002 /* SessionHaptics.swift */,
 				A040C0DE0000000000000002 /* ProjectCreationSheet.swift */,
 				A048C0DE0000000000000002 /* SessionRenameSheet.swift */,
@@ -2006,7 +1795,6 @@
 				03103103103103103103100C /* MarkdownMathFormatter+Environments.swift */,
 				031031031031031031031008 /* MarkdownMathFormatter+Support.swift */,
 					C04100000000000000000002 /* ChatComposerConfigLoader.swift */,
-					C04600000000000000000002 /* ChatStreamCoordinator.swift */,
 					C04700000000000000000002 /* ChatPendingActionCoordinator.swift */,
 					C04800000000000000000002 /* ChatAttachmentCoordinator.swift */,
 				1A2B3C4D5E6F7000000000D5 /* ChatViewModel.swift */,
@@ -2014,7 +1802,6 @@
 				C107T0000000000000000108 /* ClarificationPromptState.swift */,
 				C107T0000000000000000102 /* ProfileSwitchOutcome.swift */,
 				C107T0000000000000000103 /* ChatPollingIntervals.swift */,
-				C107T0000000000000000104 /* ActiveStreamRecoveryState.swift */,
 				C107T0000000000000000105 /* ActiveChatStreamSnapshotStore.swift */,
 				C107T0000000000000000106 /* QueuedSlashMessage.swift */,
 				C107T0000000000000000107 /* ToolCall+ReplayMatching.swift */,
@@ -2065,18 +1852,6 @@
 				22AB000000000000000000F2 /* WorkspaceManagerView.swift */,
 			);
 			path = Workspace;
-			sourceTree = "<group>";
-		};
-		1A2B3C4D5E6F7000000000F0 /* Persistence */ = {
-			isa = PBXGroup;
-			children = (
-				C28702000000000000000002 /* ChatDraftStore.swift */,
-				C28702000000000000000006 /* ChatDraftAttachmentStore.swift */,
-				1A2B3C4D5E6F7000000000F3 /* CacheStore.swift */,
-				1A2B3C4D5E6F7000000000EE /* CachedSession.swift */,
-				1A2B3C4D5E6F7000000000EF /* CachedMessage.swift */,
-			);
-			path = Persistence;
 			sourceTree = "<group>";
 		};
 		1A2B3C4D5E6F7000000000F7 /* Settings */ = {
@@ -2148,13 +1923,11 @@
 			isa = PBXGroup;
 			children = (
 				D81000000000000000000002 /* ShareExtensionUITestHost.swift */,
-				1A2B3C4D5E6F7000000000F9 /* AppConfig.swift */,
 				C06900000000000000000002 /* UITestFixture.swift */,
 				C06900000000000000000004 /* UITestFixture+Kanban.swift */,
 				C06900000000000000000006 /* UITestFixture+Panels.swift */,
 				C06900000000000000000008 /* UITestFixture+Workspace.swift */,
 				C09200000000000000000002 /* AppFont.swift */,
-				1A2B3C4D5E6F700000000101 /* AppTheme.swift */,
 				C107D000000000000000011 /* AppSettings.swift */,
 				C107D000000000000000012 /* ChatActiveRunStatus.swift */,
 				C107D000000000000000013 /* ResponseCompletionNotifications.swift */,
@@ -2162,15 +1935,6 @@
 				C012400000000000000001 /* AppIconChoice.swift */,
 			);
 			path = Config;
-			sourceTree = "<group>";
-		};
-		B5A100000000000000000050 /* Share */ = {
-			isa = PBXGroup;
-			children = (
-				D81000000000000000000012 /* ShareOpenFixture.swift */,
-				B5A100000000000000000010 /* SharedDraftStore.swift */,
-			);
-			path = Share;
 			sourceTree = "<group>";
 		};
 		B5A100000000000000000051 /* TalariaShareExtension */ = {
@@ -2196,14 +1960,13 @@
 		A04500000000000000000020 /* LiveActivities */ = {
 			isa = PBXGroup;
 			children = (
-				A04500000000000000000010 /* AgentRunActivityAttributes.swift */,
 				A04500000000000000000011 /* TalariaDeepLink.swift */,
 				A04500000000000000000012 /* AgentLiveActivityManager.swift */,
 				C100B0000000000000000101 /* PerSessionRelayActivityRegistration.swift */,
 				C107E000000000000000011 /* TalariaRelay.swift */,
 				C17300000000000000000011 /* TalariaCompletionStore.swift */,
 				C107E000000000000000012 /* TalariaAggregateLiveActivityManager.swift */,
-				C107E000000000000000013 /* LiveActivityReconciler.swift */,
+				9EC8D639E3A5818B98398993 /* LiveActivityReconciler+App.swift */,
 			);
 			path = LiveActivities;
 			sourceTree = "<group>";
@@ -2311,7 +2074,6 @@
 				C107L0000000000000000103 /* ActivitySummaryRow.swift */,
 				C107L0000000000000000104 /* ProviderQuotaRow.swift */,
 				C107L0000000000000000105 /* AnalyticsCard.swift */,
-				C0DE512E0000000000000201 /* InsightsModels.swift */,
 				C0DE512E0000000000000203 /* InsightsRows.swift */,
 				931EC010A2D940B0E42287A4 /* InsightsViewModel.swift */,
 			);
@@ -2338,6 +2100,7 @@
 			);
 			name = Talaria;
 			packageProductDependencies = (
+				D399000000000000000000A1 /* TalariaKit */,
 				1A2B3C4D5E6F700000000094 /* LDSwiftEventSource */,
 				1A2B3C4D5E6F700000000095 /* MarkdownUI */,
 				1A2B3C4D5E6F700000000096 /* Splash */,
@@ -2401,6 +2164,9 @@
 			dependencies = (
 			);
 			name = TalariaShareExtension;
+			packageProductDependencies = (
+				D399000000000000000000A2 /* TalariaKit */,
+			);
 			productName = TalariaShareExtension;
 			productReference = B5A100000000000000000017 /* TalariaShareExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -2418,6 +2184,9 @@
 			dependencies = (
 			);
 			name = TalariaLiveActivityWidget;
+			packageProductDependencies = (
+				D399000000000000000000A3 /* TalariaKit */,
+			);
 			productName = TalariaLiveActivityWidget;
 			productReference = A04500000000000000000017 /* TalariaLiveActivityWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -2478,6 +2247,7 @@
 			);
 			mainGroup = 1A2B3C4D5E6F700000000030;
 			packageReferences = (
+				D399000000000000000000A0 /* XCLocalSwiftPackageReference "TalariaKit" */,
 				1A2B3C4D5E6F700000000090 /* XCRemoteSwiftPackageReference "swift-eventsource" */,
 				1A2B3C4D5E6F700000000091 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				1A2B3C4D5E6F700000000092 /* XCRemoteSwiftPackageReference "Splash" */,
@@ -2539,7 +2309,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D81000000000000000000011 /* ShareOpenFixture.swift in Sources */,
+				DF70F1E3194F55301886A523 /* LiveActivityReconciler+App.swift in Sources */,
 				D81000000000000000000001 /* ShareExtensionUITestHost.swift in Sources */,
 				1A2B3C4D5E6F700000000001 /* TalariaApp.swift in Sources */,
 				1A2B3C4D5E6F700000000002 /* ContentView.swift in Sources */,
@@ -2547,23 +2317,12 @@
 				1A2B3C4D5E6F700000000343 /* ProfileEntity.swift in Sources */,
 				1A2B3C4D5E6F7000000000A1 /* AuthManager.swift in Sources */,
 				AA1900000000000000000001 /* ReauthenticationSheet.swift in Sources */,
-				B11200000000000000000001 /* ServerCookieStore.swift in Sources */,
-				1A2B3C4D5E6F700000000300 /* ServerAccount.swift in Sources */,
-				A04500000000000000000001 /* AgentRunActivityAttributes.swift in Sources */,
 				A04500000000000000000002 /* TalariaDeepLink.swift in Sources */,
 				A04500000000000000000003 /* AgentLiveActivityManager.swift in Sources */,
 				C100B0000000000000000001 /* PerSessionRelayActivityRegistration.swift in Sources */,
 				C107E000000000000000001 /* TalariaRelay.swift in Sources */,
 				C17300000000000000000001 /* TalariaCompletionStore.swift in Sources */,
 				C107E000000000000000002 /* TalariaAggregateLiveActivityManager.swift in Sources */,
-				C107E000000000000000003 /* LiveActivityReconciler.swift in Sources */,
-				1A2B3C4D5E6F7000000000A2 /* APIClient.swift in Sources */,
-				C04000000000000000000001 /* APIClient+Sessions.swift in Sources */,
-				C04000000000000000000002 /* APIClient+Projects.swift in Sources */,
-				C04000000000000000000003 /* APIClient+Chat.swift in Sources */,
-				C04000000000000000000004 /* APIClient+Workspace.swift in Sources */,
-				C03120000000000000B001 /* GitWorkspace.swift in Sources */,
-				C03120000000000000B002 /* APIClient+Git.swift in Sources */,
 				C03120000000000000B003 /* GitWorkspaceViewModel.swift in Sources */,
 				22AB000000000000000000B1 /* WorkspaceRegistryViewModel.swift in Sources */,
 				22AB000000000000000000B2 /* WorkspaceManagerView.swift in Sources */,
@@ -2573,20 +2332,8 @@
 				C03180000000000000B002 /* GitActionToastOverlay.swift in Sources */,
 				C03180000000000000B003 /* GitInlineCommitButton.swift in Sources */,
 				C03180000000000000B004 /* GitCommitView.swift in Sources */,
-				C03180000000000000B005 /* TurnFileChangeSummary.swift in Sources */,
 				C03180000000000000B007 /* GitTurnChangesCard.swift in Sources */,
 				C03140000000000000B001 /* GitBranchPickerView.swift in Sources */,
-				C04000000000000000000005 /* APIClient+ServerPanels.swift in Sources */,
-				C04000000000000000000006 /* APIClient+Cron.swift in Sources */,
-				C04000000000000000000007 /* APIClient+Memory.swift in Sources */,
-				C04000000000000000000008 /* APIClient+Skills.swift in Sources */,
-				C04000000000000000000009 /* APIClient+Upload.swift in Sources */,
-				C14900000000000000000001 /* Kanban.swift in Sources */,
-				C107H000000000000000001 /* KanbanRequests.swift in Sources */,
-				C107H000000000000000002 /* KanbanCardDetails.swift in Sources */,
-				C107H000000000000000003 /* KanbanCompatibility.swift in Sources */,
-				C14900000000000000000003 /* APIClient+Kanban.swift in Sources */,
-				C15100000000000000000001 /* KanbanEventStreamClient.swift in Sources */,
 				C14900000000000000000005 /* KanbanFeatureState.swift in Sources */,
 				C107S0000000000000000001 /* KanbanFeatureStateModels.swift in Sources */,
 				C14900000000000000000007 /* KanbanLabView.swift in Sources */,
@@ -2602,16 +2349,7 @@
 				C15400000000000000000003 /* KanbanCardDetailView.swift in Sources */,
 				C15300000000000000000001 /* KanbanCardEditorState.swift in Sources */,
 				C15300000000000000000003 /* KanbanCardEditorView.swift in Sources */,
-				1A2B3C4D5E6F7000000000A8 /* Endpoints.swift in Sources */,
-				C03250000000000000B101 /* TranscribeResponse.swift in Sources */,
-				C03250000000000000B102 /* APIClient+Transcribe.swift in Sources */,
-				C03260000000000000B101 /* APIClient+TTS.swift in Sources */,
-				C03270000000000000B101 /* APIClient+SessionExport.swift in Sources */,
-				C03250000000000000B103 /* MultipartFormData.swift in Sources */,
 				C03250000000000000B104 /* ComposerVoiceNoteRecorder.swift in Sources */,
-				1A2B3C4D5E6F7000000000A3 /* APIError.swift in Sources */,
-				C04400000000000000000001 /* CacheFallbackPolicy.swift in Sources */,
-				1A2B3C4D5E6F7000000000A0 /* KeychainStore.swift in Sources */,
 				C10D00000000000000000011 /* ConfigurationSyncModels.swift in Sources */,
 				C10D00000000000000000012 /* ConfigurationSyncStore.swift in Sources */,
 				C10D00000000000000000013 /* ConfigurationSyncMerge.swift in Sources */,
@@ -2627,16 +2365,6 @@
 				C15210000000000000000002 /* OnboardingWelcomePage.swift in Sources */,
 				1A2B3C4D5E6F70000000410 /* OnboardingComponents.swift in Sources */,
 				1A2B3C4D5E6F7000000000A6 /* OnboardingViewModel.swift in Sources */,
-				1A2B3C4D5E6F7000000000A4 /* ServerInfo.swift in Sources */,
-				1A2B3C4D5E6F7000000000AB /* Session.swift in Sources */,
-				1A2B3C4D5E6F7000000000AA /* ChatMessage.swift in Sources */,
-				1A2B3C4D5E6F7000000000AD /* Workspace.swift in Sources */,
-				1A2B3C4D5E6F7000000000AE /* ServerCatalog.swift in Sources */,
-				C107G000000000000000001 /* ChatControlResponses.swift in Sources */,
-				C107G000000000000000002 /* ServerSettingsUpdates.swift in Sources */,
-				C107G000000000000000003 /* ServerProfiles.swift in Sources */,
-				C107G000000000000000004 /* ModelCatalog.swift in Sources */,
-				A06100000000000000000001 /* ProviderQuota.swift in Sources */,
 				A06100000000000000000006 /* ProviderQuotaWidgetSettings.swift in Sources */,
 				C107W0000000000000000001 /* ProviderQuotaPresentationModels.swift in Sources */,
 				C107W0000000000000000002 /* ProviderQuotaWidgetLayout.swift in Sources */,
@@ -2647,18 +2375,8 @@
 				C107M0000000000000000005 /* ProviderQuotaLockScreenPercentageView.swift in Sources */,
 				C107M0000000000000000007 /* ProviderQuotaLockScreenPaceView.swift in Sources */,
 				C107M0000000000000000009 /* ProviderQuotaForecastView.swift in Sources */,
-				C107F000000000000000001 /* ProviderQuotaWidgetSnapshot.swift in Sources */,
-				C107F000000000000000003 /* ProviderQuotaWidgetRefresh.swift in Sources */,
 				A10700000000000000000001 /* ProviderQuotaWidgetConfiguration.swift in Sources */,
 				A06300000000000000000001 /* ProviderIconRegistry.swift in Sources */,
-				1A2B3C4D5E6F70000000140 /* ModelFavoritesStore.swift in Sources */,
-				1A2B3C4D5E6F7000000000DE /* ToolCall.swift in Sources */,
-				1A2B3C4D5E6F7000000000A9 /* JSONValue.swift in Sources */,
-				1A2B3C4D5E6F7000000000EC /* CachedSession.swift in Sources */,
-				1A2B3C4D5E6F7000000000ED /* CachedMessage.swift in Sources */,
-				1A2B3C4D5E6F7000000000F1 /* CacheStore.swift in Sources */,
-				C28702000000000000000001 /* ChatDraftStore.swift in Sources */,
-				C28702000000000000000005 /* ChatDraftAttachmentStore.swift in Sources */,
 				1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */,
 				C108A0000000000000000001 /* SettingsCategory.swift in Sources */,
 				C108A0000000000000000002 /* PersonalizationSettingsViews.swift in Sources */,
@@ -2713,7 +2431,6 @@
 				C23400000000000000000003 /* StreamingLabView.swift in Sources */,
 				1A2B3C4D5E6F70000000112 /* ArchivedSessionsViewModel.swift in Sources */,
 				C09200000000000000000001 /* AppFont.swift in Sources */,
-				1A2B3C4D5E6F700000000100 /* AppTheme.swift in Sources */,
 				C107O0000000000000000001 /* ChatScrollObserver.swift in Sources */,
 				C107O0000000000000000002 /* ChatVerticalScrollAxisGuard.swift in Sources */,
 				C107O0000000000000000003 /* AssistantTypingIndicatorView.swift in Sources */,
@@ -2813,7 +2530,6 @@
 				C107D000000000000000002 /* ChatActiveRunStatus.swift in Sources */,
 				C107D000000000000000003 /* ResponseCompletionNotifications.swift in Sources */,
 				C107D000000000000000004 /* ComposerBehavior.swift in Sources */,
-				1A2B3C4D5E6F7000000000F8 /* AppConfig.swift in Sources */,
 				C06900000000000000000001 /* UITestFixture.swift in Sources */,
 				C06900000000000000000003 /* UITestFixture+Kanban.swift in Sources */,
 				C06900000000000000000005 /* UITestFixture+Panels.swift in Sources */,
@@ -2851,7 +2567,6 @@
 					C042A000000000000000003 /* ChatComposerSelectorSheets.swift in Sources */,
 					105050000000000000000001 /* ComposerModelPickerSectionExpansionState.swift in Sources */,
 				1A2B3C4D5E6F7000000000D8 /* MessageBubbleView.swift in Sources */,
-				C03190000000000000B001 /* AttachmentAudioDetection.swift in Sources */,
 				C03190000000000000B002 /* InlineAudioPlayerView.swift in Sources */,
 				BEEF02400000000000000001 /* ChatAttachmentPreviewView.swift in Sources */,
 				C12800000000000000000001 /* ToolActivityGroupView.swift in Sources */,
@@ -2914,7 +2629,6 @@
 				03103103103103103103100B /* MarkdownMathFormatter+Environments.swift in Sources */,
 				031031031031031031031007 /* MarkdownMathFormatter+Support.swift in Sources */,
 					C04100000000000000000001 /* ChatComposerConfigLoader.swift in Sources */,
-					C04600000000000000000001 /* ChatStreamCoordinator.swift in Sources */,
 					C04700000000000000000001 /* ChatPendingActionCoordinator.swift in Sources */,
 					C04800000000000000000001 /* ChatAttachmentCoordinator.swift in Sources */,
 				1A2B3C4D5E6F7000000000D4 /* ChatViewModel.swift in Sources */,
@@ -2922,14 +2636,11 @@
 				C107T0000000000000000008 /* ClarificationPromptState.swift in Sources */,
 				C107T0000000000000000002 /* ProfileSwitchOutcome.swift in Sources */,
 				C107T0000000000000000003 /* ChatPollingIntervals.swift in Sources */,
-				C107T0000000000000000004 /* ActiveStreamRecoveryState.swift in Sources */,
 				C107T0000000000000000005 /* ActiveChatStreamSnapshotStore.swift in Sources */,
 				C107T0000000000000000006 /* QueuedSlashMessage.swift in Sources */,
 				C107T0000000000000000007 /* ToolCall+ReplayMatching.swift in Sources */,
 				C107R0000000000000000001 /* ChatTranscriptModels.swift in Sources */,
 					C107C000000000000000001 /* ChatListenPlayback.swift in Sources */,
-				1A2B3C4D5E6F7000000000D6 /* SSEClient.swift in Sources */,
-				C0FF000000000000000000A1 /* CustomHeader.swift in Sources */,
 				1A2B3C4D5E6F7000000000D0 /* SessionRowView.swift in Sources */,
 				1A2B3C4D5E6F7000000000D1 /* SessionListViewModel.swift in Sources */,
 				A04300000000000000000001 /* SessionListComponents.swift in Sources */,
@@ -2959,28 +2670,18 @@
 				C107K0000000000000000024 /* OfflineCacheBanner.swift in Sources */,
 				A10900000000000000000001 /* SessionNavigationState.swift in Sources */,
 				A04300000000000000000002 /* SessionListActionConfirmations.swift in Sources */,
-				A04300000000000000000003 /* SessionMutator.swift in Sources */,
 				A040C0DE0000000000000001 /* ProjectCreationSheet.swift in Sources */,
 				A048C0DE0000000000000001 /* SessionRenameSheet.swift in Sources */,
-				1A2B3C4D5E6F70000000130 /* ContextWindowSnapshot.swift in Sources */,
 				1A2B3C4D5E6F70000000131 /* ContextWindowIndicatorView.swift in Sources */,
-				1A2B3C4D5E6F70000000150 /* UploadResponse.swift in Sources */,
-				1A2B3C4D5E6F70000000152 /* MessageAttachment.swift in Sources */,
-				A04200000000000000000001 /* Approval.swift in Sources */,
 				A04200000000000000000003 /* ApprovalRequestOverlay.swift in Sources */,
-				C1A042000000000000000001 /* Clarification.swift in Sources */,
 				C1A042000000000000000003 /* ClarificationRequestOverlay.swift in Sources */,
-				A02400000000000000000001 /* Goal.swift in Sources */,
-				3F91D2A54B9A4F66A2C01001 /* Cron.swift in Sources */,
 				3F91D2A54B9A4F66A2C01002 /* TasksView.swift in Sources */,
 				3F91D2A54B9A4F66A2C01003 /* TasksViewModel.swift in Sources */,
 				3F91D2A54B9A4F66A2C01004 /* TaskDetailView.swift in Sources */,
 				C166A0000000000000000001 /* TaskRunHistoryViews.swift in Sources */,
 				3F91D2A54B9A4F66A2C01005 /* TaskDetailViewModel.swift in Sources */,
-				1A2B3C4D5E6F70000000200 /* Memory.swift in Sources */,
 				1A2B3C4D5E6F70000000202 /* MemoryView.swift in Sources */,
 				1A2B3C4D5E6F70000000204 /* MemoryViewModel.swift in Sources */,
-				1A2B3C4D5E6F70000000210 /* Skills.swift in Sources */,
 				1A2B3C4D5E6F70000000212 /* SkillsView.swift in Sources */,
 				1A2B3C4D5E6F70000000214 /* SkillsViewModel.swift in Sources */,
 				36CD9EF0B0734E5F8C28BB92 /* SlashCommand.swift in Sources */,
@@ -2989,14 +2690,12 @@
 				8618A9261B8047CEA6084798 /* SlashCommandAutocompleteView.swift in Sources */,
 				A710739233F64F4FA4C2B700 /* ComposerVoiceInputController.swift in Sources */,
 				8B71DA2AAC521382F54A841C /* InsightsView.swift in Sources */,
-				C0DE512E0000000000000202 /* InsightsModels.swift in Sources */,
 				C0DE512E0000000000000204 /* InsightsRows.swift in Sources */,
 				05814DEA5DE4690F730B1E15 /* InsightsViewModel.swift in Sources */,
 				26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */,
 				26AB000000000000000000B2 /* ProvidersView.swift in Sources */,
 				C107I000000000000000006 /* ProviderRow.swift in Sources */,
 				C107I000000000000000007 /* ProvidersStatusRow.swift in Sources */,
-				B5A100000000000000000001 /* SharedDraftStore.swift in Sources */,
 				B5A100000000000000000008 /* ShareInputReader.swift in Sources */,
 				D74A00000000000000000008 /* AgentRunStatusDot.swift in Sources */,
 				D74A00000000000000000009 /* AgentRunProgressRail.swift in Sources */,
@@ -3173,8 +2872,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D81000000000000000000013 /* ShareOpenFixture.swift in Sources */,
-				B5A100000000000000000002 /* SharedDraftStore.swift in Sources */,
 				B5A100000000000000000003 /* ShareViewController.swift in Sources */,
 				B5A100000000000000000007 /* ShareInputReader.swift in Sources */,
 			);
@@ -3184,10 +2881,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A04500000000000000000004 /* AgentRunActivityAttributes.swift in Sources */,
 				A04500000000000000000005 /* TalariaDeepLink.swift in Sources */,
 				A04500000000000000000006 /* AgentRunLiveActivityWidget.swift in Sources */,
-				A06100000000000000000005 /* ProviderQuota.swift in Sources */,
 				A06100000000000000000008 /* ProviderQuotaWidgetSettings.swift in Sources */,
 				C107W0000000000000000011 /* ProviderQuotaPresentationModels.swift in Sources */,
 				C107W0000000000000000012 /* ProviderQuotaWidgetLayout.swift in Sources */,
@@ -3216,9 +2911,6 @@
 				C107M0000000000000000026 /* AgentRunProgressRail.swift in Sources */,
 				C107M0000000000000000027 /* AgentRunTimerPill.swift in Sources */,
 				C107M0000000000000000028 /* AgentRunElapsedTimerText.swift in Sources */,
-				C107F000000000000000002 /* ProviderQuotaWidgetSnapshot.swift in Sources */,
-				C107F000000000000000004 /* ProviderQuotaWidgetRefresh.swift in Sources */,
-				A20300000000000000000001 /* AppConfig.swift in Sources */,
 				A10700000000000000000002 /* ProviderQuotaWidgetConfiguration.swift in Sources */,
 				A06300000000000000000002 /* ProviderIconRegistry.swift in Sources */,
 				A06100000000000000000009 /* ProviderQuotaWidget.swift in Sources */,
@@ -3700,6 +3392,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		D399000000000000000000A0 /* XCLocalSwiftPackageReference "TalariaKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = TalariaKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		1A2B3C4D5E6F700000000090 /* XCRemoteSwiftPackageReference "swift-eventsource" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -3786,6 +3485,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 5417A7400000000000000090 /* XCRemoteSwiftPackageReference "SwiftMath" */;
 			productName = SwiftMath;
+		};
+		D399000000000000000000A1 /* TalariaKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D399000000000000000000A0 /* XCLocalSwiftPackageReference "TalariaKit" */;
+			productName = TalariaKit;
+		};
+		D399000000000000000000A2 /* TalariaKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D399000000000000000000A0 /* XCLocalSwiftPackageReference "TalariaKit" */;
+			productName = TalariaKit;
+		};
+		D399000000000000000000A3 /* TalariaKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D399000000000000000000A0 /* XCLocalSwiftPackageReference "TalariaKit" */;
+			productName = TalariaKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

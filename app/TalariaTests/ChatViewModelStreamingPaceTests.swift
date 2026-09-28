@@ -1,6 +1,7 @@
 import SwiftUI
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// Display-pacing tests for issue #212: buffered streamed tokens are revealed
 /// word-by-word at an adaptive cadence, while completion paths flush instantly.

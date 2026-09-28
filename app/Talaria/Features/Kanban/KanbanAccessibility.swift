@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct KanbanBoardStatusLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {

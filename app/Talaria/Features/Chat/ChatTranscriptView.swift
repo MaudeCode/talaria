@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct ChatTranscriptView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

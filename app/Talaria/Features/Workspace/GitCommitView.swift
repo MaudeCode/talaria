@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 /// Advanced staging & commit sheet (issue #315, Slice C, surface C).
 ///

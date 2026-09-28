@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 struct ParsedSlashCommand: Equatable {
     let command: SlashCommand?

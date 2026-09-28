@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// Visual references only. The behaviour behind these surfaces is asserted in
 /// `SessionListMutationTests`, `ChatAttachmentCoordinatorTests` and friends;

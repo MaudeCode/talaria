@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct GitWorkspaceView: View {
     let onAPIError: (Error) -> Void

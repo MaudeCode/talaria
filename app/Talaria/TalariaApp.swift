@@ -3,6 +3,7 @@ import SwiftUI
 import SwiftData
 import UIKit
 import UserNotifications
+import TalariaKit
 
 final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(
@@ -111,6 +112,10 @@ struct TalariaApp: App {
     #endif
 
     init() {
+        #if DEBUG
+        // TalariaKit builds the URL sessions; the UI-test fixture must reach them before any exists.
+        UITestURLSessionHook.configure = UITestFixtureURLProtocol.configure
+        #endif
         AppConfig.logReleaseIdentity()
         let arguments = ProcessInfo.processInfo.arguments
 

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import TalariaKit
 
 protocol InsightsDataClient {
     func sessions() async throws -> SessionsResponse

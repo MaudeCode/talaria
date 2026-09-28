@@ -2,6 +2,7 @@ import SwiftUI
 import XCTest
 import UserNotifications
 @testable import Talaria
+@testable import TalariaKit
 
 final class AppThemeTests: XCTestCase {
     func testStoredValueFallsBackToSystemForUnknownRawValue() {

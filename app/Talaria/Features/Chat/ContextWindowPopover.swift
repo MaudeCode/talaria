@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ContextWindowPopover: View {
     let snapshot: ContextWindowSnapshot

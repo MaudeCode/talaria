@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TalariaKit
 
 struct ApprovalRequestOverlay: View {
     let prompt: ApprovalPromptState

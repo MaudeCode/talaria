@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SessionInteractiveRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

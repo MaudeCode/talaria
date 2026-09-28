@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct AvatarServerSwitcherMenu: View {
     let model: AvatarServerSwitcherModel

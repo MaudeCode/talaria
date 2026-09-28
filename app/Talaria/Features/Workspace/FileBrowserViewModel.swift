@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 @Observable
 final class FileBrowserViewModel {

@@ -1,5 +1,6 @@
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// One action list serves the long-press menu and VoiceOver, so the states it
 /// reports are asserted once, here (TAL-49).

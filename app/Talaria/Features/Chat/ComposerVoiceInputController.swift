@@ -4,6 +4,7 @@ import Observation
 import OSLog
 import Speech
 import UIKit
+import TalariaKit
 
 @MainActor
 @Observable

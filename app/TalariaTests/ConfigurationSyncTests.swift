@@ -1,6 +1,7 @@
 import CloudKit
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// Sign in with Apple + CloudKit configuration sync (TAL-91). Every test runs
 /// against an in-memory sync store, in-memory Keychains, and throwaway

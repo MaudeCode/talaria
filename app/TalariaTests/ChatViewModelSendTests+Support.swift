@@ -5,6 +5,7 @@ import SwiftData
 import UIKit
 import UniformTypeIdentifiers
 @testable import Talaria
+@testable import TalariaKit
 
 extension XCTestCase {
     /// Lets every main-actor task queued before this call run.

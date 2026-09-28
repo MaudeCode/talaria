@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct MemorySectionHeader: View {
     let section: MemorySection

@@ -1,5 +1,6 @@
 import AVFoundation
 import SwiftUI
+import TalariaKit
 
 /// A compact, Telegram-style inline audio player used both in the chat bubble
 /// and in the full-screen attachment preview. Bytes are fetched lazily via the

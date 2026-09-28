@@ -1,6 +1,7 @@
 import AppIntents
 import Foundation
 import WidgetKit
+import TalariaKit
 
 struct ProviderQuotaWidgetSavedProfile: Codable, Equatable, Identifiable, Sendable {
     let id: String

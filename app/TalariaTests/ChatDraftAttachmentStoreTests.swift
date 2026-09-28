@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 final class ChatDraftAttachmentStoreTests: XCTestCase {
     func testSaveAndLoadRoundTrip() async throws {

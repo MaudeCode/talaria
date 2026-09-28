@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct DefaultModelPickerView: View {
     let server: URL

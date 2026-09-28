@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 /// The explicit allowlist of durable, user-chosen preferences that travel
 /// between a user's devices. Everything else in UserDefaults stays on the

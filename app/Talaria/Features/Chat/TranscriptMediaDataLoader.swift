@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 extension APIClient {
     func transcriptMediaData(for reference: TranscriptMediaReference, sessionID: String) async throws -> Data {

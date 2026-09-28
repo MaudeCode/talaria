@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftUI
+import TalariaKit
 
 struct UpdateNotificationsPresentation: View {
     @Bindable var viewModel: UpdateNotificationCenterViewModel

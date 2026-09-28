@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 /// Loads read-only git status for a chat session's workspace (issue #312, Slice A).
 ///

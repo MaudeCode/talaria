@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import os
+import TalariaKit
 
 private let syncLogger = Logger(subsystem: "dev.kil.talaria", category: "ConfigurationSync")
 

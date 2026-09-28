@@ -2,6 +2,7 @@ import XCTest
 import CryptoKit
 import SwiftData
 @testable import Talaria
+@testable import TalariaKit
 
 final class APIClientAuthAndErrorTests: APIClientTestCase {
     func testOnboardingPasswordValidationOnlyRequiresKnownAuthEnabledPassword() {

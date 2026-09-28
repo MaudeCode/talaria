@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import PhotosUI
+import TalariaKit
 
 
 struct MessageComposerView: View {

@@ -3,6 +3,7 @@ import SwiftData
 import UIKit
 import PhotosUI
 import UniformTypeIdentifiers
+import TalariaKit
 
 private enum GitChatAlert: Identifiable {
     case confirmRemote(GitRemoteAction)

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ToolActivityGroupView: View {
     let group: ToolCallGroup

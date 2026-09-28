@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import Observation
 import SwiftData
+import TalariaKit
 
 @MainActor
 @Observable

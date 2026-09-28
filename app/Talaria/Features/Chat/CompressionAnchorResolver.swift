@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 /// Session-level compaction anchor metadata carried by `SessionDetail`
 /// (`compression_anchor_*` fields in the `/api/session` payload).

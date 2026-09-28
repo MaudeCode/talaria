@@ -1,6 +1,7 @@
 import AuthenticationServices
 import CryptoKit
 import Foundation
+import TalariaKit
 
 struct TalariaRelayCredentials: Codable, Equatable {
     var baseURL: URL
@@ -558,29 +559,9 @@ enum TalariaRelayAppleCredentialState {
     }
 }
 
-private struct TalariaRelayPairRequest: Encodable {
-    var relayURL: String
-    var publisherID: String
-    var publisherInvitation: String
-    var label: String
-}
-
-private struct TalariaRelayPairResponse: Decodable {
-    var ok: Bool
-}
-
 extension APIClient {
     func pairTalariaRelay(invitation: String, relayURL: URL, publisherID: URL) async throws {
-        let response: TalariaRelayPairResponse = try await send(
-            endpoint: .talariaRelayPair,
-            method: "POST",
-            body: TalariaRelayPairRequest(
-                relayURL: relayURL.absoluteString,
-                publisherID: publisherID.absoluteString,
-                publisherInvitation: invitation,
-                label: publisherID.host() ?? "Hermes WebUI"
-            )
-        )
-        guard response.ok else { throw TalariaRelayClient.ClientError.invalidResponse(500, nil) }
+        let accepted = try await requestTalariaRelayPairing(invitation: invitation, relayURL: relayURL, publisherID: publisherID)
+        guard accepted else { throw TalariaRelayClient.ClientError.invalidResponse(500, nil) }
     }
 }

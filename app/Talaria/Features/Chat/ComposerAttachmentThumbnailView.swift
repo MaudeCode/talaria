@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import TalariaKit
 
 struct ComposerAttachmentThumbnailView: View {
     let attachment: PendingAttachment

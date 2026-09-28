@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct SlashCommandAutocompleteView: View {
     private let rowHeight: CGFloat = 48

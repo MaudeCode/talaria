@@ -1,6 +1,7 @@
 import AVFoundation
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// Covers the Server First dictation recording format and the client upload
 /// ceiling that keeps a long recording out of `Data(contentsOf:)` and off the wire.

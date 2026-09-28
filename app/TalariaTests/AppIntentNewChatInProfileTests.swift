@@ -1,6 +1,7 @@
 import XCTest
 import AppIntents
 @testable import Talaria
+@testable import TalariaKit
 
 /// Covers the "New Chat in <Profile>" App Intent plumbing (issue #339): the profile-carrying
 /// deep link, its non-aliasing with the other new-chat links, the `NewChatRequest` threading,

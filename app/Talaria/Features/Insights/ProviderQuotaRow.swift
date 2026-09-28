@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ProviderQuotaRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize

@@ -1,6 +1,7 @@
 import SwiftUI
 import XCTest
 @testable import Talaria
+@testable import TalariaKit
 
 /// Visual references only. Behavioural assertions about Live Activity state
 /// live in `LiveActivityTests`; nothing here asserts on anything but pixels.

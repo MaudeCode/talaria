@@ -2,6 +2,7 @@ import AppIntents
 import Foundation
 import SwiftUI
 import WidgetKit
+import TalariaKit
 
 enum ProviderQuotaDisplaySettings {
     static let aliasesKey = "providerQuota.providerAliases"
@@ -51,15 +52,6 @@ enum ProviderQuotaWidgetSelection {
     ) -> [ProviderQuotaWidgetSource?] {
         let byID = Dictionary(uniqueKeysWithValues: (snapshot?.sources ?? []).map { ($0.sourceID, $0) })
         return sourceIDs.map { byID[$0] }
-    }
-}
-
-enum ProviderQuotaDateParser {
-    static func date(from value: String?) -> Date? {
-        guard let value else { return nil }
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions.insert(.withFractionalSeconds)
-        return ISO8601DateFormatter().date(from: value) ?? fractional.date(from: value)
     }
 }
 

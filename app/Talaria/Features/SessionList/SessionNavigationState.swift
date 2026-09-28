@@ -1,4 +1,5 @@
 import Foundation
+import TalariaKit
 
 enum SessionNavigationDestination: Hashable, Identifiable {
     case session(SessionSummary)

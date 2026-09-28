@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct GitStatusChip: View {
     let kind: GitFile.ChangeKind

@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct KanbanBoardEditorView: View {
     @Environment(\.dismiss) private var dismiss

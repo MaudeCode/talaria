@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct GitDiffView: View {
     let onAPIError: (Error) -> Void

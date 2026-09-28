@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct ModelBreakdownRow: View {
     let model: InsightsModelBreakdown

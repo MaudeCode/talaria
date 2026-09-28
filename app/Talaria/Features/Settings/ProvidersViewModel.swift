@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import UserNotifications
+import TalariaKit
 
 /// Backs the read-only Providers status screen and Insights quota section.
 /// Provider-key writes remain server-side; the only client persistence here is

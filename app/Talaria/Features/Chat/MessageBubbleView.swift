@@ -1,4 +1,5 @@
 import SwiftUI
+import TalariaKit
 
 struct MessageBubbleView: View {
     @Environment(\.colorScheme) private var colorScheme
