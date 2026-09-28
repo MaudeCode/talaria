@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".svg", ".ico", ".icns", ".pdf"}
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".heic", ".svg", ".ico", ".icns", ".pdf"}
 ALLOWED_PREFIXES = (
     "app/TalariaTests/VisualReferences/",  # snapshot-test references
     "app/docs/assets/readme/",  # App README images

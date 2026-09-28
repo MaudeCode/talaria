@@ -31,6 +31,7 @@ class AllowedTests(unittest.TestCase):
             "web/docs/ui-ux/evidence/tal233/after-desktop.png",
             "web/docs/images/ui-sessions.PNG",
             "evidence.pdf",
+            "web/docs/evidence.avif",
         ]:
             self.assertFalse(cci.allowed(path), path)
 
