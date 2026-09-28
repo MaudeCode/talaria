@@ -21,11 +21,12 @@ over several speculative ones.
 - Async work in views/view models must handle `Task` cancellation and stale results: no
   unguarded `await` that mutates state after the owning view/task is gone.
 
-## Networking & models (PROJECT_SPEC.md is the source of truth)
-- Never invent API endpoints or JSON shapes; the upstream API contract is authoritative.
-- Tolerant decoding: every `Codable` model uses optionals for fields upstream might
+## Networking & models
+- Never invent API endpoints or JSON shapes; `web/packages/contracts` defines them, and
+  the server computes every value a client shows (root `AGENTS.md`).
+- Tolerant decoding: every `Codable` model uses optionals for fields the server might
   add/rename — never crash on unknown or missing fields.
-- No new third-party dependencies beyond the locked list.
+- No new third-party dependencies without approval.
 
 ## Hygiene
 - Don't flag generated/churn files (`*.pbxproj`, `*.xcstrings`); they are filtered by config.

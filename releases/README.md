@@ -69,13 +69,13 @@ uses the Mac label. Current Mac jobs and their native dependency:
 | `release-set.yml` | `contracts` | compiles and tests the selected and previously released App in the simulator |
 | `release-set.yml` | `app-dry-build` | unsigned `xcodebuild archive` |
 
-TAL-268 moved the Web contract probe, Docker smoke, release-plan preparation,
-Web/Relay fixture suites, Agent verification, Relay/Web builds, publication
-receipt jobs, manifest assembly, TestFlight inspection and cutover recovery
-off the Mac. PR Web/contract changes run the disposable Web probe on Linux;
-its exact live responses reach the Mac `test` job as a same-run artifact whose
-SHA-256 travels in the probe job's outputs, and the App's real request,
-decoding and SSE contract classes run against them from one build-for-testing.
+The Web contract probe, Docker smoke, release-plan preparation, Web/Relay
+fixture suites, Agent verification, Relay/Web builds, publication receipt jobs,
+manifest assembly, TestFlight inspection and cutover recovery run on Linux.
+PR Web/contract changes run the disposable Web probe on Linux and store its live
+responses on the NAS; the Mac `test` job fetches them by the key and SHA-256 in
+the probe's annotation and runs the App's live decoding test against them from
+the same build-for-testing (see [contract validation](../CONTRACT_TESTS.md)).
 
 The one GitHub-hosted job, npm publication, cannot reach the private NAS. The
 self-hosted `web-build` job hands it only the plan, the build receipt and the npm
@@ -134,8 +134,8 @@ local clone. These signatures validate the rehearsal only. Production requires
 the existing tags' GitHub-verified signatures. Neither mode pushes tags.
 
 `build.py COMPONENT --plan PLAN --output NEW_DIRECTORY` builds without publishing:
-an unsigned App archive with verified bundle versions, a Web wheel and
-multi-platform OCI archive, or checked Relay functions validated against an
+an unsigned App archive with verified bundle versions, the Web contracts and
+server npm tarballs plus a multi-platform OCI archive, or checked Relay functions validated against an
 anonymous local backend. Use an output directory outside the source checkout.
 Local execution writes `build-result.json`; Actions execution additionally writes
 a receipt tied to the actual run. An unsigned App archive is not an installable
@@ -211,15 +211,10 @@ jobs that fail, cancel or unexpectedly skip block completion.
 Credentials are scoped to jobs: `relay-production` supplies the matching
 production deployment key, `web-release` authorizes the GitHub-hosted OIDC job
 that npm trusts and the job token writes the GHCR image, `testflight` supplies Apple signing/upload credentials, and
-`release-set-publication` grants the job's release-write token. Configure these
-environments to allow the trusted `main` workflow before the first cutover.
-There is no live Web host in this migration; Web publication is followed by
-isolated legacy-upgrade validation, not host provisioning.
+`release-set-publication` grants the job's release-write token. These
+environments must allow the trusted `main` workflow.
 
-The two npm package names must exist before npm accepts a trusted-publisher
-configuration. Bootstrap `@maudecode/talaria-web-contracts@0.0.0` and
-`@maudecode/talaria-web@0.0.0` once through an interactive maintainer login with
-the non-default `bootstrap` tag. Then configure both packages to trust GitHub
+`@maudecode/talaria-web-contracts` and `@maudecode/talaria-web` trust GitHub
 organization `MaudeCode`, repository `talaria`, workflow
 `production-cutover.yml`, environment `web-release`, with direct publishing
 allowed. Production releases use no long-lived npm token. The caller and

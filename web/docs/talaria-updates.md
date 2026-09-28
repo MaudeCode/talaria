@@ -116,65 +116,6 @@ manual. Containers use the immutable image digest from the completed
 manifest. Settings distinguishes a failed check, an unknown status, local changes,
 and an available automatic update; manual installations link to the releases page.
 
-Legacy standalone checkouts and pip installations migrate by installing the npm package (see the end of this
-section), which is the only installation that updates itself. To keep running from source instead, prepare a
-monorepo checkout as below; it updates only through git. The updater refuses to reshape an arbitrary parent
-repository or discard the old checkout. Preserve the old checkout and state for rollback. No live Web host is
-required to validate this distribution path.
-
-### Prepare a legacy source migration
-
-From an authenticated Talaria checkout, run:
-
-```sh
-python3 scripts/prepare-web-migration.py /absolute/legacy-web /absolute/new-talaria
-
-# Track the current Git branch instead of a published release:
-python3 scripts/prepare-web-migration.py /absolute/legacy-web /absolute/new-talaria --channel experimental
-```
-
-The command resolves a completed release (or `origin/main` with `--channel experimental`),
-clones it into a new directory,
-verifies the selected source and that the legacy revision is included in its history,
-then stamps Web provenance for a published release. It copies a simple legacy `.env` with mode `0600` and
-preserves its bytes. Relative paths and shell-expanded configuration require
-manual review before preparation; use absolute state, workspace, Agent and TLS
-paths. No state directory is copied or rewritten, and no service is started or
-stopped. Keep the same service user and persistent state paths at cutover.
-
-Preparation uses a blob-filtered partial clone and a cone-mode sparse checkout
-of `web/`, `contracts/`, and `scripts/`, plus Git's root-level files. Shared commit
-and tree metadata remains available; App/Relay file contents are not downloaded
-or checked out. Updates preserve that configuration and suppress Git diffstat,
-which would otherwise fetch excluded blobs to count changed lines. Normal sparse
-clones and sparse Git worktrees are supported. Commands that explicitly inspect
-excluded files can still make Git download them on demand.
-
-Experimental preparation creates a tracking `main` branch without a release stamp;
-Stable preparation checks out the selected tag's commit detached and stamps
-its verified provenance. The receipt reports `updateChannel`. Select that channel
-in Settings after activating the deployment; preparation does not edit existing
-user settings or state. The frontend bundle is not committed, so the receipt's
-`install` and `build` commands (`npm ci`, then `npm run build:fast` for the
-contracts, server and frontend) must run before `launch` (the `talaria-web` bin),
-independently of whether Git selected main or a release. A prepared checkout is a
-source checkout: it never updates itself. For a deployment that should follow
-Stable or Experimental automatically, install the npm package instead, as below.
-
-After preparation succeeds, stop the old service, change its working directory
-and launch command to the paths in the preparation receipt, then start and check
-`/health` and normal authenticated access. Preserve the legacy checkout for
-rollback. An unsuccessful preparation leaves any partial new directory available
-for inspection. There is no supported in-place rewrite of the standalone root.
-
-For a legacy pip installation (`hermes-webui` or the `talaria-web` wheel), stop its
-service, then install the npm package (`npm install -g @maudecode/talaria-web`) and
-point the service at the `talaria-web` bin with the same `HERMES_HOME`,
-`HERMES_WEBUI_STATE_DIR`, and `.env`. The Python environment can be removed once
-the new service is healthy; state files are read in place without migration.
-Container migrations replace only the Web image reference with the completed
-manifest's digest and preserve persistent mounts.
-
 Validation lives in `packages/server/src/tools/updates.test.ts` and the frontend
 System settings/browser tests. Source tests own their repositories, tags, worktrees, locks, and state;
 browser fixtures own release responses and never install updates.

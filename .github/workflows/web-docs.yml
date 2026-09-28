@@ -1,8 +1,7 @@
 name: Talaria Web docs CI
 
-# Check rendering-breaking Markdown defects with the repository-owned script.
-# The standalone informational third-party link action is omitted under the
-# root repository's existing Actions allowlist.
+# Check Web docs for rendering-breaking Markdown defects with the
+# repository-owned script.
 
 on:
   pull_request:

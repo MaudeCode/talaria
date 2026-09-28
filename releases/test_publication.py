@@ -447,8 +447,7 @@ class PublicationTests(unittest.TestCase):
     def test_first_party_actions_run_on_node_24(self):
         # Older majors of these actions target Node 20, which GitHub deprecates (forced onto Node 24 with warnings).
         root = Path(__file__).resolve().parents[1]
-        paths = [*(root / ".github/workflows").glob("*.yml"), *(root / ".github/actions").glob("*/action.yml"),
-                 *(root / ".github/release-templates").glob("*.yml")]
+        paths = [*(root / ".github/workflows").glob("*.yml"), *(root / ".github/actions").glob("*/action.yml")]
         for path in sorted(paths):
             for action, version in re.findall(r"uses: (actions/(?:checkout|setup-node|setup-python))@v(\d+)", path.read_text()):
                 with self.subTest(path=path.name, action=action):

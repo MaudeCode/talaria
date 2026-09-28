@@ -40,7 +40,6 @@ SCRIPTS = {
     "check-docker.py": {"docker", "tooling"},
     "check-relay-local.py": {"relay", "tooling"},
     "stamp-release.py": {"tooling"},
-    "prepare-web-migration.py": {"tooling"},
     "check-agent-compatibility.py": {"web_server", "docker", "tooling"},
     "critical-markdown-check.py": {"tooling"},
     "test-critical-markdown-check.py": {"tooling"},
@@ -52,13 +51,10 @@ SCRIPTS = {
     "check-regression-port.py": {"tooling"},
     "test-check-regression-port.py": {"tooling"},
     "generate-brand-icons.py": {"web_frontend", "tooling"},
-    "repair-workspace-user-turns.py": {"web_server", "tooling"},
-    "check-selected-contracts.py": CONSUMERS | {"tooling"},
     "check-release-agent.py": {"tooling"},
     "check-releases": {"tooling"},
     "s3-artifact": {"tooling"},
     "test-s3-artifact.py": {"tooling"},
-    "rehearse-monorepo.py": {"tooling"},
 }
 
 
@@ -125,8 +121,8 @@ def path_suites(path):
         return WORKFLOWS.get(local.removeprefix("workflows/"), SUITES)
     if path == ".github/actions/docker-plugins/action.yml":
         return {"docker", "tooling"}  # Compose/Buildx setup for the Docker smoke.
-    if path.startswith((".github/actions/", ".github/release-templates/", "releases/")) or path in (
-            ".github/actionlint.yaml", ".github/dependabot.yml", ".github/CODEOWNERS", "docs/monorepo-sources.json"):
+    if path.startswith((".github/actions/", "releases/")) or path in (
+            ".github/actionlint.yaml", ".github/dependabot.yml", ".github/CODEOWNERS"):
         return {"tooling"}
     if component == "scripts":
         return SCRIPTS.get(local, SUITES)

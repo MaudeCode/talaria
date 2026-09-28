@@ -6,6 +6,6 @@ sessionDefaults:
   projectPath: "./app/Talaria.xcodeproj"
   scheme: "Talaria"
   configuration: "Debug"
-  simulatorName: "i17Pro 26.4"
+  simulatorName: "iPhone 17"
   bundleId: "dev.kil.talaria"
 sentryDisabled: true
