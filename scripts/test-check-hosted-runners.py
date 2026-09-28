@@ -83,6 +83,20 @@ jobs:
     def test_repository_scope_is_hosted(self):
         self.assertEqual(hosted.violations(), [])
 
+    def test_only_native_jobs_use_macos(self):
+        # Hosted macOS allows five concurrent jobs, so each macOS job must still show the native work that
+        # needs it; moving a portable job onto macOS fails here.
+        native = {("pr-ci.yml", "app-tooling"): "test-ios-simulator-pool", ("pr-ci.yml", "app-build"): "xcodebuild",
+                  ("pr-ci.yml", "app-test"): "xcodebuild"}
+        found = {}
+        for name in hosted.SCOPE:
+            for job_name, job in hosted.load(hosted.ROOT / ".github/workflows" / name)["jobs"].items():
+                if any(label.startswith(("macos", "xcode")) for label in hosted.runner_labels(job)):
+                    found[(name, job_name)] = str(job["steps"])
+        self.assertEqual(set(found), set(native))
+        for job, dependency in native.items():
+            self.assertIn(dependency, found[job], job)
+
 
 if __name__ == "__main__":
     unittest.main()

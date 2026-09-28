@@ -57,6 +57,37 @@ class TestIOSRunnerTest < Minitest::Test
     refute_includes(live_step, "xcrun simctl")
   end
 
+  def test_only_shard_zero_waits_for_the_probe_after_its_suite
+    require "yaml"
+    jobs = YAML.safe_load_file(File.expand_path("../../.github/workflows/pr-ci.yml", __dir__), aliases: true)["jobs"]
+    shard, probe = jobs.fetch("app-test"), jobs.fetch("contracts")
+    # The suite starts without waiting for the Linux probe; only the live-fixture test needs it.
+    assert_equal(%w[changes app-build], shard["needs"])
+    steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
+    names = steps.keys
+    suite, wait, fetch, live = [
+      "Test without building", "Wait for the Web contract probe",
+      "Download the probe's live response fixture", "Run the live Web contract test against the probe fixture"
+    ].map { |name| names.index(name) }
+    assert_operator(suite, :<, wait)
+    assert_equal([wait + 1, wait + 2], [fetch, live])
+    [wait, fetch, live].each do |index|
+      assert_equal("env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0", shard["steps"][index]["if"])
+    end
+    # "Re-run failed jobs" keeps an earlier probe, so the newest attempt at or before this one is awaited.
+    ["filter=all", ".run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber)", 'select(.name == "Web contract probe"']
+      .each { |required| assert_includes(steps.fetch(names[wait])["run"], required) }
+    assert_equal("contract-fixture", steps.fetch(names[fetch])["with"]["name"])
+    ['TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"', '-only-testing:"${LIVE_CONTRACT_TEST}"',
+     "-parallel-testing-enabled NO", '.[0].result == "Passed"']
+      .each { |required| assert_includes(steps.fetch(names[live])["run"], required) }
+    upload = probe["steps"].find { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }
+    assert_equal("contract-fixture", upload["with"]["name"])
+    # The shard script skips the live test in every shard's suite run.
+    assert_includes(File.read(File.expand_path("test_shards.py", __dir__), encoding: "UTF-8"),
+                    "TalariaTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied")
+  end
+
   def test_pr_ci_shards_run_one_worker_without_clones
     workflow = File.read(
       File.expand_path("../../.github/workflows/pr-ci.yml", __dir__),

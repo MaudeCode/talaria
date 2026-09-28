@@ -23,6 +23,10 @@ import publish
 from test_release_set import candidate, complete
 from cli import require_latest_predecessor
 
+# Workflows whose runners and handoffs scripts/check-hosted-runners.py guards (GitHub-hosted, no NAS keys).
+_hosted = (Path(__file__).resolve().parents[1] / "scripts/check-hosted-runners.py").read_text()
+HOSTED_SCOPE = set(re.findall(r'"([\w-]+\.yml)"', _hosted.split("SCOPE = (", 1)[1].split(")", 1)[0]))
+
 
 class PublicationTests(unittest.TestCase):
     def setUp(self):
@@ -304,8 +308,6 @@ class PublicationTests(unittest.TestCase):
         # GitHub artifact storage is not used. CI workflows may only reference the talaria-ci key, release
         # workflows only the talaria-release key, and no other workflow references either.
         allowed = {
-            "pr-ci.yml": {"contracts": "CI", "test": "CI", "web-docker": "CI"},
-            "web-docker-smoke.yml": {"smoke": "CI"},
             "fuzz-soak.yml": {"soak": "CI"},
             "ui-performance.yml": {"measure": "CI"},
             "ios-release-build.yml": {"build": "RELEASE"},
@@ -317,8 +319,9 @@ class PublicationTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         for path in sorted((root / ".github/workflows").glob("*.yml")):
             text = path.read_text()
-            self.assertNotIn("upload-artifact", text, path.name)
-            self.assertNotIn("download-artifact", text, path.name)
+            if path.name not in HOSTED_SCOPE:  # scripts/check-hosted-runners.py owns these (TAL-380).
+                self.assertNotIn("upload-artifact", text, path.name)
+                self.assertNotIn("download-artifact", text, path.name)
             document = json.loads(subprocess.check_output([
                 "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(path),
             ], text=True))
@@ -339,8 +342,6 @@ class PublicationTests(unittest.TestCase):
         # the Linux pool, or on GitHub-hosted Linux where npm trusted publishing requires it. Each allowed Mac job
         # names the native dependency its steps must still show; moving a portable job back fails here.
         native = {
-            ("pr-ci.yml", "app-tooling"): "test-ios-simulator-pool",
-            ("pr-ci.yml", "test"): "xcodebuild",
             ("fuzz-soak.yml", "soak"): "xcodebuild",
             ("ui-performance.yml", "measure"): "xcodebuild",
             ("ios-release-build.yml", "build"): "xcodebuild archive",
@@ -354,7 +355,7 @@ class PublicationTests(unittest.TestCase):
                 "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))", str(path),
             ], text=True))
             for name, job in document["jobs"].items():
-                if "steps" not in job:
+                if "steps" not in job or path.name in HOSTED_SCOPE:
                     continue
                 runner = job["runs-on"]
                 if runner == "maude-mac":
@@ -367,33 +368,6 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(set(found), set(native))
         for job, dependency in native.items():
             self.assertIn(dependency, found[job], job)
-
-    def test_mac_suite_does_not_wait_for_the_linux_probe(self):
-        # Only the live-fixture test needs the probe; it runs last against the digest from the probe's annotation.
-        root = Path(__file__).resolve().parents[1]
-        document = json.loads(subprocess.check_output([
-            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
-            str(root / ".github/workflows/pr-ci.yml"),
-        ], text=True))
-        test, probe = document["jobs"]["test"], document["jobs"]["contracts"]
-        self.assertEqual(test["needs"], "changes")
-        runs = {step.get("name"): step.get("run", "") for step in test["steps"]}
-        self.assertIn('"-skip-testing:${LIVE_CONTRACT_TEST}"', runs["Test without building"])
-        live = runs["Run the live Web contract test against the probe fixture"]
-        # A "Re-run failed jobs" attempt reruns only the Mac job, so the probe is found across attempts; GitHub
-        # also copies the unrerun probe into the new attempt without its annotations, so the annotation is
-        # searched newest-first across every successful probe record.
-        self.assertIn("while read -r _ id status conclusion", live)
-        for required in ("filter=all", ".run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber)",
-                         'select(.title == "contract-fixture")', "shasum -a 256 --check",
-                         'TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"', '-only-testing:"${LIVE_CONTRACT_TEST}"',
-                         # The scheme is parallelizable; one test must not clone the simulator while the
-                         # main run's clones are still being torn down.
-                         "-parallel-testing-enabled NO",
-                         '.[0].result == "Passed"'):
-            self.assertIn(required, live)
-        self.assertIn("::notice title=contract-fixture::key=$key sha256=$sha256",
-                      "\n".join(step.get("run", "") for step in probe["steps"]))
 
     def test_assembly_restores_only_receipt_handoffs(self):
         # Candidate and publication assembly must not pull the Web image or iOS payloads off the NAS.
@@ -483,13 +457,10 @@ class PublicationTests(unittest.TestCase):
                 "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
                 str(root / ".github/workflows" / name),
             ], text=True))
-        test = workflow("pr-ci.yml")["jobs"]["test"]
-        classes = test["env"]["PERFORMANCE_UI_TEST_CLASSES"].split()
+        # PR and main CI skip them in every shard through app/ci/test_shards.py (tested there).
+        shards = (root / "app/ci/test_shards.py").read_text()
+        classes = re.findall(r'"(TalariaUITests/\w+PerformanceUITests)"', shards)
         self.assertEqual(len(classes), 4)
-        suite = next(step["run"] for step in test["steps"] if step.get("name") == "Test without building")
-        self.assertIn('test_options+=("-skip-testing:${performance_class}")', suite)
-        # Not gated on pull requests: main pushes skip them too.
-        self.assertNotRegex(suite, r'GITHUB_EVENT_NAME\}" == "pull_request" \]\]; then\s+for performance_class')
         # The behavioural halves of those classes stay in every CI suite (resume, dense open/dismiss).
         functional = (root / "app/TalariaUITests/PerformanceUITests.swift").read_text()
         self.assertIn("final class PerformancePathUITests: PerformanceUITestCase", functional)
