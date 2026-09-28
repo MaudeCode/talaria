@@ -1,5 +1,4 @@
-# Exact reviewed false positives from the TAL-202 source-history scan.
-# Review dispositions and source revisions: docs/monorepo-migration.md.
+# Reviewed gitleaks false positives in repository history (commit:file:rule:line).
 969a3b309fa128f86d594a0197a1d015a93694c3:Talaria/LiveActivities/TalariaCompletionStore.swift:generic-api-key:19
 8b512b042ccefa0dfc048121633e104bf617441a:TalariaTests/APIClientSessionDetailPresentationTests.swift:curl-auth-header:108
 067f2c8c13a183913eac56667b981b8f7348d6fa:HermesMobileTests/APIClientSessionDetailTests.swift:curl-auth-header:1964

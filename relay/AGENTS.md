@@ -7,7 +7,6 @@ Run `pnpm check`; `convex-test` validates functions against the actual schema
 in isolated synthetic state. Local Convex validation must use a fresh anonymous
 local deployment, never an existing production deployment or database.
 
-Relay credentials belong only to its deployment workflow. Source consolidation
-never authorizes replacing the production deployment, database, domain, APNs
-configuration, publisher registrations, or device records. Release integration
-is TAL-203; live cutover is TAL-204.
+Relay credentials belong only to its deployment workflow. Never replace the
+production deployment, database, domain, APNs configuration, publisher
+registrations, or device records.

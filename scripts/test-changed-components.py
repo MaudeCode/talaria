@@ -50,7 +50,6 @@ class RoutingTests(unittest.TestCase):
             (["scripts/check-release-contracts.py"], {"contracts", "tooling"}),
             (["scripts/check", "scripts/check-regression-port.py", "scripts/test-check-regression-port.py"], {"tooling"}),
             (["scripts/generate-brand-icons.py"], {"web_frontend", "tooling"}),
-            (["scripts/repair-workspace-user-turns.py"], {"web_server", "tooling"}),
             (["app/changelog.d/TAL-123.json"], set()),
             (["README.md", "docs/guide.md", "app/DEVELOPMENT.md", "web/docs/guide.md", "relay/README.md"], set()),
             (["web/packages/frontend/src/main.tsx", "web/static/dist/app.js", "changelog.d/TAL-123.json"], {"web_frontend"}),

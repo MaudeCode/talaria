@@ -1,5 +1,3 @@
-<!-- Thanks for contributing! Please read CONTRIBUTING.md before opening a PR. -->
-
 ## Linked work
 
 <!-- Every PR must reference its canonical Kaneo task. -->
@@ -25,5 +23,5 @@ app/docs/release-notes.md; CI validates the fragments, not this prose. -->
 - [ ] Release fragments validate (`python3 app/ci/release_notes.py validate --base origin/main` after staging)
 - [ ] Affected component checks pass locally (`scripts/check app|web|relay|contracts|docker`)
 - [ ] New/changed `Codable` models decode tolerantly (optionals for fields the server might add or rename)
-- [ ] No new third-party dependencies (the list in `app/PROJECT_SPEC.md` is locked)
-- [ ] No invented API endpoints or JSON shapes (verified against upstream source or a running server)
+- [ ] No new third-party dependencies without approval
+- [ ] No invented API endpoints or JSON shapes (defined in `web/packages/contracts` or verified against a running server)

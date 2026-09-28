@@ -1,0 +1,1 @@
+{"skip": "Repository hygiene only: remove monorepo-migration leftovers and rewrite root and Relay docs to the current system; no app, Web, or Relay behavior changes."}

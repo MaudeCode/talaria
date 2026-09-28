@@ -23,10 +23,3 @@ for their owning checks. Browser and server tests use synthetic isolated state.
 Start app validation directly with `app/scripts/test-ios`. Open
 `app/Talaria.xcodeproj` in Xcode. Component commands run from their own directory.
 See [app development](app/DEVELOPMENT.md) and [contribution policy](CONTRIBUTING.md).
-
-See [source migration and rehearsal](docs/monorepo-migration.md) for history,
-root ownership, and tag preservation.
-
-Source consolidation, release integration, and the production cutover are
-complete. See [cutover evidence](docs/monorepo-cutover.md) for the published
-release set, retained state, rollback proof, and archived standalone repositories.

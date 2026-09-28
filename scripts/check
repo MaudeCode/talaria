@@ -25,7 +25,6 @@ case "$component" in
   contracts) exec app/scripts/validate-upstream-contract ;;
   docker) exec python3 scripts/check-docker.py "$@" ;;
   tooling)
-    python3 scripts/rehearse-monorepo.py --verify-only
     python3 scripts/changed-components.py --self-test
     python3 scripts/test-critical-markdown-check.py
     python3 scripts/test-check-committed-images.py

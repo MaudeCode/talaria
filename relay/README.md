@@ -1,8 +1,8 @@
 # Talaria Relay
 
-Run component commands from `relay/` in the Talaria monorepo. Repository
-workflows live in `../.github/`; standalone release templates remain inactive.
-See the [root release procedure](../releases/README.md) for publication.
+Run component commands from `relay/`. Repository workflows live in
+`../.github/`. See the [root release procedure](../releases/README.md) for
+publication.
 
 Profile-isolated Convex relay for Talaria notifications and aggregate Live Activities.
 
