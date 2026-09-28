@@ -48,9 +48,11 @@ class TestIOSRunnerTest < Minitest::Test
 
   def test_unit_tests_never_request_real_live_activities
     # A test host that requests real Live Activities leaves them on the simulator,
-    # and the next host launch there fails with "No such process" or hangs (TAL-375).
+    # and the next host launch there fails with "No such process" or hangs (TAL-375). The App host installs the real
+    # manager; under `swift test` no hook is installed, so only hosted sources and the shared support matter (TAL-399).
     spy = /Spy\w*LiveActivityManager/
-    constructions = Dir[File.expand_path("../TalariaTests/**/*.swift", __dir__)].flat_map do |path|
+    hosted = %w[../TalariaTests/**/*.swift ../TalariaKit/Tests/TalariaKitTests/Support/**/*.swift]
+    constructions = hosted.flat_map { |pattern| Dir[File.expand_path(pattern, __dir__)] }.flat_map do |path|
       source = File.read(path, encoding: "UTF-8")
       source.enum_for(:scan, /^(\s*)(?:let \w+ = |return )ChatViewModel\((.*?)\n\1\)/m).map do
         match = Regexp.last_match
@@ -59,7 +61,7 @@ class TestIOSRunnerTest < Minitest::Test
       end
     end
 
-    assert_operator(constructions.length, :>=, 10)
+    assert_operator(constructions.length, :>=, 2)
     constructions.each do |file, enclosing_function, manager|
       # A nil or omitted manager resolves to the shared production manager.
       test_double = manager&.match?(/\A(?:liveActivityManager \?\? )?#{spy}\(\)\z/) ||
@@ -78,16 +80,16 @@ class TestIOSRunnerTest < Minitest::Test
     assert_nil(shard["needs"])
     # The boot finishes before the build wait and download, so it competes with neither (TAL-380).
     boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
-    assert_equal(["Wait for App build", "Download the test build", "Select this shard's tests", "Test without building"],
+    assert_equal(["Wait for the build", "Download the test build", "Select this shard's tests", "Test without building"],
                  shard["steps"][boot + 1, 4].map { |step| step["name"] })
     assert_equal("true", shard["steps"][boot]["with"]["wait_for_boot"].to_s)
     refute(shard["steps"].any? { |step| step["name"] == "Build for testing" }, "test jobs never build")
     steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
     assert_equal(1, workflow_text("app-tests.yml").scan("xcodebuild test-without-building").length)
-    assert_equal('ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"', steps.fetch("Wait for App build")["run"])
-    # The live test moved to the package job with its class; hosted shards never read the probe's fixture (TAL-399).
-    refute_match(/contract-fixture|LIVE_CONTRACT/, shard.to_yaml)
-    refute_match(/APIClientSessionListTests|APIClientSessionMutationTests|SSEClientTests/, shard["env"]["CONTRACT_TEST_CLASSES"])
+    assert_equal('ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"', steps.fetch("Wait for the build")["run"])
+    # Every native contract class and the live test run in the package job; hosted shards never read the probe's
+    # fixture (TAL-399).
+    refute_match(/contract-fixture|LIVE_CONTRACT|CONTRACT_TEST_CLASSES|CONTRACTS_SELECTED/, shard.to_yaml)
   end
 
   def test_package_job_runs_the_live_test_without_a_simulator
@@ -147,16 +149,22 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal(1, workflow.scan("            -parallel-testing-enabled NO \\").length)
     refute_match(/parallel-testing-enabled YES|parallel-testing-worker-count|test_workers|build_cache|COMPILATION_CACHE|xcode-cache/, workflow)
     refute_match(/COMPILATION_CACHE|build-cache/, File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8"))
-    # Four shards for the UI suite; one for CI's hosted unit tests and launch smoke, for contract-only changes
-    # and for a scoped UI suite dispatch (TAL-401).
-    assert_includes(workflow, "shard: ${{ fromJSON(inputs.only_testing != '' && '[0]' || (inputs.mode == 'full' && '[0,1,2,3]' || '[0]')) }}")
+    # Pull requests boot no simulator: the package tests plus the App build for testing. The simulator-hosted
+    # remainder and every UI test run in the full suite's four shards (TAL-399), or in one for a scoped UI suite
+    # dispatch (TAL-401).
     assert_includes(workflow, "timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 360 || 60 }}")
     # Dispatch inputs arrive as strings, so the reusable workflow's input is a string too.
     app_tests = YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)
     assert_equal({"type" => "string", "default" => "1"}, app_tests[true]["workflow_call"]["inputs"]["test_iterations"])
     assert_includes(workflow, 'if (( TEST_ITERATIONS > 1 )); then selection+=(-test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure); fi')
     jobs = workflow_jobs("app-tests.yml")
-    assert_equal([nil] * 6, jobs.values_at("app-build", "app-test", "package-test").flat_map { |job| job.values_at("needs", "if") })
+    assert_equal("${{ fromJSON(inputs.only_testing != '' && '[0]' || '[0,1,2,3]') }}", jobs.fetch("app-test")["strategy"]["matrix"]["shard"])
+    assert_equal("inputs.mode == 'full'", jobs.fetch("app-test")["if"])
+    assert_equal("inputs.mode != 'contracts'", jobs.fetch("app-build")["if"])
+    assert_equal([nil] * 4, jobs.values_at("app-build", "app-test", "package-test").map { |job| job["needs"] } + [jobs.fetch("package-test")["if"]])
+    build = jobs.fetch("app-build")["steps"].find { |step| step["name"] == "Build for testing" }["run"]
+    assert_includes(build, '[[ "${MODE}" == "full" ]] || exit 0')
+    assert_equal("inputs.mode == 'full'", jobs.fetch("app-build")["steps"].find { |step| step["name"] == "Upload the test build" }["if"])
     # Pull requests and main pushes run the same App jobs; the full UI suite is nightly and a release gate.
     app = workflow_jobs("ci.yml").fetch("app")
     assert_equal("./.github/workflows/app-tests.yml", app["uses"])
@@ -169,7 +177,7 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal("string", suite[true]["workflow_dispatch"]["inputs"]["test_iterations"]["type"])
     assert_equal(%w[schedule workflow_dispatch workflow_call], suite[true].keys)
     assert_equal(true, suite[true]["workflow_call"]["inputs"]["ref"]["required"])
-    assert_includes(workflow, 'python3 ci/test_shards.py "${options[@]}" > selection.txt')
+    assert_includes(workflow, 'python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" > selection.txt')
     assert_equal(26, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
     # CI skips the measurement-only UI classes and the scheduled UI Performance
     # workflow runs them (TAL-75, TAL-287); the shard script owns the skip list.

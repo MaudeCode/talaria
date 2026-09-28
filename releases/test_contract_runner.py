@@ -164,6 +164,41 @@ class ContractRunnerTests(unittest.TestCase):
                                                   "^TalariaKitTests\\.(APIClientSessionListTests|SSEClientTests)/"],
                                                  str(app / "responses.json"))])
 
+    def test_fully_packaged_app_runs_no_simulator(self):
+        # Once TalariaKit holds every contract class, test-ios must not run: with no class it runs every hosted test.
+        spec = importlib.util.spec_from_file_location("previous_app", Path(__file__).resolve().parents[1] / "scripts/check-previous-app.py")
+        previous = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(previous)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            commands = []
+
+            def run(command, **kwargs):
+                commands.append(command)
+                if command[:2] == ["git", "clone"]:
+                    app = Path(command[-1]) / "app"
+                    (app / "Talaria.xcodeproj").mkdir(parents=True)
+                    tests = app / "TalariaKit/Tests/TalariaKitTests"
+                    tests.mkdir(parents=True)
+                    (tests / "Contract.swift").write_text(
+                        "".join(f"final class {name}: XCTestCase {{}}\n" for name in previous.TESTS))
+                elif command[0] == "swift":
+                    kwargs["stdout"].write("".join(f"Test Suite '{name}' passed\n" for name in previous.TESTS)
+                                           + f"Test Case '-[TalariaKitTests.{previous.LIVE_CLASS} {previous.LIVE_TEST}]' passed\n")
+
+            def probe(web_sha, responses, log):
+                responses.write_text("{}")
+
+            argv = ["check", "--app-ref", "a" * 40, "--web-ref", "b" * 40, "--output", str(root / "out")]
+            with patch.object(sys, "argv", argv), patch.object(previous, "commit", side_effect=lambda ref: ref), \
+                    patch.object(previous, "probe_web", side_effect=probe), \
+                    patch.object(previous, "runner_avoids_clones", return_value=True), \
+                    patch.object(previous.subprocess, "run", side_effect=run), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                previous.main()
+            self.assertFalse(any(str(command[0]).endswith("scripts/test-ios") for command in commands))
+            self.assertEqual(json.loads((root / "out/verification.json").read_text())["testClasses"], previous.TESTS)
+
     def test_only_selector_splits_native_app_runs_from_portable_fixture_suites(self):
         plan = {"components": {"app": {"sourceRevision": "a" * 40}, "web": {"sourceRevision": "b" * 40},
                                "relay": {"sourceRevision": "c" * 40}}, "supportedWebSources": ["b" * 40, "d" * 40]}

@@ -56,13 +56,12 @@ contract scripts themselves. In `ci.yml`:
   uploads the live responses as the run's `contract-fixture` artifact.
 - The App package tests job (`app-tests.yml`, called by `ci.yml`) waits for the
   probe, downloads that artifact, and runs the TalariaKit tests with `swift test`
-  on macOS, including the API client and SSE contract classes and
+  on macOS, including every native contract class (`ContractReadinessTests`,
+  `SharedContractTests`, `APIClientAuthAndErrorTests`,
+  `StreamReconnectContractTests`, and the API client and SSE classes) and
   `APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied`
   against the fixture. A missing fixture skips that test, so the job requires an
   explicit pass.
-- App test shard 0 runs the simulator-hosted contract classes
-  (`ContractReadinessTests`, `SharedContractTests`, `APIClientAuthAndErrorTests`
-  and `StreamReconnectContractTests`) and requires each to pass.
 
 Releases repeat the gate in `release-set.yml`: `scripts/check-release-contracts.py`
 checks the selected App against the selected and still-supported Web sources and
@@ -81,12 +80,12 @@ selected Web.
 | Disposable create, detail, status, rename, pin, archive, move, truncate, branch, delete, and cleanup | `scripts/upstream-contract-probe` |
 | SSE content type and controlled `initial`/`approval` events | `scripts/upstream-contract-probe` |
 | Live response values decoded by Talaria's real `Codable` models | `TalariaKit/Tests/TalariaKitTests/APIClientSessionListTests.swift` through `scripts/validate-upstream-contract` |
-| Every app endpoint's URL path and query shape | `TalariaTests/APIEndpointContractTests.swift` |
-| Every endpoint family's HTTP method, read off the `URLRequest` the client builds | `TalariaKit/Tests/TalariaKitTests/APIClient*Tests.swift` and `TalariaTests/APIClient*Tests.swift` request-interception tests |
-| Auth/error decoding and native POST headers | `TalariaTests/APIClientAuthAndErrorTests.swift` |
-| Native OIDC capability, callback/state/PKCE/server binding, exchange cookies, expiry, replay, cancellation, and server isolation | `TalariaTests/APIClientAuthAndErrorTests.swift`, `TalariaTests/AuthManagerStateTests.swift` |
+| Every app endpoint's URL path and query shape | `TalariaKit/Tests/TalariaKitTests/APIEndpointContractTests.swift` |
+| Every endpoint family's HTTP method, read off the `URLRequest` the client builds | `TalariaKit/Tests/TalariaKitTests/APIClient*Tests.swift` request-interception tests |
+| Auth/error decoding and native POST headers | `TalariaKit/Tests/TalariaKitTests/APIClientAuthAndErrorTests.swift` |
+| Native OIDC capability, callback/state/PKCE/server binding, exchange cookies, expiry, replay, cancellation, and server isolation | `TalariaKit/Tests/TalariaKitTests/APIClientAuthAndErrorTests.swift`, `TalariaKit/Tests/TalariaKitTests/AuthManagerStateTests.swift` |
 | Session status and mutation response decoding | `TalariaKit/Tests/TalariaKitTests/APIClientSessionListTests.swift`, `TalariaKit/Tests/TalariaKitTests/APIClientSessionMutationTests.swift` |
-| Chat SSE parsing, heartbeats, redirects, and reconnect status | `TalariaKit/Tests/TalariaKitTests/SSEClientTests.swift`, `TalariaTests/StreamReconnectContractTests.swift` |
+| Chat SSE parsing, heartbeats, redirects, and reconnect status | `TalariaKit/Tests/TalariaKitTests/SSEClientTests.swift`, `TalariaKit/Tests/TalariaKitTests/StreamReconnectContractTests.swift` |
 
 The plural provider quota endpoint is covered by the Swift contract tests
 against the local Web implementation.

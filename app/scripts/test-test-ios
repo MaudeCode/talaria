@@ -250,9 +250,9 @@ read -r active < "$state/active"
 [[ "$maximum" == 1 && "$active" == 0 ]]
 [[ ! -e "$common_dir/talaria-xctest-runner.lock.owner" ]]
 
-"$repo/scripts/test-ios" TalariaTests > "$state/whole-target.log" 2>&1
-grep -Fqx -- '-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests' "$state/last-args"
-"$repo/scripts/test-ios" TalariaTests/UntrustedInputFuzzSoakTests > "$state/explicit-soak.log" 2>&1
-! grep -Fqx -- '-skip-testing:TalariaTests/UntrustedInputFuzzSoakTests' "$state/last-args"
+"$repo/scripts/test-ios" TalariaUITests > "$state/whole-target.log" 2>&1
+grep -Fqx -- '-skip-testing:TalariaUITests/SidebarPerformanceUITests' "$state/last-args"
+"$repo/scripts/test-ios" TalariaUITests/SidebarPerformanceUITests > "$state/explicit-performance.log" 2>&1
+! grep -Fqx -- '-skip-testing:TalariaUITests/SidebarPerformanceUITests' "$state/last-args"
 
 print "test-ios admission, selection and runner-hang retry checks passed ($rounds concurrent rounds)."

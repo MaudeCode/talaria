@@ -71,13 +71,11 @@ typeset -a test_filters
 for selector in "$@"; do
     test_filters+=("-only-testing:$selector")
 done
-# The fuzz soak class reruns the PR fuzz properties at a far larger seed budget
-# and belongs to the scheduled Fuzz Soak workflow. The measuring performance UI
-# classes add minutes of scrolling and relaunching; the scheduled UI Performance
-# workflow records them. Selecting an entire target must not
-# enable these extended checks; name their class or method explicitly to run it.
+# The measuring performance UI classes add minutes of scrolling and relaunching;
+# the scheduled UI Performance workflow records them. Selecting an entire target
+# must not enable these extended checks; name their class or method explicitly
+# to run it.
 for extended_class in \
-    TalariaTests/UntrustedInputFuzzSoakTests \
     TalariaUITests/SidebarPerformanceUITests \
     TalariaUITests/LaunchPerformanceUITests \
     TalariaUITests/TranscriptPerformanceUITests \

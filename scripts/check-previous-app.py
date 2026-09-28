@@ -76,6 +76,50 @@ def run_package_tests(app, classes, responses, output):
         raise ValueError("previous App did not decode the live Web fixtures")
 
 
+def verify_hosted(app, hosted, responses, output):
+    """Run the simulator-hosted contract classes with the App's own test-ios; each class and the live test must pass."""
+    env = {**os.environ, "_TALARIA_ENV_LOADED": "1",
+           "TALARIA_UPSTREAM_CONTRACT_RESPONSES": "base64:" + base64.b64encode(responses.read_bytes()).decode()}
+    with (output / "app-tests.log").open("w") as log:
+        subprocess.run([str(app / "scripts/test-ios"), *("TalariaTests/" + name for name in hosted)],
+                       cwd=app, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+    result_path = re.search(r"^Result bundle: (.+)$", (output / "app-tests.log").read_text(), re.MULTILINE)
+    if result_path is None:
+        raise ValueError("native runner did not identify its result bundle")
+    evidence = {}
+    for kind in ("summary", "tests"):
+        payload = json.loads(subprocess.check_output([
+            "xcrun", "xcresulttool", "get", "test-results", kind, "--path", result_path[1], "--compact",
+        ]))
+        (output / f"app-{kind}.json").write_text(json.dumps(payload, indent=2) + "\n")
+        evidence[kind] = payload
+    if evidence["summary"].get("result") != "Passed" or evidence["summary"].get("failedTests"):
+        raise ValueError("native contract tests did not pass")
+    cases = {}
+
+    def collect(node):
+        if isinstance(node, dict):
+            if node.get("nodeType") == "Test Case":
+                cases[node["nodeIdentifier"]] = node["result"]
+            for value in node.values():
+                collect(value)
+        elif isinstance(node, list):
+            for value in node:
+                collect(value)
+
+    collect(evidence["tests"])
+    for name in hosted:
+        if not any(key.startswith(name + "/") and result == "Passed" for key, result in cases.items()):
+            raise ValueError(f"native gate did not execute {name}")
+    if LIVE_CLASS in hosted:
+        if cases.get(f"{LIVE_CLASS}/{LIVE_TEST}()") != "Passed":
+            raise ValueError("previous App did not decode the live Web fixtures")
+        products = app / ".codex-tmp/xctest/derived-data/Build/Products"
+        plists = list(products.glob("**/TalariaTests.xctest/Info.plist"))
+        if not any(plistlib.loads(path.read_bytes()).get("CFBundleDisplayName") == env["TALARIA_UPSTREAM_CONTRACT_RESPONSES"] for path in plists):
+            raise ValueError("live fixtures were not embedded in the executed App test bundle")
+
+
 def probe_web(web_sha, responses, log):
     """Probe a Web source with the harness from its own revision.
 
@@ -128,46 +172,10 @@ def main():
         if packaged:
             run_package_tests(app, packaged, responses, output)
         hosted = [name for name in tests if name not in packaged]
-        env = {**os.environ, "_TALARIA_ENV_LOADED": "1",
-               "TALARIA_UPSTREAM_CONTRACT_RESPONSES": "base64:" + base64.b64encode(responses.read_bytes()).decode()}
-        with (output / "app-tests.log").open("w") as log:
-            subprocess.run([str(app / "scripts/test-ios"), *("TalariaTests/" + name for name in hosted)],
-                           cwd=app, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-        result_path = re.search(r"^Result bundle: (.+)$", (output / "app-tests.log").read_text(), re.MULTILINE)
-        if result_path is None:
-            raise ValueError("native runner did not identify its result bundle")
-        evidence = {}
-        for kind in ("summary", "tests"):
-            payload = json.loads(subprocess.check_output([
-                "xcrun", "xcresulttool", "get", "test-results", kind, "--path", result_path[1], "--compact",
-            ]))
-            (output / f"app-{kind}.json").write_text(json.dumps(payload, indent=2) + "\n")
-            evidence[kind] = payload
-        if evidence["summary"].get("result") != "Passed" or evidence["summary"].get("failedTests"):
-            raise ValueError("native contract tests did not pass")
-        cases = {}
-
-        def collect(node):
-            if isinstance(node, dict):
-                if node.get("nodeType") == "Test Case":
-                    cases[node["nodeIdentifier"]] = node["result"]
-                for value in node.values():
-                    collect(value)
-            elif isinstance(node, list):
-                for value in node:
-                    collect(value)
-
-        collect(evidence["tests"])
-        for name in hosted:
-            if not any(key.startswith(name + "/") and result == "Passed" for key, result in cases.items()):
-                raise ValueError(f"native gate did not execute {name}")
-        if LIVE_CLASS in hosted:
-            if cases.get(f"{LIVE_CLASS}/{LIVE_TEST}()") != "Passed":
-                raise ValueError("previous App did not decode the live Web fixtures")
-            products = app / ".codex-tmp/xctest/derived-data/Build/Products"
-            plists = list(products.glob("**/TalariaTests.xctest/Info.plist"))
-            if not any(plistlib.loads(path.read_bytes()).get("CFBundleDisplayName") == env["TALARIA_UPSTREAM_CONTRACT_RESPONSES"] for path in plists):
-                raise ValueError("live fixtures were not embedded in the executed App test bundle")
+        # A revision whose package holds every selected class needs no simulator; test-ios with no class would run
+        # the whole hosted suite.
+        if hosted:
+            verify_hosted(app, hosted, responses, output)
     record = {"appSourceRevision": app_sha, "webSourceRevision": web_sha, "result": "success",
               "fixturesSha256": hashlib.sha256(responses.read_bytes()).hexdigest(), "testClasses": tests}
     (output / "verification.json").write_text(json.dumps(record, indent=2) + "\n")

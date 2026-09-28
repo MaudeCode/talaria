@@ -22,6 +22,9 @@ class RoutingTests(unittest.TestCase):
     def test_app_ui_scope(self):
         assert not routing.app_ui_required(["app/Talaria/Networking/APIClient.swift"])
         assert not routing.app_ui_required(["app/TalariaKit/Sources/TalariaKit/Networking/APIClient.swift"])
+        assert not routing.app_ui_required(["app/TalariaKit/Tests/TalariaKitTests/SSEClientTests.swift"])
+        assert routing.app_ui_required(["app/TalariaKit/Sources/TalariaKit/Features/Chat/ChatViewModel.swift"])
+        assert routing.app_ui_required(["app/TalariaKit/Sources/TalariaKit/Platform/PlatformHooks.swift"])
         assert not routing.app_ui_required(["app/Talaria/Resources/Info.plist"], metadata_only_plists=["app/Talaria/Resources/Info.plist"])
         assert routing.app_ui_required(["app/Talaria/Resources/Info.plist"])
         assert routing.same_plist_ui(plistlib.dumps({}), plistlib.dumps({"TalariaRelease": {"version": "1.0.0"}}))

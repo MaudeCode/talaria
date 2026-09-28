@@ -143,7 +143,7 @@ jobs:
                   ("app-tests.yml", "app-test"): "xcodebuild",
                   # TalariaKit links Apple frameworks (SwiftData, WidgetKit) that Linux lacks (TAL-399).
                   ("app-tests.yml", "package-test"): "swift test --package-path TalariaKit",
-                  ("fuzz-soak.yml", "soak"): "xcodebuild", ("ui-performance.yml", "measure"): "xcodebuild",
+                  ("fuzz-soak.yml", "soak"): "swift test --package-path TalariaKit", ("ui-performance.yml", "measure"): "xcodebuild",
                   ("ios-release-build.yml", "build"): "xcodebuild archive",
                   ("release-set.yml", "contracts"): "check-release-contracts.py --only app",
                   ("release-set.yml", "previous-app-contracts"): "check-previous-app.py",

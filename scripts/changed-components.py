@@ -77,7 +77,11 @@ def app_ui_required(paths, scene_unchanged=False, metadata_only_plists=()):
                 return True
         elif path.startswith(("app/Talaria/Networking/", "app/Talaria/Models/", "app/Talaria/Config/",
                               "app/Talaria/Persistence/", "app/Talaria/Sync/", "app/Talaria/LiveActivities/",
-                              "app/TalariaKit/", "app/TalariaTests/", "app/ci/", "app/scripts/", "app/docs/",
+                              # TalariaKit's view models and presentation logic (Features/, Auth/, ...) drive the UI.
+                              *(f"app/TalariaKit/Sources/TalariaKit/{directory}/" for directory in
+                                ("Networking", "Models", "Config", "Persistence", "Sync", "LiveActivities")),
+                              "app/TalariaKit/Package.", "app/TalariaKit/Tests/",
+                              "app/TalariaTests/", "app/ci/", "app/scripts/", "app/docs/",
                               "app/changelog.d/", "app/Talaria.xcodeproj/")):
             continue
         elif path in metadata_only_plists or (path.count("/") == 1 and path.endswith(".md")):

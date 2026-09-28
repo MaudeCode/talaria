@@ -50,8 +50,8 @@ class ShardTests(unittest.TestCase):
             "final class BrandNewUITests: TalariaUITestCase {}\n"
             "final class SidebarPerformanceUITests: TalariaUITestCase {}\n")
 
-    def plan(self, count, targets=shards.TARGETS, extra=(), pinned=()):
-        return shards.plan(count, targets, extra, pinned, WEIGHTS, self.app)
+    def plan(self, count, targets=shards.TARGETS):
+        return shards.plan(count, targets, WEIGHTS, self.app)
 
     def test_discovery_finds_concrete_classes_and_measured_bases(self):
         # Support base classes resolve; package-only tests are not expected in the hosted bundle.
@@ -63,7 +63,8 @@ class ShardTests(unittest.TestCase):
 
     def test_every_class_lands_in_exactly_one_shard(self):
         expected = {"TalariaTests/HeavyTests", "TalariaTests/LightTests", "TalariaTests/NewUnmeasuredTests",
-                    "TalariaTests/SupportedTests", "TalariaTests/UntrustedInputFuzzTests", "TalariaUITests/BrandNewUITests",
+                    "TalariaTests/SupportedTests", "TalariaTests/UntrustedInputFuzzSoakTests",
+                    "TalariaTests/UntrustedInputFuzzTests", "TalariaUITests/BrandNewUITests",
                     "TalariaUITests/ChatUITests", "TalariaUITests/ShareUITests"}
         for count in range(1, 6):
             with self.subTest(count=count):
@@ -74,7 +75,7 @@ class ShardTests(unittest.TestCase):
 
     def test_unknown_classes_get_the_target_default_weight(self):
         buckets, loads = self.plan(1)
-        self.assertEqual(loads, [30 + 1 + 1 + 1 + 5 + 40 + 90 + 60])
+        self.assertEqual(loads, [30 + 1 + 1 + 1 + 1 + 5 + 40 + 90 + 60])
         self.assertEqual(shards.weight_of("TalariaUITests/BrandNewUITests", WEIGHTS), 40.0)
         self.assertEqual(shards.weight_of("TalariaTests/NewUnmeasuredTests", WEIGHTS), 1.0)
         # Greedy: 90 | 60 | 40, then HeavyTests (30) joins the lightest shard.
@@ -106,16 +107,6 @@ class ShardTests(unittest.TestCase):
             self.assertIn(f"-skip-testing:{item}", last)
         first = shards.selection(0, buckets, shards.TARGETS)
         self.assertFalse(any(option in ("-only-testing:TalariaTests", "-only-testing:TalariaUITests") for option in first))
-
-    def test_pull_request_split_pins_contracts_and_places_the_smoke_once(self):
-        smoke = "TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList"
-        buckets, _ = self.plan(2, ("TalariaTests",), [smoke], ["TalariaTests/LightTests"])
-        self.assertIn("TalariaTests/LightTests", buckets[0])
-        self.assertFalse(any(item.startswith("TalariaUITests/") and item != smoke for bucket in buckets for item in bucket))
-        options = [shards.selection(index, buckets, ("TalariaTests",)) for index in range(2)]
-        self.assertEqual([f"-only-testing:{smoke}" in shard for shard in options], [False, True])
-        self.assertEqual(buckets[1][-1:], [smoke])
-        self.assertEqual([shard.count("-only-testing:TalariaTests") for shard in options], [0, 1])
 
     def test_committed_weights_are_valid(self):
         weights = json.loads(shards.WEIGHTS.read_text())

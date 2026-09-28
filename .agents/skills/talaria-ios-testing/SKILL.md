@@ -32,13 +32,12 @@ Run simulator-hosted XCTest only through `scripts/test-ios [test-identifier ...]
 2. Wait for it to finish.
 3. For non-UI App changes, run `swift test --package-path TalariaKit` and `scripts/test-ios TalariaTests TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList` before review or commit. HTTP/SSE changes also require the contract checks. Run `scripts/test-ios` for UI changes or uncertain scope.
 
-CI (pull requests and main pushes) runs only the focused set for every App
-change, so run the UI suite locally for UI changes before review: CI does not
-run it before merge (TAL-332). Every selected App run builds all targets once
-and runs the hosted tests on one simulator, while a separate macOS job runs
-`swift test` for TalariaKit. The launch smoke test must execute and pass;
-absence or skipping fails CI. The full UI suite runs in four shards plus the
-package job nightly and as a release gate (`.github/workflows/ui-suite.yml`).
+CI (pull requests and main pushes) boots no simulator: every App change runs
+`swift test` for TalariaKit and builds the App, its extensions and both test
+bundles for testing (TAL-399). The simulator-hosted tests, the launch smoke test
+and the UI suite run in four shards plus the package job nightly and as a
+release gate (`.github/workflows/ui-suite.yml`), not before merge, so run step 3
+locally, and the UI suite for UI changes, before review (TAL-332).
 
 The script serializes runs within one worktree and leases pooled simulators across
 worktrees. Let the current run finish instead of starting an overlapping run.

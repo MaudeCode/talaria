@@ -1,12 +1,13 @@
 # Pull requests and main pushes run suites selected by the complete changed-path diff. App changes run
-# the unit tests plus a launch smoke test; the full iOS UI suite runs nightly and as a release gate
-# (ui-suite.yml).
+# the TalariaKit package tests with `swift test` and build the App, its extensions and test bundles for
+# testing, with no simulator; the simulator-hosted tests, launch smoke and full iOS UI suite run nightly
+# and as a release gate (ui-suite.yml).
 # Release metadata always validates; uncertain classification runs every suite.
 # The always-reporting CI Gate is the required check, including skipped jobs.
 #
 # Every job runs on GitHub-hosted runners and uses no repository secrets (TAL-380); handoffs are
-# Actions artifacts. Only Xcode work runs on hosted macOS: App build, one simulator test shard and the
-# TalariaKit package tests (app-tests.yml). A manual run exercises every suite.
+# Actions artifacts. Only Xcode work runs on hosted macOS: App build and the TalariaKit package tests
+# (app-tests.yml). A manual run exercises every suite.
 
 name: CI
 

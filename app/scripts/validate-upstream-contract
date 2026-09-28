@@ -164,14 +164,10 @@ if (( run_swift_tests )); then
   echo "Running Talaria request and SSE contract tests"
   (
     cd "$repo_root"
-    # TalariaKit's contract classes and the live decoding test run on macOS without a simulator (TAL-399).
+    # Every native contract class and the live decoding test run in TalariaKit on macOS, without a simulator
+    # (TAL-399).
     TALARIA_LIVE_CONTRACT_RESPONSES="$responses_file" swift test --package-path TalariaKit \
-      --filter '^TalariaKitTests\.(APIClientSessionListTests|APIClientSessionMutationTests|SSEClientTests)/'
-    scripts/test-ios \
-      TalariaTests/ContractReadinessTests \
-      TalariaTests/SharedContractTests \
-      TalariaTests/APIClientAuthAndErrorTests \
-      TalariaTests/StreamReconnectContractTests
+      --filter '^TalariaKitTests\.(APIClientSessionListTests|APIClientSessionMutationTests|SSEClientTests|ContractReadinessTests|SharedContractTests|APIClientAuthAndErrorTests|StreamReconnectContractTests)/'
   ) 2>&1 | tee "$run_dir/swift-tests.log"
 else
   echo "Swift contract tests skipped by --server-only"

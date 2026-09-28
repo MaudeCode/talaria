@@ -19,9 +19,8 @@ TARGETS = ("TalariaTests", "TalariaUITests")
 # Source directories per target. TalariaTests also compiles the TalariaKit package's shared test support, which
 # declares base classes such as APIClientTestCase; the package's own tests run with `swift test` (TAL-399).
 SOURCES = {"TalariaTests": ("TalariaTests", "TalariaKit/Tests/TalariaKitTests/Support"), "TalariaUITests": ("TalariaUITests",)}
-# Owned elsewhere: the scheduled Fuzz Soak (TAL-85) and UI Performance (TAL-287) workflows.
+# Owned elsewhere: the scheduled UI Performance workflow (TAL-287).
 SKIPPED = (
-    "TalariaTests/UntrustedInputFuzzSoakTests",
     "TalariaUITests/SidebarPerformanceUITests",
     "TalariaUITests/LaunchPerformanceUITests",
     "TalariaUITests/TranscriptPerformanceUITests",
@@ -57,16 +56,11 @@ def weight_of(identifier, weights):
     return float(weights["classes"].get(identifier, weights["default"][identifier.split("/", 1)[0]]))
 
 
-def assign(items, shards, weights, pinned=(), last=()):
-    """Greedy longest-first assignment; pinned items go to shard 0 and last items to the last shard first, so the
-    greedy pass balances around them. Ties break by name and index."""
+def assign(items, shards, weights):
+    """Greedy longest-first assignment. Ties break by name and index."""
     buckets = [[] for _ in range(shards)]
     loads = [0.0] * shards
-    for index, fixed in ((0, pinned), (shards - 1, last)):
-        for item in fixed:
-            buckets[index].append(item)
-            loads[index] += weight_of(item, weights)
-    for item in sorted(set(items) - set(pinned) - set(last), key=lambda item: (-weight_of(item, weights), item)):
+    for item in sorted(set(items), key=lambda item: (-weight_of(item, weights), item)):
         index = min(range(shards), key=lambda index: (loads[index], index))
         buckets[index].append(item)
         loads[index] += weight_of(item, weights)
@@ -85,13 +79,11 @@ def selection(shard, buckets, targets):
     return options + [f"-skip-testing:{item}" for item in SKIPPED]
 
 
-def plan(shards, targets, extra=(), pinned=(), weights=None, app=APP):
+def plan(shards, targets, weights=None, app=APP):
     weights = weights or json.loads(WEIGHTS.read_text())
     skipped_classes = {item for item in SKIPPED if item.count("/") == 1}
     items = [item for item in discover(app, targets, weights["classes"]) if item not in skipped_classes]
-    # Tests added outside --targets (the PR launch smoke) run in the last shard, away from shard 0's pinned
-    # contract classes and live test.
-    return assign(items, shards, weights, pinned, extra)
+    return assign(items, shards, weights)
 
 
 def main():
@@ -99,13 +91,11 @@ def main():
     parser.add_argument("--shards", type=int, required=True)
     parser.add_argument("--shard", type=int, help="print this shard's xcodebuild options")
     parser.add_argument("--targets", default=",".join(TARGETS), help="comma-separated test targets to split")
-    parser.add_argument("--add", action="append", default=[], help="also run this test outside --targets, in the last shard")
-    parser.add_argument("--pin", action="append", default=[], help="always run this class in shard 0")
     args = parser.parse_args()
     targets = tuple(args.targets.split(","))
     if args.shards < 1 or not set(targets) <= set(TARGETS) or (args.shard is not None and not 0 <= args.shard < args.shards):
         parser.error("invalid --shards, --shard or --targets")
-    buckets, loads = plan(args.shards, targets, args.add, args.pin)
+    buckets, loads = plan(args.shards, targets)
     if args.shard is None:
         for index, (bucket, load) in enumerate(zip(buckets, loads)):
             print(f"shard {index}: {load:.1f}s, {len(bucket)} items{' + catch-all' if index == args.shards - 1 else ''}")

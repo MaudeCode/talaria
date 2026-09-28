@@ -1,6 +1,7 @@
-# The full iOS unit and UI suite on GitHub-hosted runners: App build plus four shards and the TalariaKit package
-# tests (app-tests.yml, full mode). It is too long for every main push (about an hour of hosted test time), so it
-# runs nightly, on demand, and as a release gate.
+# The full iOS unit and UI suite on GitHub-hosted runners: App build plus four simulator shards (the hosted unit
+# tests, the launch smoke and every UI test) and the TalariaKit package tests (app-tests.yml, full mode). It is
+# too long for every main push (about an hour of hosted test time), so it runs nightly, on demand, and as a
+# release gate.
 #
 # Interface (stable; TAL-381's release graph calls it on the release commit):
 #   uses: ./.github/workflows/ui-suite.yml   (the caller grants contents: read and actions: read)
