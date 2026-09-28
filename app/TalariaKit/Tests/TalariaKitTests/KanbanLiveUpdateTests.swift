@@ -54,15 +54,21 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
             eventsResult: .success(.events(cursor: 13))
         )
         let stream = KanbanStreamSpy()
+        // Real 20 ms intervals let a slow runner poll again before the count below is read (CI run
+        // 36496020768), so the hold lets exactly one interval elapse. A fallback that polled without sleeping,
+        // or more than once per interval, still makes more than one events call.
+        let pollingInterval = Duration.milliseconds(20)
+        let hold = PollingIntervalHold(pollingInterval: pollingInterval)
         let state = makeState(
             client: client,
             stream: stream,
             timing: KanbanLiveUpdateTiming(
                 coalescingDelay: .milliseconds(5),
                 reconnectDelays: [.zero, .zero],
-                pollingInterval: .milliseconds(20),
+                pollingInterval: pollingInterval,
                 failuresBeforePolling: 3
-            )
+            ),
+            sleep: { try await hold.sleep($0) }
         )
 
         await state.load()
@@ -348,14 +354,16 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
             reconnectDelays: [.milliseconds(5), .milliseconds(5)],
             pollingInterval: .seconds(60),
             failuresBeforePolling: 3
-        )
+        ),
+        sleep: @escaping @MainActor @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) -> KanbanFeatureState {
         KanbanFeatureState(
             server: URL(string: "https://example.test")!,
             defaults: defaults,
             client: client,
             streamClient: stream,
-            timing: timing
+            timing: timing,
+            sleep: sleep
         )
     }
 
@@ -377,6 +385,24 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
             try await Task.sleep(for: .milliseconds(5))
         }
         XCTFail("Timed out waiting for condition")
+    }
+}
+
+/// Sleeps normally, except that only the first polling interval elapses: later ones wait until the polling
+/// task is cancelled.
+@MainActor
+private final class PollingIntervalHold {
+    private let pollingInterval: Duration
+    private var elapsedPollingIntervals = 0
+
+    init(pollingInterval: Duration) {
+        self.pollingInterval = pollingInterval
+    }
+
+    func sleep(_ duration: Duration) async throws {
+        guard duration == pollingInterval else { return try await Task.sleep(for: duration) }
+        elapsedPollingIntervals += 1
+        try await Task.sleep(for: elapsedPollingIntervals == 1 ? duration : .seconds(3600))
     }
 }
 
