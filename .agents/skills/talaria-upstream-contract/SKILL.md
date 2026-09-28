@@ -7,8 +7,7 @@ description: Verify Talaria API requests, decoding, HTTP/SSE transport, and serv
 
 Read root `CONTRACT_TESTS.md`, `web/packages/contracts` (the route, SSE, and sidecar
 schemas), and the relevant `web/packages/server/src/api/*` handler before changing
-app requests, JSON decoding, or streaming. `web/` is the current source of truth;
-`app/UPSTREAM_*` records the pre-monorepo support history.
+app requests, JSON decoding, or streaming. `web/` is the source of truth.
 
 Clients are display-only (root `AGENTS.md`, server-owned state). Before app logic
 uses a value, confirm the server ships it as a contract field; when it does not,
@@ -25,7 +24,7 @@ server with disposable state on the fixture replay sidecar
 (`web/sidecar/scripts/replay_sidecar.py`, no Hermes Agent needed) and runs the
 HTTP/SSE probe plus focused Swift checks. `--ref <monorepo-ref>` exports an
 immutable candidate's Web tree; `--server-only` is the Linux half. Neither option
-edits historical pins or live state.
+touches live state.
 
 Record the monorepo revision, dirty-source status, artifact directory, checks,
 and any failed endpoint/decoder boundary. Use `$talaria-ios-testing` for the

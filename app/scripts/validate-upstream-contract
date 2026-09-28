@@ -51,14 +51,6 @@ if (( ${print_interpreters:-0} )); then
   exit 0
 fi
 
-read_config() {
-  local value
-  value="$(tr -d '[:space:]' < "$repo_root/$1")"
-  [[ -n "$value" ]] || { echo "$1 is empty" >&2; exit 1; }
-  echo "$value"
-}
-
-tested_sha_before="$(read_config UPSTREAM_TESTED_SHA)"
 monorepo_root="$(cd "$repo_root/.." && pwd)"
 run_stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 run_dir="$repo_root/.codex-tmp/upstream-contract/$run_stamp"
@@ -186,15 +178,9 @@ else
   echo "Swift contract tests skipped by --server-only"
 fi
 
-tested_sha_after="$(read_config UPSTREAM_TESTED_SHA)"
-[[ "$tested_sha_after" == "$tested_sha_before" ]] || {
-  echo "UPSTREAM_TESTED_SHA changed during validation; refusing silent pin advancement" >&2
-  exit 1
-}
 if [[ -n "$responses_output" ]]; then
   mkdir -p "$(dirname "$responses_output")"
   cp "$responses_file" "$responses_output"
 fi
 
 echo "PASS local web/ at monorepo $candidate_sha"
-echo "Historical standalone UPSTREAM_TESTED_SHA remains $tested_sha_before; local web/ is the tested source."

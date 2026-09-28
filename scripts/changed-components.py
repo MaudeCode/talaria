@@ -129,7 +129,7 @@ def path_suites(path):
     if component == "app":
         if local.startswith("ci/"):
             return {"tooling"}
-        if local in ("scripts/validate-upstream-contract", "scripts/upstream-contract-probe") or local.startswith("UPSTREAM_"):
+        if local in ("scripts/validate-upstream-contract", "scripts/upstream-contract-probe"):
             return {"contracts", "tooling"}
         if local.startswith("scripts/"):
             return {"app_tooling", "tooling"}

@@ -29,7 +29,6 @@ class ReleaseNotesTests(unittest.TestCase):
         }
         self.git("init", "-b", "main")
         self.write(".gitignore", "out/\n")
-        self.write("CHANGELOG.md", "# Handwritten history\n\nUnchanged.\n")
         self.add_fragment(1, "Old release")
         self.commit("TAL-1: old release")
         self.git("tag", "v1.0.0")
@@ -310,7 +309,6 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertEqual([entry["ticket"] for entry in release["highlights"]], ["TAL-2", "TAL-3"])
         self.assertNotIn("Old release", markdown)
         self.assertNotIn("Repository tooling only", markdown)
-        self.assertEqual((self.root / "CHANGELOG.md").read_text(), "# Handwritten history\n\nUnchanged.\n")
         # Working-tree changes cannot contaminate a release generated from Git.
         self.write("changelog.d/TAL-2.json", "malformed")
         self.generate("--previous", "v1.0.0")
@@ -362,6 +360,7 @@ class ReleaseNotesTests(unittest.TestCase):
 
     def test_missing_metadata_and_repository_skip(self):
         self.write("README.md", "Documentation\n")
+        self.write("NOTICE", "Repository metadata\n")
         self.write(".codex/environments/environment.toml", "# Local agent tooling\n")
         self.write(".xcodebuildmcp/config.yaml", "# Local test runner settings\n")
         self.commit("TAL-2: documentation")

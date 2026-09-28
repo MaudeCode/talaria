@@ -131,13 +131,15 @@ def introduced(base, target, current):
 
 def repository_only(path):
     # Fail closed for app sources, assets, project settings, and unknown paths.
+    # Uppercase extensionless top-level files (LICENSE and the like) are repository metadata.
     return (
         path.endswith(".md")
+        or re.fullmatch(r"[A-Z][A-Z_]*", path) is not None
         or path.startswith((
             "web/", "relay/", "contracts/", "releases/", "docs/", "ci/", "scripts/", ".github/", ".agents/", ".agy/", ".codex/",
             ".xcodebuildmcp/", DIRECTORY + "/", "TalariaTests/", "TalariaUITests/",
         ))
-        or path in {"LICENSE", ".gitignore", ".gitattributes", ".gitleaksignore", "CLAUDE.md"}
+        or path in {".gitignore", ".gitattributes", ".gitleaksignore", "CLAUDE.md"}
     )
 
 
