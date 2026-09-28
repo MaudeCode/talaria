@@ -25,6 +25,9 @@ def check(needs, stage, dry_run):
         expected = "success" if flag == "true" else "skipped"
         if needs.get(job, {}).get("result") != expected:
             raise ValueError(f"{job} must be {expected}")
+        # The full unit and UI suite gates every release that ships the App, dry runs included.
+        if stage == "build" and component == "app" and needs.get("ui-suite", {}).get("result") != expected:
+            raise ValueError(f"ui-suite must be {expected}")
     if stage == "build":
         inactive = "app-signed-build" if dry_run else "app-dry-build"
         if needs.get(inactive, {}).get("result") != "skipped":

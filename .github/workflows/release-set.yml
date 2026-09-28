@@ -98,9 +98,39 @@ jobs:
         if-no-files-found: error
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
+  ui-suite:
+    # The full unit and UI suite (TAL-380's ui-suite.yml: a build plus four macOS test shards) on the release
+    # source, beside every other gate; build-gate, and so every publication, requires it when the App ships.
+    needs: prepare
+    if: needs.prepare.outputs.app_changed == 'true'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/ui-suite.yml
+    with:
+      ref: ${{ needs.prepare.outputs.source }}
+  ui-suite-started:
+    # Hosted macOS runs five jobs at once and the suite's shards wait at most 45 minutes for its build. This
+    # workflow's own macOS jobs therefore queue only once that build holds a runner: the shards then wait no
+    # longer than the build takes, and whichever macOS jobs do not fit simply start later.
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+    - uses: actions/checkout@v7
+      if: needs.prepare.outputs.app_changed == 'true'
+      with:
+        sparse-checkout: app/ci
+    - name: Wait until the UI suite build holds a macOS runner
+      if: needs.prepare.outputs.app_changed == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: app/ci/wait-for-job "UI suite build" 3600 "Set up job"
   contracts:
     # macOS: compiles the selected App and tests it in the iOS simulator against every supported Web source.
-    needs: prepare
+    needs:
+    - prepare
+    - ui-suite-started
     runs-on: xcode-27
     timeout-minutes: 120
     steps:
@@ -156,7 +186,9 @@ jobs:
   previous-app-contracts:
     # macOS: compiles the previously released App from Git and tests it against the selected Web. It runs beside
     # `contracts` on its own runner rather than sharing one runner's cores and simulators.
-    needs: prepare
+    needs:
+    - prepare
+    - ui-suite-started
     runs-on: xcode-27
     timeout-minutes: 120
     steps:
@@ -380,7 +412,9 @@ jobs:
   app-dry-build:
     # macOS: unsigned xcodebuild archive. Builds consume only the release plan, so they run alongside the gates
     # and each other; build-gate joins every gate and build before anything publishes (TAL-319).
-    needs: prepare
+    needs:
+    - prepare
+    - ui-suite-started
     if: inputs.dry_run && needs.prepare.outputs.app_changed == 'true'
     runs-on: xcode-27
     timeout-minutes: 90
@@ -460,7 +494,9 @@ jobs:
   app-signed-build:
     # Builds consume only the release plan, so they run alongside the gates and each other; build-gate
     # joins every gate and build before anything publishes (TAL-319).
-    needs: prepare
+    needs:
+    - prepare
+    - ui-suite-started
     if: ${{ !inputs.dry_run && needs.prepare.outputs.app_changed == 'true' }}
     uses: ./.github/workflows/ios-release-build.yml
     secrets: inherit
@@ -706,6 +742,7 @@ jobs:
     - previous-app-contracts
     - component-contracts
     - agent
+    - ui-suite
     - relay-build
     - web-build
     - app-dry-build

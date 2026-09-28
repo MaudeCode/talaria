@@ -394,11 +394,20 @@ class PublicationTests(unittest.TestCase):
         jobs = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/release-set.yml")], text=True))["jobs"]
-        gates = ("contracts", "previous-app-contracts", "component-contracts", "agent")
+        gates = ("contracts", "previous-app-contracts", "component-contracts", "agent", "ui-suite")
         builds = ("relay-build", "web-build", "app-dry-build", "app-signed-build")
+        # The macOS jobs queue once the UI suite's build holds a runner, so its shards never outwait their build.
+        macos = ("contracts", "previous-app-contracts", "app-dry-build", "app-signed-build")
         for name in (*gates, *builds):
             with self.subTest(job=name):
-                self.assertEqual(jobs[name]["needs"], "prepare")
+                self.assertEqual(jobs[name]["needs"], ["prepare", "ui-suite-started"] if name in macos else "prepare")
+        self.assertEqual(jobs["ui-suite-started"]["needs"], "prepare")
+        self.assertIn('app/ci/wait-for-job "UI suite build" 3600 "Set up job"', [step.get("run") for step in jobs["ui-suite-started"]["steps"]])
+        # The full UI suite runs on the release source whenever the App ships, dry runs included.
+        self.assertEqual(jobs["ui-suite"]["uses"], "./.github/workflows/ui-suite.yml")
+        self.assertEqual(jobs["ui-suite"]["with"], {"ref": "${{ needs.prepare.outputs.source }}"})
+        self.assertEqual(jobs["ui-suite"]["if"], "needs.prepare.outputs.app_changed == 'true'")
+        self.assertEqual(jobs["ui-suite"]["permissions"], {"contents": "read", "actions": "read"})
         self.assertEqual(set(jobs["build-gate"]["needs"]), {"prepare", *gates, *builds})
         # Publication stays ordered and behind the joined gate: Relay, Web, App, then the manifest.
         self.assertEqual(set(jobs["relay-publish"]["needs"]), {"prepare", "build-gate"})
@@ -474,6 +483,8 @@ class PublicationTests(unittest.TestCase):
                     needs[job] = {"result": "success" if changed else "skipped"}
                 if stage == "build":
                     needs["app-signed-build" if dry else "app-dry-build"] = {"result": "skipped"}
+                    needs["ui-suite"] = {"result": "success" if app else "skipped"}
+                    jobs.append("ui-suite")
                 if stage == "publication" and dry:
                     with self.assertRaises(ValueError):
                         check(needs, stage, dry)

@@ -78,8 +78,14 @@ dependency:
 | `release-set.yml` | `previous-app-contracts` | compiles and tests the previously released App in the simulator |
 | `release-set.yml` | `app-dry-build` | unsigned `xcodebuild archive` |
 
-The organization runs at most five macOS jobs at once; a release uses three
-(the two contract gates and one App build). Every simulator job uses the image's
+The organization runs at most five macOS jobs at once. A release that ships the
+App uses eight: the full UI suite (`ui-suite.yml`: one build and four test
+shards on the release source), the two contract gates and one App build. The
+suite's shards wait at most 45 minutes for its build, so `release-set.yml`'s own
+macOS jobs queue only once `ui-suite-started` has seen that build hold a runner;
+the shards then wait no longer than the build, and whichever jobs do not fit
+start as slots free up. Queue time does not count toward a job's timeout. A
+release without App changes skips the suite and the App build. Every simulator job uses the image's
 own iPhone 17 on the runtime matching the selected Xcode's SDK, as `ci.yml`
 does: the fuzz soak and UI performance boot it with the pinned
 `futureware-tech/simulator-action` and run plain `xcodebuild`; the contract
@@ -220,7 +226,8 @@ or stale predecessor once a release set exists. Changed tags must point to
 `sourceRevision`; unchanged tags must match the previous manifest.
 
 The cutover repeats every gate (selected-source and previous-App contracts,
-pinned Agent compatibility, component builds), then deploys Relay, publishes
+the full unit and UI suite on the release source when the App ships, pinned
+Agent compatibility, component builds), then deploys Relay, publishes
 Web and uploads the App in that order, and publishes the manifest last.
 A `release-set.yml` dispatch with `dry_run=true` rehearses the same gates without
 publication credentials when a change to the release tooling needs it.
