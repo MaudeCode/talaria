@@ -35,8 +35,8 @@ extension ChatViewModelSendTests {
         streamClient.emit(.toolStarted(ToolStreamEvent(
             eventType: "tool.started",
             name: "read_file",
-            preview: "Reading PROJECT_SPEC.md",
-            args: ["path": .string("PROJECT_SPEC.md")],
+            preview: "Reading notes.md",
+            args: ["path": .string("notes.md")],
             duration: nil,
             isError: nil,
             stableID: "call-read-spec"
@@ -44,8 +44,8 @@ extension ChatViewModelSendTests {
         streamClient.emit(.toolCompleted(ToolStreamEvent(
             eventType: "tool.completed",
             name: "read_file",
-            preview: "Read PROJECT_SPEC.md",
-            args: ["path": .string("PROJECT_SPEC.md")],
+            preview: "Read notes.md",
+            args: ["path": .string("notes.md")],
             duration: 0.25,
             isError: false,
             stableID: "call-read-spec"

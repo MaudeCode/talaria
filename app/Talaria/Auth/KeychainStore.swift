@@ -24,9 +24,9 @@ struct KeychainStore: KeychainStoring {
         // JSON-encoded WebUI cookies, scoped by normalized server URL. Keeping
         // these in Keychain lets same-host servers use independent cookie jars.
         case sessionCookies = "session_cookies"
-        // JSON-encoded multi-server registry (server list + active id). The server
-        // URL is treated as a credential (PROJECT_SPEC Phase 1), so the registry
-        // lives in the Keychain, not UserDefaults (#15).
+        // JSON-encoded multi-server registry (server list + active id). A server
+        // URL reveals where the user's agent is reachable, so the registry lives in
+        // the Keychain (this device only, never backed up), not UserDefaults.
         case servers = "servers"
         // The server-authorized profile name adopted by the last native OIDC
         // sign-in, scoped by normalized server URL (TAL-131). Compared on the next

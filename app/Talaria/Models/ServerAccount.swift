@@ -1,18 +1,16 @@
 import Foundation
 import os
 
-/// Non-secret-shaped metadata for one configured Hermes Web UI server.
+/// Non-secret-shaped metadata for one configured Talaria Web server.
 ///
-/// This is the persisted account model introduced by I-039a (#15) — the
-/// foundation the rest of the multi-server epic (#16/#17/#18) builds on. The
-/// server URL is treated as a credential (PROJECT_SPEC Phase 1), so the whole
-/// registry is persisted in the Keychain (see `ServerRegistry`), alongside the
-/// existing `server_url` and `custom_headers` entries. Auth cookies live in
-/// per-server `HTTPCookieStorage` jars with Keychain-backed snapshots. This model is an additive shadow of the
-/// single-server state; nothing in this slice reads it for routing yet.
+/// A self-hosted server's URL tells whoever reads it where the user's agent is
+/// reachable, so it is stored like a credential: the whole registry lives in the
+/// Keychain (see `ServerRegistry`), alongside the `server_url` and
+/// `custom_headers` entries. Auth cookies live in per-server `HTTPCookieStorage`
+/// jars with Keychain-backed snapshots.
 ///
-/// Decoding is tolerant (CLAUDE.md rule 3): missing fields fall back to sensible
-/// defaults so a blob written by a different slice in the epic still loads.
+/// Decoding is tolerant: missing fields fall back to sensible defaults so a blob
+/// written by an older build still loads.
 struct ServerAccount: Codable, Identifiable, Equatable, Sendable {
     /// Stable per-server identity. We reuse the normalized base-URL string so it
     /// matches the offline cache's `serverURLString` key (`CachedSession` /
@@ -93,8 +91,8 @@ struct ServerAccount: Codable, Identifiable, Equatable, Sendable {
 }
 
 /// Process-wide, thread-safe registry of configured servers plus which one is
-/// active, persisted as a JSON blob in the Keychain (the server URL is a
-/// credential — PROJECT_SPEC Phase 1, #15).
+/// active, persisted as a JSON blob in the Keychain because server URLs are
+/// treated as credentials (see `ServerAccount`).
 ///
 /// Mirrors `CustomHeaderStore`: the blob is loaded from the Keychain **once** at
 /// init into a lock-guarded in-memory snapshot, reads come from that snapshot
