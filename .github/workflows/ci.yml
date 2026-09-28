@@ -193,8 +193,9 @@ jobs:
       - name: Wait for App build
         env:
           GH_TOKEN: ${{ github.token }}
-        # Returns once the build artifact exists; the job's own completion reaches the API about a minute later.
-        run: ci/wait-for-job "App build" 2700 app-build
+        # Returns once App build's upload step has succeeded; the job's own completion, and in run 36446521579
+        # the artifact list too, reached the API one to two minutes later.
+        run: ci/wait-for-job "App build" 2700 "Upload the test build"
 
       # curl, not actions/download-artifact, which fetched this 82 MB artifact at about 1 MB/s on hosted macOS.
       - name: Download the test build
@@ -203,7 +204,15 @@ jobs:
         run: |
           set -euo pipefail
           start_seconds=${SECONDS}
-          url=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=app-build" --jq '.artifacts[0].archive_download_url')
+          # The artifact list can trail the upload step, so look it up for up to two minutes.
+          url=""
+          for _ in $(seq 24); do
+            url=$(gh api -H "Cache-Control: no-cache" "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=app-build&poll=${SECONDS}" \
+              --jq '.artifacts[0].archive_download_url // empty')
+            [[ -z "${url}" ]] || break
+            sleep 5
+          done
+          [[ -n "${url}" ]] || { echo "App build uploaded, but its app-build artifact is not listed" >&2; exit 1; }
           # The redirect to blob storage drops the Authorization header (curl sends it to the API host only).
           curl -fsSL --retry 3 -H "Authorization: Bearer ${GH_TOKEN}" -o "${RUNNER_TEMP}/app-build.zip" "${url}"
           unzip -q -o "${RUNNER_TEMP}/app-build.zip" -d "${RUNNER_TEMP}"
