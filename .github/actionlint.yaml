@@ -1,7 +1,3 @@
-self-hosted-runner:
-  labels:
-    - ghar-set-maudecode
-    - maude-mac
 paths:
   .github/workflows/*.yml:
     ignore:
