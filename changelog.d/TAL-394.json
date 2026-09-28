@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Talaria Web now uses its own name in the interface, CLI output, and exports, and Help links point to Talaria's documentation.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
