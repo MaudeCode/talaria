@@ -148,10 +148,11 @@ jobs:
         run: |
           set -euo pipefail
           start_seconds=${SECONDS}
-          # The artifact list can trail the upload step, so look it up for up to two minutes.
+          # The artifact list can trail the upload step, so look it up for up to two minutes; gh-api-poll rides out
+          # transient API errors.
           url=""
           for _ in $(seq 24); do
-            url=$(gh api -H "Cache-Control: no-cache" "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=${BUILD_ARTIFACT}&poll=${SECONDS}" \
+            url=$(ci/gh-api-poll -H "Cache-Control: no-cache" "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=${BUILD_ARTIFACT}&poll=${SECONDS}" \
               --jq '.artifacts[0].archive_download_url // empty')
             [[ -z "${url}" ]] || break
             sleep 5
