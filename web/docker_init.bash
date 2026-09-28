@@ -437,7 +437,7 @@ else
       echo "!!   Path: $_agent_src"
       echo "!! The multi-container compose defaults use a read-only mount for defence-in-depth."
       echo "!! If this is not an intentional local development checkout, switch the WebUI"
-      echo "!! agent source volume/bind mount to read-only. See docs/rfcs/agent-source-boundary.md."
+      echo "!! agent source volume/bind mount to read-only. See docs/docker.md."
       echo ""
     fi
     # The agent source can be mounted read-only (see docker-compose.two-container.yml

@@ -1,225 +1,106 @@
-# Hermes Web UI — Themes
+# Talaria Web themes
 
-Hermes Web UI splits **appearance** into two independent pickers:
+Appearance has two independent axes:
 
-- **Theme** — the mode: `System`, `Dark`, or `Light`. Drives the background,
-  text, surface, and chrome colors.
-- **Skin** — the accent palette: built-in skins ship as named keys. Drives only
-  the `--accent` family (active states, links, focus rings, primary actions).
+- **Theme**: the mode, `Light`, `Dark` (default), or `System`. It toggles the
+  `.dark` class on `<html>`; System follows `prefers-color-scheme` live.
+- **Skin**: a named palette. It overrides any subset of the design tokens for
+  both modes and is applied as `data-skin="<key>"` on `<html>` (the `default`
+  skin clears the attribute).
 
-You pick one of each and they combine, so the look adapts to your environment
-without losing your favorite accent — pure CSS, no Python changes needed.
-
----
-
-## Switching Appearance
-
-**Settings panel:** Click the gear icon → **Appearance**. The **Theme** card
-toggles Light/Dark/System; the **Skin** grid offers the built-in accent palettes.
-Preview is instant — the UI updates as you click.
-
-**Slash command:** Type `/theme <name>` in the composer. The command accepts
-both theme names (`system`, `dark`, `light`) and skin names (`default`, `ares`,
-`mono`, `slate`, `poseidon`, `sisyphus`, `charizard`, `sienna`,
-`catppuccin`, `nous`, `geist-contrast`, `zeus`). It updates the matching axis and leaves the other one
-alone.
-
-**Persistence:** Both choices are stored in `localStorage` for flicker-free
-loading, and saved server-side via `POST /api/settings` (under `theme` and
-`skin` keys in `settings.json`).
+They combine, so a skin keeps its look in both modes.
 
 ---
 
-## Built-in Themes
+## Switching appearance
 
-| Theme | Description |
-|-------|-------------|
-| **System** (default) | Follows the OS `prefers-color-scheme` preference and updates live. |
-| **Dark** | Deep dark surfaces, low-glare for long sessions. |
-| **Light** | Bright surfaces with dark text, high contrast for daylight environments. |
+**Settings → Appearance** has the Theme toggle, the Skin grid (built-in skins
+plus any extension skins), and the font size. Changes apply instantly.
 
-The theme is applied as a class on `<html>`: `.dark` is present for dark mode,
-absent for light. System mode tracks the OS preference at runtime.
+**Slash command:** `/theme light|dark|system` switches the theme and leaves
+the skin alone.
+
+**Persistence:** choices live in `localStorage` (`hermes-theme`,
+`hermes-skin`, `hermes-font-size`). `theme/prepaint.js` is a blocking `<head>`
+script that applies the theme and skin before first paint; `theme/boot.ts`
+then validates and applies the full appearance.
 
 ---
 
-## Built-in Skins
+## Built-in skins
 
-| Skin | Description |
-|------|-------------|
-| **Default** | The original Hermes gold accent. Warm and understated. |
-| **Ares** | Fiery red. High-energy and assertive. |
-| **Mono** | Neutral gray. Distraction-free, for deep focus. |
-| **Slate** | Slate blue-gray. Subtle and grown-up. |
-| **Poseidon** | Ocean blue. Calm and focused for long sessions. |
-| **Sisyphus** | Vivid purple. Distinctive without being loud. |
-| **Charizard** | Warm orange. Energetic and easy on the eyes. |
-| **Sienna** | Warm clay and sand earth palette. Soft and natural. |
-| **Catppuccin** | Catppuccin Latte/Mocha palette with Mauve accent. |
-| **Nous** | Steel-blue accent with dashed technical surfaces. |
-| **Geist Contrast** (`geist-contrast`) | Geist-inspired monochrome surfaces with a restrained dark-mode `#FFF175` accent. |
-| **Zeus** | OLED-near-black dark surfaces that keep the default gold accent. Dark-focused; falls back to the default light palette in light mode. |
+The built-in skins are the `SKINS` array in
+`packages/frontend/src/theme/skins.ts`: Codex, Terracotta, Default, Ares,
+Mono, Graphite, GitHub, Slate, Poseidon, Sisyphus, Charizard, Sienna,
+Catppuccin, Hepburn, Nous, Geist Contrast, Neon, Neon Soft, Neon Paint, Zeus,
+and Verdigris. The picker, `SkinSchema`, and the rendered stylesheet all derive
+from that array.
 
-Each skin defines paired light + dark variants so it reads cleanly on either
-theme. The skin is applied as `data-skin="<name>"` on `<html>` (the default
-skin clears the attribute).
-
-The WebUI brandmark uses Talaria's original winged sandal paths in
-`static/brand/brandmark.svg`, adapted from Talaria's `Sandal.svg` source. The title bar
-and shared-chat header use a CSS mask colored by the active skin's `--accent`;
-the login page
-uses its existing gold accent. No app-icon shading or outline is included.
-The main app favicon follows the resolved light/dark theme, including system
-changes and extension skins. The standalone SVG favicon follows the browser's
-color scheme. Install and notification icons use a fixed dark tile; install
-icons include maskable safe-area padding.
+The brandmark uses Talaria's winged sandal paths in
+`static/brand/brandmark.svg`. The title bar and shared-chat header colour it
+with a CSS mask from the active skin's `--accent`; the login page uses its own
+gold accent. The main app favicon follows the resolved light/dark theme,
+including system changes and extension skins. The standalone SVG favicon
+follows the browser's colour scheme. Install and notification icons use a
+fixed dark tile; install icons include maskable safe-area padding.
 
 After editing the source SVG, regenerate the derived SVG, PNG and ICO assets
-with `uv run --no-project --with playwright python ../scripts/generate-brand-icons.py` (from `web/`; the script lives in the repository `scripts/`).
-This uses an installed Playwright Chromium for rendering and is only an asset
-maintenance command, not an application build step.
+with `uv run --no-project --with playwright python ../scripts/generate-brand-icons.py`
+(from `web/`). It renders with an installed Playwright Chromium and is an
+asset maintenance command, not a build step.
 
 ---
 
-## Creating a Custom Skin
+## How skins work
 
-A skin is a small CSS block that overrides the accent variables for both the
-light and dark variants:
+All tokens live in `packages/frontend/src/theme/skins.ts`:
 
-```css
-/* Light variant */
-:root[data-skin="my-skin"] {
-  --accent:           #2E7D32;                   /* Active states, links, primary buttons */
-  --accent-hover:     #1B5E20;                   /* Hover */
-  --accent-bg:        rgba(46,125,50,0.08);      /* Soft tinted backgrounds */
-  --accent-bg-strong: rgba(46,125,50,0.15);      /* Highlighted backgrounds */
-  --accent-text:      #1B5E20;                   /* Text on accent bg */
-}
+- `TOKEN_NAMES` is the vocabulary: palette tokens (`--bg`, `--surface`,
+  `--text`, `--accent`, ...), semantic roles (`--accent-fg`, `--link-color`,
+  ...), and component knobs (`--composer-bg`, `--session-active-fg`, ...).
+- `BASE` holds every token's light value plus the dark overrides.
+- Each `SkinSpec` in `SKINS` overrides a subset in `tokens` (both modes) and
+  `dark` (dark mode only). `traits` opts into structural variants
+  (`square-controls`, `card-sessions`) whose rules live in `theme/theme.css`.
 
-/* Dark variant — usually lighter or more saturated for contrast */
-:root.dark[data-skin="my-skin"] {
-  --accent:           #66BB6A;
-  --accent-hover:     #43A047;
-  --accent-bg:        rgba(102,187,106,0.08);
-  --accent-bg-strong: rgba(102,187,106,0.15);
-  --accent-text:      #66BB6A;
-}
-```
+`renderThemeCss` turns this into the `virtual:hermes-theme.css` stylesheet the
+Vite plugin serves, and `theme/tailwind.css` maps the same names into
+utilities. Component CSS in `theme/components/` reads tokens only; no rule
+names a skin.
 
-Two ways to ship it:
+### Adding a built-in skin
 
-1. **In the repo (built-in):** add the block to `frontend/src/theme/tokens.css`,
-   register it in `frontend/src/contracts/persisted.ts` (`SkinSchema`) and the
-   skin list in `frontend/src/features/settings/AppearanceSection.tsx`, and rebuild
-   `static/dist`.
+1. Append a `SkinSpec` to `SKINS` in `skins.ts` with a `key`, a display
+   `name`, up to three swatch `colors`, and the `tokens`/`dark` overrides.
+2. Check both modes on desktop and mobile. A skin that works in Dark can be
+   illegible in Light; keep `--accent-text` readable on `--accent-bg`.
+3. `skins.test.ts` covers the rendered stylesheet; run the frontend unit tests.
 
-2. **Self-hosted (no fork):** declare a `theme` block in your extension manifest
-   (see `docs/architecture/extension-protocol-v1.md`). The host applies the
-   allowlisted tokens as CSS custom properties when the user selects the skin
-   in Settings, Appearance; no stylesheet or script is injected.
+### Extension skins
 
-   Extensions that declare a skin through the manifest may
-   also set `scheme: "light"` or `scheme: "dark"` for light-only or dark-only
-   skins. The saved Theme preference stays unchanged, but WebUI applies the
-   matching effective base class while that skin is selected so System/Light or
-   System/Dark does not mix incompatible base tokens into the skin.
-
-### Tips
-
-- **Test both themes.** A skin that pops on Dark can be illegible on Light.
-  Always check `:root[data-skin]` (light) *and* `:root.dark[data-skin]` (dark).
-- **Pick contrasting `--accent-text` on `--accent-bg`.** The strong variant
-  appears behind small labels and chips; weak contrast there reads as blur.
-- **The logo gradient uses `--accent` automatically**, so it adapts to your
-  skin without any extra work.
-- **No server changes needed.** The `skin` setting in `settings.json` accepts
-  any string, so your custom skin name persists without code changes once you
-  load the CSS.
+An extension can ship a skin without changing Talaria Web: declare a `theme`
+block in its manifest (see `docs/architecture/extension-protocol-v1.md`). The
+host applies the allowlisted tokens as CSS custom properties when the user
+selects the skin; no stylesheet or script is injected. A manifest skin may set
+`scheme: "light"` or `scheme: "dark"`; while it is selected the host applies
+that mode without changing the saved Theme preference.
 
 ---
 
-## Creating a Custom Theme
+## Font size
 
-A full custom *theme* (a different overall mood, not just an accent change) is
-a larger task than a skin: it has to redefine the core palette variables
-(`--bg`, `--surface`, `--text`, `--border`, `--code-bg`, and friends) for one
-or both modes. The contract is defined in the top `:root` and `:root.dark`
-blocks of `frontend/src/theme/tokens.css` — start there.
-
-Most of the time, a custom **skin** is what you actually want. Reach for a
-custom theme only when the existing Light/Dark modes don't fit (for example,
-a high-contrast accessibility theme or an OLED black variant).
+Settings → Appearance offers `Small`, `Default`, `Large`, and `XLarge`. The
+choice is applied as `data-font-size` on `<html>` and scales the root and
+message font sizes (`theme/theme.css`).
 
 ---
 
-## Font Size
+## Typography tokens
 
-Right under Theme/Skin in **Settings → Appearance**: `Small`, `Default`,
-`Large`. Applied as `data-font-size` on `<html>` and scales the WebUI's root
-font size. Persists alongside theme and skin.
-
----
-
-## Typography Tokens
-
-The three font tokens are declared in `frontend/src/theme/tokens.css`:
-
-- `--font-ui`: user interface chrome, controls, composer chrome, labels, and
-  ordinary non-code UI text
-- `--font-conversation`: user/assistant message prose
+- `--font-ui`: interface chrome, controls, labels, and ordinary UI text
+- `--font-conversation`: user and assistant message prose
 - `--font-mono`: code, tool details, logs, identifiers, and terminal text
 
-By default:
-
-```css
---font-conversation: var(--font-ui);
---font-mono: ui-monospace,"SFMono-Regular","SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
-```
-
-For CSS-based custom skins and extension stylesheets/scripts, override the three
-font tokens directly (`--font-ui`, `--font-conversation`, `--font-mono`) on the
-skin root (`:root[data-skin="..."]`), including any mode-specific variant.
-`window.registerHermesSkin()` currently accepts only the documented design-token
-allowlist (no `--font-*` tokens), so custom font families should be supplied via
-CSS rather than skin registration.
-
-Leaving `--font-conversation` untouched keeps prose coupled to `--font-ui`;
-override it only when a different reading face is explicitly required. Avoid
-hard-coded selector-level font declarations when one of these tokens already
-expresses the intent.
-
----
-
-## How It Works Internally
-
-1. **Theme:** `document.documentElement.classList.toggle('dark', isDark)` —
-   light mode removes the class. System mode tracks
-   `matchMedia('(prefers-color-scheme: dark)')`. Extension-registered skins
-   may declare a light/dark `scheme`; when selected, that scheme controls the
-   effective `.dark` class without rewriting the saved Theme preference.
-2. **Skin:** `document.documentElement.dataset.skin = name` (or remove the
-   attribute for `default`).
-3. **Font size:** `document.documentElement.dataset.fontSize = size` (or
-   remove for `default`).
-4. **No flash on load:** a tiny inline `<script>` in `<head>` reads
-   `localStorage` before the stylesheet does, so the right look is applied
-   before paint.
-5. **Server sync:** preferences are saved via `POST /api/settings` and
-   rehydrated on boot via `GET /api/settings`.
-
----
-
-## Adding a Built-in Skin
-
-Skins are the easiest extension point — pure CSS, no Python, no JS logic. To
-add one to the built-in list:
-
-1. Add your `:root[data-skin="name"]` and `:root.dark[data-skin="name"]`
-   blocks to `frontend/src/theme/tokens.css`.
-2. Register it in `SkinSchema` (`frontend/src/contracts/persisted.ts`) and in
-   the Settings skin picker (`frontend/src/features/settings/AppearanceSection.tsx`);
-   the `/theme` command reads the same list.
-3. Test on desktop and mobile across both Light and Dark themes.
-
-A custom *theme* (overriding the base palette) touches many selectors; plan its
-scope before starting.
+`--font-conversation` defaults to `var(--font-ui)`; override it in a skin only
+when a different reading face is needed. Prefer these tokens over
+selector-level font declarations.

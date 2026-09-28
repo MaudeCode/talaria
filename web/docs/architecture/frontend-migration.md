@@ -1,7 +1,6 @@
-# Frontend architecture: TanStack Start, React, TypeScript (HWEB-100)
+# Frontend architecture: TanStack Start, React, TypeScript
 
-Status: implemented by HWEB-100. This document is the authoritative description
-of the browser application after the migration. `ARCHITECTURE.md` links here
+This document describes the browser application. `ARCHITECTURE.md` links here
 for the frontend half of the system; the server half is described there.
 
 ## 1. Runtime and server ownership
@@ -17,15 +16,14 @@ for the frontend half of the system; the server half is described there.
 - The Start plugin runs in SPA mode to produce the prerendered shell and the
   client bundle. The frontend build stays a static artifact served by the
   TypeScript server; Start server functions and server routes are not used.
-- Same-origin REST and SSE contracts are preserved. Zod schemas under
-  `frontend/src/contracts/` describe them so a future TypeScript handler can
-  implement an endpoint without changing React callers.
+- The client talks to the server over same-origin REST and SSE. Zod schemas
+  under `packages/frontend/src/contracts/` describe every payload it reads.
 
 ## 2. Repository layout
 
 ```
 packages/frontend/              editable source (npm workspace "@maudecode/talaria-web-frontend")
-  package.json, package-lock.json
+  package.json                  (the lockfile is the workspace root's web/package-lock.json)
   vite.config.ts                Start SPA plugin, React, Tailwind, Paraglide, PWA injectManifest
   tsconfig.json                 strict, noUncheckedIndexedAccess, verbatimModuleSyntax
   eslint.config.js              typescript-eslint, react-hooks, custom no-raw-fetch / no-innerHTML rules
@@ -33,9 +31,9 @@ packages/frontend/              editable source (npm workspace "@maudecode/talar
   playwright.config.ts          Node Playwright against the built assets + the TypeScript server
   project.inlang/settings.json  Paraglide project (base locale en, all locales)
   messages/<locale>.json        one message catalogue per locale (inlang message format)
-  scripts/                      build-time gates (i18n parity, generated-output diff)
+  scripts/                      i18n parity gate, route generation, dist finalisation, service worker build
   src/
-    entry.tsx                   theme/dir boot, base-url freeze, router + query providers
+    client.tsx                  theme/dir boot, base-url freeze, router + query providers
     router.tsx                  route tree, basepath, scroll restoration, not-found, error boundary
     routes/                     TanStack Router file routes (see section 4)
     contracts/                  Zod schemas: http, sse, bootstrap, url, persisted, extension
@@ -43,7 +41,7 @@ packages/frontend/              editable source (npm workspace "@maudecode/talar
     stream/                     chat stream reducer, connection, lifecycle hooks
     features/                   UI by domain (auth, onboarding, sessions, chat, composer, panels, settings...)
     shell/                      titlebar, rail, sidebar, layout, shortcuts
-    theme/                      tokens.css (carried-forward custom properties), boot.ts, tailwind.css
+    theme/                      skins.ts (tokens and skins), theme.css, components/*.css, tailwind.css, boot.ts, prepaint.js
     i18n/                       Paraglide runtime glue, locale metadata, speech locales
     extensions/                 sandboxed host, bridge, manifest loading
     lib/                        small utilities (persisted JSON, safeNextPath, base url)
@@ -63,9 +61,10 @@ native `frontend-build` stage, so installs serve the UI without a frontend toolc
 
 ## 3. Build and serving
 
-- `npm run build` in `frontend/` runs: Paraglide compile, i18n parity gate,
-  `tsc --noEmit`, ESLint, Vite production build with `base: './'`, PWA service
-  worker injection, then writes `static/dist/`. Source maps are off unless
+- `npm run build` in `packages/frontend/` runs: i18n parity gate, Paraglide
+  compile, route generation, `tsc --noEmit`, ESLint, Vite production build with
+  `base: './'`, dist finalisation, and the service worker build, writing
+  `static/dist/`. `npm run build:fast` skips the gates. Source maps are off unless
   `HERMES_WEBUI_SOURCEMAP=1`.
 - Determinism: Vite's content hashes are stable for identical inputs; the build
   strips timestamps and sorts precache entries.
@@ -82,14 +81,14 @@ native `frontend-build` stage, so installs serve the UI without a frontend toolc
   `/sw.js` maps to `static/dist/sw.js` with `Service-Worker-Allowed: /` and
   `Cache-Control: no-store`. `/manifest.json` and `/manifest.webmanifest` map to
   the generated manifest.
-- The base URL is frozen once: `entry.tsx` reads `document.baseURI`, writes the
+- The base URL is frozen once: `client.tsx` (`lib/appRoot.ts`) reads `document.baseURI`, writes the
   absolute value back to the `<base>` element so later `pushState` navigations
   do not move it, exposes it as `appRoot`, and gives TanStack Router
   `basepath = appRoot.pathname`. All API and asset URLs derive from `appRoot`.
 
 ### Development server
 
-`HERMES_WEBUI_DEV_PROXY=http://127.0.0.1:8797 npm run dev -- --host 0.0.0.0 --port 8798` (from `frontend/`) serves
+`HERMES_WEBUI_DEV_PROXY=http://127.0.0.1:8797 npm run dev -- --host 0.0.0.0 --port 8798` (from `packages/frontend/`) serves
 the app from source with hot module replacement. The Vite dev server forwards `api/`, `static/`, `extensions/`,
 `plugins/`, and `dashboard-plugins/` requests at any mount depth to the server named in the variable, which
 keeps state, sessions and auth; everything else is served by Vite. The dev document has no server-injected `<base>`,
@@ -105,7 +104,7 @@ local frontend to loopback, and forwards any remaining arguments to Vite.
 
 TanStack Router owns canonical URLs, path and search parsing, navigation,
 history, scroll restoration, not-found, and route error boundaries. Routes are
-file-based under `frontend/src/routes/`:
+file-based under `packages/frontend/src/routes/`:
 
 | Route | Purpose | Auth |
 |---|---|---|
@@ -134,7 +133,7 @@ The server serves the shell for exactly these prefixes: `/`, `/index.html`,
 `/static/*`, `/sw.js`, `/manifest.*`, `/extensions/*`, `/plugins/*`,
 `/dashboard-plugins/*`, `/favicon.ico`, `/search`) or returns 404. The
 allowlist lives in `packages/server/src/spa.ts` and is tested in
-`tests/test_hweb100_spa_shell_routes.py`.
+`packages/server/src/spa.test.ts`.
 
 Unauthenticated requests to protected shell routes still receive the server's
 302 to `/login?next=<safe path>`. The client never decides authorization; it
@@ -152,26 +151,24 @@ only renders what the server allows.
 | Extension channels | `extensions/host.ts` | one `MessageChannel` per iframe, nonce and version handshake, capability table from the sanitized manifest |
 | Service worker state | `sw.ts` | precache list injected by the build; runtime caches for hashed assets only |
 
-## 6. Contracts and the backend migration seam
+## 6. Contracts
 
-- `frontend/src/contracts/` holds browser-independent Zod 4 schemas: request
+- `packages/frontend/src/contracts/` holds browser-independent Zod 4 schemas: request
   bodies, responses, the normalized `ApiError`, `/api/bootstrap`, SSE events (a
   discriminated union by wire name), URL search params, persisted state, and
   extension protocol messages. Modules import only `zod`.
-- `frontend/src/api/client.ts` is the only module that calls `fetch` or
+- `packages/frontend/src/api/client.ts` is the only module that calls `fetch` or
   constructs `EventSource`. It resolves same-origin URLs from `appRoot`, adds
   the CSRF header to unsafe same-origin requests (except `/api/auth/login` and
   `/api/csp-report`), coalesces identical idempotent requests, retries network
-  failures with the legacy policy, redirects once on 401, parses the response
+  failures, redirects once on 401, parses the response
   with the endpoint schema, and returns typed values. An ESLint rule fails the
   build on any other `fetch`/`EventSource` use.
-- Fixtures under `frontend/src/contracts/__fixtures__/` are consumed by Vitest
-  schema tests and by `tests/test_hweb100_contract_fixtures.py`, which asserts
-  the live server handlers still produce payloads that satisfy the same
-  fixtures' shapes.
-- `frontend/src/contracts/adapters/` proves the seam: an in-memory adapter
-  implements the session read endpoint and the session rename mutation from the
-  schemas alone, and the React hooks run against it in tests unchanged.
+- Captured live payloads under `packages/frontend/src/contracts/__fixtures__/live/`
+  must parse with the client's schemas (`contracts/fixtures.test.ts`).
+- `packages/frontend/src/contracts/adapters/memory.ts` is an in-memory contract
+  server built from the schemas; component tests run the real hooks against
+  it.
 
 ## 7. Bootstrap endpoint
 
@@ -195,24 +192,21 @@ through `GET /api/chat/stream/status`, journal replay with `after_seq` and
 test: `done`, `stream_end`, `apperror`, `cancel`, legacy `error`, reconnect,
 replay, session replacement, profile change, and unmount. Invariants from
 `docs/rfcs/webui-run-state-consistency-contract.md` and
-`docs/rfcs/stable-assistant-turn-anchors.md` are asserted in
-`frontend/src/stream/reducer.test.ts`.
+`docs/rfcs/live-to-final-assistant-replies.md` are asserted in
+`packages/frontend/src/stream/reducer.test.ts`.
 
 ## 9. UI, styling, accessibility
 
-- Theme system: `frontend/src/theme/skins.ts` is the single source of truth
+- Theme system: `packages/frontend/src/theme/skins.ts` is the single source of truth
   for tokens and skins (palette, semantic and component tiers; 21 `SkinSpec`
   entries as data; `renderThemeCss`). The `hermesTheme` Vite plugin serves the
   rendered cascade as `virtual:hermes-theme.css`; `tailwind.css` maps the same
   names into `@theme` so utilities consume tokens; component sheets under
   `theme/components/` (in `@layer app`, after utilities) never mention a skin
-  or a theme and carry no colour literals (enforced by `skins.test.ts`). The
-  per-skin overrides the legacy sheet expressed as `!important` rules became
-  component tokens or one of two traits (`square-controls`, `card-sessions`).
-  The legacy stylesheet was converted with `frontend/scripts/css-convert.mjs`
-  (now a history tool); `docs/architecture/css-conversion-ledger.md` gives every
-  one of its 4166 rules a disposition. `skins.test.ts` validates every skin's
-  token contract and generated CSS.
+  or a theme and carry no colour literals (enforced by `skins.test.ts`).
+  Structural per-skin variants are one of two traits (`square-controls`,
+  `card-sessions`). `skins.test.ts` validates every skin's token contract and
+  generated CSS.
 - Base UI provides dialogs, alert dialogs, menus, popovers, tooltips, tabs,
   selects, comboboxes, and focus management. The composer command palette uses
   Base UI Combobox; the approval card keeps its inline placement but uses the
@@ -224,14 +218,13 @@ replay, session replacement, profile change, and unmount. Invariants from
 
 ## 10. Localisation
 
-Paraglide JS compiles `frontend/messages/<locale>.json` into tree-shakeable
+Paraglide JS compiles `packages/frontend/messages/<locale>.json` into tree-shakeable
 message functions with per-locale chunks. The runtime strategy is
 `localStorage` (`hermes-lang`) then the server `language` setting from
-bootstrap then `en`. No locale path segments. `frontend/scripts/i18n-gate.mjs`
+bootstrap then `en`. No locale path segments. `scripts/i18n-gate.mjs`
 fails the build when English is missing a key any locale defines, when
 placeholders differ between English and a translation, or when a locale has a
-key English lacks. Plural helpers for `ru`, `zh`, `zh-Hant` tool summaries are
-ported as message variants.
+key English lacks. Plural forms for tool summaries are message variants.
 
 ## 11. Rendering
 
@@ -241,10 +234,9 @@ approvals, clarification, file links, media, subagents, background processes,
 goals, todos, lifecycle status) are typed React components fed from the stream
 reducer and session payload, never Markdown strings. The only HTML sink is
 Streamdown's own sanitized renderer; `dangerouslySetInnerHTML` is forbidden by
-lint outside `frontend/src/features/chat/render/`, which contains no such use
-today. The legacy renderer corpus is ported to
-`frontend/src/features/chat/__fixtures__/markdown/` with differential
-expectations.
+lint outside `packages/frontend/src/features/chat/render/`, which contains no
+such use today. The Markdown corpus lives in
+`packages/frontend/src/features/chat/__fixtures__/markdown/`.
 
 ### Turn activity projection
 
@@ -272,7 +264,7 @@ through the server-owned consented proxy. Legacy injection and globals are gone.
 
 ## 13. PWA, assets, security
 
-- `vite-plugin-pwa` in `injectManifest` mode with `frontend/src/sw.ts`
+- `vite-plugin-pwa` in `injectManifest` mode with `packages/frontend/src/sw.ts`
   precaches the hashed shell, cleans obsolete caches on activate, serves the
   offline shell for navigations, and never caches API responses. Update flow:
   `registerSW` with a prompt, `skipWaiting` on user confirmation, reload on
@@ -285,26 +277,14 @@ through the server-owned consented proxy. Legacy injection and globals are gone.
 - Auth cookies, CSRF, profile scoping, authorization, and redirects are
   server-owned. Root and route error boundaries render retry and reload
   actions.
-- Dependencies are pinned by `frontend/package-lock.json`. Update and audit
-  with `npm --prefix frontend outdated`, `npm --prefix frontend audit`, then
-  `npm --prefix frontend update <pkg>` followed by `npm run build`.
+- Dependencies are pinned by the workspace lockfile `web/package-lock.json`.
+  Update and audit from `web/` with `npm outdated -w packages/frontend`,
+  `npm audit`, then `npm update <pkg> -w packages/frontend` followed by
+  `npm run build -w packages/frontend`.
 
-## 13a. Scope amendments
+## 13a. Shell boot and geometry
 
-Recorded on the ticket on 2026-09-15 by the ticket owner. Removed restrictions:
-no global state library; TanStack Virtual only where already required; no Start
-server functions or routes; the CI committed-output diff gate; the legacy theme
-and skin custom properties as the authoritative design tokens. The legacy
-stylesheet was the visual reference while the chrome was restyled with Tailwind.
-Current UI changes use PR before/after evidence and manual review.
-
-## 13b. Validation-round adjustments
-
-Recorded after the ticket owner validated the built frontend on the LAN
-preview (2026-09-15 and 2026-09-16). Product-visible changes are X5 to X11 in
-the parity matrix. Mechanisms worth knowing:
-
-- **Boot.** `frontend/src/theme/prepaint.js` is a blocking classic script in
+- **Boot.** `packages/frontend/src/theme/prepaint.js` is a blocking classic script in
   `<head>` (a hashed asset, never inlined as a `data:` URL, precached by the
   service worker) that applies the persisted theme, skin, collapsed sidebar and
   workspace-panel state before first paint. While `#app` is empty, pseudo-element
@@ -325,8 +305,7 @@ the parity matrix. Mechanisms worth knowing:
   highlights stop one seam radius short of the top and bottom and the seams draw
   an accent ring along their arc on hover.
 - **Component sheets** keep every rule inside their `@layer app{}` block; an
-  unlayered rule outranks layered ones regardless of specificity, which hid one
-  hover rule during this round.
+  unlayered rule outranks layered ones regardless of specificity.
 - **Dev server.** See "Development server" in section 3.
 
 ## 14. Testing
@@ -337,17 +316,9 @@ the parity matrix. Mechanisms worth knowing:
 | Lint | `npm run lint` | TS/React, service worker, contract rules |
 | Unit | `npm run test` (Vitest) | contracts, reducer, router search schemas, Query invalidation, forms, extension protocol, PWA helpers, rendering adapter, hostile corpus |
 | Behaviour | Vitest + RTL | focus, keyboard, live regions, forms, dialogs, menus, comboboxes, error states, reduced motion |
-| End to end | `npm run e2e` (Node Playwright) | navigation, hard refresh, chat lifecycle with the deterministic gateway, reconnect, auth, onboarding, extensions, PWA update, subpath mount at desktop and mobile viewports |
+| End to end | `npm run e2e` (Node Playwright) | navigation, hard refresh, chat lifecycle on the replay sidecar, reconnect, auth, onboarding, extensions, PWA update, subpath mount at desktop and mobile viewports |
 | Server | `npm test -w packages/server` | SPA allowlist, bootstrap, auth/CSRF/profile boundaries, share, extension assets/sidecars, 404s, contract fixtures |
 | Packaging | `releases/build.py`, Docker smoke | the npm package and container include `static/dist/` |
 
 Tests pin clocks, locale (`en`), data, and viewport for deterministic browser
 checks.
-
-## 15. Rollback
-
-Revert the merge commit. The legacy frontend and its serving code return with
-it; no data migration is involved. Persisted browser keys keep their legacy
-names and JSON shapes, so a rolled-back client reads the same preferences.
-Extension authors who migrated to the protocol would need the previous
-extension build until the migration is re-applied.

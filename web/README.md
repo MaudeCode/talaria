@@ -202,13 +202,11 @@ outside contributions; see the [contribution policy](../CONTRIBUTING.md).
 - [docs/docker.md](docs/docker.md) — container reference
 - [docs/talaria-updates.md](docs/talaria-updates.md) — release channels, provenance, migration
 - [docs/EXTENSIONS.md](docs/EXTENSIONS.md) — extension platform
-- [docs/architecture/](docs/architecture/) — contract package, sidecar RPC, parity matrices
+- [docs/architecture/](docs/architecture/) — contract package, sidecar RPC, frontend layout
 - [docs/rfcs/](docs/rfcs/) — state and streaming contracts
 - [docs/CONTRACTS.md](docs/CONTRACTS.md) — index of subsystem contracts
-- [docs/why-hermes.md](docs/why-hermes.md) — background
 
 ## Repo
 
-Talaria Web began as a fork of [nesquena/hermes-webui](https://github.com/nesquena/hermes-webui); the
-history and contributor credits are preserved in [CONTRIBUTORS.md](CONTRIBUTORS.md) and
-[CHANGELOG.md](CHANGELOG.md). Licensed under the MIT license (see the repository root).
+Talaria Web began as a fork of Hermes WebUI; [NOTICE](NOTICE) keeps the upstream MIT attribution.
+Licensed under the MIT license (see the repository root).

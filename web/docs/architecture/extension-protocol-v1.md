@@ -1,6 +1,6 @@
-# Hermes WebUI extension protocol, version 1
+# Talaria Web extension protocol, version 1
 
-Status: implemented by HWEB-100. This replaces the injected-script extension
+Status: implemented. This replaces the injected-script extension
 surface and the dashboard-plugin IIFE loader with one sandboxed capability
 protocol. There is no compatibility shim: an extension either ships a panel
 document that speaks this protocol or it is listed as needing migration.

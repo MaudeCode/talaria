@@ -1,93 +1,54 @@
 # Project Contracts
 
-This document is a contributor-facing index for existing Hermes WebUI contracts,
-RFCs, design constraints, and review expectations. It does not replace the
-source documents and it does not mark proposals as implemented. Follow each
-linked document's status and scope.
+This is the index of Talaria Web's contracts, RFCs, design constraints, and
+review expectations. It routes you to the source documents; follow each
+document's own status and scope.
 
-Use this file when starting a change so the relevant public contract is visible
-before code is edited. This index focuses on documentation routing and
-contributor guidance; it does not change runtime behavior or CI gates.
+Use it when starting a change so the relevant contract is visible before code
+is edited.
 
 ## Start here
 
-- [`AGENTS.md`](../AGENTS.md): repository entry point for AI assistants,
-  public-safety rules, and the short redline checklist.
-- [`README.md`](../README.md): product overview, quick start, architecture map,
-  feature inventory, and docs index.
-- [`CHANGELOG.md`](../CHANGELOG.md): release history maintained by the release
-  workflow. Read it for context, but do not edit it in ordinary contributor PRs;
-  put release-note-ready wording in the PR body instead.
+- [`AGENTS.md`](../AGENTS.md): entry point for AI assistants, safety rules,
+  and the change guidelines.
+- [`README.md`](../README.md): product overview, quick start, configuration,
+  and docs index.
+- [`ARCHITECTURE.md`](../ARCHITECTURE.md): components, module layout, state
+  ownership, and design constraints.
 
 ## Runtime, durability, and state contracts
 
-- [`docs/remote-workspaces.md`](remote-workspaces.md):
-  architecture contract for remote terminal workspaces (SSH/Docker), target-side
-  POSIX path preservation against macOS synthetic firmlink expansion, and
-  per-profile isolation boundaries.
+- Server-owned derivation: clients are display-only. The server computes every
+  value a client renders and ships it through `packages/contracts`; see
+  server-owned state in the root [`AGENTS.md`](../../AGENTS.md).
 - [`docs/rfcs/webui-run-state-consistency-contract.md`](rfcs/webui-run-state-consistency-contract.md):
-  proposed consistency rules for current WebUI streaming, recovery, replay,
-  model-context reconstruction, compression, UI scene/cache, and sidebar metadata
-  repairs. Start here for narrow fixes that keep the existing WebUI execution
-  path.
+  consistency rules for streaming, recovery, replay, model-context
+  reconstruction, compression, and sidebar metadata, plus the review
+  checklist for run-state changes.
 - [`docs/rfcs/live-to-final-assistant-replies.md`](rfcs/live-to-final-assistant-replies.md):
-  accepted product model for long-running assistant replies, live process text,
-  tool activity, recovery, terminal outcomes, and final-answer boundaries. Start
-  here for UI/UX changes to running-session assistant reply rendering.
-- [`docs/rfcs/stable-assistant-turn-anchors.md`](rfcs/stable-assistant-turn-anchors.md):
-  implemented presentation/reconciliation model that attaches live, settled,
-  replayed, and recovered activity to one assistant-turn owner and projects one
-  `activity_scene_v1` into Compact Worklog, Transparent Stream, or Final answer
-  only. The server owns that projection: it stamps every message with its turn's
-  `_turn_id` and attaches each completed turn's scene (ordered rows under
-  "Worked", `final_answer`, `terminal_state`, `expanded_by_default`, and the
-  `file_changes` its file-mutating calls made) in session
-  detail and terminal payloads; Web and iOS render those fields and derive none
-  of them. Every terminal chat frame (`done`, `apperror`/`error`, `cancel`)
-  carries the same `terminal_state` enum (`TurnTerminalStateSchema`) that the
-  settled scene then shows; the run journal maps it to its own run-status
-  vocabulary. Remaining hardening stays tracked under #3400.
-- [`docs/architecture/stable-assistant-turn-anchor-phase0.md`](architecture/stable-assistant-turn-anchor-phase0.md):
-  cumulative implementation inventory for the Stable Assistant Turn Anchors
-  work under #3926. Use it to distinguish shipped wiring from historical slice
-  boundaries before changing live SSE, replay, settlement, `INFLIGHT`, or
-  `renderMessages()` paths.
-- [`docs/rfcs/canonical-session-resolution.md`](rfcs/canonical-session-resolution.md):
-  proposed contract for resolving URL routes, query parameters, localStorage,
-  sidebar rows, and compression-lineage IDs to one canonical visible session
-  target. Start here for session routing, boot restore, stale parent, or
-  compression-tip selection changes.
-- [`docs/rfcs/hermes-run-adapter-contract.md`](rfcs/hermes-run-adapter-contract.md):
-  proposed event/control contract, runtime-state ownership matrix,
-  acceptance-test catalog, and reversible migration gates for moving WebUI
-  execution behind an adapter boundary. Use this for adapter-seam, control-plane,
-  runner, sidecar, or execution-ownership work; do not treat it as authorization
-  to implement those slices.
-- [`docs/architecture/agent-api-contract.md`](architecture/agent-api-contract.md):
-  current audit of WebUI dependencies on the hermes-agent source checkout and
-  the replacement API/client surfaces needed before source mounts can be removed.
-  Start here for issue #2491 and Docker/source-boundary migration slices.
-- [`docs/rfcs/turn-journal.md`](rfcs/turn-journal.md): proposed crash-safe
-  write-ahead journal for browser-originated chat turns.
-- [`docs/rfcs/webui-pending-intent-controls.md`](rfcs/webui-pending-intent-controls.md):
-  proposed control-surface companion to the long-running-session reply model for
-  Queue, Steer, Stop-and-send, Interrupt, and leftover-steer inputs submitted
-  while an agent run is active. Start here for busy-composer behavior, pending
-  queued messages, interrupt replacement, steer visibility, or leftover-steer
-  recovery changes.
-- [`docs/rfcs/README.md`](rfcs/README.md): RFC conventions and current RFC index.
+  product model for long-running assistant replies: live process text, tool
+  activity, recovery, terminal outcomes, display projections (Compact
+  Worklog, Transparent Stream, Final answer only), and the final-answer
+  boundary. The server stamps each message's `_turn_id` and attaches every
+  completed turn's `activity_scene_v1`; every terminal chat frame carries
+  `terminal_state` (`TurnTerminalStateSchema`). Web and iOS render those
+  fields and derive none of them.
 - [`docs/rfcs/session-sse-contract-v1.md`](rfcs/session-sse-contract-v1.md):
-  proposed contract vocabulary, cursor/resume semantics, replay identity, snapshot
-  fallback, event taxonomy, and implementation gates for the per-session SSE
-  stream `GET /api/sessions/{session_id}/events` (#4812). Distinct from the
-  existing global session-list stream `GET /api/sessions/events`. Start here for
-  any work that touches per-session SSE, `Last-Event-ID` replay, or session
-  lifecycle event delivery. The Phase 1 **server route and journal relay** for
-  `GET /api/sessions/{session_id}/events` are implemented; broader client,
-  platform, and semantic-taxonomy claims in the RFC remain behind the recorded
-  proof gates. Prefer the RFC's **Authoritative emitted events** table (live
-  `/api/chat/stream` wire names) over the aspirational semantic taxonomy when
-  writing clients against current source.
+  chat and per-session SSE event names, `event_id` cursors and resume, the
+  run-journal replay source, `session_snapshot` fallback, the session detail
+  `transcript_seq` cursor, and persisted tool-call outcomes.
+- [`docs/sse-streams.md`](sse-streams.md): every SSE endpoint, approval and
+  clarify prompts, the merged sidebar stream, and heartbeats.
+- [`docs/remote-workspaces.md`](remote-workspaces.md): remote terminal
+  profiles (SSH, Docker), target-side path preservation, and the
+  `profileSupportsLocalIo` host-isolation gate.
+- [`docs/architecture/sidecar-rpc.md`](architecture/sidecar-rpc.md) and
+  [`docs/architecture/agent-api-contract.md`](architecture/agent-api-contract.md):
+  the sidecar RPC that is the server's only boundary to Hermes Agent, and the
+  tested Agent identity.
+- [`docs/architecture/contract-package.md`](architecture/contract-package.md):
+  the `packages/contracts` layout and the committed OpenAPI document.
+- [`docs/rfcs/README.md`](rfcs/README.md): RFC conventions and index.
 
 ## Authentication contracts
 
@@ -97,73 +58,49 @@ contributor guidance; it does not change runtime behavior or CI gates.
 
 When a change touches streaming, recovery, replay, compression, context
 reconstruction, cancellation, approval/clarify, session metadata, or run state,
-read the relevant RFC before editing. In the PR description, name the state layer
-or event/control surface affected and include a regression test or manual
+read the relevant RFC before editing. In the PR description, name the state
+layer or event/control surface affected and include a regression test or manual
 verification for the relevant invariant.
-
-Proposed RFCs are review guardrails, not implementation authorization. Do not
-implement RFC fragments unless the task or tracking issue explicitly asks for
-that slice.
 
 ## Frontend application contracts
 
-- Server-owned derivation: the frontend is display-only. The server computes
-  every value it renders and ships it through `packages/contracts`; see
-  server-owned state in the root [`AGENTS.md`](../../AGENTS.md).
 - [`docs/architecture/frontend-migration.md`](architecture/frontend-migration.md):
-  the browser application architecture after HWEB-100: TanStack Start SPA
-  shell, Router-owned URLs, Query-owned server state, the reducer-owned chat
-  stream, Zod contracts as the backend migration seam, Paraglide
-  localisation, Streamdown rendering, PWA build, CSP, and the build/serve
-  pipeline for `static/dist/`. Start here for any change under `frontend/`.
-- [`docs/architecture/frontend-parity-matrix.md`](architecture/frontend-parity-matrix.md):
-  the checked-in inventory of user-visible capabilities, their owners,
-  routes, verification, and status. A capability may not be dropped without a
-  row and an approval reference.
+  the browser application architecture: TanStack Start SPA shell,
+  Router-owned URLs, Query-owned server state, the reducer-owned chat stream,
+  Zod contracts, Paraglide localisation, Streamdown rendering, PWA build, CSP,
+  and the build/serve pipeline for `static/dist/`. Start here for any change
+  under `packages/frontend/`.
 - [`docs/architecture/extension-protocol-v1.md`](architecture/extension-protocol-v1.md)
   and [`docs/architecture/extension-migration-guide.md`](architecture/extension-migration-guide.md):
-  the unified sandboxed extension protocol and the migration path from the
-  legacy injection and dashboard-plugin interfaces.
+  the sandboxed extension protocol and the migration path from the injection
+  and dashboard-plugin interfaces.
 
 ## UI, UX, and theme contracts
 
-- [`DESIGN.md`](../DESIGN.md): design tokens and the current calm-console
-  direction: conversation first, quiet metadata, restrained accents, and
-  progressive disclosure for debugging detail.
+- [`DESIGN.md`](../DESIGN.md): the calm-console direction: conversation first,
+  quiet metadata, restrained accents, and progressive disclosure for debugging
+  detail.
 - [`docs/UIUX-GUIDE.md`](UIUX-GUIDE.md): contributor-facing synthesis of the
-  repository's UI/UX principles, sourced from existing project docs and code
-  comments.
-- [`docs/ui-ux/index.html`](ui-ux/index.html): message-area inventory wired to
-  the real app stylesheet.
-- [`docs/ui-ux/two-stage-proposal.html`](ui-ux/two-stage-proposal.html):
-  existing two-stage chat UX proposal for issue #536.
-- [`THEMES.md`](../THEMES.md): theme and skin guidance; the core palette
-  variable contract lives in `static/style.css`.
+  UI/UX principles.
+- [`THEMES.md`](../THEMES.md): the theme and skin axes, the token vocabulary in
+  `packages/frontend/src/theme/skins.ts`, and extension skins.
 
-Current appearance has a theme axis (`light`, `dark`, `system`) and a separate
-skin axis (`default`, `ares`, `mono`, `slate`, `poseidon`, `sisyphus`,
-`charizard`, `sienna`, `catppuccin`, `nous`, `geist-contrast`) in
-`static/boot.js` and `static/style.css`. Do not follow stale `data-theme`-only theme guidance unless
-the current code and tests prove that model still applies.
-
-For UI or UX work, include before/after evidence, verify relevant responsive
-states, and prefer stable class/data hooks over one-off visual behavior.
+For UI or UX work, attach before/after evidence to the PR, verify desktop,
+narrow, and mobile states, and prefer stable class/data hooks over one-off
+visual behavior.
 
 ## Choosing the relevant contract
 
 Before editing, identify which contract family the task exercises. This is a
-routing check, not a request to read every document in the repository. Read the
-documents that match the touched subsystem.
-
-Use this lightweight note in an issue comment, draft PR, task note, or AI-agent
-handoff when it helps clarify scope:
+routing check, not a request to read every document. When it helps clarify
+scope, add this note to the PR or task handoff:
 
 ```markdown
 ## Contract Routing
 
 Task type:
 Touched areas:
-Relevant public docs:
+Relevant docs:
 - `AGENTS.md`
 - `docs/CONTRACTS.md`
 - <subsystem-specific documents>
@@ -171,110 +108,46 @@ Scope boundaries:
 Evidence needed before claiming done:
 ```
 
-For small, obvious fixes, keep this short. The goal is to avoid routing mistakes,
-not to create process overhead.
-
 ## Contract changes
 
-Changing contract documents, RFC guidance, or contract tests changes review
-expectations for future contributors. A PR that intentionally changes an
-existing contract should include a `Contract Change` section in its PR body with:
+A PR that intentionally changes an existing contract includes a
+`Contract Change` section in its body with the previous contract, the new
+contract, the affected docs and tests, and the compatibility or migration
+reason. Contract tests and their docs move together; a test must not silently
+redefine a contract by asserting the opposite behavior.
 
-- the previous contract,
-- the new contract,
-- the affected docs and tests,
-- the compatibility or migration reason.
+## PR checklist
 
-Contract tests and corresponding docs must move together. Tests that encode
-product semantics must not silently redefine the contract by asserting the
-opposite behavior without updating the public docs and naming the change in the
-PR body.
+Before opening or updating a PR, verify the body against the root PR template
+(`.github/PULL_REQUEST_TEMPLATE.md`) and confirm:
 
-The static tests for this guidance are advisory coverage. They pin contributor
-wording so the rule stays visible. This advisory coverage is not an automated
-policy gate; static coverage is not an automated policy gate and does not enforce
-PR-body content on GitHub. A future release-time or CI check could
-surface contract-affecting diffs whose PR body lacks `Contract Routing`, but this
-document only defines the review expectation.
-
-Release batches should list included contract-affecting PRs explicitly so
-reviewers can distinguish ordinary green-CI fixes from changes that update the
-project's product or runtime guardrails.
-
-## PR preparation checklist
-
-Before opening or updating a PR, verify the actual PR body against the PR
-template (`.github/PULL_REQUEST_TEMPLATE.md` at the repository root) and this
-checklist. It applies even when code and tests are already done.
-
-Required checks:
-
-- The PR solves one logical problem.
-- The PR body contains every section of the root PR template.
-- UI/UX changes include before/after evidence and responsive-state coverage.
-- Runtime/streaming changes name the state layer or invariant being changed and
-  list the regression or manual invariant check.
+- The PR solves one logical problem; unrelated refactors are split out.
+- UI/UX changes include before/after evidence (uploaded attachments, never
+  committed files) and responsive-state coverage.
+- Runtime or streaming changes name the state layer or invariant being changed
+  and list the regression or manual check.
+- Clients render server contract fields; a value a client computes that the
+  server could send moves to the server.
 - Contract-affecting PRs include `Contract Routing`; intentional contract
   changes also include `Contract Change`.
-- Onboarding/setup validation used isolated `HERMES_HOME` and
-  `HERMES_WEBUI_STATE_DIR`, unless the human operator explicitly requested real
+- Onboarding or setup validation used isolated `HERMES_HOME` and
+  `HERMES_WEBUI_STATE_DIR` unless the operator explicitly asked for real
   state.
-- Docs updates are included or explicitly not needed, and release-note-worthy
-  changes are described in the PR body rather than by editing `CHANGELOG.md`.
-- After the GitHub write, read the PR back and verify the headings rendered as
-  intended.
-
-Green CI plus a focused diff is not sufficient if the PR description or evidence
-does not match the touched subsystem.
+- Docs are updated or explicitly not needed, and the change has a
+  `changelog.d/TAL-<number>.json` fragment (see the root `AGENTS.md`).
+- New dependencies, build tools, frameworks, or long-lived processes have an
+  explicit benefit and rollback story.
+- Secrets, private paths, and personal notes stay out of tracked docs.
 
 ## Setup, onboarding, and operational references
 
-- [`TESTING.md`](../TESTING.md): automated test command and manual browser test
-  plan.
-- [`ARCHITECTURE.md`](../ARCHITECTURE.md): API, module layout, and design
-  constraints.
+- [`TESTING.md`](../TESTING.md): test gates and manual checks.
 - [`docs/onboarding.md`](onboarding.md): first-run wizard and provider setup.
 - [`docs/onboarding-agent-checklist.md`](onboarding-agent-checklist.md): safety
   rules for assistant-led install, reinstall, bootstrap, provider setup, local
   model setup, Docker onboarding, and WSL onboarding.
-- [`docs/docker.md`](docker.md): Docker compose setup, common failures, and
+- [`docs/docker.md`](docker.md): Docker Compose setup, common failures, and
   bind-mount migration.
 - [`docs/troubleshooting.md`](troubleshooting.md): diagnostic flows for common
   failures.
-- [`docs/EXTENSIONS.md`](EXTENSIONS.md): administrator-controlled WebUI
-  extension injection.
-
-## Quick redline checklist
-
-Before opening a change for review, confirm:
-
-- The change solves one logical problem; unrelated refactors are split out.
-- `AGENTS.md`, this index, and any linked contract for the touched subsystem were
-  read before editing.
-- Behavior, setup, architecture, testing, or workflow changes update the relevant
-  docs; release-note-ready changes include PR-body release-note wording while
-  `CHANGELOG.md` is left to release commits.
-- UI/UX changes include before/after evidence and cover relevant desktop,
-  narrow, and mobile states.
-- Runtime, streaming, recovery, replay, compression, or sidebar changes state
-  which layer they mutate and include a regression for the invariant.
-- Clients render server contract fields; a value a client computes that the
-  server could send moves to the server (root server-owned state).
-- New dependencies, build tools, frameworks, or long-lived processes are avoided
-  unless the benefit and rollback story are explicit.
-- Onboarding/setup validation uses isolated `HERMES_HOME` and
-  `HERMES_WEBUI_STATE_DIR` unless the human operator explicitly asks to use real
-  state.
-- Secrets, private paths, local-only workflows, and personal notes stay out of
-  tracked docs and examples.
-
-## Future evolution
-
-This index is not intended to make the first contract set final. Future PRs may
-add, revise, split, or retire contracts when real issues, implementation changes,
-RFC decisions, contributor feedback, or review experience show that guidance is
-incomplete or stale.
-
-Potential follow-up areas include session import/export, cron, extensions,
-security boundaries, Docker/runtime isolation, and lightweight checks that keep
-key contract links from drifting.
+- [`docs/EXTENSIONS.md`](EXTENSIONS.md): administrator-controlled extensions.

@@ -66,7 +66,7 @@ class RoutingTests(unittest.TestCase):
             (["web/skills/runtime/SKILL.md"], {"web_server", "web_frontend", "docker", "contracts"}),
             (["web/packages/frontend/src/guide.md"], {"web_frontend"}),
             (["web/Dockerfile", "web/docker-compose.yml", "web/scripts/lib/health_probe.sh"], {"docker", "web_server"}),
-            (["web/scripts/wsl/hermes_webui_autostart.sh", "web/.env.example"], {"web_server"}),
+            (["web/.env.example"], {"web_server"}),
             (["app/Talaria/Features/Chat/ChatView.swift"], {"app"}),
             (["app/Talaria/Resources/Guide.md"], {"app"}),
             (["app/Talaria/Networking/APIClient.swift"], {"app", "contracts"}),

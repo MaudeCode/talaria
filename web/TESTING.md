@@ -33,8 +33,6 @@ CI (`.github/workflows/web-verify.yml`) runs the server, sidecar (provisioning t
 - Fake authenticator (P-256, CBOR) for passkeys, fake IdP (RS256 JWKS) for OIDC, fake relay via a fetch
   stub, synthetic `state.db` through `node:sqlite`, synthetic git repositories and `file://` remotes for
   git and self-update tests, `InMemoryTransport` for the MCP bin, and a fake serve command for `ctl`.
-- Regression ports keep their original issue/PR reference in the test name or a comment
-  (`backend-parity-matrix.md` row "regressions" accounts for every Python case).
 - Focus a file with `npx vitest run src/tools/updates.test.ts`; `-t "name"` selects one case.
 
 ## Sidecar tests
@@ -50,8 +48,7 @@ directory, runs the Agent probe, the sidecar suite, and optionally verifies the 
 `packages/frontend/src/**/*.test.ts(x)` run in jsdom against the in-memory contract server; `e2e/*.spec.ts`
 run Playwright against the built assets and the Node server started by `e2e/server.ts`
 (`HERMES_E2E_PORT`, `HERMES_WEBUI_AGENT_DIR`, `HERMES_WEBUI_SIDECAR_COMMAND` are honoured). See
-`docs/architecture/frontend-migration.md` for the layout and `docs/architecture/frontend-parity-matrix.md`
-for what each spec covers.
+`docs/architecture/frontend-migration.md` for the layout.
 
 ## Manual checks
 

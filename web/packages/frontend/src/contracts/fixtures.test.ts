@@ -1,7 +1,6 @@
 /**
  * Every captured live payload must parse with the schema the client uses for
- * that endpoint. The same files are checked against the running Python server
- * by tests/test_hweb100_contract_fixtures.py.
+ * that endpoint.
  */
 import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'

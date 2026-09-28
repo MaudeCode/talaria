@@ -1,234 +1,152 @@
-# WebUI Run State Consistency Contract
+# Run State Consistency Contract
 
-- **Status:** Proposed
-- **Author:** @franksong2702
+- **Status:** Accepted (review contract for run-state changes)
 - **Created:** 2026-05-16
-- **Updated:** 2026-08-22
-- **Tracking issue:** [#2361](https://github.com/nesquena/hermes-webui/issues/2361)
-- **Related architecture:** [#1925](https://github.com/nesquena/hermes-webui/issues/1925), [`hermes-run-adapter-contract.md`](hermes-run-adapter-contract.md), [`stable-assistant-turn-anchors.md`](stable-assistant-turn-anchors.md)
+- **Updated:** 2026-09-27
+- **Related:** [`live-to-final-assistant-replies.md`](live-to-final-assistant-replies.md), [`session-sse-contract-v1.md`](session-sse-contract-v1.md)
 
 ## Problem
 
-A single WebUI agent turn is represented by several overlapping state layers:
+A single agent turn is represented by several overlapping state layers:
 
 - the visible transcript the user can read,
-- the model context / `context_messages` the agent actually receives,
+- the model context the agent actually receives,
 - `pending_user_message` and active stream metadata,
 - live SSE events and in-memory stream state,
-- durable run journal / replay state,
+- the durable run journal and replay state,
 - automatic compression summaries and active-task handoff text,
-- the browser's live timeline DOM/cache,
+- the client's live timeline state,
 - sidebar ordering, unread state, and `updated_at` metadata.
 
-Those layers are not independent. When they drift apart, the user sees failures
-that look unrelated: a prompt is visible but missing from recovered model
-context, a live run loses or reorders thinking/tool cards after switching
-sessions, cleanup makes old sessions look newly active, replay duplicates content,
-or automatic compression reference material appears inside the active turn.
+When those layers drift apart, the user sees failures that look unrelated: a
+prompt is visible but missing from recovered model context, a live run loses or
+reorders thinking/tool rows after switching sessions, cleanup makes old sessions
+look newly active, replay duplicates content, or compression reference material
+appears inside the active turn.
 
-This RFC defines a consistency contract for those layers. It complements the
-larger run adapter direction in #1925 by documenting what must remain coherent
-while WebUI still has multiple overlapping state stores.
+This contract defines what must stay coherent across those layers.
 
 ## Goals
 
-- Define the state layers involved in active and recovered WebUI turns.
-- Make the source-of-truth expectations explicit for each layer.
+- Name the state layers involved in active and recovered turns.
+- Make the source-of-truth expectation explicit for each layer.
 - Give reviewers a checklist for streaming, replay, compression, recovery,
   model-context, and sidebar changes.
-- Map recent real issues to reusable invariants so future fixes do not solve the
-  same class of bug one symptom at a time.
 
-## Non-goals
+## Current implementation
 
-- Do not implement a runner process, sidecar, or new runtime boundary here.
-- Do not replace #1925 or the run adapter contract.
-- Do not rewrite the streaming protocol in this RFC.
-- Do not reopen already-fixed narrow bugs.
-- Do not make this a catch-all for unrelated UI polish.
+The server owns every layer except the client's live timeline:
 
-## Current implementation relationship
+- `packages/server/src/sessions/turn.ts` admits turns, persists pending state,
+  relays sidecar frames, and settles the transcript.
+- `packages/server/src/sessions/streams.ts` (`StreamRegistry`) holds live
+  channels, stream owners, and active runs.
+- `packages/server/src/sessions/journal.ts` (`RunJournal`) writes one JSONL
+  journal per stream under `sessions/_run_journal/<sid>/<stream_id>.jsonl`.
+- `packages/server/src/sessions/anchor.ts` builds the `activity_scene_v1` each
+  completed turn carries, so Web and iOS render one projection of live,
+  settled, replayed, and recovered activity.
 
-Stable Assistant Turn Anchors now implement the presentation/reconciliation
-portion of this contract for one assistant turn. The run journal and settled
-transcript provide durable observations; the Anchor registry and
-`activity_scene_v1` reconcile those observations into Compact Worklog,
-Transparent Stream, or Final answer only; `S.messages`, `INFLIGHT`, renderer
-caches, and DOM remain projections or recovery caches rather than independent
-semantic owners.
+The frontend's stream reducer (`packages/frontend/src/stream/reducer.ts`) is a
+projection of SSE frames that converges on the server's settled fields.
 
-This RFC remains `Proposed` because its broader cross-layer contract also covers
-model-context reconstruction, compression handoff, session metadata, and future
-runtime-adapter migration. Shipped Anchor coverage strengthens invariants 2, 3,
-and 5; it does not mark every run-state boundary implemented.
-
-## State Layers
+## State layers
 
 | Layer | Purpose | Source-of-truth expectation | Must not do |
 |---|---|---|---|
-| Visible transcript | Shows what the user and assistant said | Session transcript plus live replay should produce one chronological user-visible story | Hide the user turn that started active work, or show internal recovery text as current user intent |
-| Model context / `context_messages` | Supplies conversation state to the agent | Must include the current visible user turn unless deliberately excluded with a user-visible reason | Let the agent resume from context that contradicts what the user can see |
-| Pending turn metadata | Bridges submitted-but-not-yet-finalized user input | Must identify the user turn and stream that own active work | Become a permanent duplicate transcript row after recovery |
-| Live stream / SSE | Delivers active runtime events to the browser | Must remain an observation path, not the only durable truth for already-emitted events | Lose the visible scene on refresh, reconnect, or session switch |
-| Worker lifecycle registry (`ACTIVE_RUNS`) | Tracks whether a worker still occupies the session, so a successor turn cannot start on top of it | Broader than "attachable UI work": a cancelled worker stays registered while it unwinds | Be read directly as the set of runs a browser may attach to |
-| Run journal / replay | Rebuilds emitted runtime events after reconnect or restart | Must be cursor-safe and idempotent | Duplicate assistant text, thinking text, tool cards, or compression cards |
-| Compression summary / handoff | Gives the agent recovery context after automatic compression | Must remain agent-facing recovery material unless explicitly rendered as history | Pollute the active turn or become implicit current user intent |
-| Live UI scene/cache | Preserves expanded rows, in-progress cards, local scroll, and transient grouping | May optimize presentation but must be rebuildable or degradable from transcript/replay | Become the only place where chronological ordering exists |
-| Sidebar/session metadata | Helps the user find active and recent sessions | Must reflect meaningful user or assistant activity | Treat background cleanup as a fresh user-facing update |
+| Visible transcript | Shows what the user and assistant said | Session transcript plus live replay produce one chronological user-visible story | Hide the user turn that started active work, or show internal recovery text as current user intent |
+| Model context | Supplies conversation state to the agent | Includes the current visible user turn unless deliberately excluded with a user-visible reason | Let the agent resume from context that contradicts what the user can see |
+| Pending turn metadata | Bridges submitted-but-not-yet-settled user input | Identifies the user turn and stream that own active work | Become a permanent duplicate transcript row after recovery |
+| Live stream / SSE | Delivers active runtime events to clients | An observation path, not the only durable record of emitted events | Lose the visible scene on refresh, reconnect, or session switch |
+| Active-run registry (`StreamRegistry.activeRuns`) | Tracks whether a worker still occupies the session, so a successor turn cannot start on top of it | Broader than "attachable": a cancelled worker stays registered while it unwinds | Be read directly as the set of runs a client may attach to |
+| Run journal / replay | Rebuilds emitted runtime events after reconnect or restart | Cursor-safe and idempotent | Duplicate assistant text, thinking text, tool rows, or compression rows |
+| Compression summary / handoff | Gives the agent recovery context after automatic compression | Agent-facing recovery material unless explicitly rendered as history | Pollute the active turn or become implicit current user intent |
+| Client live timeline | Holds expanded rows, in-progress rows, scroll, and transient grouping | Rebuildable from transcript plus replay | Become the only place where chronological ordering exists |
+| Sidebar/session metadata | Helps the user find active and recent sessions | Reflects meaningful user or assistant activity | Treat background cleanup as a fresh user-facing update |
 
-## Core Invariants
+## Core invariants
 
 1. **Visible current turns enter model context.** If the user can see a current
-   prompt and WebUI asks the model to continue that work, the prompt must be in
-   the reconstructed model context unless WebUI shows an explicit reason it was
-   excluded.
+   prompt and the server asks the model to continue that work, the prompt is in
+   the reconstructed model context unless the server shows an explicit reason
+   it was excluded.
 2. **Active turn UI keeps its owner.** The user turn that started active work
-   must remain visible before assistant text, thinking cards, tool cards, or
+   stays visible before the assistant text, thinking rows, tool rows, or
    activity groups that belong to that work.
 3. **Reattach preserves order or degrades clearly.** Refresh, reconnect, and
-   session switch must preserve chronological live-scene order. If WebUI cannot
-   restore the exact live scene, it should downgrade to an explicit structured
-   replay state instead of silently reordering content.
-4. **Maintenance is not activity.** Runtime maintenance such as stale-stream
-   cleanup, orphan repair, or background compression must not refresh sidebar
-   ordering, unread markers, or active-session affordances as if the user or
-   assistant just acted.
-5. **Replay is idempotent.** Replaying a run from a cursor must not duplicate
-   transcript rows, thinking content, interim assistant text, tool cards, or
-   compression cards. Replayed long-task events should enter the same
-   browser-facing timeline renderer as live SSE events so recovery does not
-   downgrade a structured Thinking / progress / tool / compression turn into a
-   separate flattened presentation.
-   When session loading combines a WebUI sidecar with Hermes Agent `state.db`, a
-   native-image user turn may appear as both rich multipart content and scalar
-   text that replaces each image part with `[screenshot]`. Reconciliation may
-   treat those rows as one turn only when the multipart value contains text and
-   recognized native-image parts, its exact scalar projection matches, role and
-   tool shape match, timestamps match exactly, stable IDs and provider metadata
-   do not conflict, and the pairing is unambiguous. Keep the rich sidecar row;
-   if any requirement is missing or contradictory, preserve both rows rather
-   than deduplicating. Literal scalar `[screenshot]` text alone is not identity
-   evidence.
-   Visible interim assistant progress must remain visible timeline content; a
-   compact Activity disclosure may summarize adjacent tool/debug detail, but it
-   must not be the only place where the user can see emitted progress text.
+   session switch preserve chronological live-scene order. If the exact live
+   scene cannot be restored, the client shows an explicit structured replay
+   state instead of silently reordering content.
+4. **Maintenance is not activity.** Stale-stream cleanup, orphan repair, and
+   background compression do not refresh sidebar ordering, unread markers, or
+   active-session affordances as if the user or assistant just acted.
+5. **Replay is idempotent.** Replaying a run from a cursor does not duplicate
+   transcript rows, thinking content, interim assistant text, tool rows, or
+   compression rows. Replayed events go through the same reducer as live SSE
+   frames, so recovery never flattens a structured Thinking / progress / tool /
+   compression turn into a separate presentation. Visible interim assistant
+   progress stays visible timeline content; an Activity disclosure may
+   summarize adjacent tool detail but is never the only place emitted progress
+   text appears.
 6. **Compression is not current intent.** Automatic compression summaries and
-   reference cards are recovery/handoff material. They must not be treated as a
-   new user request, active-turn content, or the default visible explanation for
-   the current answer.
-   Automatic compression may appear during a live turn only as a quiet,
-   non-interactive context divider in the Worklog timeline, not as a clickable
-   tool row. It should use action wording: `Compressing context` while active
-   and `Context auto-compressed` when the agent has continued past the
-   compression barrier or when a completion event arrives. The timer is
-   diagnostic detail, not the source of truth for the divider's running state.
-   Later tool, reasoning, or interim assistant events prove the compression
-   barrier has passed even if no explicit completion event was delivered.
-7. **Recovery work is bounded.** Session load and live-run reattach may project a
-   recent journal window while preserving the latest durable cursor and total
-   event count. They must not parse, serialize, or render an unbounded active
-   journal in one request. A truncated transport snapshot is an observation
-   optimization; the append-only journal remains authoritative.
-8. **Automatic turns have a distinct circuit breaker.** A process-completion
-   wakeup uses bounded tool iterations, wall-clock runtime, and no-activity time.
-   Those limits do not apply to a user-started WebUI turn, and a limit exit must
-   be reported as an automatic-wakeup limit rather than a user cancellation.
-   Settled final history should omit live-only automatic-compression rows unless
-   there is a user-visible recovery or error state to explain.
-7. **Observation has a degraded path.** Long-running or many-session observation
-   should expose enough heartbeat/degraded status that the UI does not appear
+   reference rows are recovery and handoff material, never a new user request,
+   active-turn content, or the default explanation for the current answer.
+   During a live turn, automatic compression appears only as a quiet,
+   non-interactive divider: `Compressing context` while active and
+   `Context auto-compressed` once a completion event arrives or later tool,
+   reasoning, or interim assistant events prove the barrier has passed. Settled
+   history omits the live-only divider unless a visible recovery or error state
+   needs it.
+7. **Recovery work is bounded.** Session load and live-run reattach may project
+   a recent journal window while preserving the latest durable cursor and total
+   event count. They never parse, serialize, or render an unbounded active
+   journal in one request. The append-only journal stays authoritative.
+8. **Automatic turns have a distinct budget.** A process-completion wakeup turn
+   (`sessions/completions.ts`) runs under its own retry and batch limits, and a
+   limit exit is reported as an automatic-wakeup limit, never as a user
+   cancellation.
+9. **Observation has a degraded path.** Long-running or many-session
+   observation exposes heartbeat or degraded status so the UI does not appear
    silent and ordinary APIs do not stall behind active streams.
-8. **Every mutation names its layer.** A PR touching streaming, recovery,
-   context reconstruction, compression, replay, or sidebar metadata should state
-   which layer it changes and what regression proves the invariant still holds.
-9. **Detached completions follow their live owner.** The immutable session id
-   captured when background work is commissioned proves ownership. Before any
-   busy-state check or transcript mutation, WebUI must resolve that owner through
-   compression lineage and act on the live continuation. Durable completions with
-   no recoverable owner may retry startup races, but must eventually enter an
-   auditable terminal quarantine rather than replay forever.
-10. **Lifecycle-busy is not client-attachable.** `ACTIVE_RUNS` answers "may a new
-   turn start?", not "may a browser attach a renderer?". Cancellation splits the
-   two: `cancel_stream()` keeps the row as `phase="cancelling"` so a successor
-   cannot overlap the unwinding worker, but the client has already reached a
-   terminal state for that stream because its run journal ends in a terminal
-   event. Recovery paths that hand a stream id to a renderer — session SSE
-   recovery and hidden-tab status polling — must therefore exclude cancelling
-   rows, while busy/admission checks must keep counting them. Reading the
-   registry with a single meaning resurrects a cancelled run on every fresh
-   subscription: the client attaches, consumes the terminal event, tears the
-   renderer down, resubscribes, and the loop repeats indefinitely.
+10. **Detached completions follow their owner.** The session id captured when
+    background work is commissioned proves ownership. Completions are routed to
+    that exact owner before any busy-state check or transcript mutation; an
+    unroutable completion is requeued rather than delivered to another session.
+11. **Busy is not attachable.** `StreamRegistry.activeRunStreamForSession`
+    answers "may a new turn start?"; `attachableRunForSession` answers "may a
+    client attach a renderer?". Cancellation splits the two: the run stays
+    registered as cancelling so a successor cannot overlap the unwinding
+    worker, but its journal already ends in a terminal event. Session SSE
+    recovery and status polling use the attachable predicate; admission uses
+    the busy one. Reading the registry with a single meaning resurrects a
+    cancelled run on every fresh subscription.
 
-   Because a cancelling row can otherwise persist forever, cancellation unwind is
-   bounded: a cancelling row older than that window **and** owning no live
-   `STREAMS` channel is reclaimed from `ACTIVE_RUNS` along with its stream-owner
-   entry, so a wedged worker cannot suppress background wakeups permanently.
-   Reclamation requires both conditions — age alone must not evict a row that
-   still owns a live channel. Staleness is measured from the cancellation
-   timestamp (falling back to run start), so a long-running turn cancelled
-   moments ago is never mistaken for an orphan.
+    Cancellation unwind is bounded: a run cancelled more than
+    `CANCEL_UNWIND_CEILING_S` (180 s) ago **and** owning no live channel no
+    longer blocks its session. Both conditions are required, and staleness is
+    measured from the cancellation time, so a long turn cancelled moments ago
+    is never mistaken for an orphan.
+12. **Every mutation names its layer.** A PR touching streaming, recovery,
+    context reconstruction, compression, replay, or sidebar metadata states
+    which layer it changes and what regression proves the invariant still
+    holds.
 
-## Review Checklist
+## Review checklist
 
-Use this checklist for PRs that touch run state, streaming, replay, compression,
-context reconstruction, or session metadata:
-
-- Which state layers does this PR read or write?
+- Which state layers does this change read or write?
 - Which layer is the source of truth after this change?
 - Can the visible transcript and model context diverge? If yes, is that
   deliberate and user-visible?
-- What happens after browser refresh, session switch, SSE reconnect, and WebUI
+- What happens after client refresh, session switch, SSE reconnect, and server
   restart?
-- Does replay rebuild the same scene without duplicates?
-- Does replay use the same timeline-rendering path as live SSE for thinking,
-  interim assistant text, tool cards, compression cards, and terminal states?
+- Does replay rebuild the same scene without duplicates, through the same
+  reducer path as live SSE?
 - Can this change move a session in the sidebar without meaningful user or
   assistant activity?
-- Does this change read `ACTIVE_RUNS` for admission ("may a turn start?") or for
-  attachment ("may a browser render this?"), and does it use the matching
-  predicate for that question?
-- If it introduces or changes a reclamation window, what proves an in-flight
-  cancellation is not evicted early, and that a wedged one is eventually freed?
-- Can automatic compression or recovery text become visible active-turn content?
+- Does this change ask the active-run registry "may a turn start?" or "may a
+  client attach?", and does it use the matching predicate?
+- If it changes a reclamation window, what proves an in-flight cancellation is
+  not evicted early, and that a wedged one is eventually freed?
+- Can automatic compression or recovery text become visible active-turn
+  content?
 - What test or manual evidence proves the invariant?
-
-## Existing Issue Map
-
-| Example | State boundary exposed | Relevant invariant |
-|---|---|---|
-| [#2341](https://github.com/nesquena/hermes-webui/issues/2341) / [#2342](https://github.com/nesquena/hermes-webui/pull/2342) | Active reattach could show agent activity without the pending user turn that started it | 2 |
-| [#2344](https://github.com/nesquena/hermes-webui/issues/2344) / [#2347](https://github.com/nesquena/hermes-webui/pull/2347) | Session switching could lose or reorder the live thinking/tool/interim timeline | 3, 5 |
-| [#2345](https://github.com/nesquena/hermes-webui/issues/2345) / [#2349](https://github.com/nesquena/hermes-webui/pull/2349) | Stale stream cleanup could mutate `updated_at` and resurface old sessions | 4 |
-| [#2346](https://github.com/nesquena/hermes-webui/issues/2346) / [#2348](https://github.com/nesquena/hermes-webui/pull/2348) | Thinking cards could repeat interim assistant progress text | 5 |
-| [#2353](https://github.com/nesquena/hermes-webui/issues/2353) / [#2354](https://github.com/nesquena/hermes-webui/pull/2354) | Recovered pending user turns could be visible but missing from model context | 1 |
-| [#2355](https://github.com/nesquena/hermes-webui/issues/2355) / [#2357](https://github.com/nesquena/hermes-webui/pull/2357) | Auto-compression rotation could leave reference-only cards in the active conversation tail | 3, 6 |
-| [#2308](https://github.com/nesquena/hermes-webui/issues/2308) / [#2309](https://github.com/nesquena/hermes-webui/pull/2309) | Compressed sessions could resume stale agent tasks when the user starts an ordinary fresh chat | 6 |
-| [#2283](https://github.com/nesquena/hermes-webui/pull/2283) | Run event journal replay provides the foundation for ordered recovery | 5 |
-
-These references are evidence for the contract. This RFC does not make the
-linked implementation PRs dependent on this document, and it does not close the
-tracking issue by itself.
-
-## Relationship To The Run Adapter RFC
-
-The run adapter RFC defines the longer-term event/control boundary for WebUI and
-Hermes runtime ownership. This RFC defines the consistency rules that the current
-WebUI and any future adapter-backed implementation must preserve.
-
-The two documents should be read together:
-
-- The adapter contract answers: "Where should execution ownership live?"
-- This consistency contract answers: "How do transcript, context, streams,
-  replay, compression, and UI metadata stay coherent while execution is active
-  or being recovered?"
-
-## Rollout Plan
-
-1. Land this RFC as a reviewable draft and refine it through PR discussion.
-2. Link future streaming/recovery/compression/sidebar PRs back to the invariant
-   they intentionally preserve or change.
-3. Convert recurring checklist items into focused regression tests where
-   practical.
-4. If #1925 introduces a new adapter-backed runtime layer, update this RFC or
-   replace it with the accepted implementation contract so these invariants do
-   not live only in historical discussion.

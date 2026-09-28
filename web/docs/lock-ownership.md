@@ -14,10 +14,10 @@ Three rules apply everywhere:
    `writeFileSync` + `rename`), so no other request can interleave. Where a
    subprocess or network call belongs inside the transaction (git, the sidecar,
    the relay), the owner below holds a promise-based lock instead.
-2. **Cross-process coordination uses the same files the Python backend used**:
-   `.tmp.<pid>` atomic writes, `.bak` shrink guards, the per-profile
-   `.session_cleanup.lock`, per-journal shard files, and `flock`-style turn
-   journal shards keyed by pid liveness.
+2. **Cross-process coordination goes through files**: `.tmp.<pid>` atomic
+   writes, `.bak` shrink guards, the per-profile `.session_cleanup.lock` (taken
+   by the sidecar around `state.db` session deletion), and one run-journal file
+   per stream.
 3. **A failed local write returns or logs an explicit degraded result** and
    never falls back to another profile's state. Auth session persistence stays the
    documented availability exception: a failed `.sessions.json` replace is logged

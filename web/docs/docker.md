@@ -18,10 +18,9 @@ paths.
 
 | Setup | When to use | File |
 |---|---|---|
-| **Single-container** (recommended) | You just want chat working. WebUI runs the agent in-process. | `docker-compose.yml` |
+| **Single-container** (recommended) | You just want chat working. The container runs the Agent from your mounted `~/.hermes/hermes-agent` through its sidecar. | `docker-compose.yml` |
 | **Two-container** | You want isolation between gateway (CLI/Telegram/cron) and chat UI. | `docker-compose.two-container.yml` |
 | **Three-container** | Two-container PLUS the dashboard for monitoring. | `docker-compose.three-container.yml` |
-| **All-in-one image** (community fork — third-party, not maintained by us) | Podman 3.4 / multi-arch / supervisord-style preference. | [sunnysktsang/hermes-suite](https://github.com/sunnysktsang/hermes-suite) — see [#1399](https://github.com/nesquena/hermes-webui/issues/1399) for the original discussion |
 
 ### Published images and local builds
 
@@ -36,20 +35,12 @@ names the local image `ghcr.io/maudecode/talaria-web:local`. That local name is 
 a published release. Stable source tags use `web-vX.Y.Z`; experimental source tags
 use `web-exp-vX.Y.Z`. Both channels resolve through completed release sets.
 
-> **Note (v0.14+):** If you use `docker-compose.three-container.yml`, both
-> `hermes-agent` and `hermes-dashboard` initialise from the same image and write
-> to the same `hermes-home` volume simultaneously. This can cause overlapping lock
-> files and stale `gateway_state.json` entries. The unified pattern described in
-> [Three-service unified setup (v0.14+)](#three-service-unified-setup-v014) below
-> avoids this by running a single `hermes-agent` process that serves both the
-> gateway and the dashboard.
-
 If something stops working, **start with the single-container setup** — it's the simplest path and fixes most permission/UID/path-mismatch issues by construction.
 
 ## Production image security model
 
 The production Docker image is hardened for the normal single-tenant container threat model:
-Hermes WebUI assumes one operator controls the container, mounted Hermes home, and workspace.
+Talaria Web assumes one operator controls the container, mounted Hermes home, and workspace.
 The image does **not** install `sudo`, does not add runtime users to a sudo group, and does not
 grant `NOPASSWD` escalation. If an agent/tool process gains a shell as `hermeswebui`, it should
 not be able to become root with a passwordless sudo command.
@@ -102,11 +93,11 @@ isolated Hermes home and follow
 
 ## Optional GPU runtime image
 
-The default Hermes WebUI Docker image stays CPU-only. GPU user-space packages
-are installed only when you build a custom image with the opt-in build arg:
+The default image stays CPU-only. GPU user-space packages are installed only
+when you build a custom image with the opt-in build arg:
 
 ```bash
-docker build --build-arg INSTALL_GPU_LIBS=1 -t hermes-webui:gpu .
+docker build --build-arg INSTALL_GPU_LIBS=1 -t talaria-web:gpu .
 ```
 
 That build path installs VA-API basics (`libva2`, `vainfo`), AMD Mesa VA-API
@@ -130,7 +121,7 @@ docker run --rm \
   --device /dev/dri:/dev/dri \
   --group-add video \
   --group-add render \
-  hermes-webui:gpu vainfo
+  talaria-web:gpu vainfo
 ```
 
 For Compose, add the same mapping to a custom service definition:
@@ -138,7 +129,7 @@ For Compose, add the same mapping to a custom service definition:
 ```yaml
 services:
   hermes-webui:
-    image: hermes-webui:gpu
+    image: talaria-web:gpu
     devices:
       - /dev/dri:/dev/dri
     group_add:
@@ -157,7 +148,7 @@ Install and configure the NVIDIA Container Toolkit on the host first, then use
 Docker's GPU runtime flag:
 
 ```bash
-docker run --rm --gpus all hermes-webui:gpu nvidia-smi
+docker run --rm --gpus all talaria-web:gpu nvidia-smi
 ```
 
 For Compose, use a custom service with GPU access enabled:
@@ -165,13 +156,13 @@ For Compose, use a custom service with GPU access enabled:
 ```yaml
 services:
   hermes-webui:
-    image: hermes-webui:gpu
+    image: talaria-web:gpu
     gpus: all
 ```
 
 If `nvidia-smi` is unavailable or reports no devices, fix the host NVIDIA driver
-and container toolkit setup before debugging Hermes WebUI. The container image
-only supplies the WebUI plus optional user-space media libraries; it cannot
+and container toolkit setup before debugging Talaria Web. The container image
+only supplies Talaria Web plus optional user-space media libraries; it cannot
 provide host kernel drivers or the NVIDIA runtime.
 
 ## Scheduled jobs and the gateway daemon
@@ -244,110 +235,24 @@ curl -sS "${GATEWAY_BASE_URL%/}/health/detailed" | jq '.gateway_state, .state'
 If the service name differs in your compose file, `docker compose -f docker-compose.two-container.yml ps` lists the running services.
 For container-to-container diagnostics, set one of `HERMES_API_URL` or `HERMES_WEBUI_GATEWAY_BASE_URL` in the WebUI environment, then restart WebUI.
 
-Refs #2785, #4483.
-
-## Three-service unified setup (v0.14+)
-
-Since v0.14, `hermes-agent` can serve the gateway API and the built-in dashboard
-from the same process by setting `HERMES_DASHBOARD_HOST` and
-`HERMES_DASHBOARD_PORT`. Running agent and dashboard in one container means a
-single writer to `hermes-home`, eliminating the concurrent-init write conflicts
-that occur when `hermes-agent` and `hermes-dashboard` both start from the same
-image against the same volume.
-
-The three-service pattern uses two containers:
-
-| Service | Image | Ports |
-|---|---|---|
-| `hermes-agent` | `nousresearch/hermes-agent:latest` | 8642 (gateway), 9119 (dashboard) |
-| `hermes-webui` | `TALARIA_WEB_IMAGE` (published digest, or local source build) | 8787 (chat UI) |
-
-Example compose snippet (save as `docker-compose.three-service.yml` or inline into your own file):
-
-```yaml
-services:
-  hermes-agent:
-    image: nousresearch/hermes-agent:latest
-    container_name: hermes-agent
-    command: gateway run
-    ports:
-      - "127.0.0.1:8642:8642"
-      - "127.0.0.1:9119:9119"
-    volumes:
-      - hermes-home:/home/hermes/.hermes
-      - hermes-agent-src:/opt/hermes
-    environment:
-      - HERMES_HOME=/home/hermes/.hermes
-      - HERMES_UID=${UID:-1000}
-      - HERMES_GID=${GID:-1000}
-      - HERMES_DASHBOARD_HOST=0.0.0.0
-      - HERMES_DASHBOARD_PORT=9119
-    restart: unless-stopped
-    networks:
-      - hermes-net
-
-  hermes-webui:
-    image: ${TALARIA_WEB_IMAGE:?Set the published Talaria Web image digest}
-    container_name: hermes-webui
-    depends_on:
-      - hermes-agent
-    ports:
-      - "127.0.0.1:8787:8787"
-    volumes:
-      - hermes-home:/home/hermeswebui/.hermes
-      - hermes-agent-src:/home/hermeswebui/.hermes/hermes-agent:ro
-      - ${HERMES_WORKSPACE:-${HOME}/workspace}:/workspace
-    environment:
-      - HERMES_WEBUI_HOST=0.0.0.0
-      - HERMES_WEBUI_PORT=8787
-      - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui
-      - WANTED_UID=${UID:-1000}
-      - WANTED_GID=${GID:-1000}
-    restart: unless-stopped
-    networks:
-      - hermes-net
-
-networks:
-  hermes-net:
-    driver: bridge
-
-volumes:
-  hermes-home:
-  hermes-agent-src:
-```
-
-Open http://localhost:8787 for chat and http://localhost:9119 for the dashboard.
-Check `hermes gateway run --help` for the exact flag names for your agent release —
-the env-var equivalents shown above (`HERMES_DASHBOARD_HOST`, `HERMES_DASHBOARD_PORT`)
-are available in recent releases alongside the CLI flags.
-
-If you need the separate dashboard container (e.g. resource limits per service),
-`docker-compose.three-container.yml` still works. Add a `depends_on` from
-`hermes-dashboard` to `hermes-agent` with a `condition: service_healthy` healthcheck
-so the dashboard waits for the gateway to finish initialising agent-home before it
-starts its own init pass.
 
 ## What goes wrong (and how to fix it)
 
 ### Compatibility policy and version pinning
 
-WebUI shows the version it is currently running, but that display does not in itself guarantee tested compatibility with your agent release.
-
-Until the compatibility boundary work in [#1925](https://github.com/nesquena/hermes-webui/issues/1925) and [#2491](https://github.com/nesquena/hermes-webui/issues/2491) land, the WebUI and Hermes Agent deployment should be treated as a release pair: the WebUI release is tested against its matching agent release and should be upgraded/pinned together.
-
-If you use `latest`, use it consistently on both sides and avoid mixing a fixed tag with `latest`:
-- fixed WebUI tag + `hermes-agent:latest`
-- `hermes-webui:latest` + fixed `hermes-agent` tag
-
-In multi-container setups, if you must run a pinned pair, prefer the matching tag in `docker-compose.two-container.yml`/`docker-compose.three-container.yml` and perform the agent-volume refresh workflow in [Upgrading the agent container](#upgrading-the-agent-container) whenever you upgrade the agent image.
-
-If you see behavior issues after a mixed-version upgrade, capture both WebUI and hermes-agent versions and the compose layout in the issue.
+Each Talaria Web release is tested against one Hermes Agent release, pinned in
+[`sidecar/agent_dependency.json`](../sidecar/agent_dependency.json). The
+multi-container Compose files take the Agent image digest from that file, so
+Web and Agent upgrade together. The sidecar checks the loaded Agent revision at
+startup and the server reports drift. Do not swap in `hermes-agent:latest`;
+after changing the Agent image, follow
+[Upgrading the agent container](#upgrading-the-agent-container).
 
 ### 1. "Permission denied" at startup
 
 **Symptom**: Container starts but immediately crashes, logs show:
 ```
-PermissionError: [Errno 13] Permission denied: '/home/hermeswebui/.hermes/...'
+EACCES: permission denied, open '/home/hermeswebui/.hermes/...'
 ```
 
 **Cause**: The container's user (UID 1000 by default) can't read your bind-mounted directory because your host files are owned by a different UID.
@@ -363,27 +268,14 @@ On macOS, host UIDs start at 501. On Linux, the first interactive user is usuall
 
 > **macOS Docker Desktop**: if UID mapping still misbehaves after the env fix, try toggling **Settings → General → File sharing implementation** between VirtioFS and gRPC-FUSE. Different implementations preserve UIDs across the host/container boundary differently.
 
-### 2. ".env file mode 0640 → permission denied" (#1389)
+### 2. Credential and home directory modes
 
-**Symptom**: You set `HERMES_HOME_MODE=0640` (or some other group-readable mode) on your host `.env` file, container starts, then errors out:
-```
-[security] fixed permissions on .env (0o640 -> 0600)
-failed to load .env: open .env: permission denied
-```
-
-**Cause**: WebUI's `fix_credential_permissions()` startup hook enforces 0600 by default. This is the right thing for a clean install but conflicts with operator-set modes.
-
-**Fix**: Set one of these env vars in your `.env`:
-- `HERMES_SKIP_CHMOD=1` — bypass the fixer entirely
-- `HERMES_HOME_MODE=0640` — allow group bits, only strip world-readable
-
-Both are handled by the server's startup credential-permission fixer.
-
-> ⚠️ **Multi-container warning**: `HERMES_HOME_MODE` has DIFFERENT semantics in the agent image vs. the WebUI:
-> - **WebUI**: credential FILE mode threshold (`0640` allows group bits on `.env`)
-> - **Agent**: `HERMES_HOME` *directory* mode (default `0700`)
->
-> `0640` on a directory has no owner-execute bit, so the agent can't traverse its own home → bricked. For multi-container setups, use `HERMES_HOME_MODE=0750` (group-traversable) or `0701` (x-only). The compose files have per-service comments that match each side's semantics.
+Talaria Web does not rewrite credential file modes at startup, and the Agent
+skips its `0600` enforcement inside containers, so a group-readable `.env` is
+left alone. `HERMES_HOME_MODE` is the Agent's `HERMES_HOME` *directory* mode:
+a value without the owner execute bit (such as `0640`) stops the Agent from
+traversing its own home. Use `0750` (group-traversable) or `0701` (execute
+only) when sharing the home between containers.
 
 ### 3. "Workspace appears empty even though my files are there"
 
@@ -393,7 +285,7 @@ Both are handled by the server's startup credential-permission fixer.
 
 **Fix**: Same as #1 — match host UID/GID via `.env`.
 
-### 4. "Two-container setup: WebUI can't find agent source" (#858)
+### 4. "Two-container setup: WebUI can't find agent source"
 
 **Symptom**: WebUI logs at startup:
 ```
@@ -408,16 +300,13 @@ Both are handled by the server's startup credential-permission fixer.
 
 If you must use a bind mount: pick a host path, then mount it to `/opt/hermes` in the agent container AND `/home/hermeswebui/.hermes/hermes-agent` in the WebUI container.
 
-### 5. "Tools (git, node, etc.) missing in two-container setup" (#681)
+### 5. "Tools missing in two-container setup"
 
-**Symptom**: You ask the agent to run `git status` in chat and it errors with `command not found`.
+**Symptom**: You ask the agent to run a tool in chat and it errors with `command not found`.
 
-**Cause**: This is **architectural, not a bug**. In the two-container setup, agent processes started by the WebUI run **inside the WebUI container**, not the agent container. The WebUI image doesn't include git/node by design (it's a UI image, not a tool host).
+**Cause**: Chat turns run through the sidecar **inside the WebUI container**, not the agent container, so tools come from the WebUI image. It ships git, curl, rsync, the OpenSSH client, Python 3, and Node, and nothing else by design.
 
-**Workarounds**:
-- **Single-container setup** (`docker-compose.yml`) — everything in one container, no boundary
-- **Custom WebUI image** — extend the `Dockerfile` to install the tools you need
-- **Combined image** ([sunnysktsang/hermes-suite](https://github.com/sunnysktsang/hermes-suite)) — community fork that ships agent+webui+dashboard in one container
+**Fix**: Extend the `Dockerfile` with the tools you need, or use a remote terminal backend (see [remote-workspaces.md](remote-workspaces.md)).
 
 ### 6. "config.yaml not loaded"
 
@@ -436,11 +325,11 @@ If you must use a bind mount: pick a host path, then mount it to `/opt/hermes` i
 
 **Cause**: Podman 3.4 (Ubuntu 22.04 default) has limited support for `userns_mode: keep-id` across multiple containers — files written by one container appear with a different UID in the other.
 
-**Fix**: Either upgrade to Podman 4+ (which fixes this), or use the [single-container setup](#5-minute-quickstart-single-container), or use the [community all-in-one image](https://github.com/sunnysktsang/hermes-suite).
+**Fix**: Either upgrade to Podman 4+ (which fixes this) or use the [single-container setup](#5-minute-quickstart-single-container).
 
-### 8. "API base URL set to localhost fails from Docker" (#3012)
+### 8. "API base URL set to localhost fails from Docker"
 
-**Symptom**: A provider, local model server, webhook, or custom API works on the host at `http://localhost:<port>`, but fails when the same URL is configured in Hermes WebUI running in Docker.
+**Symptom**: A provider, local model server, webhook, or custom API works on the host at `http://localhost:<port>`, but fails when the same URL is configured in Talaria Web running in Docker.
 
 **Cause**: Inside a container, `localhost` means *that container*, not your laptop/host. The WebUI process cannot reach host services through `127.0.0.1` unless the service is running inside the same container.
 
@@ -459,39 +348,21 @@ services:
 
 Then configure the URL as `http://host.docker.internal:<port>`. Also ensure the host service binds to an address reachable from containers (not only a loopback interface the Docker bridge cannot reach) and that your host firewall allows the connection.
 
-### 9. "Failed to verify state directory" / restart loop on a bind-mounted state dir (#7027)
+### 9. UID/GID auto-detection
 
-**Symptom**: Single-container deploy with the state directory bind-mounted from a
-host directory, no `WANTED_UID` set. The container exits 1 and restart-loops:
+Without an explicit `WANTED_UID`/`WANTED_GID`, `docker_init.bash` takes the
+owner of the first match:
 
-```
--- Auto-detected workspace UID: 1024 (from /workspace)
-touch: cannot touch '/app/data/.testfile': Permission denied
-!! ERROR: Failed to verify state directory at /app/data
-```
+1. `$HERMES_WEBUI_STATE_DIR` (default `/app/data`), a bind mount in a
+   single-container deploy, so its owner is the host identity to match
+2. `/home/hermeswebui/.hermes`, `$HERMES_HOME`, `/opt/data`, the shared
+   hermes-home volume in multi-container setups
+3. `/workspace`, used only when nothing above resolves
+4. `1024`, the fallback default
 
-**Cause**: UID auto-detection used to read `/workspace` before the configured
-state directory. In a stock image `/workspace` exists and is owned by the
-image's own build-time `1024:1024`, so detection returned a value that carries
-no information about the host — and because `1024` is also the fallback default,
-the log read as if detection had found nothing.
-
-**Fix**: Fixed in the init script — the configured `HERMES_WEBUI_STATE_DIR` is
-now probed first. The full order is:
-
-1. `$HERMES_WEBUI_STATE_DIR` (default `/app/data`) — a bind mount by definition
-   in a single-container deploy, so its owner is the host identity to match
-2. `/home/hermeswebui/.hermes`, `$HERMES_HOME`, `/opt/data` — the hermes-home
-   shared volume in two-container setups (#668)
-3. `/workspace` — used only when nothing above resolves
-4. `1024` — fallback default
-
-Root-owned candidates (UID 0, e.g. a freshly created named volume) are skipped
-at every step. An explicitly supplied `WANTED_UID`/`WANTED_GID` always wins and
-is never overwritten by detection — including the value `1024`, which earlier
-versions treated as "unset".
-
-If you are on an older image, the workaround is to set the IDs explicitly:
+Root-owned candidates (UID 0, for example a freshly created named volume) are
+skipped. An explicit `WANTED_UID`/`WANTED_GID` always wins, including `1024`.
+If detection picks the wrong owner, set both explicitly:
 
 ```bash
 docker run -e WANTED_UID=$(id -u) -e WANTED_GID=$(id -g) ...
@@ -526,9 +397,7 @@ The WebUI container doesn't ship with the agent — at startup it stages the sou
 
 ## Upgrading the agent container
 
-The `hermes-agent-src` named volume is initialised from the agent image's `/opt/hermes` on first `up`. Docker reuses the volume verbatim on every subsequent `up` — **even after `docker pull` of a newer agent image**. The cached volume content masks the new image's source tree, so a fresh `docker pull` of `nousresearch/hermes-agent:latest` does not by itself give you the new agent code, dependencies, or entrypoint.
-
-This is the root cause of [#1416](https://github.com/nesquena/hermes-webui/issues/1416): the symptom looked like a missing entrypoint, but the entrypoint was actually present in the new image and hidden behind the stale named volume.
+The `hermes-agent-src` named volume is initialised from the agent image's `/opt/hermes` on first `up`. Docker reuses the volume verbatim on every subsequent `up` — **even after `docker pull` of a newer agent image**. The cached volume content masks the new image's source tree, so pulling a newer agent image does not by itself give you the new agent code, dependencies, or entrypoint.
 
 To upgrade the agent image cleanly, drop the source volume before recreating:
 
@@ -561,13 +430,13 @@ The two- and three-container setups give you **process, network, and resource is
 
 What multi-container does **not** isolate:
 
-- **Filesystem boundary.** Both services share `hermes-home` (config, sessions, state), and the WebUI mounts the agent's installed source from `hermes-agent-src`. The WebUI mount is read-only (since v0.51.84), but the agent service still has write access, and both services share the home volume.
+- **Filesystem boundary.** Both services share `hermes-home` (config, sessions, state), and the WebUI mounts the agent's installed source from `hermes-agent-src`. The WebUI mount is read-only, but the agent service still has write access, and both services share the home volume.
 - **UID/GID boundary.** Both services default to `${UID:-1000}` so files written by one are readable by the other. If you align them to different UIDs you'll get permission errors on the shared volume.
 - **Trust boundary on the agent source.** The WebUI's sidecar runs Agent code from the staged copy of the shared `hermes-agent-src` volume. The read-only mount means a compromised WebUI cannot rewrite the agent source, but it does run code from that volume.
 
 If you need **filesystem isolation** between the chat UI and the agent (e.g. you don't trust the WebUI to read agent state), the multi-container setup is not enough — run the agent on a separate host and connect the WebUI to it via the gateway HTTP API. If you don't need any boundary, the single-container setup is simpler.
 
-The direct source mount is a compatibility bridge, not the long-term API contract. The current source/API boundary inventory and decoupling task list live in [`docs/rfcs/agent-source-boundary.md`](rfcs/agent-source-boundary.md) for [#2453](https://github.com/nesquena/hermes-webui/issues/2453). If you customize the compose files with bind mounts, keep the WebUI-side agent source mount read-only unless you are intentionally doing local development; `docker_init.bash` warns at startup when that path is writable.
+The source mount only gets Agent code into the container; the server itself imports no Agent code and talks to the Agent only through the sidecar ([architecture/agent-api-contract.md](architecture/agent-api-contract.md)). If you customize the compose files with bind mounts, keep the WebUI-side agent source mount read-only unless you are intentionally doing local development; `docker_init.bash` warns at startup when that path is writable.
 
 ## Bind-mount migration (advanced)
 
@@ -594,7 +463,6 @@ volumes:
 1. The host directory MUST be readable by your container UID. Run `id -u` on the host and ensure `~/.hermes` is owned by that UID (or readable via group bits).
 2. ALL containers sharing the volume must run as the SAME UID/GID. Set `UID=$(id -u)` and `GID=$(id -g)` in `.env`.
 3. If you run Compose with sudo, do not rely on `${HOME}` defaults: `sudo` often changes `$HOME` to `/root`, so `${HERMES_HOME:-${HOME}/.hermes}` becomes `/root/.hermes`. Prefer running Docker as your user; otherwise pass absolute paths with `sudo -E`, for example `HERMES_HOME=/home/youruser/.hermes HERMES_WORKSPACE=/home/youruser/workspace sudo -E docker compose up -d`, and confirm the rendered bind mount with `docker compose config`.
-4. If your host `.env` is mode 0640, set `HERMES_SKIP_CHMOD=1` or `HERMES_HOME_MODE=0640` so the startup hook doesn't try to enforce 0600.
 
 ## Reference
 
@@ -604,20 +472,6 @@ volumes:
 - [`.env.docker.example`](../.env.docker.example) — environment variable template
 - [`Dockerfile`](../Dockerfile) — single-container build
 - [`docker_init.bash`](../docker_init.bash) — container entrypoint script
-
-## Related issues
-
-- #1416 — agent-image upgrade requires removing `hermes-agent-src` named volume (see [Upgrading the agent container](#upgrading-the-agent-container))
-- #1389 — `HERMES_HOME_MODE` override (fixed in v0.50.254 — agent honors `HERMES_SKIP_CHMOD` and `HERMES_HOME_MODE`)
-- #1399 — UID alignment in compose files (fixed in v0.50.260 via PR #1428 + this guide)
-- #3012 — host `localhost` API URLs fail from Docker containers (use `host.docker.internal` / `host.containers.internal`)
-- #3006 — `sudo docker compose` can mount `/root/.hermes` instead of the user's Hermes home
-- #3243 — optional GPU runtime image/docs for containerized acceleration workloads
-- #858 — two-container `/opt/hermes` path confusion
-- #681 — tools running in WebUI container, not agent container (architectural)
-- #668 — auto-detect UID/GID from mounted volume
-- #569 — UID/GID detection priority order
-- #7027 — state dir probed before `/workspace` in UID/GID detection (see [#9 above](#9-failed-to-verify-state-directory--restart-loop-on-a-bind-mounted-state-dir-7027))
 
 For a new failure mode not covered here, collect:
 

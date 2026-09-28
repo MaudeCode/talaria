@@ -1,11 +1,10 @@
 # UI/UX Guide
 
-This document summarizes UI/UX principles that are already visible in the
-repository. It is a contributor guide, not a new design proposal. Source
-documents include [`DESIGN.md`](../DESIGN.md), [`README.md`](../README.md),
-[`THEMES.md`](../THEMES.md), [`docs/ui-ux/index.html`](ui-ux/index.html),
-[`docs/ui-ux/two-stage-proposal.html`](ui-ux/two-stage-proposal.html), and
-design comments in `frontend/src/theme/tokens.css`.
+This document summarizes the UI/UX principles of the current frontend. It is a
+contributor guide, not a new design proposal. Source documents include
+[`DESIGN.md`](../DESIGN.md), [`README.md`](../README.md),
+[`THEMES.md`](../THEMES.md), and the token vocabulary in
+`packages/frontend/src/theme/skins.ts`.
 
 Use this guide when a change touches layout, chat rendering, composer chrome,
 navigation, theme/skin behavior, responsive behavior, or visual hierarchy. For
@@ -13,9 +12,9 @@ purely backend changes, use the runtime/state contracts instead.
 
 ## Product shape
 
-Hermes WebUI is a browser workbench for Hermes Agent with near-CLI parity and a
-simple operating shape: Python on the server and one committed production build
-of the TanStack Start / React / TypeScript app under `frontend/`.
+Talaria Web is a browser workbench for Hermes Agent with near-CLI parity: a
+TypeScript server and a TanStack Start / React app under `packages/frontend/`,
+built into `static/dist/`.
 
 The primary layout is three-panel:
 
@@ -29,9 +28,8 @@ Stop/Send. Profile, workspace, toolsets, saved prompts, voice mode and provider
 quota live one level down, in the composer's overflow menu
 (`#composerMobileConfigBtn` / `#composerMobileConfigPanel`) — one menu at every
 width, not a second desktop-only surface. Saved prompts is the exception: it
-stays a desktop-only affordance (#3571) and is absent from the menu at phone
-widths. Settings and session-level tools live
-in the Hermes Control Center. Pending attachments and action-required states
+stays a desktop-only affordance and is absent from the menu at phone widths.
+Settings and session-level tools live in the Control Center. Pending attachments and action-required states
 (approvals, clarifications, the queue card) never move into overflow. Preserve
 this shape unless the change explicitly justifies a different interaction
 model.
@@ -86,9 +84,8 @@ show-more affordance where needed.
 
 Thinking and context cards should share the quiet metadata visual family. They
 should not overpower assistant prose. Collapsed activity summaries should be
-terse, for example `Activity: 4 tools`, and should not duplicate the thinking
-area, list every tool name in the summary, or add redundant trailing count
-badges.
+terse and should not duplicate the thinking area, list every tool name in the
+summary, or add redundant trailing count badges.
 
 Visible interim assistant progress is part of the live conversation timeline,
 not raw debug detail. Compact Activity may collapse tool arguments, long tool
@@ -103,12 +100,6 @@ completion event arrives. Do not give it a caret, click target, leading status
 dot, or standalone running badge. In settled final history, remove live-only
 automatic compression rows unless they explain a visible recovery or error
 state.
-
-The existing two-stage proposal in `docs/ui-ux/two-stage-proposal.html` records a
-compatible direction for long turns: live work can be grouped as a worklog, then
-settled history can collapse while the final answer reads as the calm
-conclusion. Treat that page as an existing proposal, not as shipped behavior
-unless the code and tests prove it is implemented.
 
 Long-turn performance budgets apply to transport and mounted DOM, never to the
 durable worklog history. A normal session load may return only a recent activity
@@ -127,7 +118,7 @@ Use three explicit font tokens:
 
 - `--font-ui`: shell chrome, controls, composer, labels, and ordinary UI text
 - `--font-conversation`: user/assistant message prose; by default this is
-  `var(--font-ui)` in `frontend/src/theme/tokens.css`
+  `var(--font-ui)` (`packages/frontend/src/theme/skins.ts`)
 - `--font-mono`: code, file paths, command lines, tool payloads, technical logs,
   and terminal output
 
@@ -158,18 +149,12 @@ its own prose size or spacing scale.
 ### Code blocks and tables in chat
 
 Code and tables are quoted content inside prose, not cards competing with it. A
-chat code block uses `10px 12px` padding and an `8px` radius (matching the
-`.pre-header` it sits under) and keeps its size on
-`--message-pre-code-font-size`; Prism highlighting, the Copy button, horizontal
-scrolling on desktop and wrapping under 640px all stay.
+chat code block keeps its size on `--message-pre-code-font-size` and keeps
+syntax highlighting, the Copy button, and horizontal scrolling.
 
 An ordinary markdown table is a reading table: row separators only, no cell
-grid, no header fill, no zebra rows. Columns take their natural width with a
-`10ch` floor, so a wide table scrolls inside the reading column instead of
-squeezing columns to an unreadable width. Sorting and filtering chrome belongs
-to the explicit structured-data mode — a ```` ```csv ```` fence or a CSV
-preview, both rendered into `.csv-table-wrap` — and must not appear on prose
-tables.
+grid, no header fill, no zebra rows. A wide table scrolls inside the reading
+column instead of squeezing columns to an unreadable width.
 
 ## Color, depth, and shape
 
@@ -199,8 +184,8 @@ mobile. If a setting or quota/control surface does not fit in the composer, rout
 it through the appropriate Control Center panel instead of squeezing the footer.
 
 On phone widths the composer collapses to a single prompt-preview row while it is
-unfocused and idle, and expands on tap or focus (`cf-collapsed`, the third stage
-of the `_fitComposerFooter()` mechanism alongside `cf-icons`/`cf-burger`). A new
+unfocused and idle, and expands on tap or focus (`cf-collapsed`, the third
+footer-fit stage alongside `cf-icons`/`cf-burger` in `Composer.tsx`). A new
 footer control is therefore hidden until the composer is expanded — anything that
 must stay reachable while the user is reading belongs beside the primary action in
 `.composer-right`, or in an action-required surface that blocks the collapse.
@@ -208,9 +193,9 @@ must stay reachable while the user is reading belongs beside the primary action 
 ### Composer sizing
 
 The composer grows with its content up to a cap. Where the browser supports
-`field-sizing: content` (`textarea#msg` in `frontend/src/theme/components/chat.css`,
+`field-sizing: content` (`textarea#msg` in `packages/frontend/src/theme/components/chat.css`,
 with `field-sizing: fixed` while the placeholder shows) CSS owns that and no
-script runs. Elsewhere the fallback in `frontend/src/features/composer/Composer.tsx`
+script runs. Elsewhere the fallback in `packages/frontend/src/features/composer/Composer.tsx`
 measures `scrollHeight` in an effect that runs only when the text changes, never
 on layout or scroll. Keep these invariants when touching it:
 
@@ -254,59 +239,21 @@ a per-surface gutter, or a wide-viewport breakpoint.
 Overlay affordances split by role. The scroll-to-end pill is the primary
 recovery action for the response being read, so it is centred on the column
 immediately above the composer (`left:50%` + `translateX(-50%)`) and is the one
-floating control that carries a visible label. The secondary edge affordances —
-the optional Start jump button and the outline FAB — use `--chat-col-inset` to
-ride the column's right edge instead of the pane's, and stack vertically so a
-taller composer cannot make them collide.
+floating control that carries a visible label. The optional Start jump button
+uses `--chat-col-inset` to ride the column's right edge instead of the pane's.
 
-The **left** gutter carries the turn minimap (`#outlineMinimap`): one 9×2px mark
-per loaded user turn, dividing the rail evenly so mark *k* sits ~*k*/*N* through
-the conversation. It is part of the conversation-outline feature — same
-`show_conversation_outline` preference, same `_buildEntries()` turns, same
-`_jumpToMessage()` jump — with the labelled panel as its keyboard/touch fallback.
-The rail is `pointer-events:none` (only the marks and never the hover preview
-take pointer events) so it cannot intercept a transcript selection, and
-the outline component hides it whenever the measured gutter drops below 52px, the
-viewport is under 900px, full-width chat leaves no gutter, or fewer than four
-turns are loaded. The current turn is a static width/colour change driven by one
-`IntersectionObserver` over the rendered user rows — never a running animation.
-
-User bubbles are right-aligned inside that column and may use up to 80% of it
-(90% under 600px), sized as a percentage of `--msg-max` rather than of the
-center pane. Length is handled by progressive disclosure, not by a narrower
-bubble: a user message longer than 600 characters or 8 lines renders clipped to
-8 lines behind a quiet fade with a **Show full message** / **Show less** button.
-The clip is visual-only (`max-height` + `overflow: hidden` on `.msg-clip`): the
-complete text stays in the accessibility tree at all times, so the button is a
-plain action button whose accessible name states the visual change — "Show full
-message visually" / "Show less of message visually" — and it carries no
-`aria-expanded` / `aria-controls` (which would falsely claim a collapsed
-region) and no `aria-pressed` (a toggle's name must not change with its state,
-and the visible "Show less" text has to stay inside the accessible name).
-Keyboard focus landing on a control below the visible boundary opens the clip
-through the same `toggleMessageExpand` path, so the name stays truthful. The thresholds live in two places that must move
-together — `USER_MSG_COLLAPSE_CHARS` / `USER_MSG_COLLAPSE_LINES` in
-`frontend/src/features/chat/MessageRow.tsx` and `--msg-collapse-lines` in
-`frontend/src/theme/tokens.css`. The fade sits
-on the `.msg-clip` wrapper, not on `.msg-body`, so skins that repaint the bubble
-background with `!important` keep a solid bubble.
+User bubbles are right-aligned inside that column and stay compact; length is
+handled by progressive disclosure rather than a narrower bubble.
 
 ## Themes and skins
 
-Theme and skin work should use the existing variable system. `THEMES.md` points
-to the core palette variables in `frontend/src/theme/tokens.css`; skin comments in the CSS
-show the expected pattern for full palette rewrites and accent-only changes.
-
-Current implementation has two appearance axes, sourced from `frontend/src/theme/boot.ts`:
-`theme` is only `light`, `dark`, or `system` and resolves to the `.dark` class
-for dark mode; `skin` is a separate axis applied with `data-skin` and currently
-includes `default`, `ares`, `mono`, `slate`, `poseidon`, `sisyphus`,
-`charizard`, `sienna`, `catppuccin`, `nous`, and `geist-contrast` / Geist Contrast. `slate` is both an active skin
-and a legacy theme-name migration target; `solarized`, `monokai`, `nord`, and
-`oled` are legacy theme names mapped to current theme/skin pairs. Do not follow
-stale `data-theme`-only guidance without first proving the current
-`frontend/src/theme/boot.ts` and `frontend/src/theme/tokens.css` contracts still
-support it.
+Theme and skin work uses the token system described in
+[`THEMES.md`](../THEMES.md): `theme` is `light`, `dark`, or `system` and
+resolves to the `.dark` class; `skin` is a separate axis applied with
+`data-skin`, defined by the `SKINS` array in
+`packages/frontend/src/theme/skins.ts`. `packages/frontend/src/theme/boot.ts`
+also maps the legacy theme names `slate`, `solarized`, `monokai`, `nord`, and
+`oled` to current theme/skin pairs.
 
 Do not hardcode new colors, radii, shadows, or typography values into isolated
 components when a token or existing variable can carry the intent. If a token is
@@ -316,9 +263,8 @@ missing, explain why a new one is needed.
 
 For any interface or interaction change:
 
-- include before/after images or a short video,
+- attach before/after images or a short video to the PR (never commit them),
 - mention the tested viewport sizes and responsive states,
-- reference the affected visual inventory or design source when applicable,
 - add or update tests for behavior, state persistence, or regression-prone DOM
   structure where practical,
 - keep stable class or data hooks when they help future visual regression tests.
@@ -337,6 +283,6 @@ Don't:
 
 - make every tool call look like a separate chat message,
 - add decorative color or motion without a user-facing reason,
-- introduce a frontend framework, bundler, or build step for ordinary UI work,
+- add a frontend framework, bundler plugin, or build step for ordinary UI work,
 - hide important recovery, error, or approval state,
-- treat proposal mockups as shipped behavior without code/test evidence.
+- document behavior the code and tests do not show.

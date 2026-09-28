@@ -15,7 +15,6 @@ Before making changes, read:
 
 1. `README.md`
 2. `docs/CONTRACTS.md`
-3. `CHANGELOG.md`
 
 For architecture, testing, or setup work, also read the matching reference:
 
@@ -68,9 +67,6 @@ Follow that checklist's safety rules:
   without clear justification and a rollback story.
 - Update docs when changing setup, onboarding, runtime behavior, architecture,
   testing guidance, or user-facing workflows.
-- Do not edit `CHANGELOG.md` in ordinary contributor PRs. The release workflow
-  owns changelog updates through release commits. If a change is release-note
-  worthy, include concise release-note wording in the PR body instead.
 - For UI or UX changes, include before/after evidence in the PR description
   (uploaded attachments, never committed files) and test relevant desktop,
   narrow, and mobile states.
@@ -86,9 +82,7 @@ Follow that checklist's safety rules:
 
 ## Before you open a PR — the change guidelines
 
-Read [`docs/GUIDELINES.md`](docs/GUIDELINES.md) in full before non-trivial work. It is the
-distilled set of habits that get a change merged in one review round instead of several. The
-compressed form:
+These habits get a change merged in one review round instead of several:
 
 1. **Fix the class, not the instance.** A bug usually has siblings — other call sites, backends,
    companion endpoints, layouts, exit paths. Find them all and fix the shared chokepoint, or name
@@ -120,15 +114,15 @@ not verify.
 
 ## Local state and secrets
 
-Hermes WebUI can read and write real agent state, sessions, workspaces,
+Talaria Web can read and write real agent state, sessions, workspaces,
 credentials, and cron data. Treat local validation as potentially destructive
 unless you have confirmed the active state directories.
 
 Prefer isolated trial state for experiments:
 
 ```bash
-HERMES_HOME=/tmp/hermes-webui-agent-home \
-HERMES_WEBUI_STATE_DIR=/tmp/hermes-webui-agent-state \
+HERMES_HOME=/tmp/talaria-web-agent-home \
+HERMES_WEBUI_STATE_DIR=/tmp/talaria-web-agent-state \
 HERMES_WEBUI_PORT=8789 \
 node packages/server/dist/bin/talaria-web.js --foreground --no-browser
 ```
