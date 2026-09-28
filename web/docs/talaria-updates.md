@@ -116,10 +116,10 @@ manual. Containers use the immutable image digest from the completed
 manifest. Settings distinguishes a failed check, an unknown status, local changes,
 and an available automatic update; manual installations link to the releases page.
 
-Legacy standalone checkouts require an explicit migration to an authenticated
-monorepo checkout with the service working directory and launch path under `web/`.
-The updater refuses to reshape an arbitrary parent repository or discard the old
-checkout. Preserve the old checkout and state for rollback. No live Web host is
+Legacy standalone checkouts and pip installations migrate by installing the npm package (see the end of this
+section), which is the only installation that updates itself. To keep running from source instead, prepare a
+monorepo checkout as below; it updates only through git. The updater refuses to reshape an arbitrary parent
+repository or discard the old checkout. Preserve the old checkout and state for rollback. No live Web host is
 required to validate this distribution path.
 
 ### Prepare a legacy source migration
