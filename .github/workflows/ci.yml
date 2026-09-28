@@ -160,7 +160,6 @@ jobs:
       RESULT_BUNDLE_PATH: TestResults.xcresult
       LAUNCH_SMOKE_TEST: TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList
       LIVE_CONTRACT_TEST: TalariaTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied
-      LIVE_CONTRACT_RESULT_BUNDLE_PATH: LiveContractResults.xcresult
       # Pinned to shard 0, which also runs the live contract test, so one shard proves them all.
       CONTRACT_TEST_CLASSES: >-
         TalariaTests/ContractReadinessTests
@@ -209,6 +208,22 @@ jobs:
           unzip -q -o "${RUNNER_TEMP}/app-build.zip" -d "${RUNNER_TEMP}"
           echo "- Test build download: $((SECONDS - start_seconds))s ($(du -h "${RUNNER_TEMP}/app-build.zip" | cut -f1))" | tee -a "${GITHUB_STEP_SUMMARY}"
 
+      # The probe finishes about a minute into the run, long before the build, so shard 0 fetches its fixture
+      # here and runs the live decoding test inside the same xcodebuild as its suite: a second invocation spent
+      # over two minutes preparing the destination again before it ran one test.
+      - name: Wait for the Web contract probe
+        if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ci/wait-for-job "Web contract probe" 1500
+
+      - name: Download the probe's live response fixture
+        if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
+        uses: actions/download-artifact@v8
+        with:
+          name: contract-fixture
+          path: ${{ runner.temp }}/contract-fixture
+
       - name: Select this shard's tests
         run: |
           set -euo pipefail
@@ -225,6 +240,11 @@ jobs:
             for contract_class in ${CONTRACT_TEST_CLASSES}; do options+=(--pin "${contract_class}"); done
             python3 ci/test_shards.py "${options[@]}" > selection.txt
           fi
+          if [[ "${CONTRACTS_SELECTED}" == "true" && "${SHARD}" == "0" ]]; then
+            # Shard 0 holds the live test's class (pinned) or the whole target; only its skip goes.
+            grep -vx -- "-skip-testing:${LIVE_CONTRACT_TEST}" selection.txt > selection.live.txt
+            mv selection.live.txt selection.txt
+          fi
           echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries"
 
       - name: Test without building
@@ -232,6 +252,14 @@ jobs:
           SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
         run: |
           set -euo pipefail
+          live=false
+          [[ "${CONTRACTS_SELECTED}" == "true" && "${SHARD}" == "0" ]] && live=true
+          fixture="${RUNNER_TEMP}/contract-fixture/live-responses.json"
+          if [[ "${live}" == "true" ]]; then
+            [[ -s "${fixture}" ]] || { echo "The probe artifact has no live-responses.json" >&2; exit 1; }
+            # xcodebuild strips TEST_RUNNER_ and hands the path to the simulator test process.
+            export TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"
+          fi
           start_seconds=${SECONDS}
           selection=()
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
@@ -246,7 +274,7 @@ jobs:
             -parallel-testing-enabled NO \
             "${selection[@]}"
           duration_seconds=$((SECONDS - start_seconds))
-          if [[ "${CONTRACTS_SELECTED}" == "true" && "${SHARD}" == "0" ]]; then
+          if [[ "${live}" == "true" ]]; then
             # Every native contract class must have passed.
             xcrun xcresulttool get test-results tests --path "${RESULT_BUNDLE_PATH}" --compact > contract-results.json
             for contract_class in ${CONTRACT_TEST_CLASSES}; do
@@ -254,48 +282,14 @@ jobs:
                 any(.. | objects; .nodeType? == "Test Case" and .result? == "Passed" and ((.nodeIdentifierURL? // "") | startswith($prefix)))
               ' contract-results.json >/dev/null || { echo "Native contract class ${contract_class} did not pass" >&2; exit 1; }
             done
+            # A missing fixture makes the live test skip, so require an explicit pass.
+            /usr/bin/jq -e --arg id "test://com.apple.xcode/Talaria/${LIVE_CONTRACT_TEST}" '
+              [.. | objects | select(.nodeType? == "Test Case" and ((.nodeIdentifierURL? // "") | startswith($id)))]
+              | length == 1 and .[0].result == "Passed"
+            ' contract-results.json >/dev/null || { echo "The live Web contract test did not pass against the fixture" >&2; exit 1; }
           fi
           echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Wait for the Web contract probe
-        if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ci/wait-for-job "Web contract probe" 1500
-
-      - name: Download the probe's live response fixture
-        if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
-        uses: actions/download-artifact@v8
-        with:
-          name: contract-fixture
-          path: ${{ runner.temp }}/contract-fixture
-
-      - name: Run the live Web contract test against the probe fixture
-        if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
-        env:
-          SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
-        run: |
-          set -euo pipefail
-          start_seconds=${SECONDS}
-          fixture="${RUNNER_TEMP}/contract-fixture/live-responses.json"
-          [[ -s "${fixture}" ]] || { echo "The probe artifact has no live-responses.json" >&2; exit 1; }
-          xctestrun=(Build/Products/*.xctestrun)
-          # xcodebuild strips TEST_RUNNER_ and hands the path to the simulator test process.
-          TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}" xcodebuild test-without-building \
-            -xctestrun "${xctestrun[0]}" \
-            -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
-            -resultBundlePath "${LIVE_CONTRACT_RESULT_BUNDLE_PATH}" \
-            -collect-test-diagnostics never \
-            -parallel-testing-enabled NO \
-            -only-testing:"${LIVE_CONTRACT_TEST}"
-          # A missing fixture makes the test skip, so require an explicit pass.
-          xcrun xcresulttool get test-results tests --path "${LIVE_CONTRACT_RESULT_BUNDLE_PATH}" --compact \
-            | /usr/bin/jq -e --arg id "test://com.apple.xcode/Talaria/${LIVE_CONTRACT_TEST}" '
-                [.. | objects | select(.nodeType? == "Test Case" and ((.nodeIdentifierURL? // "") | startswith($id)))]
-                | length == 1 and .[0].result == "Passed"
-              ' >/dev/null || { echo "The live Web contract test did not pass against the fixture" >&2; exit 1; }
-          echo "- Live Web contract test: $((SECONDS - start_seconds))s including the probe wait" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Report slowest tests
         if: always()
@@ -378,9 +372,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results-shard-${{ matrix.shard }}
-          path: |
-            app/TestResults.xcresult
-            app/LiveContractResults.xcresult
+          path: app/TestResults.xcresult
           retention-days: 14
           overwrite: true
           if-no-files-found: ignore
@@ -428,8 +420,8 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends zsh
       - name: Probe local Web HTTP and SSE contracts and record the live responses
         run: scripts/validate-upstream-contract --server-only --responses-output "$RUNNER_TEMP/contract-fixture/live-responses.json"
-      # App shard 0 starts without waiting for this job. After its own suite it waits for this job
-      # through the jobs API, downloads this artifact and runs the native live decoding test against it.
+      # App shard 0 starts without waiting for this job. Before its suite it waits for this job through the
+      # jobs API, downloads this artifact and runs the native live decoding test in the same xcodebuild.
       - name: Upload the live response fixture
         uses: actions/upload-artifact@v7
         with:

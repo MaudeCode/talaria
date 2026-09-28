@@ -54,13 +54,13 @@ contract scripts themselves. In `ci.yml`:
 - The Linux `Web contract probe` job runs
   `scripts/validate-upstream-contract --server-only --responses-output ...` and
   uploads the live responses as the run's `contract-fixture` artifact.
-- The App test job (shard 0 of the full suite) runs the native contract classes
-  (`ContractReadinessTests`, `SharedContractTests`, and the API client, SSE and
-  reconnect contract tests), then waits for the probe, downloads that artifact
-  and runs
+- The App test job (shard 0 of the full suite) waits for the probe, downloads
+  that artifact, and runs the native contract classes (`ContractReadinessTests`,
+  `SharedContractTests`, and the API client, SSE and reconnect contract tests)
+  together with
   `APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied`
-  against it. A missing fixture skips the test, so the job requires an explicit
-  pass.
+  against it in one `xcodebuild` run. A missing fixture skips the test, so the
+  job requires an explicit pass.
 
 Releases repeat the gate in `release-set.yml`: `scripts/check-release-contracts.py`
 checks the selected App against the selected and still-supported Web sources and

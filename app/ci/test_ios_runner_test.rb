@@ -37,7 +37,7 @@ class TestIOSRunnerTest < Minitest::Test
     %w[scripts/select-ios-simulator scripts/test-ios(?![-\w]) scripts/setup-ios-test-pool scripts/ios-simulator-pool(?![-\w])].each do |local|
       refute_match(Regexp.new(local), workflow)
     end
-    assert_equal(2, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
+    assert_equal(1, workflow.scan('platform=iOS Simulator,id=${SIMULATOR_ID}').length)
     assert_equal(1, workflow.scan('ci/build-for-testing "${BUILD_DESTINATION}"').length)
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
     assert_includes(build, '-destination "${destination}"')
@@ -66,15 +66,15 @@ class TestIOSRunnerTest < Minitest::Test
     end
 
     workflow = File.read(File.expand_path("../../.github/workflows/ci.yml", __dir__), encoding: "UTF-8")
-    live_step = workflow[/- name: Run the live Web contract test.*?(?=\n      - name: )/m]
-    refute_includes(live_step, "xcrun simctl")
+    suite_step = workflow[/- name: Test without building.*?(?=\n      - name: )/m]
+    refute_includes(suite_step, "xcrun simctl")
   end
 
-  def test_only_shard_zero_waits_for_the_probe_after_its_suite
+  def test_only_shard_zero_runs_the_live_test_inside_its_suite
     jobs = YAML.safe_load_file(File.expand_path("../../.github/workflows/ci.yml", __dir__), aliases: true)["jobs"]
     shard, probe = jobs.fetch("app-test"), jobs.fetch("contracts")
-    # Test jobs start with App build and boot their simulator while it builds; the Linux probe is awaited
-    # only before the live-fixture test.
+    # Test jobs start with App build and boot their simulator while it builds; shard 0 fetches the Linux
+    # probe's fixture before its suite and runs the live decoding test in the same xcodebuild (TAL-380).
     assert_equal("changes", shard["needs"])
     # The boot finishes before the build wait and download, so it competes with neither (TAL-380).
     boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
@@ -83,13 +83,13 @@ class TestIOSRunnerTest < Minitest::Test
     refute(shard["steps"].any? { |step| step["name"] == "Build for testing" }, "test jobs never build")
     steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
     names = steps.keys
-    suite, wait, fetch, live = [
-      "Test without building", "Wait for the Web contract probe",
-      "Download the probe's live response fixture", "Run the live Web contract test against the probe fixture"
+    download, wait, fetch, select, suite = [
+      "Download the test build", "Wait for the Web contract probe", "Download the probe's live response fixture",
+      "Select this shard's tests", "Test without building"
     ].map { |name| names.index(name) }
-    assert_operator(suite, :<, wait)
-    assert_equal([wait + 1, wait + 2], [fetch, live])
-    [wait, fetch, live].each do |index|
+    assert_equal([download + 1, download + 2, download + 3, download + 4], [wait, fetch, select, suite])
+    refute(names.any? { |name| name.to_s.include?("Run the live Web contract test") }, "no second xcodebuild")
+    [wait, fetch].each do |index|
       assert_equal("env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0", shard["steps"][index]["if"])
     end
     # "Re-run failed jobs" keeps an earlier probe, so the newest attempt at or before this one is awaited.
@@ -98,12 +98,15 @@ class TestIOSRunnerTest < Minitest::Test
     ["filter=all", ".run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber)", "select(.name == $ENV.WAIT_JOB_NAME"]
       .each { |required| assert_includes(waiter, required) }
     assert_equal("contract-fixture", steps.fetch(names[fetch])["with"]["name"])
-    ['TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"', '-only-testing:"${LIVE_CONTRACT_TEST}"',
-     "-parallel-testing-enabled NO", '.[0].result == "Passed"']
-      .each { |required| assert_includes(steps.fetch(names[live])["run"], required) }
+    ['export TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"', '.[0].result == "Passed"',
+     '[[ "${CONTRACTS_SELECTED}" == "true" && "${SHARD}" == "0" ]] && live=true']
+      .each { |required| assert_includes(steps.fetch(names[suite])["run"], required) }
+    # The selection drops only the live test's skip, and only in shard 0 with contracts selected.
+    assert_includes(steps.fetch(names[select])["run"], 'grep -vx -- "-skip-testing:${LIVE_CONTRACT_TEST}" selection.txt')
+    assert_equal(1, File.read(File.expand_path("../../.github/workflows/ci.yml", __dir__)).scan("xcodebuild test-without-building").length)
     upload = probe["steps"].find { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }
     assert_equal("contract-fixture", upload["with"]["name"])
-    # The shard script skips the live test in every shard's suite run.
+    # The shard script skips the live test everywhere else.
     assert_includes(File.read(File.expand_path("test_shards.py", __dir__), encoding: "UTF-8"),
                     "TalariaTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied")
   end
@@ -120,7 +123,7 @@ class TestIOSRunnerTest < Minitest::Test
     )
 
     # Every run uses one worker on the job's own booted simulator: clones took minutes to boot on hosted runners.
-    assert_equal(2, workflow.scan("            -parallel-testing-enabled NO \\").length)
+    assert_equal(1, workflow.scan("            -parallel-testing-enabled NO \\").length)
     refute_match(/parallel-testing-enabled YES|parallel-testing-worker-count|test_workers|build_cache|COMPILATION_CACHE|xcode-cache/, workflow)
     refute_match(/COMPILATION_CACHE|build-cache/, File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8"))
     # Four shards for the full suite, otherwise one test job; App build runs whenever any test job does.
