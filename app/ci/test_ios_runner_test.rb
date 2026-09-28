@@ -127,6 +127,7 @@ class TestIOSRunnerTest < Minitest::Test
     # Four shards for the UI suite, two for CI's unit tests and launch smoke, one for contract-only changes
     # and for a scoped UI suite dispatch (TAL-401).
     assert_includes(workflow, "shard: ${{ fromJSON(inputs.only_testing != '' && '[0]' || (inputs.mode == 'full' && '[0,1,2,3]' || (inputs.mode == 'pull-request' && '[0,1]' || '[0]'))) }}")
+    assert_includes(workflow, "timeout-minutes: ${{ inputs.test_iterations > 1 && 360 || 60 }}")
     assert_includes(workflow, 'if (( TEST_ITERATIONS > 1 )); then selection+=(-test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure); fi')
     jobs = workflow_jobs("app-tests.yml")
     assert_equal([nil, nil, nil, nil], jobs.values_at("app-build", "app-test").flat_map { |job| job.values_at("needs", "if") })
