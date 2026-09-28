@@ -1839,7 +1839,17 @@ fileprivate extension AdaptiveLayoutUITestCase {
             // measuring the rendered variant; element detection scans pixels and names no
             // element to fix.
             for auditType: XCUIAccessibilityAuditType in [.dynamicType, .hitRegion, .sufficientElementDescription, .trait] {
-                try app.performAccessibilityAudit(for: auditType, handleIssue)
+                // A call that runs out of time reports nothing, and one right after a slow
+                // launch did so under CPU load, so a timed-out type runs again, up to 3 times.
+                for attempt in 1...3 {
+                    do {
+                        try app.performAccessibilityAudit(for: auditType, handleIssue)
+                        break
+                    } catch let error as NSError
+                        where error.domain == "com.apple.xcode.xctest.accessibilityAudit" && error.code == -56 && attempt < 3 {
+                        activity.add(XCTAttachment(string: "Audit type \(auditType.rawValue) timed out on attempt \(attempt)"))
+                    }
+                }
             }
             if !unlocated.isEmpty {
                 let note = XCTAttachment(string: unlocated.joined(separator: "\n"))
