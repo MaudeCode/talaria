@@ -30,8 +30,8 @@ class TestIOSRunnerTest < Minitest::Test
     jobs = YAML.safe_load_file(File.expand_path("../../.github/workflows/ci.yml", __dir__), aliases: true)["jobs"]
     boot = jobs.fetch("app-test")["steps"].find { |step| step["name"] == "Boot the simulator" }
     assert_match(%r{\Afutureware-tech/simulator-action@[0-9a-f]{40}\z}, boot["uses"])
-    assert_equal(["iPhone 17", "iOS", "~${{ env.XCODE_VERSION }}", true, 600],
-                 boot["with"].values_at("model", "os", "os_version", "wait_for_boot", "boot_timeout_seconds"))
+    assert_equal(["iPhone 17", "iOS", "~${{ env.XCODE_VERSION }}", false, true, 600],
+                 boot["with"].values_at("model", "os", "os_version", "erase_before_boot", "wait_for_boot", "boot_timeout_seconds"))
     assert_includes(workflow, "SIMULATOR_ID: ${{ steps.sim.outputs.udid }}")
     assert_includes(workflow, "BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.XCODE_VERSION }}")
     %w[scripts/select-ios-simulator scripts/test-ios(?![-\w]) scripts/setup-ios-test-pool scripts/ios-simulator-pool(?![-\w])].each do |local|
@@ -42,26 +42,6 @@ class TestIOSRunnerTest < Minitest::Test
     build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
     assert_includes(build, '-destination "${destination}"')
     refute_includes(workflow, "platform=iOS Simulator,name=${SIMULATOR_NAME}")
-  end
-
-  def test_only_main_saves_the_build_cache_and_pull_requests_restore_it
-    jobs = YAML.safe_load_file(File.expand_path("../../.github/workflows/ci.yml", __dir__), aliases: true)["jobs"]
-    steps = jobs.fetch("app-build")["steps"].to_h { |step| [step["name"], step] }
-    restore, save = steps.fetch("Restore the build cache"), steps.fetch("Save the build cache")
-    # Pushes and seed dispatches build cold; only main pushes and seed dispatches save.
-    assert_equal("github.event_name != 'push' && inputs.build_cache != 'off' && inputs.build_cache != 'seed' && inputs.build_cache != 'xcode-cache'", restore["if"])
-    assert_equal("(github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.build_cache == 'seed'", save["if"])
-    assert_equal(restore["with"]["path"], save["with"]["path"])
-    assert_equal(restore["with"]["key"], save["with"]["key"])
-    assert(restore["with"]["key"].end_with?("${{ github.sha }}"))
-    assert_equal(restore["with"]["key"].delete_suffix("${{ github.sha }}"), restore["with"]["restore-keys"])
-    names = steps.keys
-    assert_operator(names.index("Restore the build cache"), :<, names.index("Build for testing"))
-    assert_operator(names.index("Build for testing"), :<, names.index("Save the build cache"))
-    build = File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8")
-    ['-clonedSourcePackagesDirPath "${cache}/SourcePackages"', %q(COMPILATION_CACHE_ENABLE_CACHING="${TALARIA_COMPILATION_CACHE:-YES}"),
-     'COMPILATION_CACHE_CAS_PATH="${cache}/cas"', "cache=${PWD}/.build-cache"].each { |setting| assert_includes(build, setting) }
-    assert_equal("app/.build-cache", save["with"]["path"])
   end
 
   def test_unit_tests_never_request_real_live_activities
@@ -139,12 +119,10 @@ class TestIOSRunnerTest < Minitest::Test
       encoding: "UTF-8"
     )
 
-    # Pushes and PRs run one worker on each shard's own simulator; only a dispatch's test_workers input clones it.
-    assert_includes(workflow, "TEST_WORKERS: ${{ inputs.test_workers || '1' }}")
-    assert_includes(workflow, 'parallel=(-parallel-testing-enabled NO)')
-    assert_includes(workflow, 'parallel=(-parallel-testing-enabled YES -parallel-testing-worker-count "${TEST_WORKERS}")')
-    # The live contract test never clones the simulator.
-    assert_equal(1, workflow.scan("            -parallel-testing-enabled NO \\").length)
+    # Every run uses one worker on the job's own booted simulator: clones took minutes to boot on hosted runners.
+    assert_equal(2, workflow.scan("            -parallel-testing-enabled NO \\").length)
+    refute_match(/parallel-testing-enabled YES|parallel-testing-worker-count|test_workers|build_cache|COMPILATION_CACHE|xcode-cache/, workflow)
+    refute_match(/COMPILATION_CACHE|build-cache/, File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8"))
     # Four shards for the full suite, otherwise one test job; App build runs whenever any test job does.
     full = "(github.event_name == 'push' || inputs.full_ui == true) && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false')"
     assert_includes(workflow, "shard: ${{ fromJSON((#{full}) && '[0,1,2,3]' || '[0]') }}")

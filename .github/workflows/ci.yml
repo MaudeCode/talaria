@@ -23,24 +23,6 @@ on:
         description: Run the main-push App suite (build plus four full unit and UI shards).
         type: boolean
         default: true
-      test_workers:
-        description: Simulator clones per App shard (1 runs on the shard's own simulator).
-        type: choice
-        options: ["1", "2"]
-        default: "2"
-      simulator:
-        description: Boot the image's preinstalled simulator as is, or fresh (erased first); alternate splits even and odd shards.
-        type: choice
-        options: [alternate, preinstalled, fresh]
-        default: alternate
-      build_cache:
-        description: >-
-          on restores the newest package and compilation cache; seed builds cold and saves it for this branch;
-          off builds cold; xcode-cache benchmarks irgaly/xcode-cache (DerivedData with restored file times)
-          instead, and a second run on the same commit measures it warm.
-        type: choice
-        options: ["on", "off", "seed", "xcode-cache"]
-        default: "on"
 
 permissions:
   contents: read
@@ -126,40 +108,10 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
-      # Packages and Xcode's content-keyed compilation cache (app/.build-cache). Main builds cold and saves
-      # one entry per commit, so an entry holds exactly one build's objects and never accumulates; pull
-      # requests and dispatches restore the newest entry they can see (main's, or their branch's from a seed
-      # dispatch) and replay unchanged compilations from it.
-      - name: Restore the build cache
-        if: github.event_name != 'push' && inputs.build_cache != 'off' && inputs.build_cache != 'seed' && inputs.build_cache != 'xcode-cache'
-        uses: actions/cache/restore@v6
-        with:
-          path: app/.build-cache
-          key: xcode-build-v1-${{ env.XCODE_VERSION }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ github.sha }}
-          restore-keys: xcode-build-v1-${{ env.XCODE_VERSION }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-
-
-      # Dispatch-only benchmark (TAL-380): irgaly/xcode-cache restores DerivedData and the file times of
-      # unchanged sources for an incremental build, in place of the compilation cache. It saves after a
-      # successful job when its key missed, so the first run on a commit seeds and the second measures.
-      - name: Restore DerivedData with irgaly/xcode-cache
-        if: inputs.build_cache == 'xcode-cache'
-        uses: irgaly/xcode-cache@4141f139f00e335c6e1031fb93e667181f86146f # v1.9.2
-        with:
-          key: xcode-deriveddata-v1-${{ env.XCODE_VERSION }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ github.sha }}
-          restore-keys: xcode-deriveddata-v1-${{ env.XCODE_VERSION }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-
-          deriveddata-directory: app/DerivedData
-          sourcepackages-directory: app/.build-cache/SourcePackages
-          use-default-mtime-targets: false
-          restore-mtime-targets: |
-            app/**
-            !app/DerivedData/**
-            !app/.build-cache/**
-
       - name: Build for testing
         env:
           # A build destination only; nothing boots on this runner.
           BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.XCODE_VERSION }}
-          TALARIA_COMPILATION_CACHE: ${{ inputs.build_cache == 'xcode-cache' && 'NO' || 'YES' }}
         run: |
           set -euo pipefail
           ci/build-for-testing "${BUILD_DESTINATION}"
@@ -172,15 +124,6 @@ jobs:
             products+=("Products/Debug-iphonesimulator/${product}")
           done
           tar -cf "${RUNNER_TEMP}/app-build.tar" "${products[@]}"
-
-      # Main saves for every pull request. A seed dispatch saves under its own branch's scope, which that
-      # branch's later dispatches can restore (pull requests only see their own and main's caches).
-      - name: Save the build cache
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.build_cache == 'seed'
-        uses: actions/cache/save@v6
-        with:
-          path: app/.build-cache
-          key: xcode-build-v1-${{ env.XCODE_VERSION }}-${{ hashFiles('app/Talaria.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ github.sha }}
 
       - name: Upload the test build
         uses: actions/upload-artifact@v7
@@ -213,8 +156,6 @@ jobs:
       APP_TESTS_REQUIRED: ${{ needs.changes.result != 'success' || needs.changes.outputs.app != 'false' }}
       # PRs run the unit tests plus one launch smoke test; the full UI suite runs on main pushes (TAL-332).
       APP_UI_REQUIRED: ${{ github.event_name == 'push' || inputs.full_ui == true }}
-      # The one knob for in-shard parallelism: pushes and PRs use 1 until a dispatch proves 2 is faster and stable.
-      TEST_WORKERS: ${{ inputs.test_workers || '1' }}
       CONTRACTS_SELECTED: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
       RESULT_BUNDLE_PATH: TestResults.xcresult
       LAUNCH_SMOKE_TEST: TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList
@@ -237,8 +178,7 @@ jobs:
           xcode-version: ${{ env.XCODE_VERSION }}
 
       # The image's own iPhone 17 on the runtime matching the SDK, booted to completion before the wait and the
-      # download so nothing competes with its first boot; App build runs meanwhile on another runner. fresh
-      # (or odd shards with alternate) erases it first, which also forces a first boot.
+      # download so nothing competes with its first boot; App build runs meanwhile on another runner.
       - name: Boot the simulator
         id: sim
         uses: futureware-tech/simulator-action@e89aa8f93d3aec35083ff49d2854d07f7186f7f5 # v5
@@ -246,7 +186,7 @@ jobs:
           model: iPhone 17
           os: iOS
           os_version: ~${{ env.XCODE_VERSION }}
-          erase_before_boot: ${{ inputs.simulator == 'fresh' || (inputs.simulator == 'alternate' && (matrix.shard == 1 || matrix.shard == 3)) }}
+          erase_before_boot: false
           wait_for_boot: true
           boot_timeout_seconds: 600
 
@@ -292,15 +232,6 @@ jobs:
           SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
         run: |
           set -euo pipefail
-          if (( TEST_WORKERS > 1 )); then
-            # Xcode clones the shut-down simulator per worker. The finished first boot leaves a migrated
-            # data container, so the clones boot quickly instead of each repeating it.
-            xcrun simctl shutdown "${SIMULATOR_ID}"
-            parallel=(-parallel-testing-enabled YES -parallel-testing-worker-count "${TEST_WORKERS}")
-          else
-            # One worker runs on the shard's own simulator: no clones.
-            parallel=(-parallel-testing-enabled NO)
-          fi
           start_seconds=${SECONDS}
           selection=()
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
@@ -312,7 +243,7 @@ jobs:
             -testRegion US \
             -resultBundlePath "${RESULT_BUNDLE_PATH}" \
             -collect-test-diagnostics never \
-            "${parallel[@]}" \
+            -parallel-testing-enabled NO \
             "${selection[@]}"
           duration_seconds=$((SECONDS - start_seconds))
           if [[ "${CONTRACTS_SELECTED}" == "true" && "${SHARD}" == "0" ]]; then
@@ -325,7 +256,7 @@ jobs:
             done
           fi
           echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
-          echo "- Test without building (${TEST_WORKERS} workers): ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Wait for the Web contract probe
         if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
