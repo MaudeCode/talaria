@@ -262,7 +262,7 @@ describe('npm package contents', () => {
     const pkg = join(import.meta.dirname, '..', '..')
     const out = execFileSync('npm', ['pack', '--dry-run', '--json'], { cwd: pkg, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
     const files = new Set((JSON.parse(out) as { files: { path: string }[] }[])[0]!.files.map((f) => f.path))
-    for (const required of ['static/dist/index.html', 'static/brand/favicon.ico', 'static/brand/brandmark.svg', 'static/brand/favicon-192.png', 'sidecar/agent_dependency.json', 'sidecar/talaria_sidecar/__main__.py', 'contract_versions.json']) {
+    for (const required of ['LICENSE', 'static/dist/THIRD_PARTY_LICENSES.md', 'static/dist/index.html', 'static/brand/favicon.ico', 'static/brand/brandmark.svg', 'static/brand/favicon-192.png', 'sidecar/agent_dependency.json', 'sidecar/talaria_sidecar/__main__.py', 'contract_versions.json']) {
       expect(files.has(required), required).toBe(true)
     }
   })

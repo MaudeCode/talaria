@@ -1,12 +1,12 @@
 // `npm pack` / `npm publish`: copy the runtime trees the bins resolve through the Web root
-// (committed frontend build, sidecar package and scripts, contract metadata, release stamp)
+// (license, built frontend bundle, sidecar package and scripts, contract metadata, release stamp)
 // into the package so a global install is self-contained. `postpack` removes the copies.
 import { cpSync, existsSync, rmSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const pkg = resolve(import.meta.dirname, '..')
 const web = resolve(pkg, '..', '..')
-const copies = ['static/dist', 'static/brand', 'sidecar/talaria_sidecar', 'sidecar/scripts', 'sidecar/agent_dependency.json', 'contract_versions.json', '_release.json']
+const copies = ['LICENSE', 'static/dist', 'static/brand', 'sidecar/talaria_sidecar', 'sidecar/scripts', 'sidecar/agent_dependency.json', 'contract_versions.json', '_release.json']
 const clean = process.argv.includes('--clean')
 for (const relative of copies) {
   const target = resolve(pkg, relative)

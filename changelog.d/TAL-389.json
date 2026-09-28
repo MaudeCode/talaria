@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The Talaria Web npm packages and container image now include the license and the bundled libraries' third-party notices.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
