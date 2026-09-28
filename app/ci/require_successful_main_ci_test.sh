@@ -35,7 +35,8 @@ gh() {
   [[ "$attempts" -ge 2 ]] && printf '84\n'
 }
 sleep() { :; }
-export WAIT_FOR_MAIN_CI_SECONDS=1
+# SECONDS ticks on wall-clock second boundaries, so a 1s budget can expire before the retry (TAL-380).
+export WAIT_FOR_MAIN_CI_SECONDS=60
 export MAIN_CI_POLL_SECONDS=0
 [[ "$(require_successful_main_ci)" == *"Verified successful CI run 84"* ]]
 
