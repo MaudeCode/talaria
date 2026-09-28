@@ -1,7 +1,7 @@
 import type { BrowserContext, Page, Route } from '@playwright/test'
 import { expect, settle, test } from './fixtures'
 
-/** A disposable identity for "the bundle this tab loaded before the deployment"; the server serves the committed build. */
+/** A disposable identity for "the bundle this tab loaded before the deployment"; the server serves the built bundle. */
 const OLD_BUILD = 'a'.repeat(64)
 const BUILD_META = /(<meta name="talaria-build" content=")[a-f0-9]{64}(")/
 const TITLE = 'Talaria Web was updated'
