@@ -32,9 +32,10 @@ on:
       only_testing:
         type: string
         default: ""
+      # A string, like the ui-suite.yml dispatch input that feeds it; the jobs convert it.
       test_iterations:
-        type: number
-        default: 1
+        type: string
+        default: "1"
 
 permissions:
   contents: read
@@ -95,7 +96,7 @@ jobs:
     name: ${{ inputs.mode == 'full' && 'UI suite' || 'App' }} tests (shard ${{ matrix.shard }})
     runs-on: xcode-27
     # An iterated dispatch repeats minutes-long UI tests, so it gets the hosted job maximum.
-    timeout-minutes: ${{ inputs.test_iterations > 1 && 360 || 60 }}
+    timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 360 || 60 }}
     permissions:
       contents: read
       # Reads this run's job list to wait for the build and the Web contract probe.
@@ -231,6 +232,7 @@ jobs:
           start_seconds=${SECONDS}
           selection=()
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
+          [[ "${TEST_ITERATIONS}" =~ ^[1-9][0-9]*$ ]] || { echo "test_iterations must be a positive integer, got '${TEST_ITERATIONS}'" >&2; exit 1; }
           if (( TEST_ITERATIONS > 1 )); then selection+=(-test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure); fi
           xctestrun=(Build/Products/*.xctestrun)
           xcodebuild test-without-building \

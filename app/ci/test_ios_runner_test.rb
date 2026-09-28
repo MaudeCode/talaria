@@ -127,7 +127,10 @@ class TestIOSRunnerTest < Minitest::Test
     # Four shards for the UI suite, two for CI's unit tests and launch smoke, one for contract-only changes
     # and for a scoped UI suite dispatch (TAL-401).
     assert_includes(workflow, "shard: ${{ fromJSON(inputs.only_testing != '' && '[0]' || (inputs.mode == 'full' && '[0,1,2,3]' || (inputs.mode == 'pull-request' && '[0,1]' || '[0]'))) }}")
-    assert_includes(workflow, "timeout-minutes: ${{ inputs.test_iterations > 1 && 360 || 60 }}")
+    assert_includes(workflow, "timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 360 || 60 }}")
+    # Dispatch inputs arrive as strings, so the reusable workflow's input is a string too.
+    app_tests = YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)
+    assert_equal({"type" => "string", "default" => "1"}, app_tests[true]["workflow_call"]["inputs"]["test_iterations"])
     assert_includes(workflow, 'if (( TEST_ITERATIONS > 1 )); then selection+=(-test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure); fi')
     jobs = workflow_jobs("app-tests.yml")
     assert_equal([nil, nil, nil, nil], jobs.values_at("app-build", "app-test").flat_map { |job| job.values_at("needs", "if") })
@@ -139,7 +142,8 @@ class TestIOSRunnerTest < Minitest::Test
     refute_match(/full_ui|mode: full/, workflow_text("ci.yml"))
     suite = YAML.safe_load_file(File.join(WORKFLOWS, "ui-suite.yml"), aliases: true)
     assert_equal({"mode" => "full", "ref" => "${{ inputs.ref }}", "only_testing" => "${{ inputs.only_testing }}",
-                  "test_iterations" => "${{ inputs.test_iterations || 1 }}"}, suite["jobs"]["suite"]["with"])
+                  "test_iterations" => "${{ inputs.test_iterations || '1' }}"}, suite["jobs"]["suite"]["with"])
+    assert_equal("string", suite[true]["workflow_dispatch"]["inputs"]["test_iterations"]["type"])
     assert_equal(%w[schedule workflow_dispatch workflow_call], suite[true].keys)
     assert_equal(true, suite[true]["workflow_call"]["inputs"]["ref"]["required"])
     assert_includes(workflow, 'python3 ci/test_shards.py "${options[@]}" > selection.txt')

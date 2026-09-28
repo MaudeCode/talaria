@@ -30,9 +30,9 @@ on:
         type: string
         required: false
       test_iterations:
-        description: Runs of each selected test; above 1 stops at the first failure.
-        type: number
-        default: 1
+        description: Runs of each selected test (a positive integer); above 1 stops at the first failure.
+        type: string
+        default: "1"
   workflow_call:
     inputs:
       ref:
@@ -54,4 +54,5 @@ jobs:
       mode: full
       ref: ${{ inputs.ref }}
       only_testing: ${{ inputs.only_testing }}
-      test_iterations: ${{ inputs.test_iterations || 1 }}
+      # Strings end to end: schedule and workflow_call runs have no such input, so they pass "1".
+      test_iterations: ${{ inputs.test_iterations || '1' }}
