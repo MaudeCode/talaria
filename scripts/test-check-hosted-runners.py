@@ -117,8 +117,8 @@ jobs:
     def test_only_native_jobs_use_macos(self):
         # Hosted macOS allows five concurrent jobs, so each macOS job must still show the native work that
         # needs it; moving a portable job onto macOS fails here.
-        native = {("ci.yml", "app-tooling"): "test-ios-simulator-pool", ("ci.yml", "app-build"): "ci/build-for-testing",
-                  ("ci.yml", "app-test"): "xcodebuild"}
+        native = {("ci.yml", "app-tooling"): "test-ios-simulator-pool", ("app-tests.yml", "app-build"): "ci/build-for-testing",
+                  ("app-tests.yml", "app-test"): "xcodebuild"}
         found = {}
         for name in hosted.SCOPE:
             for job_name, job in hosted.load(hosted.ROOT / ".github/workflows" / name)["jobs"].items():

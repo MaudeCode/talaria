@@ -5,6 +5,10 @@ require "minitest/autorun"
 require "yaml"
 
 class TestIOSRunnerTest < Minitest::Test
+  WORKFLOWS = File.expand_path("../../.github/workflows", __dir__)
+
+  def workflow_text(name) = File.read(File.join(WORKFLOWS, name), encoding: "UTF-8")
+  def workflow_jobs(name) = YAML.safe_load_file(File.join(WORKFLOWS, name), aliases: true)["jobs"]
   def test_disables_slow_xcode_failure_diagnostics
     script = File.read(File.expand_path("../scripts/test-ios", __dir__))
 
@@ -20,14 +24,11 @@ class TestIOSRunnerTest < Minitest::Test
   end
 
   def test_pr_ci_uses_a_unique_simulator_destination
-    workflow = File.read(
-      File.expand_path("../../.github/workflows/ci.yml", __dir__),
-      encoding: "UTF-8"
-    )
+    workflow = workflow_text("app-tests.yml")
 
     # CI boots the image's iPhone 17 with the pinned simulator action and builds for it by name; the local
     # pool, leases and XCTest admission only run in App tooling's own tests.
-    jobs = YAML.safe_load_file(File.expand_path("../../.github/workflows/ci.yml", __dir__), aliases: true)["jobs"]
+    jobs = workflow_jobs("app-tests.yml")
     boot = jobs.fetch("app-test")["steps"].find { |step| step["name"] == "Boot the simulator" }
     assert_match(%r{\Afutureware-tech/simulator-action@[0-9a-f]{40}\z}, boot["uses"])
     assert_equal(["iPhone 17", "iOS", "~${{ env.XCODE_VERSION }}", false, true, 600],
@@ -65,17 +66,16 @@ class TestIOSRunnerTest < Minitest::Test
       assert(test_double, "#{file} builds a ChatViewModel with #{manager || "the default"} Live Activity manager")
     end
 
-    workflow = File.read(File.expand_path("../../.github/workflows/ci.yml", __dir__), encoding: "UTF-8")
+    workflow = workflow_text("app-tests.yml")
     suite_step = workflow[/- name: Test without building.*?(?=\n      - name: )/m]
     refute_includes(suite_step, "xcrun simctl")
   end
 
   def test_only_shard_zero_runs_the_live_test_inside_its_suite
-    jobs = YAML.safe_load_file(File.expand_path("../../.github/workflows/ci.yml", __dir__), aliases: true)["jobs"]
-    shard, probe = jobs.fetch("app-test"), jobs.fetch("contracts")
+    shard, probe = workflow_jobs("app-tests.yml").fetch("app-test"), workflow_jobs("ci.yml").fetch("contracts")
     # Test jobs start with App build and boot their simulator while it builds; shard 0 fetches the Linux
     # probe's fixture before its suite and runs the live decoding test in the same xcodebuild (TAL-380).
-    assert_equal("changes", shard["needs"])
+    assert_nil(shard["needs"])
     # The boot finishes before the build wait and download, so it competes with neither (TAL-380).
     boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
     assert_equal(["Wait for App build", "Download the test build"], shard["steps"][boot + 1, 2].map { |step| step["name"] })
@@ -95,7 +95,7 @@ class TestIOSRunnerTest < Minitest::Test
     # "Re-run failed jobs" keeps an earlier probe, so the newest attempt at or before this one is awaited.
     assert_equal('ci/wait-for-job "Web contract probe" 1500', steps.fetch(names[wait])["run"])
     waiter = File.read(File.expand_path("wait-for-job", __dir__), encoding: "UTF-8")
-    ["filter=all", ".run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber)", "select(.name == $ENV.WAIT_JOB_NAME"]
+    ["filter=all", ".run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber)", "(.name == $ENV.WAIT_JOB_NAME or"]
       .each { |required| assert_includes(waiter, required) }
     assert_equal("contract-fixture", steps.fetch(names[fetch])["with"]["name"])
     ['export TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"', '.[0].result == "Passed"',
@@ -103,7 +103,8 @@ class TestIOSRunnerTest < Minitest::Test
       .each { |required| assert_includes(steps.fetch(names[suite])["run"], required) }
     # The selection drops only the live test's skip, and only in shard 0 with contracts selected.
     assert_includes(steps.fetch(names[select])["run"], 'grep -vx -- "-skip-testing:${LIVE_CONTRACT_TEST}" selection.txt')
-    assert_equal(1, File.read(File.expand_path("../../.github/workflows/ci.yml", __dir__)).scan("xcodebuild test-without-building").length)
+    assert_equal(1, workflow_text("app-tests.yml").scan("xcodebuild test-without-building").length)
+    assert_equal('ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"', steps.fetch("Wait for App build")["run"])
     upload = probe["steps"].find { |step| step["uses"].to_s.start_with?("actions/upload-artifact@") }
     assert_equal("contract-fixture", upload["with"]["name"])
     # The shard script skips the live test everywhere else.
@@ -112,10 +113,7 @@ class TestIOSRunnerTest < Minitest::Test
   end
 
   def test_pr_ci_shards_run_one_worker_without_clones
-    workflow = File.read(
-      File.expand_path("../../.github/workflows/ci.yml", __dir__),
-      encoding: "UTF-8"
-    )
+    workflow = workflow_text("app-tests.yml")
     shards = File.read(File.expand_path("test_shards.py", __dir__), encoding: "UTF-8")
     ui_tests = File.read(
       File.expand_path("../TalariaUITests/TalariaUITests.swift", __dir__),
@@ -126,13 +124,20 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal(1, workflow.scan("            -parallel-testing-enabled NO \\").length)
     refute_match(/parallel-testing-enabled YES|parallel-testing-worker-count|test_workers|build_cache|COMPILATION_CACHE|xcode-cache/, workflow)
     refute_match(/COMPILATION_CACHE|build-cache/, File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8"))
-    # Four shards for the full suite, otherwise one test job; App build runs whenever any test job does.
-    full = "(github.event_name == 'push' || inputs.full_ui == true) && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false')"
-    app = "(needs.changes.result != 'success' || needs.changes.outputs.app != 'false')"
-    assert_includes(workflow, "shard: ${{ fromJSON((#{full}) && '[0,1,2,3]' || (#{app} && '[0,1]' || '[0]')) }}")
-    jobs = YAML.safe_load_file(File.expand_path("../../.github/workflows/ci.yml", __dir__), aliases: true)["jobs"]
-    assert_equal(jobs["app-test"]["if"], jobs["app-build"]["if"])
-    assert_equal("changes", jobs["app-build"]["needs"])
+    # Four shards for the UI suite, two for CI's unit tests and launch smoke, one for contract-only changes.
+    assert_includes(workflow, "shard: ${{ fromJSON(inputs.mode == 'full' && '[0,1,2,3]' || (inputs.mode == 'pull-request' && '[0,1]' || '[0]')) }}")
+    jobs = workflow_jobs("app-tests.yml")
+    assert_equal([nil, nil, nil, nil], jobs.values_at("app-build", "app-test").flat_map { |job| job.values_at("needs", "if") })
+    # Pull requests and main pushes run the same App jobs; the full UI suite is nightly and a release gate.
+    app = workflow_jobs("ci.yml").fetch("app")
+    assert_equal("./.github/workflows/app-tests.yml", app["uses"])
+    assert_equal("${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && 'pull-request' || 'contracts' }}",
+                 app["with"]["mode"])
+    refute_match(/full_ui|mode: full/, workflow_text("ci.yml"))
+    suite = YAML.safe_load_file(File.join(WORKFLOWS, "ui-suite.yml"), aliases: true)
+    assert_equal({"mode" => "full", "ref" => "${{ inputs.ref }}"}, suite["jobs"]["suite"]["with"])
+    assert_equal(%w[schedule workflow_dispatch workflow_call], suite[true].keys)
+    assert_equal(true, suite[true]["workflow_call"]["inputs"]["ref"]["required"])
     assert_includes(workflow, 'python3 ci/test_shards.py "${options[@]}" > selection.txt')
     assert_equal(26, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
     # CI skips the measurement-only UI classes and the scheduled UI Performance

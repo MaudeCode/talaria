@@ -37,6 +37,10 @@ fixtures "$(job "App build" 1 completed '"failure"'),$(job "App build" 2 in_prog
 [[ "$(last_line "$("$script" "App build")")" == "App build succeeded (attempt 2)." ]]
 [[ "$(cat "$work/calls")" == 2 ]]
 
+# A job in a called workflow matches by its own name; a different job sharing a suffix does not.
+fixtures "$(job "App / App build" 2 completed '"success"'),$(job "Other App build" 2 completed '"failure"')"
+[[ "$(last_line "$("$script" "App build")")" == "App build succeeded (attempt 2)." ]]
+
 # A kept earlier success counts; a later attempt than this one does not.
 fixtures "$(job "App build" 1 completed '"success"'),$(job "App build" 3 in_progress null)"
 [[ "$(last_line "$("$script" "App build")")" == "App build succeeded (attempt 1)." ]]

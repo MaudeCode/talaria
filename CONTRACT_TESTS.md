@@ -54,7 +54,7 @@ contract scripts themselves. In `ci.yml`:
 - The Linux `Web contract probe` job runs
   `scripts/validate-upstream-contract --server-only --responses-output ...` and
   uploads the live responses as the run's `contract-fixture` artifact.
-- The App test job (shard 0 of the full suite) waits for the probe, downloads
+- App test shard 0 (`app-tests.yml`, called by `ci.yml`) waits for the probe, downloads
   that artifact, and runs the native contract classes (`ContractReadinessTests`,
   `SharedContractTests`, and the API client, SSE and reconnect contract tests)
   together with

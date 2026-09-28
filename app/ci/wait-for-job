@@ -2,7 +2,7 @@
 # Usage: ci/wait-for-job JOB_NAME [TIMEOUT_SECONDS [STEP_NAME]]
 # Wait for the newest record of JOB_NAME in this workflow run at or before this attempt and fail unless it
 # succeeded. "Re-run failed jobs" keeps an earlier successful job and copies its record into the new attempt,
-# so earlier attempts count. With STEP_NAME, return as soon as that step of the job has succeeded: a job's
+# so earlier attempts count. A job inside a called workflow matches too ("Caller / JOB_NAME"). With STEP_NAME, return as soon as that step of the job has succeeded: a job's
 # completion reaches the API a minute or more after its last step. Polls every 5 seconds without caching and
 # logs each observation. Needs GH_TOKEN with actions: read and the GITHUB_REPOSITORY/RUN_ID/RUN_ATTEMPT env.
 set -euo pipefail
@@ -15,7 +15,8 @@ while :; do
   # shellcheck disable=SC2016 # jq, not the shell, expands $ENV.
   records=$(WAIT_JOB_NAME="${name}" WAIT_STEP_NAME="${step}" gh api --paginate -H "Cache-Control: no-cache" \
     "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=all&per_page=100&poll=${SECONDS}" \
-    --jq '.jobs[] | select(.name == $ENV.WAIT_JOB_NAME and .run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber))
+    --jq '.jobs[] | select((.name == $ENV.WAIT_JOB_NAME or (.name | endswith(" / " + $ENV.WAIT_JOB_NAME)))
+        and .run_attempt <= ($ENV.GITHUB_RUN_ATTEMPT | tonumber))
       | "\(.run_attempt) \(.status) \(.conclusion) \([.steps[]? | select(.name == $ENV.WAIT_STEP_NAME) | .conclusion][0])"' \
     | sort -rn)
   read -r attempt status conclusion step_conclusion _ <<< "$(head -n 1 <<< "${records}") - - - -"

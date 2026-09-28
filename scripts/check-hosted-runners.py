@@ -12,7 +12,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 # Widen to every workflow once the release workflows leave the self-hosted runners (TAL-381).
-SCOPE = ("ci.yml", "web-verify.yml", "relay-verify.yml", "repository-tooling.yml", "web-docker-smoke.yml",
+SCOPE = ("ci.yml", "app-tests.yml", "ui-suite.yml", "web-verify.yml", "relay-verify.yml", "repository-tooling.yml", "web-docker-smoke.yml",
          "web-docs.yml")
 HOSTED = re.compile(r"(?:ubuntu|macos|windows)-[a-z0-9.-]+|ubuntu-slim|xcode-\d+")
 NAS_CREDENTIALS = re.compile(r"TALARIA_(?:CI_)?S3_")

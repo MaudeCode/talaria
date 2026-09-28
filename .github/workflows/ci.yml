@@ -1,15 +1,12 @@
-# Pull requests and main pushes run suites selected by the complete changed-path diff;
-# the full iOS UI suite runs on main pushes only (pull requests run a launch smoke test).
+# Pull requests and main pushes run suites selected by the complete changed-path diff. App changes run
+# the unit tests plus a launch smoke test; the full iOS UI suite runs nightly and as a release gate
+# (ui-suite.yml).
 # Release metadata always validates; uncertain classification runs every suite.
 # The always-reporting CI Gate is the required check, including skipped jobs.
 #
 # Every job runs on GitHub-hosted runners and uses no repository secrets (TAL-380); handoffs are
-# Actions artifacts. Hosted macOS allows five concurrent jobs, so only Xcode work runs there: App build
-# plus two test shards for a pull request, or plus four full-suite shards for a main push. Test jobs start
-# with the build on their own runners and boot their simulator while it builds: a simulator's first boot
-# beside a build on one three-core runner slowed the build, cache and artifact transfers alike.
-# A manual run with full_ui proves the main-push path on any branch before merge. App builds are
-# signed ad hoc by app/ci/build-for-testing.
+# Actions artifacts. Only Xcode work runs on hosted macOS: App build plus two test shards
+# (app-tests.yml). A manual run exercises every suite.
 
 name: CI
 
@@ -18,11 +15,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      full_ui:
-        description: Run the main-push App suite (build plus four full unit and UI shards).
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -34,9 +26,6 @@ concurrency:
 defaults:
   run:
     working-directory: app
-
-env:
-  XCODE_VERSION: "27.0"
 
 jobs:
   changes:
@@ -94,298 +83,17 @@ jobs:
           scripts/test-test-ios 20
           scripts/test-ios-simulator-pool
 
-  app-build:
-    name: App build
-    # Builds on its own runner for every App test job; the test jobs boot their simulators meanwhile.
+  app:
+    name: App
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || needs.changes.outputs.contracts != 'false') }}
-    runs-on: xcode-27
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/setup-xcode
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
-
-      - name: Build for testing
-        env:
-          # A build destination only; nothing boots on this runner.
-          BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.XCODE_VERSION }}
-        run: |
-          set -euo pipefail
-          ci/build-for-testing "${BUILD_DESTINATION}"
-          # Only what test-without-building reads: the xctestrun and the products it names (about 180 of
-          # 232 MB; module files, objects and bundle copies stay behind). Artifacts drop file modes, so a tar
-          # keeps the bundles' executables and signatures intact.
-          cd DerivedData/Build
-          products=(Products/*.xctestrun)
-          for product in Talaria.app TalariaUITests-Runner.app TalariaLiveActivityWidget.appex TalariaShareExtension.appex; do
-            products+=("Products/Debug-iphonesimulator/${product}")
-          done
-          tar -cf "${RUNNER_TEMP}/app-build.tar" "${products[@]}"
-
-      - name: Upload the test build
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-build
-          path: ${{ runner.temp }}/app-build.tar
-          retention-days: 1
-          overwrite: true
-          if-no-files-found: error
-
-  app-test:
-    # Two shards for a pull request, one for a contract-only change, four for the full suite. Each boots its
-    # simulator to completion while App build runs on another runner, then waits for and downloads the build.
-    name: App tests (shard ${{ matrix.shard }})
-    needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false' || needs.changes.outputs.contracts != 'false') }}
-    runs-on: xcode-27
-    timeout-minutes: 60
     permissions:
       contents: read
-      # Reads this run's job list to wait for App build and the Web contract probe.
       actions: read
-    strategy:
-      fail-fast: false
-      matrix:
-        # Four full-suite shards; two for a pull request's unit tests and launch smoke; one for contract-only changes.
-        shard: ${{ fromJSON(((github.event_name == 'push' || inputs.full_ui == true) && (needs.changes.result != 'success' || needs.changes.outputs.app != 'false')) && '[0,1,2,3]' || ((needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && '[0,1]' || '[0]')) }}
-    env:
-      SHARD: ${{ matrix.shard }}
-      SHARD_COUNT: ${{ strategy.job-total }}
-      APP_TESTS_REQUIRED: ${{ needs.changes.result != 'success' || needs.changes.outputs.app != 'false' }}
-      # PRs run the unit tests plus one launch smoke test; the full UI suite runs on main pushes (TAL-332).
-      APP_UI_REQUIRED: ${{ github.event_name == 'push' || inputs.full_ui == true }}
-      CONTRACTS_SELECTED: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
-      RESULT_BUNDLE_PATH: TestResults.xcresult
-      LAUNCH_SMOKE_TEST: TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList
-      LIVE_CONTRACT_TEST: TalariaTests/APIClientSessionListTests/testLiveUpstreamContractResponsesDecodeWhenSupplied
-      # Pinned to shard 0, which also runs the live contract test, so one shard proves them all.
-      CONTRACT_TEST_CLASSES: >-
-        TalariaTests/ContractReadinessTests
-        TalariaTests/SharedContractTests
-        TalariaTests/APIClientAuthAndErrorTests
-        TalariaTests/APIClientSessionListTests
-        TalariaTests/APIClientSessionMutationTests
-        TalariaTests/SSEClientTests
-        TalariaTests/StreamReconnectContractTests
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/setup-xcode
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
-
-      # The image's own iPhone 17 on the runtime matching the SDK, booted to completion before the wait and the
-      # download so nothing competes with its first boot; App build runs meanwhile on another runner.
-      - name: Boot the simulator
-        id: sim
-        uses: futureware-tech/simulator-action@e89aa8f93d3aec35083ff49d2854d07f7186f7f5 # v5
-        with:
-          model: iPhone 17
-          os: iOS
-          os_version: ~${{ env.XCODE_VERSION }}
-          erase_before_boot: false
-          wait_for_boot: true
-          boot_timeout_seconds: 600
-
-      - name: Wait for App build
-        env:
-          GH_TOKEN: ${{ github.token }}
-        # Returns once App build's upload step has succeeded; the job's own completion, and in run 36446521579
-        # the artifact list too, reached the API one to two minutes later.
-        run: ci/wait-for-job "App build" 2700 "Upload the test build"
-
-      # curl, not actions/download-artifact, which fetched this 82 MB artifact at about 1 MB/s on hosted macOS.
-      - name: Download the test build
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          start_seconds=${SECONDS}
-          # The artifact list can trail the upload step, so look it up for up to two minutes.
-          url=""
-          for _ in $(seq 24); do
-            url=$(gh api -H "Cache-Control: no-cache" "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=app-build&poll=${SECONDS}" \
-              --jq '.artifacts[0].archive_download_url // empty')
-            [[ -z "${url}" ]] || break
-            sleep 5
-          done
-          [[ -n "${url}" ]] || { echo "App build uploaded, but its app-build artifact is not listed" >&2; exit 1; }
-          # The redirect to blob storage drops the Authorization header (curl sends it to the API host only).
-          curl -fsSL --retry 3 -H "Authorization: Bearer ${GH_TOKEN}" -o "${RUNNER_TEMP}/app-build.zip" "${url}"
-          unzip -q -o "${RUNNER_TEMP}/app-build.zip" -d "${RUNNER_TEMP}"
-          echo "- Test build download: $((SECONDS - start_seconds))s ($(du -h "${RUNNER_TEMP}/app-build.zip" | cut -f1))" | tee -a "${GITHUB_STEP_SUMMARY}"
-
-      # The probe finishes about a minute into the run, long before the build, so shard 0 fetches its fixture
-      # here and runs the live decoding test inside the same xcodebuild as its suite: a second invocation spent
-      # over two minutes preparing the destination again before it ran one test.
-      - name: Wait for the Web contract probe
-        if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ci/wait-for-job "Web contract probe" 1500
-
-      - name: Download the probe's live response fixture
-        if: env.CONTRACTS_SELECTED == 'true' && matrix.shard == 0
-        uses: actions/download-artifact@v8
-        with:
-          name: contract-fixture
-          path: ${{ runner.temp }}/contract-fixture
-
-      - name: Select this shard's tests
-        run: |
-          set -euo pipefail
-          mkdir -p Build
-          tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
-          if [[ "${APP_TESTS_REQUIRED}" == "false" ]]; then
-            # Web/contract-only change: the fixture-backed native contract classes are the whole selection.
-            for contract_class in ${CONTRACT_TEST_CLASSES}; do echo "-only-testing:${contract_class}"; done > selection.txt
-            echo "-skip-testing:${LIVE_CONTRACT_TEST}" >> selection.txt
-          else
-            options=(--shards "${SHARD_COUNT}" --shard "${SHARD}")
-            # A pull request: unit tests and one launch smoke test; main runs every UI test.
-            [[ "${APP_UI_REQUIRED}" == "true" ]] || options+=(--targets TalariaTests --add "${LAUNCH_SMOKE_TEST}")
-            for contract_class in ${CONTRACT_TEST_CLASSES}; do options+=(--pin "${contract_class}"); done
-            python3 ci/test_shards.py "${options[@]}" > selection.txt
-          fi
-          if [[ "${CONTRACTS_SELECTED}" == "true" && "${SHARD}" == "0" ]]; then
-            # Shard 0 holds the live test's class (pinned) or the whole target; only its skip goes.
-            grep -vx -- "-skip-testing:${LIVE_CONTRACT_TEST}" selection.txt > selection.live.txt
-            mv selection.live.txt selection.txt
-          fi
-          echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries"
-
-      - name: Test without building
-        env:
-          SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
-        run: |
-          set -euo pipefail
-          live=false
-          [[ "${CONTRACTS_SELECTED}" == "true" && "${SHARD}" == "0" ]] && live=true
-          fixture="${RUNNER_TEMP}/contract-fixture/live-responses.json"
-          if [[ "${live}" == "true" ]]; then
-            [[ -s "${fixture}" ]] || { echo "The probe artifact has no live-responses.json" >&2; exit 1; }
-            # xcodebuild strips TEST_RUNNER_ and hands the path to the simulator test process.
-            export TEST_RUNNER_TALARIA_LIVE_CONTRACT_RESPONSES="${fixture}"
-          fi
-          start_seconds=${SECONDS}
-          selection=()
-          while IFS= read -r option; do selection+=("${option}"); done < selection.txt
-          xctestrun=(Build/Products/*.xctestrun)
-          xcodebuild test-without-building \
-            -xctestrun "${xctestrun[0]}" \
-            -destination "platform=iOS Simulator,id=${SIMULATOR_ID}" \
-            -testLanguage en \
-            -testRegion US \
-            -resultBundlePath "${RESULT_BUNDLE_PATH}" \
-            -collect-test-diagnostics never \
-            -parallel-testing-enabled NO \
-            "${selection[@]}"
-          duration_seconds=$((SECONDS - start_seconds))
-          if [[ "${live}" == "true" ]]; then
-            # Every native contract class must have passed.
-            xcrun xcresulttool get test-results tests --path "${RESULT_BUNDLE_PATH}" --compact > contract-results.json
-            for contract_class in ${CONTRACT_TEST_CLASSES}; do
-              /usr/bin/jq -e --arg prefix "test://com.apple.xcode/Talaria/${contract_class}/" '
-                any(.. | objects; .nodeType? == "Test Case" and .result? == "Passed" and ((.nodeIdentifierURL? // "") | startswith($prefix)))
-              ' contract-results.json >/dev/null || { echo "Native contract class ${contract_class} did not pass" >&2; exit 1; }
-            done
-            # A missing fixture makes the live test skip, so require an explicit pass.
-            /usr/bin/jq -e --arg id "test://com.apple.xcode/Talaria/${LIVE_CONTRACT_TEST}" '
-              [.. | objects | select(.nodeType? == "Test Case" and ((.nodeIdentifierURL? // "") | startswith($id)))]
-              | length == 1 and .[0].result == "Passed"
-            ' contract-results.json >/dev/null || { echo "The live Web contract test did not pass against the fixture" >&2; exit 1; }
-          fi
-          echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
-          echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Report slowest tests
-        if: always()
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-          if [[ ! -d "${RESULT_BUNDLE_PATH}" ]]; then
-            echo "No result bundle is available; skipping slow-test reporting."
-            exit 0
-          fi
-
-          xcrun xcresulttool get test-results tests \
-            --path "${RESULT_BUNDLE_PATH}" \
-            --compact > test-results.json
-
-          python3 - <<'PY' | tee slowest-tests.txt
-          import json
-
-          with open("test-results.json", encoding="utf-8") as results_file:
-              results = json.load(results_file)
-
-          tests = []
-
-          def visit(node, parents):
-              name = node.get("name", "<unnamed>")
-              node_type = node.get("nodeType")
-              path = [*parents, name]
-              duration = node.get("durationInSeconds")
-              if node_type == "Test Case" and isinstance(duration, (int, float)):
-                  tests.append((duration, " / ".join(path)))
-              for child in node.get("children", []):
-                  visit(child, path)
-
-          for root in results.get("testNodes", []):
-              visit(root, [])
-
-          print("Slowest test cases:")
-          for duration, name in sorted(tests, reverse=True)[:20]:
-              print(f"{duration:8.3f}s  {name}")
-          PY
-
-          {
-            echo ""
-            echo "#### Slowest test cases"
-            echo '```text'
-            cat slowest-tests.txt
-            echo '```'
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Reject skipped UI tests
-        run: |
-          options=()
-          # Exactly one pull-request shard owns the launch smoke test, and it must pass there.
-          if grep -qx -- "-only-testing:${LAUNCH_SMOKE_TEST}" selection.txt; then options+=(--require-launch-smoke); fi
-          scripts/assert-no-skipped-ui-tests "${RESULT_BUNDLE_PATH}" "${options[@]}"
-
-      # Performance budgets are only useful against previous runs, so every run
-      # keeps its measurements as an artifact and prints them into the summary.
-      - name: Record performance metrics
-        if: always()
-        continue-on-error: true
-        run: scripts/report-performance-metrics "${RESULT_BUNDLE_PATH}"
-
-      - name: Upload performance metrics
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@v7
-        with:
-          name: performance-metrics-shard-${{ matrix.shard }}
-          path: |
-            app/performance-metrics.json
-            app/performance-metrics.txt
-          retention-days: 30
-          overwrite: true
-          if-no-files-found: ignore
-
-      - name: Upload test results on failure
-        if: failure()
-        continue-on-error: true
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-results-shard-${{ matrix.shard }}
-          path: app/TestResults.xcresult
-          retention-days: 14
-          overwrite: true
-          if-no-files-found: ignore
+    uses: ./.github/workflows/app-tests.yml
+    with:
+      mode: ${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && 'pull-request' || 'contracts' }}
+      contracts: ${{ needs.changes.result != 'success' || needs.changes.outputs.contracts != 'false' }}
 
   tooling:
     needs: changes
@@ -443,7 +151,7 @@ jobs:
 
   gate:
     name: CI Gate
-    needs: [changes, app-build, app-test, app-tooling, tooling, web, web-docker, relay, contracts]
+    needs: [changes, app, app-tooling, tooling, web, web-docker, relay, contracts]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

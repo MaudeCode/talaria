@@ -14,11 +14,13 @@ import sys
 SUITES = {"app", "app_tooling", "web_server", "web_frontend", "docker", "relay", "contracts", "tooling"}
 CONSUMERS = {"app", "web_server", "web_frontend", "relay", "contracts"}
 WEB_BUILD = {"web_server", "web_frontend", "docker", "contracts"}
-JOBS = {"app-build": {"app", "contracts"}, "app-test": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend"},
+JOBS = {"app": {"app", "contracts"}, "app-tooling": {"app_tooling"}, "web": {"web_server", "web_frontend"},
         "web-docker": {"docker"}, "relay": {"relay"}, "contracts": {"contracts"}}
 WORKFLOWS = {
     # CI owns the App jobs and the Web contract probe's fixture handoff.
     "ci.yml": {"app", "contracts", "tooling"},
+    "app-tests.yml": {"app", "contracts", "tooling"},
+    "ui-suite.yml": {"tooling"},  # Nightly and release gate only; PR CI runs its shared app-tests.yml.
     "web-verify.yml": {"web_server", "web_frontend", "tooling"},
     "web-docker-smoke.yml": {"docker", "tooling"},
     "relay-verify.yml": {"relay", "tooling"},
