@@ -169,12 +169,12 @@ export async function runBootstrap(ctx: LaunchContext, args: BootstrapArgs, serv
   const scheme = tls ? 'https' : 'http'
   const foregroundReason = args.foreground ? '--foreground' : detectSupervisor(env)
   if (foregroundReason) {
-    log(`[bootstrap] Starting Hermes Web UI on ${scheme}://${hostAuthority(args.host, args.port)} (foreground mode: ${foregroundReason})`)
+    log(`[bootstrap] Starting Talaria Web on ${scheme}://${hostAuthority(args.host, args.port)} (foreground mode: ${foregroundReason})`)
     await serveInProcess()
     return 0
   }
   const logPath = join(stateDir, `bootstrap-${String(args.port)}.log`)
-  log(`[bootstrap] Starting Hermes Web UI on ${scheme}://${hostAuthority(args.host, args.port)}`)
+  log(`[bootstrap] Starting Talaria Web on ${scheme}://${hostAuthority(args.host, args.port)}`)
   const fd = openSync(logPath, 'a')
   // The worker re-applies the checkout `.env` before serving; the resolved host/port travel as explicit serve
   // arguments so a `.env` HERMES_WEBUI_PORT cannot override what the user asked for on the command line.

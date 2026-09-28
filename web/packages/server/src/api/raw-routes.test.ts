@@ -238,6 +238,7 @@ describe('raw byte routes', () => {
     expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8')
     const html = await res.text()
     expect(html).toContain('<html lang="en">')
+    expect(html).toContain('Exported from Talaria Web on ')
     expect(html).toContain('<strong>world</strong>')
     expect(html).toContain('<code>[image: https://evil.example/leak.png]</code>')
     expect(html).not.toContain('<img src="https://evil.example')

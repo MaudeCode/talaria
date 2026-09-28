@@ -116,7 +116,7 @@ async function allSessions(api: WebApiClient): Promise<Json[] | { error: string 
 
 export function createTalariaMcpServer(opts: McpClientOptions): McpServer {
   const api = new WebApiClient(opts)
-  const server = new McpServer({ name: 'hermes-webui', version: '1.0.0' })
+  const server = new McpServer({ name: 'talaria-web', version: '1.0.0' })
 
   server.registerTool('list_projects', { description: 'List all session projects with their IDs, names, colors, and session counts (scoped to active profile).', inputSchema: {} }, async () => {
     const projects = await api.get('/api/projects')

@@ -77,7 +77,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   })
   const address = server.address()
   const port = typeof address === 'object' && address ? address.port : config.port
-  log(`  Hermes Web UI listening on ${scheme}://${config.host}:${port}`)
+  log(`  Talaria Web listening on ${scheme}://${config.host}:${port}`)
   const close = async () => {
     await new Promise<void>((resolve) => {
       server.close(() => { resolve() })
