@@ -1,3 +1,4 @@
+import notify
 import XCTest
 
 /// Launched-app smoke coverage for the agent panels reached from the sidebar (TAL-71).
@@ -38,7 +39,7 @@ class AgentPanelUITestCase: TalariaUITestCase {
             openNavigation.tap()
         }
         XCTAssertTrue(
-            chats.waitForExistence(timeout: 5),
+            chats.waitForExistence(timeout: Self.navigationTimeout),
             "\(panel) offered no way back to the session list"
         )
         chats.tap()
@@ -50,7 +51,7 @@ class AgentPanelUITestCase: TalariaUITestCase {
 
     func tapBack(from bar: XCUIElement) {
         let back = bar.buttons["BackButton"]
-        XCTAssertTrue(back.waitForExistence(timeout: 5), "The pushed screen offered no Back control")
+        XCTAssertTrue(back.waitForExistence(timeout: Self.navigationTimeout), "The pushed screen offered no Back control")
         tapCenter(of: back)
     }
 
@@ -60,11 +61,13 @@ class AgentPanelUITestCase: TalariaUITestCase {
             .firstMatch
     }
 
-    /// The panel fixture stalls each panel's first load, so the loading surface is a real
-    /// state rather than a frame that may already be gone when the query runs.
+    /// The panel fixture holds each panel's first load until this releases it, so the loading
+    /// surface stays up however long a slow runner takes to find it (TAL-401).
     func assertLoadingResolves(_ label: String, panel: String) {
         let loading = element(labelled: label)
-        XCTAssertTrue(loading.waitForExistence(timeout: 5), "\(panel) never showed its loading state")
+        XCTAssertTrue(loading.waitForExistence(timeout: Self.navigationTimeout), "\(panel) never showed its loading state")
+        // Matches `UITestPanelScenario.releaseLoadsNotification` in the app's fixture.
+        notify_post("dev.kil.talaria.ui-test.release-panel-loads")
         XCTAssertTrue(loading.waitForNonExistence(timeout: 20), "\(panel) stayed in its loading state")
     }
 
