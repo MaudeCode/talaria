@@ -9,8 +9,8 @@ the [Talaria monorepo](../README.md) next to the iOS app and the Relay.
 - **Contracts** — `packages/contracts`, published as `@maudecode/talaria-web-contracts`: every route, SSE
   event, and sidecar RPC method as Zod schemas; the OpenAPI document at `../contracts/web-api.openapi.json`
   is generated from it and consumed by the iOS app.
-- **Frontend** — `packages/frontend`, a TanStack Start / React SPA whose production build is committed
-  under `static/dist/` so installs need no frontend toolchain.
+- **Frontend** — `packages/frontend`, a TanStack Start / React SPA. CI builds it into `static/dist/`, which ships
+  inside the npm package and the container image, so installs need no frontend toolchain. It is not committed.
 - **Sidecar** — `sidecar/talaria_sidecar`, stdlib-only Python that wraps the Agent modules (chat turns,
   approvals, profiles, cron, kanban, skills, providers, auxiliary models, STT, `state.db` writes).
 
@@ -53,16 +53,18 @@ talaria-web ctl <start|stop|restart|status|logs>    daemon control
 talaria-web-mcp                                     MCP server over the HTTP API
 ```
 
-From a source checkout:
+From a source checkout (for contributors; it never updates itself):
 
 ```bash
 git clone --filter=blob:none --sparse --single-branch https://github.com/MaudeCode/talaria.git talaria
 git -C talaria sparse-checkout set web contracts scripts
 cd talaria/web
-npm ci --workspace packages/contracts --workspace packages/server --include=dev
-npm run build --workspace packages/contracts && npm run build --workspace packages/server
+npm ci
+npm run build:fast    # contracts, server, and the frontend bundle in static/dist
 node packages/server/dist/bin/talaria-web.js
 ```
+
+Update a checkout with `git pull`, then run `npm ci` and `npm run build:fast` again.
 
 Without an Agent the server still starts: the UI, sessions, files, git, and settings work, while chat and
 other Agent-backed routes answer `503` with `condition: sidecar_unavailable` until an Agent is installed.
@@ -159,14 +161,12 @@ Agent gateway and the dashboard. Details, GPU images, and failure modes: [docs/d
 
 ## Updates
 
-Settings → System checks for updates on the **Stable** (completed release sets) or **Experimental**
-(`origin/main`) channel. A recognized clean git checkout of this repository fast-forwards in place, runs the
-`npm ci` / `npm run build` steps above, and restarts once active work drains and embedded terminals close; a failed build leaves the old
-release stamp and server in place and reports the npm error. Update checks run at startup and every five minutes.
-Enable **Automatically apply Web updates** to apply them: source installations can follow Experimental `origin/main`, and direct global
-npm installations can install the exact package in a completed Stable release or the verified Experimental artifact on
-GHCR. Changing the channel switches an npm installation on its next update, in either direction. Containers remain
-manual image replacements. Details:
+Settings → System checks for updates on the **Stable** (completed release sets) or **Experimental** (each passing
+`main` commit, published to GHCR) channel. A direct global npm installation installs the exact package in a completed
+Stable release or the verified Experimental artifact, then restarts once active work drains and embedded terminals
+close. Changing the channel switches the installation on its next update, in either direction. Update checks run at
+startup and every five minutes; enable **Automatically apply Web updates** to apply them. Source checkouts are for
+contributors and report a manual update: update them with git. Containers remain manual image replacements. Details:
 [docs/talaria-updates.md](docs/talaria-updates.md).
 The Notifications bell keeps a bounded server-owned history of update progress and results across Web
 restarts. Talaria Web and the iPhone app render the same records, including required acknowledgement and

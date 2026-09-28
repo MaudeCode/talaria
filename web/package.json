@@ -16,7 +16,6 @@
     "lint": "npm run lint -w packages/contracts && npm run lint -w packages/server && npm run lint -w packages/frontend",
     "test": "npm run build -w packages/contracts && npm test -w packages/contracts && npm test -w packages/server && npm test -w packages/frontend",
     "e2e": "npm run e2e -w packages/frontend",
-    "check-dist": "npm run check-dist -w packages/frontend",
     "openapi": "npm run openapi -w packages/contracts"
   },
   "engines": {

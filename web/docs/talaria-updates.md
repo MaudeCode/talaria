@@ -7,20 +7,23 @@ opt-in and requires update checks to be enabled. It applies only Web updates and
 retries blocked or failed attempts on the next check. Existing chats and manual cron
 jobs finish first, and open embedded terminals must be closed before an update;
 new chats receive a retry response while files are changing or restart is pending.
-For Git source installations, Experimental follows `origin/main` through a clean Git fast-forward and needs only Git
-read access. It does not query release manifests or require a release API token.
-It offers updates only when the net changes under `web/` or `contracts/` differ.
-Counts and change summaries include only commits touching those paths. App-only,
-Relay-only, root documentation/CI/changelog-only, and fully reverted Web changes
-leave Web up to date without changing its checkout or restarting it. When Web or
-shared contracts do change, applying the update advances to the exact latest
-main commit, including its shared history metadata.
-Stable source updates follow completed releases. Stable tags are
+Only a direct global npm installation (`npm install -g @maudecode/talaria-web`) updates itself. Stable installs the
+exact package in the newest completed release set; Experimental installs the verified artifact that CI publishes to
+`ghcr.io/maudecode/talaria-web-experimental` for each passing `main` commit that changes Web or shared contracts.
+Changing the channel switches the installation on its next update, in either direction, after backing up the
+persisted stores.
+
+A source checkout is for contributors. The updater reports it as a manual update with a server-owned message and
+never fetches, merges, rebuilds or restamps it: update it with `git pull`, then `npm ci` and `npm run build:fast`
+(see the README). The frontend bundle in `static/dist/` is built, not committed, so a checkout that skips the build
+has no UI.
+
+Stable tags are
 `web-vX.Y.Z`; experimental tags are `web-exp-vX.Y.Z`. App and Relay tags cannot
 become Web's version. Public Hermes WebUI imports were retired with the TypeScript backend; there is no
 upstream import feed.
 
-For Stable source updates and both packaged channels, the updater reads root releases named `release-set-<commit SHA>` and their
+For Stable, the updater reads root releases named `release-set-<commit SHA>` and their
 `release-set.json` asset. Only `status: complete` manifests with matching immutable
 Web references advertise an update. A tag or draft release alone is insufficient.
 The publisher must make this record public to authorized readers only after all
@@ -29,43 +32,18 @@ component gates pass. Lookup failures remain unavailable, never â€œup to date.â€
 For private release lookup, set `TALARIA_RELEASE_TOKEN` in the Web process environment
 to a token with **Contents: read** on this repository. This token is separate from
 Agent/provider credentials. Downloads strip authorization before following the
-GitHub asset redirect. Source updates also require Git's own HTTPS credential
-helper or SSH authentication; the release API token does not configure Git.
+GitHub asset redirect.
 See GitHub's [release permissions](https://docs.github.com/en/rest/releases/releases#list-releases)
 and [asset download API](https://docs.github.com/en/rest/releases/assets#get-a-release-asset).
 
-Automatic source updates require a recognized Talaria origin and the `web/`
-component under the Git root. Normal clones and Git worktrees are supported.
-The complete checkout must be clean, including App/Relay edits and untracked
-files. Experimental source updates fetch only `origin/main`; Stable fetches the selected
-published tag, checks its commit against the manifest and verifies packaged
-compatibility metadata. Both paths perform
-a fast-forward that protects ignored files from overwrite, then install and
-build the Web packages (`npm ci` for contracts and server, `npm run build` for
-each) before the release stamp is written; the supervisor re-executes the
-rebuilt `packages/server/dist/bin/talaria-web.js`. A failed build reports the
-npm error, keeps the previous stamp and running server, and the next Update
-retries the build from the advanced source. Divergent histories
-require manual reconciliation. A checkout ahead of the selected published release
-is reported as manual, rather than a successful automatic update, and stays at
-its current revision. At startup, an otherwise valid source stamp must match
-Git HEAD; a mismatch or unreadable Git identity reports development provenance.
-Packaged artifacts without Git retain their baked release identity.
-
-Experimental source checks report the current and target Git commits. After relevant source advances,
-**Finish applying this release** remains available until the server restarts with that revision.
-An unchanged generated release stamp is removed when advancing to unreleased
-main code; modified stamps require manual inspection. Experimental source never fabricates a
-completed release identity. Switching back to Stable does not rewind a checkout
-that is ahead of the published release.
-
-Source updates advance the monorepo checkout; deployment remains component-specific.
-The operation updates Web provenance and schedules a Web restart: once active work
+An npm update stages the new package beside the installed one, verifies its name, bins and release identity,
+and swaps it in only if the update settings are unchanged; any failure keeps the installed package. It then
+schedules a Web restart: once active work
 drains and embedded terminals are closed, the server worker exits with code 75 and the
 `talaria-web serve` supervisor respawns it, so the PID tracked by `ctl`, launchd,
 or systemd never changes. Existing
 active-run guards still apply. The compatibility `force` and `clear_lock` endpoints
-use this same clean-only path for Web. Git owns its locks; the server never deletes
+use this same path for Web, so they never mutate a source checkout. Git owns its locks; the server never deletes
 them. External Agent update and gateway-restart behavior stays separate. Settings
 provides an independent **Update Agent** action, including when Web is current
 or requires manual handling. Applying Web does not also update Agent.
@@ -176,11 +154,12 @@ Experimental preparation creates a tracking `main` branch without a release stam
 Stable preparation checks out the selected tag's commit detached and stamps
 its verified provenance. The receipt reports `updateChannel`. Select that channel
 in Settings after activating the deployment; preparation does not edit existing
-user settings or state. The repository already commits its frontend build, so
-Git updates deliver those assets without a frontend build. The receipt lists the
-`install`, `build`, and `launch` commands (`npm ci` for the contracts and server
-workspaces, their builds, then the `talaria-web` bin), independently of whether
-Git selected main or a release.
+user settings or state. The frontend bundle is not committed, so the receipt's
+`install` and `build` commands (`npm ci`, then `npm run build:fast` for the
+contracts, server and frontend) must run before `launch` (the `talaria-web` bin),
+independently of whether Git selected main or a release. A prepared checkout is a
+source checkout: it never updates itself. For a deployment that should follow
+Stable or Experimental automatically, install the npm package instead, as below.
 
 After preparation succeeds, stop the old service, change its working directory
 and launch command to the paths in the preparation receipt, then start and check

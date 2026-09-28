@@ -8,8 +8,3 @@
 # or directory`.
 *.sh text eol=lf
 *.bash text eol=lf
-
-# Committed frontend build output: generated, minified vendor code. Not diffed
-# by default and exempt from whitespace checks (template literals in bundled
-# grammars carry trailing spaces that are part of the source).
-static/dist/** linguist-generated -diff -whitespace

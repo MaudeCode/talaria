@@ -10,14 +10,14 @@ inventory of what moved where during the rewrite is
 
 ```
 web/
-  package.json                 npm workspaces root: build, test, typecheck, lint, e2e, check-dist, openapi
+  package.json                 npm workspaces root: build, test, typecheck, lint, e2e, openapi
   packages/contracts/          @maudecode/talaria-web-contracts — oRPC contract, Zod schemas, SSE unions,
                                sidecar RPC schema and fixtures, OpenAPI generator
   packages/server/             @maudecode/talaria-web — HTTP server, oRPC handlers, SSE, state, sidecar
                                client, bootstrap/ctl/update CLIs, MCP bin
   packages/frontend/           TanStack Start / React SPA consuming the contract client
   sidecar/                     talaria_sidecar (stdlib Python) + its pytest suite; agent_dependency.json pins the Agent
-  static/dist/                 committed frontend build served by the server
+  static/dist/                 frontend build served by the server (built, not committed)
   Dockerfile, docker-compose*.yml, docker_init.bash   node:24-slim image; Python only for the Agent venv
 ```
 
@@ -100,8 +100,8 @@ one approval so browser e2e and the iOS contract runner need no Agent.
 `docs/architecture/frontend-migration.md`: routes, features, the contract client (`src/api/orpc.ts`,
 `client.ts` with CSRF, GET coalescing, 401 redirect, timeouts), SSE consumers on the contract event unions,
 the sandboxed extension platform (`docs/architecture/extension-protocol-v1.md`), i18n, service worker, and
-the in-memory contract server used by Vitest (`src/adapters/memory.ts`). `npm run build:fast` produces the
-committed `static/dist/`; `check-dist` verifies it is reproducible.
+the in-memory contract server used by Vitest (`src/adapters/memory.ts`). `npm run build:fast` produces
+`static/dist/`, which is not committed: CI builds it for tests, the npm package and the container image.
 
 ## 6. Runtime and startup
 

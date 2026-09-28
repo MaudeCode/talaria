@@ -49,18 +49,17 @@ packages/frontend/              editable source (npm workspace "@maudecode/talar
     lib/                        small utilities (persisted JSON, safeNextPath, base url)
     sw.ts                       custom service worker (injectManifest)
   e2e/                          Playwright functional specs
-static/dist/                    committed production output served by the TypeScript server
+static/dist/                    production output served by the TypeScript server (built, not committed)
   index.html                    prerendered SPA shell with token placeholders
   assets/*.[hash].js|css        hashed chunks
   sw.js, manifest.webmanifest, workbox-*.js
 static/brand/                   brand artwork (SVG/PNG favicons, apple touch icon)
 ```
 
-`static/dist/` is generated. It is committed so a source checkout, the npm
-package, and the container image serve the UI without a frontend build. CI rebuilds from a
-clean `npm ci`; `frontend/scripts/check-dist.mjs` verifies the committed output
-against a clean build on demand (the CI diff gate was removed by the ticket
-owner's scope amendment).
+`static/dist/` is generated and not committed (TAL-379). CI builds it from a clean `npm ci` for the server
+tests and e2e suite, `releases/build.py` builds it into every npm package, and the Docker image builds it in a
+native `frontend-build` stage, so installs serve the UI without a frontend toolchain. A source checkout runs
+`npm run build:fast` itself.
 
 ## 3. Build and serving
 
@@ -69,8 +68,7 @@ owner's scope amendment).
   worker injection, then writes `static/dist/`. Source maps are off unless
   `HERMES_WEBUI_SOURCEMAP=1`.
 - Determinism: Vite's content hashes are stable for identical inputs; the build
-  strips timestamps and sorts precache entries. `check-dist.mjs` rebuilds to a
-  temporary directory and diffs byte-for-byte.
+  strips timestamps and sorts precache entries.
 - The server serves the shell from `static/dist/index.html` for the SPA allowlist
   (section 4). It substitutes three placeholders at request time:
   `__WEBUI_VERSION__`, `__BASE_HREF__` (a relative depth prefix such as `./`
@@ -289,8 +287,7 @@ through the server-owned consented proxy. Legacy injection and globals are gone.
   actions.
 - Dependencies are pinned by `frontend/package-lock.json`. Update and audit
   with `npm --prefix frontend outdated`, `npm --prefix frontend audit`, then
-  `npm --prefix frontend update <pkg>` followed by `npm run build` and,
-  optionally, `npm run check-dist`.
+  `npm --prefix frontend update <pkg>` followed by `npm run build`.
 
 ## 13a. Scope amendments
 
@@ -342,7 +339,7 @@ the parity matrix. Mechanisms worth knowing:
 | Behaviour | Vitest + RTL | focus, keyboard, live regions, forms, dialogs, menus, comboboxes, error states, reduced motion |
 | End to end | `npm run e2e` (Node Playwright) | navigation, hard refresh, chat lifecycle with the deterministic gateway, reconnect, auth, onboarding, extensions, PWA update, subpath mount at desktop and mobile viewports |
 | Server | `npm test -w packages/server` | SPA allowlist, bootstrap, auth/CSRF/profile boundaries, share, extension assets/sidecars, 404s, contract fixtures |
-| Packaging | `npm run check-dist`, Docker smoke | the npm package and container include `static/dist/` |
+| Packaging | `releases/build.py`, Docker smoke | the npm package and container include `static/dist/` |
 
 Tests pin clocks, locale (`en`), data, and viewport for deterministic browser
 checks.

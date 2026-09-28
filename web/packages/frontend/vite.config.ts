@@ -16,7 +16,7 @@ function hermesTheme(): Plugin {
   }
 }
 
-// The Python server serves the committed output from ../static/dist (see
+// The server serves the built output from ../static/dist, which is not committed (see
 // scripts/finalize-dist.mjs). The service worker is built by scripts/build-sw.mjs
 // (workbox injectManifest) after the app build, because the Start builder does
 // not run vite-plugin-pwa's closeBundle for the client environment. Relative base keeps hashed asset URLs valid

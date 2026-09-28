@@ -1,6 +1,16 @@
+# The frontend bundle is platform-independent, so it is built once natively and only static/dist enters the
+# image; it is not committed (TAL-379). The frontend imports the contracts package, which it builds first.
+FROM --platform=$BUILDPLATFORM node:24-slim AS frontend-build
+WORKDIR /apptoo
+COPY . /apptoo
+RUN npm ci --no-audit --no-fund --include=dev --workspace packages/contracts --workspace packages/frontend \
+    && npm run build --workspace packages/contracts \
+    && npm run build:fast --workspace packages/frontend \
+    && rm -rf /root/.npm
+
 # Build the contracts and server packages natively on the build machine: compiling them (and node-pty) under
-# emulation for a foreign target is what made multi-platform releases slow (TAL-321). The frontend bundle is
-# the committed static/dist tree. node-pty has no Linux prebuilds, so a foreign target cross-compiles it.
+# emulation for a foreign target is what made multi-platform releases slow (TAL-321). node-pty has no Linux
+# prebuilds, so a foreign target cross-compiles it.
 FROM --platform=$BUILDPLATFORM node:24-slim AS node-build
 ARG TARGETARCH
 WORKDIR /apptoo
@@ -119,6 +129,7 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/b
 
 # The workspace built natively above: sources, contracts/server dist and production node_modules only.
 COPY --from=node-build --chown=root:root /apptoo /apptoo
+COPY --from=frontend-build --chown=root:root /apptoo/static/dist /apptoo/static/dist
 # A node-pty built for the wrong architecture would only fail at the first terminal; fail the build instead.
 RUN node -e 'require("node-pty")'
 

@@ -188,8 +188,9 @@ def prepare(legacy, destination, release, *, channel="stable"):
     return {"prepared": True, "legacyRevision": old, "sourceRevision": source,
             "tag": release["tag"] if release else None, "updateChannel": channel,
             "workingDirectory": str(destination / "web"), "environmentCopied": environment is not None,
-            "install": ["npm", "ci", "--prefix", str(destination / "web"), "--workspace", "packages/contracts", "--workspace", "packages/server", "--include=dev"],
-            "build": ["npm", "run", "build", "--prefix", str(destination / "web"), "--workspace", "packages/contracts", "--workspace", "packages/server"],
+            # The frontend bundle is built, not committed (TAL-379), so the checkout builds every workspace.
+            "install": ["npm", "ci", "--prefix", str(destination / "web"), "--include=dev"],
+            "build": ["npm", "run", "build:fast", "--prefix", str(destination / "web")],
             "launch": ["node", str(destination / "web/packages/server/dist/bin/talaria-web.js"), "--foreground", "--no-browser", "--skip-agent-install"]}
 
 
