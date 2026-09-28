@@ -72,6 +72,10 @@ jobs:
         if: inputs.full
         run: ../scripts/check tooling
 
+      # Always runs: an image added under any path would not select the tooling suite (TAL-390).
+      - name: Reject committed images outside the asset locations
+        run: python3 ../scripts/check-committed-images.py
+
       - name: Validate release fragments
         env:
           CHANGE_BASE: ${{ github.event.before }}

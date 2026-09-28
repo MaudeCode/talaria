@@ -1,0 +1,1 @@
+{"skip": "Repository hygiene only: removes committed PR and validation screenshots and adds a check that keeps evidence out of git; no app, Web, or Relay behavior changes."}

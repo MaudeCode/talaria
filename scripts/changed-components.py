@@ -44,6 +44,8 @@ SCRIPTS = {
     "check-agent-compatibility.py": {"web_server", "docker", "tooling"},
     "critical-markdown-check.py": {"tooling"},
     "test-critical-markdown-check.py": {"tooling"},
+    "check-committed-images.py": {"tooling"},
+    "test-check-committed-images.py": {"tooling"},
     "check-previous-app.py": {"contracts", "tooling"},
     "check-release-contracts.py": {"contracts", "tooling"},
     "check": {"tooling"},
