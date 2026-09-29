@@ -1,29 +1,29 @@
 #if DEBUG
 import Foundation
+import notify
 
 /// Deterministic workspace, file-preview, archived-session and Git responses (TAL-72).
 ///
 /// Opt-in through `--ui-test-workspace` so every existing fixture launch keeps its exact
-/// current responses (no repository, no files). `--ui-test-read-errors` and
-/// `--ui-test-file-read-errors` turn the reads these screens depend on into failures — split
-/// so a file preview can fail inside a browser that still lists it — and
-/// `--ui-test-workspace-slow-reads` holds a read long enough for its loading state to be
-/// observed. Remote Git writes stay rejected unless `--ui-test-git-writes` grants the
-/// capability; the fixture never reaches a real remote, so a push only ever moves fixture
-/// state.
+/// current responses (no repository, no files). `fixture-unreadable.txt` is listed but never
+/// reads, so a file preview fails inside a browser that still lists it; the other screens' read
+/// failures are view-model tests (TAL-402). `--ui-test-workspace-slow-reads` holds
+/// each listing and status read until the test releases it, so its loading state can be observed.
+/// Remote Git writes stay rejected until the test posts `grantGitWritesNotification`; the fixture
+/// never reaches a real remote, so a push only ever moves fixture state.
 extension UITestFixtureURLProtocol {
     enum WorkspaceFixture {
         static let argument = "--ui-test-workspace"
-        static let readErrorsArgument = "--ui-test-read-errors"
-        static let fileReadErrorsArgument = "--ui-test-file-read-errors"
         static let slowReadsArgument = "--ui-test-workspace-slow-reads"
-        static let gitWritesArgument = "--ui-test-git-writes"
+        /// Posted by a UI test to grant the remote Git write capability for the rest of the launch.
+        static let grantGitWritesNotification = "dev.kil.talaria.ui-test.grant-git-writes"
 
         static let directoryName = "fixture-dir"
         static let nestedFileName = "nested-note.txt"
         static let textFileName = "fixture-notes.txt"
         static let imageFileName = "fixture-image.png"
         static let unsupportedFileName = "fixture-archive.zip"
+        static let unreadableFileName = "fixture-unreadable.txt"
         static let textFileBody = "FixtureTextPreviewBody\nSecond deterministic line.\n"
         static let branch = "fixture-main"
         static let archivedSessionTitle = "Fixture Archived Session"
@@ -36,10 +36,19 @@ extension UITestFixtureURLProtocol {
             """
 
         static var isEnabled: Bool { hasArgument(argument) }
-        static var readsFail: Bool { hasArgument(readErrorsArgument) }
-        static var fileReadsFail: Bool { hasArgument(fileReadErrorsArgument) }
         static var readsAreSlow: Bool { hasArgument(slowReadsArgument) }
-        static var allowsGitWrites: Bool { hasArgument(gitWritesArgument) }
+        static var allowsGitWrites: Bool { gitWriteLock.withLock { gitWritesGranted } }
+
+        private static let gitWriteLock = NSLock()
+        nonisolated(unsafe) private static var gitWritesGranted = false
+        nonisolated(unsafe) private static var gitWriteToken: Int32 = 0
+
+        /// Registers at launch, before any push the test makes.
+        static func listenForGitWriteGrant() {
+            notify_register_dispatch(grantGitWritesNotification, &gitWriteToken, .global()) { _ in
+                gitWriteLock.withLock { gitWritesGranted = true }
+            }
+        }
 
         private static func hasArgument(_ argument: String) -> Bool {
             ProcessInfo.processInfo.arguments.contains(argument)
@@ -87,21 +96,11 @@ extension UITestFixtureURLProtocol {
         }
     }
 
-    /// Reads these screens depend on, failed together so each surface has an error state.
+    /// The one read that always fails: a file the browser lists but cannot preview.
     static func isFailingWorkspaceRead(_ request: URLRequest) -> Bool {
         guard let url = request.url else { return false }
-        if WorkspaceFixture.fileReadsFail, url.path == "/api/file" || url.path == "/api/file/raw" {
-            return true
-        }
-        guard WorkspaceFixture.readsFail else { return false }
-        switch url.path {
-        case "/api/list", "/api/git/status", "/api/providers":
-            return true
-        case "/api/sessions":
-            return includesArchived(url)
-        default:
-            return false
-        }
+        return WorkspaceFixture.isEnabled && url.path == "/api/file"
+            && queryValue("path", in: url) == WorkspaceFixture.unreadableFileName
     }
 
     static func workspaceStatusCode(for request: URLRequest) -> Int {
@@ -112,13 +111,11 @@ extension UITestFixtureURLProtocol {
         WorkspaceFixture.isEnabled && url.path == "/api/file/raw" ? "image/png" : nil
     }
 
-    /// Delays a read long enough for its loading state to be asserted, without a real server.
-    /// The delay has to outlast the navigation that opens the screen, since the request
-    /// starts as the destination appears and nothing else holds the response back.
-    static func workspaceResponseDelay(for url: URL) -> TimeInterval? {
-        guard WorkspaceFixture.isEnabled, WorkspaceFixture.readsAreSlow else { return nil }
-        guard url.path == "/api/list" || url.path == "/api/git/status" else { return nil }
-        return 8
+    /// Holds every listing and Git status read until the UI test releases it (`UITestFixtureHold`),
+    /// so each loading state stays observable without a fixed stall.
+    static func holdsWorkspaceRead(for url: URL) -> Bool {
+        WorkspaceFixture.isEnabled && WorkspaceFixture.readsAreSlow
+            && (url.path == "/api/list" || url.path == "/api/git/status")
     }
 
     private static func directoryListData(path: String) -> Data {
@@ -138,7 +135,9 @@ extension UITestFixtureURLProtocol {
             {"name":"\(WorkspaceFixture.imageFileName)","path":"\(WorkspaceFixture.imageFileName)",\
             "type":"file","size":128,"is_dir":false},\
             {"name":"\(WorkspaceFixture.unsupportedFileName)","path":"\(WorkspaceFixture.unsupportedFileName)",\
-            "type":"file","size":256,"is_dir":false}
+            "type":"file","size":256,"is_dir":false},\
+            {"name":"\(WorkspaceFixture.unreadableFileName)","path":"\(WorkspaceFixture.unreadableFileName)",\
+            "type":"file","size":64,"is_dir":false}
             """
         }
         return Data("""

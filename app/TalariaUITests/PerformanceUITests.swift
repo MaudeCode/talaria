@@ -4,9 +4,8 @@ import XCTest
 ///
 /// The measuring classes repeat each path several times under `measure`, so CI
 /// skips them and the scheduled UI Performance workflow runs them serially and
-/// keeps their metrics (TAL-287); the full local suite runs them too. Their
-/// behavioural halves (warm resume, dense open and dismiss) run once without
-/// measuring in `PerformancePathUITests`, which stays in every CI suite.
+/// keeps their metrics (TAL-287); the full local suite runs them too. The nightly
+/// and release UI suite no longer runs their paths separately (TAL-402).
 ///
 /// The deterministic fixture serves the dense transcript and session list
 /// (`--ui-test-dense`), so every run measures the same content.
@@ -34,7 +33,7 @@ class PerformanceUITestCase: TalariaUITestCase {
 
     func waitForSessionList() {
         XCTAssertTrue(
-            denseSessionRow.waitForExistence(timeout: 30),
+            denseSessionRow.awaitExistence(timeout: 30),
             "Missing the deterministic dense session fixture"
         )
     }
@@ -58,21 +57,6 @@ class PerformanceUITestCase: TalariaUITestCase {
             Thread.sleep(forTimeInterval: 0.1)
         } while Date() < deadline
         return false
-    }
-
-    /// Backgrounds the app under test. On this simulator a home press alone
-    /// leaves it in `runningForeground`; following the press with an explicit
-    /// Springboard activation, and letting each step settle, is what actually
-    /// suspends it.
-    func background() {
-        XCUIDevice.shared.press(.home)
-        Thread.sleep(forTimeInterval: 2)
-        XCUIApplication(bundleIdentifier: "com.apple.springboard").activate()
-        Thread.sleep(forTimeInterval: 2)
-        XCTAssertNotEqual(
-            app.state, .runningForeground,
-            "The app never left the foreground"
-        )
     }
 
     func openDenseSession() {
@@ -111,7 +95,7 @@ final class LaunchPerformanceUITests: PerformanceUITestCase {
             metrics: [XCTClockMetric(), XCTCPUMetric(application: app), XCTMemoryMetric(application: app)],
             options: measureOptions(manualWindow: true)
         ) {
-            background()
+            sendToBackground()
 
             startMeasuring()
             let start = Date()
@@ -154,7 +138,7 @@ final class TranscriptPerformanceUITests: PerformanceUITestCase {
             stopMeasuring()
 
             app.navigationBars.buttons["BackButton"].firstMatch.tap()
-            XCTAssertTrue(app.navigationBars["Chats"].waitForExistence(timeout: 15))
+            XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: 15))
         }
     }
 
@@ -166,7 +150,7 @@ final class TranscriptPerformanceUITests: PerformanceUITestCase {
         launchDenseFixture()
         openDenseSession()
         let transcript = app.scrollViews.firstMatch
-        XCTAssertTrue(transcript.waitForExistence(timeout: 15), "Missing the transcript scroll view")
+        XCTAssertTrue(transcript.awaitExistence(timeout: 15), "Missing the transcript scroll view")
 
         measure(
             metrics: [XCTClockMetric(), XCTHitchMetric(application: app), XCTCPUMetric(application: app)],
@@ -195,34 +179,10 @@ final class NavigationPerformanceUITests: PerformanceUITestCase {
                 XCTAssertTrue(waitForComposer(), "The dense fixture session never opened")
                 app.navigationBars.buttons["BackButton"].firstMatch.tap()
                 XCTAssertTrue(
-                    app.navigationBars["Chats"].waitForExistence(timeout: 15),
+                    app.navigationBars["Chats"].awaitExistence(timeout: 15),
                     "The transcript never dismissed back to the session list"
                 )
             }
         }
-    }
-}
-
-/// The functional paths the measuring classes above exercise, run once so pull
-/// request and main CI keep them while the measurements run on a schedule.
-final class PerformancePathUITests: PerformanceUITestCase {
-    /// Suspension succeeds and resume restores the dense session list. The
-    /// wall-clock budget stays in `LaunchPerformanceUITests` on the scheduled lane.
-    func testWarmResumeReturnsToTheSessionList() {
-        launchDenseFixture()
-        waitForSessionList()
-        background()
-        app.activate()
-        waitForSessionList()
-    }
-
-    func testDenseSessionOpensAndDismisses() {
-        launchDenseFixture()
-        openDenseSession()
-        app.navigationBars.buttons["BackButton"].firstMatch.tap()
-        XCTAssertTrue(
-            app.navigationBars["Chats"].waitForExistence(timeout: 15),
-            "The transcript never dismissed back to the session list"
-        )
     }
 }

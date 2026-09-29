@@ -120,6 +120,7 @@ struct TalariaApp: App {
         if ShareExtensionUITestHost.resetsSharedState {
             ShareExtensionUITestHost.resetSharedState()
         }
+        ShareOpenFixtureMode.storeHoldsStatus(ShareExtensionUITestHost.isActive)
         let fixture = arguments.contains(UITestFixtureEnvironment.launchArgument)
             ? UITestFixtureEnvironment.make()
             : nil

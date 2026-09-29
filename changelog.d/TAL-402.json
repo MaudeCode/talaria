@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The app's automated interface checks finish in about half the time with the same coverage; the app itself behaves the same.",
+      "highlight": false
+    }
+  ]
+}

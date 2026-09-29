@@ -1258,4 +1258,28 @@ extension ChatViewModelSendTests {
         )
     }
 
+    /// A stream that fails after partial output keeps that output, surfaces the server's message
+    /// and stops streaming, which gives the composer back (formerly
+    /// `ChatRecoveryUITests.testChatStreamSurfacesTerminalErrorAndRestoresComposer`, TAL-402).
+    @MainActor
+    func testTerminalErrorKeepsPartialOutputSurfacesTheMessageAndEndsTheStream() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            XCTAssertEqual(request.url?.path, "/api/chat/start")
+            return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+        }
+
+        let didStart = await viewModel.sendMessage("Run the deterministic fixture")
+        XCTAssertTrue(didStart)
+        streamClient.emit(.token("Partial fixture response."))
+        try await waitForStreamingContent(viewModel, toSatisfy: { $0 == "Partial fixture response." })
+        streamClient.emit(.error("Synthetic fixture failure"))
+
+        XCTAssertEqual(viewModel.messages.compactMap(\.role), ["user", "assistant"])
+        XCTAssertEqual(viewModel.messages.last?.content, "Partial fixture response.")
+        XCTAssertEqual(viewModel.sendErrorMessage, "Synthetic fixture failure")
+        XCTAssertNil(viewModel.activeStreamID)
+        XCTAssertEqual(streamClient.stopCount, 1)
+    }
+
 }

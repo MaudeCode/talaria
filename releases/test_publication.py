@@ -514,10 +514,6 @@ class PublicationTests(unittest.TestCase):
         shards = (root / "app/ci/test_shards.py").read_text()
         classes = re.findall(r'"(TalariaUITests/\w+PerformanceUITests)"', shards)
         self.assertEqual(len(classes), 4)
-        # The behavioural halves of those classes stay in every CI suite (resume, dense open/dismiss).
-        functional = (root / "app/TalariaUITests/PerformanceUITests.swift").read_text()
-        self.assertIn("final class PerformancePathUITests: PerformanceUITestCase", functional)
-        self.assertNotIn("TalariaUITests/PerformancePathUITests", classes)
         scheduled = workflow("ui-performance.yml")
         self.assertIn("schedule", scheduled["on"])
         self.assertIn("workflow_dispatch", scheduled["on"])

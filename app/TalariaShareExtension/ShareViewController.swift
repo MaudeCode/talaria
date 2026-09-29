@@ -1,5 +1,8 @@
 import UIKit
 import TalariaKit
+#if DEBUG
+import notify
+#endif
 
 @MainActor
 final class ShareViewController: UIViewController {
@@ -215,7 +218,37 @@ final class ShareViewController: UIViewController {
     /// sheet closes itself.
     private let statusDwell: TimeInterval = 2.5
 
+    #if DEBUG
+    private var statusReleaseToken: Int32 = NOTIFY_TOKEN_INVALID
+
+    /// Closes the sheet when the UI test posts `ShareOpenFixtureMode.releaseStatusNotification`,
+    /// or after a minute if it never does.
+    private func completeRequestWhenTestReleasesStatus() {
+        notify_register_dispatch(ShareOpenFixtureMode.releaseStatusNotification, &statusReleaseToken, .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.finishHeldStatus() }
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 60_000_000_000)
+            self?.finishHeldStatus()
+        }
+    }
+
+    private func finishHeldStatus() {
+        guard statusReleaseToken != NOTIFY_TOKEN_INVALID else { return }
+        notify_cancel(statusReleaseToken)
+        statusReleaseToken = NOTIFY_TOKEN_INVALID
+        extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+    }
+    #endif
+
     private func completeRequest(after delay: TimeInterval) {
+        #if DEBUG
+        // TAL-402: under the UI-test share host the status stays until the test has read it.
+        if ShareOpenFixtureMode.holdsStatus {
+            completeRequestWhenTestReleasesStatus()
+            return
+        }
+        #endif
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)

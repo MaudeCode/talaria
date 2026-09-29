@@ -31,5 +31,21 @@ public enum ShareOpenFixtureMode: String {
         UserDefaults(suiteName: TalariaShareDraft.appGroupIdentifier)?
             .set(mode.rawValue, forKey: storageKey)
     }
+
+    /// Posted by a UI test once it has read the extension's status message; the extension
+    /// closes its sheet then instead of after its usual dwell. On a hosted runner one read of the
+    /// sheet can take longer than that dwell (TAL-402).
+    public static let releaseStatusNotification = "dev.kil.talaria.ui-test.release-share-status"
+    static let holdsStatusKey = "TalariaShareHoldsStatus"
+
+    /// Whether the extension keeps a status on screen until `releaseStatusNotification`. Only the
+    /// UI-test share host turns it on, and every other app launch turns it off.
+    public static var holdsStatus: Bool {
+        UserDefaults(suiteName: TalariaShareDraft.appGroupIdentifier)?.bool(forKey: holdsStatusKey) ?? false
+    }
+
+    public static func storeHoldsStatus(_ holds: Bool) {
+        UserDefaults(suiteName: TalariaShareDraft.appGroupIdentifier)?.set(holds, forKey: holdsStatusKey)
+    }
 }
 #endif

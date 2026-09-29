@@ -169,6 +169,13 @@ final class ShareInputReaderTests: XCTestCase {
                 error as? SharedDraftStoreError,
                 .totalAttachmentBytesExceeded(maximumBytes: TalariaShareDraft.maximumSharedImportBytes)
             )
+            // The share extension shows this description as its status (formerly asserted by
+            // ShareExtensionUITests with two 12 MB files, TAL-402).
+            let limit = ByteCountFormatter.string(
+                fromByteCount: Int64(TalariaShareDraft.maximumSharedImportBytes),
+                countStyle: .file
+            )
+            XCTAssertEqual(error.localizedDescription, "Shared attachments must be \(limit) total or less.")
         }
     }
 
