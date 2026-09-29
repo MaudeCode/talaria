@@ -356,20 +356,13 @@ final class ChatComposerUITests: ChatUITestCase {
         idleComposer.tap()
         let expandedTextView = app.textViews.firstMatch
         XCTAssertTrue(expandedTextView.awaitExistence(timeout: 10))
-        let transitionCheck = "Composer transition check"
-        expandedTextView.typeText(transitionCheck)
+        expandedTextView.typeText("Composer transition check")
         XCTAssertFalse(app.buttons["Reply"].exists)
 
-        // Clear the draft and drag the keyboard away instead of relaunching: an empty,
-        // unfocused composer is the idle state the collapse starts from.
-        expandedTextView.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: transitionCheck.count))
-        XCTAssertEqual(expandedTextView.value as? String ?? "", "")
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-            .press(
-                forDuration: 0.1,
-                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
-            )
-        XCTAssertTrue(app.keyboards.firstMatch.awaitNonExistence(timeout: 3))
+        app.terminate()
+        app.launchArguments = fixtureLaunchArguments
+        app.launch()
+        _ = try openFixtureSession()
 
         let transcript = app.scrollViews["chat-detail:\(fixtureSessionTitle)"]
         XCTAssertTrue(transcript.awaitExistence(timeout: 3))
@@ -1119,22 +1112,29 @@ class AdaptiveLayoutUITestCase: TalariaUITestCase {
 }
 
 /// One test per variant: a single test walking all three launches ran past five minutes on a
-/// GitHub-hosted runner, and a failure in one variant no longer hides the others (TAL-401).
-final class AdaptiveLayoutAppUITests: AdaptiveLayoutUITestCase {
+/// GitHub-hosted runner, and a failure in one variant no longer hides the others (TAL-401). Each
+/// variant is its own class so the UI suite's shards can balance them (TAL-402).
+final class AdaptiveLayoutPortraitLightUITests: AdaptiveLayoutAppUITestCase {
     func testCoreScreensPassAccessibilityAuditsInPortraitLight() throws {
         try auditCoreScreens(Self.variants[0])
     }
+}
 
+final class AdaptiveLayoutPortraitDarkRTLUITests: AdaptiveLayoutAppUITestCase {
     func testCoreScreensPassAccessibilityAuditsInPortraitDarkRTLAccessibilityXXXL() throws {
         try auditCoreScreens(Self.variants[1])
     }
+}
 
+final class AdaptiveLayoutLandscapeUITests: AdaptiveLayoutAppUITestCase {
     func testCoreScreensPassAccessibilityAuditsInLandscapeDarkReduceMotion() throws {
         try auditCoreScreens(Self.variants[2])
     }
+}
 
-    private func auditCoreScreens(_ variant: Variant) throws {
-        XCTAssertEqual(Self.variants.count, 3, "Give every adaptive layout variant its own core-screen audit test")
+class AdaptiveLayoutAppUITestCase: AdaptiveLayoutUITestCase {
+    func auditCoreScreens(_ variant: Variant) throws {
+        XCTAssertEqual(Self.variants.count, 3, "Give every adaptive layout variant its own core-screen audit class")
         try XCTContext.runActivity(named: variant.name) { _ in
             launchFixture(variant: variant)
             let openNavigation = app.buttons["Open navigation"]
@@ -1381,8 +1381,19 @@ func poll(timeout: TimeInterval, until condition: () -> Bool) -> Bool {
 
 extension XCUIElement {
     /// `waitForExistence(timeout:)` without its one-second polling; see `poll(timeout:until:)`.
+    /// A found element still moving (a sheet, menu or sidebar sliding in) gets up to a second to
+    /// come to rest, since a tap mid-transition can land without running its action; that second
+    /// is what XCTest's own first check used to give every wait.
     func awaitExistence(timeout: TimeInterval) -> Bool {
-        poll(timeout: timeout) { exists }
+        guard poll(timeout: timeout, until: { exists }) else { return false }
+        // `firstMatch`: `exists` accepts a query with several matches, `frame` alone would not.
+        var last = firstMatch.frame
+        _ = poll(timeout: 1) {
+            let next = firstMatch.frame
+            defer { last = next }
+            return next == last
+        }
+        return true
     }
 
     /// `waitForNonExistence(timeout:)` without its one-second polling; see `poll(timeout:until:)`.
@@ -1390,7 +1401,6 @@ extension XCUIElement {
         poll(timeout: timeout) { !exists }
     }
 }
-
 class TalariaUITestCase: XCTestCase {
     /// Bound for the shared helpers' waits on a destination or control. A wait returns as soon
     /// as its element appears, so a passing run pays nothing for the margin; a 3-core
@@ -1681,6 +1691,10 @@ fileprivate extension TalariaUITestCase {
         XCTAssertGreaterThanOrEqual(session.frame.minY, viewportTop)
         XCTAssertLessThanOrEqual(session.frame.maxY, viewportBottom)
         session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // The transcript keeps scrolling into place for about a second after the chat opens, and
+        // expanding the composer or typing during it leaves an animation XCTest then waits on for
+        // a minute before every later step. XCTest's one-second first check used to cover it.
+        Thread.sleep(forTimeInterval: 1)
     }
 }
 

@@ -8,10 +8,118 @@ import XCTest
 /// The host is Talaria's own DEBUG `--ui-test-share-host` bar, so a run owns every byte it
 /// shares and depends on no pre-existing photo, document, or account. Each host launch also
 /// empties the shared inbox, so nothing carries over between tests.
-final class ShareExtensionUITests: TalariaUITestCase {
-    private static let fixtureText = "TalariaShareFixtureText"
-    private static let fixtureURL = "https://share.fixture.invalid/talaria"
+class ShareExtensionUITestCase: TalariaUITestCase {
+    static let fixtureText = "TalariaShareFixtureText"
+    static let fixtureURL = "https://share.fixture.invalid/talaria"
 
+    // MARK: - Harness
+
+    /// Mirrors `ShareExtensionUITestPayload`, which lives in the app target.
+    enum Payload: String {
+        case text
+        case url
+        case attachments
+        case unsupported
+        case oversizedFile
+        case oversizedTotal
+    }
+
+    func launchShareHost() {
+        launch(arguments: ["--ui-test-fixture", "--ui-test-share-host", "--ui-test-share-reset"])
+        XCTAssertTrue(
+            app.buttons["share-host-text"].awaitExistence(timeout: 30),
+            "Missing the share host fixture"
+        )
+    }
+
+    /// Right after launch a tap can land before the bar takes input, and nothing on screen shows
+    /// the mode, so wait until the switch is tappable first.
+    func selectOpenMode(_ identifier: String) {
+        let button = app.buttons[identifier]
+        XCTAssertTrue(button.awaitExistence(timeout: 15), "Missing the \(identifier) switch")
+        XCTAssertTrue(waitUntilHittable(button, timeout: 30), "The \(identifier) switch never became tappable")
+        button.tap()
+    }
+
+    func share(_ payload: Payload) {
+        let button = app.buttons["share-host-\(payload.rawValue)"]
+        XCTAssertTrue(button.awaitExistence(timeout: 15), "Missing the \(payload.rawValue) share button")
+        // A previous round's sheet can still be dismissing over the bar, and a tap
+        // synthesized then lands on nothing.
+        XCTAssertTrue(
+            waitUntilHittable(button, timeout: 30),
+            "The \(payload.rawValue) share button never became tappable"
+        )
+        button.tap()
+    }
+
+    func shareToTalaria(_ payload: Payload) {
+        share(payload)
+        let sheet = app.otherElements["ActivityListView"]
+        XCTAssertTrue(sheet.awaitExistence(timeout: 20), "The system share sheet did not open")
+        let talaria = talariaActivity(in: sheet)
+        XCTAssertTrue(talaria.awaitExistence(timeout: 20), "Talaria is not offered for \(payload.rawValue)")
+        XCTAssertTrue(
+            waitUntilHittable(talaria, timeout: 20),
+            "The Talaria share activity never became tappable"
+        )
+        talaria.tap()
+    }
+
+    func talariaActivity(in sheet: XCUIElement) -> XCUIElement {
+        sheet.cells.matching(NSPredicate(format: "label == %@", "Talaria")).firstMatch
+    }
+
+    func assertExtensionStatus(_ text: String, timeout: TimeInterval = 30) {
+        XCTAssertTrue(
+            element(labelContaining: text).awaitExistence(timeout: timeout),
+            "The share extension never showed: \(text)"
+        )
+    }
+
+    func inboxSummary() -> String {
+        app.staticTexts["share-host-inbox"].label
+    }
+
+    func waitForInbox(_ summary: String, timeout: TimeInterval = 20) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        repeat {
+            if inboxSummary() == summary { return true }
+            Thread.sleep(forTimeInterval: 0.25)
+        } while Date() < deadline
+
+        return false
+    }
+
+    func waitUntilHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        repeat {
+            if element.isHittable { return true }
+            Thread.sleep(forTimeInterval: 0.25)
+        } while Date() < deadline
+
+        return false
+    }
+
+    func waitForComposerDraft(containing text: String, timeout: TimeInterval = 30) -> String? {
+        let composer = app.textViews.firstMatch
+        let deadline = Date().addingTimeInterval(timeout)
+
+        repeat {
+            if composer.exists, let value = composer.value as? String, value.contains(text) {
+                return value
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        } while Date() < deadline
+
+        return nil
+    }
+}
+
+/// Shares that reach the composer, on the shipping open path and the private-selector workaround.
+final class ShareExtensionUITests: ShareExtensionUITestCase {
     /// The whole happy path: sheet, extension, app group, containing-app launch, composer.
     /// Consuming the draft has to clear it, so a later launch cannot replay it.
     func testSharedTextReachesTheComposerAndIsConsumed() throws {
@@ -79,6 +187,28 @@ final class ShareExtensionUITests: TalariaUITestCase {
         }
     }
 
+    /// The private-selector workaround behind `NSExtensionContext.open` is the App Review
+    /// risk in `ShareViewController`. This pins whether it still reaches the containing app
+    /// on the OS the suite runs against, so a regression shows up here and not in review.
+    func testWorkaroundOpenPathStillReachesTheApp() throws {
+        launchShareHost()
+        selectOpenMode("share-host-open-mode-workaround")
+
+        shareToTalaria(.text)
+        XCTAssertNotNil(
+            waitForComposerDraft(containing: Self.fixtureText),
+            """
+            The containing-app workaround no longer opens Talaria on \
+            \(ProcessInfo.processInfo.operatingSystemVersionString); sharing now ends on the \
+            manual-open fallback.
+            """
+        )
+    }
+}
+
+/// Shares the extension refuses or cannot hand over: size limits, unsupported content and the
+/// manual-open fallback. Split from `ShareExtensionUITests` so the shards balance (TAL-402).
+final class ShareExtensionRefusalUITests: ShareExtensionUITestCase {
     /// Both size-limit paths: one file over the per-item limit, and two files that only
     /// exceed it together. Each explains itself, and neither reaches the composer. Last, more
     /// web URLs than the activation rule accepts: the system must not offer Talaria at all,
@@ -109,29 +239,11 @@ final class ShareExtensionUITests: TalariaUITestCase {
         )
     }
 
-    /// The private-selector workaround behind `NSExtensionContext.open` is the App Review
-    /// risk in `ShareViewController`. This pins whether it still reaches the containing app
-    /// on the OS the suite runs against, so a regression shows up here and not in review.
-    func testWorkaroundOpenPathStillReachesTheApp() throws {
-        launchShareHost()
-        app.buttons["share-host-open-mode-workaround"].tap()
-
-        shareToTalaria(.text)
-        XCTAssertNotNil(
-            waitForComposerDraft(containing: Self.fixtureText),
-            """
-            The containing-app workaround no longer opens Talaria on \
-            \(ProcessInfo.processInfo.operatingSystemVersionString); sharing now ends on the \
-            manual-open fallback.
-            """
-        )
-    }
-
     /// When no launch path works the extension says so, and the draft has to survive for
     /// the next time the user opens Talaria themselves.
     func testManualOpenFallbackExplainsItselfAndKeepsTheDraft() throws {
         launchShareHost()
-        app.buttons["share-host-open-mode-manual"].tap()
+        selectOpenMode("share-host-open-mode-manual")
 
         shareToTalaria(.text)
         assertExtensionStatus("Shared content saved. Open Talaria manually.")
@@ -153,101 +265,5 @@ final class ShareExtensionUITests: TalariaUITestCase {
             waitForComposerDraft(containing: Self.fixtureText),
             "The manually opened app lost the draft the extension had saved"
         )
-    }
-
-    // MARK: - Harness
-
-    /// Mirrors `ShareExtensionUITestPayload`, which lives in the app target.
-    private enum Payload: String {
-        case text
-        case url
-        case attachments
-        case unsupported
-        case oversizedFile
-        case oversizedTotal
-    }
-
-    private func launchShareHost() {
-        launch(arguments: ["--ui-test-fixture", "--ui-test-share-host", "--ui-test-share-reset"])
-        XCTAssertTrue(
-            app.buttons["share-host-text"].awaitExistence(timeout: 30),
-            "Missing the share host fixture"
-        )
-    }
-
-    private func share(_ payload: Payload) {
-        let button = app.buttons["share-host-\(payload.rawValue)"]
-        XCTAssertTrue(button.awaitExistence(timeout: 15), "Missing the \(payload.rawValue) share button")
-        // A previous round's sheet can still be dismissing over the bar, and a tap
-        // synthesized then lands on nothing.
-        XCTAssertTrue(
-            waitUntilHittable(button, timeout: 30),
-            "The \(payload.rawValue) share button never became tappable"
-        )
-        button.tap()
-    }
-
-    private func shareToTalaria(_ payload: Payload) {
-        share(payload)
-        let sheet = app.otherElements["ActivityListView"]
-        XCTAssertTrue(sheet.awaitExistence(timeout: 20), "The system share sheet did not open")
-        let talaria = talariaActivity(in: sheet)
-        XCTAssertTrue(talaria.awaitExistence(timeout: 20), "Talaria is not offered for \(payload.rawValue)")
-        XCTAssertTrue(
-            waitUntilHittable(talaria, timeout: 20),
-            "The Talaria share activity never became tappable"
-        )
-        talaria.tap()
-    }
-
-    private func talariaActivity(in sheet: XCUIElement) -> XCUIElement {
-        sheet.cells.matching(NSPredicate(format: "label == %@", "Talaria")).firstMatch
-    }
-
-    private func assertExtensionStatus(_ text: String, timeout: TimeInterval = 30) {
-        XCTAssertTrue(
-            element(labelContaining: text).awaitExistence(timeout: timeout),
-            "The share extension never showed: \(text)"
-        )
-    }
-
-    private func inboxSummary() -> String {
-        app.staticTexts["share-host-inbox"].label
-    }
-
-    private func waitForInbox(_ summary: String, timeout: TimeInterval = 20) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-
-        repeat {
-            if inboxSummary() == summary { return true }
-            Thread.sleep(forTimeInterval: 0.25)
-        } while Date() < deadline
-
-        return false
-    }
-
-    private func waitUntilHittable(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-
-        repeat {
-            if element.isHittable { return true }
-            Thread.sleep(forTimeInterval: 0.25)
-        } while Date() < deadline
-
-        return false
-    }
-
-    private func waitForComposerDraft(containing text: String, timeout: TimeInterval = 30) -> String? {
-        let composer = app.textViews.firstMatch
-        let deadline = Date().addingTimeInterval(timeout)
-
-        repeat {
-            if composer.exists, let value = composer.value as? String, value.contains(text) {
-                return value
-            }
-            Thread.sleep(forTimeInterval: 0.25)
-        } while Date() < deadline
-
-        return nil
     }
 }
