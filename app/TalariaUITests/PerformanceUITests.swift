@@ -59,22 +59,6 @@ class PerformanceUITestCase: TalariaUITestCase {
         return false
     }
 
-    /// Backgrounds the app under test. On this simulator a home press alone
-    /// leaves it in `runningForeground`; following the press with an explicit
-    /// Springboard activation is what actually suspends it. A press right after
-    /// launch can be dropped, so the pair repeats until the app has left.
-    func background() {
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        XCTAssertTrue(
-            poll(timeout: 20) {
-                XCUIDevice.shared.press(.home)
-                springboard.activate()
-                return poll(timeout: 4) { app.state != .runningForeground }
-            },
-            "The app never left the foreground"
-        )
-    }
-
     func openDenseSession() {
         waitForSessionList()
         tapCentre(of: denseSessionRow)
@@ -111,7 +95,7 @@ final class LaunchPerformanceUITests: PerformanceUITestCase {
             metrics: [XCTClockMetric(), XCTCPUMetric(application: app), XCTMemoryMetric(application: app)],
             options: measureOptions(manualWindow: true)
         ) {
-            background()
+            sendToBackground()
 
             startMeasuring()
             let start = Date()

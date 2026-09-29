@@ -156,7 +156,9 @@ final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
             "Nothing has been shared yet"
         )
 
-        XCUIDevice.shared.press(.home)
+        // The fixture seeds the draft once the app has entered the background; on a slow runner
+        // that lands after a URL opened right behind the home press, which then finds nothing.
+        sendToBackground()
         openThroughSystem(fixtureURL("share"))
         XCTAssertTrue(
             app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 25),

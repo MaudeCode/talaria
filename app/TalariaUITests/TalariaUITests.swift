@@ -1297,6 +1297,25 @@ class TalariaUITestCase: XCTestCase {
         launch(arguments: fixtureLaunchArguments + additionalArguments)
     }
 
+    /// Backgrounds the app under test and returns once it has left the foreground, so work the
+    /// app does on entering the background (the fixture seeds a share draft there) has run. On
+    /// this simulator a home press alone can leave it in `runningForeground`; following the press
+    /// with an explicit Springboard activation is what suspends it, and a press right after launch
+    /// can be dropped, so the pair repeats until the app has left.
+    func sendToBackground() {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        XCTAssertTrue(
+            poll(timeout: 20) {
+                XCUIDevice.shared.press(.home)
+                springboard.activate()
+                return poll(timeout: 4) {
+                    [.runningBackground, .runningBackgroundSuspended].contains(app.state)
+                }
+            },
+            "The app never entered the background"
+        )
+    }
+
     /// Answers the loads the fixture holds (`UITestFixtureHold` in the app) until `condition` holds.
     /// A release answers only what is held when it lands, so it repeats while a request is still on
     /// its way.
