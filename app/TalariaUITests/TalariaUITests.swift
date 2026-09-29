@@ -1132,12 +1132,22 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
                 app.buttons["Already have a server?"].tap()
                 let serverField = app.textFields.firstMatch
                 XCTAssertTrue(serverField.awaitExistence(timeout: 5), "Server URL field missing [\(variant.name)]")
-                // The pager is still sliding the page in; auditing mid-slide can leave it on the previous page.
+                // The shortcut pages over two steps; audit and tap only once the pager reports the
+                // connect page and the field has stopped moving, or both act on a page in motion.
+                XCTAssertTrue(
+                    element(label: "Page 5 of 5").awaitExistence(timeout: 10),
+                    "The pager did not reach the connect page [\(variant.name)]"
+                )
                 _ = serverField.settledFrame
                 try audit("Onboarding connect", variant: variant)
                 // Focus retention: the audit walks the page, so focus the field only afterwards.
+                // Focus and the keyboard arrive after the tap returns (a first keyboard on a
+                // hosted runner took over 30 s), so wait for focus rather than read it once.
                 serverField.tap()
-                XCTAssertTrue(hasKeyboardFocus(serverField), "Server field did not take focus [\(variant.name)]")
+                XCTAssertTrue(
+                    poll(timeout: 45) { hasKeyboardFocus(serverField) },
+                    "Server field did not take focus [\(variant.name)]"
+                )
                 XCUIDevice.shared.orientation = variant.orientation == .portrait ? .landscapeLeft : .portrait
                 // iOS 27 usually resets the page-style TabView to the welcome page when the
                 // device rotates with the keyboard up (TAL-201); not strict, because some
@@ -1152,7 +1162,11 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
                     XCTAssertTrue(fieldSurvived, "Server URL field lost on rotation [\(variant.name)]")
                 }
                 if fieldSurvived {
-                    XCTAssertTrue(hasKeyboardFocus(serverField), "Rotation dropped field focus [\(variant.name)]")
+                    // The rotated layout restores focus after the field reappears.
+                    XCTAssertTrue(
+                        poll(timeout: 10) { hasKeyboardFocus(serverField) },
+                        "Rotation dropped field focus [\(variant.name)]"
+                    )
                 }
                 app.terminate()
             }
