@@ -279,7 +279,9 @@ class PublicationTests(unittest.TestCase):
         self.assertLess(restore, npm)
         self.assertLess(npm, image)
         self.assertFalse([job for job in jobs.values() for step in job.get("steps", []) if "actions/cache/" in step.get("uses", "")])
-        self.assertIn("web-publish", jobs["app-publish"]["needs"])
+        # The App publishes beside Web, after the Relay deployment (TAL-414); the manifest needs every publication.
+        self.assertNotIn("web-publish", jobs["app-publish"]["needs"])
+        self.assertIn("relay-publish", jobs["app-publish"]["needs"])
         self.assertEqual(set(jobs["publish-set"]["needs"]), {
             "prepare", "build-gate", "relay-publish", "web-publish", "app-publish"})
         self.assertTrue(any("check_results.py publication" in step.get("run", "")
@@ -394,20 +396,50 @@ class PublicationTests(unittest.TestCase):
         jobs = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/release-set.yml")], text=True))["jobs"]
-        gates = ("contracts", "previous-app-contracts", "component-contracts", "agent", "ui-suite-lookup", "ui-suite")
+        gates = ("contracts", "component-contracts", "agent", "ui-suite-lookup", "ui-suite")
         builds = ("relay-build", "web-build", "app-dry-build", "app-signed-build")
-        # Every macOS gate and build queues right after prepare: the suite's shards queue only once its build holds
-        # a runner (TAL-413), so nothing waits on the suite's build here. The previous App's gate, the longest,
-        # needs only the plan and claims a runner first (TAL-408).
+        # The macOS slot plan (TAL-414): both App contract gates share the contracts runner, and the suite's build and
+        # shards take the other four slots at once (the shards queue once the build holds a runner, TAL-413). The App
+        # builds, off the critical path, queue once the suite build has uploaded and take its runner.
+        after = {"ui-suite": ["prepare", "ui-suite-lookup"], "app-dry-build": ["prepare", "ui-suite-built"],
+                 "app-signed-build": ["prepare", "ui-suite-built"]}
         for name in (*gates, *builds):
             with self.subTest(job=name):
-                expected = ["prepare", "ui-suite-lookup"] if name == "ui-suite" else "prepare"
-                self.assertEqual(jobs[name]["needs"], expected)
+                self.assertEqual(jobs[name]["needs"], after.get(name, "prepare"))
+        self.assertNotIn("previous-app-contracts", jobs)
+        gate = next(step["run"] for step in jobs["contracts"]["steps"] if "cli.py gate" in step.get("run", ""))
+        for name in ("currentContracts", "previousAppContracts"):
+            self.assertIn(f"--name {name}", gate)
         self.assertNotIn("ui-suite-started", jobs)
+        built = jobs["ui-suite-built"]
+        self.assertEqual((built["needs"], built["if"], built["runs-on"], built["permissions"]),
+                         (["prepare", "ui-suite-lookup"], "needs.prepare.outputs.app_changed == 'true'", "ubuntu-latest",
+                          {"contents": "read", "actions": "read"}))
+        wait = next(step for step in built["steps"] if "wait-for-job" in step.get("run", ""))
+        self.assertEqual(wait["if"], "needs.ui-suite-lookup.outputs.reused == 'false'")
+        self.assertEqual(wait["run"], 'app/ci/wait-for-job "UI suite build" 20700 "Upload the test build"')
+        app_tests = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+            str(root / ".github/workflows/app-tests.yml")], text=True))
+        self.assertIn("Upload the test build", [step.get("name") for step in app_tests["jobs"]["app-build"]["steps"]])
         # The full UI suite runs on the release source whenever the App ships and no reusable run exists, dry runs
-        # included.
+        # included, in the release's shard count; contracts runs its package tests (--package-suite).
         self.assertEqual(jobs["ui-suite"]["uses"], "./.github/workflows/ui-suite.yml")
-        self.assertEqual(jobs["ui-suite"]["with"], {"ref": "${{ needs.prepare.outputs.source }}"})
+        self.assertEqual(jobs["ui-suite"]["with"], {"ref": "${{ needs.prepare.outputs.source }}",
+                                                    "shards": "${{ inputs.ui_shards }}", "package_tests": False})
+        document = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+            str(root / ".github/workflows/release-set.yml")], text=True))
+        for trigger in ("workflow_call", "workflow_dispatch"):
+            self.assertEqual({key: document["on"][trigger]["inputs"]["ui_shards"][key] for key in ("type", "default")},
+                             {"type": "number", "default": 3})
+        # app-tests.yml turns a shard count from 1 to 6 into that many matrix entries.
+        matrix = app_tests["jobs"]["app-test"]["strategy"]["matrix"]["shard"]
+        table = json.loads(re.search(r"fromJSON\('(\[null,.*?\])'\)\[inputs\.shards\]", matrix)[1])
+        self.assertEqual(table, [None, *([*range(count)] for count in range(1, 7))])
+        self.assertEqual(app_tests["jobs"]["package-test"]["if"], "inputs.package_tests")
+        check = (root / "scripts/check-release-contracts.py").read_text()
+        self.assertIn('*(["--package-suite"] if index == 0 and plan["changed"]["app"] else [])', check)
         self.assertEqual(jobs["ui-suite"]["if"],
                          "needs.prepare.outputs.app_changed == 'true' && needs.ui-suite-lookup.outputs.reused == 'false'")
         self.assertEqual(jobs["ui-suite"]["permissions"], {"contents": "read", "actions": "read"})
@@ -424,10 +456,42 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(jobs["ui-suite-lookup"]["if"], "needs.prepare.outputs.app_changed == 'true'")
         self.assertEqual(jobs["ui-suite-lookup"]["permissions"], {"contents": "read", "actions": "read"})
         self.assertEqual(set(jobs["build-gate"]["needs"]), {"prepare", *gates, *builds})
-        # Publication stays ordered and behind the joined gate: Relay, Web, App, then the manifest.
+        # Nothing publishes before build-gate joined every gate and build; Relay deploys first, Web and the App then
+        # publish at once, and the manifest publishes after every publication read back (TAL-414).
         self.assertEqual(set(jobs["relay-publish"]["needs"]), {"prepare", "build-gate"})
         self.assertEqual(set(jobs["web-publish"]["needs"]), {"prepare", "build-gate", "relay-publish"})
-        self.assertEqual(set(jobs["app-publish"]["needs"]), {"prepare", "build-gate", "relay-publish", "web-publish"})
+        self.assertEqual(set(jobs["app-publish"]["needs"]), {"prepare", "build-gate", "relay-publish"})
+        relay_done = ("(needs.relay-publish.result == 'success' || (needs.prepare.outputs.relay_changed == 'false' "
+                      "&& needs.relay-publish.result == 'skipped'))")
+        for name in ("relay-publish", "web-publish", "app-publish", "publish-set"):
+            condition = " ".join(jobs[name]["if"].split())
+            with self.subTest(job=name):
+                self.assertIn("build-gate", jobs[name]["needs"])
+                self.assertIn("needs.build-gate.result == 'success'", condition)
+                self.assertIn("!inputs.dry_run", condition)
+                if name in ("web-publish", "app-publish"):
+                    self.assertIn(relay_done, condition)
+        self.assertEqual(set(jobs["publish-set"]["needs"]), {"prepare", "build-gate", "relay-publish", "web-publish", "app-publish"})
+        # Measurement only: the timeline job reads the run after everything else and holds no credentials.
+        timeline = jobs["timeline"]
+        self.assertEqual((set(timeline["needs"]), timeline["if"], timeline["permissions"]),
+                         ({"candidate", "publish-set"}, "always()", {"contents": "read", "actions": "read"}))
+        self.assertTrue(all(step.get("continue-on-error") for step in timeline["steps"] if "run" in step))
+
+    def test_timeline_orders_jobs_by_start_from_the_attempt_start(self):
+        from timeline import table
+        run = {"run_started_at": "2026-01-01T00:00:00Z"}
+        jobs = [{"name": "publish-set", "created_at": "2026-01-01T00:17:00Z", "started_at": "2026-01-01T00:17:05Z",
+                 "completed_at": "2026-01-01T00:17:40Z", "conclusion": "success"},
+                {"name": "contracts", "created_at": "2026-01-01T00:00:50Z", "started_at": "2026-01-01T00:01:00Z",
+                 "completed_at": "2026-01-01T00:06:00Z", "conclusion": "success"},
+                {"name": "candidate", "created_at": "2026-01-01T00:10:00Z", "started_at": "2026-01-01T00:10:00Z",
+                 "completed_at": "2026-01-01T00:10:00Z", "conclusion": "skipped"}]
+        lines = table(run, jobs).splitlines()
+        self.assertIn("the last job finished at 17:40", lines[2])
+        self.assertEqual(lines[6:], ["| contracts | 0:50 | 0:10 | 1:00 | 5:00 | 6:00 | success |",
+                                     "| publish-set | 17:00 | 0:05 | 17:05 | 0:35 | 17:40 | success |",
+                                     "| candidate | 10:00 |  |  |  |  | skipped |"])
 
     def test_buildx_builders_are_never_fixed_names(self):
         # A Docker daemon that outlives a job would reject a second builder with the same fixed name.
@@ -485,7 +549,7 @@ class PublicationTests(unittest.TestCase):
     def test_selected_jobs_must_succeed(self):
         for dry, app, web, relay_changed in product((False, True), repeat=4):
             for stage in ("build", "publication"):
-                needs = {name: {"result": "success"} for name in ("prepare", "contracts", "previous-app-contracts", "component-contracts", "agent", "build-gate")}
+                needs = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts", "agent", "build-gate")}
                 needs["prepare"]["outputs"] = {
                     name + "_changed": str(changed).lower()
                     for name, changed in zip(("app", "web", "relay"), (app, web, relay_changed))
@@ -506,7 +570,7 @@ class PublicationTests(unittest.TestCase):
                         check(needs, stage, dry)
                     continue
                 check(needs, stage, dry)
-                for job in jobs + (["prepare", "contracts", "previous-app-contracts", "component-contracts", "agent"] if stage == "build" else ["prepare", "build-gate"]):
+                for job in jobs + (["prepare", "contracts", "component-contracts", "agent"] if stage == "build" else ["prepare", "build-gate"]):
                     for result in ("failure", "cancelled", "skipped", "success"):
                         if result == needs[job]["result"]:
                             continue
@@ -545,8 +609,8 @@ class PublicationTests(unittest.TestCase):
                 outputs = dict(line.split("=", 1) for line in (work / "output").read_text().splitlines()) \
                     if (work / "output").exists() else {}
                 summary = (work / "summary").read_text() if (work / "summary").exists() else ""
-            needs = {name: {"result": "success"} for name in ("prepare", "contracts", "previous-app-contracts",
-                                                              "component-contracts", "agent", "app-dry-build")}
+            needs = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts",
+                                                              "agent", "app-dry-build")}
             needs["prepare"]["outputs"] = {"app_changed": "true", "web_changed": "false", "relay_changed": "false"}
             needs.update({name: {"result": "skipped"} for name in ("relay-build", "web-build", "app-signed-build")})
             needs["ui-suite-lookup"] = {"result": "success" if lookup.returncode == 0 else "failure", "outputs": outputs}
@@ -589,8 +653,8 @@ class PublicationTests(unittest.TestCase):
                     check(needs, "build", True)
 
     def test_ui_suite_gate_rejects_inconsistent_lookup_results(self):
-        base = {name: {"result": "success"} for name in ("prepare", "contracts", "previous-app-contracts",
-                                                          "component-contracts", "agent", "app-dry-build")}
+        base = {name: {"result": "success"} for name in ("prepare", "contracts", "component-contracts",
+                                                          "agent", "app-dry-build")}
         base["prepare"]["outputs"] = {"app_changed": "true", "web_changed": "false", "relay_changed": "false"}
         base.update({name: {"result": "skipped"} for name in ("relay-build", "web-build", "app-signed-build")})
         url = "https://github.com/MaudeCode/talaria/actions/runs/7"

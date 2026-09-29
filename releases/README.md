@@ -69,14 +69,13 @@ dependency:
 | Workflow | Job | Native dependency |
 |---|---|---|
 | `app-tests.yml` | `app-build` | `app/ci/build-for-testing` once: pull requests and main pushes stop there, and the UI suite uploads it as the `ui-suite-build` artifact |
-| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the UI suite's four shards (hosted unit tests, launch smoke, UI tests), nightly and at release; never on pull requests |
-| `app-tests.yml` | `package-test` | `swift test` for TalariaKit (every native contract class and the live Web contract test) |
+| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the UI suite's shards (hosted unit tests, launch smoke, UI tests; four nightly, three at release), nightly and at release; never on pull requests |
+| `app-tests.yml` | `package-test` | `swift test` for TalariaKit (every native contract class and the live Web contract test); a release's suite call leaves it to `contracts` |
 | `ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
 | `fuzz-soak.yml` | `soak` | `swift test` for TalariaKit's fuzz soak class |
 | `ui-performance.yml` | `measure` | `xcodebuild test` in the simulator |
 | `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
-| `release-set.yml` | `contracts` | tests the selected App against every supported Web: `swift test`, or the simulator for an App from before TAL-399 |
-| `release-set.yml` | `previous-app-contracts` | tests the previously released App against the selected Web: the simulator before TAL-399, `swift test` once that App has TalariaKit |
+| `release-set.yml` | `contracts` | both App contract gates at once: the selected App against every supported Web, plus its whole TalariaKit suite when it ships, and the previously released App against the selected Web; `swift test`, or the simulator for an App from before TAL-399 |
 | `release-set.yml` | `app-dry-build` | unsigned `xcodebuild archive` |
 
 A release that ships the App first looks for a UI suite to reuse (TAL-408):
@@ -95,21 +94,70 @@ the nightly run counts when the source is its `main` head, or dispatch
 is still at that commit (a dispatch with a `ref` input other than that full
 commit, or with `only_testing`, never counts).
 
-The organization runs at most five macOS jobs at once. A release that runs the
-suite uses up to nine: the suite (`ui-suite.yml`: one build, four test shards
-and the package tests on the release source), the two contract gates and one
-App build. `previous-app-contracts`, the longest gate while the previous App
-predates TAL-399, needs only the plan, so it queues before the suite's jobs.
-The suite's shards queue only once its build holds a runner (TAL-413), so no
-macOS job ever holds a slot while waiting for a queued one: the release's gates
-and builds start right after `prepare`, and whichever jobs do not fit start as
-slots free up. Queue time does not count toward a job's timeout. The release's
-call has a concurrency group of its own, so it neither waits for nor is
-replaced by a nightly or dispatched suite; it may overlap one. A reused suite,
-or a release without App changes, runs no suite. The critical path is
-then `prepare`, `previous-app-contracts` (about 16 minutes in the simulator; a
-few minutes with `swift test`), `build-gate`, Web and App publication and the
-manifest. Every simulator job uses the image's
+The organization runs at most five macOS jobs at once, so a release that runs
+the suite plans its macOS jobs into five slots (TAL-414):
+
+- `contracts` runs both App contract gates on one runner, at once, each with its
+  own receipt. With `swift test` they take about five minutes together; with
+  an App from before TAL-399, which builds and tests in the simulator, about ten.
+- The suite's build and `ui_shards` test shards (a `release-set.yml` input,
+  default 3) take the other four slots at the start: the shards queue once the
+  build holds a runner (TAL-413) and boot their simulators while it builds.
+- The suite's package tests run in `contracts` instead of on a sixth runner:
+  `contracts` already builds the release source's TalariaKit tests, so the whole
+  package suite adds about 30 seconds there (`--package-suite`).
+- The App build (signed, or `app-dry-build` on a dry run) is not on the critical
+  path, so it starts only when the suite build has uploaded its test build
+  (`ui-suite-built`, a Linux wait) and takes that runner. Starting it first
+  would take a shard's slot, and that shard would boot only after the suite
+  build, about two minutes later. A reused suite, or none, starts it at once.
+- The signed build cannot reuse the suite build's compiled work: one is a
+  Release archive for devices signed for distribution, the other a Debug build
+  for the simulator, signed ad hoc with the `.xctest` identifier suffix, so no
+  compiled file is valid for both.
+
+The shard count follows from the suite: about 1,000 s of hosted UI test time
+after TAL-402, a 3:15 build that starts at 0:50 and uploads at about 4:05, and
+a shard's simulator boot (1:20 to 3:40) that must overlap the build. A shard then
+finishes at about 4:05 + 0:20 download + 1,000 s / N + 0:15. With N = 3 that is
+10:15. `contracts` plus the build plus three shards fill the five slots, and
+the App build takes the build's runner at 4:05 and finishes by about 9:40. N = 4
+makes the fourth shard wait for the build's runner, boot after it, and finish
+at about 10:50, and the App build then waits for the `contracts` runner (about
+6:00) and finishes at about 11:30. N = 2
+runs 8:20 of tests per shard and finishes at about 12:45. Nightly and dispatched
+suites keep four shards; TAL-402 owns that count and the test weights.
+
+The planned critical path, in minutes from the cutover run's start (the tag
+push is about a minute earlier, while `release.yml` starts the cutover). The
+times are estimates from the measured jobs of dry runs 36555256618 and
+36561319994 and release run 36358838255; the `timeline` job measures each run:
+
+| Time | Event |
+|---|---|
+| 0:00-0:50 | `authorization`, then `prepare` |
+| 0:50 | `contracts` and the suite build start; three shards start and boot |
+| 4:05 | the suite build uploads; the App build takes its runner |
+| 6:00 | `contracts` done with `swift test` (next release: about 11:00, see below) |
+| 9:40 | App build done |
+| 10:15 | the last shard done; `build-gate` |
+| 10:40 | `relay-publish` starts (about 1:30) |
+| 12:10 | `web-publish` (about 3:00) and `app-publish` (upload and processing to VALID, about 4:30) start |
+| 16:40 | `app-publish` done |
+| 17:30 | `publish-set` published the manifest (about 18:30 after the tag push) |
+
+The next release still tests a previous App from before TAL-399, so `contracts`
+finishes at about 11:20 and moves `build-gate` to about 11:30 and the manifest
+to about 18:45 (about 20 minutes after the tag push). Queue time does not count
+toward a job's timeout. The release's call has a concurrency group of its own,
+so it neither waits for nor is replaced by a nightly or dispatched suite; it may
+overlap one, and whichever macOS jobs then do not fit start as slots free up.
+A job that holds a macOS slot never waits for a queued macOS job, so the plan
+cannot deadlock. The `timeline` job writes every job's queue, start and finish
+time into the step summary, and the publication jobs and `contracts` record
+their phases (npm publish and readback, GHCR copy, TestFlight transfer and
+processing, Web probe, builds and simulator boot) there too, so each dry run
+and release measures this plan. Every simulator job uses the image's
 own iPhone 17 on the runtime matching the selected Xcode's SDK, as `ci.yml`
 does: the fuzz soak and UI performance boot it with the pinned
 `futureware-tech/simulator-action` and run plain `xcodebuild`; the contract
@@ -211,6 +259,14 @@ the fixtures reached the test bundle and retains structured XCTest results. For 
 App revision with the TalariaKit package (TAL-399), the contract classes that live
 there run with `swift test` against the same responses, and the live decoding test
 must pass there instead; their build runs while the Web is probed (TAL-408).
+An older App with an explicit `IOS_SIMULATOR_ID` boots that simulator and
+compiles its hosted tests (the settings of its own `test-ios`, with a
+placeholder fixture) while the Web is probed; its `test-ios` then only rewrites
+the Info.plists with the live fixture and re-signs before testing (TAL-414).
+Measured locally on `fa370fac`, the gate took 80 s instead of 126 s, and
+`test-ios` 13 s instead of 61 s; on a hosted runner the build, about 7.5 of the
+13 minutes, no longer waits for the probe and the boot. `--package-suite` also
+runs every TalariaKit test but the fuzz soak against the live fixture.
 
 ## Root workflow
 
@@ -255,8 +311,32 @@ or stale predecessor once a release set exists. Changed tags must point to
 The cutover repeats every gate (selected-source and previous-App contracts,
 the full unit and UI suite on the release source when the App ships, or a
 successful earlier run of it on that exact commit, pinned
-Agent compatibility, component builds), then deploys Relay, publishes
-Web and uploads the App in that order, and publishes the manifest last.
+Agent compatibility, component builds), then deploys Relay, publishes Web and
+uploads the App at once, and publishes the manifest last. Nothing publishes
+before `build-gate` has every gate and build. The ordering keeps only the
+constraints that hold (TAL-414):
+
+- Relay deploys before Web and the App publish. Preparation checks that the new
+  Relay serves the previous Web and App, and the contract gates test the new
+  Web and App against the new Relay's fixtures, but nothing tests them against
+  the previous Relay, which serves them until the deployment succeeds.
+- Web and the App publish at once. The App was tested live against every
+  supported Web, the latest completed Web releases included, and the Web
+  against the previous App (`previousAppContracts`); neither needs the other
+  published, and installations upgrade their Web on their own schedule anyway.
+  The TestFlight upload, whose processing to `VALID` is the longest publication,
+  therefore starts right after the Relay deployment.
+- The manifest publishes last, only after every selected publication read back
+  (`check_results.py publication`): the Web updater reads only that manifest.
+  The component releases are drafts until then.
+
+Publication is fail-closed rather than all-or-nothing: a failed Relay
+deployment stops Web and the App before they publish, but Web and the App no
+longer stop each other. Either can then be public without the manifest, and
+both work with the released peers. **Re-run failed jobs** on the same run
+retries the failed one, whose retry accepts the identical bytes already
+published, and then `publish-set`. The App-only recovery workflow still covers
+a failed App upload after Relay and Web succeeded.
 A `release-set.yml` dispatch with `dry_run=true` rehearses the same gates without
 publication credentials when a change to the release tooling needs it.
 Unchanged components skip their build/publication jobs. Required

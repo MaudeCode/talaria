@@ -25,7 +25,7 @@ def check_ui_suite(needs, app_changed):
 
 
 def check(needs, stage, dry_run):
-    required = ["prepare", "contracts", "previous-app-contracts", "component-contracts", "agent"] if stage == "build" else ["prepare", "build-gate"]
+    required = ["prepare", "contracts", "component-contracts", "agent"] if stage == "build" else ["prepare", "build-gate"]
     for name in required:
         if needs.get(name, {}).get("result") != "success":
             raise ValueError(f"required job {name} did not succeed")

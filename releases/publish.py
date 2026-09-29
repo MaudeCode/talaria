@@ -3,6 +3,7 @@
 
 import argparse
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -17,6 +18,20 @@ from pathlib import Path
 from cli import REPOSITORY, ROOT, load, receipt, require_latest_predecessor, run_url, unused_release, write
 from plan import git
 from release_set import validate
+
+
+@contextlib.contextmanager
+def timed(label):
+    """Log how long a publication phase took, also in the job's step summary, so each release measures it (TAL-414)."""
+    start = time.monotonic()
+    try:
+        yield
+    finally:
+        line = f"{label}: {time.monotonic() - start:.0f} s"
+        print(line, flush=True)
+        if os.environ.get("GITHUB_STEP_SUMMARY"):
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+                summary.write(f"- {line}\n")
 
 
 def authorize(plan):
@@ -58,7 +73,8 @@ def relay(plan, output):
     key = os.environ.get("CONVEX_DEPLOY_KEY", "")
     if not key.startswith(f"prod:{deployment}|") or not key.split("|", 1)[-1]:
         raise ValueError("Relay requires a production deployment-scoped key matching the planned deployment")
-    subprocess.run(["pnpm", "install", "--frozen-lockfile"], cwd=ROOT / "relay", check=True)
+    with timed("Relay dependencies"):
+        subprocess.run(["pnpm", "install", "--frozen-lockfile"], cwd=ROOT / "relay", check=True)
     subprocess.run(["python3", "scripts/stamp-release.py", "relay", "--version", component["version"],
                     "--source-revision", component["sourceRevision"], "--deployment-id", deployment], cwd=ROOT, check=True)
     # An explicit Convex env file is authoritative for both target and auth.
@@ -66,8 +82,10 @@ def relay(plan, output):
                                      dir=os.environ.get("RUNNER_TEMP")) as environment:
         environment.write("CONVEX_DEPLOY_KEY=" + json.dumps(key) + "\n")
         environment.flush()
-        subprocess.run(["pnpm", "exec", "convex", "deploy", "--typecheck", "enable", "--env-file", environment.name,
-                        "--message", "Talaria release-set " + plan["releaseSet"]], cwd=ROOT / "relay", check=True)
+        with timed("Relay deploy"):
+            subprocess.run(["pnpm", "exec", "convex", "deploy", "--typecheck", "enable", "--env-file", environment.name,
+                            "--message", "Talaria release-set " + plan["releaseSet"]], cwd=ROOT / "relay", check=True)
+    started = time.monotonic()
     for attempt in range(12):
         try:
             with urllib.request.urlopen(f"https://{deployment}.convex.site/v1/health", timeout=10) as response:
@@ -75,6 +93,7 @@ def relay(plan, output):
             expected = {key: component[key] for key in ("version", "sourceRevision", "releaseSet", "deploymentId")}
             actual = health.get("release", {})
             if health.get("ok") is True and all(actual.get(key) == value for key, value in expected.items()):
+                print(f"Relay readiness readback: {time.monotonic() - started:.0f} s", flush=True)
                 write(output, receipt("deployRelay", plan["releaseSet"], deploymentId=deployment,
                                       deployedRevision=actual["sourceRevision"]))
                 return
@@ -106,8 +125,9 @@ def web(plan, build, directory, output):
     component = _web_component(plan, build)
     image = build["image"]
     tag = f"ghcr.io/maudecode/talaria-web:{component['tag']}"
-    npm_identity = verify_npm(component, build, directory)
-    with tempfile.TemporaryDirectory(prefix="talaria-registry-auth-") as temporary:
+    with timed("npm readback before GHCR"):
+        npm_identity = verify_npm(component, build, directory)
+    with timed("GHCR image copy and readback"), tempfile.TemporaryDirectory(prefix="talaria-registry-auth-") as temporary:
         auth = str(Path(temporary) / "auth.json")
         subprocess.run(["skopeo", "login", "--authfile", auth, "--username", os.environ["GITHUB_ACTOR"],
                         "--password-stdin", "ghcr.io"], input=os.environ["GH_TOKEN"], text=True, check=True)
@@ -131,7 +151,7 @@ def _npm_json(stdout):
 
 def _npm_view(spec, field):
     """The registry's value for ``field`` of ``spec``, or None when that version is not published."""
-    view = subprocess.run(["npm", "view", spec, field, "--json"], capture_output=True, text=True)
+    view = subprocess.run(["npm", "view", spec, field, "--json", "--prefer-online"], capture_output=True, text=True)
     if view.returncode == 0:
         return _npm_json(view.stdout) if view.stdout.strip() else None
     if "E404" in view.stderr:
@@ -175,10 +195,12 @@ def publish_npm(component, build, directory):
     """Publish the packed tarballs (contracts first) and verify the registry readback."""
     plan = preflight_npm(component, build, directory)
     tarballs, dist_tag, published = plan["tarballs"], plan["dist_tag"], plan["published"]
-    for name in plan["ordered"]:
-        if not published[name]:
-            subprocess.run(["npm", "publish", str(tarballs[name]), "--access", "public", "--tag", dist_tag], check=True)
-    return verify_npm(component, build, directory)
+    with timed("npm publish"):
+        for name in plan["ordered"]:
+            if not published[name]:
+                subprocess.run(["npm", "publish", str(tarballs[name]), "--access", "public", "--tag", dist_tag], check=True)
+    with timed("npm readback"):
+        return verify_npm(component, build, directory)
 
 
 NPM_READBACK_ATTEMPTS = 60
@@ -189,7 +211,9 @@ def verify_npm(component, build, directory):
     """The registry serves exactly the built tarballs under the channel's dist-tag; needs no publishing identity.
 
     npm processes a new version for a few minutes before serving it ("may take a few minutes to become
-    available"), so a missing version or dist-tag is awaited; different bytes fail at once.
+    available"), so a missing version or dist-tag is awaited; different bytes fail at once. Every read revalidates
+    (--prefer-online): the CLI otherwise answers from its cached packument, which the preflight read just stored and
+    which stays fresh for five minutes, so the readback saw the new version only once that cache expired (TAL-414).
     """
     npm = _npm_packages(component, build, directory)
     expected, tarballs, ordered = npm["expected"], npm["tarballs"], npm["ordered"]
@@ -198,7 +222,7 @@ def verify_npm(component, build, directory):
         spec = f"{packages[name]}@{component['version']}"
         for attempt in range(NPM_READBACK_ATTEMPTS):
             integrity = _npm_view(spec, "dist.integrity")
-            tags = _npm_json(subprocess.check_output(["npm", "view", packages[name], "dist-tags", "--json"], text=True))
+            tags = _npm_json(subprocess.check_output(["npm", "view", packages[name], "dist-tags", "--json", "--prefer-online"], text=True))
             if integrity is not None and integrity != _npm_integrity(tarballs[name]):
                 raise ValueError("npm registry readback differs from the published tarball")
             if integrity is not None and tags.get(dist_tag) == component["version"]:
@@ -352,10 +376,12 @@ def main():
         if len(files) != 1 or verify_ipa(files[0], component) != build["ipaSha256"]:
             raise ValueError("App upload artifact differs from the verified build")
         if args.operation == "app":
-            result = json.loads(subprocess.check_output([
-                "ruby", str(Path(__file__).resolve().parents[1] / "app/ci/upload_testflight.rb"), str(files[0]), component["version"],
-                str(component["buildNumber"]), build["ipaSha256"],
-            ], text=True))
+            with timed("TestFlight upload and processing to VALID"):
+                uploaded = subprocess.check_output([
+                    "ruby", str(Path(__file__).resolve().parents[1] / "app/ci/upload_testflight.rb"), str(files[0]), component["version"],
+                    str(component["buildNumber"]), build["ipaSha256"],
+                ], text=True)
+            result = json.loads(uploaded)
             if (any(result.get(key) != component[key] for key in ("version", "buildNumber"))
                     or result.get("ipaSha256") != build["ipaSha256"] or result.get("processingState") != "VALID"
                     or not result.get("buildId") or not result.get("uploadId")):

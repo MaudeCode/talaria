@@ -14,6 +14,11 @@ name: Release set
         required: false
         default: true
         type: boolean
+      ui_shards:
+        description: UI suite test shards when the release runs the suite (TAL-414; releases/README.md has the math).
+        required: false
+        default: 3
+        type: number
   workflow_dispatch:
     inputs:
       request:
@@ -30,6 +35,11 @@ name: Release set
         required: true
         default: true
         type: boolean
+      ui_shards:
+        description: UI suite test shards when the release runs the suite (TAL-414; releases/README.md has the math).
+        required: false
+        default: 3
+        type: number
 permissions:
   contents: read
   actions: read
@@ -38,8 +48,9 @@ concurrency:
   cancel-in-progress: false
 # Handoffs are this run's Actions artifacts: `artifacts.py put` stages and digests them, the next step uploads
 # them, and `artifacts.py get` (job token, actions: read) downloads only forwarded producer outputs whose run,
-# attempt, source and SHA-256 match. Every gate and build starts as soon as prepare has the plan; build-gate
-# joins them all before anything publishes, and publication stays ordered Relay, Web, App, manifest.
+# attempt, source and SHA-256 match. Every gate starts as soon as prepare has the plan; the macOS App build takes the
+# UI suite build's runner when the suite runs (TAL-414). build-gate joins them all before anything publishes. Relay
+# deploys first, then Web and the App publish at once, and the manifest publishes last (releases/README.md).
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -145,10 +156,43 @@ jobs:
     uses: ./.github/workflows/ui-suite.yml
     with:
       ref: ${{ needs.prepare.outputs.source }}
+      shards: ${{ inputs.ui_shards }}
+      # The contracts job runs the package tests on the release source instead (TAL-414).
+      package_tests: false
+  ui-suite-built:
+    # Five hosted macOS slots: at the start the contracts runner, the UI suite build and three shards fill them, and
+    # the shards boot while the build runs. The App build is not on the critical path, so it queues once the UI
+    # suite build has uploaded its test build and takes that runner (TAL-414). This Linux job holds no macOS slot
+    # while it waits. A reused suite, or none, lets the App build start at once; a lookup error skips this job, and
+    # so the App build, and build-gate fails.
+    needs:
+    - prepare
+    - ui-suite-lookup
+    if: needs.prepare.outputs.app_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    permissions:
+      contents: read
+      actions: read
+    steps:
+    - uses: actions/checkout@v7
+      if: needs.ui-suite-lookup.outputs.reused == 'false'
+      with:
+        sparse-checkout: app/ci
+    - name: Wait until the UI suite build has uploaded its test build
+      if: needs.ui-suite-lookup.outputs.reused == 'false'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        WAIT_FOR_JOB_POLL_SECONDS: '10'
+      run: app/ci/wait-for-job "UI suite build" 20700 "Upload the test build"
   contracts:
-    # macOS: tests the selected App against every supported Web source: TalariaKit's contract classes with `swift test`
-    # and no simulator, building the package tests while each Web is probed (TAL-408); an App revision from before
-    # TAL-399 runs them in the iOS simulator.
+    # macOS: both App contract gates on one runner (TAL-414), each writing its own receipt. currentContracts tests the
+    # selected App against every supported Web source and, when the App ships, runs its whole TalariaKit suite (the UI
+    # suite's package job, which the release's suite call leaves out); previousAppContracts compiles the previously
+    # released App from Git and tests it against the selected Web. Both spend minutes probing Webs beside their builds,
+    # so they run at once, with `swift test` (TAL-399) or one of them in the simulator; two Apps from before TAL-399
+    # would share the one simulator, so they take turns. One runner for both leaves four macOS slots to the UI suite's
+    # build and shards (releases/README.md).
     needs: prepare
     runs-on: xcode-27
     timeout-minutes: 120
@@ -167,9 +211,12 @@ jobs:
     - name: Select the image's iPhone 17
       run: |
         set -euo pipefail
-        app=$(jq -er .components.app.sourceRevision "$RUNNER_TEMP/release-plan/plan.json")
-        if git cat-file -e "${app}:app/TalariaKit/Package.swift" 2>/dev/null; then
-          echo "The App at ${app} tests its contract classes with swift test; no simulator."
+        hosted=0
+        for app in $(jq -er '.components.app.sourceRevision, .previousAppSource' "$RUNNER_TEMP/release-plan/plan.json"); do
+          git cat-file -e "${app}:app/TalariaKit/Package.swift" 2>/dev/null || hosted=$((hosted + 1))
+        done
+        if (( hosted == 0 )); then
+          echo "Both Apps test their contract classes with swift test; no simulator."
           exit 0
         fi
         # The App's own scripts/test-ios leases, boots and shuts down exactly this simulator (IOS_SIMULATOR_ID; it
@@ -178,17 +225,59 @@ jobs:
         runtime="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
         udid=$(xcrun simctl list devices available --json |
           jq -er --arg runtime "$runtime" 'first(.devices[$runtime][]? | select(.name == "iPhone 17") | .udid)')
-        echo "Using iPhone 17 ${udid} on ${runtime}"
-        printf 'IOS_SIMULATOR_ID=%s\nIOS_SIMULATOR_RUNTIME=%s\n' "$udid" "$runtime" >> "$GITHUB_ENV"
-    - name: Verify the selected App against the Web sources
+        echo "Using iPhone 17 ${udid} on ${runtime} for ${hosted} App revision(s) from before TAL-399"
+        printf 'IOS_SIMULATOR_ID=%s\nIOS_SIMULATOR_RUNTIME=%s\nSIMULATOR_APPS=%s\n' "$udid" "$runtime" "$hosted" >> "$GITHUB_ENV"
+    - name: Verify the selected and the previously released App against the Web sources
       env:
         TALARIA_TEST_WORKER_COUNT: '1'
       run: |
-        "$RELEASE_PYTHON" releases/cli.py gate --plan "$RUNNER_TEMP/release-plan/plan.json" --name currentContracts --output "$RUNNER_TEMP/contract-receipts/currentContracts.json" -- \
-          "$RELEASE_PYTHON" scripts/check-release-contracts.py --only app --plan "$RUNNER_TEMP/release-plan/plan.json" --output "$RUNNER_TEMP/current-contracts"
+        set -euo pipefail
+        plan="$RUNNER_TEMP/release-plan/plan.json"
+        previous=$(jq -er .previousAppSource "$plan")
+        web=$(jq -er .components.web.sourceRevision "$plan")
+        current() {
+          "$RELEASE_PYTHON" releases/cli.py gate --plan "$plan" --name currentContracts --output "$RUNNER_TEMP/contract-receipts/currentContracts.json" -- \
+            "$RELEASE_PYTHON" scripts/check-release-contracts.py --only app --plan "$plan" --output "$RUNNER_TEMP/current-contracts"
+        }
+        previous_app() {
+          "$RELEASE_PYTHON" releases/cli.py gate --plan "$plan" --name previousAppContracts --output "$RUNNER_TEMP/previous-app-receipts/previousAppContracts.json" -- \
+            "$RELEASE_PYTHON" scripts/check-previous-app.py --app-ref "$previous" --web-ref "$web" --output "$RUNNER_TEMP/previous-app"
+        }
+        failed=()
+        if [[ "${SIMULATOR_APPS:-0}" == 2 ]]; then
+          current > "$RUNNER_TEMP/current-contracts.log" 2>&1 || failed+=(currentContracts)
+          previous_app > "$RUNNER_TEMP/previous-app.log" 2>&1 || failed+=(previousAppContracts)
+        else
+          current > "$RUNNER_TEMP/current-contracts.log" 2>&1 &
+          current_pid=$!
+          previous_app > "$RUNNER_TEMP/previous-app.log" 2>&1 &
+          previous_pid=$!
+          wait "$current_pid" || failed+=(currentContracts)
+          wait "$previous_pid" || failed+=(previousAppContracts)
+        fi
+        for gate in current-contracts previous-app; do
+          echo "::group::${gate} log"
+          cat "$RUNNER_TEMP/${gate}.log"
+          echo "::endgroup::"
+        done
+        # Phase durations (seconds) of the selected Web's pair and the previous App (TAL-414).
+        for result in current-contracts/app-web-0 previous-app; do
+          phases=$(jq -c '.seconds // empty' "$RUNNER_TEMP/${result}/verification.json" 2>/dev/null || true)
+          [[ -z "$phases" ]] || echo "- ${result}: ${phases}" >> "$GITHUB_STEP_SUMMARY"
+        done
+        (( ${#failed[@]} == 0 )) || { echo "::error::${failed[*]} failed; see the log groups above."; exit 1; }
     - name: Stage contract-receipts for other jobs
-      id: store
+      id: store-current
       run: '"$RELEASE_PYTHON" releases/artifacts.py put contract-receipts "$RUNNER_TEMP/contract-receipts"'
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.store-current.outputs.handoff_name }}
+        path: ${{ steps.store-current.outputs.handoff_path }}
+        retention-days: 30
+        if-no-files-found: error
+    - name: Stage previous-app-receipts for other jobs
+      id: store
+      run: '"$RELEASE_PYTHON" releases/artifacts.py put previous-app-receipts "$RUNNER_TEMP/previous-app-receipts"'
     - uses: actions/upload-artifact@v7
       with:
         name: ${{ steps.store.outputs.handoff_name }}
@@ -203,65 +292,6 @@ jobs:
         path: ${{ runner.temp }}/current-contracts
         retention-days: 30
         if-no-files-found: ignore
-    env:
-      RELEASE_NEEDS: ${{ toJSON(needs) }}
-    outputs:
-      artifacts: ${{ steps.store.outputs.artifacts }}
-  previous-app-contracts:
-    # macOS: compiles the previously released App from Git and tests it against the selected Web. It runs beside
-    # `contracts` on its own runner rather than sharing one runner's cores and simulators. It needs only the plan, so
-    # it claims a macOS runner before the UI suite's jobs queue (TAL-408): a previous App from before TAL-399 runs its
-    # classes in the simulator and is the longest gate. A previous App with TalariaKit uses `swift test` instead.
-    needs: prepare
-    runs-on: xcode-27
-    timeout-minutes: 120
-    steps:
-    - uses: actions/checkout@v7
-      with:
-        ref: ${{ needs.prepare.outputs.source }}
-        fetch-depth: 0
-    - uses: ./.github/actions/setup-xcode
-    - uses: ./.github/actions/release-python
-    - uses: ./.github/actions/release-node
-    - name: Restore release-plan
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: '"$RELEASE_PYTHON" releases/artifacts.py get "$RUNNER_TEMP" release-plan'
-    - name: Select the image's iPhone 17
-      run: |
-        set -euo pipefail
-        app=$(jq -er .previousAppSource "$RUNNER_TEMP/release-plan/plan.json")
-        if git cat-file -e "${app}:app/TalariaKit/Package.swift" 2>/dev/null; then
-          echo "The App at ${app} tests its contract classes with swift test; no simulator."
-          exit 0
-        fi
-        # The App's own scripts/test-ios leases, boots and shuts down exactly this simulator (IOS_SIMULATOR_ID; it
-        # never erases a named device), so no pool is set up. The runtime matches the selected Xcode's SDK, as in CI.
-        sdk_version=$(xcrun --sdk iphonesimulator --show-sdk-version)
-        runtime="com.apple.CoreSimulator.SimRuntime.iOS-${sdk_version//./-}"
-        udid=$(xcrun simctl list devices available --json |
-          jq -er --arg runtime "$runtime" 'first(.devices[$runtime][]? | select(.name == "iPhone 17") | .udid)')
-        echo "Using iPhone 17 ${udid} on ${runtime}"
-        printf 'IOS_SIMULATOR_ID=%s\nIOS_SIMULATOR_RUNTIME=%s\n' "$udid" "$runtime" >> "$GITHUB_ENV"
-    - name: Verify the previously released App against the selected Web
-      env:
-        TALARIA_TEST_WORKER_COUNT: '1'
-      run: |
-        set -euo pipefail
-        plan="$RUNNER_TEMP/release-plan/plan.json"
-        previous=$(jq -er .previousAppSource "$plan")
-        web=$(jq -er .components.web.sourceRevision "$plan")
-        "$RELEASE_PYTHON" releases/cli.py gate --plan "$plan" --name previousAppContracts --output "$RUNNER_TEMP/previous-app-receipts/previousAppContracts.json" -- \
-          "$RELEASE_PYTHON" scripts/check-previous-app.py --app-ref "$previous" --web-ref "$web" --output "$RUNNER_TEMP/previous-app"
-    - name: Stage previous-app-receipts for other jobs
-      id: store
-      run: '"$RELEASE_PYTHON" releases/artifacts.py put previous-app-receipts "$RUNNER_TEMP/previous-app-receipts"'
-    - uses: actions/upload-artifact@v7
-      with:
-        name: ${{ steps.store.outputs.handoff_name }}
-        path: ${{ steps.store.outputs.handoff_path }}
-        retention-days: 30
-        if-no-files-found: error
     - name: Retain sanitized previous App diagnostics
       if: always()
       uses: actions/upload-artifact@v7
@@ -439,9 +469,11 @@ jobs:
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
   app-dry-build:
-    # macOS: unsigned xcodebuild archive. Builds consume only the release plan, so they run alongside the gates
-    # and each other; build-gate joins every gate and build before anything publishes (TAL-319).
-    needs: prepare
+    # macOS: unsigned xcodebuild archive. Builds consume only the release plan; this one takes the UI suite build's
+    # runner when the suite runs (ui-suite-built). build-gate joins every gate and build before anything publishes.
+    needs:
+    - prepare
+    - ui-suite-built
     if: inputs.dry_run && needs.prepare.outputs.app_changed == 'true'
     runs-on: xcode-27
     timeout-minutes: 90
@@ -519,9 +551,11 @@ jobs:
     env:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
   app-signed-build:
-    # Builds consume only the release plan, so they run alongside the gates and each other; build-gate
-    # joins every gate and build before anything publishes (TAL-319).
-    needs: prepare
+    # Builds consume only the release plan; this one takes the UI suite build's runner when the suite runs
+    # (ui-suite-built). build-gate joins every gate and build before anything publishes (TAL-319).
+    needs:
+    - prepare
+    - ui-suite-built
     if: ${{ !inputs.dry_run && needs.prepare.outputs.app_changed == 'true' }}
     uses: ./.github/workflows/ios-release-build.yml
     secrets: inherit
@@ -576,7 +610,8 @@ jobs:
       artifacts: ${{ steps.store.outputs.artifacts }}
   web-publish:
     # npm first (trusted publishing needs this GitHub-hosted job's OIDC token), then GHCR once npm's readback
-    # matches the built tarballs. A retry accepts npm versions already published with identical bytes.
+    # matches the built tarballs. A retry accepts npm versions already published with identical bytes. It follows the
+    # Relay deployment, since the new Web was never tested against the previous Relay, and runs beside app-publish.
     needs:
     - prepare
     - build-gate
@@ -651,14 +686,14 @@ jobs:
       artifacts: ${{ steps.store.outputs.artifacts }}
   app-publish:
     name: Publish iOS app
+    # Beside web-publish, after the Relay deployment: the new App was tested against every supported Web, but never
+    # against the previous Relay (TAL-414).
     needs:
     - prepare
     - build-gate
     - relay-publish
-    - web-publish
     if: ${{ !cancelled() && !inputs.dry_run && needs.prepare.outputs.app_changed == 'true' && needs.build-gate.result == 'success' && (needs.relay-publish.result
-      == 'success' || (needs.prepare.outputs.relay_changed == 'false' && needs.relay-publish.result == 'skipped')) && (needs.web-publish.result
-      == 'success' || (needs.prepare.outputs.web_changed == 'false' && needs.web-publish.result == 'skipped')) }}
+      == 'success' || (needs.prepare.outputs.relay_changed == 'false' && needs.relay-publish.result == 'skipped')) }}
     runs-on: ubuntu-latest
     environment: testflight
     concurrency:
@@ -764,7 +799,6 @@ jobs:
     needs:
     - prepare
     - contracts
-    - previous-app-contracts
     - component-contracts
     - agent
     - ui-suite-lookup
@@ -796,3 +830,24 @@ jobs:
       RELEASE_NEEDS: ${{ toJSON(needs) }}
     outputs:
       artifacts: ${{ steps.store.outputs.artifacts }}
+  timeline:
+    # Measurement only (TAL-414): every job's queue, run and finish time from the run's start, in the step summary,
+    # after the candidate or the completed manifest. It reads the run's jobs and never gates anything.
+    needs:
+    - candidate
+    - publish-set
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        sparse-checkout: releases
+    - name: Record the run's job timeline
+      continue-on-error: true
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 releases/timeline.py | tee -a "$GITHUB_STEP_SUMMARY"
