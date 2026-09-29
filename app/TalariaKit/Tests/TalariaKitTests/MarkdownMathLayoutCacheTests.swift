@@ -75,20 +75,23 @@ final class MarkdownMathLayoutCacheTests: XCTestCase {
         let content = "streaming answer with no math"
 
         // Comparing the two layout values proves nothing: they are equal
-        // whether or not the cache was written. Observe the cache directly.
-        XCTAssertFalse(MarkdownMathLayoutCache.hasCachedLayout(for: content))
+        // whether or not the cache was written. Count cache writes instead; a
+        // lookup would also depend on NSCache not evicting the entry.
+        let writesBefore = MarkdownMathLayoutCache.storedLayoutWrites
 
         let uncached = MarkdownMathLayoutCache.uncachedLayout(for: content)
 
-        XCTAssertFalse(
-            MarkdownMathLayoutCache.hasCachedLayout(for: content),
+        XCTAssertEqual(
+            MarkdownMathLayoutCache.storedLayoutWrites,
+            writesBefore,
             "The streaming path must not write to the cache; per-token entries would evict settled answers."
         )
 
         let cached = MarkdownMathLayoutCache.layout(for: content)
 
-        XCTAssertTrue(
-            MarkdownMathLayoutCache.hasCachedLayout(for: content),
+        XCTAssertEqual(
+            MarkdownMathLayoutCache.storedLayoutWrites,
+            writesBefore + 1,
             "The settled path is expected to memoize."
         )
         XCTAssertEqual(uncached, cached, "Cached and uncached layouts must agree.")
