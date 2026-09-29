@@ -37,7 +37,7 @@ final class ShareExtensionUITests: TalariaUITestCase {
         launch(arguments: ["--ui-test-fixture", "--ui-test-share-host"])
 
         XCTAssertTrue(
-            app.navigationBars["Chats"].waitForExistence(timeout: 30),
+            app.navigationBars["Chats"].awaitExistence(timeout: 30),
             "The relaunch did not land on the session list"
         )
         XCTAssertFalse(
@@ -73,7 +73,7 @@ final class ShareExtensionUITests: TalariaUITestCase {
 
         for filename in ["fixture-image.png", "fixture-document.pdf", "fixture-file.dat"] {
             XCTAssertTrue(
-                element(labelContaining: filename).waitForExistence(timeout: 30),
+                element(labelContaining: filename).awaitExistence(timeout: 30),
                 "The composer is missing the shared attachment \(filename)"
             )
         }
@@ -86,9 +86,9 @@ final class ShareExtensionUITests: TalariaUITestCase {
 
         share(.unsupported)
         let sheet = app.otherElements["ActivityListView"]
-        XCTAssertTrue(sheet.waitForExistence(timeout: 20), "The system share sheet did not open")
+        XCTAssertTrue(sheet.awaitExistence(timeout: 20), "The system share sheet did not open")
         XCTAssertFalse(
-            talariaActivity(in: sheet).waitForExistence(timeout: 5),
+            talariaActivity(in: sheet).awaitExistence(timeout: 5),
             "Talaria was offered content its activation rule does not accept"
         )
     }
@@ -173,14 +173,14 @@ final class ShareExtensionUITests: TalariaUITestCase {
     private func launchShareHost() {
         launch(arguments: ["--ui-test-fixture", "--ui-test-share-host", "--ui-test-share-reset"])
         XCTAssertTrue(
-            app.buttons["share-host-text"].waitForExistence(timeout: 30),
+            app.buttons["share-host-text"].awaitExistence(timeout: 30),
             "Missing the share host fixture"
         )
     }
 
     private func share(_ payload: Payload) {
         let button = app.buttons["share-host-\(payload.rawValue)"]
-        XCTAssertTrue(button.waitForExistence(timeout: 15), "Missing the \(payload.rawValue) share button")
+        XCTAssertTrue(button.awaitExistence(timeout: 15), "Missing the \(payload.rawValue) share button")
         // A previous round's sheet can still be dismissing over the bar, and a tap
         // synthesized then lands on nothing.
         XCTAssertTrue(
@@ -193,9 +193,9 @@ final class ShareExtensionUITests: TalariaUITestCase {
     private func shareToTalaria(_ payload: Payload) {
         share(payload)
         let sheet = app.otherElements["ActivityListView"]
-        XCTAssertTrue(sheet.waitForExistence(timeout: 20), "The system share sheet did not open")
+        XCTAssertTrue(sheet.awaitExistence(timeout: 20), "The system share sheet did not open")
         let talaria = talariaActivity(in: sheet)
-        XCTAssertTrue(talaria.waitForExistence(timeout: 20), "Talaria is not offered for \(payload.rawValue)")
+        XCTAssertTrue(talaria.awaitExistence(timeout: 20), "Talaria is not offered for \(payload.rawValue)")
         XCTAssertTrue(
             waitUntilHittable(talaria, timeout: 20),
             "The Talaria share activity never became tappable"
@@ -209,7 +209,7 @@ final class ShareExtensionUITests: TalariaUITestCase {
 
     private func assertExtensionStatus(_ text: String, timeout: TimeInterval = 30) {
         XCTAssertTrue(
-            element(labelContaining: text).waitForExistence(timeout: timeout),
+            element(labelContaining: text).awaitExistence(timeout: timeout),
             "The share extension never showed: \(text)"
         )
     }

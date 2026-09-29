@@ -34,7 +34,7 @@ class PerformanceUITestCase: TalariaUITestCase {
 
     func waitForSessionList() {
         XCTAssertTrue(
-            denseSessionRow.waitForExistence(timeout: 30),
+            denseSessionRow.awaitExistence(timeout: 30),
             "Missing the deterministic dense session fixture"
         )
     }
@@ -62,15 +62,16 @@ class PerformanceUITestCase: TalariaUITestCase {
 
     /// Backgrounds the app under test. On this simulator a home press alone
     /// leaves it in `runningForeground`; following the press with an explicit
-    /// Springboard activation, and letting each step settle, is what actually
-    /// suspends it.
+    /// Springboard activation is what actually suspends it. A press right after
+    /// launch can be dropped, so the pair repeats until the app has left.
     func background() {
-        XCUIDevice.shared.press(.home)
-        Thread.sleep(forTimeInterval: 2)
-        XCUIApplication(bundleIdentifier: "com.apple.springboard").activate()
-        Thread.sleep(forTimeInterval: 2)
-        XCTAssertNotEqual(
-            app.state, .runningForeground,
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        XCTAssertTrue(
+            poll(timeout: 20) {
+                XCUIDevice.shared.press(.home)
+                springboard.activate()
+                return poll(timeout: 4) { app.state != .runningForeground }
+            },
             "The app never left the foreground"
         )
     }
@@ -154,7 +155,7 @@ final class TranscriptPerformanceUITests: PerformanceUITestCase {
             stopMeasuring()
 
             app.navigationBars.buttons["BackButton"].firstMatch.tap()
-            XCTAssertTrue(app.navigationBars["Chats"].waitForExistence(timeout: 15))
+            XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: 15))
         }
     }
 
@@ -166,7 +167,7 @@ final class TranscriptPerformanceUITests: PerformanceUITestCase {
         launchDenseFixture()
         openDenseSession()
         let transcript = app.scrollViews.firstMatch
-        XCTAssertTrue(transcript.waitForExistence(timeout: 15), "Missing the transcript scroll view")
+        XCTAssertTrue(transcript.awaitExistence(timeout: 15), "Missing the transcript scroll view")
 
         measure(
             metrics: [XCTClockMetric(), XCTHitchMetric(application: app), XCTCPUMetric(application: app)],
@@ -195,7 +196,7 @@ final class NavigationPerformanceUITests: PerformanceUITestCase {
                 XCTAssertTrue(waitForComposer(), "The dense fixture session never opened")
                 app.navigationBars.buttons["BackButton"].firstMatch.tap()
                 XCTAssertTrue(
-                    app.navigationBars["Chats"].waitForExistence(timeout: 15),
+                    app.navigationBars["Chats"].awaitExistence(timeout: 15),
                     "The transcript never dismissed back to the session list"
                 )
             }
@@ -221,7 +222,7 @@ final class PerformancePathUITests: PerformanceUITestCase {
         openDenseSession()
         app.navigationBars.buttons["BackButton"].firstMatch.tap()
         XCTAssertTrue(
-            app.navigationBars["Chats"].waitForExistence(timeout: 15),
+            app.navigationBars["Chats"].awaitExistence(timeout: 15),
             "The transcript never dismissed back to the session list"
         )
     }

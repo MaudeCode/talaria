@@ -23,7 +23,7 @@ class AppEntryPointUITestCase: TalariaUITestCase {
     func launchFixtureOnSessionList(additionalArguments: [String] = []) {
         launchFixture(additionalArguments: additionalArguments)
         XCTAssertTrue(
-            app.navigationBars["Chats"].waitForExistence(timeout: 20),
+            app.navigationBars["Chats"].awaitExistence(timeout: 20),
             "Missing deterministic app fixture"
         )
     }
@@ -32,9 +32,9 @@ class AppEntryPointUITestCase: TalariaUITestCase {
         let chats = app.navigationBars["Chats"]
         for _ in 0..<3 where !chats.exists {
             let back = app.buttons["BackButton"]
-            guard back.waitForExistence(timeout: 5) else { break }
+            guard back.awaitExistence(timeout: 5) else { break }
             back.tap()
-            _ = chats.waitForExistence(timeout: 5)
+            _ = chats.awaitExistence(timeout: 5)
         }
         XCTAssertTrue(chats.exists, "Did not return to the session list")
     }
@@ -80,7 +80,7 @@ final class NewChatDeepLinkUITests: AppEntryPointUITestCase {
 
         openThroughSystem(fixtureURL("new-chat"))
         XCTAssertTrue(
-            app.navigationBars["New Fixture Chat"].waitForExistence(timeout: 25),
+            app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 25),
             "talaria://new-chat did not open the New Chat composer"
         )
 
@@ -90,7 +90,7 @@ final class NewChatDeepLinkUITests: AppEntryPointUITestCase {
         // assertion proves the profile rode the link through to session creation.
         openThroughSystem(fixtureURL("new-chat-profile?profile=fixture-profile"))
         XCTAssertTrue(
-            app.navigationBars["New Fixture Chat (fixture-profile)"].waitForExistence(timeout: 25),
+            app.navigationBars["New Fixture Chat (fixture-profile)"].awaitExistence(timeout: 25),
             "talaria://new-chat-profile did not pin the new chat to the requested profile"
         )
     }
@@ -105,7 +105,7 @@ final class NewChatDeepLinkUITests: AppEntryPointUITestCase {
 
         openThroughSystem(fixtureURL("new-chat-voice"))
         XCTAssertTrue(
-            app.navigationBars["New Fixture Chat"].waitForExistence(timeout: 25),
+            app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 25),
             "talaria://new-chat-voice did not open the New Chat composer"
         )
         XCTAssertTrue(
@@ -126,7 +126,7 @@ final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
 
         openThroughSystem(fixtureURL("session?id=ui-fixture-session"))
         XCTAssertTrue(
-            app.navigationBars["UI Fixture Session"].waitForExistence(timeout: 25),
+            app.navigationBars["UI Fixture Session"].awaitExistence(timeout: 25),
             "talaria://session did not open the deep-linked session"
         )
     }
@@ -145,11 +145,11 @@ final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
         XCUIDevice.shared.press(.home)
         openThroughSystem(fixtureURL("share"))
         XCTAssertTrue(
-            app.navigationBars["New Fixture Chat"].waitForExistence(timeout: 25),
+            app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 25),
             "Reopening through talaria://share did not import the shared draft"
         )
         XCTAssertTrue(
-            element(carrying: "FixtureSharedDraft").waitForExistence(timeout: 15),
+            element(carrying: "FixtureSharedDraft").awaitExistence(timeout: 15),
             "The shared text was routed away and never reached the composer"
         )
 
@@ -157,19 +157,19 @@ final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
         // carrying the seeded text alone, so a surviving marker means this composer was left
         // alone rather than replaced.
         let input = app.textViews.firstMatch
-        XCTAssertTrue(input.waitForExistence(timeout: 10), "The shared draft did not open an editable composer")
+        XCTAssertTrue(input.awaitExistence(timeout: 10), "The shared draft did not open an editable composer")
         input.tap()
         input.typeText(" MarkedByTest")
-        XCTAssertTrue(element(carrying: "MarkedByTest").waitForExistence(timeout: 5))
+        XCTAssertTrue(element(carrying: "MarkedByTest").awaitExistence(timeout: 5))
 
         // The inbox is empty now, so delivering the share URL again must import nothing.
         openThroughSystem(fixtureURL("share"))
         XCTAssertFalse(
-            app.navigationBars["Chats"].waitForExistence(timeout: 3),
+            app.navigationBars["Chats"].awaitExistence(timeout: 3),
             "A share URL with nothing pending changed navigation"
         )
         XCTAssertTrue(
-            element(carrying: "MarkedByTest").waitForExistence(timeout: 10),
+            element(carrying: "MarkedByTest").awaitExistence(timeout: 10),
             "A second share URL replaced the composer, so the record was imported twice"
         )
     }
@@ -182,7 +182,7 @@ final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
         for url in ["not-a-destination", "session?id=", "new-chat-provider?provider=", "open"] {
             openThroughSystem(fixtureURL(url))
             XCTAssertFalse(
-                app.navigationBars["New Fixture Chat"].waitForExistence(timeout: 3),
+                app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 3),
                 "talaria://\(url) opened a new chat"
             )
             XCTAssertFalse(
@@ -206,7 +206,7 @@ final class AppIntentEntryPointUITests: AppEntryPointUITestCase {
     func testNewChatIntentOpensTheComposerAtLaunch() throws {
         launchFixture(additionalArguments: ["--ui-test-intent-new-chat"])
         XCTAssertTrue(
-            app.navigationBars["New Fixture Chat"].waitForExistence(timeout: 25),
+            app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 25),
             "The New Chat App Intent did not open the composer"
         )
     }
@@ -294,7 +294,7 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
                 Thread.sleep(forTimeInterval: 2)
             }
             select(icon)
-            if selectedChoice(icon).waitForExistence(timeout: 5) { return true }
+            if selectedChoice(icon).awaitExistence(timeout: 5) { return true }
         }
         return false
     }
@@ -311,11 +311,11 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
         for _ in 0..<8 where !row.exists {
             scrollSettingsRoot(up: true)
         }
-        XCTAssertTrue(row.waitForExistence(timeout: 5), "Missing the App Icon picker")
+        XCTAssertTrue(row.awaitExistence(timeout: 5), "Missing the App Icon picker")
         guard !choice("System").exists else { return }
         tapRow(row)
         XCTAssertTrue(
-            choice("System").waitForExistence(timeout: 5),
+            choice("System").awaitExistence(timeout: 5),
             "The App Icon choices did not expand"
         )
     }
@@ -326,13 +326,13 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
         for _ in 0..<8 where !choice.exists {
             scrollSettingsRoot(up: true)
         }
-        XCTAssertTrue(choice.waitForExistence(timeout: 5), "Missing the \(icon) app icon choice")
+        XCTAssertTrue(choice.awaitExistence(timeout: 5), "Missing the \(icon) app icon choice")
         tapRow(choice)
         // Changing the icon raises the system's "you have changed the icon" alert.
         dismissSystemAlert()
         // A successful change collapses the picker. Waiting for that before re-reading it
         // keeps the next tap from landing on a row that is still animating away.
-        _ = self.choice("System").waitForNonExistence(timeout: 5)
+        _ = self.choice("System").awaitNonExistence(timeout: 5)
         expandIconPicker()
     }
 
@@ -381,7 +381,7 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
     func testSessionLossSignsInOverExistingSessionList() {
         let row = triggerRecovery()
         let password = app.secureTextFields["ReauthenticatePassword"]
-        XCTAssertTrue(password.waitForExistence(timeout: 15))
+        XCTAssertTrue(password.awaitExistence(timeout: 15))
         XCTAssertFalse(app.textFields["Server URL"].exists)
         XCTAssertTrue(password.isEnabled)
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
@@ -391,18 +391,18 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         password.tap()
         password.typeText("fixture-password")
         app.buttons["ReauthenticateSignIn"].tap()
-        XCTAssertTrue(password.waitForNonExistence(timeout: 15))
+        XCTAssertTrue(password.awaitNonExistence(timeout: 15))
         XCTAssertTrue(app.navigationBars["Chats"].exists)
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(row.awaitExistence(timeout: 10))
         XCTAssertTrue(row.isEnabled)
         row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        XCTAssertTrue(app.buttons["BackButton"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["BackButton"].awaitExistence(timeout: 10))
     }
 
     func testTrustedHeaderRecoveryCanRetryWithoutSigningOut() {
         _ = triggerRecovery(additionalArguments: ["--ui-test-reauthentication-trusted"])
         let retry = app.buttons["ReauthenticateRetry"]
-        XCTAssertTrue(retry.waitForExistence(timeout: 15))
+        XCTAssertTrue(retry.awaitExistence(timeout: 15))
         XCTAssertFalse(app.secureTextFields["ReauthenticatePassword"].exists)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(
             format: "label BEGINSWITH %@", "This server signs in through an identity proxy"
@@ -416,7 +416,7 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         for _ in 0..<5 where !addHeader.exists || !addHeader.isHittable { app.swipeUp() }
         addHeader.tap()
         let name = app.textFields["Header name"]
-        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        XCTAssertTrue(name.awaitExistence(timeout: 5))
         name.tap()
         name.typeText("X-Fixture-Authorization")
         let value = app.secureTextFields["Header value"]
@@ -424,31 +424,31 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         value.typeText("fixture-token")
         for _ in 0..<5 where !retry.exists || !retry.isHittable { app.swipeDown() }
         retry.tap()
-        XCTAssertTrue(retry.waitForNonExistence(timeout: 15))
+        XCTAssertTrue(retry.awaitNonExistence(timeout: 15))
         // This title is returned only by a new request carrying the repaired header.
-        XCTAssertTrue(app.staticTexts["Header recovery confirmed"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Header recovery confirmed"].awaitExistence(timeout: 10))
     }
 
     func testSSOIsPrimaryWithPasswordAvailableThroughTextLink() {
         _ = triggerRecovery(additionalArguments: ["--ui-test-reauthentication-both"])
         let sso = app.buttons["ReauthenticateSSO"]
         let methodSwitch = app.buttons["ReauthenticateSwitchMethod"]
-        XCTAssertTrue(sso.waitForExistence(timeout: 15))
+        XCTAssertTrue(sso.awaitExistence(timeout: 15))
         XCTAssertFalse(app.secureTextFields["ReauthenticatePassword"].exists)
         XCTAssertEqual(methodSwitch.label, "Sign in with password")
         methodSwitch.tap()
-        XCTAssertTrue(app.secureTextFields["ReauthenticatePassword"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.secureTextFields["ReauthenticatePassword"].awaitExistence(timeout: 5))
         XCTAssertTrue(app.buttons["ReauthenticateSignIn"].exists)
         XCTAssertFalse(sso.exists)
         methodSwitch.tap()
-        XCTAssertTrue(sso.waitForExistence(timeout: 5))
+        XCTAssertTrue(sso.awaitExistence(timeout: 5))
         XCTAssertFalse(app.secureTextFields["ReauthenticatePassword"].exists)
     }
 
     private func triggerRecovery(additionalArguments: [String] = []) -> XCUIElement {
         launchFixtureOnSessionList(additionalArguments: ["--ui-test-reauthentication"] + additionalArguments)
         let row = app.buttons.containing(.staticText, identifier: "UI Fixture Session").firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(row.awaitExistence(timeout: 10))
         // Returning to the list triggers its normal refresh without leaving a
         // pull-to-refresh animation running behind the authentication sheet.
         row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -456,11 +456,7 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         let recovery = app.staticTexts["Your session expired. Sign in again."]
         // A foreground refresh can expire the session before navigation finishes,
         // for example when a native permission alert interrupts the row tap.
-        let reachedChatOrRecovery = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in back.exists || recovery.exists },
-            object: nil
-        )
-        XCTAssertEqual(XCTWaiter.wait(for: [reachedChatOrRecovery], timeout: 10), .completed)
+        XCTAssertTrue(poll(timeout: 10) { back.exists || recovery.exists })
         if !recovery.exists { back.tap() }
         return row
     }
