@@ -68,8 +68,8 @@ dependency:
 
 | Workflow | Job | Native dependency |
 |---|---|---|
-| `app-tests.yml` | `app-build` | `app/ci/build-for-testing` once; the UI suite uploads it as the `ui-suite-build` artifact |
-| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: a pull request's launch smoke test, or the UI suite's four shards (hosted unit tests, launch smoke, UI tests) |
+| `app-tests.yml` | `app-build` | `app/ci/build-for-testing` once: pull requests and main pushes stop there, and the UI suite uploads it as the `ui-suite-build` artifact |
+| `app-tests.yml` | `app-test` | `xcodebuild test-without-building` in the simulator: the UI suite's four shards (hosted unit tests, launch smoke, UI tests), nightly and at release; never on pull requests |
 | `app-tests.yml` | `package-test` | `swift test` for TalariaKit (every native contract class and the live Web contract test) |
 | `ci.yml` | `app-tooling` | exercises the macOS `lockf`/`simctl` runner scripts with fakes |
 | `fuzz-soak.yml` | `soak` | `swift test` for TalariaKit's fuzz soak class |

@@ -67,6 +67,30 @@ if "$script" "App build" 0 "Upload the test build" >/dev/null 2>&1; then echo "E
 fixtures "$(job "App build" 2 completed '"failure"' '"success"')"
 if "$script" "App build" 60 "Upload the test build" >/dev/null 2>&1; then echo "Expected a failed build to fail despite its upload." >&2; exit 1; fi
 
+# The UI suite shards' handoff (TAL-405). An upload already visible on the first poll returns after that one call.
+fixtures "$(job "App build" 2 in_progress null '"success"')"
+[[ "$(last_line "$("$script" "App build" 2700 "Upload the test build")")" == "App build finished Upload the test build (attempt 2)." ]]
+[[ "$(cat "$work/calls")" == 1 ]]
+# A build that fails or is cancelled before its upload fails on the poll that sees it, not at the timeout.
+for conclusion in failure cancelled; do
+  fixtures "$(job "App build" 2 in_progress null null)" "$(job "App build" 2 completed "\"${conclusion}\"" '"skipped"')"
+  if output=$("$script" "App build" 2700 "Upload the test build" 2>&1); then echo "Expected a ${conclusion} build to fail." >&2; exit 1; fi
+  [[ "$(last_line "$output")" == "App build finished ${conclusion} (attempt 2)" ]]
+  [[ "$(cat "$work/calls")" == 2 ]]
+done
+# "Re-run failed jobs" on a shard alone: attempt 2 has only the build record kept from attempt 1.
+fixtures "$(job "App build" 1 completed '"success"' '"success"')"
+[[ "$(last_line "$("$script" "App build" 2700 "Upload the test build")")" == "App build succeeded (attempt 1)." ]]
+[[ "$(cat "$work/calls")" == 1 ]]
+# A re-run that rebuilds waits for the new attempt's upload, not attempt 1's failed build.
+fixtures "$(job "App build" 1 completed '"failure"' '"skipped"'),$(job "App build" 2 in_progress null null)" \
+         "$(job "App build" 1 completed '"failure"' '"skipped"'),$(job "App build" 2 in_progress null '"success"')"
+[[ "$(last_line "$("$script" "App build" 2700 "Upload the test build")")" == "App build finished Upload the test build (attempt 2)." ]]
+[[ "$(cat "$work/calls")" == 2 ]]
+# Each observation logs its call's duration, the latency a shard's step summary reports.
+fixtures "$(job "App build" 2 completed '"success"')"
+[[ "$("$script" "App build" | head -n 1)" =~ ^[0-9:]{8}\ App\ build:\ attempt\ 2\ completed\ success\ \([0-9]+s\ call\)$ ]]
+
 # Transient API errors are retried at the poll cadence (TAL-404): a TLS timeout twice, then the upload succeeded.
 tls='Get "https://api.github.com/repos/MaudeCode/talaria/actions/runs/1/jobs?filter=all&per_page=100&poll=35": net/http: TLS handshake timeout'
 fixtures "$(job "App build" 2 in_progress null '"success"')"

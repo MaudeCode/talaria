@@ -86,7 +86,13 @@ class TestIOSRunnerTest < Minitest::Test
     refute(shard["steps"].any? { |step| step["name"] == "Build for testing" }, "test jobs never build")
     steps = shard["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
     assert_equal(1, workflow_text("app-tests.yml").scan("xcodebuild test-without-building").length)
-    assert_equal('ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"', steps.fetch("Wait for the build")["run"])
+    # The build poll starts in the background before the setup and the boot, whose aftermath starves this runner,
+    # and the step after the boot collects its result (TAL-405).
+    start = shard["steps"].index { |step| step["name"] == "Start waiting for the build" }
+    assert_equal(["actions/checkout@v7", "./.github/actions/setup-xcode"], [start - 1, start + 1].map { |index| shard["steps"][index]["uses"] })
+    assert_includes(steps.fetch("Start waiting for the build")["run"],
+                    %(nohup bash -c 'ci/wait-for-job "${BUILD_JOB}" 2700 "Upload the test build"; echo $? >))
+    assert_includes(steps.fetch("Wait for the build")["run"], 'exit "$(cat "${status}")"')
     # Every native contract class and the live test run in the package job; hosted shards never read the probe's
     # fixture (TAL-399).
     refute_match(/contract-fixture|LIVE_CONTRACT|CONTRACT_TEST_CLASSES|CONTRACTS_SELECTED/, shard.to_yaml)
@@ -149,9 +155,9 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal(1, workflow.scan("            -parallel-testing-enabled NO \\").length)
     refute_match(/parallel-testing-enabled YES|parallel-testing-worker-count|test_workers|build_cache|COMPILATION_CACHE|xcode-cache/, workflow)
     refute_match(/COMPILATION_CACHE|build-cache/, File.read(File.expand_path("build-for-testing", __dir__), encoding: "UTF-8"))
-    # Pull requests run the package tests, the App build for testing and the launch smoke test on one simulator.
-    # The simulator-hosted unit tests and every UI test run in the full suite's four shards (TAL-399), or in one
-    # for a scoped UI suite dispatch (TAL-401).
+    # Pull requests run the package tests and the App build for testing, and nothing in a simulator (TAL-405). The
+    # simulator-hosted unit tests, the launch smoke and every UI test run in the full suite's four shards
+    # (TAL-399), or in one for a scoped UI suite dispatch (TAL-401).
     assert_includes(workflow, "timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 360 || 60 }}")
     # Dispatch inputs arrive as strings, so the reusable workflow's input is a string too.
     app_tests = YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)
@@ -159,21 +165,23 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(workflow, 'if (( TEST_ITERATIONS > 1 )); then selection+=(-test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure); fi')
     jobs = workflow_jobs("app-tests.yml")
     shard = jobs.fetch("app-test")
-    assert_equal("${{ fromJSON(inputs.mode == 'full' && inputs.only_testing == '' && '[0,1,2,3]' || '[0]') }}",
-                 shard["strategy"]["matrix"]["shard"])
-    # A contract-only change has no App build, so no smoke either; the package job runs its contract classes.
-    assert_equal(["inputs.mode != 'contracts'"] * 2, [shard["if"], jobs.fetch("app-build")["if"]])
+    assert_equal("${{ fromJSON(inputs.only_testing == '' && '[0,1,2,3]' || '[0]') }}", shard["strategy"]["matrix"]["shard"])
+    # A pull request builds without a test shard; a contract-only change has no App build either, and the package
+    # job runs its contract classes in every mode.
+    assert_equal("inputs.mode == 'full'", shard["if"])
+    assert_equal("inputs.mode != 'contracts'", jobs.fetch("app-build")["if"])
     assert_equal([nil] * 4, jobs.values_at("app-build", "app-test", "package-test").map { |job| job["needs"] } + [jobs.fetch("package-test")["if"]])
-    # Every mode with a build uploads it for the test jobs.
-    assert_nil(jobs.fetch("app-build")["steps"].find { |step| step["name"] == "Upload the test build" }["if"])
-    refute_includes(jobs.fetch("app-build")["steps"].find { |step| step["name"] == "Build for testing" }["run"], "exit 0")
-    # Outside the full suite the one shard selects only the launch smoke test, which must execute and pass.
-    assert_equal("TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList", shard["env"]["LAUNCH_SMOKE_TEST"])
-    select = shard["steps"].find { |step| step["name"] == "Select this shard's tests" }["run"]
-    assert_includes(select, %(elif [[ "${MODE}" != "full" ]]; then\n  echo "-only-testing:${LAUNCH_SMOKE_TEST}" > selection.txt))
+    # Only the full suite packages and uploads its build for the shards; the build itself always runs to the end.
+    build_steps = jobs.fetch("app-build")["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
+    assert_equal(["inputs.mode == 'full'"] * 2, build_steps.values_at("Package the test build", "Upload the test build").map { |step| step["if"] })
+    assert_equal('ci/build-for-testing "${BUILD_DESTINATION}"', build_steps.fetch("Build for testing")["run"])
+    assert_nil(build_steps.fetch("Build for testing")["if"])
+    # The launch smoke runs as one of the full suite's UI tests, and no UI test may skip.
+    refute_match(/LAUNCH_SMOKE|require-launch-smoke|MODE/, shard.to_yaml)
     reject = shard["steps"].find { |step| step["name"] == "Reject skipped UI tests" }["run"]
-    assert_includes(reject, '[[ "${MODE}" == "full" ]] || options+=(--require-launch-smoke)')
-    # Pull requests and main pushes run the same App jobs; the full UI suite is nightly and a release gate.
+    assert_equal('scripts/assert-no-skipped-ui-tests "${RESULT_BUNDLE_PATH}"', reject)
+    # Pull requests and main pushes run the same App jobs; the full UI suite, launch smoke included, is nightly and
+    # a release gate.
     app = workflow_jobs("ci.yml").fetch("app")
     assert_equal("./.github/workflows/app-tests.yml", app["uses"])
     assert_equal("${{ (needs.changes.result != 'success' || needs.changes.outputs.app != 'false') && 'pull-request' || 'contracts' }}",

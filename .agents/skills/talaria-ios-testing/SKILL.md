@@ -33,10 +33,10 @@ Run simulator-hosted XCTest only through `scripts/test-ios [test-identifier ...]
 3. For non-UI App changes, run `swift test --package-path TalariaKit` and `scripts/test-ios TalariaTests TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList` before review or commit. HTTP/SSE changes also require the contract checks. Run `scripts/test-ios` for UI changes or uncertain scope.
 
 CI (pull requests and main pushes) runs, for every App change, `swift test` for
-TalariaKit, the App build for testing (App, extensions and both test bundles),
-and the launch smoke test on one simulator, which must execute and pass
-(TAL-399). The simulator-hosted unit tests and the UI suite run in four shards
-plus the package job nightly and as a release gate
+TalariaKit and the App build for testing (App, extensions and both test
+bundles); nothing runs in a simulator (TAL-399, TAL-405). The simulator-hosted
+unit tests, the launch smoke test and the UI suite run in four shards plus the
+package job nightly and as a release gate
 (`.github/workflows/ui-suite.yml`), not before merge, so run step 3 locally, and
 the UI suite for UI changes, before review (TAL-332).
 

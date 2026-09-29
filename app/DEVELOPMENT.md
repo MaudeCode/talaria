@@ -50,8 +50,9 @@ models, networking (API client, SSE, contract types), persistence and sync, and
 the view models and presentation logic behind every screen (chat, sessions,
 Kanban, settings, workspace, auth). The App, the share extension and the Live
 Activity widget link it. Its tests run on macOS without a simulator; CI runs
-them on every App change, beside the App build and the launch smoke test, while
-the simulator-hosted `TalariaTests` run nightly and as a release gate:
+them on every App change, beside the App build for testing, while the
+simulator-hosted `TalariaTests`, the launch smoke test and the UI suite run
+nightly and as a release gate:
 
 ```zsh
 swift test --package-path TalariaKit
