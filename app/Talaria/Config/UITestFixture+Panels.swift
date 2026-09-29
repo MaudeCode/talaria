@@ -8,7 +8,8 @@ enum UITestPanelScenario: String, CaseIterable {
     case populated = "--ui-test-panels"
     case empty = "--ui-test-panels-empty"
     /// Fails each panel's first load so a journey can walk the error state and recover
-    /// through Try Again; every later request serves the `populated` payload.
+    /// through Try Again; every later request serves the `populated` payload, and the retry is
+    /// held like a populated first load so its loading state shows too.
     case failing = "--ui-test-panels-error"
 
     static var current: Self? {
@@ -122,7 +123,7 @@ extension UITestFixtureURLProtocol {
     /// Whether to hold a panel's first load until the UI test has seen its loading state
     /// (TAL-401); a fixed stall let a slow runner miss it.
     static func holdsPanelLoad(for url: URL) -> Bool {
-        UITestPanelScenario.current == .populated
+        [.populated, .failing].contains(UITestPanelScenario.current)
             && panelDelayPaths.contains(url.path)
             && url.query?.contains("since=") != true
             && UITestPanelFixtureState.shared.consumeDelay(for: url.path)

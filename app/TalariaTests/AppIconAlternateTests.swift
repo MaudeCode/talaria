@@ -5,8 +5,8 @@ import XCTest
 /// Every alternate icon the Appearance picker offers ships in the built app under the name the
 /// picker passes to `setAlternateIconName`. The asset catalog compiler writes an alternate into
 /// `CFBundleAlternateIcons` only after compiling its icon set, and fails the build for a listed
-/// set it cannot find. `AppIconSwitchingUITests` applies one alternate and the primary icon
-/// through the picker and the system; applying every alternate that way cost minutes of system
+/// set it cannot find. `AppIconSwitchingUITests` applies one alternate through the picker
+/// and the system; applying every alternate that way cost minutes of system
 /// alerts, and a hosted test cannot dismiss the alert each change raises (TAL-402).
 final class AppIconAlternateTests: XCTestCase {
     func testEveryPickerAlternateIsDeclaredInTheBuiltApp() throws {

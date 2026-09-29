@@ -70,6 +70,22 @@ class AgentPanelUITestCase: TalariaUITestCase {
         XCTAssertTrue(releaseHeldLoads { !loading.exists }, "\(panel) stayed in its loading state")
     }
 
+    /// From a panel's failed first load: its error (Kanban names none), Try Again, the held
+    /// retry's loading state, and the error gone.
+    func recoverFromFailedLoad(_ panel: String, error: String?, loading: String) {
+        if let error {
+            XCTAssertTrue(
+                element(labelContaining: error).awaitExistence(timeout: 15),
+                "\(panel) did not surface its load failure"
+            )
+        }
+        tapRetry(in: panel)
+        assertLoadingResolves(loading, panel: panel)
+        if let error {
+            XCTAssertFalse(element(labelContaining: error).exists, "\(panel) kept its error state after recovering")
+        }
+    }
+
     func tapRetry(in panel: String) {
         let retry = app.buttons["Try Again"].firstMatch
         XCTAssertTrue(retry.awaitExistence(timeout: 10), "\(panel) offered no recovery action")
@@ -77,12 +93,15 @@ class AgentPanelUITestCase: TalariaUITestCase {
     }
 }
 
-/// Content, detail/editor surfaces and one safe primary interaction per panel.
+/// Each panel's failed first load and its recovery through Try Again, then its content,
+/// detail/editor surfaces and one safe primary interaction. The fixture fails each panel's first
+/// load and holds the retry (`--ui-test-panels-error`), so one visit walks the failure, the
+/// loading state and the content (TAL-402).
 final class AgentPanelContentUITests: AgentPanelUITestCase {
     /// Each panel is reached from the previous one's sidebar, so one launch walks three
     /// panels and leaves through the Chats destination once (TAL-402).
     func testTasksKanbanAndMemoryPanels() throws {
-        launchPanelFixture("--ui-test-panels")
+        launchPanelFixture("--ui-test-panels-error")
         try assertTasksPanelOpensDetailAndEditorWithoutLosingItsList()
         try assertKanbanPanelOpensCardDetailWithoutDispatchingWork()
         try assertMemoryPanelSavesASectionThroughItsEditor()
@@ -90,7 +109,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
     }
 
     func testSkillsAndInsightsPanels() throws {
-        launchPanelFixture("--ui-test-panels")
+        launchPanelFixture("--ui-test-panels-error")
         try assertSkillsPanelFiltersTogglesAndOpensASkill()
         try assertInsightsPanelShowsQuotasAnalyticsAndSwitchesTimeframe()
         leavePanel("Insights")
@@ -98,7 +117,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
 
     private func assertTasksPanelOpensDetailAndEditorWithoutLosingItsList() throws {
         openPanel("Tasks")
-        assertLoadingResolves("Loading tasks...", panel: "Tasks")
+        recoverFromFailedLoad("Tasks", error: "Could Not Load Tasks", loading: "Loading tasks...")
 
         let job = element(labelContaining: "Fixture Nightly Digest")
         XCTAssertTrue(job.awaitExistence(timeout: 10), "Tasks did not render the fixture jobs")
@@ -140,7 +159,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
 
     private func assertKanbanPanelOpensCardDetailWithoutDispatchingWork() throws {
         openPanel("Kanban")
-        assertLoadingResolves("Loading Kanban", panel: "Kanban")
+        recoverFromFailedLoad("Kanban", error: nil, loading: "Loading Kanban")
 
         let selector = app.descendants(matching: .any)["KanbanStatusSelector"]
         XCTAssertTrue(selector.awaitExistence(timeout: 15), "The Kanban Board did not load")
@@ -166,7 +185,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
 
     private func assertSkillsPanelFiltersTogglesAndOpensASkill() throws {
         openPanel("Skills")
-        assertLoadingResolves("Loading skills...", panel: "Skills")
+        recoverFromFailedLoad("Skills", error: "Could Not Load Skills", loading: "Loading skills...")
 
         let skill = element(labelContaining: "fixture-runner")
         XCTAssertTrue(skill.awaitExistence(timeout: 10), "Skills did not render the fixture skills")
@@ -248,7 +267,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
 
     private func assertMemoryPanelSavesASectionThroughItsEditor() throws {
         openPanel("Memory")
-        assertLoadingResolves("Loading memory...", panel: "Memory")
+        recoverFromFailedLoad("Memory", error: "Could Not Load Memory", loading: "Loading memory...")
 
         XCTAssertTrue(
             element(labelContaining: "Fixture notes body").awaitExistence(timeout: 10),
@@ -275,7 +294,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
 
     private func assertInsightsPanelShowsQuotasAnalyticsAndSwitchesTimeframe() throws {
         openPanel("Insights")
-        assertLoadingResolves("Loading analytics…", panel: "Insights")
+        recoverFromFailedLoad("Insights", error: "Could Not Load Analytics", loading: "Loading analytics…")
 
         XCTAssertTrue(
             element(labelled: "Provider quotas").awaitExistence(timeout: 10),
@@ -336,47 +355,6 @@ final class AgentPanelEmptyStateUITests: AgentPanelUITestCase {
                     add(screenshot)
                     XCTFail("\(panel) did not show its empty state")
                 }
-            }
-        }
-        leavePanel(try XCTUnwrap(Self.panels.last))
-    }
-}
-
-/// Every panel's load failure, and its recovery through Try Again on the same screen.
-final class AgentPanelRecoveryUITests: AgentPanelUITestCase {
-    func testEveryAgentPanelRecoversFromAFailedLoad() throws {
-        launchPanelFixture("--ui-test-panels-error")
-
-        let failures = [
-            "Tasks": (error: "Could Not Load Tasks", content: "Fixture Nightly Digest"),
-            "Skills": (error: "Could Not Load Skills", content: "fixture-runner"),
-            "Memory": (error: "Could Not Load Memory", content: "Fixture notes body"),
-            "Insights": (error: "Could Not Load Analytics", content: "Sessions")
-        ]
-
-        for panel in Self.panels {
-            openPanel(panel)
-            if panel == "Kanban" {
-                tapRetry(in: panel)
-                XCTAssertTrue(
-                    app.descendants(matching: .any)["KanbanStatusSelector"].awaitExistence(timeout: 20),
-                    "Kanban did not recover after Try Again"
-                )
-            } else {
-                let expected = try XCTUnwrap(failures[panel])
-                XCTAssertTrue(
-                    element(labelContaining: expected.error).awaitExistence(timeout: 15),
-                    "\(panel) did not surface its load failure"
-                )
-                tapRetry(in: panel)
-                XCTAssertTrue(
-                    element(labelContaining: expected.content).awaitExistence(timeout: 20),
-                    "\(panel) did not recover after Try Again"
-                )
-                XCTAssertFalse(
-                    element(labelContaining: expected.error).exists,
-                    "\(panel) kept its error state after recovering"
-                )
             }
         }
         leavePanel(try XCTUnwrap(Self.panels.last))

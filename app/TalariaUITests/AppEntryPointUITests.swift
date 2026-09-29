@@ -143,6 +143,7 @@ final class NewChatDeepLinkUITests: AppEntryPointUITestCase {
 }
 
 /// Share delivery needs its own launch: the fixture seeds the draft whenever the app backgrounds.
+/// The hardware-keyboard commands run in the same launch, after the share.
 final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
     /// The share extension writes its draft while Talaria is in the background and then opens
     /// `talaria://share`; the fixture seeds it the same way, so reopening has real work to do.
@@ -185,15 +186,14 @@ final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
             element(carrying: "MarkedByTest").awaitExistence(timeout: 10),
             "A second share URL replaced the composer, so the record was imported twice"
         )
+
+        returnToSessionList()
+        assertSearchAndNewChatCommands()
     }
-}
 
-/// Hardware-keyboard commands. `typeKey` is available on every simulator destination the
-/// scheme runs on, so these checks never skip.
-final class KeyboardCommandUITests: AppEntryPointUITestCase {
-    func testSearchAndNewChatCommands() throws {
-        launchFixtureOnSessionList()
-
+    /// Hardware-keyboard commands. `typeKey` is available on every simulator destination the
+    /// scheme runs on, so these checks never skip. Starts on the session list.
+    private func assertSearchAndNewChatCommands() {
         XCTAssertNotNil(waitForSessionSearchControl(timeout: 15), "Missing the session search control")
         let search = sessionSearchField
         XCTAssertFalse(search.exists && hasKeyboardFocus(search), "Session search starts unfocused")
@@ -230,11 +230,10 @@ final class KeyboardCommandUITests: AppEntryPointUITestCase {
     }
 }
 
-/// Appearance: the theme picker and the alternate app icon picker. The picker switches one
-/// alternate and back through the system; `AppIconAlternateTests` (TalariaTests) applies every
-/// alternate through the same `setAlternateIconName` call without driving the picker for each
-/// (TAL-402). The fixture restores the primary icon and the theme at launch, and this journey
-/// leaves both on System, so a reused device starts every run the same way.
+/// Appearance: the theme picker and the alternate app icon picker, which applies one alternate
+/// through the system; `AppIconAlternateTests` (TalariaTests) checks that every alternate the
+/// picker offers ships in the app (TAL-402). The fixture restores the primary icon and the theme at
+/// every launch, so a reused device starts each run the same way.
 final class AppIconSwitchingUITests: AppEntryPointUITestCase {
     func testThemeAndAppIconPickersShowTheirChoiceAndApplyAnAlternate() throws {
         launchFixture()
@@ -273,12 +272,12 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
         XCTAssertTrue(choice("Disco").awaitExistence(timeout: 3), "The App Icon choices did not expand")
         XCTAssertTrue(selectedChoice("System").exists, "The current app icon is not marked as selected")
 
-        for icon in ["Disco", "System"] {
-            XCTAssertTrue(
-                applyIcon(icon),
-                "The app icon never changed to \(icon); its alternate icon resource is missing or was rejected"
-            )
-        }
+        // One alternate through the picker and the system; the fixture restores the primary icon
+        // at every launch (TAL-402).
+        XCTAssertTrue(
+            applyIcon("Disco"),
+            "The app icon never changed to Disco; its alternate icon resource is missing or was rejected"
+        )
     }
 
     /// iOS rejects alternate-icon changes made in quick succession — the picker surfaces
