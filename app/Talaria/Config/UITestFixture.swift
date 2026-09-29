@@ -1,6 +1,7 @@
 #if DEBUG
 import AppIntents
 import Foundation
+import notify
 import UIKit
 import TalariaKit
 
@@ -42,9 +43,7 @@ struct UITestFixtureEnvironment {
             UITestChatFixtureState.shared.startChat()
             initialDrafts[.session(server: serverURL, sessionID: UITestFixtureURLProtocol.sessionID)] = ChatDraft(text: "Ordinary fixture draft")
         }
-        if UITestPanelScenario.current == .populated {
-            UITestPanelFixtureState.shared.listenForLoadRelease()
-        }
+        UITestFixtureHold.shared.listen()
         // Theme is a standard-defaults preference a test can change, so every fixture
         // launch starts from the same appearance even if a previous run left it switched.
         UserDefaults.standard.set(AppTheme.system.rawValue, forKey: AppTheme.storageKey)
@@ -128,6 +127,39 @@ private extension UITestFixtureEnvironment {
         ) { _ in
             try? TalariaShareDraft.savePendingDraft(pendingShareDraft, in: inbox)
         }
+    }
+}
+
+/// Responses held until the UI test posts `releaseNotification`, so a loading state stays up however long a
+/// slow runner takes to find it (TAL-401). A release answers only the loads held when it lands and is never
+/// banked for a later one, so one launch can hold several screens' loads in turn; the test repeats the release
+/// until what it waits for appears, which also covers a request still on its way (TAL-402).
+final class UITestFixtureHold: @unchecked Sendable {
+    static let shared = UITestFixtureHold()
+    /// Matches `TalariaUITestCase.releaseHeldLoads` in the UI tests.
+    static let releaseNotification = "dev.kil.talaria.ui-test.release-held-loads"
+
+    private let lock = NSLock()
+    private var held: [() -> Void] = []
+    private var token: Int32 = 0
+
+    /// Registers at launch, before any screen can render the loading state the test answers.
+    func listen() {
+        notify_register_dispatch(Self.releaseNotification, &token, .global()) { [weak self] _ in
+            self?.release()
+        }
+    }
+
+    func hold(_ send: @escaping () -> Void) {
+        lock.withLock { held.append(send) }
+    }
+
+    private func release() {
+        let loads = lock.withLock {
+            defer { held = [] }
+            return held
+        }
+        loads.forEach { $0() }
     }
 }
 
@@ -344,17 +376,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
 
-        if Self.holdsPanelLoad(for: url) {
-            UITestPanelFixtureState.shared.hold { [weak self] in
-                guard let self, !self.isStopped else { return }
-                self.sendResponse(for: url)
-            }
-            return
-        }
-
-        if let delay = Self.workspaceResponseDelay(for: url)
-            ?? Self.chatResponseDelay(for: url) {
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) { [weak self] in
+        if Self.holdsPanelLoad(for: url) || Self.holdsWorkspaceRead(for: url) || Self.holdsChatSession(for: url) {
+            UITestFixtureHold.shared.hold { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
             }
@@ -586,10 +609,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
 
     /// TAL-250: the reopen scenario holds the cold first open and the running session's detail, so a test sees
     /// what the chat paints before each answers.
-    private static func chatResponseDelay(for url: URL) -> TimeInterval? {
-        guard UITestChatScenario.current == .reopen, url.path == "/api/session" else { return nil }
+    private static func holdsChatSession(for url: URL) -> Bool {
+        guard UITestChatScenario.current == .reopen, url.path == "/api/session" else { return false }
         let state = chatState.snapshot()
-        return state.started && state.settled ? nil : 6
+        return !(state.started && state.settled)
     }
 
     private static func sessionResponse() -> Data {

@@ -7,8 +7,8 @@ import Foundation
 /// current responses (no repository, no files). `--ui-test-read-errors` and
 /// `--ui-test-file-read-errors` turn the reads these screens depend on into failures — split
 /// so a file preview can fail inside a browser that still lists it — and
-/// `--ui-test-workspace-slow-reads` holds a read long enough for its loading state to be
-/// observed. Remote Git writes stay rejected unless `--ui-test-git-writes` grants the
+/// `--ui-test-workspace-slow-reads` holds each listing and status read until the test releases it,
+/// so its loading state can be observed. Remote Git writes stay rejected unless `--ui-test-git-writes` grants the
 /// capability; the fixture never reaches a real remote, so a push only ever moves fixture
 /// state.
 extension UITestFixtureURLProtocol {
@@ -112,13 +112,11 @@ extension UITestFixtureURLProtocol {
         WorkspaceFixture.isEnabled && url.path == "/api/file/raw" ? "image/png" : nil
     }
 
-    /// Delays a read long enough for its loading state to be asserted, without a real server.
-    /// The delay has to outlast the navigation that opens the screen, since the request
-    /// starts as the destination appears and nothing else holds the response back.
-    static func workspaceResponseDelay(for url: URL) -> TimeInterval? {
-        guard WorkspaceFixture.isEnabled, WorkspaceFixture.readsAreSlow else { return nil }
-        guard url.path == "/api/list" || url.path == "/api/git/status" else { return nil }
-        return 8
+    /// Holds every listing and Git status read until the UI test releases it (`UITestFixtureHold`),
+    /// so each loading state stays observable without a fixed stall.
+    static func holdsWorkspaceRead(for url: URL) -> Bool {
+        WorkspaceFixture.isEnabled && WorkspaceFixture.readsAreSlow
+            && (url.path == "/api/list" || url.path == "/api/git/status")
     }
 
     private static func directoryListData(path: String) -> Data {

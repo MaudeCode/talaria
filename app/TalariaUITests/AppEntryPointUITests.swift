@@ -28,17 +28,6 @@ class AppEntryPointUITestCase: TalariaUITestCase {
         )
     }
 
-    func returnToSessionList() {
-        let chats = app.navigationBars["Chats"]
-        for _ in 0..<3 where !chats.exists {
-            let back = app.buttons["BackButton"]
-            guard back.awaitExistence(timeout: 5) else { break }
-            back.tap()
-            _ = chats.awaitExistence(timeout: 5)
-        }
-        XCTAssertTrue(chats.exists, "Did not return to the session list")
-    }
-
     /// Matches on label *or* value: composer text arrives as an element value, row text as a
     /// label.
     func element(carrying text: String) -> XCUIElement {

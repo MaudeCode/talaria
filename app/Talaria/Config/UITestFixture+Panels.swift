@@ -1,6 +1,5 @@
 #if DEBUG
 import Foundation
-import notify
 
 /// Deterministic Tasks, Kanban, Skills, Memory and Insights payloads for the agent-panel
 /// smoke journeys (TAL-71). Without one of these arguments the fixture keeps serving the
@@ -11,10 +10,6 @@ enum UITestPanelScenario: String, CaseIterable {
     /// Fails each panel's first load so a journey can walk the error state and recover
     /// through Try Again; every later request serves the `populated` payload.
     case failing = "--ui-test-panels-error"
-
-    /// Posted by the UI test once it has seen a panel's loading state; `populated` holds each
-    /// panel's first load until then.
-    static let releaseLoadsNotification = "dev.kil.talaria.ui-test.release-panel-loads"
 
     static var current: Self? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -30,9 +25,6 @@ final class UITestPanelFixtureState: @unchecked Sendable {
     private let lock = NSLock()
     private var failedPaths: Set<String> = []
     private var delayedPaths: Set<String> = []
-    private var heldLoads: [() -> Void] = []
-    private var loadsReleased = false
-    private var releaseToken: Int32 = 0
     private var analyticsFallbackFails = false
     private var disabledSkills: Set<String> = ["fixture-archivist"]
     private var memoryOverrides: [String: String] = [:]
@@ -42,35 +34,9 @@ final class UITestPanelFixtureState: @unchecked Sendable {
         lock.withLock { failedPaths.insert(path).inserted }
     }
 
-    /// Registers at launch, before any panel can render the loading state the test answers.
-    func listenForLoadRelease() {
-        notify_register_dispatch(UITestPanelScenario.releaseLoadsNotification, &releaseToken, .global()) { [weak self] _ in
-            self?.releaseLoads()
-        }
-    }
-
     /// True once per path, so only a panel's first load renders its loading state.
     func consumeDelay(for path: String) -> Bool {
         lock.withLock { delayedPaths.insert(path).inserted }
-    }
-
-    /// Runs `send` once the UI test releases panel loads. The release is sticky: the loading
-    /// state can render before its request reaches the fixture, so a late load runs at once.
-    func hold(_ send: @escaping () -> Void) {
-        let released = lock.withLock {
-            if !loadsReleased { heldLoads.append(send) }
-            return loadsReleased
-        }
-        if released { send() }
-    }
-
-    private func releaseLoads() {
-        let loads = lock.withLock {
-            loadsReleased = true
-            defer { heldLoads = [] }
-            return heldLoads
-        }
-        loads.forEach { $0() }
     }
 
     /// Insights falls back to `/api/sessions` when analytics fail, so the fallback has to

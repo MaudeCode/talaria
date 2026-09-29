@@ -1,4 +1,3 @@
-import notify
 import XCTest
 
 /// Launched-app smoke coverage for the agent panels reached from the sidebar (TAL-71).
@@ -68,9 +67,7 @@ class AgentPanelUITestCase: TalariaUITestCase {
     func assertLoadingResolves(_ label: String, panel: String) {
         let loading = element(labelled: label)
         XCTAssertTrue(loading.awaitExistence(timeout: Self.navigationTimeout), "\(panel) never showed its loading state")
-        // Matches `UITestPanelScenario.releaseLoadsNotification` in the app's fixture.
-        notify_post("dev.kil.talaria.ui-test.release-panel-loads")
-        XCTAssertTrue(loading.awaitNonExistence(timeout: 20), "\(panel) stayed in its loading state")
+        XCTAssertTrue(releaseHeldLoads { !loading.exists }, "\(panel) stayed in its loading state")
     }
 
     func tapRetry(in panel: String) {
@@ -82,8 +79,24 @@ class AgentPanelUITestCase: TalariaUITestCase {
 
 /// Content, detail/editor surfaces and one safe primary interaction per panel.
 final class AgentPanelContentUITests: AgentPanelUITestCase {
-    func testTasksPanelOpensDetailAndEditorWithoutLosingItsList() throws {
+    /// Each panel is reached from the previous one's sidebar, so one launch walks three
+    /// panels and leaves through the Chats destination once (TAL-402).
+    func testTasksKanbanAndMemoryPanels() throws {
         launchPanelFixture("--ui-test-panels")
+        try assertTasksPanelOpensDetailAndEditorWithoutLosingItsList()
+        try assertKanbanPanelOpensCardDetailWithoutDispatchingWork()
+        try assertMemoryPanelSavesASectionThroughItsEditor()
+        leavePanel("Memory")
+    }
+
+    func testSkillsAndInsightsPanels() throws {
+        launchPanelFixture("--ui-test-panels")
+        try assertSkillsPanelFiltersTogglesAndOpensASkill()
+        try assertInsightsPanelShowsQuotasAnalyticsAndSwitchesTimeframe()
+        leavePanel("Insights")
+    }
+
+    private func assertTasksPanelOpensDetailAndEditorWithoutLosingItsList() throws {
         openPanel("Tasks")
         assertLoadingResolves("Loading tasks...", panel: "Tasks")
 
@@ -123,12 +136,9 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         tapCenter(of: editor.buttons["Cancel"])
         XCTAssertTrue(editor.awaitNonExistence(timeout: 10), "The New Task editor did not dismiss")
         XCTAssertTrue(job.awaitExistence(timeout: 10), "Dismissing the editor lost the task list")
-
-        leavePanel("Tasks")
     }
 
-    func testKanbanPanelOpensCardDetailWithoutDispatchingWork() throws {
-        launchPanelFixture("--ui-test-panels")
+    private func assertKanbanPanelOpensCardDetailWithoutDispatchingWork() throws {
         openPanel("Kanban")
         assertLoadingResolves("Loading Kanban", panel: "Kanban")
 
@@ -152,12 +162,9 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
             selector.awaitExistence(timeout: 10) && card.awaitExistence(timeout: 10),
             "Returning from the Card detail lost the Board"
         )
-
-        leavePanel("Kanban")
     }
 
-    func testSkillsPanelFiltersTogglesAndOpensASkill() throws {
-        launchPanelFixture("--ui-test-panels")
+    private func assertSkillsPanelFiltersTogglesAndOpensASkill() throws {
         openPanel("Skills")
         assertLoadingResolves("Loading skills...", panel: "Skills")
 
@@ -237,12 +244,9 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
                 && skill.awaitExistence(timeout: 10),
             "Returning from the skill detail lost the skill list"
         )
-
-        leavePanel("Skills")
     }
 
-    func testMemoryPanelSavesASectionThroughItsEditor() throws {
-        launchPanelFixture("--ui-test-panels")
+    private func assertMemoryPanelSavesASectionThroughItsEditor() throws {
         openPanel("Memory")
         assertLoadingResolves("Loading memory...", panel: "Memory")
 
@@ -267,12 +271,9 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
             element(labelContaining: "Edited by fixture").awaitExistence(timeout: 15),
             "The saved memory text did not return with the reload"
         )
-
-        leavePanel("Memory")
     }
 
-    func testInsightsPanelShowsQuotasAnalyticsAndSwitchesTimeframe() throws {
-        launchPanelFixture("--ui-test-panels")
+    private func assertInsightsPanelShowsQuotasAnalyticsAndSwitchesTimeframe() throws {
         openPanel("Insights")
         assertLoadingResolves("Loading analytics…", panel: "Insights")
 
@@ -299,8 +300,6 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
             "Switching the analytics timeframe did not reload the analytics"
         )
         XCTAssertTrue(sessions.exists, "Switching the analytics timeframe lost the loaded analytics")
-
-        leavePanel("Insights")
     }
 }
 
@@ -338,8 +337,8 @@ final class AgentPanelEmptyStateUITests: AgentPanelUITestCase {
                     XCTFail("\(panel) did not show its empty state")
                 }
             }
-            leavePanel(panel)
         }
+        leavePanel(try XCTUnwrap(Self.panels.last))
     }
 }
 
@@ -379,7 +378,7 @@ final class AgentPanelRecoveryUITests: AgentPanelUITestCase {
                     "\(panel) kept its error state after recovering"
                 )
             }
-            leavePanel(panel)
         }
+        leavePanel(try XCTUnwrap(Self.panels.last))
     }
 }
