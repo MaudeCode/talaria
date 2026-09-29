@@ -865,10 +865,18 @@ extension ChatViewModelSendTests {
         let approvalPendingRequests = LockedCounter()
         let clarificationPendingRequests = LockedCounter()
         let backgroundStatusRequests = LockedCounter()
+        // Each loop polls once and then parks in its interval until cancelled (CI run 36500298117 counted a
+        // poll that real 100 ms intervals had already sent when cleanup ran). Distinct intervals name the loops.
+        let hold = PollingLoopHold(pollsByInterval: [
+            1: approvalPendingRequests,
+            2: clarificationPendingRequests,
+            3: backgroundStatusRequests
+        ])
         let pollingIntervals = ChatPollingIntervals(
-            approvalNanoseconds: 100_000_000,
-            clarificationNanoseconds: 100_000_000,
-            backgroundNanoseconds: 100_000_000
+            approvalNanoseconds: 1,
+            clarificationNanoseconds: 2,
+            backgroundNanoseconds: 3,
+            sleep: { try await hold.sleep($0) }
         )
         let viewModel = try makeViewModel(
             streamClient: streamClient,
@@ -907,22 +915,21 @@ extension ChatViewModelSendTests {
         )
         XCTAssertEqual(result, .executed(message: "Background task started. I'll add the result here when it completes."))
 
-        try await waitUntil {
-            approvalPendingRequests.count > 0 &&
-                clarificationPendingRequests.count > 0 &&
-                backgroundStatusRequests.count > 0
-        }
+        // Every loop has polled and is parked, so no request is in flight.
+        try await waitUntil { hold.parkedLoops == 3 }
+        XCTAssertEqual(approvalPendingRequests.count, 1)
+        XCTAssertEqual(clarificationPendingRequests.count, 1)
+        XCTAssertEqual(backgroundStatusRequests.count, 1)
 
         viewModel.cleanupPollingTasks()
-        let approvalCountAfterCleanup = approvalPendingRequests.count
-        let clarificationCountAfterCleanup = clarificationPendingRequests.count
-        let backgroundCountAfterCleanup = backgroundStatusRequests.count
 
-        try await Task.sleep(nanoseconds: 350_000_000)
-
-        XCTAssertEqual(approvalPendingRequests.count, approvalCountAfterCleanup)
-        XCTAssertEqual(clarificationPendingRequests.count, clarificationCountAfterCleanup)
-        XCTAssertEqual(backgroundStatusRequests.count, backgroundCountAfterCleanup)
+        // A loop that cleanup left running would stay parked instead of seeing its interval cancelled.
+        try await waitUntil { hold.cancelledLoops == 3 }
+        await drainMainActor()
+        XCTAssertEqual(hold.parkedLoops, 3, "A cancelled loop must not wait for another interval")
+        XCTAssertEqual(approvalPendingRequests.count, 1)
+        XCTAssertEqual(clarificationPendingRequests.count, 1)
+        XCTAssertEqual(backgroundStatusRequests.count, 1)
     }
 
     @MainActor
@@ -1203,5 +1210,31 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.sendErrorMessage, "Could not start chat")
         // The rejected voice note never reached transcription or upload.
         XCTAssertEqual(requestedPaths, ["/api/upload", "/api/chat/start"])
+    }
+}
+
+/// Polling-loop sleep that parks a loop in its interval, once it has polled, until the loop is cancelled.
+@MainActor
+private final class PollingLoopHold {
+    private let pollsByInterval: [UInt64: LockedCounter]
+    private(set) var parkedLoops = 0
+    private(set) var cancelledLoops = 0
+
+    init(pollsByInterval: [UInt64: LockedCounter]) {
+        self.pollsByInterval = pollsByInterval
+    }
+
+    func sleep(_ interval: UInt64) async throws {
+        // The clarification loop skips HTTP until its stream fails; let it check again shortly.
+        guard let polls = pollsByInterval[interval], polls.count > 0 else {
+            return try await Task.sleep(for: .milliseconds(1))
+        }
+        parkedLoops += 1
+        do {
+            try await Task.sleep(for: .seconds(3600))
+        } catch {
+            cancelledLoops += 1
+            throw error
+        }
     }
 }

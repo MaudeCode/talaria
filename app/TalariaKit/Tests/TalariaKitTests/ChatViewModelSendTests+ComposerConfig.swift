@@ -260,7 +260,7 @@ extension ChatViewModelSendTests {
         let loadTask = Task { @MainActor in
             await viewModel.loadComposerConfiguration()
         }
-        await fulfillment(of: [firstProfilesStarted], timeout: 1)
+        await fulfillment(of: [firstProfilesStarted], timeout: 10)
         defer { releaseProfilesIfNeeded() }
 
         let selectWorkspaceTask = Task { @MainActor in
@@ -1052,7 +1052,7 @@ extension ChatViewModelSendTests {
         let cancelledCaller = Task { @MainActor in
             await viewModel.loadSkillSlashSuggestions()
         }
-        await fulfillment(of: [requestStarted], timeout: 2)
+        await fulfillment(of: [requestStarted], timeout: 10)
         var survivingCallerFinished = false
         let survivingCaller = Task { @MainActor in
             await viewModel.loadSkillSlashSuggestions()

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 public enum MarkdownMathSegment: Equatable {
     case markdown(String)
@@ -346,6 +347,7 @@ public enum MarkdownMathLayoutCache {
 
         let layout = computeLayout(for: content)
         storage.setObject(Box(layout), forKey: key)
+        storedLayoutCount.withLock { $0 += 1 }
         return layout
     }
 
@@ -410,13 +412,15 @@ public enum MarkdownMathLayoutCache {
         storage.removeAllObjects()
     }
 
-    /// Test seam: whether `content` currently has a memoized entry.
+    /// Test seam: how many layouts have been written to the cache.
     ///
     /// Exists so a test can assert the *absence* of caching on the streaming
     /// path. Comparing two layout values cannot do that — they are equal
-    /// whether or not the cache was written — so without this probe the
-    /// non-pollution contract is untestable.
-    static func hasCachedLayout(for content: String) -> Bool {
-        storage.object(forKey: content as NSString) != nil
+    /// whether or not the cache was written. A write count, unlike a lookup,
+    /// does not depend on `NSCache` keeping an entry it may evict at any time.
+    static var storedLayoutWrites: Int {
+        storedLayoutCount.withLock { $0 }
     }
+
+    private static let storedLayoutCount = OSAllocatedUnfairLock(initialState: 0)
 }

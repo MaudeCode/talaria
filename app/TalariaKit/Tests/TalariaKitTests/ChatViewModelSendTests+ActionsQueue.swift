@@ -298,9 +298,9 @@ extension ChatViewModelSendTests {
             throw URLError(.badURL)
         }
         let olderLoad = Task { @MainActor in await viewModel.loadMessages() }
-        await fulfillment(of: [firstRequestStarted], timeout: 2)
+        await fulfillment(of: [firstRequestStarted], timeout: 10)
         let newerLoad = Task { @MainActor in await viewModel.loadMessages() }
-        await fulfillment(of: [secondRequestStarted], timeout: 2)
+        await fulfillment(of: [secondRequestStarted], timeout: 10)
 
         requests.request(at: 1).complete(withJSON: #"{"session": {"session_id": "session-abc", "read_only": true, "messages": []}}"#)
         await newerLoad.value
@@ -645,11 +645,11 @@ extension ChatViewModelSendTests {
         let loadTask = Task { @MainActor in
             await viewModel.loadMessages()
         }
-        await fulfillment(of: [outerSessionRequestStarted], timeout: 2)
+        await fulfillment(of: [outerSessionRequestStarted], timeout: 10)
         let retryTask = Task { @MainActor in
             await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "retry")))
         }
-        await fulfillment(of: [retryRequestStarted], timeout: 2)
+        await fulfillment(of: [retryRequestStarted], timeout: 10)
 
         requests.request(at: 1).complete(withJSON: """
         {
@@ -658,7 +658,7 @@ extension ChatViewModelSendTests {
           "removed_count": 2
         }
         """)
-        await fulfillment(of: [retrySessionRequestStarted], timeout: 2)
+        await fulfillment(of: [retrySessionRequestStarted], timeout: 10)
         requests.request(at: 2).complete(withJSON: """
         {
           "session": {
@@ -669,7 +669,7 @@ extension ChatViewModelSendTests {
           }
         }
         """)
-        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+        await fulfillment(of: [chatStartRequestStarted], timeout: 10)
 
         requests.request(at: 0).complete(withJSON: """
         {
@@ -753,7 +753,6 @@ extension ChatViewModelSendTests {
         let didStart = await viewModel.sendMessage("Initial request")
         XCTAssertTrue(didStart)
         streamClient.emit(.token("Before hint. "))
-        try await Task.sleep(nanoseconds: 100_000_000)
 
         let result = await viewModel.executeSlashCommand(
             try XCTUnwrap(SlashCommandCatalog.command(named: "steer")),
@@ -1325,9 +1324,11 @@ extension ChatViewModelSendTests {
         streamClient.emit(.streamEnd)
         XCTAssertNil(viewModel.activeStreamID)
 
-        // 4. Let the drain (and any retry loop) fully quiesce. MockURLProtocol resolves
-        //    synchronously, so once the attempt count is stable across several short polls no
-        //    further sends are in flight.
+        // 4. Wait for the drained send itself, then let any retry loop quiesce. MockURLProtocol
+        //    resolves synchronously, so once the attempt count is stable across several short polls
+        //    no further sends are in flight. Without the first wait, a starved drain could look
+        //    quiescent before it sent anything.
+        try await waitUntil { startChatAttempts > attemptsBeforeDrain }
         var lastSeen = startChatAttempts
         var stablePolls = 0
         for _ in 0..<80 {

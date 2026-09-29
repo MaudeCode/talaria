@@ -250,7 +250,7 @@ public final class KanbanFeatureState {
 
     public var hasAvailableArchiveUndo: Bool {
         guard let archiveUndo else { return false }
-        return archiveUndo.expiresAt > Date()
+        return archiveUndo.expiresAt > now()
     }
 
     public var selectedBoard: KanbanBoard? {
@@ -1623,7 +1623,7 @@ public final class KanbanFeatureState {
             cardID: cardID,
             cardTitle: normalizedOptional(title) ?? cardID,
             previousStatus: previousStatus,
-            expiresAt: Date().addingTimeInterval(archiveUndoLifetime),
+            expiresAt: now().addingTimeInterval(archiveUndoLifetime),
             card: card
         )
         archiveUndo = undo

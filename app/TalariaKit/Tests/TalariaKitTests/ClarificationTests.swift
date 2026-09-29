@@ -733,7 +733,7 @@ final class ClarificationTests: APIClientTestCase {
             appeared.fulfill()
         }
         coordinator.startMonitoring()
-        await fulfillment(of: [appeared], timeout: 3)
+        await fulfillment(of: [appeared], timeout: 10)
         XCTAssertEqual(coordinator.clarificationPrompt?.question, "Recovered first question?")
         stream.emit(SSEEventDecoder.decode(eventType: "initial", data: #"{"pending":null,"pending_count":0}"#))
         XCTAssertEqual(coordinator.clarificationPrompt?.question, "Recovered first question?")
@@ -761,7 +761,7 @@ final class ClarificationTests: APIClientTestCase {
         _ = await model.sendMessage("Continue")
         model.applyClarificationUpdate(.init(pending: PendingClarification(clarifyId: "old", question: "Old?"), pendingCount: 1), sessionID: "session-abc")
         let response = Task { await model.respondToClarification("Old answer") }
-        await fulfillment(of: [pendingRead], timeout: 3)
+        await fulfillment(of: [pendingRead], timeout: 10)
         model.applyClarificationUpdate(.init(pending: PendingClarification(clarifyId: "new", question: "New?"), pendingCount: 1), sessionID: "session-abc")
         release.signal()
         _ = await response.value

@@ -1114,7 +1114,7 @@ extension ChatViewModelSendTests {
         assertLiveTigerRun(reopenedViewModel)
 
         let load = Task { @MainActor in await reopenedViewModel.loadMessages(modelContext: context) }
-        await fulfillment(of: [sessionRequested], timeout: 2)
+        await fulfillment(of: [sessionRequested], timeout: 10)
         assertLiveTigerRun(reopenedViewModel)
         XCTAssertTrue(reopenedViewModel.showsRunStateCheck)
 
@@ -1372,7 +1372,6 @@ extension ChatViewModelSendTests {
         let didStart = await viewModel.sendMessage("Initial request")
         XCTAssertTrue(didStart)
         streamClient.emit(.token("Before hint. "))
-        try await Task.sleep(nanoseconds: 100_000_000)
         _ = await viewModel.executeSlashCommand(
             try XCTUnwrap(SlashCommandCatalog.command(named: "steer")),
             args: "Use the focused test"

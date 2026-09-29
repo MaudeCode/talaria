@@ -388,7 +388,7 @@ final class WorkspaceRegistryViewModelTests: APIClientTestCase {
         let firstMove = Task { @MainActor in
             await model.moveWorkspaces(fromOffsets: IndexSet(integer: 0), toOffset: 3)
         }
-        await fulfillment(of: [firstReorderStarted], timeout: 2)
+        await fulfillment(of: [firstReorderStarted], timeout: 10)
         XCTAssertTrue(model.isMutating)
 
         // Move 2 (overlapping): beta to the end → [gamma, alpha, beta];
@@ -460,7 +460,7 @@ final class WorkspaceRegistryViewModelTests: APIClientTestCase {
         let renameTask = Task { @MainActor in
             await model.renameWorkspace(path: "/Users/test/alpha", to: "Renamed Alpha")
         }
-        await fulfillment(of: [renameStarted], timeout: 2)
+        await fulfillment(of: [renameStarted], timeout: 10)
         XCTAssertTrue(model.isMutating)
 
         let beta = try XCTUnwrap(model.rows.first { $0.path == "/Users/test/beta" })

@@ -566,7 +566,7 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         let first = Task { @MainActor in
             await manager.configureWithOIDC(serverURLString: "https://example.test")
         }
-        await fulfillment(of: [browserStarted], timeout: 2)
+        await fulfillment(of: [browserStarted], timeout: 10)
 
         await manager.configureWithOIDC(serverURLString: "https://example.test")
         XCTAssertEqual(client.beginCount, 1)

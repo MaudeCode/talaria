@@ -180,7 +180,7 @@ final class LiveActivityTests: XCTestCase {
         let store = TalariaCompletionStore(defaults: defaults, session: session, credentials: { credentials })
         await store.refresh()
         let refresh = Task { await store.refresh() }
-        await fulfillment(of: [refreshStarted], timeout: 2)
+        await fulfillment(of: [refreshStarted], timeout: 10)
         let acknowledged = await store.acknowledge(["completion1"])
         XCTAssertTrue(acknowledged)
         requests.request(at: 1).complete(withJSON: payload)

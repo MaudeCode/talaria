@@ -27,8 +27,10 @@ class KanbanDefaultsTestCase: XCTestCase {
 final class KanbanFeatureStateTests: KanbanDefaultsTestCase {
 }
 
+/// A condition that already holds returns at once; the deadline is generous because a loaded CI runner can
+/// starve the main actor for seconds.
 func waitUntil(
-    timeout: Duration = .seconds(1),
+    timeout: Duration = .seconds(10),
     condition: @escaping @Sendable () async -> Bool
 ) async throws {
     let clock = ContinuousClock()

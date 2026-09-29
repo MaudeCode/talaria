@@ -140,18 +140,24 @@ extension KanbanFeatureStateTests {
         let client = ImmediateMutationClient(statusResults: [
             .success(mutationDecode(#"{"task":{"id":"CARD-1","status":"archived"}}"#))
         ])
+        // A test clock ends the undo window; a real 10 ms lifetime could lapse before the first check on a
+        // slow runner.
+        let clock = MutableClock(Date(timeIntervalSince1970: 1_770_000_000))
         let state = KanbanFeatureState(
             server: URL(string: "https://example.test")!,
             defaults: defaults,
             client: client,
-            archiveUndoLifetime: 0.01
+            archiveUndoLifetime: 8,
+            now: { clock.now }
         )
         await state.load()
         let card = try XCTUnwrap(state.allCards.first { $0.cardID == "CARD-1" })
 
         await state.archiveCard(card)
         XCTAssertTrue(state.hasAvailableArchiveUndo)
-        try await Task.sleep(for: .milliseconds(30))
+        clock.advance(by: 7.9)
+        XCTAssertTrue(state.hasAvailableArchiveUndo)
+        clock.advance(by: 0.1)
 
         XCTAssertFalse(state.hasAvailableArchiveUndo)
         let statusRequestCount = await client.statusRequestCount

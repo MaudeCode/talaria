@@ -339,7 +339,7 @@ extension ChatViewModelSendTests {
         // While the network reload is still in flight, the cached transcript is
         // already on screen (no skeleton, since messages is non-empty) and the
         // offline indicator stays off because this is the success-expected window.
-        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        await fulfillment(of: [sessionRequestStarted], timeout: 10)
         XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Cached question", "Cached answer"])
         XCTAssertTrue(viewModel.isLoading)
         XCTAssertFalse(viewModel.isViewingCachedData)
@@ -520,7 +520,7 @@ extension ChatViewModelSendTests {
 
         // With no cache, nothing is painted before the network resolves, so the
         // first-open skeleton path (isLoading && messages.isEmpty) is preserved.
-        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        await fulfillment(of: [sessionRequestStarted], timeout: 10)
         XCTAssertTrue(viewModel.messages.isEmpty)
         XCTAssertTrue(viewModel.isLoading)
 
@@ -657,7 +657,7 @@ extension ChatViewModelSendTests {
         // *without* awaiting it (its optimistic user message is appended synchronously
         // before the network call) so the transcript is mutated while the reload is
         // still in flight.
-        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        await fulfillment(of: [sessionRequestStarted], timeout: 10)
         let sendTask = Task { @MainActor in
             await viewModel.sendMessage("In-flight question", modelContext: context)
         }
@@ -705,12 +705,12 @@ extension ChatViewModelSendTests {
         let loadTask = Task { @MainActor in
             await viewModel.loadMessages()
         }
-        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        await fulfillment(of: [sessionRequestStarted], timeout: 10)
 
         let sendTask = Task { @MainActor in
             await viewModel.sendMessage("In-flight question")
         }
-        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+        await fulfillment(of: [chatStartRequestStarted], timeout: 10)
         requests.request(at: 1).complete(withJSON: """
         {
           "session_id": "session-abc",
@@ -811,11 +811,11 @@ extension ChatViewModelSendTests {
         let loadTask = Task { @MainActor in
             await viewModel.loadMessages()
         }
-        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        await fulfillment(of: [sessionRequestStarted], timeout: 10)
         let sendTask = Task { @MainActor in
             await viewModel.sendMessage("Pending question")
         }
-        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+        await fulfillment(of: [chatStartRequestStarted], timeout: 10)
 
         requests.request(at: 0).complete(withJSON: """
         {
@@ -878,15 +878,15 @@ extension ChatViewModelSendTests {
         let firstLoadTask = Task { @MainActor in
             await viewModel.loadMessages()
         }
-        await fulfillment(of: [firstSessionRequestStarted], timeout: 2)
+        await fulfillment(of: [firstSessionRequestStarted], timeout: 10)
         let secondLoadTask = Task { @MainActor in
             await viewModel.loadMessages()
         }
-        await fulfillment(of: [secondSessionRequestStarted], timeout: 2)
+        await fulfillment(of: [secondSessionRequestStarted], timeout: 10)
         let sendTask = Task { @MainActor in
             await viewModel.sendMessage("Pending question")
         }
-        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+        await fulfillment(of: [chatStartRequestStarted], timeout: 10)
 
         requests.request(at: 0).complete(withJSON: """
         {
@@ -954,11 +954,11 @@ extension ChatViewModelSendTests {
         let firstLoadTask = Task { @MainActor in
             await viewModel.loadMessages()
         }
-        await fulfillment(of: [firstSessionRequestStarted], timeout: 2)
+        await fulfillment(of: [firstSessionRequestStarted], timeout: 10)
         let secondLoadTask = Task { @MainActor in
             await viewModel.loadMessages()
         }
-        await fulfillment(of: [secondSessionRequestStarted], timeout: 2)
+        await fulfillment(of: [secondSessionRequestStarted], timeout: 10)
 
         requests.request(at: 0).complete(withJSON: #"{"error":"older failure"}"#, statusCode: 500)
         await drainMainActor()
@@ -1006,12 +1006,12 @@ extension ChatViewModelSendTests {
         let loadTask = Task { @MainActor in
             await viewModel.loadMessages()
         }
-        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        await fulfillment(of: [sessionRequestStarted], timeout: 10)
 
         let firstSendTask = Task { @MainActor in
             await viewModel.sendMessage("Question A")
         }
-        await fulfillment(of: [firstChatStartRequestStarted], timeout: 2)
+        await fulfillment(of: [firstChatStartRequestStarted], timeout: 10)
         requests.request(at: 1).complete(withJSON: """
         {
           "session_id": "session-abc",
@@ -1026,7 +1026,7 @@ extension ChatViewModelSendTests {
         let secondSendTask = Task { @MainActor in
             await viewModel.sendMessage("Question B")
         }
-        await fulfillment(of: [secondChatStartRequestStarted], timeout: 2)
+        await fulfillment(of: [secondChatStartRequestStarted], timeout: 10)
         requests.request(at: 0).complete(withJSON: """
         {
           "session": {
@@ -1090,11 +1090,11 @@ extension ChatViewModelSendTests {
         let loadTask = Task { @MainActor in
             await viewModel.loadMessages()
         }
-        await fulfillment(of: [outerSessionRequestStarted], timeout: 2)
+        await fulfillment(of: [outerSessionRequestStarted], timeout: 10)
         let sendTask = Task { @MainActor in
             await viewModel.sendMessage("Rejected duplicate")
         }
-        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+        await fulfillment(of: [chatStartRequestStarted], timeout: 10)
 
         requests.request(at: 0).complete(withJSON: """
         {
@@ -1116,7 +1116,7 @@ extension ChatViewModelSendTests {
             withJSON: #"{"error":"session already has an active stream","active_stream_id":"stream-existing"}"#,
             statusCode: 409
         )
-        await fulfillment(of: [recoverySessionRequestStarted], timeout: 2)
+        await fulfillment(of: [recoverySessionRequestStarted], timeout: 10)
         requests.request(at: 2).complete(withJSON: """
         {
           "session": {
@@ -1181,11 +1181,11 @@ extension ChatViewModelSendTests {
         let loadTask = Task { @MainActor in
             await viewModel.loadMessages()
         }
-        await fulfillment(of: [outerSessionRequestStarted], timeout: 2)
+        await fulfillment(of: [outerSessionRequestStarted], timeout: 10)
         let sendTask = Task { @MainActor in
             await viewModel.sendMessage("Rejected duplicate")
         }
-        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+        await fulfillment(of: [chatStartRequestStarted], timeout: 10)
 
         requests.request(at: 0).complete(withJSON: """
         {
@@ -1213,7 +1213,7 @@ extension ChatViewModelSendTests {
             withJSON: #"{"error":"session already has an active stream","active_stream_id":"stream-existing"}"#,
             statusCode: 409
         )
-        await fulfillment(of: [recoverySessionRequestStarted], timeout: 2)
+        await fulfillment(of: [recoverySessionRequestStarted], timeout: 10)
         requests.request(at: 2).fail(with: URLError(.timedOut))
 
         let didStart = await sendTask.value
@@ -1256,12 +1256,12 @@ extension ChatViewModelSendTests {
         let loadTask = Task { @MainActor in
             await viewModel.loadMessages()
         }
-        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        await fulfillment(of: [sessionRequestStarted], timeout: 10)
 
         let sendTask = Task { @MainActor in
             await viewModel.sendMessage("Rejected question")
         }
-        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+        await fulfillment(of: [chatStartRequestStarted], timeout: 10)
         requests.request(at: 1).complete(withJSON: #"{"error":"start failed"}"#)
         let didStart = await sendTask.value
         XCTAssertFalse(didStart)
@@ -1321,11 +1321,11 @@ extension ChatViewModelSendTests {
         let loadTask = Task { @MainActor in
             await viewModel.loadMessages(modelContext: context)
         }
-        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        await fulfillment(of: [sessionRequestStarted], timeout: 10)
         let sendTask = Task { @MainActor in
             await viewModel.sendMessage("Rejected question", modelContext: context)
         }
-        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+        await fulfillment(of: [chatStartRequestStarted], timeout: 10)
 
         requests.request(at: 0).fail(with: URLError(.timedOut))
         await drainMainActor()
@@ -1380,7 +1380,7 @@ extension ChatViewModelSendTests {
         let sendTask = Task { @MainActor in
             await viewModel.sendMessage("Question")
         }
-        await fulfillment(of: [chatStartRequestStarted], timeout: 2)
+        await fulfillment(of: [chatStartRequestStarted], timeout: 10)
         requests.request(at: 0).complete(withJSON: """
         {
           "session_id": "session-abc",
@@ -1396,7 +1396,7 @@ extension ChatViewModelSendTests {
         let loadTask = Task { @MainActor in
             await viewModel.loadMessages()
         }
-        await fulfillment(of: [sessionRequestStarted], timeout: 2)
+        await fulfillment(of: [sessionRequestStarted], timeout: 10)
         streamClient.emit(.streamEnd)
         requests.request(at: 1).complete(withJSON: """
         {
@@ -1420,7 +1420,7 @@ extension ChatViewModelSendTests {
         }
         """)
         await loadTask.value
-        await fulfillment(of: [titleRequestCompleted], timeout: 2)
+        await fulfillment(of: [titleRequestCompleted], timeout: 10)
 
         XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Question", "Final response"])
         XCTAssertFalse(viewModel.responseCompletionNeedsTranscriptRefresh)

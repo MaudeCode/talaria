@@ -201,7 +201,7 @@ final class CustomHeaderSSEInjectionTests: XCTestCase {
         )
 
         client.start(url: URL(string: "https://example.test/api/chat/stream?stream_id=s1")!) { _ in }
-        await fulfillment(of: [captured], timeout: 2)
+        await fulfillment(of: [captured], timeout: 10)
         client.stop()
     }
 
@@ -244,7 +244,7 @@ final class CustomHeaderSSEInjectionTests: XCTestCase {
         let client = SSEClient(urlSessionConfiguration: configuration)
 
         client.start(url: streamURL) { _ in }
-        await fulfillment(of: [captured], timeout: 2)
+        await fulfillment(of: [captured], timeout: 10)
         client.stop()
     }
 

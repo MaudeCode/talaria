@@ -569,16 +569,32 @@ final class TranscriptMediaParserTests: XCTestCase {
         XCTAssertNotEqual(firstSessionKey, secondSessionKey)
         XCTAssertNotEqual(firstSessionKey, secondServerKey)
 
+        // Assert on loader calls, not on a cache hit: NSCache may evict any entry under memory pressure. A key
+        // that collided with an earlier one would return that image without running its own loader.
         let cache = DecodedImageCache()
         let firstImage = PlatformImage()
         let secondImage = PlatformImage()
+        let thirdImage = PlatformImage()
+        let secondLoads = LockedCounter()
+        let thirdLoads = LockedCounter()
         let loadedFirst = await cache.image(for: firstSessionKey) { firstImage }
-        let loadedSecond = await cache.image(for: secondSessionKey) { secondImage }
-        let cachedFirst = await cache.image(for: firstSessionKey) { nil }
+        let loadedSecond = await cache.image(for: secondSessionKey) {
+            _ = secondLoads.increment()
+            return secondImage
+        }
+        let loadedThird = await cache.image(for: secondServerKey) {
+            _ = thirdLoads.increment()
+            return thirdImage
+        }
+        // Hit or reload, the first key must still resolve to its own image.
+        let reloadedFirst = await cache.image(for: firstSessionKey) { firstImage }
 
         XCTAssertTrue(loadedFirst === firstImage)
+        XCTAssertEqual(secondLoads.count, 1, "Another session must not reuse the first session's image")
         XCTAssertTrue(loadedSecond === secondImage)
-        XCTAssertTrue(cachedFirst === firstImage)
+        XCTAssertEqual(thirdLoads.count, 1, "Another server must not reuse the first server's image")
+        XCTAssertTrue(loadedThird === thirdImage)
+        XCTAssertTrue(reloadedFirst === firstImage)
     }
 
     private func mediaReferences(in segments: [TranscriptMediaSegment]) -> [TranscriptMediaReference] {

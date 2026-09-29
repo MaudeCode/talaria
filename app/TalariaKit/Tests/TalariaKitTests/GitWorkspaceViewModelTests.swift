@@ -607,7 +607,11 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertNil(state.progress)
         XCTAssertNotNil(state.success)
 
-        try? await Task.sleep(for: .milliseconds(30))
+        // Wait for the dismissal rather than a fixed 30 ms that a starved main actor can outlast.
+        let deadline = ContinuousClock.now + .seconds(10)
+        while state.success != nil, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
         XCTAssertNil(state.success)
     }
 
@@ -615,7 +619,8 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
     func testToastRapidReplacementDoesNotDismissLatestSuccess() async {
         let state = GitActionToastState()
         state.showSuccess(GitActionSuccess(title: "First"), autoDismissAfter: .milliseconds(5))
-        state.showSuccess(GitActionSuccess(title: "Second"), autoDismissAfter: .seconds(1))
+        // The replacement never expires on its own, so only the replaced 5 ms timer could dismiss it here.
+        state.showSuccess(GitActionSuccess(title: "Second"), autoDismissAfter: .seconds(3600))
 
         try? await Task.sleep(for: .milliseconds(20))
         XCTAssertEqual(state.success?.title, "Second")
