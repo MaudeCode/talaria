@@ -1,3 +1,4 @@
+import notify
 import XCTest
 
 /// End-to-end coverage for sharing into Talaria (TAL-81). Everything here runs through the
@@ -73,11 +74,15 @@ class ShareExtensionUITestCase: TalariaUITestCase {
         sheet.cells.matching(NSPredicate(format: "label == %@", "Talaria")).firstMatch
     }
 
+    /// Under the share host the extension keeps its status on screen until the test has read it
+    /// (`ShareOpenFixtureMode.holdsStatus`): on a hosted runner one read of the sheet outlasted
+    /// the 2.5 s the status normally shows (run 36621649816). Releasing it closes the sheet.
     func assertExtensionStatus(_ text: String, timeout: TimeInterval = 30) {
         XCTAssertTrue(
             element(labelContaining: text).awaitExistence(timeout: timeout),
             "The share extension never showed: \(text)"
         )
+        notify_post("dev.kil.talaria.ui-test.release-share-status")
     }
 
     func inboxSummary() -> String {
