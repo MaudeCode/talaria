@@ -9,7 +9,9 @@ require_relative "app_store_connect"
 # recover after acceptance but before receipt writes. ipaSha256 is our verified
 # artifact digest; it is not an Apple-attested digest when its checksum is absent.
 class TestFlightUpload < AppStoreConnectClient
-  def upload(path, version, number, sha256, attempts: 90, delay: 20)
+  # Polls every 10 s for up to 30 minutes: Apple usually processes a build in a few minutes, and a coarser poll only
+  # adds to every release (TAL-414).
+  def upload(path, version, number, sha256, attempts: 180, delay: 10)
     unless version.match?(/\A\d+\.\d+\.\d+\z/) && number.match?(/\A[1-9]\d*\z/) &&
            sha256.match?(/\A[a-f0-9]{64}\z/) && Digest::SHA256.file(path).hexdigest == sha256
       raise Error, "Invalid or changed TestFlight artifact"
@@ -53,8 +55,10 @@ class TestFlightUpload < AppStoreConnectClient
     file_id = file.fetch("id")
     verify_file(file, path, filename, sha256)
     delivery = file.dig("attributes", "assetDeliveryState", "state")
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     if state == "AWAITING_UPLOAD" && delivery == "AWAITING_UPLOAD"
       transfer(path, file.fetch("attributes").fetch("uploadOperations"))
+      warn format("TestFlight: transferred %d bytes in %.0f s", File.size(path), Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
       fetch_json("/v1/buildUploadFiles/#{file_id}", method: "PATCH", body: {data: {
         # Match Apple's upload-testflight-build action: this endpoint rejects
         # optional checksum declarations despite their presence in the schema.
@@ -81,6 +85,7 @@ class TestFlightUpload < AppStoreConnectClient
             raise Error, "Completed upload does not identify the expected valid build"
           end
           if build.dig("attributes", "processingState") == "VALID" && current_file.dig("attributes", "assetDeliveryState", "state") == "COMPLETE"
+            warn format("TestFlight: build %s VALID %.0f s after the transfer began", build_id, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
             return {"buildId" => build_id, "uploadId" => upload_id, "ipaSha256" => sha256,
                     "version" => version, "buildNumber" => number.to_i, "processingState" => "VALID"}
           end

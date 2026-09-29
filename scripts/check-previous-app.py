@@ -11,6 +11,7 @@ import plistlib
 import re
 import subprocess
 import tempfile
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -61,6 +62,39 @@ def package_classes(app, tests):
     return [name for name in tests if name in declared]
 
 
+def preboot_simulator(app):
+    """Boot the explicit IOS_SIMULATOR_ID in the background while the Web is probed and the App builds (TAL-414).
+
+    Older runners lease only a Shutdown device, so the disposable checkout's pool helper also accepts that booted one.
+    Returns the boot process, or None when there is no explicit device or the helper is not the known one."""
+    device, pool = os.environ.get("IOS_SIMULATOR_ID"), app / "scripts/ios-simulator-pool"
+    shutdown_only = '[[ "$candidate_state" == Shutdown ]] || continue'
+    booted_too = '[[ "$candidate_state" == Shutdown || "$candidate_state" == Booted ]] || continue'
+    if not device or not pool.is_file():
+        return None
+    helper = pool.read_text()
+    if shutdown_only in helper:
+        pool.write_text(helper.replace(shutdown_only, booted_too))
+    elif booted_too not in helper:
+        return None
+    return subprocess.Popen(["xcrun", "simctl", "bootstatus", device, "-b"], stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+
+
+def prebuild_hosted(app, output):
+    """Compile an older App's hosted tests while the Web is probed and the simulator boots (TAL-414).
+
+    The settings mirror the App's own test-ios with a placeholder fixture, so its build afterwards only rewrites the
+    Info.plists and re-signs (seconds). test-ios stays the authority: a failure here, or settings that drifted, only
+    cost its own full build again."""
+    with (output / "app-prebuild.log").open("w") as log:
+        subprocess.run(["xcodebuild", "build-for-testing", "-quiet", "-project", "Talaria.xcodeproj", "-scheme", "Talaria",
+                        "-destination", f"platform=iOS Simulator,id={os.environ['IOS_SIMULATOR_ID']}",
+                        "-derivedDataPath", str(app / ".codex-tmp/xctest/derived-data"), "-disableAutomaticPackageResolution",
+                        "-enableCodeCoverage", "NO", "APP_IDENTIFIER_SUFFIX=.xctest", "INFOPLIST_KEY_CFBundleDisplayName=base64:",
+                        "SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) TALARIA_LIVE_CONTRACT"],
+                       cwd=app, stdout=log, stderr=subprocess.STDOUT, check=False)
+
+
 def build_package_tests(app, output):
     with (output / "app-package-build.log").open("w") as log:
         subprocess.run(["swift", "build", "--package-path", str(app / "TalariaKit"), "--build-tests"],
@@ -81,6 +115,19 @@ def run_package_tests(app, classes, responses, output):
             raise ValueError(f"package gate did not execute {name}")
     if LIVE_CLASS in classes and f"Test Case '-[TalariaKitTests.{LIVE_CLASS} {LIVE_TEST}]' passed" not in text:
         raise ValueError("previous App did not decode the live Web fixtures")
+
+
+def run_package_suite(app, responses, output):
+    """The UI suite's package job on this checkout (TAL-414): every TalariaKit test but the fuzz soak, against the live
+    fixture, whose decoding test must pass."""
+    log_path = output / "app-package-suite.log"
+    with log_path.open("w") as log:
+        subprocess.run(["swift", "test", "--package-path", str(app / "TalariaKit"), "--skip-build",
+                        "--skip", "UntrustedInputFuzzSoakTests"],
+                       cwd=app, env={**os.environ, "TALARIA_LIVE_CONTRACT_RESPONSES": str(responses)},
+                       stdout=log, stderr=subprocess.STDOUT, check=True)
+    if f"Test Case '-[TalariaKitTests.{LIVE_CLASS} {LIVE_TEST}]' passed" not in log_path.read_text():
+        raise ValueError("the package suite did not decode the live Web fixtures")
 
 
 def verify_hosted(app, hosted, responses, output):
@@ -149,6 +196,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True, help="New directory for retained verification evidence.")
     parser.add_argument("--app-checkout", type=Path,
                         help="Reusable App checkout (and warm DerivedData) shared by consecutive runs of one App revision.")
+    parser.add_argument("--package-suite", action="store_true",
+                        help="Also run every TalariaKit test but the fuzz soak against the live fixture (the UI suite's package job).")
     args = parser.parse_args()
     tests = [*TESTS, *(["SharedContractTests"] if args.shared_contracts else [])]
     app_sha, web_sha = commit(args.app_ref), commit(args.web_ref)
@@ -174,23 +223,45 @@ def main():
             web_fixture = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{web_sha}:contracts/fixtures/web-session.json"])
             (checkout / "contracts/fixtures/web-session.json").write_bytes(web_fixture)
         packaged = package_classes(app, tests)
-        # The package tests build while the Web is probed (TAL-408): each takes minutes and needs nothing of the other.
-        # ponytail: a failed probe still waits for the build to finish; kill it if failures become common.
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            build = pool.submit(build_package_tests, app, output) if packaged else None
+        hosted = [name for name in tests if name not in packaged]
+        if args.package_suite and not packaged:
+            raise ValueError("the package suite needs an App revision with TalariaKit")
+        started, seconds = time.monotonic(), {}
+
+        def timed(name, function, *arguments):
+            begin = time.monotonic()
+            try:
+                return function(*arguments)
+            finally:
+                seconds[name] = round(time.monotonic() - begin)
+
+        # The Web probe, the package or App build and the simulator boot need nothing of each other, so they run at
+        # once (TAL-408, TAL-414); the tests follow.
+        # ponytail: a failed probe still waits for the builds to finish; kill them if failures become common.
+        boot = preboot_simulator(app) if hosted else None
+        if boot:
+            stack.callback(lambda: boot.poll() is None and boot.kill())
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            builds = [pool.submit(timed, "packageBuild", build_package_tests, app, output)] if packaged else []
+            if boot:
+                # test-ios boots the device itself when this boot failed.
+                builds += [pool.submit(timed, "appBuild", prebuild_hosted, app, output),
+                           pool.submit(timed, "simulatorBoot", boot.wait)]
             with (output / "web-probe.log").open("w") as log:
-                probe_web(web_sha, responses, log)
-            if build:
+                timed("webProbe", probe_web, web_sha, responses, log)
+            for build in builds:
                 build.result()
         if packaged:
-            run_package_tests(app, packaged, responses, output)
-        hosted = [name for name in tests if name not in packaged]
+            timed("packageTests", run_package_tests, app, packaged, responses, output)
+        if args.package_suite:
+            timed("packageSuite", run_package_suite, app, responses, output)
         # A revision whose package holds every selected class needs no simulator; test-ios with no class would run
         # the whole hosted suite.
         if hosted:
-            verify_hosted(app, hosted, responses, output)
+            timed("hostedTests", verify_hosted, app, hosted, responses, output)
+        seconds["total"] = round(time.monotonic() - started)
     record = {"appSourceRevision": app_sha, "webSourceRevision": web_sha, "result": "success",
-              "fixturesSha256": hashlib.sha256(responses.read_bytes()).hexdigest(), "testClasses": tests}
+              "fixturesSha256": hashlib.sha256(responses.read_bytes()).hexdigest(), "testClasses": tests, "seconds": seconds}
     (output / "verification.json").write_text(json.dumps(record, indent=2) + "\n")
     print(json.dumps(record))
 

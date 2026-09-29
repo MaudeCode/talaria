@@ -15,13 +15,15 @@ ROOT = Path(__file__).resolve().parents[1]
 def verify_app_web(plan, output):
     app = plan["components"]["app"]["sourceRevision"]
     web_refs = list(dict.fromkeys([plan["components"]["web"]["sourceRevision"], *plan["supportedWebSources"]]))
-    # One App revision for every Web: the pairs share a checkout, so only the first builds cold.
+    # One App revision for every Web: the pairs share a checkout, so only the first builds cold. A shipping App also runs
+    # its whole TalariaKit suite there against the selected Web, which the release's UI suite call leaves out (TAL-414).
     with tempfile.TemporaryDirectory(prefix="talaria-selected-app-") as temporary:
         for index, web in enumerate(web_refs):
             subprocess.run([
                 "python3", str(ROOT / "scripts/check-previous-app.py"), "--app-ref", app, "--web-ref", web,
                 "--shared-contracts", "--output", str(output / f"app-web-{index}"),
                 "--app-checkout", str(Path(temporary) / "source"),
+                *(["--package-suite"] if index == 0 and plan["changed"]["app"] else []),
             ], check=True)
     return web_refs
 

@@ -145,8 +145,8 @@ jobs:
                   ("app-tests.yml", "package-test"): "swift test --package-path TalariaKit",
                   ("fuzz-soak.yml", "soak"): "swift test --package-path TalariaKit", ("ui-performance.yml", "measure"): "xcodebuild",
                   ("ios-release-build.yml", "build"): "xcodebuild archive",
-                  ("release-set.yml", "contracts"): "check-release-contracts.py --only app",
-                  ("release-set.yml", "previous-app-contracts"): "check-previous-app.py",
+                  # Both App contract gates share one runner (TAL-414).
+                  ("release-set.yml", "contracts"): "check-previous-app.py --app-ref",
                   ("release-set.yml", "app-dry-build"): "build.py app"}
         found = {}
         for name in hosted.workflows():

@@ -107,7 +107,10 @@ class TestIOSRunnerTest < Minitest::Test
     package, probe = workflow_jobs("app-tests.yml").fetch("package-test"), workflow_jobs("ci.yml").fetch("contracts")
     # TalariaKit's tests run with `swift test` on hosted macOS beside the build: no simulator, no app host (TAL-399).
     assert_nil(package["needs"])
-    assert_nil(package["if"])
+    # Every caller runs it but a release's UI suite call, whose contracts job runs the same suite (TAL-414).
+    assert_equal("inputs.package_tests", package["if"])
+    assert_equal({"type" => "boolean", "default" => true},
+                 YAML.safe_load_file(File.join(WORKFLOWS, "app-tests.yml"), aliases: true)[true]["workflow_call"]["inputs"]["package_tests"])
     assert_equal("xcode-27", package["runs-on"])
     refute_match(/simulator|xcodebuild/i, package.to_yaml)
     steps = package["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
@@ -170,12 +173,15 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(workflow, 'if (( TEST_ITERATIONS > 1 )); then selection+=(-test-iterations "${TEST_ITERATIONS}" -run-tests-until-failure); fi')
     jobs = workflow_jobs("app-tests.yml")
     shard = jobs.fetch("app-test")
-    assert_equal("${{ fromJSON(inputs.only_testing == '' && '[0,1,2,3]' || '[0]') }}", shard["strategy"]["matrix"]["shard"])
+    # inputs.shards shards (default four; a release passes its own count, TAL-414), or one for a scoped dispatch.
+    assert_equal("${{ inputs.only_testing == '' && fromJSON('[null,[0],[0,1],[0,1,2],[0,1,2,3],[0,1,2,3,4],[0,1,2,3,4,5]]')[inputs.shards] || fromJSON('[0]') }}",
+                 shard["strategy"]["matrix"]["shard"])
+    assert_equal({"type" => "number", "default" => 4}, app_tests[true]["workflow_call"]["inputs"]["shards"])
     # A pull request builds without a test shard; a contract-only change has no App build either, and the package
     # job runs its contract classes in every mode.
     assert_equal("inputs.mode == 'full'", shard["if"])
     assert_equal("inputs.mode != 'contracts'", jobs.fetch("app-build")["if"])
-    assert_equal([nil] * 3, jobs.values_at("app-build", "package-test").map { |job| job["needs"] } + [jobs.fetch("package-test")["if"]])
+    assert_equal([nil] * 2, jobs.values_at("app-build", "package-test").map { |job| job["needs"] })
     # Only the full suite packages and uploads its build for the shards; the build itself always runs to the end.
     build_steps = jobs.fetch("app-build")["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
     assert_equal(["inputs.mode == 'full'"] * 2, build_steps.values_at("Package the test build", "Upload the test build").map { |step| step["if"] })
@@ -194,7 +200,8 @@ class TestIOSRunnerTest < Minitest::Test
     refute_match(/full_ui|mode: full/, workflow_text("ci.yml"))
     suite = YAML.safe_load_file(File.join(WORKFLOWS, "ui-suite.yml"), aliases: true)
     assert_equal({"mode" => "full", "ref" => "${{ inputs.ref }}", "only_testing" => "${{ inputs.only_testing }}",
-                  "test_iterations" => "${{ inputs.test_iterations || '1' }}"}, suite["jobs"]["suite"]["with"])
+                  "test_iterations" => "${{ inputs.test_iterations || '1' }}", "shards" => "${{ inputs.shards || 4 }}",
+                  "package_tests" => "${{ format('{0}', inputs.package_tests) != 'false' }}"}, suite["jobs"]["suite"]["with"])
     assert_equal("string", suite[true]["workflow_dispatch"]["inputs"]["test_iterations"]["type"])
     assert_equal(%w[schedule workflow_dispatch workflow_call], suite[true].keys)
     assert_equal(true, suite[true]["workflow_call"]["inputs"]["ref"]["required"])
