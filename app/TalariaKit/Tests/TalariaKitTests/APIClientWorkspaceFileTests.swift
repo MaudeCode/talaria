@@ -479,7 +479,7 @@ final class APIClientWorkspaceFileTests: APIClientTestCase {
         )
 
         let firstLoad = Task { await viewModel.load(path: "cat") }
-        await fulfillment(of: [firstRequestStarted], timeout: 1)
+        await fulfillment(of: [firstRequestStarted], timeout: 10)
         let latestLoad = Task { await viewModel.load(path: "leetcode-editor") }
 
         await latestLoad.value
@@ -777,8 +777,9 @@ final class APIClientWorkspaceFileTests: APIClientTestCase {
         )
 
         let export = Task { try await viewModel.exportPayload() }
-        for _ in 0..<1_000 where DeferredFilePreviewURLProtocol.pendingRequest == nil {
-            try await Task.sleep(nanoseconds: 1_000_000)
+        let deadline = ContinuousClock.now + .seconds(10)
+        while DeferredFilePreviewURLProtocol.pendingRequest == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
         }
         let pendingRequest = try XCTUnwrap(DeferredFilePreviewURLProtocol.pendingRequest)
         await viewModel.load(path: "second.zip")

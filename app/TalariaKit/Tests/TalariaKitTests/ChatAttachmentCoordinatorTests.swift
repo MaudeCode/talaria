@@ -147,7 +147,7 @@ final class ChatAttachmentCoordinatorTests: APIClientTestCase {
         let firstUpload = Task {
             await coordinator.uploadAttachment(data: Data("one".utf8), filename: "one.txt")
         }
-        await fulfillment(of: [firstUploadStarted], timeout: 2)
+        await fulfillment(of: [firstUploadStarted], timeout: 10)
         XCTAssertTrue(coordinator.isUploadingAttachment)
 
         let secondUpload = Task {

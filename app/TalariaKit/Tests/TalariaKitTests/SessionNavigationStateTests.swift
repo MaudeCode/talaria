@@ -97,7 +97,12 @@ final class SessionNavigationStateTests: XCTestCase {
         await SessionListInitialLoad.run(
             resolvePendingDeepLink: {
                 await recorder.record(.deepLinkStarted)
-                try? await Task.sleep(nanoseconds: 50_000_000)
+                // Finish only once the refresh has started, or after a deadline a serial load would hit. A fixed
+                // 50 ms deep link could finish before a starved concurrent refresh began.
+                let deadline = ContinuousClock.now + .seconds(10)
+                while await !recorder.snapshot().contains(.refreshStarted), ContinuousClock.now < deadline {
+                    try? await Task.sleep(for: .milliseconds(5))
+                }
                 await recorder.record(.deepLinkFinished)
             },
             refreshSessionsAndActiveProfile: {

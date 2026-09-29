@@ -340,19 +340,6 @@ final class KanbanCardEditorStateTests: XCTestCase {
             prerequisiteOptions: [.prerequisite]
         )
     }
-
-    private func waitUntil(
-        timeout: Duration = .seconds(1),
-        condition: @escaping @Sendable () async -> Bool
-    ) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-        while clock.now < deadline {
-            if await condition() { return }
-            await Task.yield()
-        }
-        XCTFail("Condition was not met before timeout")
-    }
 }
 
 final class KanbanLabClientMutationTests: XCTestCase {

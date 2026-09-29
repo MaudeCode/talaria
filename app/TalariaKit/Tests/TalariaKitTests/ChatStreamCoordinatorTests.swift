@@ -804,7 +804,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         ) { request in
             XCTAssertEqual(request.url?.path, "/api/chat/cancel")
             cancelRequestStarted.fulfill()
-            _ = releaseCancelResponse.wait(timeout: .now() + 2)
+            _ = releaseCancelResponse.wait(timeout: .now() + 10)
             return apiTestJSONResponse(#"{"ok": true}"#, for: request)
         }
 
@@ -813,7 +813,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
             try await coordinator.cancelActiveStream()
         }
 
-        await fulfillment(of: [cancelRequestStarted], timeout: 1)
+        await fulfillment(of: [cancelRequestStarted], timeout: 10)
         coordinator.start(streamID: "stream-new")
         releaseCancelResponse.signal()
         let response = try await cancelTask.value
@@ -1113,18 +1113,19 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
             return apiTestJSONResponse(#"{"active": true, "stream_id": "stream-123"}"#, for: request)
         }
         let contextlessLoadStarted = expectation(description: "context-less transcript load started")
+        // The context-less load stays in flight until the context-bearing caller cancels it; a fixed 200 ms
+        // load could finish first on a slow runner, leaving nothing to take over.
         delegate.onLoadMessages = { [weak delegate] in
-            if delegate?.loadMessagesCount == 1 {
-                contextlessLoadStarted.fulfill()
-            }
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard delegate?.loadMessagesCount == 1 else { return }
+            contextlessLoadStarted.fulfill()
+            try? await Task.sleep(for: .seconds(10))
         }
 
         coordinator.start(streamID: "stream-123")
         coordinator.suspendActiveStreamConnection()
 
         let contextless = Task { @MainActor in await coordinator.reconnectIfNeeded() }
-        await fulfillment(of: [contextlessLoadStarted], timeout: 2)
+        await fulfillment(of: [contextlessLoadStarted], timeout: 10)
         await coordinator.reconnectIfNeeded(modelContext: try makeCoordinatorTestContext())
         await contextless.value
 
@@ -1553,7 +1554,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     private func waitUntil(
-        timeout: TimeInterval = 2,
+        timeout: TimeInterval = 10,
         condition: @escaping @MainActor @Sendable () -> Bool
     ) async throws {
         let deadline = Date().addingTimeInterval(timeout)

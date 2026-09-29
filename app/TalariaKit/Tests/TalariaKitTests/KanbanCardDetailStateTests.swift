@@ -229,19 +229,6 @@ final class KanbanCardDetailStateTests: XCTestCase {
     private func makeState(client: any KanbanDataClient) -> KanbanCardDetailState {
         KanbanCardDetailState(cardID: "CARD-1", board: "main", client: client)
     }
-
-    private func waitUntil(
-        timeout: Duration = .seconds(1),
-        condition: @escaping @Sendable () async -> Bool
-    ) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-        while clock.now < deadline {
-            if await condition() { return }
-            await Task.yield()
-        }
-        XCTFail("Condition was not met before timeout")
-    }
 }
 
 private actor CardDetailClient: KanbanDataClient {

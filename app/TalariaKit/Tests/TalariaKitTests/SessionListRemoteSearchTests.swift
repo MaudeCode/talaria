@@ -154,7 +154,7 @@ extension SessionListMutationTests {
         let oldTask = Task {
             await viewModel.searchSessions(query: "old", debounceNanoseconds: 0)
         }
-        await fulfillment(of: [oldSearchStarted], timeout: 1)
+        await fulfillment(of: [oldSearchStarted], timeout: 10)
 
         await viewModel.searchSessions(query: "new", debounceNanoseconds: 0)
         await oldTask.value

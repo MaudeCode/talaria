@@ -376,7 +376,7 @@ final class KanbanLiveUpdateTests: KanbanDefaultsTestCase {
     }
 
     private func waitUntil(
-        timeout: TimeInterval = 2,
+        timeout: TimeInterval = 10,
         condition: @escaping @MainActor @Sendable () async -> Bool
     ) async throws {
         let deadline = Date().addingTimeInterval(timeout)

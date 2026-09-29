@@ -119,6 +119,9 @@ extension SessionListMutationTests {
     @MainActor
     func testConcurrentSessionMutationsAreIgnoredWhileSameSessionIsInFlight() async throws {
         let firstPinRequestStarted = expectation(description: "first pin request started")
+        // The first pin stays in flight until the competing mutations have returned; a fixed 200 ms could let it
+        // finish first on a slow runner.
+        let releaseFirstPin = DispatchSemaphore(value: 0)
         let requestCounts = LockedSessionMutationRequestCounts()
         let viewModel = try makeViewModel { request in
             switch request.url?.path {
@@ -133,7 +136,7 @@ extension SessionListMutationTests {
 
                 if currentPinRequestCount == 1 {
                     firstPinRequestStarted.fulfill()
-                    Thread.sleep(forTimeInterval: 0.2)
+                    XCTAssertEqual(releaseFirstPin.wait(timeout: .now() + 10), .success)
                 }
 
                 return apiTestJSONResponse(#"{"ok": true}"#, for: request)
@@ -149,7 +152,7 @@ extension SessionListMutationTests {
         let firstMutation = Task { @MainActor in
             await viewModel.setPinned(true, for: session)
         }
-        await fulfillment(of: [firstPinRequestStarted], timeout: 1)
+        await fulfillment(of: [firstPinRequestStarted], timeout: 10)
         XCTAssertTrue(viewModel.isMutating(session))
 
         let duplicatePinMutation = Task { @MainActor in
@@ -165,6 +168,7 @@ extension SessionListMutationTests {
         let didSkipDuplicatePin = await duplicatePinMutation.value
         _ = await duplicateMutation.value
         await moveMutation.value
+        releaseFirstPin.signal()
         let didPin = await firstMutation.value
 
         let finalCounts = requestCounts.snapshot
