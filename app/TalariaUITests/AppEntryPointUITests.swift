@@ -366,6 +366,7 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         _ = triggerRecovery(additionalArguments: ["--ui-test-reauthentication-trusted"])
         let retry = app.buttons["ReauthenticateRetry"]
         XCTAssertTrue(retry.awaitExistence(timeout: 15))
+        _ = retry.settledFrame
         XCTAssertFalse(app.secureTextFields["ReauthenticatePassword"].exists)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(
             format: "label BEGINSWITH %@", "This server signs in through an identity proxy"
@@ -374,9 +375,15 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         screenshot.name = "Trusted-header recovery"
         screenshot.lifetime = .keepAlways
         add(screenshot)
-        app.buttons["Connection Headers"].tap()
         let addHeader = app.buttons["Add header"]
+        // A tap while the sheet is still sliding in can be dropped, so expand until the row shows.
+        repeatStep(3, until: { addHeader.exists }) {
+            app.buttons["Connection Headers"].tap()
+            _ = addHeader.awaitExistence(timeout: 3)
+        }
         repeatStep(5, until: { addHeader.exists && addHeader.isHittable }) { app.swipeUp() }
+        // The sheet is still gliding after the swipe; tap once it rests.
+        _ = addHeader.settledFrame
         addHeader.tap()
         let name = app.textFields["Header name"]
         XCTAssertTrue(name.awaitExistence(timeout: 5))
@@ -386,6 +393,7 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         value.tap()
         value.typeText("fixture-token")
         repeatStep(5, until: { retry.exists && retry.isHittable }) { app.swipeDown() }
+        _ = retry.settledFrame
         retry.tap()
         XCTAssertTrue(retry.awaitNonExistence(timeout: 15))
         // This title is returned only by a new request carrying the repaired header.
@@ -400,6 +408,8 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         let sso = app.buttons["ReauthenticateSSO"]
         let methodSwitch = app.buttons["ReauthenticateSwitchMethod"]
         XCTAssertTrue(sso.awaitExistence(timeout: 15))
+        // The sign-in sheet slides up; a tap on its way can be dropped.
+        _ = sso.settledFrame
         XCTAssertFalse(app.secureTextFields["ReauthenticatePassword"].exists)
         XCTAssertEqual(methodSwitch.label, "Sign in with password")
         methodSwitch.tap()

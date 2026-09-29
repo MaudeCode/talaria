@@ -1258,6 +1258,46 @@ final class UITestWaitingTests: XCTestCase {
     }
 }
 
+/// Before and after every action XCTest waits for the app to go idle, including every running
+/// animation. An animation that never settles (seen after leaving a chat and in Archived Chats)
+/// turns the wait before the next action into a 60-second stall, on hosted runners too (TAL-402).
+/// The UI tests keep the wait after each action as it is, so the action's own transition still
+/// finishes, and drop only the animation part of the wait before one; where a scroll may still be
+/// gliding, the helpers wait for the element to rest (`settledFrame`). Installed only when
+/// XCTest's private method has the expected signature, so an Xcode that changes it falls back to
+/// XCTest's own behavior.
+enum QuiescenceWithoutAnimations {
+    static let install: Void = {
+        swizzle("waitForQuiescenceIncludingAnimationsIdle:isPreEvent:", encoding: "v24@0:8B16B20") { original in
+            typealias Wait = @convention(c) (AnyObject, Selector, Bool, Bool) -> Void
+            let wait = unsafeBitCast(original, to: Wait.self)
+            let selector = NSSelectorFromString("waitForQuiescenceIncludingAnimationsIdle:isPreEvent:")
+            let block: @convention(block) (AnyObject, Bool, Bool) -> Void = { process, animationsIdle, isPreEvent in
+                wait(process, selector, animationsIdle && !isPreEvent, isPreEvent)
+            }
+            return imp_implementationWithBlock(block)
+        }
+        swizzle("waitForQuiescenceIncludingAnimationsIdle:usingActivity:isPreEvent:", encoding: "v28@0:8B16B20B24") { original in
+            typealias Wait = @convention(c) (AnyObject, Selector, Bool, Bool, Bool) -> Void
+            let wait = unsafeBitCast(original, to: Wait.self)
+            let selector = NSSelectorFromString("waitForQuiescenceIncludingAnimationsIdle:usingActivity:isPreEvent:")
+            let block: @convention(block) (AnyObject, Bool, Bool, Bool) -> Void = { process, animationsIdle, usingActivity, isPreEvent in
+                wait(process, selector, animationsIdle && !isPreEvent, usingActivity, isPreEvent)
+            }
+            return imp_implementationWithBlock(block)
+        }
+    }()
+
+    private static func swizzle(_ name: String, encoding: String, replacement: (IMP) -> IMP) {
+        guard let cls = NSClassFromString("XCUIApplicationProcess"),
+              let method = class_getInstanceMethod(cls, NSSelectorFromString(name)),
+              let types = method_getTypeEncoding(method),
+              String(cString: types) == encoding
+        else { return }
+        method_setImplementation(method, replacement(method_getImplementation(method)))
+    }
+}
+
 class TalariaUITestCase: XCTestCase {
     /// Bound for the shared helpers' waits on a destination or control. A wait returns as soon
     /// as its element appears, so a passing run pays nothing for the margin; a 3-core
@@ -1273,6 +1313,7 @@ class TalariaUITestCase: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
+        _ = QuiescenceWithoutAnimations.install
     }
 
     override func tearDownWithError() throws {
@@ -1545,7 +1586,9 @@ extension TalariaUITestCase {
         XCTAssertTrue(category.awaitExistence(timeout: Self.navigationTimeout), "Missing Settings category: \(title)")
         let viewportTop = app.navigationBars["Settings"].frame.maxY
         let viewportBottom = app.frame.maxY
-        var frame = category.settledFrame
+        // The Back tap that returned here already waited for the pop to finish, so one read gives
+        // the resting frame; only a scroll below leaves the list gliding.
+        var frame = category.firstMatch.frame
         repeatStep(10, until: { frame.minY >= viewportTop && frame.maxY <= viewportBottom }) {
             scrollSettingsRoot(up: frame.maxY > viewportBottom)
             frame = category.settledFrame
