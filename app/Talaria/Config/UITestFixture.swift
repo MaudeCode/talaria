@@ -216,9 +216,6 @@ private enum UITestChatScenario: String, CaseIterable {
     case clarification = "--ui-test-chat-clarification"
     case full = "--ui-test-chat-full"
     case controls = "--ui-test-chat-controls"
-    case error = "--ui-test-chat-error"
-    case reconnect = "--ui-test-chat-reconnect"
-    case reopen = "--ui-test-chat-reopen"
 
     static var current: Self? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -237,7 +234,6 @@ private final class UITestChatFixtureState: @unchecked Sendable {
     private var clarificationResponse = ""
     private var steerID: String?
     private var cancelled = false
-    private var streamConnectionCount = 0
 
     func startChat() {
         condition.lock()
@@ -287,13 +283,6 @@ private final class UITestChatFixtureState: @unchecked Sendable {
         settled = true
         condition.broadcast()
         condition.unlock()
-    }
-
-    func nextStreamConnection() -> Int {
-        condition.lock()
-        defer { condition.unlock() }
-        streamConnectionCount += 1
-        return streamConnectionCount
     }
 
     func snapshot() -> (
@@ -377,7 +366,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
 
-        if Self.holdsPanelLoad(for: url) || Self.holdsWorkspaceRead(for: url) || Self.holdsChatSession(for: url) {
+        if Self.holdsPanelLoad(for: url) || Self.holdsWorkspaceRead(for: url) {
             UITestFixtureHold.shared.hold { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -596,24 +585,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 title: index == 0 ? firstTitle : String(format: "Fixture Session %02d", index)
             )
         }
-        if isReopenRunActive {
-            sessions[0]["is_streaming"] = true
-            sessions[0]["active_stream_id"] = chatStreamID
-        }
         return json(["sessions": sessions, "archived_count": 0])
-    }
-
-    private static var isReopenRunActive: Bool {
-        let state = chatState.snapshot()
-        return UITestChatScenario.current == .reopen && state.started && !state.settled
-    }
-
-    /// TAL-250: the reopen scenario holds the cold first open and the running session's detail, so a test sees
-    /// what the chat paints before each answers.
-    private static func holdsChatSession(for url: URL) -> Bool {
-        guard UITestChatScenario.current == .reopen, url.path == "/api/session" else { return false }
-        let state = chatState.snapshot()
-        return !(state.started && state.settled)
     }
 
     private static func sessionResponse() -> Data {
@@ -745,20 +717,6 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                         ]
                     ]
                 ]
-            ])
-        } else if state.settled, UITestChatScenario.current == .reopen {
-            messages.append([
-                "role": "assistant",
-                "content": "Reopen fixture progress. Reopen fixture done.",
-                "message_id": "ui-fixture-assistant",
-                "_ts": 2_000_000_101
-            ])
-        } else if state.started, UITestChatScenario.current == .reconnect {
-            messages.append([
-                "role": "assistant",
-                "content": "Before reconnect.",
-                "message_id": "ui-fixture-assistant",
-                "_ts": 2_000_000_101
             ])
         }
 
@@ -959,13 +917,12 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
 
-        let connection = Self.chatState.nextStreamConnection()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.runChatScript(connection: connection)
+            self?.runChatScript()
         }
     }
 
-    private func runChatScript(connection: Int) {
+    private func runChatScript() {
         guard let scenario = UITestChatScenario.current else { return }
         switch scenario {
         case .clarification, .batchClarification:
@@ -1070,49 +1027,6 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             guard !isStopped else { return }
             send(events: [("cancel", [:])])
             finish()
-        case .error:
-            send(events: [
-                ("token", ["text": "Partial fixture response."]),
-                ("error", ["message": "Synthetic fixture failure"])
-            ])
-            Self.chatState.settle()
-            finish()
-        case .reconnect:
-            if connection == 1 {
-                send(events: [("token", ["text": "Before reconnect."])])
-                fail(with: URLError(.networkConnectionLost))
-                return
-            }
-            Self.chatState.settle()
-            send(events: [
-                ("token", ["text": " After reconnect."]),
-                ("done", [:]),
-                ("stream_end", [:])
-            ])
-            finish()
-        case .reopen:
-            if connection == 1 {
-                send(events: [
-                    ("token", ["text": "Reopen fixture progress."]),
-                    ("tool", [
-                        "event_type": "tool.started",
-                        "name": "fixture_tool",
-                        "preview": "fixture input",
-                        "args": ["target": "synthetic"],
-                        "id": "ui-fixture-tool"
-                    ])
-                ])
-                // Held open until leaving the chat stops this connection.
-                wait { _ in false }
-                return
-            }
-            Self.chatState.settle()
-            send(events: [
-                ("token", ["text": " Reopen fixture done."]),
-                ("done", [:]),
-                ("stream_end", [:])
-            ])
-            finish()
         }
     }
 
@@ -1138,11 +1052,6 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     private func finish() {
         guard !isStopped else { return }
         client?.urlProtocolDidFinishLoading(self)
-    }
-
-    private func fail(with error: Error) {
-        guard !isStopped else { return }
-        client?.urlProtocol(self, didFailWithError: error)
     }
 }
 #endif

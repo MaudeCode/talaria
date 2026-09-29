@@ -21,8 +21,11 @@ class ChatUITestCase: TalariaUITestCase {
     }
 }
 
+/// Opening a chat from the list, then what the opened chat offers: its idle composer, which
+/// expands for typing, and long-press isolation between a message's links and its own actions
+/// (TAL-49).
 final class ChatNavigationUITests: ChatUITestCase {
-    func testChatSessionOpensFromList() throws {
+    func testChatSessionOpensFromListWithItsComposerAndMessageActions() throws {
         launchFixture()
         let session = fixtureSessionButton
         XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
@@ -37,7 +40,19 @@ final class ChatNavigationUITests: ChatUITestCase {
         }
 
         tapFixtureSession(session)
-        XCTAssertTrue(waitForComposer(timeout: 15) != nil)
+        let idleComposer = try XCTUnwrap(waitForComposer(timeout: 15))
+        XCTAssertTrue(app.buttons["Choose workspace path"].exists)
+        XCTAssertTrue(app.buttons["Choose profile"].exists)
+        XCTAssertFalse(app.tabBars.firstMatch.exists)
+        XCTAssertFalse(app.descendants(matching: .any)["chat-bottom-accessory"].exists)
+
+        assertLongPressShowsMessageActionsOnTextAndOnlyLinkActionsOnALink()
+
+        idleComposer.tap()
+        let expandedTextView = app.textViews.firstMatch
+        XCTAssertTrue(expandedTextView.awaitExistence(timeout: 10))
+        expandedTextView.typeText("Composer transition check")
+        XCTAssertFalse(app.buttons["Reply"].exists)
     }
 }
 
@@ -100,38 +115,10 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
         XCTAssertEqual(app.textViews.firstMatch.value as? String, "Ordinary fixture draft")
     }
 
-    func testClarificationUsesOnlyTheComposerAndSendsSlashTextAsAnAnswer() throws {
-        launchChatFixture(argument: "--ui-test-chat-full", trace: "clarification -> composer answer -> done")
-        try sendFixtureMessage("Run the deterministic fixture")
-        XCTAssertTrue(app.buttons["Allow once"].awaitExistence(timeout: 5))
-        app.buttons["Allow once"].tap()
-        XCTAssertTrue(app.staticTexts["Clarification Required"].awaitExistence(timeout: 5))
-        let question = app.staticTexts["Which deterministic path should continue?"]
-        XCTAssertTrue(question.exists)
-        XCTAssertEqual(app.textViews.count, 1)
-        XCTAssertFalse(app.textFields["Type a response"].exists)
-        XCTAssertFalse(app.buttons["Stop response"].exists)
-        XCTAssertFalse(app.buttons["Composer options"].exists)
-        let send = app.buttons["Submit clarification"]
-        XCTAssertFalse(send.isEnabled)
-        let input = app.textViews.firstMatch
-        input.tap()
-        input.typeText("/interrupt is my answer")
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Clarification in the chat composer"
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
-        XCTAssertTrue(send.isEnabled)
-        send.tap()
-        XCTAssertTrue(app.navigationBars["Deterministic Stream Complete"].awaitExistence(timeout: 5))
-        XCTAssertFalse(app.staticTexts["Clarification Required"].exists)
-        XCTAssertFalse(app.staticTexts["/interrupt is my answer"].exists)
-    }
-
     func testChatStreamPreservesChronologyAndSettlesWithoutDuplication() throws {
         launchChatFixture(
             argument: "--ui-test-chat-full",
-            trace: "start -> token -> reasoning -> token -> tool -> approval -> tool_complete -> token -> clarify -> title -> metering -> done -> stream_end -> reload"
+            trace: "start -> token -> reasoning -> token -> tool -> approval -> tool_complete -> token -> clarify -> composer answer -> title -> metering -> done -> stream_end -> reload"
         )
         try sendFixtureMessage("Run the deterministic fixture")
 
@@ -158,10 +145,27 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
         let finished = app.staticTexts["Fixture finished."]
         XCTAssertTrue(finished.exists)
 
-        let clarificationChoice = app.buttons["Use the deterministic path"]
-        XCTAssertTrue(clarificationChoice.exists)
-        tapCenter(of: clarificationChoice)
+        // The clarification uses only the composer, and slash text there is an answer, not a
+        // command. Tapping an offered choice is the batch test's and `ClarificationTests`'.
+        XCTAssertTrue(app.buttons["Use the deterministic path"].exists)
+        XCTAssertEqual(app.textViews.count, 1)
+        XCTAssertFalse(app.textFields["Type a response"].exists)
+        XCTAssertFalse(app.buttons["Stop response"].exists)
+        XCTAssertFalse(app.buttons["Composer options"].exists)
+        let send = app.buttons["Submit clarification"]
+        XCTAssertFalse(send.isEnabled)
+        let input = app.textViews.firstMatch
+        input.tap()
+        input.typeText("/interrupt is my answer")
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Clarification in the chat composer"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
         XCTAssertTrue(app.navigationBars["Deterministic Stream Complete"].awaitExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Clarification Required"].exists)
+        XCTAssertFalse(app.staticTexts["/interrupt is my answer"].exists)
         XCTAssertTrue(app.buttons["Stop response"].awaitNonExistence(timeout: 5))
 
         let back = app.buttons["BackButton"]
@@ -196,6 +200,9 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
     }
 }
 
+/// Steering and stopping a running turn through the composer. A terminal error, a transport
+/// reconnect and reopening a running chat are ChatViewModel and session-list tests in
+/// TalariaKit (TAL-402).
 final class ChatRecoveryUITests: ChatUITestCase {
     func testChatStreamSupportsSteeringAndCancellation() throws {
         launchChatFixture(
@@ -227,92 +234,13 @@ final class ChatRecoveryUITests: ChatUITestCase {
         XCTAssertTrue(app.staticTexts["Keep the fixture concise"].exists)
         XCTAssertNotNil(waitForComposer(timeout: 5))
     }
-
-    func testChatStreamSurfacesTerminalErrorAndRestoresComposer() throws {
-        launchChatFixture(
-            argument: "--ui-test-chat-error",
-            trace: "start -> token -> error"
-        )
-        try sendFixtureMessage("Run the deterministic fixture")
-
-        XCTAssertTrue(app.staticTexts["Partial fixture response."].awaitExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Synthetic fixture failure"].awaitExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["Stop response"].awaitNonExistence(timeout: 5))
-        XCTAssertNotNil(waitForComposer(timeout: 5))
-    }
-
-    func testChatStreamReconnectsAfterTransportLoss() throws {
-        launchChatFixture(
-            argument: "--ui-test-chat-reconnect",
-            trace: "start -> token -> transport error -> status(active) -> session reload -> reconnect -> token -> done -> stream_end"
-        )
-        try sendFixtureMessage("Run the deterministic fixture")
-        XCTAssertTrue(element(labelContaining: "Before reconnect.").awaitExistence(timeout: 5))
-
-        XCTAssertTrue(element(labelContaining: "After reconnect.").awaitExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["Stop response"].awaitNonExistence(timeout: 5))
-        XCTAssertEqual(countElements(containing: "Before reconnect."), 1)
-        XCTAssertEqual(countElements(containing: "After reconnect."), 1)
-        XCTAssertNotNil(waitForComposer(timeout: 5))
-    }
-
-    // TAL-250: reopening a running chat paints its work and a run-state check before the held session detail answers.
-    func testReopeningRunningChatKeepsItsWorkVisibleWhileTheSessionLoads() throws {
-        launchChatFixture(
-            argument: "--ui-test-chat-reopen",
-            trace: "cold open (detail held) -> release -> start -> token + tool -> leave -> list streaming -> reopen (detail held) -> release -> active detail -> reconnect -> token -> done"
-        )
-        // Cold open: no cache and a row without a run state, so the loading skeleton carries the check.
-        XCTAssertTrue(fixtureSessionButton.awaitExistence(timeout: 15), "Missing deterministic session fixture")
-        tapFixtureSession(fixtureSessionButton)
-        XCTAssertTrue(
-            element(label: "Checking stream").awaitExistence(timeout: 2.5),
-            "The cold-open loading skeleton showed no run-state check"
-        )
-        XCTAssertTrue(releaseHeldLoads { !element(label: "Checking stream").exists })
-
-        try sendFixtureMessage("Run the deterministic fixture")
-        XCTAssertTrue(element(labelContaining: "Reopen fixture progress.").awaitExistence(timeout: 5))
-
-        tapCenter(of: app.buttons["BackButton"])
-        XCTAssertTrue(element(labelContaining: "Streaming").awaitExistence(timeout: 10), "The list never reported the run")
-        tapCenter(of: fixtureSessionButton)
-
-        // Both paint at once while the fixture holds the detail; the check goes first because adopting the run replaces it.
-        XCTAssertTrue(element(label: "Checking stream").awaitExistence(timeout: 2.5))
-        XCTAssertTrue(
-            element(labelContaining: "Reopen fixture progress.").exists,
-            "The running turn's work vanished while the session detail was held"
-        )
-
-        XCTAssertTrue(releaseHeldLoads(timeout: 30) { element(labelContaining: "Reopen fixture done.").exists })
-        XCTAssertTrue(element(label: "Checking stream").awaitNonExistence(timeout: 5))
-        XCTAssertEqual(countElements(containing: "Reopen fixture progress."), 1)
-    }
 }
 
-/// The composer's transitions and the transcript's long-press isolation (TAL-49), in one launch.
+/// The composer collapses as the transcript scrolls and expands again, starting from a fresh,
+/// unfocused composer with no draft. Its first expansion runs in `ChatNavigationUITests`.
 final class ChatComposerUITests: ChatUITestCase {
-    func testComposerTransitionsAndLongPressIsolation() throws {
+    func testComposerCollapsesAndExpandsWithoutBottomNavigation() throws {
         launchFixture()
-        let idleComposer = try openFixtureSession()
-        XCTAssertTrue(app.buttons["Choose workspace path"].exists)
-        XCTAssertTrue(app.buttons["Choose profile"].exists)
-        XCTAssertFalse(app.tabBars.firstMatch.exists)
-        XCTAssertFalse(app.descendants(matching: .any)["chat-bottom-accessory"].exists)
-
-        assertLongPressShowsMessageActionsOnTextAndOnlyLinkActionsOnALink()
-
-        idleComposer.tap()
-        let expandedTextView = app.textViews.firstMatch
-        XCTAssertTrue(expandedTextView.awaitExistence(timeout: 10))
-        expandedTextView.typeText("Composer transition check")
-        XCTAssertFalse(app.buttons["Reply"].exists)
-
-        // The collapse starts from a fresh, unfocused composer with no draft.
-        app.terminate()
-        app.launchArguments = fixtureLaunchArguments
-        app.launch()
         _ = try openFixtureSession()
 
         let transcript = app.scrollViews["chat-detail:\(fixtureSessionTitle)"]
@@ -355,129 +283,15 @@ final class ChatComposerUITests: ChatUITestCase {
         XCTAssertTrue(app.buttons["Choose profile"].exists)
         XCTAssertFalse(app.tabBars.firstMatch.exists)
     }
-
-    /// A long press on a message's prose opens its actions at the press point; one on a link
-    /// offers only the link's own actions.
-    private func assertLongPressShowsMessageActionsOnTextAndOnlyLinkActionsOnALink() {
-        let message = element(labelContaining: "FixturePlainLead")
-        XCTAssertTrue(message.awaitExistence(timeout: 15), "Missing the fixture's long assistant message")
-        let before = settledFrame(of: message)
-        // High in a tall bubble: the pre-TAL-49 context menu lifted the whole
-        // bubble and pushed its menu to the top of the screen from here.
-        let press = CGPoint(x: before.midX, y: before.minY + 12)
-        longPress(at: press)
-
-        let fork = app.buttons["Fork From Here"]
-        XCTAssertTrue(fork.awaitExistence(timeout: 5), "The message actions did not open")
-        XCTAssertFalse(app.buttons["Open Link"].exists, "Prose must not offer link actions")
-
-        // The menu opens from the press point, not from a lifted bubble: one of
-        // its edges sits at the finger.
-        let menu = app.buttons["Listen"].frame.union(fork.frame)
-        XCTAssertLessThan(
-            min(abs(menu.minY - press.y), abs(menu.maxY - press.y)), 60,
-            "The menu opened away from the press point: \(menu) for a press at \(press)"
-        )
-        XCTAssertEqual(
-            message.frame, before,
-            "Opening the menu moved the message instead of leaving the transcript still"
-        )
-        dismissContextMenu(avoiding: menu)
-        XCTAssertTrue(fork.awaitNonExistence(timeout: 5), "The message actions did not close")
-
-        let link = app.links["FixtureLinkTarget"]
-        XCTAssertTrue(link.awaitExistence(timeout: 15), "Missing the fixture's mixed text-and-link message")
-        longPress(at: settledCenter(of: link))
-
-        let openLink = app.buttons["Open Link"]
-        XCTAssertTrue(openLink.awaitExistence(timeout: 5), "The link's own actions did not open")
-        XCTAssertFalse(app.buttons["Fork From Here"].exists, "A link press must not offer message actions")
-        XCTAssertFalse(app.buttons["Listen"].exists, "A link press must not offer message actions")
-        dismissContextMenu(avoiding: openLink.frame)
-        XCTAssertTrue(openLink.awaitNonExistence(timeout: 5), "The link actions did not close")
-    }
-
-    /// Taps the half of the screen the open menu does not cover; a tap outside a context menu
-    /// only closes it.
-    private func dismissContextMenu(avoiding menu: CGRect) {
-        let screen = app.frame
-        tap(at: CGPoint(x: screen.midX, y: menu.midY > screen.midY ? screen.height * 0.3 : screen.height * 0.75))
-    }
 }
 
 class SettingsUITestCase: TalariaUITestCase {}
 
-/// The server-backed Settings screens and the grouped controls around them, in one launch. Their
-/// failed loads run in `ReadFailureUITests`.
-final class SettingsConfigurationUITests: SettingsUITestCase {
-    func testChatsAndProvidersSettingsShowTheirControlsAndServerContent() throws {
-        launchFixture()
-        openSettings()
-
-        openArchivedChats()
-        XCTAssertTrue(
-            element(labelContaining: "Fixture Archived Session").awaitExistence(timeout: 10),
-            "The archived list did not show the fixture archived session"
-        )
-        app.buttons["BackButton"].tap()
-        XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: Self.navigationTimeout))
-
-        let composerHeading = app.staticTexts["Composer"]
-        repeatStep(8, until: { composerHeading.exists }) {
-            app.swipeUp()
-        }
-        XCTAssertTrue(composerHeading.exists)
-        for label in [
-            "Send While Responding",
-            "Dictation Provider",
-            "Workspace",
-            "Profile",
-            "Git Branch",
-            "Context Usage",
-        ] {
-            let setting = app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label BEGINSWITH %@", label))
-                .firstMatch
-            repeatStep(8, until: { setting.exists }) {
-                app.swipeUp()
-            }
-            XCTAssertTrue(setting.exists, "Missing composer setting: \(label)")
-        }
-
-        app.navigationBars["Chats"].buttons["Settings"].tap()
-        openProviders()
-        XCTAssertTrue(
-            element(labelContaining: "Fixture Provider").awaitExistence(timeout: 10),
-            "The providers list did not show the fixture provider"
-        )
-        app.buttons["BackButton"].tap()
-        XCTAssertTrue(app.navigationBars["Providers"].awaitExistence(timeout: Self.navigationTimeout))
-
-        let percentage = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "Quota Percentage"))
-            .firstMatch
-        repeatStep(12, until: { percentage.exists }) {
-            app.swipeUp()
-        }
-        XCTAssertTrue(percentage.exists)
-        XCTAssertTrue(app.staticTexts["Used"].exists)
-
-        let quotaRefresh = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "Quota Refresh"))
-            .firstMatch
-        repeatStep(6, until: { quotaRefresh.exists }) {
-            app.swipeUp()
-        }
-        XCTAssertTrue(quotaRefresh.exists)
-        XCTAssertTrue(app.staticTexts["Every 5 minutes"].exists)
-
-        add(XCTAttachment(screenshot: XCUIScreen.main.screenshot()))
-    }
-}
-
-/// The category root, where moved controls live, and every category's route, in one launch.
+/// The category root, where moved controls live, every category's route, and the server-backed
+/// Chats and Providers screens with the grouped controls around them, in one launch. Their failed
+/// loads run in `ReadFailureUITests`.
 final class SettingsStructureUITests: SettingsUITestCase {
-    func testSettingsRootHoldsCategoriesThatOwnTheirControlsAndRoute() throws {
+    func testSettingsRootCategoriesRoutesAndServerContent() throws {
         launchFixture()
         openSettings()
 
@@ -538,6 +352,70 @@ final class SettingsStructureUITests: SettingsUITestCase {
             app.navigationBars[category.1].buttons["Settings"].tap()
             XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: Self.navigationTimeout))
         }
+
+        assertChatsAndProvidersShowTheirControlsAndServerContent()
+    }
+
+    /// Starts at the Settings root.
+    private func assertChatsAndProvidersShowTheirControlsAndServerContent() {
+        openArchivedChats()
+        XCTAssertTrue(
+            element(labelContaining: "Fixture Archived Session").awaitExistence(timeout: 10),
+            "The archived list did not show the fixture archived session"
+        )
+        app.buttons["BackButton"].tap()
+        XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: Self.navigationTimeout))
+
+        let composerHeading = app.staticTexts["Composer"]
+        repeatStep(8, until: { composerHeading.exists }) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(composerHeading.exists)
+        for label in [
+            "Send While Responding",
+            "Dictation Provider",
+            "Workspace",
+            "Profile",
+            "Git Branch",
+            "Context Usage",
+        ] {
+            let setting = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH %@", label))
+                .firstMatch
+            repeatStep(8, until: { setting.exists }) {
+                app.swipeUp()
+            }
+            XCTAssertTrue(setting.exists, "Missing composer setting: \(label)")
+        }
+
+        app.navigationBars["Chats"].buttons["Settings"].tap()
+        openProviders()
+        XCTAssertTrue(
+            element(labelContaining: "Fixture Provider").awaitExistence(timeout: 10),
+            "The providers list did not show the fixture provider"
+        )
+        app.buttons["BackButton"].tap()
+        XCTAssertTrue(app.navigationBars["Providers"].awaitExistence(timeout: Self.navigationTimeout))
+
+        let percentage = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Quota Percentage"))
+            .firstMatch
+        repeatStep(12, until: { percentage.exists }) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(percentage.exists)
+        XCTAssertTrue(app.staticTexts["Used"].exists)
+
+        let quotaRefresh = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Quota Refresh"))
+            .firstMatch
+        repeatStep(6, until: { quotaRefresh.exists }) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(quotaRefresh.exists)
+        XCTAssertTrue(app.staticTexts["Every 5 minutes"].exists)
+
+        add(XCTAttachment(screenshot: XCUIScreen.main.screenshot()))
     }
 }
 
@@ -979,7 +857,13 @@ final class SidebarPresentationUITests: SidebarUITestCase {
 
         // New Chat opens the existing composer and closes the sidebar.
         XCTAssertTrue(poll(timeout: 3) { !sidebar.isHittable })
-        openNavigation.tap()
+        // A tap while the close is still settling can be dropped. The sidebar and its rows stay
+        // in the tree while it is closed, so hittability is the sign it opened.
+        repeatStep(3, until: { sidebar.isHittable }) {
+            openNavigation.tap()
+            _ = poll(timeout: 3) { sidebar.isHittable }
+        }
+        XCTAssertTrue(sidebar.isHittable, "The sidebar did not open again")
         let newChat = sidebar.buttons["New Chat"]
         XCTAssertTrue(newChat.awaitExistence(timeout: 3))
         _ = newChat.settledFrame
@@ -1033,6 +917,10 @@ class AdaptiveLayoutUITestCase: TalariaUITestCase {
         let arguments: [String]
         let orientation: UIDeviceOrientation
         var reduceMotion = false
+        /// Audit types run on this variant's screens. Element descriptions and traits belong to
+        /// the elements, not to the layout, so only the baseline variant audits them; every
+        /// variant audits Dynamic Type and hit regions, which follow the layout (TAL-402).
+        var auditTypes: [XCUIAccessibilityAuditType] = [.dynamicType, .hitRegion]
         var isRightToLeft: Bool { arguments.contains("-AppleTextDirection") }
     }
 
@@ -1043,7 +931,8 @@ class AdaptiveLayoutUITestCase: TalariaUITestCase {
         Variant(
             name: "portrait light",
             arguments: ["-appTheme", "light", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"],
-            orientation: .portrait
+            orientation: .portrait,
+            auditTypes: [.dynamicType, .hitRegion, .sufficientElementDescription, .trait]
         ),
         Variant(
             name: "portrait dark RTL AXXXL",
@@ -1506,6 +1395,54 @@ class TalariaUITestCase: XCTestCase {
 }
 
 fileprivate extension ChatUITestCase {
+    /// A long press on a message's prose opens its actions at the press point; one on a link
+    /// offers only the link's own actions.
+    func assertLongPressShowsMessageActionsOnTextAndOnlyLinkActionsOnALink() {
+        let message = element(labelContaining: "FixturePlainLead")
+        XCTAssertTrue(message.awaitExistence(timeout: 15), "Missing the fixture's long assistant message")
+        let before = settledFrame(of: message)
+        // High in a tall bubble: the pre-TAL-49 context menu lifted the whole
+        // bubble and pushed its menu to the top of the screen from here.
+        let press = CGPoint(x: before.midX, y: before.minY + 12)
+        longPress(at: press)
+
+        let fork = app.buttons["Fork From Here"]
+        XCTAssertTrue(fork.awaitExistence(timeout: 5), "The message actions did not open")
+        XCTAssertFalse(app.buttons["Open Link"].exists, "Prose must not offer link actions")
+
+        // The menu opens from the press point, not from a lifted bubble: one of
+        // its edges sits at the finger.
+        let menu = app.buttons["Listen"].frame.union(fork.frame)
+        XCTAssertLessThan(
+            min(abs(menu.minY - press.y), abs(menu.maxY - press.y)), 60,
+            "The menu opened away from the press point: \(menu) for a press at \(press)"
+        )
+        XCTAssertEqual(
+            message.frame, before,
+            "Opening the menu moved the message instead of leaving the transcript still"
+        )
+        dismissContextMenu(avoiding: menu)
+        XCTAssertTrue(fork.awaitNonExistence(timeout: 5), "The message actions did not close")
+
+        let link = app.links["FixtureLinkTarget"]
+        XCTAssertTrue(link.awaitExistence(timeout: 15), "Missing the fixture's mixed text-and-link message")
+        longPress(at: settledCenter(of: link))
+
+        let openLink = app.buttons["Open Link"]
+        XCTAssertTrue(openLink.awaitExistence(timeout: 5), "The link's own actions did not open")
+        XCTAssertFalse(app.buttons["Fork From Here"].exists, "A link press must not offer message actions")
+        XCTAssertFalse(app.buttons["Listen"].exists, "A link press must not offer message actions")
+        dismissContextMenu(avoiding: openLink.frame)
+        XCTAssertTrue(openLink.awaitNonExistence(timeout: 5), "The link actions did not close")
+    }
+
+    /// Taps the half of the screen the open menu does not cover; a tap outside a context menu
+    /// only closes it.
+    func dismissContextMenu(avoiding menu: CGRect) {
+        let screen = app.frame
+        tap(at: CGPoint(x: screen.midX, y: menu.midY > screen.midY ? screen.height * 0.3 : screen.height * 0.75))
+    }
+
     func openFixtureSession() throws -> XCUIElement {
         if let composer = waitForComposer(timeout: 0) {
             return composer
@@ -1862,11 +1799,11 @@ fileprivate extension AdaptiveLayoutUITestCase {
             }
             // XCTest gives each audit call 15 seconds, and one call covering every type overran
             // it on a 3-core GitHub-hosted runner (TAL-401), so each type gets its own call.
-            // These are every iOS audit type except three: contrast is unreliable over blurred
-            // glass surfaces; the text-clipping audit predicts from `lineLimit` instead of
-            // measuring the rendered variant; element detection scans pixels and names no
-            // element to fix.
-            for auditType: XCUIAccessibilityAuditType in [.dynamicType, .hitRegion, .sufficientElementDescription, .trait] {
+            // The baseline variant runs every iOS audit type except three: contrast is unreliable
+            // over blurred glass surfaces; the text-clipping audit predicts from `lineLimit`
+            // instead of measuring the rendered variant; element detection scans pixels and names
+            // no element to fix. The other variants run the layout-dependent types.
+            for auditType in variant.auditTypes {
                 // A call that runs out of time reports nothing, and one right after a slow
                 // launch did so under CPU load, so a timed-out type runs again, up to 3 times.
                 for attempt in 1...3 {

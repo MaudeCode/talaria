@@ -159,24 +159,26 @@ final class ShareExtensionUITests: ShareExtensionUITestCase {
         XCTAssertEqual(inboxSummary(), "inbox pending=0 reserved=0", "The share inbox was not left empty")
     }
 
-    func testSharedURLReachesTheComposer() throws {
+    /// One share carrying text, a URL, an image, a PDF, and a generic file, delivered through
+    /// the private-selector workaround behind `NSExtensionContext.open`: the draft and every
+    /// attachment have to survive the handoff. The workaround is the App Review risk in
+    /// `ShareViewController`, so this pins whether it still reaches the containing app on the OS
+    /// the suite runs against; the shipping open path runs in the text test above. A URL-only
+    /// share's extraction is `ShareInputReaderTests` (TAL-402).
+    func testWorkaroundOpenPathDeliversTextURLAndAttachments() throws {
         launchShareHost()
-
-        shareToTalaria(.url)
-        XCTAssertNotNil(
-            waitForComposerDraft(containing: Self.fixtureURL),
-            "A shared URL never reached the composer"
-        )
-    }
-
-    /// One share carrying text, a URL, an image, a PDF, and a generic file: the draft and
-    /// every attachment have to survive the handoff.
-    func testSharedAttachmentsReachTheComposer() throws {
-        launchShareHost()
+        selectOpenMode("share-host-open-mode-workaround")
 
         shareToTalaria(.attachments)
         let draft = waitForComposerDraft(containing: Self.fixtureText)
-        XCTAssertNotNil(draft, "A mixed share never reached the composer")
+        XCTAssertNotNil(
+            draft,
+            """
+            The containing-app workaround no longer opens Talaria on \
+            \(ProcessInfo.processInfo.operatingSystemVersionString), or the mixed share never \
+            reached the composer.
+            """
+        )
         XCTAssertTrue(draft?.contains(Self.fixtureURL) == true, "The shared URL was dropped: \(draft ?? "")")
 
         for filename in ["fixture-image.png", "fixture-document.pdf", "fixture-file.dat"] {
@@ -186,65 +188,26 @@ final class ShareExtensionUITests: ShareExtensionUITestCase {
             )
         }
     }
-
-    /// The private-selector workaround behind `NSExtensionContext.open` is the App Review
-    /// risk in `ShareViewController`. This pins whether it still reaches the containing app
-    /// on the OS the suite runs against, so a regression shows up here and not in review.
-    func testWorkaroundOpenPathStillReachesTheApp() throws {
-        launchShareHost()
-        selectOpenMode("share-host-open-mode-workaround")
-
-        shareToTalaria(.text)
-        XCTAssertNotNil(
-            waitForComposerDraft(containing: Self.fixtureText),
-            """
-            The containing-app workaround no longer opens Talaria on \
-            \(ProcessInfo.processInfo.operatingSystemVersionString); sharing now ends on the \
-            manual-open fallback.
-            """
-        )
-    }
 }
 
-/// Shares the extension refuses or cannot hand over: size limits, unsupported content and the
-/// manual-open fallback. Split from `ShareExtensionUITests` so the shards balance (TAL-402).
+/// Shares the extension refuses or cannot hand over, in one launch and its manual reopen: a file
+/// over the size limit, the manual-open fallback, and content the activation rule rejects. The
+/// aggregate limit's copy and reading are `ShareInputReaderTests` (TAL-402).
 final class ShareExtensionRefusalUITests: ShareExtensionUITestCase {
-    /// Both size-limit paths: one file over the per-item limit, and two files that only
-    /// exceed it together. Each explains itself, and neither reaches the composer. Last, more
-    /// web URLs than the activation rule accepts: the system must not offer Talaria at all,
-    /// rather than handing the extension something it would silently drop. None of these
-    /// opens a composer, so they share one launch (TAL-402).
-    func testOversizedAndUnsupportedContentIsRefused() throws {
-        launchShareHost()
-
-        shareToTalaria(.oversizedFile)
-        assertExtensionStatus("Talaria accepts text, URLs, images, PDFs, and files up to 20 MB.")
-
-        shareToTalaria(.oversizedTotal)
-        // The limit is formatted by ByteCountFormatter, so match the sentence, not the
-        // locale-dependent number it renders for 20 MiB.
-        assertExtensionStatus("Shared attachments must be")
-
-        XCTAssertNil(
-            waitForComposerDraft(containing: "fixture-", timeout: 5),
-            "Refused content still opened a composer"
-        )
-
-        share(.unsupported)
-        let sheet = app.otherElements["ActivityListView"]
-        XCTAssertTrue(sheet.awaitExistence(timeout: 20), "The system share sheet did not open")
-        XCTAssertFalse(
-            talariaActivity(in: sheet).awaitExistence(timeout: 5),
-            "Talaria was offered content its activation rule does not accept"
-        )
-    }
-
-    /// When no launch path works the extension says so, and the draft has to survive for
-    /// the next time the user opens Talaria themselves.
-    func testManualOpenFallbackExplainsItselfAndKeepsTheDraft() throws {
+    func testRefusedAndUnopenedSharesExplainThemselves() throws {
         launchShareHost()
         selectOpenMode("share-host-open-mode-manual")
 
+        // One file over the per-item limit explains itself and reaches no composer.
+        shareToTalaria(.oversizedFile)
+        assertExtensionStatus("Talaria accepts text, URLs, images, PDFs, and files up to 20 MB.")
+        XCTAssertNil(
+            waitForComposerDraft(containing: "fixture-", timeout: 3),
+            "Refused content still opened a composer"
+        )
+
+        // When no launch path works the extension says so, and the draft has to survive for
+        // the next time the user opens Talaria themselves.
         shareToTalaria(.text)
         assertExtensionStatus("Shared content saved. Open Talaria manually.")
         XCTAssertNil(
@@ -258,12 +221,22 @@ final class ShareExtensionRefusalUITests: ShareExtensionUITestCase {
         )
 
         // Opening Talaria by hand is a cold launch, which is where the saved draft has to
-        // reappear.
+        // reappear. The host bar comes back without a reset.
         app.terminate()
-        launch(arguments: ["--ui-test-fixture"])
+        launch(arguments: ["--ui-test-fixture", "--ui-test-share-host"])
         XCTAssertNotNil(
             waitForComposerDraft(containing: Self.fixtureText),
             "The manually opened app lost the draft the extension had saved"
+        )
+
+        // More web URLs than the activation rule accepts: the system must not offer Talaria at
+        // all, rather than handing the extension something it would silently drop.
+        share(.unsupported)
+        let sheet = app.otherElements["ActivityListView"]
+        XCTAssertTrue(sheet.awaitExistence(timeout: 20), "The system share sheet did not open")
+        XCTAssertFalse(
+            talariaActivity(in: sheet).awaitExistence(timeout: 5),
+            "Talaria was offered content its activation rule does not accept"
         )
     }
 }

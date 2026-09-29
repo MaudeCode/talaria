@@ -1572,4 +1572,53 @@ extension ChatViewModelSendTests {
 
         XCTAssertEqual(viewModel.sendErrorMessage, sendError)
     }
+
+    /// A transport loss mid-stream reattaches and the answer continues without repeating what
+    /// was already shown, then settles and ends the stream (formerly
+    /// `ChatRecoveryUITests.testChatStreamReconnectsAfterTransportLoss`, TAL-402).
+    @MainActor
+    func testTransportLossReattachesAndContinuesTheAnswerOnceThenSettles() async throws {
+        let streamClient = SpySSEStreamingClient()
+        var settled = false
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+            case "/api/chat/stream/status":
+                return apiTestJSONResponse(#"{"active":true,"stream_id":"stream-123"}"#, for: request)
+            case "/api/session":
+                let assistant = settled
+                    ? #",{"role":"assistant","content":"Before reconnect. After reconnect.","timestamp":1770000101,"message_id":"assistant-1"}"#
+                    : ""
+                return apiTestJSONResponse("""
+                {"session":{"session_id":"session-abc","title":"Planning",\
+                "active_stream_id":\(settled ? "null" : #""stream-123""#),"messages":[\
+                {"role":"user","content":"Run the deterministic fixture","timestamp":1770000100,"message_id":"user-1"}\
+                \(assistant)]}}
+                """, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+
+        _ = await viewModel.sendMessage("Run the deterministic fixture")
+        streamClient.emit(.token("Before reconnect."))
+        streamClient.emit(.transportError("The network connection was lost."))
+        try await waitUntil { streamClient.startedURLs.count == 2 }
+        XCTAssertEqual(viewModel.activeStreamID, "stream-123")
+
+        streamClient.emit(.token(" After reconnect."))
+        try await waitUntil {
+            viewModel.messages.last?.content == "Before reconnect. After reconnect."
+        }
+        settled = true
+        streamClient.emit(.done(DoneStreamEvent()))
+        streamClient.emit(.streamEnd)
+        try await waitUntil { viewModel.activeStreamID == nil }
+
+        let assistants = viewModel.messages.filter { $0.role == "assistant" }
+        XCTAssertEqual(assistants.map(\.content), ["Before reconnect. After reconnect."])
+        XCTAssertNil(viewModel.sendErrorMessage)
+    }
 }
