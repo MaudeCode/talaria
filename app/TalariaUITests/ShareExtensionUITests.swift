@@ -58,7 +58,10 @@ class ShareExtensionUITestCase: TalariaUITestCase {
         let sheet = app.otherElements["ActivityListView"]
         XCTAssertTrue(sheet.awaitExistence(timeout: 20), "The system share sheet did not open")
         let talaria = talariaActivity(in: sheet)
-        XCTAssertTrue(talaria.awaitExistence(timeout: 20), "Talaria is not offered for \(payload.rawValue)")
+        // The first sheet of a launch lists its apps slowly on a hosted runner: 8-20 s measured
+        // across runs 36595587727-36610754926, with a mixed share at 20.1 s. The wait returns as
+        // soon as Talaria shows, so a fast sheet pays nothing for the margin.
+        XCTAssertTrue(talaria.awaitExistence(timeout: 45), "Talaria is not offered for \(payload.rawValue)")
         XCTAssertTrue(
             waitUntilHittable(talaria, timeout: 20),
             "The Talaria share activity never became tappable"
@@ -198,16 +201,9 @@ final class ShareExtensionRefusalUITests: ShareExtensionUITestCase {
         launchShareHost()
         selectOpenMode("share-host-open-mode-manual")
 
-        // One file over the per-item limit explains itself and reaches no composer.
-        shareToTalaria(.oversizedFile)
-        assertExtensionStatus("Talaria accepts text, URLs, images, PDFs, and files up to 20 MB.")
-        XCTAssertNil(
-            waitForComposerDraft(containing: "fixture-", timeout: 3),
-            "Refused content still opened a composer"
-        )
-
         // When no launch path works the extension says so, and the draft has to survive for
-        // the next time the user opens Talaria themselves.
+        // the next time the user opens Talaria themselves. This light share goes first: the
+        // launch's first sheet is the slow one, and the 25 MB file below adds to its load.
         shareToTalaria(.text)
         assertExtensionStatus("Shared content saved. Open Talaria manually.")
         XCTAssertNil(
@@ -219,6 +215,15 @@ final class ShareExtensionRefusalUITests: ShareExtensionUITestCase {
             waitForInbox("inbox pending=1 reserved=0"),
             "The extension did not leave the unopened draft in the inbox: \(inboxSummary())"
         )
+
+        // One file over the per-item limit explains itself and reaches no composer.
+        shareToTalaria(.oversizedFile)
+        assertExtensionStatus("Talaria accepts text, URLs, images, PDFs, and files up to 20 MB.")
+        XCTAssertNil(
+            waitForComposerDraft(containing: "fixture-", timeout: 3),
+            "Refused content still opened a composer"
+        )
+        XCTAssertEqual(inboxSummary(), "inbox pending=1 reserved=0", "The refused share changed the inbox")
 
         // Opening Talaria by hand is a cold launch, which is where the saved draft has to
         // reappear. The host bar comes back without a reset.
@@ -234,6 +239,9 @@ final class ShareExtensionRefusalUITests: ShareExtensionUITestCase {
         share(.unsupported)
         let sheet = app.otherElements["ActivityListView"]
         XCTAssertTrue(sheet.awaitExistence(timeout: 20), "The system share sheet did not open")
+        // Only a sheet that has listed its activities can show Talaria's absence; this is the
+        // relaunch's first, slow sheet.
+        XCTAssertTrue(sheet.cells.firstMatch.awaitExistence(timeout: 45), "The share sheet listed no activities")
         XCTAssertFalse(
             talariaActivity(in: sheet).awaitExistence(timeout: 5),
             "Talaria was offered content its activation rule does not accept"
