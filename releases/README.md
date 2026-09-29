@@ -187,7 +187,7 @@ exports live responses, and compiles the actual older App from Git. It verifies
 the fixtures reached the test bundle and retains structured XCTest results. For an
 App revision with the TalariaKit package (TAL-399), the contract classes that live
 there run with `swift test` against the same responses, and the live decoding test
-must pass there instead.
+must pass there instead; their build runs while the Web is probed (TAL-408).
 
 ## Root workflow
 
