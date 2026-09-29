@@ -67,7 +67,7 @@ if "$script" "App build" 0 "Upload the test build" >/dev/null 2>&1; then echo "E
 fixtures "$(job "App build" 2 completed '"failure"' '"success"')"
 if "$script" "App build" 60 "Upload the test build" >/dev/null 2>&1; then echo "Expected a failed build to fail despite its upload." >&2; exit 1; fi
 
-# The launch smoke's handoff (TAL-405). An upload already visible on the first poll returns after that one call.
+# The UI suite shards' handoff (TAL-405). An upload already visible on the first poll returns after that one call.
 fixtures "$(job "App build" 2 in_progress null '"success"')"
 [[ "$(last_line "$("$script" "App build" 2700 "Upload the test build")")" == "App build finished Upload the test build (attempt 2)." ]]
 [[ "$(cat "$work/calls")" == 1 ]]
@@ -78,7 +78,7 @@ for conclusion in failure cancelled; do
   [[ "$(last_line "$output")" == "App build finished ${conclusion} (attempt 2)" ]]
   [[ "$(cat "$work/calls")" == 2 ]]
 done
-# "Re-run failed jobs" on the smoke alone: attempt 2 has only the build record kept from attempt 1.
+# "Re-run failed jobs" on a shard alone: attempt 2 has only the build record kept from attempt 1.
 fixtures "$(job "App build" 1 completed '"success"' '"success"')"
 [[ "$(last_line "$("$script" "App build" 2700 "Upload the test build")")" == "App build succeeded (attempt 1)." ]]
 [[ "$(cat "$work/calls")" == 1 ]]
@@ -87,7 +87,7 @@ fixtures "$(job "App build" 1 completed '"failure"' '"skipped"'),$(job "App buil
          "$(job "App build" 1 completed '"failure"' '"skipped"'),$(job "App build" 2 in_progress null '"success"')"
 [[ "$(last_line "$("$script" "App build" 2700 "Upload the test build")")" == "App build finished Upload the test build (attempt 2)." ]]
 [[ "$(cat "$work/calls")" == 2 ]]
-# Each observation logs its call's duration, the latency the smoke's step summary reports.
+# Each observation logs its call's duration, the latency a shard's step summary reports.
 fixtures "$(job "App build" 2 completed '"success"')"
 [[ "$("$script" "App build" | head -n 1)" =~ ^[0-9:]{8}\ App\ build:\ attempt\ 2\ completed\ success\ \([0-9]+s\ call\)$ ]]
 

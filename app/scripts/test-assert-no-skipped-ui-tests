@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthetic xcresult output verifies selected smoke execution and skip failures."""
+"""Synthetic xcresult output verifies that a skipped UI test fails the check."""
 
 import json
 import os
@@ -20,13 +20,10 @@ with tempfile.TemporaryDirectory(prefix="talaria-ui-results-") as temporary:
     prefix = "test://com.apple.xcode/Talaria/TalariaUITests/"
     smoke = {"nodeType": "Test Case", "result": "Passed",
              "nodeIdentifierURL": prefix + "ChatNavigationUITests/testChatSessionOpensFromList()"}
-    for nodes, focused, expected in (([smoke], True, 0), ([], True, 1), ([], False, 0),
-                                    ([{**smoke, "result": "Skipped"}], True, 1),
-                                    ([{**smoke, "result": "Failed"}], True, 1),
-                                    ([{**smoke, "nodeIdentifierURL": prefix + "Other/test()"}], True, 1),
-                                    ([{**smoke, "result": "Skipped"}], False, 1)):
+    for nodes, expected in (([smoke], 0), ([], 0), ([{**smoke, "result": "Skipped"}], 1),
+                            ([{**smoke, "result": "Skipped", "nodeIdentifierURL": "test://com.apple.xcode/Talaria/TalariaTests/X/test()"}], 0)):
         fixture.write_text(json.dumps({"testNodes": nodes}))
-        command = [str(script), str(result), *(["--require-launch-smoke"] if focused else [])]
-        completed = subprocess.run(command, env=env, capture_output=True, text=True)
+        completed = subprocess.run([str(script), str(result)], env=env, capture_output=True, text=True)
         assert completed.returncode == expected, (nodes, completed.stderr)
-print("UI skip and required launch-smoke checks passed.")
+    assert subprocess.run([str(script), str(result), "--require-launch-smoke"], env=env, capture_output=True).returncode == 64
+print("UI skip checks passed.")

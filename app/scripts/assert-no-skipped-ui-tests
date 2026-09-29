@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-if (( $# < 1 || $# > 2 )) || [[ "${2:-}" != "" && "${2:-}" != "--require-launch-smoke" ]]; then
-    print -u2 "Usage: scripts/assert-no-skipped-ui-tests <result-bundle> [--require-launch-smoke]"
+if (( $# != 1 )); then
+    print -u2 "Usage: scripts/assert-no-skipped-ui-tests <result-bundle>"
     exit 64
 fi
 
@@ -31,15 +31,4 @@ if [[ -n "$skipped_ui_tests" ]]; then
     print -u2 "TalariaUITests must not skip:"
     print -u2 -r -- "$skipped_ui_tests"
     exit 1
-fi
-
-if [[ "${2:-}" == "--require-launch-smoke" ]]; then
-    if ! print -r -- "$results_json" | /usr/bin/jq -e '
-        any(.. | objects;
-            .nodeType? == "Test Case" and .result? == "Passed" and
-            ((.nodeIdentifierURL? // "") | startswith("test://com.apple.xcode/Talaria/TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList")))
-    ' >/dev/null; then
-        print -u2 "The required App launch smoke test did not pass."
-        exit 1
-    fi
 fi

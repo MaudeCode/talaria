@@ -4,19 +4,19 @@
 #     mode: pull-request | contracts | full
 #       Every mode runs the TalariaKit package tests with `swift test` on macOS, without a simulator: about
 #       94% of the unit tests, including every native contract class (TAL-399).
-#       pull-request: plus the App build for testing (App, extensions and both test bundles) and the launch smoke
-#       test on one simulator.
+#       pull-request: plus the App build for testing (App, extensions and both test bundles); nothing runs in a
+#       simulator (TAL-405).
 #       contracts: the package tests alone; a contract-only change leaves the App sources alone.
-#       full: plus every simulator-hosted unit and UI test in four shards (the UI suite), launch smoke included.
+#       full: plus the build's upload and every simulator-hosted unit and UI test, launch smoke included, in four
+#       shards (the UI suite), nightly and as a release gate.
 #     contracts: true | false  - the package job also waits for this run's "Web contract probe" job and runs the
 #       live decoding test against its contract-fixture artifact.
 #     ref: optional commit to check out (default: the triggering commit).
 #     only_testing: optional space-separated test identifiers; one shard runs exactly these (ui-suite.yml dispatch).
 #     test_iterations: runs of each selected test (default 1); above 1 stops at the first failing iteration.
 #   No outputs: the calling job's result is the suite's result.
-# Jobs are named "App build"/"App launch smoke"/"App package tests", or "UI suite build"/"UI suite tests (shard N)"/
-# "UI suite package tests" in full mode, and the build artifact is app-build or ui-suite-build, so both suites can
-# run in one workflow run.
+# Jobs are named "App build"/"App package tests", or "UI suite build"/"UI suite tests (shard N)"/"UI suite package
+# tests" in full mode, whose build artifact is ui-suite-build.
 # Test shards boot their simulator while the build runs on another runner (TAL-380): hosted macOS allows five
 # concurrent jobs, and a simulator's first boot beside a build on one three-core runner slowed both. Each shard
 # polls the jobs API for the build's upload from before its boot (TAL-405).
@@ -54,13 +54,14 @@ defaults:
 
 env:
   XCODE_VERSION: "27.0"
-  BUILD_JOB: ${{ inputs.mode == 'full' && 'UI suite build' || 'App build' }}
-  BUILD_ARTIFACT: ${{ inputs.mode == 'full' && 'ui-suite-build' || 'app-build' }}
+  # Only the full suite hands its build to test shards.
+  BUILD_JOB: UI suite build
+  BUILD_ARTIFACT: ui-suite-build
 
 jobs:
   app-build:
     name: ${{ inputs.mode == 'full' && 'UI suite build' || 'App build' }}
-    # Builds on its own runner; the test jobs boot their simulators meanwhile. A contract-only
+    # Builds on its own runner; in the full suite the test shards boot their simulators meanwhile. A contract-only
     # change leaves the App sources alone, so its package tests are the whole check.
     if: inputs.mode != 'contracts'
     runs-on: xcode-27
@@ -78,9 +79,12 @@ jobs:
         env:
           # A build destination only; nothing boots on this runner.
           BUILD_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=${{ env.XCODE_VERSION }}
+        run: ci/build-for-testing "${BUILD_DESTINATION}"
+
+      - name: Package the test build
+        if: inputs.mode == 'full'
         run: |
           set -euo pipefail
-          ci/build-for-testing "${BUILD_DESTINATION}"
           # Only what test-without-building reads: the xctestrun and the products it names (about 180 of
           # 232 MB; module files, objects and bundle copies stay behind). Artifacts drop file modes, so a tar
           # keeps the bundles' executables and signatures intact.
@@ -92,6 +96,7 @@ jobs:
           tar -cf "${RUNNER_TEMP}/app-build.tar" "${products[@]}"
 
       - name: Upload the test build
+        if: inputs.mode == 'full'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.BUILD_ARTIFACT }}
@@ -162,10 +167,10 @@ jobs:
 
   app-test:
     # Each shard boots its simulator to completion while the build runs on another runner and a background poll
-    # watches for the build's upload, then downloads the build. Pull requests run one shard with only the launch
-    # smoke test; the hosted unit tests and the UI tests run in the full suite (TAL-399).
-    name: ${{ inputs.mode == 'full' && format('UI suite tests (shard {0})', matrix.shard) || 'App launch smoke' }}
-    if: inputs.mode != 'contracts'
+    # watches for the build's upload, then downloads the build. Only the full suite runs them: the hosted unit
+    # tests, the launch smoke and the UI tests (TAL-399); pull requests stop at the build (TAL-405).
+    name: UI suite tests (shard ${{ matrix.shard }})
+    if: inputs.mode == 'full'
     runs-on: xcode-27
     # An iterated dispatch repeats minutes-long UI tests, so it gets the hosted job maximum.
     timeout-minutes: ${{ fromJSON(inputs.test_iterations) > 1 && 360 || 60 }}
@@ -176,13 +181,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Four UI suite shards; one for a pull request's launch smoke or a scoped UI suite dispatch (TAL-401).
-        shard: ${{ fromJSON(inputs.mode == 'full' && inputs.only_testing == '' && '[0,1,2,3]' || '[0]') }}
+        # Four UI suite shards; one for a scoped UI suite dispatch (TAL-401).
+        shard: ${{ fromJSON(inputs.only_testing == '' && '[0,1,2,3]' || '[0]') }}
     env:
       SHARD: ${{ matrix.shard }}
       SHARD_COUNT: ${{ strategy.job-total }}
-      MODE: ${{ inputs.mode }}
-      LAUNCH_SMOKE_TEST: TalariaUITests/ChatNavigationUITests/testChatSessionOpensFromList
       ONLY_TESTING: ${{ inputs.only_testing }}
       TEST_ITERATIONS: ${{ inputs.test_iterations }}
       RESULT_BUNDLE_PATH: TestResults.xcresult
@@ -274,8 +277,6 @@ jobs:
           tar -C Build -xf "${RUNNER_TEMP}/app-build.tar"
           if [[ -n "${ONLY_TESTING}" ]]; then
             for test_identifier in ${ONLY_TESTING}; do echo "-only-testing:${test_identifier}"; done > selection.txt
-          elif [[ "${MODE}" != "full" ]]; then
-            echo "-only-testing:${LAUNCH_SMOKE_TEST}" > selection.txt
           else
             python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" > selection.txt
           fi
@@ -354,11 +355,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Reject skipped UI tests
-        run: |
-          options=()
-          # A pull request's only test is the launch smoke, and it must execute and pass.
-          [[ "${MODE}" == "full" ]] || options+=(--require-launch-smoke)
-          scripts/assert-no-skipped-ui-tests "${RESULT_BUNDLE_PATH}" "${options[@]}"
+        run: scripts/assert-no-skipped-ui-tests "${RESULT_BUNDLE_PATH}"
 
       # Performance budgets are only useful against previous runs, so every run
       # keeps its measurements as an artifact and prints them into the summary.

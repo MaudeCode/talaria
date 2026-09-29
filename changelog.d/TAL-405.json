@@ -1,1 +1,1 @@
-{"skip": "CI tooling only: App test shards watch for the build from before their simulator boot; no app behavior changes."}
+{"skip": "CI tooling only: pull requests build the App and run the package tests without a simulator; the launch smoke test runs in the nightly and release UI suite, whose shards watch for the build from before their simulator boot; no app behavior changes."}
