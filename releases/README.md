@@ -100,13 +100,13 @@ suite uses up to nine: the suite (`ui-suite.yml`: one build, four test shards
 and the package tests on the release source), the two contract gates and one
 App build. `previous-app-contracts`, the longest gate while the previous App
 predates TAL-399, needs only the plan, so it queues before the suite's jobs.
-The suite's shards wait at most 45 minutes for its build, so `contracts` and
-the App build queue only once `ui-suite-started` has seen that build hold a
-runner; the shards then wait no longer than the build, and whichever jobs do
-not fit start as slots free up. Queue time does not count toward a job's
-timeout. A reused suite, or a release without App changes, runs no suite:
-`ui-suite-started` does not wait, and the contract gates and the App build
-(three macOS jobs) start together right after the lookup. The critical path is
+The suite's shards queue only once its build holds a runner (TAL-413), so no
+macOS job ever holds a slot while waiting for a queued one: the release's gates
+and builds start right after `prepare`, and whichever jobs do not fit start as
+slots free up. Queue time does not count toward a job's timeout. The release's
+call has a concurrency group of its own, so it neither waits for nor is
+replaced by a nightly or dispatched suite; it may overlap one. A reused suite,
+or a release without App changes, runs no suite. The critical path is
 then `prepare`, `previous-app-contracts` (about 16 minutes in the simulator; a
 few minutes with `swift test`), `build-gate`, Web and App publication and the
 manifest. Every simulator job uses the image's

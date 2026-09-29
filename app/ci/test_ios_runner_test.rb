@@ -75,9 +75,14 @@ class TestIOSRunnerTest < Minitest::Test
   end
 
   def test_hosted_shards_boot_before_waiting_for_the_build
-    shard = workflow_jobs("app-tests.yml").fetch("app-test")
-    # Test jobs start with App build and boot their simulator while it builds (TAL-380).
-    assert_nil(shard["needs"])
+    jobs = workflow_jobs("app-tests.yml")
+    shard = jobs.fetch("app-test")
+    # Test jobs queue once App build holds a runner, never beside a queued build (TAL-413), and boot their simulator
+    # while it builds (TAL-380). The wait runs on Linux, so it holds no macOS slot.
+    assert_equal("build-started", shard["needs"])
+    started = jobs.fetch("build-started")
+    assert_equal(["inputs.mode == 'full'", "ubuntu-latest"], started.values_at("if", "runs-on"))
+    assert_equal(['ci/wait-for-job "${BUILD_JOB}" 20700 "Set up job"'], started["steps"].filter_map { |step| step["run"] })
     # The boot finishes before the build wait and download, so it competes with neither (TAL-380).
     boot = shard["steps"].index { |step| step["name"] == "Boot the simulator" }
     assert_equal(["Wait for the build", "Download the test build", "Select this shard's tests", "Test without building"],
@@ -170,7 +175,7 @@ class TestIOSRunnerTest < Minitest::Test
     # job runs its contract classes in every mode.
     assert_equal("inputs.mode == 'full'", shard["if"])
     assert_equal("inputs.mode != 'contracts'", jobs.fetch("app-build")["if"])
-    assert_equal([nil] * 4, jobs.values_at("app-build", "app-test", "package-test").map { |job| job["needs"] } + [jobs.fetch("package-test")["if"]])
+    assert_equal([nil] * 3, jobs.values_at("app-build", "package-test").map { |job| job["needs"] } + [jobs.fetch("package-test")["if"]])
     # Only the full suite packages and uploads its build for the shards; the build itself always runs to the end.
     build_steps = jobs.fetch("app-build")["steps"].map { |step| [step["name"] || step["uses"], step] }.to_h
     assert_equal(["inputs.mode == 'full'"] * 2, build_steps.values_at("Package the test build", "Upload the test build").map { |step| step["if"] })

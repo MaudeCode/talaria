@@ -87,6 +87,11 @@ fixtures "$(job "App build" 1 completed '"failure"' '"skipped"'),$(job "App buil
          "$(job "App build" 1 completed '"failure"' '"skipped"'),$(job "App build" 2 in_progress null '"success"')"
 [[ "$(last_line "$("$script" "App build" 2700 "Upload the test build")")" == "App build finished Upload the test build (attempt 2)." ]]
 [[ "$(cat "$work/calls")" == 2 ]]
+# The shards' gate (TAL-413): a queued build with no steps keeps it waiting; the build's runner setup ends it.
+fixtures '{"name":"App build","run_attempt":2,"status":"queued","conclusion":null,"steps":[]}' \
+         '{"name":"App build","run_attempt":2,"status":"in_progress","conclusion":null,"steps":[{"name":"Set up job","conclusion":"success"}]}'
+[[ "$(last_line "$("$script" "App build" 20700 "Set up job")")" == "App build finished Set up job (attempt 2)." ]]
+[[ "$(cat "$work/calls")" == 2 ]]
 # Each observation logs its call's duration, the latency a shard's step summary reports.
 fixtures "$(job "App build" 2 completed '"success"')"
 [[ "$("$script" "App build" | head -n 1)" =~ ^[0-9:]{8}\ App\ build:\ attempt\ 2\ completed\ success\ \([0-9]+s\ call\)$ ]]
