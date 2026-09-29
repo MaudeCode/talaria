@@ -1,0 +1,1 @@
+{"skip": "CI only: UI suite shards queue once their build holds a macOS runner; no app behavior changes."}

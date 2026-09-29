@@ -8,7 +8,7 @@
 #   with:
 #     ref: <commit SHA>   # required for workflow_call
 #   No outputs: the calling job's result is the suite's result. Its jobs are named "UI suite build",
-#   "UI suite tests (shard N)" and "UI suite package tests", and its build artifact is ui-suite-build.
+#   "UI suite build started", "UI suite tests (shard N)" and "UI suite package tests", and its build artifact is ui-suite-build.
 #
 # A manual run can scope and repeat the suite instead (TAL-401), for example 10 runs in a row of one flaky test:
 #   gh workflow run ui-suite.yml --repo MaudeCode/talaria --ref <branch> \
@@ -48,6 +48,15 @@ on:
 
 permissions:
   contents: read
+
+# Nightly and dispatched suites run one at a time; the next waits (TAL-413). GitHub keeps one waiting run per group, so
+# a third run replaces the waiting one: a replaced nightly just means a release runs the suite itself. A release's
+# call is evaluated in its caller's context (workflow_ref names the caller) and gets a group of its own, so it never
+# waits for an hour-long or iterated suite and is never replaced. Suites may still overlap a release's call: the
+# shards queue only once their build holds a macOS runner (app-tests.yml), so overlapping suites cannot deadlock.
+concurrency:
+  group: ${{ contains(github.workflow_ref, '/.github/workflows/ui-suite.yml@') && 'ui-suite' || format('ui-suite-call-{0}', github.run_id) }}
+  cancel-in-progress: false
 
 jobs:
   suite:

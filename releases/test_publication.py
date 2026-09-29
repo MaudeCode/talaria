@@ -396,21 +396,14 @@ class PublicationTests(unittest.TestCase):
             str(root / ".github/workflows/release-set.yml")], text=True))["jobs"]
         gates = ("contracts", "previous-app-contracts", "component-contracts", "agent", "ui-suite-lookup", "ui-suite")
         builds = ("relay-build", "web-build", "app-dry-build", "app-signed-build")
-        # When the UI suite runs, contracts and the App build queue once its build holds a runner, so its shards
-        # never outwait their build. The previous App's gate, the longest, claims a runner first (TAL-408).
-        after_suite_build = ("contracts", "app-dry-build", "app-signed-build")
-        after_lookup = ("ui-suite", "ui-suite-started")
+        # Every macOS gate and build queues right after prepare: the suite's shards queue only once its build holds
+        # a runner (TAL-413), so nothing waits on the suite's build here. The previous App's gate, the longest,
+        # needs only the plan and claims a runner first (TAL-408).
         for name in (*gates, *builds):
             with self.subTest(job=name):
-                expected = ["prepare", "ui-suite-started"] if name in after_suite_build else (
-                    ["prepare", "ui-suite-lookup"] if name in after_lookup else "prepare")
+                expected = ["prepare", "ui-suite-lookup"] if name == "ui-suite" else "prepare"
                 self.assertEqual(jobs[name]["needs"], expected)
-        self.assertEqual(jobs["ui-suite-started"]["needs"], ["prepare", "ui-suite-lookup"])
-        wait = [step for step in jobs["ui-suite-started"]["steps"] if step.get("run")]
-        self.assertEqual([step["run"] for step in wait], ['app/ci/wait-for-job "UI suite build" 3600 "Set up job"'])
-        # It waits only while the suite runs, and a failed lookup stops it, and so every macOS job after it.
-        self.assertEqual(wait[0]["if"], "needs.ui-suite-lookup.outputs.reused == 'false'")
-        self.assertIn("needs.ui-suite-lookup.result == 'success'", jobs["ui-suite-started"]["if"])
+        self.assertNotIn("ui-suite-started", jobs)
         # The full UI suite runs on the release source whenever the App ships and no reusable run exists, dry runs
         # included.
         self.assertEqual(jobs["ui-suite"]["uses"], "./.github/workflows/ui-suite.yml")
@@ -418,6 +411,15 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(jobs["ui-suite"]["if"],
                          "needs.prepare.outputs.app_changed == 'true' && needs.ui-suite-lookup.outputs.reused == 'false'")
         self.assertEqual(jobs["ui-suite"]["permissions"], {"contents": "read", "actions": "read"})
+        # Nightly and dispatched suites queue one at a time; the release's call, evaluated in its caller's context,
+        # gets a group of its own, so it never waits for one and a newer run never replaces it (TAL-413).
+        suite = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+            str(root / ".github/workflows/ui-suite.yml")], text=True))
+        self.assertEqual(suite["concurrency"], {
+            "group": "${{ contains(github.workflow_ref, '/.github/workflows/ui-suite.yml@') && 'ui-suite' || "
+                     "format('ui-suite-call-{0}', github.run_id) }}",
+            "cancel-in-progress": False})
         # The lookup only reads Actions runs.
         self.assertEqual(jobs["ui-suite-lookup"]["if"], "needs.prepare.outputs.app_changed == 'true'")
         self.assertEqual(jobs["ui-suite-lookup"]["permissions"], {"contents": "read", "actions": "read"})
