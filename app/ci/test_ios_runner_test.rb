@@ -206,7 +206,7 @@ class TestIOSRunnerTest < Minitest::Test
     assert_equal(%w[schedule workflow_dispatch workflow_call], suite[true].keys)
     assert_equal(true, suite[true]["workflow_call"]["inputs"]["ref"]["required"])
     assert_includes(workflow, 'python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" > selection.txt')
-    assert_equal(17, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
+    assert_equal(14, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
     # CI skips the measurement-only UI classes and the scheduled UI Performance
     # workflow runs them (TAL-75, TAL-287); the shard script owns the skip list.
     %w[

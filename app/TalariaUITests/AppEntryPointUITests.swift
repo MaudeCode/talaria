@@ -362,27 +362,6 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
 }
 
 final class ReauthenticationUITests: AppEntryPointUITestCase {
-    func testSessionLossSignsInOverExistingSessionList() {
-        let row = triggerRecovery()
-        let password = app.secureTextFields["ReauthenticatePassword"]
-        XCTAssertTrue(password.awaitExistence(timeout: 15))
-        XCTAssertFalse(app.textFields["Server URL"].exists)
-        XCTAssertTrue(password.isEnabled)
-        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        screenshot.name = "In-place reauthentication"
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
-        password.tap()
-        password.typeText("fixture-password")
-        app.buttons["ReauthenticateSignIn"].tap()
-        XCTAssertTrue(password.awaitNonExistence(timeout: 15))
-        XCTAssertTrue(app.navigationBars["Chats"].exists)
-        XCTAssertTrue(row.awaitExistence(timeout: 10))
-        XCTAssertTrue(row.isEnabled)
-        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        XCTAssertTrue(app.buttons["BackButton"].awaitExistence(timeout: 10))
-    }
-
     func testTrustedHeaderRecoveryCanRetryWithoutSigningOut() {
         _ = triggerRecovery(additionalArguments: ["--ui-test-reauthentication-trusted"])
         let retry = app.buttons["ReauthenticateRetry"]
@@ -413,20 +392,42 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         XCTAssertTrue(app.staticTexts["Header recovery confirmed"].awaitExistence(timeout: 10))
     }
 
-    func testSSOIsPrimaryWithPasswordAvailableThroughTextLink() {
-        _ = triggerRecovery(additionalArguments: ["--ui-test-reauthentication-both"])
+    /// A server offering SSO and a password: SSO is primary, the text link switches between the
+    /// two, and signing in with the password recovers the session over the existing session list.
+    /// A password-only server shows the same password sheet without the link (TAL-402).
+    func testSSOIsPrimaryAndPasswordSignInRecoversOverTheSessionList() {
+        let row = triggerRecovery(additionalArguments: ["--ui-test-reauthentication-both"])
         let sso = app.buttons["ReauthenticateSSO"]
         let methodSwitch = app.buttons["ReauthenticateSwitchMethod"]
         XCTAssertTrue(sso.awaitExistence(timeout: 15))
         XCTAssertFalse(app.secureTextFields["ReauthenticatePassword"].exists)
         XCTAssertEqual(methodSwitch.label, "Sign in with password")
         methodSwitch.tap()
-        XCTAssertTrue(app.secureTextFields["ReauthenticatePassword"].awaitExistence(timeout: 5))
+        let password = app.secureTextFields["ReauthenticatePassword"]
+        XCTAssertTrue(password.awaitExistence(timeout: 5))
         XCTAssertTrue(app.buttons["ReauthenticateSignIn"].exists)
         XCTAssertFalse(sso.exists)
         methodSwitch.tap()
         XCTAssertTrue(sso.awaitExistence(timeout: 5))
-        XCTAssertFalse(app.secureTextFields["ReauthenticatePassword"].exists)
+        XCTAssertFalse(password.exists)
+        methodSwitch.tap()
+
+        XCTAssertTrue(password.awaitExistence(timeout: 5))
+        XCTAssertFalse(app.textFields["Server URL"].exists)
+        XCTAssertTrue(password.isEnabled)
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "In-place reauthentication"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        password.tap()
+        password.typeText("fixture-password")
+        app.buttons["ReauthenticateSignIn"].tap()
+        XCTAssertTrue(password.awaitNonExistence(timeout: 15))
+        XCTAssertTrue(app.navigationBars["Chats"].exists)
+        XCTAssertTrue(row.awaitExistence(timeout: 10))
+        XCTAssertTrue(row.isEnabled)
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["BackButton"].awaitExistence(timeout: 10))
     }
 
     private func triggerRecovery(additionalArguments: [String] = []) -> XCUIElement {

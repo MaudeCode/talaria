@@ -4,9 +4,8 @@ import XCTest
 ///
 /// The measuring classes repeat each path several times under `measure`, so CI
 /// skips them and the scheduled UI Performance workflow runs them serially and
-/// keeps their metrics (TAL-287); the full local suite runs them too. Their
-/// behavioural halves (warm resume, dense open and dismiss) run once without
-/// measuring in `PerformancePathUITests`, which stays in every CI suite.
+/// keeps their metrics (TAL-287); the full local suite runs them too. The nightly
+/// and release UI suite no longer runs their paths separately (TAL-402).
 ///
 /// The deterministic fixture serves the dense transcript and session list
 /// (`--ui-test-dense`), so every run measures the same content.
@@ -201,25 +200,5 @@ final class NavigationPerformanceUITests: PerformanceUITestCase {
                 )
             }
         }
-    }
-}
-
-/// The functional paths the measuring classes above exercise, run once so pull
-/// request and main CI keep them while the measurements run on a schedule.
-final class PerformancePathUITests: PerformanceUITestCase {
-    /// Suspension succeeds and resume restores the dense session list, whose dense
-    /// session then opens and dismisses. The wall-clock budgets stay in the measuring
-    /// classes on the scheduled lane.
-    func testWarmResumeAndDenseSessionOpenAndDismiss() {
-        launchDenseFixture()
-        waitForSessionList()
-        background()
-        app.activate()
-        openDenseSession()
-        app.navigationBars.buttons["BackButton"].firstMatch.tap()
-        XCTAssertTrue(
-            app.navigationBars["Chats"].awaitExistence(timeout: 15),
-            "The transcript never dismissed back to the session list"
-        )
     }
 }

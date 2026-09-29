@@ -726,4 +726,50 @@ final class ProvidersViewModelTests: APIClientTestCase {
         XCTAssertEqual(ProvidersViewModel.modelCount(for: bare), 0)
         XCTAssertNil(ProvidersViewModel.truncatedModelInfo(for: bare))
     }
+
+    /// ProvidersView: an error and no providers -> "Could not load providers" with Try Again; a
+    /// retry that succeeds replaces it (formerly `ReadFailureUITests`, TAL-402).
+    @MainActor
+    func testFailedProviderLoadShowsTheFailureThenRetryLoadsProviders() async {
+        var fails = true
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/providers")
+            if fails {
+                let response = HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!
+                return (response, Data(#"{"error":"Fixture read failure"}"#.utf8))
+            }
+            return apiTestJSONResponse(#"{"providers":[{"id":"fixture-provider","name":"Fixture Provider"}]}"#, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        await model.load()
+        XCTAssertFalse(model.isLoading)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertTrue(model.providers.isEmpty)
+
+        fails = false
+        await model.load()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.providers.map(\.id), ["fixture-provider"])
+    }
+
+    /// InsightsView: loaded quotas with no sources and no error -> "No quota sources reported by
+    /// this server." (formerly `AgentPanelEmptyStateUITests`, TAL-402).
+    @MainActor
+    func testNoQuotaSourcesShowTheEmptyState() async {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/provider/quotas")
+            return apiTestJSONResponse("""
+            {"version":1,"scope_id":"ui-fixture-scope","profile_id":"ui-fixture-profile",\
+            "active_provider":"fixture-provider","sources":[]}
+            """, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        await model.loadQuotas()
+
+        XCTAssertFalse(model.isQuotaLoading)
+        XCTAssertNil(model.quotaErrorMessage)
+        XCTAssertTrue(model.quotaSources.isEmpty)
+    }
 }

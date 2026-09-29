@@ -5,16 +5,15 @@ import notify
 /// Deterministic workspace, file-preview, archived-session and Git responses (TAL-72).
 ///
 /// Opt-in through `--ui-test-workspace` so every existing fixture launch keeps its exact
-/// current responses (no repository, no files). `--ui-test-read-errors` turns the reads these
-/// screens depend on into failures; `fixture-unreadable.txt` is listed but never reads, so a file
-/// preview fails inside a browser that still lists it. `--ui-test-workspace-slow-reads` holds
+/// current responses (no repository, no files). `fixture-unreadable.txt` is listed but never
+/// reads, so a file preview fails inside a browser that still lists it; the other screens' read
+/// failures are view-model tests (TAL-402). `--ui-test-workspace-slow-reads` holds
 /// each listing and status read until the test releases it, so its loading state can be observed.
 /// Remote Git writes stay rejected until the test posts `grantGitWritesNotification`; the fixture
 /// never reaches a real remote, so a push only ever moves fixture state.
 extension UITestFixtureURLProtocol {
     enum WorkspaceFixture {
         static let argument = "--ui-test-workspace"
-        static let readErrorsArgument = "--ui-test-read-errors"
         static let slowReadsArgument = "--ui-test-workspace-slow-reads"
         /// Posted by a UI test to grant the remote Git write capability for the rest of the launch.
         static let grantGitWritesNotification = "dev.kil.talaria.ui-test.grant-git-writes"
@@ -37,7 +36,6 @@ extension UITestFixtureURLProtocol {
             """
 
         static var isEnabled: Bool { hasArgument(argument) }
-        static var readsFail: Bool { hasArgument(readErrorsArgument) }
         static var readsAreSlow: Bool { hasArgument(slowReadsArgument) }
         static var allowsGitWrites: Bool { gitWriteLock.withLock { gitWritesGranted } }
 
@@ -98,22 +96,11 @@ extension UITestFixtureURLProtocol {
         }
     }
 
-    /// Reads these screens depend on, failed together so each surface has an error state.
+    /// The one read that always fails: a file the browser lists but cannot preview.
     static func isFailingWorkspaceRead(_ request: URLRequest) -> Bool {
         guard let url = request.url else { return false }
-        if WorkspaceFixture.isEnabled, url.path == "/api/file",
-           queryValue("path", in: url) == WorkspaceFixture.unreadableFileName {
-            return true
-        }
-        guard WorkspaceFixture.readsFail else { return false }
-        switch url.path {
-        case "/api/list", "/api/git/status", "/api/providers":
-            return true
-        case "/api/sessions":
-            return includesArchived(url)
-        default:
-            return false
-        }
+        return WorkspaceFixture.isEnabled && url.path == "/api/file"
+            && queryValue("path", in: url) == WorkspaceFixture.unreadableFileName
     }
 
     static func workspaceStatusCode(for request: URLRequest) -> Int {

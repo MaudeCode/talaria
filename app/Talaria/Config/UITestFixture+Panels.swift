@@ -6,7 +6,6 @@ import Foundation
 /// responses the chat, sidebar and Kanban journeys already rely on.
 enum UITestPanelScenario: String, CaseIterable {
     case populated = "--ui-test-panels"
-    case empty = "--ui-test-panels-empty"
     /// Fails each panel's first load so a journey can walk the error state and recover
     /// through Try Again; every later request serves the `populated` payload, and the retry is
     /// held like a populated first load so its loading state shows too.
@@ -130,44 +129,34 @@ extension UITestFixtureURLProtocol {
     }
 
     static func panelResponseData(for request: URLRequest, url: URL) -> Data? {
-        guard let scenario = UITestPanelScenario.current else { return nil }
-        let isEmpty = scenario == .empty
+        guard UITestPanelScenario.current != nil else { return nil }
         let state = UITestPanelFixtureState.shared
 
         switch url.path {
         case "/api/crons":
-            return body(isEmpty ? emptyCrons : populatedCrons)
+            return body(populatedCrons)
         case "/api/crons/status":
-            return body(isEmpty ? #"{"running":{}}"# : #"{"running":{"ui-fixture-cron-digest":42.5}}"#)
+            return body(#"{"running":{"ui-fixture-cron-digest":42.5}}"#)
         case "/api/crons/output":
-            return body(isEmpty ? #"{"outputs":[]}"# : cronOutputs)
+            return body(cronOutputs)
         case "/api/crons/history":
-            return body(isEmpty ? #"{"runs":[],"total":0,"offset":0}"# : cronHistory)
+            return body(cronHistory)
         case "/api/crons/run" where request.httpMethod == "GET":
             return body(cronRunDetail)
         case "/api/crons/delivery-options":
             return body(#"{"platforms":[{"value":"local","label":"Local"}]}"#)
         case "/api/skills":
-            return body(isEmpty ? #"{"skills":[]}"# : skills(state))
+            return body(skills(state))
         case "/api/skills/content":
             return body(skillContent(for: url))
         case "/api/skills/toggle":
             return body(toggleSkill(request, state: state))
         case "/api/memory":
-            return body(isEmpty ? emptyMemory : memory(state))
+            return body(memory(state))
         case "/api/memory/write":
             return body(writeMemory(request, state: state))
         case "/api/insights":
-            return body(isEmpty ? emptyInsights : populatedInsights)
-        case "/api/provider/quotas" where isEmpty:
-            return body("""
-            {"version":1,"scope_id":"ui-fixture-scope","profile_id":"ui-fixture-profile",\
-            "active_provider":"fixture-provider","sources":[]}
-            """)
-        case "/api/kanban/board" where isEmpty && url.query?.contains("since=") != true:
-            return body(emptyKanbanBoard)
-        case "/api/kanban/stats" where isEmpty:
-            return body(#"{"by_status":{},"by_assignee":{}}"#)
+            return body(populatedInsights)
         default:
             return nil
         }
@@ -176,8 +165,6 @@ extension UITestFixtureURLProtocol {
     private static func body(_ json: String) -> Data { Data(json.utf8) }
 
     // MARK: - Tasks
-
-    private static let emptyCrons = #"{"jobs":[]}"#
 
     private static let populatedCrons = """
     {"jobs":[
@@ -238,8 +225,6 @@ extension UITestFixtureURLProtocol {
 
     // MARK: - Memory
 
-    private static let emptyMemory = #"{"memory":"","user":"","soul":""}"#
-
     private static func memory(_ state: UITestPanelFixtureState) -> String {
         let sections = [
             ("memory", "Fixture notes body."),
@@ -269,12 +254,6 @@ extension UITestFixtureURLProtocol {
 
     // MARK: - Insights
 
-    private static let emptyInsights = """
-    {"period_days":30,"total_sessions":0,"total_messages":0,"total_input_tokens":0,\
-    "total_output_tokens":0,"total_tokens":0,"total_cost":0,"models":[],"daily_tokens":[],\
-    "activity_by_day":[],"activity_by_hour":[]}
-    """
-
     private static let populatedInsights = """
     {"period_days":30,"total_sessions":42,"total_messages":128,"total_input_tokens":4321,\
     "total_output_tokens":8765,"total_tokens":13086,"total_cost":12.34,\
@@ -283,15 +262,5 @@ extension UITestFixtureURLProtocol {
 
     // MARK: - Kanban
 
-    private static let emptyKanbanBoard = """
-    {"changed":true,"latest_event_id":1,"read_only":false,"tenants":["fixture"],"assignees":[],"columns":[
-      {"name":"triage","tasks":[]},
-      {"name":"todo","tasks":[]},
-      {"name":"ready","tasks":[]},
-      {"name":"running","tasks":[]},
-      {"name":"blocked","tasks":[]},
-      {"name":"done","tasks":[]}
-    ]}
-    """
 }
 #endif

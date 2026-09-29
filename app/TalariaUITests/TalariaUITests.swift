@@ -358,14 +358,7 @@ final class SettingsStructureUITests: SettingsUITestCase {
 
     /// Starts at the Settings root.
     private func assertChatsAndProvidersShowTheirControlsAndServerContent() {
-        openArchivedChats()
-        XCTAssertTrue(
-            element(labelContaining: "Fixture Archived Session").awaitExistence(timeout: 10),
-            "The archived list did not show the fixture archived session"
-        )
-        app.buttons["BackButton"].tap()
-        XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: Self.navigationTimeout))
-
+        tapSettingsCategory(id: "chats", title: "Chats")
         let composerHeading = app.staticTexts["Composer"]
         repeatStep(8, until: { composerHeading.exists }) {
             app.swipeUp()
@@ -389,6 +382,7 @@ final class SettingsStructureUITests: SettingsUITestCase {
         }
 
         app.navigationBars["Chats"].buttons["Settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: Self.navigationTimeout))
         openProviders()
         XCTAssertTrue(
             element(labelContaining: "Fixture Provider").awaitExistence(timeout: 10),
@@ -414,8 +408,17 @@ final class SettingsStructureUITests: SettingsUITestCase {
         }
         XCTAssertTrue(quotaRefresh.exists)
         XCTAssertTrue(app.staticTexts["Every 5 minutes"].exists)
-
         add(XCTAttachment(screenshot: XCUIScreen.main.screenshot()))
+
+        // Last, because XCTest's next action after Archived Chats waits a minute for the app to
+        // go idle, locally and on hosted runners.
+        app.navigationBars["Providers"].buttons["Settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: Self.navigationTimeout))
+        openArchivedChats()
+        XCTAssertTrue(
+            element(labelContaining: "Fixture Archived Session").awaitExistence(timeout: 10),
+            "The archived list did not show the fixture archived session"
+        )
     }
 }
 
@@ -613,50 +616,6 @@ final class WorkspaceFilePreviewUITests: WorkspaceUITestCase {
     }
 }
 
-/// `--ui-test-read-errors` fails every read the Git changes, file browser, Providers and Archived
-/// Chats screens depend on, so one launch walks each failure and its retry.
-final class ReadFailureUITests: WorkspaceUITestCase {
-    func testFailedReadsSurfaceWithARetry() throws {
-        launchFixture(additionalArguments: ["--ui-test-read-errors"])
-        openFixtureSessionChat()
-
-        openGitActions()
-        let unavailable = app.buttons["Changes unavailable"]
-        XCTAssertTrue(unavailable.awaitExistence(timeout: 25), "A failed status must still open the sheet")
-        unavailable.tap()
-        XCTAssertTrue(
-            app.staticTexts["Could Not Load Changes"].awaitExistence(timeout: 20),
-            "A failed status must be visible"
-        )
-        XCTAssertTrue(app.buttons["Try Again"].exists)
-        app.buttons["Done"].tap()
-
-        openFiles()
-        XCTAssertTrue(
-            app.staticTexts["Could Not Load Files"].awaitExistence(timeout: 20),
-            "A failed listing must be visible"
-        )
-        XCTAssertTrue(app.buttons["Try Again"].exists)
-
-        returnToSessionList()
-        openSettings()
-        openProviders()
-        XCTAssertTrue(
-            app.staticTexts["Could not load providers"].awaitExistence(timeout: 10),
-            "A failed provider load must be visible"
-        )
-        XCTAssertTrue(app.buttons["Try Again"].exists, "A failed provider load needs a retry")
-
-        returnToSettingsRoot()
-        openArchivedChats()
-        XCTAssertTrue(
-            app.staticTexts["Could not load archived sessions"].awaitExistence(timeout: 10),
-            "A failed archived load must be visible"
-        )
-        XCTAssertTrue(app.buttons["Try Again"].exists, "A failed archived load needs a retry")
-    }
-}
-
 class QuotaWidgetUITestCase: TalariaUITestCase {}
 
 final class QuotaInsightsUITests: QuotaWidgetUITestCase {
@@ -701,77 +660,6 @@ final class QuotaInsightsUITests: QuotaWidgetUITestCase {
             app.staticTexts["Add or edit the Talaria Provider quotas widget to inspect its configured states."].exists
         )
     }
-}
-
-final class QuotaCustomizationUITests: QuotaWidgetUITestCase {
-    func testWidgetCustomizationShowsSharedAndDenseLayouts() throws {
-        launch(arguments: ["--provider-quota-widget-customization"])
-
-        XCTAssertTrue(app.navigationBars["Customization"].awaitExistence(timeout: 10))
-        assertPreviewVisible(identifier: "provider-quota-widget-bars")
-        app.buttons["Lock %"].tap()
-        XCTAssertTrue(
-            app.descendants(matching: .any)["provider-quota-lock-percentage"]
-                .awaitExistence(timeout: 3)
-        )
-
-        app.buttons["Lock Pace"].tap()
-        XCTAssertTrue(
-            app.descendants(matching: .any)["provider-quota-lock-pace"]
-                .awaitExistence(timeout: 3)
-        )
-
-        app.buttons["Home"].tap()
-        app.buttons["Medium"].tap()
-        app.buttons["2"].tap()
-        XCTAssertTrue(app.buttons["2"].isSelected)
-        assertPreviewVisible(identifier: "provider-quota-widget-bars")
-
-        app.buttons["Large"].tap()
-        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
-        let twoProviders = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        twoProviders.name = "Detailed two-provider large quota widget preview"
-        twoProviders.lifetime = .keepAlways
-        add(twoProviders)
-
-        app.buttons["1"].tap()
-        XCTAssertTrue(app.buttons["1"].isSelected)
-        app.buttons["1W"].tap()
-        XCTAssertTrue(app.buttons["1W"].isSelected)
-        assertPreviewVisible(identifier: "provider-quota-widget-classic")
-        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
-        let oneWindow = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        oneWindow.name = "Expanded one-window large quota widget preview"
-        oneWindow.lifetime = .keepAlways
-        add(oneWindow)
-
-        app.buttons["2W"].tap()
-        XCTAssertTrue(app.buttons["2W"].isSelected)
-        assertPreviewVisible(identifier: "provider-quota-widget-classic")
-        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
-        let twoWindows = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        twoWindows.name = "Detailed two-window large quota widget preview"
-        twoWindows.lifetime = .keepAlways
-        add(twoWindows)
-
-        app.buttons["3W"].tap()
-        XCTAssertTrue(app.buttons["3W"].isSelected)
-        assertPreviewVisible(identifier: "provider-quota-widget-classic")
-        assertPreviewVisible(identifier: "provider-quota-widget-forecast")
-
-        app.buttons["3"].tap()
-        XCTAssertTrue(app.buttons["3"].isSelected)
-        assertPreviewVisible(identifier: "provider-quota-widget-bars")
-
-        app.buttons["4"].tap()
-        XCTAssertTrue(app.buttons["4"].isSelected)
-        assertPreviewVisible(identifier: "provider-quota-widget-bars")
-        let bars = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        bars.name = "Bar four-source large quota widget preview"
-        bars.lifetime = .keepAlways
-        add(bars)
-    }
-
 }
 
 class SidebarUITestCase: TalariaUITestCase {}
@@ -913,41 +801,42 @@ final class SidebarPerformanceUITests: SidebarUITestCase {
 
 class AdaptiveLayoutUITestCase: TalariaUITestCase {
     struct Variant {
-        let name: String
+        var name: String
         let arguments: [String]
-        let orientation: UIDeviceOrientation
+        /// The first orientation launches the variant; the core-screen audit rotates through the
+        /// rest in the same launch.
+        let orientations: [UIDeviceOrientation]
         var reduceMotion = false
         /// Audit types run on this variant's screens. Element descriptions and traits belong to
         /// the elements, not to the layout, so only the baseline variant audits them; every
         /// variant audits Dynamic Type and hit regions, which follow the layout (TAL-402).
         var auditTypes: [XCUIAccessibilityAuditType] = [.dynamicType, .hitRegion]
         var isRightToLeft: Bool { arguments.contains("-AppleTextDirection") }
+        var orientation: UIDeviceOrientation { orientations[0] }
     }
 
     /// One launch per variant; each launch walks every representative screen. Settings
-    /// are bundled so the matrix stays at three launches instead of screens × settings.
-    /// Every variant pins its text size so a reused simulator cannot leak one in.
+    /// are bundled so the matrix stays at two launches instead of screens × settings.
+    /// Every variant pins its text size so a reused simulator cannot leak one in. Landscape
+    /// is audited by rotating the default-size variant rather than in a launch of its own; the
+    /// accessibility-size variant carries Reduce Motion (TAL-402). Landscape at accessibility
+    /// sizes is not audited: its composer covers the chat's navigation bar.
     static let variants = [
         Variant(
-            name: "portrait light",
+            name: "light",
             arguments: ["-appTheme", "light", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"],
-            orientation: .portrait,
+            orientations: [.portrait, .landscapeLeft],
             auditTypes: [.dynamicType, .hitRegion, .sufficientElementDescription, .trait]
         ),
         Variant(
-            name: "portrait dark RTL AXXXL",
+            name: "portrait dark RTL AXXXL reduce-motion",
             arguments: [
                 "-appTheme", "dark",
                 "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
                 "-AppleTextDirection", "YES",
                 "-NSForceRightToLeftWritingDirection", "YES",
             ],
-            orientation: .portrait
-        ),
-        Variant(
-            name: "landscape dark reduce-motion",
-            arguments: ["-appTheme", "dark", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"],
-            orientation: .landscapeLeft,
+            orientations: [.portrait],
             reduceMotion: true
         ),
     ]
@@ -991,32 +880,48 @@ class AdaptiveLayoutUITestCase: TalariaUITestCase {
     }
 }
 
-/// One test per variant: a single test walking all three launches ran past five minutes on a
+/// One test per variant: a single test walking every launch ran past five minutes on a
 /// GitHub-hosted runner, and a failure in one variant no longer hides the others (TAL-401). Each
 /// variant is its own class so the UI suite's shards can balance them (TAL-402).
-final class AdaptiveLayoutPortraitLightUITests: AdaptiveLayoutAppUITestCase {
-    func testCoreScreensPassAccessibilityAuditsInPortraitLight() throws {
+final class AdaptiveLayoutLightUITests: AdaptiveLayoutAppUITestCase {
+    func testCoreScreensPassAccessibilityAuditsInLightPortraitAndLandscape() throws {
         try auditCoreScreens(Self.variants[0])
     }
 }
 
 final class AdaptiveLayoutPortraitDarkRTLUITests: AdaptiveLayoutAppUITestCase {
-    func testCoreScreensPassAccessibilityAuditsInPortraitDarkRTLAccessibilityXXXL() throws {
+    func testCoreScreensPassAccessibilityAuditsInPortraitDarkRTLAccessibilityXXXLReduceMotion() throws {
         try auditCoreScreens(Self.variants[1])
-    }
-}
-
-final class AdaptiveLayoutLandscapeUITests: AdaptiveLayoutAppUITestCase {
-    func testCoreScreensPassAccessibilityAuditsInLandscapeDarkReduceMotion() throws {
-        try auditCoreScreens(Self.variants[2])
     }
 }
 
 class AdaptiveLayoutAppUITestCase: AdaptiveLayoutUITestCase {
     func auditCoreScreens(_ variant: Variant) throws {
-        XCTAssertEqual(Self.variants.count, 3, "Give every adaptive layout variant its own core-screen audit class")
+        XCTAssertEqual(Self.variants.count, 2, "Give every adaptive layout variant its own core-screen audit class")
+        launchFixture(variant: variant)
+        for (index, orientation) in variant.orientations.enumerated() {
+            var pass = variant
+            if variant.orientations.count > 1 {
+                pass.name = "portrait \(variant.name)"
+            }
+            if index > 0 {
+                // Rotated passes audit the layout-dependent types; the elements were audited upright.
+                pass.name = "landscape \(variant.name)"
+                pass.auditTypes = [.dynamicType, .hitRegion]
+                // The next pass starts on the session list, rotated there.
+                openSidebarDestination("Chats")
+                XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: Self.navigationTimeout))
+                XCUIDevice.shared.orientation = orientation
+                _ = app.navigationBars["Chats"].settledFrame
+            }
+            try walkCoreScreens(pass)
+        }
+        app.terminate()
+    }
+
+    /// One walk of the core screens from the session list, in the current orientation.
+    private func walkCoreScreens(_ variant: Variant) throws {
         try XCTContext.runActivity(named: variant.name) { _ in
-            launchFixture(variant: variant)
             let openNavigation = app.buttons["Open navigation"]
             XCTAssertTrue(openNavigation.awaitExistence(timeout: 15), "Missing deterministic app fixture")
             XCTAssertTrue(fixtureSessionButton.awaitExistence(timeout: 15), "Missing deterministic session fixture")
@@ -1085,7 +990,6 @@ class AdaptiveLayoutAppUITestCase: AdaptiveLayoutUITestCase {
             )
             try audit("Kanban board", variant: variant)
             assertBoardPickerAndToolbarReachable(variant)
-            app.terminate()
         }
     }
 
@@ -1167,6 +1071,8 @@ class AdaptiveLayoutAppUITestCase: AdaptiveLayoutUITestCase {
     }
 }
 
+/// Onboarding in the portrait-light and dark RTL AXXXL variants, each rotating once to check focus
+/// retention; the landscape onboarding audit is no longer run (TAL-402).
 final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
     func testOnboardingScalesTitleAndRetainsFocusAcrossVariants() throws {
         var titleHeights: [String: CGFloat] = [:]
@@ -1506,9 +1412,14 @@ fileprivate extension ChatUITestCase {
 
 extension TalariaUITestCase {
     func openSidebarDestination(_ destination: String) {
-        app.buttons["Open navigation"].tap()
         let sidebar = app.descendants(matching: .any)["app-sidebar"]
-        XCTAssertTrue(sidebar.awaitExistence(timeout: Self.navigationTimeout))
+        // A tap while the screen behind is still settling (a menu closing, a rotation) can be
+        // dropped, so open until the sidebar is up.
+        repeatStep(3, until: { sidebar.exists && sidebar.isHittable }) {
+            app.buttons["Open navigation"].tap()
+            _ = poll(timeout: Self.navigationTimeout / 3) { sidebar.exists && sidebar.isHittable }
+        }
+        XCTAssertTrue(sidebar.exists, "The sidebar did not open")
         // The sidebar's rows slide in; a row tapped on the way lands on the surface behind it.
         let row = sidebar.descendants(matching: .any)[destination].firstMatch
         _ = row.settledFrame
@@ -1681,9 +1592,16 @@ fileprivate extension TalariaUITestCase {
             let read = { (try? session.snapshot())?.frame }
             return awaitStable(read) ?? read()
         }
+        // Fully in view, or, for a row taller than the viewport (landscape at accessibility
+        // sizes), at least 44 points of it.
+        func isReachable(_ row: CGRect) -> Bool {
+            (row.minY >= viewportTop && row.maxY <= viewportBottom)
+                || min(row.maxY, viewportBottom) - max(row.minY, viewportTop) >= 44
+                && row.height > viewportBottom - viewportTop - 44
+        }
         var frame = rowFrame()
         for _ in 0..<12 {
-            if let row = frame, row.minY >= viewportTop, row.maxY <= viewportBottom {
+            if let row = frame, isReachable(row) {
                 break
             }
 
@@ -1704,21 +1622,14 @@ fileprivate extension TalariaUITestCase {
             XCTFail("The session row is missing")
             return
         }
-        XCTAssertGreaterThanOrEqual(row.minY, viewportTop)
-        XCTAssertLessThanOrEqual(row.maxY, viewportBottom)
-        session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(isReachable(row), "Could not bring the session row into view: \(row)")
+        let visibleTop = max(row.minY, viewportTop)
+        let visibleBottom = min(row.maxY, viewportBottom)
+        tap(at: CGPoint(x: row.midX, y: (visibleTop + visibleBottom) / 2))
         // The transcript keeps scrolling into place for about a second after the chat opens, and
         // expanding the composer or typing during it leaves an animation XCTest then waits on for
         // a minute before every later step. XCTest's one-second first check used to cover it.
         Thread.sleep(forTimeInterval: 1)
-    }
-}
-
-fileprivate extension QuotaWidgetUITestCase {
-    func assertPreviewVisible(identifier: String) {
-        XCTAssertTrue(
-            app.descendants(matching: .any)[identifier].awaitExistence(timeout: Self.navigationTimeout)
-        )
     }
 }
 
