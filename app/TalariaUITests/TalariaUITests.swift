@@ -1116,6 +1116,14 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
                 app.buttons["Already have a server?"].tap()
                 let continueAnyway = app.buttons["Continue Anyway"]
                 XCTAssertTrue(continueAnyway.awaitExistence(timeout: 3), "Copy reminder missing [\(variant.name)]")
+                // The shortcut starts an animated jump to the connect page, which the copy reminder
+                // turns back to this step. Continuing while the pager is still moving can land on
+                // the connect page instead of the next step, so wait for it to rest on this step.
+                XCTAssertTrue(
+                    element(label: "Page 3 of 5").awaitExistence(timeout: 5),
+                    "The pager did not return to the setup step [\(variant.name)]"
+                )
+                _ = title.settledFrame
                 continueAnyway.tap()
                 let stepTwo = app.staticTexts["STEP 2"]
                 XCTAssertTrue(stepTwo.awaitExistence(timeout: 5), "Tailscale step missing [\(variant.name)]")
