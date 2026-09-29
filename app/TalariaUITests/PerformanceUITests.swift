@@ -207,18 +207,14 @@ final class NavigationPerformanceUITests: PerformanceUITestCase {
 /// The functional paths the measuring classes above exercise, run once so pull
 /// request and main CI keep them while the measurements run on a schedule.
 final class PerformancePathUITests: PerformanceUITestCase {
-    /// Suspension succeeds and resume restores the dense session list. The
-    /// wall-clock budget stays in `LaunchPerformanceUITests` on the scheduled lane.
-    func testWarmResumeReturnsToTheSessionList() {
+    /// Suspension succeeds and resume restores the dense session list, whose dense
+    /// session then opens and dismisses. The wall-clock budgets stay in the measuring
+    /// classes on the scheduled lane.
+    func testWarmResumeAndDenseSessionOpenAndDismiss() {
         launchDenseFixture()
         waitForSessionList()
         background()
         app.activate()
-        waitForSessionList()
-    }
-
-    func testDenseSessionOpensAndDismisses() {
-        launchDenseFixture()
         openDenseSession()
         app.navigationBars.buttons["BackButton"].firstMatch.tap()
         XCTAssertTrue(

@@ -79,23 +79,12 @@ final class ShareExtensionUITests: TalariaUITestCase {
         }
     }
 
-    /// More web URLs than the activation rule accepts: the system must not offer Talaria
-    /// at all, rather than handing the extension something it would silently drop.
-    func testUnsupportedContentIsNotOfferedToTalaria() throws {
-        launchShareHost()
-
-        share(.unsupported)
-        let sheet = app.otherElements["ActivityListView"]
-        XCTAssertTrue(sheet.awaitExistence(timeout: 20), "The system share sheet did not open")
-        XCTAssertFalse(
-            talariaActivity(in: sheet).awaitExistence(timeout: 5),
-            "Talaria was offered content its activation rule does not accept"
-        )
-    }
-
     /// Both size-limit paths: one file over the per-item limit, and two files that only
-    /// exceed it together. Each explains itself, and neither reaches the composer.
-    func testOversizedContentIsRefusedWithVisibleCopy() throws {
+    /// exceed it together. Each explains itself, and neither reaches the composer. Last, more
+    /// web URLs than the activation rule accepts: the system must not offer Talaria at all,
+    /// rather than handing the extension something it would silently drop. None of these
+    /// opens a composer, so they share one launch (TAL-402).
+    func testOversizedAndUnsupportedContentIsRefused() throws {
         launchShareHost()
 
         shareToTalaria(.oversizedFile)
@@ -109,6 +98,14 @@ final class ShareExtensionUITests: TalariaUITestCase {
         XCTAssertNil(
             waitForComposerDraft(containing: "fixture-", timeout: 5),
             "Refused content still opened a composer"
+        )
+
+        share(.unsupported)
+        let sheet = app.otherElements["ActivityListView"]
+        XCTAssertTrue(sheet.awaitExistence(timeout: 20), "The system share sheet did not open")
+        XCTAssertFalse(
+            talariaActivity(in: sheet).awaitExistence(timeout: 5),
+            "Talaria was offered content its activation rule does not accept"
         )
     }
 

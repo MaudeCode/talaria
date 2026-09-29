@@ -22,11 +22,12 @@ class ChatUITestCase: TalariaUITestCase {
 }
 
 final class ChatNavigationUITests: ChatUITestCase {
-    func testChatListScrolls() throws {
+    func testChatSessionOpensFromList() throws {
         launchFixture()
         let session = fixtureSessionButton
         XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
 
+        // The list scrolls; `tapFixtureSession` brings the row back into view.
         let initialY = session.frame.minY
         let sessionList = app.collectionViews.firstMatch
         XCTAssertTrue(sessionList.exists)
@@ -34,12 +35,6 @@ final class ChatNavigationUITests: ChatUITestCase {
         if session.exists {
             XCTAssertGreaterThan(abs(session.frame.minY - initialY), 20)
         }
-    }
-
-    func testChatSessionOpensFromList() throws {
-        launchFixture()
-        let session = fixtureSessionButton
-        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
 
         tapFixtureSession(session)
         XCTAssertTrue(waitForComposer(timeout: 15) != nil)
@@ -48,22 +43,7 @@ final class ChatNavigationUITests: ChatUITestCase {
 
 /// Long-press isolation between a message's links and its own actions (TAL-49).
 final class ChatMessageInteractionUITests: ChatUITestCase {
-    func testLongPressOnALinkShowsOnlyTheLinkActions() throws {
-        launchFixture()
-        let session = fixtureSessionButton
-        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
-        tapFixtureSession(session)
-
-        let link = app.links["FixtureLinkTarget"]
-        XCTAssertTrue(link.awaitExistence(timeout: 15), "Missing the fixture's mixed text-and-link message")
-        longPress(at: settledCenter(of: link))
-
-        XCTAssertTrue(app.buttons["Open Link"].awaitExistence(timeout: 5), "The link's own actions did not open")
-        XCTAssertFalse(app.buttons["Fork From Here"].exists, "A link press must not offer message actions")
-        XCTAssertFalse(app.buttons["Listen"].exists, "A link press must not offer message actions")
-    }
-
-    func testLongPressOnMessageTextShowsMessageActionsAtThePressPoint() throws {
+    func testLongPressShowsMessageActionsOnTextAndOnlyLinkActionsOnALink() throws {
         launchFixture()
         let session = fixtureSessionButton
         XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
@@ -92,6 +72,25 @@ final class ChatMessageInteractionUITests: ChatUITestCase {
             message.frame, before,
             "Opening the menu moved the message instead of leaving the transcript still"
         )
+
+        // Dismiss the menu away from both the message and the navigation bar.
+        dismissContextMenu(avoiding: menu)
+        XCTAssertTrue(fork.awaitNonExistence(timeout: 5), "The message actions did not close")
+
+        let link = app.links["FixtureLinkTarget"]
+        XCTAssertTrue(link.awaitExistence(timeout: 15), "Missing the fixture's mixed text-and-link message")
+        longPress(at: settledCenter(of: link))
+
+        XCTAssertTrue(app.buttons["Open Link"].awaitExistence(timeout: 5), "The link's own actions did not open")
+        XCTAssertFalse(app.buttons["Fork From Here"].exists, "A link press must not offer message actions")
+        XCTAssertFalse(app.buttons["Listen"].exists, "A link press must not offer message actions")
+    }
+
+    /// Taps the half of the screen the open menu does not cover; a tap outside a context menu
+    /// only closes it.
+    private func dismissContextMenu(avoiding menu: CGRect) {
+        let y = menu.midY > app.frame.midY ? app.frame.height * 0.3 : app.frame.height * 0.75
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: app.frame.midX, dy: y)).tap()
     }
 }
 
@@ -357,13 +356,20 @@ final class ChatComposerUITests: ChatUITestCase {
         idleComposer.tap()
         let expandedTextView = app.textViews.firstMatch
         XCTAssertTrue(expandedTextView.awaitExistence(timeout: 10))
-        expandedTextView.typeText("Composer transition check")
+        let transitionCheck = "Composer transition check"
+        expandedTextView.typeText(transitionCheck)
         XCTAssertFalse(app.buttons["Reply"].exists)
 
-        app.terminate()
-        app.launchArguments = fixtureLaunchArguments
-        app.launch()
-        _ = try openFixtureSession()
+        // Clear the draft and drag the keyboard away instead of relaunching: an empty,
+        // unfocused composer is the idle state the collapse starts from.
+        expandedTextView.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: transitionCheck.count))
+        XCTAssertEqual(expandedTextView.value as? String ?? "", "")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            .press(
+                forDuration: 0.1,
+                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+            )
+        XCTAssertTrue(app.keyboards.firstMatch.awaitNonExistence(timeout: 3))
 
         let transcript = app.scrollViews["chat-detail:\(fixtureSessionTitle)"]
         XCTAssertTrue(transcript.awaitExistence(timeout: 3))
@@ -574,57 +580,6 @@ final class RelaySettingsUITests: SettingsUITestCase {
         XCTAssertTrue(app.buttons["settings-disconnect-relay"].exists)
     }
 
-}
-
-final class SettingsPersonalizationUITests: SettingsUITestCase {
-    func testThemeAndAppIconSelectionsShowTheirCurrentChoice() throws {
-        launchFixture()
-        openSettings()
-        tapSettingsCategory(id: "appearance", title: "Appearance")
-
-        let theme = app.buttons
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "Theme"))
-            .firstMatch
-        XCTAssertTrue(theme.awaitExistence(timeout: 3), "Missing the Theme picker")
-        XCTAssertTrue(theme.staticTexts["System"].exists, "The Theme row should show the current theme")
-
-        tapCenter(of: theme)
-        let dark = app.buttons["Dark"]
-        XCTAssertTrue(dark.awaitExistence(timeout: 3), "The Theme picker did not open")
-        dark.tap()
-        XCTAssertTrue(
-            theme.staticTexts["Dark"].awaitExistence(timeout: 3),
-            "Selecting a theme did not update the row"
-        )
-
-        // Restore the shared simulator's appearance; the fixture also resets it on launch.
-        tapCenter(of: theme)
-        let system = app.buttons["System"]
-        XCTAssertTrue(system.awaitExistence(timeout: 3))
-        system.tap()
-        XCTAssertTrue(theme.staticTexts["System"].awaitExistence(timeout: 3))
-
-        let appIcon = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "App Icon"))
-            .firstMatch
-        for _ in 0..<8 where !appIcon.exists {
-            app.swipeUp()
-        }
-        XCTAssertTrue(appIcon.exists, "Missing the App Icon picker")
-        XCTAssertTrue(appIcon.label.contains("System"), "The App Icon row should name the current icon")
-        tapCenter(of: appIcon)
-
-        // The choices only have to be reachable and report the current selection; switching
-        // the icon is a system-level change the fixture deliberately leaves alone.
-        let discoChoice = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "Disco."))
-            .firstMatch
-        XCTAssertTrue(discoChoice.awaitExistence(timeout: 3), "The App Icon choices did not expand")
-        let selectedChoice = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH %@ AND value == %@", "System.", "Selected"))
-            .firstMatch
-        XCTAssertTrue(selectedChoice.exists, "The current app icon is not marked as selected")
-    }
 }
 
 /// Every workspace destination hangs off an open chat, so these launches add the
@@ -961,7 +916,7 @@ final class QuotaCustomizationUITests: QuotaWidgetUITestCase {
 class SidebarUITestCase: TalariaUITestCase {}
 
 final class SidebarPresentationUITests: SidebarUITestCase {
-    func testSidebarPresentationAndAccessibility() throws {
+    func testSidebarPresentationClosingAndNewChat() throws {
         launchFixture()
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.awaitExistence(timeout: 15), "Missing deterministic app fixture")
@@ -1022,34 +977,10 @@ final class SidebarPresentationUITests: SidebarUITestCase {
             "The main surface or its title did not return: \(mainSurface.frame), \(navigationTitle.frame)"
         )
         XCTAssertFalse(sidebar.isHittable)
-    }
-}
 
-final class SidebarInteractionUITests: SidebarUITestCase {
-    func testSidebarNewChatOpensExistingComposer() throws {
-        launchFixture()
-        let openNavigation = app.buttons["Open navigation"]
-        XCTAssertTrue(openNavigation.awaitExistence(timeout: 15), "Missing deterministic app fixture")
-
+        // A fully open sidebar closes with a slow diagonal swipe.
         openNavigation.tap()
-        let sidebar = app.descendants(matching: .any)["app-sidebar"]
-        let newChat = sidebar.buttons["New Chat"]
-        XCTAssertTrue(newChat.awaitExistence(timeout: 3))
-        newChat.tap()
-
-        XCTAssertTrue(app.buttons["Composer options"].awaitExistence(timeout: 15))
-        XCTAssertFalse(sidebar.isHittable)
-    }
-
-    func testFullyOpenSidebarClosesWithSlowDiagonalSwipe() throws {
-        launchFixture()
-        let openNavigation = app.buttons["Open navigation"]
-        XCTAssertTrue(openNavigation.awaitExistence(timeout: 15), "Missing deterministic app fixture")
-
-        openNavigation.tap()
-        let closeNavigation = app.buttons["Close navigation"]
         XCTAssertTrue(closeNavigation.awaitExistence(timeout: 3))
-        let mainSurface = app.descendants(matching: .any)["app-main-surface"]
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.45))
             .press(
                 forDuration: 0.2,
@@ -1057,12 +988,20 @@ final class SidebarInteractionUITests: SidebarUITestCase {
                 withVelocity: 100,
                 thenHoldForDuration: 0.1
             )
-
         XCTAssertTrue(mainSurface.awaitExistence(timeout: 3))
         XCTAssertTrue(
             poll(timeout: 3) { abs(mainSurface.frame.minX - app.frame.minX) <= 1 },
             "The main surface did not return: \(mainSurface.frame)"
         )
+
+        // New Chat opens the existing composer and closes the sidebar.
+        XCTAssertTrue(poll(timeout: 3) { !sidebar.isHittable })
+        openNavigation.tap()
+        let newChat = sidebar.buttons["New Chat"]
+        XCTAssertTrue(newChat.awaitExistence(timeout: 3))
+        newChat.tap()
+        XCTAssertTrue(app.buttons["Composer options"].awaitExistence(timeout: 15))
+        XCTAssertFalse(sidebar.isHittable)
     }
 }
 
@@ -1265,58 +1204,40 @@ final class AdaptiveLayoutAppUITests: AdaptiveLayoutUITestCase {
                 "Kanban Board did not load [\(variant.name)]"
             )
             try audit("Kanban board", variant: variant)
+            assertBoardPickerAndToolbarReachable(variant)
             app.terminate()
         }
     }
-}
 
-final class KanbanBoardPickerUITests: AdaptiveLayoutUITestCase {
-    /// The fixture's current Board carries a long localized name, so every variant renders
-    /// the case that used to drop the Board picker out of the navigation bar entirely.
-    func testBoardPickerAndToolbarActionsStayReachableAcrossVariants() throws {
-        for variant in Self.variants {
-            try XCTContext.runActivity(named: variant.name) { _ in
-                launchFixture(variant: variant)
-                XCTAssertTrue(
-                    app.buttons["Open navigation"].awaitExistence(timeout: 15),
-                    "Missing deterministic app fixture [\(variant.name)]"
-                )
-                openSidebarDestination("Kanban")
-                let bar = app.navigationBars["Kanban"]
-                XCTAssertTrue(bar.awaitExistence(timeout: 5), "Kanban bar missing [\(variant.name)]")
-                XCTAssertTrue(app.staticTexts["Loading Kanban"].awaitNonExistence(timeout: 15))
-                XCTAssertTrue(
-                    app.descendants(matching: .any)["KanbanStatusSelector"].awaitExistence(timeout: 5),
-                    "Kanban Board did not load [\(variant.name)]"
-                )
+    /// The fixture's current Board carries a long localized name, so every variant renders the case
+    /// that used to drop the Board picker out of the navigation bar entirely. Runs on the Board the
+    /// audit just loaded rather than a launch of its own (TAL-402).
+    private func assertBoardPickerAndToolbarReachable(_ variant: Variant) {
+        let bar = app.navigationBars["Kanban"]
+        let picker = app.descendants(matching: .any)["KanbanBoardPicker"].firstMatch
+        XCTAssertTrue(picker.awaitExistence(timeout: 5), "Board picker missing [\(variant.name)]")
+        assertReachable(picker, named: "Board picker", in: bar, variant: variant)
 
-                let picker = app.descendants(matching: .any)["KanbanBoardPicker"].firstMatch
-                XCTAssertTrue(picker.awaitExistence(timeout: 5), "Board picker missing [\(variant.name)]")
-                assertReachable(picker, named: "Board picker", in: bar, variant: variant)
+        // The Kanban root keeps the sidebar button where a pushed screen keeps Back;
+        // whichever leads the bar must stay clear of the picker.
+        let leading = bar.buttons["BackButton"].exists ? bar.buttons["BackButton"] : bar.buttons["Open navigation"]
+        assertReachable(leading, named: "Leading bar control", in: bar, variant: variant)
+        XCTAssertFalse(leading.frame.intersects(picker.frame), "Board picker covers the leading control [\(variant.name)]")
 
-                // The Kanban root keeps the sidebar button where a pushed screen keeps Back;
-                // whichever leads the bar must stay clear of the picker.
-                let leading = bar.buttons["BackButton"].exists ? bar.buttons["BackButton"] : bar.buttons["Open navigation"]
-                assertReachable(leading, named: "Leading bar control", in: bar, variant: variant)
-                XCTAssertFalse(leading.frame.intersects(picker.frame), "Board picker covers the leading control [\(variant.name)]")
-
-                let overflow = app.descendants(matching: .any)["KanbanToolbarOverflow"].firstMatch
-                var trailing = [("New Card", bar.buttons["New Card"]), ("Dispatcher", bar.buttons["Dispatcher"])]
-                if overflow.exists {
-                    trailing.append(("More", overflow))
-                } else {
-                    trailing += [("Select Cards", bar.buttons["Select Cards"]), ("Card Filters", bar.buttons["Card Filters"])]
-                }
-                for (label, control) in trailing {
-                    assertReachable(control, named: label, in: bar, variant: variant)
-                    XCTAssertFalse(control.frame.intersects(picker.frame), "Board picker covers \(label) [\(variant.name)]")
-                }
-
-                assertSelectionAndFiltersReachable(in: bar, overflow: overflow, variant: variant)
-                assertBoardMenuSelectsAnotherBoard(picker: picker, variant: variant)
-                app.terminate()
-            }
+        let overflow = app.descendants(matching: .any)["KanbanToolbarOverflow"].firstMatch
+        var trailing = [("New Card", bar.buttons["New Card"]), ("Dispatcher", bar.buttons["Dispatcher"])]
+        if overflow.exists {
+            trailing.append(("More", overflow))
+        } else {
+            trailing += [("Select Cards", bar.buttons["Select Cards"]), ("Card Filters", bar.buttons["Card Filters"])]
         }
+        for (label, control) in trailing {
+            assertReachable(control, named: label, in: bar, variant: variant)
+            XCTAssertFalse(control.frame.intersects(picker.frame), "Board picker covers \(label) [\(variant.name)]")
+        }
+
+        assertSelectionAndFiltersReachable(in: bar, overflow: overflow, variant: variant)
+        assertBoardMenuSelectsAnotherBoard(picker: picker, variant: variant)
     }
 
     /// Navigation-bar controls report `isHittable == false` to XCUI even when visible, so

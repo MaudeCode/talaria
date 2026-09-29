@@ -62,17 +62,56 @@ class AppEntryPointUITestCase: TalariaUITestCase {
     }
 }
 
-/// The new-chat family of deep links, each of which must land on its own composer.
+/// App Intent and deep-link delivery, in one launch: every destination has to land on its own
+/// screen, and a URL naming nothing this app declares has to leave navigation alone.
 final class NewChatDeepLinkUITests: AppEntryPointUITestCase {
-    func testNewChatAndProfileURLsOpenTheirOwnComposer() throws {
-        launchFixtureOnSessionList()
+    func testIntentAndDeepLinksOpenTheirOwnDestinations() throws {
+        // The voice link's microphone prompt is the evidence that dictation started, so the
+        // test owns the permission by resetting it before launch.
+        app.resetAuthorizationStatus(for: .microphone)
+
+        // XCUITest has no supported way to run an App Intent through Shortcuts, Spotlight, or
+        // Siri deterministically, so the fixture runs the shipping intent itself at launch;
+        // everything after `perform()` — the router and `ContentView`'s drain, whether it lands
+        // on the initial pass or the `onChange` one — is the code path a real Action-button
+        // press takes.
+        launchFixture(additionalArguments: ["--ui-test-intent-new-chat"])
+        XCTAssertTrue(
+            app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 25),
+            "The New Chat App Intent did not open the composer"
+        )
+        returnToSessionList()
+
+        // A URL for another app never reaches this app — the system routes by scheme — so the
+        // boundary that has to hold is a `talaria://` URL naming nothing this app declares.
+        for url in ["not-a-destination", "session?id=", "new-chat-provider?provider=", "open"] {
+            openThroughSystem(fixtureURL(url))
+            XCTAssertFalse(
+                app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 3),
+                "talaria://\(url) opened a new chat"
+            )
+            XCTAssertFalse(
+                app.navigationBars["UI Fixture Session"].exists,
+                "talaria://\(url) opened a session"
+            )
+            XCTAssertTrue(
+                app.navigationBars["Chats"].exists,
+                "talaria://\(url) navigated away from the session list"
+            )
+        }
+
+        openThroughSystem(fixtureURL("session?id=ui-fixture-session"))
+        XCTAssertTrue(
+            app.navigationBars["UI Fixture Session"].awaitExistence(timeout: 25),
+            "talaria://session did not open the deep-linked session"
+        )
+        returnToSessionList()
 
         openThroughSystem(fixtureURL("new-chat"))
         XCTAssertTrue(
             app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 25),
             "talaria://new-chat did not open the New Chat composer"
         )
-
         returnToSessionList()
 
         // The fixture echoes the requested profile into the new session's title, so the
@@ -82,16 +121,11 @@ final class NewChatDeepLinkUITests: AppEntryPointUITestCase {
             app.navigationBars["New Fixture Chat (fixture-profile)"].awaitExistence(timeout: 25),
             "talaria://new-chat-profile did not pin the new chat to the requested profile"
         )
-    }
+        returnToSessionList()
 
-    /// The voice variant opens the same composer *and* starts dictation. The prompt is the
-    /// evidence that dictation was attempted — a plain new chat never asks — so the test owns
-    /// the microphone permission by resetting it first. Recognition itself stays out of CI:
-    /// access is declined, and the composer degrades to a clear error.
-    func testVoiceChatURLOpensTheComposerAndStartsDictation() throws {
-        app.resetAuthorizationStatus(for: .microphone)
-        launchFixtureOnSessionList()
-
+        // The voice variant opens the same composer *and* starts dictation; a plain new chat
+        // never asks for the microphone. Recognition itself stays out of CI: access is
+        // declined, and the composer degrades to a clear error.
         openThroughSystem(fixtureURL("new-chat-voice"))
         XCTAssertTrue(
             app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 25),
@@ -108,18 +142,8 @@ final class NewChatDeepLinkUITests: AppEntryPointUITestCase {
     }
 }
 
-/// Session and share delivery, plus the URLs that must leave navigation alone.
+/// Share delivery needs its own launch: the fixture seeds the draft whenever the app backgrounds.
 final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
-    func testSessionURLOpensTheDeepLinkedSession() throws {
-        launchFixtureOnSessionList()
-
-        openThroughSystem(fixtureURL("session?id=ui-fixture-session"))
-        XCTAssertTrue(
-            app.navigationBars["UI Fixture Session"].awaitExistence(timeout: 25),
-            "talaria://session did not open the deep-linked session"
-        )
-    }
-
     /// The share extension writes its draft while Talaria is in the background and then opens
     /// `talaria://share`; the fixture seeds it the same way, so reopening has real work to do.
     /// Foregrounding imports too, so this asserts the user-visible contract rather than which
@@ -162,68 +186,26 @@ final class SessionAndShareDeepLinkUITests: AppEntryPointUITestCase {
             "A second share URL replaced the composer, so the record was imported twice"
         )
     }
-
-    /// A URL for another app never reaches this app — the system routes by scheme — so the
-    /// boundary that has to hold is a `talaria://` URL naming nothing this app declares.
-    func testUnknownAndIncompleteURLsLeaveNavigationAlone() throws {
-        launchFixtureOnSessionList()
-
-        for url in ["not-a-destination", "session?id=", "new-chat-provider?provider=", "open"] {
-            openThroughSystem(fixtureURL(url))
-            XCTAssertFalse(
-                app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 3),
-                "talaria://\(url) opened a new chat"
-            )
-            XCTAssertFalse(
-                app.navigationBars["UI Fixture Session"].exists,
-                "talaria://\(url) opened a session"
-            )
-            XCTAssertTrue(
-                app.navigationBars["Chats"].exists,
-                "talaria://\(url) navigated away from the session list"
-            )
-        }
-    }
-}
-
-/// App Intent delivery. XCUITest has no supported way to run an App Intent through
-/// Shortcuts, Spotlight, or Siri deterministically, so the fixture runs the shipping intent
-/// itself at launch; everything after `perform()` — the router and `ContentView`'s drain,
-/// whether it lands on the initial pass or the `onChange` one — is the code path a real
-/// Action-button press takes.
-final class AppIntentEntryPointUITests: AppEntryPointUITestCase {
-    func testNewChatIntentOpensTheComposerAtLaunch() throws {
-        launchFixture(additionalArguments: ["--ui-test-intent-new-chat"])
-        XCTAssertTrue(
-            app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 25),
-            "The New Chat App Intent did not open the composer"
-        )
-    }
 }
 
 /// Hardware-keyboard commands. `typeKey` is available on every simulator destination the
 /// scheme runs on, so these checks never skip.
 final class KeyboardCommandUITests: AppEntryPointUITestCase {
-    func testNewChatCommandOpensANewChat() throws {
-        launchFixtureOnSessionList()
-
-        let newChat = app.navigationBars["New Fixture Chat"]
-        XCTAssertTrue(
-            pressCommand("n", until: newChat.exists),
-            "Command-N did not open a new chat"
-        )
-    }
-
-    func testSearchCommandFocusesSessionSearch() throws {
+    func testSearchAndNewChatCommands() throws {
         launchFixtureOnSessionList()
 
         XCTAssertNotNil(waitForSessionSearchControl(timeout: 15), "Missing the session search control")
         let search = sessionSearchField
         XCTAssertFalse(search.exists && hasKeyboardFocus(search), "Session search starts unfocused")
-
         XCTAssertTrue(
             pressCommand("f", until: search.exists && hasKeyboardFocus(search)),
             "Command-F did not focus session search"
+        )
+
+        let newChat = app.navigationBars["New Fixture Chat"]
+        XCTAssertTrue(
+            pressCommand("n", until: newChat.exists),
+            "Command-N did not open a new chat"
         )
     }
 
@@ -238,11 +220,7 @@ final class KeyboardCommandUITests: AppEntryPointUITestCase {
     ) -> Bool {
         for _ in 0..<attempts {
             app.typeKey(key, modifierFlags: .command)
-            let deadline = Date().addingTimeInterval(timeout)
-            repeat {
-                if isSatisfied() { return true }
-                Thread.sleep(forTimeInterval: 0.2)
-            } while Date() < deadline
+            if poll(timeout: timeout, until: isSatisfied) { return true }
         }
         return false
     }
@@ -252,21 +230,50 @@ final class KeyboardCommandUITests: AppEntryPointUITestCase {
     }
 }
 
-/// Alternate app icons. The fixture restores the primary icon at launch, and this journey
-/// leaves the simulator back on System, so a reused device starts every run the same way.
+/// Appearance: the theme picker and the alternate app icon picker. The picker switches one
+/// alternate and back through the system; `AppIconAlternateTests` (TalariaTests) applies every
+/// alternate through the same `setAlternateIconName` call without driving the picker for each
+/// (TAL-402). The fixture restores the primary icon and the theme at launch, and this journey
+/// leaves both on System, so a reused device starts every run the same way.
 final class AppIconSwitchingUITests: AppEntryPointUITestCase {
-    private static let alternates = [
-        "Light", "Dark", "Disco",
-        "Monochrome Light", "Monochrome Dark",
-        "Gradient Light", "Gradient Dark"
-    ]
-
-    func testEveryAlternateIconAppliesAndReturnsToSystem() throws {
+    func testThemeAndAppIconPickersShowTheirChoiceAndApplyAnAlternate() throws {
         launchFixture()
         openSettings()
         tapSettingsCategory(id: "appearance", title: "Appearance")
 
-        for icon in Self.alternates + ["System"] {
+        let theme = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Theme"))
+            .firstMatch
+        XCTAssertTrue(theme.awaitExistence(timeout: 3), "Missing the Theme picker")
+        XCTAssertTrue(theme.staticTexts["System"].exists, "The Theme row should show the current theme")
+
+        tapCenter(of: theme)
+        let dark = app.buttons["Dark"]
+        XCTAssertTrue(dark.awaitExistence(timeout: 3), "The Theme picker did not open")
+        dark.tap()
+        XCTAssertTrue(
+            theme.staticTexts["Dark"].awaitExistence(timeout: 3),
+            "Selecting a theme did not update the row"
+        )
+
+        // Restore the shared simulator's appearance; the fixture also resets it on launch.
+        tapCenter(of: theme)
+        let system = app.buttons["System"]
+        XCTAssertTrue(system.awaitExistence(timeout: 3))
+        system.tap()
+        XCTAssertTrue(theme.staticTexts["System"].awaitExistence(timeout: 3))
+
+        let row = iconRow
+        for _ in 0..<8 where !row.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(row.exists, "Missing the App Icon picker")
+        XCTAssertTrue(row.label.contains("System"), "The App Icon row should name the current icon")
+        expandIconPicker()
+        XCTAssertTrue(choice("Disco").awaitExistence(timeout: 3), "The App Icon choices did not expand")
+        XCTAssertTrue(selectedChoice("System").exists, "The current app icon is not marked as selected")
+
+        for icon in ["Disco", "System"] {
             XCTAssertTrue(
                 applyIcon(icon),
                 "The app icon never changed to \(icon); its alternate icon resource is missing or was rejected"

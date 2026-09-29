@@ -14,6 +14,7 @@
 		26AB000000000000000000B2 /* ProvidersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F2 /* ProvidersView.swift */; };
 		A06100000000000000000003 /* ProviderQuotaWidgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */; };
 		26AB000000000000000000B4 /* ProvidersViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F4 /* ProvidersViewModelTests.swift */; };
+		26AB0000000000000000A402 /* AppIconAlternateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB0000000000000000B402 /* AppIconAlternateTests.swift */; };
 		1A2B3C4D5E6F700000000001 /* TalariaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000011 /* TalariaApp.swift */; };
 		1A2B3C4D5E6F700000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000012 /* ContentView.swift */; };
 		1A2B3C4D5E6F700000000338 /* TalariaAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F700000000337 /* TalariaAppIntents.swift */; };
@@ -769,6 +770,7 @@
 		26AB000000000000000000F2 /* ProvidersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersView.swift; sourceTree = "<group>"; };
 		A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetTests.swift; sourceTree = "<group>"; };
 		26AB000000000000000000F4 /* ProvidersViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersViewModelTests.swift; sourceTree = "<group>"; };
+		26AB0000000000000000B402 /* AppIconAlternateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconAlternateTests.swift; sourceTree = "<group>"; };
 		A710739233F64F4FA4C2B711 /* ComposerVoiceDraftComposerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerVoiceDraftComposerTests.swift; sourceTree = "<group>"; };
 		B5A100000000000000000011 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		B5A100000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -947,6 +949,7 @@
 				A710739233F64F4FA4C2B711 /* ComposerVoiceDraftComposerTests.swift */,
 				A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */,
 				26AB000000000000000000F4 /* ProvidersViewModelTests.swift */,
+				26AB0000000000000000B402 /* AppIconAlternateTests.swift */,
 				031031031031031031031004 /* MarkdownMathRendererTests.swift */,
 				A04500000000000000000018 /* LiveActivityTests.swift */,
 				1A2B3C4D5E6F700000000340 /* AppIntentNewChatTests.swift */,
@@ -1988,6 +1991,7 @@
 				A710739233F64F4FA4C2B701 /* ComposerVoiceDraftComposerTests.swift in Sources */,
 				A06100000000000000000003 /* ProviderQuotaWidgetTests.swift in Sources */,
 				26AB000000000000000000B4 /* ProvidersViewModelTests.swift in Sources */,
+				26AB0000000000000000A402 /* AppIconAlternateTests.swift in Sources */,
 				031031031031031031031003 /* MarkdownMathRendererTests.swift in Sources */,
 				A04500000000000000000008 /* LiveActivityTests.swift in Sources */,
 				1A2B3C4D5E6F700000000341 /* AppIntentNewChatTests.swift in Sources */,
