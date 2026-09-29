@@ -420,6 +420,7 @@ final class ChatPendingActionCoordinator {
         approvalStreamClient.stop()
         approvalPollingTask?.cancel()
         let pollingInterval = pollingIntervals.approvalNanoseconds
+        let sleep = pollingIntervals.sleep
         approvalPollingTask = Task { @MainActor [weak self] in
             pollingLoop: while !Task.isCancelled {
                 do {
@@ -433,7 +434,7 @@ final class ChatPendingActionCoordinator {
                 }
 
                 guard !Task.isCancelled else { break }
-                try? await Task.sleep(nanoseconds: pollingInterval)
+                try? await sleep(pollingInterval)
             }
         }
     }
@@ -536,6 +537,7 @@ final class ChatPendingActionCoordinator {
     private func startClarificationPolling(sessionID: String) {
         guard clarificationMonitoringSessionID == sessionID, clarificationPollingTask == nil else { return }
         let pollingInterval = pollingIntervals.clarificationNanoseconds
+        let sleep = pollingIntervals.sleep
         clarificationPollingTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 guard let self,
@@ -550,7 +552,7 @@ final class ChatPendingActionCoordinator {
                     await self.refreshClarificationPending(sessionID: sessionID)
                 }
                 guard !Task.isCancelled else { break }
-                try? await Task.sleep(nanoseconds: pollingInterval)
+                try? await sleep(pollingInterval)
             }
         }
     }

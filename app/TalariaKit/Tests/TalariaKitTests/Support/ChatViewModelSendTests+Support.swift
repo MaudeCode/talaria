@@ -91,14 +91,21 @@ extension ChatViewModelSendTests {
         return viewModel
     }
 
+    /// Polls `condition` until it holds. The deadline is generous because a loaded CI runner can starve the
+    /// main actor for seconds; a condition that already holds returns at once.
     @MainActor
-    func waitUntil(_ condition: @escaping @MainActor () -> Bool) async throws {
-        for _ in 0..<40 {
-            if condition() {
-                return
+    func waitUntil(
+        timeout: Duration = .seconds(10),
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: @MainActor () -> Bool
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !condition() {
+            guard ContinuousClock.now < deadline else {
+                return XCTFail("Condition was not met within \(timeout)", file: file, line: line)
             }
-
-            try await Task.sleep(nanoseconds: 50_000_000)
+            try await Task.sleep(for: .milliseconds(10))
         }
     }
 
@@ -181,19 +188,7 @@ extension ChatViewModelSendTests {
         file: StaticString = #filePath,
         line: UInt = #line
     ) async throws {
-        for _ in 0..<20 {
-            if predicate(viewModel.messages.last?.content) {
-                return
-            }
-
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
-
-        XCTAssertTrue(
-            predicate(viewModel.messages.last?.content),
-            file: file,
-            line: line
-        )
+        try await waitUntil(file: file, line: line) { predicate(viewModel.messages.last?.content) }
     }
 }
 

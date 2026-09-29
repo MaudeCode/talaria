@@ -4448,6 +4448,7 @@ public final class ChatViewModel {
         guard backgroundPollTask == nil else { return }
 
         let pollingInterval = pollingIntervals.backgroundNanoseconds
+        let sleep = pollingIntervals.sleep
         backgroundPollTask = Task { @MainActor [weak self] in
             pollingLoop: while !Task.isCancelled {
                 do {
@@ -4467,7 +4468,7 @@ public final class ChatViewModel {
                     }
                 }
 
-                try? await Task.sleep(nanoseconds: pollingInterval)
+                try? await sleep(pollingInterval)
             }
 
             if !Task.isCancelled {
