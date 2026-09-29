@@ -1,0 +1,1 @@
+{"skip": "Release tooling only: a release reuses a successful UI suite run on its exact source commit, builds the TalariaKit contract tests while each Web is probed, and starts the previous App's contract gate first; no app, Web, or Relay behavior changes."}

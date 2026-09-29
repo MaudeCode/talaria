@@ -394,20 +394,33 @@ class PublicationTests(unittest.TestCase):
         jobs = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/release-set.yml")], text=True))["jobs"]
-        gates = ("contracts", "previous-app-contracts", "component-contracts", "agent", "ui-suite")
+        gates = ("contracts", "previous-app-contracts", "component-contracts", "agent", "ui-suite-lookup", "ui-suite")
         builds = ("relay-build", "web-build", "app-dry-build", "app-signed-build")
-        # The macOS jobs queue once the UI suite's build holds a runner, so its shards never outwait their build.
-        macos = ("contracts", "previous-app-contracts", "app-dry-build", "app-signed-build")
+        # When the UI suite runs, contracts and the App build queue once its build holds a runner, so its shards
+        # never outwait their build. The previous App's gate, the longest, claims a runner first (TAL-408).
+        after_suite_build = ("contracts", "app-dry-build", "app-signed-build")
+        after_lookup = ("ui-suite", "ui-suite-started")
         for name in (*gates, *builds):
             with self.subTest(job=name):
-                self.assertEqual(jobs[name]["needs"], ["prepare", "ui-suite-started"] if name in macos else "prepare")
-        self.assertEqual(jobs["ui-suite-started"]["needs"], "prepare")
-        self.assertIn('app/ci/wait-for-job "UI suite build" 3600 "Set up job"', [step.get("run") for step in jobs["ui-suite-started"]["steps"]])
-        # The full UI suite runs on the release source whenever the App ships, dry runs included.
+                expected = ["prepare", "ui-suite-started"] if name in after_suite_build else (
+                    ["prepare", "ui-suite-lookup"] if name in after_lookup else "prepare")
+                self.assertEqual(jobs[name]["needs"], expected)
+        self.assertEqual(jobs["ui-suite-started"]["needs"], ["prepare", "ui-suite-lookup"])
+        wait = [step for step in jobs["ui-suite-started"]["steps"] if step.get("run")]
+        self.assertEqual([step["run"] for step in wait], ['app/ci/wait-for-job "UI suite build" 3600 "Set up job"'])
+        # It waits only while the suite runs, and a failed lookup stops it, and so every macOS job after it.
+        self.assertEqual(wait[0]["if"], "needs.ui-suite-lookup.outputs.reused == 'false'")
+        self.assertIn("needs.ui-suite-lookup.result == 'success'", jobs["ui-suite-started"]["if"])
+        # The full UI suite runs on the release source whenever the App ships and no reusable run exists, dry runs
+        # included.
         self.assertEqual(jobs["ui-suite"]["uses"], "./.github/workflows/ui-suite.yml")
         self.assertEqual(jobs["ui-suite"]["with"], {"ref": "${{ needs.prepare.outputs.source }}"})
-        self.assertEqual(jobs["ui-suite"]["if"], "needs.prepare.outputs.app_changed == 'true'")
+        self.assertEqual(jobs["ui-suite"]["if"],
+                         "needs.prepare.outputs.app_changed == 'true' && needs.ui-suite-lookup.outputs.reused == 'false'")
         self.assertEqual(jobs["ui-suite"]["permissions"], {"contents": "read", "actions": "read"})
+        # The lookup only reads Actions runs.
+        self.assertEqual(jobs["ui-suite-lookup"]["if"], "needs.prepare.outputs.app_changed == 'true'")
+        self.assertEqual(jobs["ui-suite-lookup"]["permissions"], {"contents": "read", "actions": "read"})
         self.assertEqual(set(jobs["build-gate"]["needs"]), {"prepare", *gates, *builds})
         # Publication stays ordered and behind the joined gate: Relay, Web, App, then the manifest.
         self.assertEqual(set(jobs["relay-publish"]["needs"]), {"prepare", "build-gate"})
@@ -483,8 +496,9 @@ class PublicationTests(unittest.TestCase):
                     needs[job] = {"result": "success" if changed else "skipped"}
                 if stage == "build":
                     needs["app-signed-build" if dry else "app-dry-build"] = {"result": "skipped"}
+                    needs["ui-suite-lookup"] = {"result": "success" if app else "skipped", "outputs": {"reused": "false"} if app else {}}
                     needs["ui-suite"] = {"result": "success" if app else "skipped"}
-                    jobs.append("ui-suite")
+                    jobs += ["ui-suite-lookup", "ui-suite"]
                 if stage == "publication" and dry:
                     with self.assertRaises(ValueError):
                         check(needs, stage, dry)
@@ -499,6 +513,102 @@ class PublicationTests(unittest.TestCase):
                         with self.subTest(stage=stage, dry=dry, job=job, result=result):
                             with self.assertRaises(ValueError):
                                 check(broken, stage, dry)
+
+    def test_ui_suite_gate_reuses_only_a_successful_run_on_the_exact_source(self):
+        # The release graph end to end: the lookup job's own step runs app/ci/find-ui-suite-run against a fake gh
+        # replaying synthetic runs, the suite call and the wait follow the workflow's conditions, and build-gate's
+        # check_results decides (TAL-408).
+        root = Path(__file__).resolve().parents[1]
+        jobs = json.loads(subprocess.check_output([
+            "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
+            str(root / ".github/workflows/release-set.yml")], text=True))["jobs"]
+        step = next(step for step in jobs["ui-suite-lookup"]["steps"] if step.get("id") == "lookup")
+        source, other = "a" * 40, "b" * 40
+
+        def release(runs, error=None, suite="success"):
+            with TemporaryDirectory() as temporary:
+                work = Path(temporary)
+                (work / "runs.json").write_text(json.dumps({"workflow_runs": runs}))
+                (work / "bin").mkdir()
+                gh = work / "bin/gh"
+                gh.write_text("#!/usr/bin/env bash\n"
+                              + (f"echo '{error}' >&2; exit 1\n" if error else "")
+                              + 'while (( $# )); do [[ "$1" == --jq ]] && filter="$2"; shift; done\n'
+                              + f'jq -r "$filter" "{work}/runs.json"\n')
+                gh.chmod(0o755)
+                env = {"PATH": f"{work}/bin:{os.environ['PATH']}", "GH_TOKEN": "synthetic", "SOURCE": source,
+                       "GITHUB_REPOSITORY": "MaudeCode/talaria", "GITHUB_OUTPUT": str(work / "output"),
+                       "GITHUB_STEP_SUMMARY": str(work / "summary"), "GH_API_POLL_SECONDS": "0"}
+                lookup = subprocess.run(["bash", "-c", step["run"]], cwd=root, env=env, capture_output=True, text=True)
+                outputs = dict(line.split("=", 1) for line in (work / "output").read_text().splitlines()) \
+                    if (work / "output").exists() else {}
+                summary = (work / "summary").read_text() if (work / "summary").exists() else ""
+            needs = {name: {"result": "success"} for name in ("prepare", "contracts", "previous-app-contracts",
+                                                              "component-contracts", "agent", "app-dry-build")}
+            needs["prepare"]["outputs"] = {"app_changed": "true", "web_changed": "false", "relay_changed": "false"}
+            needs.update({name: {"result": "skipped"} for name in ("relay-build", "web-build", "app-signed-build")})
+            needs["ui-suite-lookup"] = {"result": "success" if lookup.returncode == 0 else "failure", "outputs": outputs}
+            # A failed needed job skips its dependants; otherwise the suite call and the build wait share one condition.
+            called = lookup.returncode == 0 and outputs.get("reused") == "false"
+            needs["ui-suite"] = {"result": suite if called else "skipped"}
+            return needs, called, summary
+
+        def run(number, head, conclusion="success", event="schedule", title=None):
+            return {"id": number, "head_sha": head, "status": "completed", "conclusion": conclusion, "event": event,
+                    "display_title": title or f"UI suite on {head}",
+                    "html_url": f"https://github.com/MaudeCode/talaria/actions/runs/{number}"}
+
+        # Found: the gate passes without running the suite or waiting for its build, and names the reused run.
+        needs, called, summary = release([run(7, source)])
+        self.assertFalse(called)
+        self.assertEqual(needs["ui-suite-lookup"]["outputs"],
+                         {"reused": "true", "run_url": "https://github.com/MaudeCode/talaria/actions/runs/7"})
+        self.assertIn("https://github.com/MaudeCode/talaria/actions/runs/7", summary)
+        check(needs, "build", True)
+        # Not found, including a successful run on another commit and failed or scoped runs on this one: the suite
+        # is called and must succeed.
+        for runs in ([], [run(8, other), run(9, source, "failure"), run(10, source, title=f"UI suite (scoped) on {source}")]):
+            with self.subTest(runs=len(runs)):
+                needs, called, summary = release(runs)
+                self.assertTrue(called)
+                self.assertEqual(needs["ui-suite-lookup"]["outputs"], {"reused": "false"})
+                self.assertIn("running the suite", summary)
+                check(needs, "build", True)
+                for result in ("failure", "cancelled"):
+                    with self.assertRaisesRegex(ValueError, "ui-suite"):
+                        check(release(runs, suite=result)[0], "build", True)
+        # A lookup error fails the lookup, skips the suite, and fails the gate closed.
+        for error in ("gh: Server Error (HTTP 500)", "gh: Resource not accessible by integration (HTTP 403)"):
+            with self.subTest(error=error):
+                needs, called, _ = release([run(7, source)], error=error)
+                self.assertEqual(needs["ui-suite-lookup"]["result"], "failure")
+                self.assertFalse(called)
+                with self.assertRaisesRegex(ValueError, "ui-suite-lookup"):
+                    check(needs, "build", True)
+
+    def test_ui_suite_gate_rejects_inconsistent_lookup_results(self):
+        base = {name: {"result": "success"} for name in ("prepare", "contracts", "previous-app-contracts",
+                                                          "component-contracts", "agent", "app-dry-build")}
+        base["prepare"]["outputs"] = {"app_changed": "true", "web_changed": "false", "relay_changed": "false"}
+        base.update({name: {"result": "skipped"} for name in ("relay-build", "web-build", "app-signed-build")})
+        url = "https://github.com/MaudeCode/talaria/actions/runs/7"
+        valid = ({"reused": "true", "run_url": url}, "skipped"), ({"reused": "false"}, "success")
+        for outputs, suite in valid:
+            check({**base, "ui-suite-lookup": {"result": "success", "outputs": outputs}, "ui-suite": {"result": suite}}, "build", True)
+        broken = (({"reused": "true"}, "skipped"), ({"reused": "true", "run_url": url}, "success"),
+                  ({"reused": "true", "run_url": url}, "failure"), ({"reused": "false", "run_url": url}, "success"),
+                  ({"reused": "false"}, "skipped"), ({}, "skipped"), ({}, "success"), ({"reused": "yes"}, "skipped"))
+        for outputs, suite in broken:
+            with self.subTest(outputs=outputs, suite=suite), self.assertRaisesRegex(ValueError, "ui-suite"):
+                check({**base, "ui-suite-lookup": {"result": "success", "outputs": outputs}, "ui-suite": {"result": suite}}, "build", True)
+        # Without App changes neither job may run.
+        unchanged = deepcopy(base)
+        unchanged["prepare"]["outputs"]["app_changed"] = "false"
+        unchanged["app-dry-build"] = {"result": "skipped"}
+        check({**unchanged, "ui-suite-lookup": {"result": "skipped"}, "ui-suite": {"result": "skipped"}}, "build", True)
+        for lookup, suite in (("success", "skipped"), ("skipped", "success")):
+            with self.subTest(lookup=lookup, suite=suite), self.assertRaisesRegex(ValueError, "ui-suite"):
+                check({**unchanged, "ui-suite-lookup": {"result": lookup}, "ui-suite": {"result": suite}}, "build", True)
 
     def test_production_requires_trusted_main_dispatch_and_exact_source(self):
         plan = {"dryRun": False, "releaseSet": "a" * 40}

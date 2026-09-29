@@ -187,6 +187,7 @@ class ContractRunnerTests(unittest.TestCase):
                                            + f"Test Case '-[TalariaKitTests.{previous.LIVE_CLASS} {previous.LIVE_TEST}]' passed\n")
 
             def probe(web_sha, responses, log):
+                commands.append(["probe"])
                 responses.write_text("{}")
 
             argv = ["check", "--app-ref", "a" * 40, "--web-ref", "b" * 40, "--output", str(root / "out")]
@@ -197,6 +198,13 @@ class ContractRunnerTests(unittest.TestCase):
                     contextlib.redirect_stdout(io.StringIO()):
                 previous.main()
             self.assertFalse(any(str(command[0]).endswith("scripts/test-ios") for command in commands))
+            # The package tests build beside the Web probe (TAL-408) and run only after both finished.
+            names = [" ".join(map(str, command[:2])) for command in commands]
+            build = next(command for command in commands if command[:2] == ["swift", "build"])
+            self.assertEqual((build[2], build[4:]), ("--package-path", ["--build-tests"]))
+            self.assertTrue(build[3].endswith("source/app/TalariaKit"))
+            self.assertLess(names.index("swift build"), names.index("swift test"))
+            self.assertLess(names.index("probe"), names.index("swift test"))
             self.assertEqual(json.loads((root / "out/verification.json").read_text())["testClasses"], previous.TESTS)
 
     def test_only_selector_splits_native_app_runs_from_portable_fixture_suites(self):

@@ -6,6 +6,24 @@ import json
 import os
 
 
+def check_ui_suite(needs, app_changed):
+    lookup = needs.get("ui-suite-lookup", {})
+    suite = needs.get("ui-suite", {}).get("result")
+    if not app_changed:
+        if lookup.get("result") != "skipped" or suite != "skipped":
+            raise ValueError("ui-suite-lookup and ui-suite must be skipped")
+        return
+    if lookup.get("result") != "success":
+        raise ValueError("ui-suite-lookup did not succeed")
+    outputs = lookup.get("outputs", {})
+    reused, url = outputs.get("reused"), outputs.get("run_url", "")
+    if reused == "true" and url.startswith("https://github.com/") and suite == "skipped":
+        return
+    if reused == "false" and not url and suite == "success":
+        return
+    raise ValueError(f"ui-suite must reuse a successful run or succeed (reused={reused!r}, ui-suite {suite})")
+
+
 def check(needs, stage, dry_run):
     required = ["prepare", "contracts", "previous-app-contracts", "component-contracts", "agent"] if stage == "build" else ["prepare", "build-gate"]
     for name in required:
@@ -25,9 +43,11 @@ def check(needs, stage, dry_run):
         expected = "success" if flag == "true" else "skipped"
         if needs.get(job, {}).get("result") != expected:
             raise ValueError(f"{job} must be {expected}")
-        # The full unit and UI suite gates every release that ships the App, dry runs included.
-        if stage == "build" and component == "app" and needs.get("ui-suite", {}).get("result") != expected:
-            raise ValueError(f"ui-suite must be {expected}")
+        # The full unit and UI suite gates every release that ships the App, dry runs included: either the lookup
+        # found a successful run on the exact source to reuse and the call was skipped, or the lookup found none and
+        # the call succeeded (TAL-408).
+        if stage == "build" and component == "app":
+            check_ui_suite(needs, flag == "true")
     if stage == "build":
         inactive = "app-signed-build" if dry_run else "app-dry-build"
         if needs.get(inactive, {}).get("result") != "skipped":

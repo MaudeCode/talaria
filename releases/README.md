@@ -76,17 +76,40 @@ dependency:
 | `ui-performance.yml` | `measure` | `xcodebuild test` in the simulator |
 | `ios-release-build.yml` | `build` | `xcodebuild archive`, Keychain signing, IPA export |
 | `release-set.yml` | `contracts` | tests the selected App against every supported Web: `swift test`, or the simulator for an App from before TAL-399 |
-| `release-set.yml` | `previous-app-contracts` | compiles and tests the previously released App in the simulator |
+| `release-set.yml` | `previous-app-contracts` | tests the previously released App against the selected Web: the simulator before TAL-399, `swift test` once that App has TalariaKit |
 | `release-set.yml` | `app-dry-build` | unsigned `xcodebuild archive` |
 
-The organization runs at most five macOS jobs at once. A release that ships the
-App uses eight: the full UI suite (`ui-suite.yml`: one build and four test
-shards on the release source), the two contract gates and one App build. The
-suite's shards wait at most 45 minutes for its build, so `release-set.yml`'s own
-macOS jobs queue only once `ui-suite-started` has seen that build hold a runner;
-the shards then wait no longer than the build, and whichever jobs do not fit
-start as slots free up. Queue time does not count toward a job's timeout. A
-release without App changes skips the suite and the App build. Every simulator job uses the image's
+A release that ships the App first looks for a UI suite to reuse (TAL-408):
+`ui-suite-lookup` reads, with `actions: read` only, the completed, successful
+`ui-suite.yml` runs (nightly schedule or dispatch) whose head is exactly the
+release source and whose run name, `UI suite on <that commit>`, shows an
+unscoped suite of that commit (`app/ci/find-ui-suite-run`). A match skips the
+`ui-suite` call and its URL goes to the step summary; no match calls the suite
+as before. `build-gate` accepts only a successful lookup with a reused run URL
+and a skipped call, or a successful lookup without one and a successful call; a
+lookup error fails the lookup, skips the call and fails `build-gate`. A
+release's own call leaves no `ui-suite.yml` run, so it is never reused. To
+reuse one, let a suite finish on the source before pushing the release tag:
+the nightly run counts when the source is its `main` head, or dispatch
+`gh workflow run ui-suite.yml --repo MaudeCode/talaria --ref main` while `main`
+is still at that commit (a dispatch with a `ref` input other than that full
+commit, or with `only_testing`, never counts).
+
+The organization runs at most five macOS jobs at once. A release that runs the
+suite uses up to nine: the suite (`ui-suite.yml`: one build, four test shards
+and the package tests on the release source), the two contract gates and one
+App build. `previous-app-contracts`, the longest gate while the previous App
+predates TAL-399, needs only the plan, so it queues before the suite's jobs.
+The suite's shards wait at most 45 minutes for its build, so `contracts` and
+the App build queue only once `ui-suite-started` has seen that build hold a
+runner; the shards then wait no longer than the build, and whichever jobs do
+not fit start as slots free up. Queue time does not count toward a job's
+timeout. A reused suite, or a release without App changes, runs no suite:
+`ui-suite-started` does not wait, and the contract gates and the App build
+(three macOS jobs) start together right after the lookup. The critical path is
+then `prepare`, `previous-app-contracts` (about 16 minutes in the simulator; a
+few minutes with `swift test`), `build-gate`, Web and App publication and the
+manifest. Every simulator job uses the image's
 own iPhone 17 on the runtime matching the selected Xcode's SDK, as `ci.yml`
 does: the fuzz soak and UI performance boot it with the pinned
 `futureware-tech/simulator-action` and run plain `xcodebuild`; the contract
@@ -187,7 +210,7 @@ exports live responses, and compiles the actual older App from Git. It verifies
 the fixtures reached the test bundle and retains structured XCTest results. For an
 App revision with the TalariaKit package (TAL-399), the contract classes that live
 there run with `swift test` against the same responses, and the live decoding test
-must pass there instead.
+must pass there instead; their build runs while the Web is probed (TAL-408).
 
 ## Root workflow
 
@@ -230,7 +253,8 @@ or stale predecessor once a release set exists. Changed tags must point to
 `sourceRevision`; unchanged tags must match the previous manifest.
 
 The cutover repeats every gate (selected-source and previous-App contracts,
-the full unit and UI suite on the release source when the App ships, pinned
+the full unit and UI suite on the release source when the App ships, or a
+successful earlier run of it on that exact commit, pinned
 Agent compatibility, component builds), then deploys Relay, publishes
 Web and uploads the App in that order, and publishes the manifest last.
 A `release-set.yml` dispatch with `dry_run=true` rehearses the same gates without

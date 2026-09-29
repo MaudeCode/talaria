@@ -11,6 +11,7 @@ import plistlib
 import re
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -58,6 +59,12 @@ def package_classes(app, tests):
     declared = {name for path in directory.rglob("*.swift")
                 for name in re.findall(r"^\s*(?:final\s+)?class\s+(\w+)\s*:", path.read_text(), re.MULTILINE)}
     return [name for name in tests if name in declared]
+
+
+def build_package_tests(app, output):
+    with (output / "app-package-build.log").open("w") as log:
+        subprocess.run(["swift", "build", "--package-path", str(app / "TalariaKit"), "--build-tests"],
+                       cwd=app, stdout=log, stderr=subprocess.STDOUT, check=True)
 
 
 def run_package_tests(app, classes, responses, output):
@@ -148,8 +155,6 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     responses = output / "responses.json"
-    with (output / "web-probe.log").open("w") as log:
-        probe_web(web_sha, responses, log)
     with contextlib.ExitStack() as stack:
         if args.app_checkout and runner_avoids_clones(app_sha):
             checkout = args.app_checkout.resolve()
@@ -169,6 +174,14 @@ def main():
             web_fixture = subprocess.check_output(["git", "-C", str(ROOT), "show", f"{web_sha}:contracts/fixtures/web-session.json"])
             (checkout / "contracts/fixtures/web-session.json").write_bytes(web_fixture)
         packaged = package_classes(app, tests)
+        # The package tests build while the Web is probed (TAL-408): each takes minutes and needs nothing of the other.
+        # ponytail: a failed probe still waits for the build to finish; kill it if failures become common.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            build = pool.submit(build_package_tests, app, output) if packaged else None
+            with (output / "web-probe.log").open("w") as log:
+                probe_web(web_sha, responses, log)
+            if build:
+                build.result()
         if packaged:
             run_package_tests(app, packaged, responses, output)
         hosted = [name for name in tests if name not in packaged]

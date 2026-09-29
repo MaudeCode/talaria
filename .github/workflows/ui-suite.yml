@@ -14,8 +14,13 @@
 #   gh workflow run ui-suite.yml --repo MaudeCode/talaria --ref <branch> \
 #     -f only_testing="TalariaUITests/SettingsInfoRoutingUITests" -f test_iterations=10
 # only_testing runs those identifiers in one shard; test_iterations above 1 stops at the first failing iteration.
+#
+# The run name records the tested commit (TAL-408): "UI suite on <commit>", or "UI suite (scoped) on <ref>" with
+# only_testing. A release reuses a successful unscoped run named for its exact source commit instead of calling the
+# suite again (app/ci/find-ui-suite-run), so keep this format in step with that script.
 
 name: UI suite
+run-name: ${{ inputs.only_testing && format('UI suite (scoped) on {0}', inputs.ref || github.sha) || format('UI suite on {0}', inputs.ref || github.sha) }}
 
 on:
   schedule:
