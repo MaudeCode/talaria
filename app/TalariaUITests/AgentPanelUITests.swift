@@ -33,7 +33,7 @@ class AgentPanelUITestCase: TalariaUITestCase {
             .descendants(matching: .any)["Chats"]
             .firstMatch
         let openNavigation = app.buttons["Open navigation"]
-        for _ in 0..<3 where !chats.exists {
+        repeatStep(3, until: { chats.exists }) {
             if openNavigation.awaitExistence(timeout: 3) {
                 openNavigation.tap()
             }

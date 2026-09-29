@@ -44,6 +44,7 @@ struct UITestFixtureEnvironment {
             initialDrafts[.session(server: serverURL, sessionID: UITestFixtureURLProtocol.sessionID)] = ChatDraft(text: "Ordinary fixture draft")
         }
         UITestFixtureHold.shared.listen()
+        UITestFixtureURLProtocol.WorkspaceFixture.listenForGitWriteGrant()
         // Theme is a standard-defaults preference a test can change, so every fixture
         // launch starts from the same appearance even if a previous run left it switched.
         UserDefaults.standard.set(AppTheme.system.rawValue, forKey: AppTheme.storageKey)

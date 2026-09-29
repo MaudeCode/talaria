@@ -264,7 +264,7 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
         XCTAssertTrue(theme.staticTexts["System"].awaitExistence(timeout: 3))
 
         let row = iconRow
-        for _ in 0..<8 where !row.exists {
+        repeatStep(8, until: { row.exists }) {
             app.swipeUp()
         }
         XCTAssertTrue(row.exists, "Missing the App Icon picker")
@@ -304,7 +304,7 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
     /// The picker collapses after a successful change, so each selection re-expands it.
     private func expandIconPicker() {
         let row = iconRow
-        for _ in 0..<8 where !row.exists {
+        repeatStep(8, until: { row.exists }) {
             scrollSettingsRoot(up: true)
         }
         XCTAssertTrue(row.awaitExistence(timeout: 5), "Missing the App Icon picker")
@@ -319,7 +319,7 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
     private func select(_ icon: String) {
         expandIconPicker()
         let choice = choice(icon)
-        for _ in 0..<8 where !choice.exists {
+        repeatStep(8, until: { choice.exists }) {
             scrollSettingsRoot(up: true)
         }
         XCTAssertTrue(choice.awaitExistence(timeout: 5), "Missing the \(icon) app icon choice")
@@ -336,28 +336,17 @@ final class AppIconSwitchingUITests: AppEntryPointUITestCase {
     /// coordinate taken while the list is still gliding lands on a neighbouring icon.
     private func tapRow(_ row: XCUIElement) {
         let top = app.navigationBars.firstMatch.frame.maxY
-        for _ in 0..<10 {
-            let frame = settledFrame(of: row)
-            guard frame.minY < top || frame.maxY > app.frame.maxY else { break }
-            scrollSettingsRoot(up: frame.maxY > app.frame.maxY)
+        let bottom = app.frame.maxY
+        var frame = row.settledFrame
+        repeatStep(10, until: { frame.minY >= top && frame.maxY <= bottom }) {
+            scrollSettingsRoot(up: frame.maxY > bottom)
+            frame = row.settledFrame
         }
-        let frame = settledFrame(of: row)
         XCTAssertTrue(
-            frame.minY >= top && frame.maxY <= app.frame.maxY,
+            frame.minY >= top && frame.maxY <= bottom,
             "Could not bring the row into view: \(frame)"
         )
-        tapCenter(of: row)
-    }
-
-    private func settledFrame(of element: XCUIElement) -> CGRect {
-        var last = element.frame
-        for _ in 0..<20 {
-            Thread.sleep(forTimeInterval: 0.2)
-            let next = element.frame
-            if next == last { return next }
-            last = next
-        }
-        return last
+        tap(at: CGPoint(x: frame.midX, y: frame.midY))
     }
 
     private func choice(_ icon: String) -> XCUIElement {
@@ -409,7 +398,7 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         add(screenshot)
         app.buttons["Connection Headers"].tap()
         let addHeader = app.buttons["Add header"]
-        for _ in 0..<5 where !addHeader.exists || !addHeader.isHittable { app.swipeUp() }
+        repeatStep(5, until: { addHeader.exists && addHeader.isHittable }) { app.swipeUp() }
         addHeader.tap()
         let name = app.textFields["Header name"]
         XCTAssertTrue(name.awaitExistence(timeout: 5))
@@ -418,7 +407,7 @@ final class ReauthenticationUITests: AppEntryPointUITestCase {
         let value = app.secureTextFields["Header value"]
         value.tap()
         value.typeText("fixture-token")
-        for _ in 0..<5 where !retry.exists || !retry.isHittable { app.swipeDown() }
+        repeatStep(5, until: { retry.exists && retry.isHittable }) { app.swipeDown() }
         retry.tap()
         XCTAssertTrue(retry.awaitNonExistence(timeout: 15))
         // This title is returned only by a new request carrying the repaired header.

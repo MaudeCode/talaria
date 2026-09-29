@@ -41,59 +41,6 @@ final class ChatNavigationUITests: ChatUITestCase {
     }
 }
 
-/// Long-press isolation between a message's links and its own actions (TAL-49).
-final class ChatMessageInteractionUITests: ChatUITestCase {
-    func testLongPressShowsMessageActionsOnTextAndOnlyLinkActionsOnALink() throws {
-        launchFixture()
-        let session = fixtureSessionButton
-        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
-        tapFixtureSession(session)
-
-        let message = element(labelContaining: "FixturePlainLead")
-        XCTAssertTrue(message.awaitExistence(timeout: 15), "Missing the fixture's long assistant message")
-        let before = settledFrame(of: message)
-        // High in a tall bubble: the pre-TAL-49 context menu lifted the whole
-        // bubble and pushed its menu to the top of the screen from here.
-        let press = CGPoint(x: before.midX, y: before.minY + 12)
-        longPress(at: press)
-
-        let fork = app.buttons["Fork From Here"]
-        XCTAssertTrue(fork.awaitExistence(timeout: 5), "The message actions did not open")
-        XCTAssertFalse(app.buttons["Open Link"].exists, "Prose must not offer link actions")
-
-        // The menu opens from the press point, not from a lifted bubble: one of
-        // its edges sits at the finger.
-        let menu = app.buttons["Listen"].frame.union(fork.frame)
-        XCTAssertLessThan(
-            min(abs(menu.minY - press.y), abs(menu.maxY - press.y)), 60,
-            "The menu opened away from the press point: \(menu) for a press at \(press)"
-        )
-        XCTAssertEqual(
-            message.frame, before,
-            "Opening the menu moved the message instead of leaving the transcript still"
-        )
-
-        // Dismiss the menu away from both the message and the navigation bar.
-        dismissContextMenu(avoiding: menu)
-        XCTAssertTrue(fork.awaitNonExistence(timeout: 5), "The message actions did not close")
-
-        let link = app.links["FixtureLinkTarget"]
-        XCTAssertTrue(link.awaitExistence(timeout: 15), "Missing the fixture's mixed text-and-link message")
-        longPress(at: settledCenter(of: link))
-
-        XCTAssertTrue(app.buttons["Open Link"].awaitExistence(timeout: 5), "The link's own actions did not open")
-        XCTAssertFalse(app.buttons["Fork From Here"].exists, "A link press must not offer message actions")
-        XCTAssertFalse(app.buttons["Listen"].exists, "A link press must not offer message actions")
-    }
-
-    /// Taps the half of the screen the open menu does not cover; a tap outside a context menu
-    /// only closes it.
-    private func dismissContextMenu(avoiding menu: CGRect) {
-        let y = menu.midY > app.frame.midY ? app.frame.height * 0.3 : app.frame.height * 0.75
-        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: app.frame.midX, dy: y)).tap()
-    }
-}
-
 final class ChatPrimaryStreamUITests: ChatUITestCase {
     func testBatchClarificationShowsChoicesAndDeliversTypedAndMultiSelectAnswers() throws {
         launchChatFixture(argument: "--ui-test-chat-batch-clarification", trace: "batch prompt -> typed answer -> next -> selected answers -> agent result")
@@ -344,8 +291,9 @@ final class ChatRecoveryUITests: ChatUITestCase {
     }
 }
 
+/// The composer's transitions and the transcript's long-press isolation (TAL-49), in one launch.
 final class ChatComposerUITests: ChatUITestCase {
-    func testComposerCollapsesAndExpandsWithoutBottomNavigation() throws {
+    func testComposerTransitionsAndLongPressIsolation() throws {
         launchFixture()
         let idleComposer = try openFixtureSession()
         XCTAssertTrue(app.buttons["Choose workspace path"].exists)
@@ -353,12 +301,15 @@ final class ChatComposerUITests: ChatUITestCase {
         XCTAssertFalse(app.tabBars.firstMatch.exists)
         XCTAssertFalse(app.descendants(matching: .any)["chat-bottom-accessory"].exists)
 
+        assertLongPressShowsMessageActionsOnTextAndOnlyLinkActionsOnALink()
+
         idleComposer.tap()
         let expandedTextView = app.textViews.firstMatch
         XCTAssertTrue(expandedTextView.awaitExistence(timeout: 10))
         expandedTextView.typeText("Composer transition check")
         XCTAssertFalse(app.buttons["Reply"].exists)
 
+        // The collapse starts from a fresh, unfocused composer with no draft.
         app.terminate()
         app.launchArguments = fixtureLaunchArguments
         app.launch()
@@ -405,6 +356,53 @@ final class ChatComposerUITests: ChatUITestCase {
         XCTAssertFalse(app.tabBars.firstMatch.exists)
     }
 
+    /// A long press on a message's prose opens its actions at the press point; one on a link
+    /// offers only the link's own actions.
+    private func assertLongPressShowsMessageActionsOnTextAndOnlyLinkActionsOnALink() {
+        let message = element(labelContaining: "FixturePlainLead")
+        XCTAssertTrue(message.awaitExistence(timeout: 15), "Missing the fixture's long assistant message")
+        let before = settledFrame(of: message)
+        // High in a tall bubble: the pre-TAL-49 context menu lifted the whole
+        // bubble and pushed its menu to the top of the screen from here.
+        let press = CGPoint(x: before.midX, y: before.minY + 12)
+        longPress(at: press)
+
+        let fork = app.buttons["Fork From Here"]
+        XCTAssertTrue(fork.awaitExistence(timeout: 5), "The message actions did not open")
+        XCTAssertFalse(app.buttons["Open Link"].exists, "Prose must not offer link actions")
+
+        // The menu opens from the press point, not from a lifted bubble: one of
+        // its edges sits at the finger.
+        let menu = app.buttons["Listen"].frame.union(fork.frame)
+        XCTAssertLessThan(
+            min(abs(menu.minY - press.y), abs(menu.maxY - press.y)), 60,
+            "The menu opened away from the press point: \(menu) for a press at \(press)"
+        )
+        XCTAssertEqual(
+            message.frame, before,
+            "Opening the menu moved the message instead of leaving the transcript still"
+        )
+        dismissContextMenu(avoiding: menu)
+        XCTAssertTrue(fork.awaitNonExistence(timeout: 5), "The message actions did not close")
+
+        let link = app.links["FixtureLinkTarget"]
+        XCTAssertTrue(link.awaitExistence(timeout: 15), "Missing the fixture's mixed text-and-link message")
+        longPress(at: settledCenter(of: link))
+
+        let openLink = app.buttons["Open Link"]
+        XCTAssertTrue(openLink.awaitExistence(timeout: 5), "The link's own actions did not open")
+        XCTAssertFalse(app.buttons["Fork From Here"].exists, "A link press must not offer message actions")
+        XCTAssertFalse(app.buttons["Listen"].exists, "A link press must not offer message actions")
+        dismissContextMenu(avoiding: openLink.frame)
+        XCTAssertTrue(openLink.awaitNonExistence(timeout: 5), "The link actions did not close")
+    }
+
+    /// Taps the half of the screen the open menu does not cover; a tap outside a context menu
+    /// only closes it.
+    private func dismissContextMenu(avoiding menu: CGRect) {
+        let screen = app.frame
+        tap(at: CGPoint(x: screen.midX, y: menu.midY > screen.midY ? screen.height * 0.3 : screen.height * 0.75))
+    }
 }
 
 class SettingsUITestCase: TalariaUITestCase {}
@@ -425,7 +423,7 @@ final class SettingsConfigurationUITests: SettingsUITestCase {
         XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: Self.navigationTimeout))
 
         let composerHeading = app.staticTexts["Composer"]
-        for _ in 0..<8 where !composerHeading.exists {
+        repeatStep(8, until: { composerHeading.exists }) {
             app.swipeUp()
         }
         XCTAssertTrue(composerHeading.exists)
@@ -440,7 +438,7 @@ final class SettingsConfigurationUITests: SettingsUITestCase {
             let setting = app.descendants(matching: .any)
                 .matching(NSPredicate(format: "label BEGINSWITH %@", label))
                 .firstMatch
-            for _ in 0..<8 where !setting.exists {
+            repeatStep(8, until: { setting.exists }) {
                 app.swipeUp()
             }
             XCTAssertTrue(setting.exists, "Missing composer setting: \(label)")
@@ -458,7 +456,7 @@ final class SettingsConfigurationUITests: SettingsUITestCase {
         let percentage = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label BEGINSWITH %@", "Quota Percentage"))
             .firstMatch
-        for _ in 0..<12 where !percentage.exists {
+        repeatStep(12, until: { percentage.exists }) {
             app.swipeUp()
         }
         XCTAssertTrue(percentage.exists)
@@ -467,7 +465,7 @@ final class SettingsConfigurationUITests: SettingsUITestCase {
         let quotaRefresh = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label BEGINSWITH %@", "Quota Refresh"))
             .firstMatch
-        for _ in 0..<6 where !quotaRefresh.exists {
+        repeatStep(6, until: { quotaRefresh.exists }) {
             app.swipeUp()
         }
         XCTAssertTrue(quotaRefresh.exists)
@@ -520,7 +518,7 @@ final class SettingsStructureUITests: SettingsUITestCase {
             let setting = app.descendants(matching: .any)
                 .matching(NSPredicate(format: "label BEGINSWITH %@", category.2))
                 .firstMatch
-            for _ in 0..<12 where !setting.exists {
+            repeatStep(12, until: { setting.exists }) {
                 app.swipeUp()
             }
             XCTAssertTrue(setting.exists, "Missing \(category.2) under \(category.1)")
@@ -644,8 +642,8 @@ final class WorkspaceLoadingUITests: WorkspaceUITestCase {
     }
 }
 
-/// Previews, a chat file link and the push guard share one plain workspace launch; a file read
-/// failure needs its own, since the browser around it must still list the file.
+/// Previews, a chat file link, a file that fails to read and the push guard share one workspace
+/// launch; the fixture grants its Git write capability partway through (TAL-402).
 final class WorkspaceFilePreviewUITests: WorkspaceUITestCase {
     func testPreviewsFileLinkAndPushConfirmationKeepTheirOwnActions() throws {
         launchFixture()
@@ -691,6 +689,17 @@ final class WorkspaceFilePreviewUITests: WorkspaceUITestCase {
         XCTAssertTrue(failure.staticTexts["Fixture git writes are disabled."].exists)
         failure.buttons["OK"].tap()
 
+        // Granted the capability, the same push completes.
+        notify_post("dev.kil.talaria.ui-test.grant-git-writes")
+        openGitActions()
+        tapGitMenuPush()
+        XCTAssertTrue(app.alerts["Push Local Commits?"].awaitExistence(timeout: 10))
+        app.alerts["Push Local Commits?"].buttons["Push"].tap()
+        XCTAssertTrue(
+            app.staticTexts["Push complete"].awaitExistence(timeout: 25),
+            "The granted fixture capability should complete the push"
+        )
+
         openFiles()
         openPreview(file: "fixture-notes.txt")
         let body = app.staticTexts
@@ -716,32 +725,13 @@ final class WorkspaceFilePreviewUITests: WorkspaceUITestCase {
         XCTAssertFalse(app.buttons["Save image to Photos"].exists, "An archive is not an image")
         app.buttons["BackButton"].tap()
 
-        app.terminate()
-        launchFixture(additionalArguments: ["--ui-test-file-read-errors"])
-        openFixtureSessionChat()
-        openFiles()
-        openPreview(file: "fixture-notes.txt")
+        // The browser lists this file, but reading it fails.
+        openPreview(file: "fixture-unreadable.txt")
         XCTAssertTrue(
             app.staticTexts["Could Not Load File"].awaitExistence(timeout: 20),
             "A failed preview must be visible"
         )
         XCTAssertTrue(app.buttons["Try Again"].exists)
-    }
-}
-
-final class GitRemoteActionUITests: WorkspaceUITestCase {
-    /// The refusal without the capability runs in `WorkspaceFilePreviewUITests`.
-    func testPushCompletesWithTheFixtureWriteCapability() throws {
-        launchFixture(additionalArguments: ["--ui-test-git-writes"])
-        openFixtureSessionChat()
-        openGitActions()
-        tapGitMenuPush()
-        XCTAssertTrue(app.alerts["Push Local Commits?"].awaitExistence(timeout: 10))
-        app.alerts["Push Local Commits?"].buttons["Push"].tap()
-        XCTAssertTrue(
-            app.staticTexts["Push complete"].awaitExistence(timeout: 25),
-            "The granted fixture capability should complete the push"
-        )
     }
 }
 
@@ -992,6 +982,7 @@ final class SidebarPresentationUITests: SidebarUITestCase {
         openNavigation.tap()
         let newChat = sidebar.buttons["New Chat"]
         XCTAssertTrue(newChat.awaitExistence(timeout: 3))
+        _ = newChat.settledFrame
         newChat.tap()
         XCTAssertTrue(app.buttons["Composer options"].awaitExistence(timeout: 15))
         XCTAssertFalse(sidebar.isHittable)
@@ -1160,7 +1151,7 @@ class AdaptiveLayoutAppUITestCase: AdaptiveLayoutUITestCase {
             // scroll until the directory renders.
             let firstCategory = app.buttons["settings-category-appearance"]
             if !firstCategory.awaitExistence(timeout: 3) {
-                for _ in 0..<10 where !firstCategory.exists {
+                repeatStep(10, until: { firstCategory.exists }) {
                     scrollSettingsRoot(up: true)
                 }
             }
@@ -1172,7 +1163,7 @@ class AdaptiveLayoutAppUITestCase: AdaptiveLayoutUITestCase {
                 .matching(NSPredicate(format: "label BEGINSWITH %@", "Add Server"))
                 .firstMatch
             XCTAssertTrue(addServer.awaitExistence(timeout: 3), "Add Server row missing [\(variant.name)]")
-            for _ in 0..<6 where addServer.frame.maxY > app.frame.maxY {
+            repeatStep(6, until: { addServer.frame.maxY <= app.frame.maxY }) {
                 app.swipeUp()
             }
             let serverRow = app.descendants(matching: .any)
@@ -1302,7 +1293,7 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
                 let lastBadge = element(label: "Tailscale ready")
                 let pageIndicator = element(label: "Page 1 of 5")
                 XCTAssertTrue(pageIndicator.exists && lastBadge.exists, "Welcome page parts missing [\(variant.name)]")
-                for _ in 0..<6 where lastBadge.frame.maxY > pageIndicator.frame.minY {
+                repeatStep(6, until: { lastBadge.frame.maxY <= pageIndicator.frame.minY }) {
                     app.swipeUp()
                 }
                 XCTAssertLessThanOrEqual(subtitle.frame.maxY, pageIndicator.frame.minY, "Subtitle under bottom bar [\(variant.name)]")
@@ -1318,6 +1309,7 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
                     .matching(NSPredicate(format: "label BEGINSWITH %@", "Send this prompt"))
                     .firstMatch
                 XCTAssertTrue(title.awaitExistence(timeout: 5), "Step title missing [\(variant.name)]")
+                _ = title.settledFrame
                 XCTAssertTrue(step.exists && description.exists, "Step header parts missing [\(variant.name)]")
                 XCTAssertGreaterThanOrEqual(title.frame.minX, app.frame.minX, "Title clipped [\(variant.name)]")
                 XCTAssertLessThanOrEqual(title.frame.maxX, app.frame.maxX, "Title clipped [\(variant.name)]")
@@ -1330,10 +1322,15 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
                 let continueAnyway = app.buttons["Continue Anyway"]
                 XCTAssertTrue(continueAnyway.awaitExistence(timeout: 3), "Copy reminder missing [\(variant.name)]")
                 continueAnyway.tap()
-                XCTAssertTrue(app.staticTexts["STEP 2"].awaitExistence(timeout: 5), "Tailscale step missing [\(variant.name)]")
+                let stepTwo = app.staticTexts["STEP 2"]
+                XCTAssertTrue(stepTwo.awaitExistence(timeout: 5), "Tailscale step missing [\(variant.name)]")
+                // A tap while the pager is still sliding the step in does not reach its button.
+                _ = stepTwo.settledFrame
                 app.buttons["Already have a server?"].tap()
                 let serverField = app.textFields.firstMatch
                 XCTAssertTrue(serverField.awaitExistence(timeout: 5), "Server URL field missing [\(variant.name)]")
+                // The pager is still sliding the page in; auditing mid-slide can leave it on the previous page.
+                _ = serverField.settledFrame
                 try audit("Onboarding connect", variant: variant)
                 // Focus retention: the audit walks the page, so focus the field only afterwards.
                 serverField.tap()
@@ -1367,40 +1364,105 @@ final class AdaptiveLayoutOnboardingUITests: AdaptiveLayoutUITestCase {
     }
 }
 
-/// Returns as soon as `condition` holds, checking every 0.2 s until `timeout`. XCTest's own waits
-/// (`waitForExistence`, `XCTNSPredicateExpectation`) first check after a full second and then once a
-/// second, so every wait cost at least a second: about a quarter of the hosted UI suite (TAL-402).
+/// Returns as soon as `condition` holds, checking at once and then after 0.1, 0.2, 0.4 and 0.8 s,
+/// then every second until `timeout`. XCTest's own waits (`waitForExistence`,
+/// `XCTNSPredicateExpectation`) first check after a full second, so every wait cost at least a
+/// second: about a quarter of the hosted UI suite (TAL-402). The back-off keeps a long wait from
+/// snapshotting the app several times a second on a 3-core hosted runner.
 func poll(timeout: TimeInterval, until condition: () -> Bool) -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
+    var interval: TimeInterval = 0.1
     while !condition() {
         guard Date() < deadline else { return false }
-        Thread.sleep(forTimeInterval: 0.2)
+        Thread.sleep(forTimeInterval: min(interval, max(deadline.timeIntervalSinceNow, 0)))
+        interval = min(interval * 2, 1)
     }
     return true
 }
 
+/// The value `read` settles on: two samples taken at least `interval` apart that agree, so two
+/// reads inside one animation frame cannot pass for a value at rest. `nil` if it is still changing
+/// at `timeout`.
+func awaitStable<Value: Equatable>(
+    timeout: TimeInterval = 2,
+    interval: TimeInterval = 0.15,
+    _ read: () -> Value
+) -> Value? {
+    let deadline = Date().addingTimeInterval(timeout)
+    var last = read()
+    while Date() < deadline {
+        Thread.sleep(forTimeInterval: interval)
+        let next = read()
+        if next == last { return next }
+        last = next
+    }
+    return nil
+}
+
+/// Runs `step` until `done` holds, at most `attempts` times. A `for _ in 0..<n where !done` loop
+/// evaluates `done` on every one of its `n` passes even once it holds, and each evaluation is a
+/// query (TAL-402).
+func repeatStep(_ attempts: Int, until done: () -> Bool, _ step: () -> Void) {
+    for _ in 0..<attempts {
+        if done() { return }
+        step()
+    }
+}
+
 extension XCUIElement {
     /// `waitForExistence(timeout:)` without its one-second polling; see `poll(timeout:until:)`.
-    /// A found element still moving (a sheet, menu or sidebar sliding in) gets up to a second to
-    /// come to rest, since a tap mid-transition can land without running its action; that second
-    /// is what XCTest's own first check used to give every wait.
     func awaitExistence(timeout: TimeInterval) -> Bool {
-        guard poll(timeout: timeout, until: { exists }) else { return false }
-        // `firstMatch`: `exists` accepts a query with several matches, `frame` alone would not.
-        var last = firstMatch.frame
-        _ = poll(timeout: 1) {
-            let next = firstMatch.frame
-            defer { last = next }
-            return next == last
-        }
-        return true
+        poll(timeout: timeout) { exists }
     }
 
     /// `waitForNonExistence(timeout:)` without its one-second polling; see `poll(timeout:until:)`.
     func awaitNonExistence(timeout: TimeInterval) -> Bool {
         poll(timeout: timeout) { !exists }
     }
+
+    /// Where the element comes to rest (`awaitStable`): a coordinate taken while a sheet, menu or
+    /// sidebar is still sliding in lands on the wrong spot. The last frame read if it never settles.
+    var settledFrame: CGRect {
+        awaitStable { firstMatch.frame } ?? firstMatch.frame
+    }
 }
+
+/// The waiting helpers' own contract, without launching the app.
+final class UITestWaitingTests: XCTestCase {
+    func testAwaitStableNeedsTwoAgreeingSamplesAnIntervalApart() {
+        var samples = [1, 2, 3, 3]
+        var readTimes: [Date] = []
+        let settled = awaitStable(timeout: 2, interval: 0.1) { () -> Int in
+            readTimes.append(Date())
+            return samples.removeFirst()
+        }
+        XCTAssertEqual(settled, 3)
+        XCTAssertEqual(readTimes.count, 4)
+        for (earlier, later) in zip(readTimes, readTimes.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(later.timeIntervalSince(earlier), 0.1)
+        }
+    }
+
+    func testAwaitStableGivesUpOnAValueThatKeepsChanging() {
+        var counter = 0
+        XCTAssertNil(awaitStable(timeout: 0.5, interval: 0.1) { () -> Int in
+            counter += 1
+            return counter
+        })
+    }
+
+    func testPollChecksAtOnceAndStopsAtTheTimeout() {
+        let start = Date()
+        XCTAssertTrue(poll(timeout: 5) { true })
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.05)
+
+        var checks = 0
+        XCTAssertFalse(poll(timeout: 1) { checks += 1; return false })
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1.5)
+        XCTAssertGreaterThanOrEqual(checks, 4)
+    }
+}
+
 class TalariaUITestCase: XCTestCase {
     /// Bound for the shared helpers' waits on a destination or control. A wait returns as soon
     /// as its element appears, so a passing run pays nothing for the margin; a 3-core
@@ -1469,6 +1531,10 @@ fileprivate extension ChatUITestCase {
             composer.tap()
             XCTAssertTrue(input.awaitExistence(timeout: 5))
         }
+        // A chat can focus its composer as it opens. Typing, or querying the app, while the
+        // keyboard is still sliding in can leave XCTest waiting a minute for the app to go idle
+        // before every later step, so let it land first, as XCTest's one-second first check did.
+        Thread.sleep(forTimeInterval: 1)
         input.typeText(message)
         let send = app.buttons["Send"]
         XCTAssertTrue(send.awaitExistence(timeout: Self.navigationTimeout))
@@ -1485,14 +1551,7 @@ fileprivate extension ChatUITestCase {
 
     /// Waits until the element stops moving, so a press lands where it was measured.
     func settledFrame(of element: XCUIElement) -> CGRect {
-        var last = element.frame
-        for _ in 0..<20 {
-            Thread.sleep(forTimeInterval: 0.3)
-            let next = element.frame
-            if next == last { return next }
-            last = next
-        }
-        return last
+        awaitStable(timeout: 6, interval: 0.3) { element.frame } ?? element.frame
     }
 
     func settledCenter(of element: XCUIElement) -> CGPoint {
@@ -1513,7 +1572,10 @@ extension TalariaUITestCase {
         app.buttons["Open navigation"].tap()
         let sidebar = app.descendants(matching: .any)["app-sidebar"]
         XCTAssertTrue(sidebar.awaitExistence(timeout: Self.navigationTimeout))
-        sidebar.descendants(matching: .any)[destination].firstMatch.tap()
+        // The sidebar's rows slide in; a row tapped on the way lands on the surface behind it.
+        let row = sidebar.descendants(matching: .any)[destination].firstMatch
+        _ = row.settledFrame
+        row.tap()
     }
 
     /// The session list's search field once it is open.
@@ -1543,9 +1605,9 @@ extension TalariaUITestCase {
 extension TalariaUITestCase {
     func returnToSessionList() {
         let chats = app.navigationBars["Chats"]
-        for _ in 0..<3 where !chats.exists {
+        repeatStep(3, until: { chats.exists }) {
             let back = app.buttons["BackButton"]
-            guard back.awaitExistence(timeout: 5) else { break }
+            guard back.awaitExistence(timeout: 5) else { return }
             back.tap()
             _ = chats.awaitExistence(timeout: 5)
         }
@@ -1559,7 +1621,9 @@ extension TalariaUITestCase {
 
         let sidebar = app.descendants(matching: .any)["app-sidebar"]
         XCTAssertTrue(sidebar.awaitExistence(timeout: Self.navigationTimeout))
-        sidebar.descendants(matching: .any)["Settings"].firstMatch.tap()
+        let settings = sidebar.descendants(matching: .any)["Settings"].firstMatch
+        _ = settings.settledFrame
+        settings.tap()
         XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: Self.navigationTimeout))
         // The sidebar stays in the tree once closed, so its closing is the loss of hittability.
         XCTAssertTrue(
@@ -1579,16 +1643,20 @@ extension TalariaUITestCase {
     }
 
     /// Settings and list rows report `isHittable == false` to XCUI even when visible; tap
-    /// where they are drawn instead. A missing element has a zero frame, which would tap the
-    /// screen corner; the assertions keep that from passing as a silent stray tap.
+    /// where they are drawn instead, once they have come to rest. A missing element has a zero
+    /// frame, which would tap the screen corner; the assertions keep that from passing as a
+    /// silent stray tap.
     func tapCenter(of element: XCUIElement) {
         XCTAssertTrue(element.awaitExistence(timeout: Self.navigationTimeout), "Missing tap target")
-        let frame = element.frame
+        let frame = element.settledFrame
         XCTAssertTrue(frame.width > 0 && frame.height > 0, "Tap target has no frame")
-        app.coordinate(withNormalizedOffset: CGVector(
-            dx: frame.midX / app.frame.width,
-            dy: frame.midY / app.frame.height
-        )).tap()
+        tap(at: CGPoint(x: frame.midX, y: frame.midY))
+    }
+
+    /// Taps a point in screen coordinates. Offsetting from the app's origin needs no read of the
+    /// app's own frame, which costs a query each time on a hosted runner.
+    func tap(at point: CGPoint) {
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
     }
 
     func element(labelContaining text: String) -> XCUIElement {
@@ -1611,31 +1679,33 @@ extension TalariaUITestCase {
 
     func tapSettingsRow(label: String) {
         let row = app.buttons[label]
-        for _ in 0..<12 where !row.exists || row.frame.maxY > app.frame.maxY {
+        let bottom = app.frame.maxY
+        repeatStep(12, until: { row.exists && row.frame.maxY <= bottom }) {
             app.swipeUp()
         }
         XCTAssertTrue(row.exists, "Missing settings row: \(label)")
         tapCenter(of: row)
     }
 
+    /// Reads each frame once per scroll: every read is a query, and this runs for every
+    /// category a test opens.
     func tapSettingsCategory(id: String, title: String) {
         let category = app.buttons["settings-category-\(id)"]
-        for _ in 0..<10 where !category.exists {
+        repeatStep(10, until: { category.exists }) {
             scrollSettingsRoot(up: true)
         }
         XCTAssertTrue(category.awaitExistence(timeout: Self.navigationTimeout), "Missing Settings category: \(title)")
         let viewportTop = app.navigationBars["Settings"].frame.maxY
-        for _ in 0..<10
-            where category.frame.minY < viewportTop || category.frame.maxY > app.frame.maxY {
-            scrollSettingsRoot(up: category.frame.maxY > app.frame.maxY)
+        let viewportBottom = app.frame.maxY
+        var frame = category.settledFrame
+        repeatStep(10, until: { frame.minY >= viewportTop && frame.maxY <= viewportBottom }) {
+            scrollSettingsRoot(up: frame.maxY > viewportBottom)
+            frame = category.settledFrame
         }
-        let visibleTop = max(category.frame.minY, viewportTop)
-        let visibleBottom = min(category.frame.maxY, app.frame.maxY)
+        let visibleTop = max(frame.minY, viewportTop)
+        let visibleBottom = min(frame.maxY, viewportBottom)
         XCTAssertGreaterThan(visibleBottom - visibleTop, 20)
-        app.coordinate(withNormalizedOffset: CGVector(
-            dx: category.frame.midX / app.frame.width,
-            dy: ((visibleTop + visibleBottom) / 2) / app.frame.height
-        )).tap()
+        tap(at: CGPoint(x: frame.midX, y: (visibleTop + visibleBottom) / 2))
         XCTAssertTrue(app.navigationBars[title].awaitExistence(timeout: Self.navigationTimeout))
     }
 }
@@ -1661,6 +1731,8 @@ fileprivate extension TalariaUITestCase {
         return nil
     }
 
+    /// Scrolls the row fully into the list's viewport and taps it. Each pass reads the row once
+    /// (a snapshot answers existence and frame together), since every read is a query.
     func tapFixtureSession(_ session: XCUIElement) {
         let sessionList = app.collectionViews.firstMatch
         let viewportTop = app.navigationBars["Chats"].frame.maxY
@@ -1668,14 +1740,17 @@ fileprivate extension TalariaUITestCase {
         XCTAssertNotNil(searchControl, "Missing the session search control")
         let viewportBottom = searchControl?.frame.minY ?? 0
 
+        func rowFrame() -> CGRect? {
+            let read = { (try? session.snapshot())?.frame }
+            return awaitStable(read) ?? read()
+        }
+        var frame = rowFrame()
         for _ in 0..<12 {
-            if session.exists,
-               session.frame.minY >= viewportTop,
-               session.frame.maxY <= viewportBottom {
+            if let row = frame, row.minY >= viewportTop, row.maxY <= viewportBottom {
                 break
             }
 
-            let scrollingUp = session.exists && session.frame.maxY > viewportBottom
+            let scrollingUp = (frame?.maxY ?? 0) > viewportBottom
             let startY = scrollingUp ? 0.65 : 0.55
             let endY = scrollingUp ? 0.55 : 0.65
             sessionList.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
@@ -1685,11 +1760,15 @@ fileprivate extension TalariaUITestCase {
                         withNormalizedOffset: CGVector(dx: 0.5, dy: endY)
                     )
                 )
+            frame = rowFrame()
         }
 
-        XCTAssertTrue(session.exists)
-        XCTAssertGreaterThanOrEqual(session.frame.minY, viewportTop)
-        XCTAssertLessThanOrEqual(session.frame.maxY, viewportBottom)
+        guard let row = frame else {
+            XCTFail("The session row is missing")
+            return
+        }
+        XCTAssertGreaterThanOrEqual(row.minY, viewportTop)
+        XCTAssertLessThanOrEqual(row.maxY, viewportBottom)
         session.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         // The transcript keeps scrolling into place for about a second after the chat opens, and
         // expanding the composer or typing during it leaves an animation XCTest then waits on for
@@ -1812,11 +1891,6 @@ fileprivate extension AdaptiveLayoutUITestCase {
         }
     }
 
-    /// Settings rows report `isHittable == false` to XCUI even when visible; tap by point.
-    func tap(at point: CGPoint) {
-        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
-    }
-
     func hasKeyboardFocus(_ element: XCUIElement) -> Bool {
         element.value(forKey: "hasKeyboardFocus") as? Bool ?? false
     }
@@ -1835,7 +1909,7 @@ fileprivate extension TalariaUITestCase {
     /// Walks back out of a nested Settings destination to the category root.
     func returnToSettingsRoot() {
         let root = app.navigationBars["Settings"]
-        for _ in 0..<3 where !root.exists {
+        repeatStep(3, until: { root.exists }) {
             app.buttons["BackButton"].tap()
             _ = root.awaitExistence(timeout: 3)
         }
@@ -1874,15 +1948,9 @@ fileprivate extension WorkspaceUITestCase {
         let push = app.buttons["Push"]
         XCTAssertTrue(push.awaitExistence(timeout: Self.navigationTimeout), "Missing the Push action")
         // A tap while the menu is still growing in from its button lands but runs no action, so
-        // wait for Push to hold still (and be enabled) first.
-        var lastFrame = CGRect.null
-        XCTAssertTrue(
-            poll(timeout: Self.navigationTimeout) {
-                defer { lastFrame = push.frame }
-                return push.isEnabled && push.frame == lastFrame
-            },
-            "The Push action never settled"
-        )
+        // wait for Push to be enabled and at rest first.
+        XCTAssertTrue(poll(timeout: Self.navigationTimeout) { push.isEnabled }, "Push stayed disabled")
+        _ = push.settledFrame
         push.tap()
     }
 
