@@ -158,7 +158,9 @@ jobs:
     with:
       mode: full
       ref: ${{ needs.prepare.outputs.source }}
-      shards: ${{ inputs.ui_shards }}
+      # A dispatch's number input reaches here as a string, which the number input rejected ("Unexpected value
+      # '3'") and left every called job pending (TAL-417); fromJSON makes it a number from either trigger.
+      shards: ${{ fromJSON(inputs.ui_shards) }}
       # The contracts job runs the package tests on the release source instead (TAL-414).
       package_tests: false
   ui-suite-built:

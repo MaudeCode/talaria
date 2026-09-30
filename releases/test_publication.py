@@ -427,7 +427,7 @@ class PublicationTests(unittest.TestCase):
         # app-tests.yml, not ui-suite.yml, whose concurrency left a called suite pending forever (TAL-417).
         self.assertEqual(jobs["ui-suite"]["uses"], "./.github/workflows/app-tests.yml")
         self.assertEqual(jobs["ui-suite"]["with"], {"mode": "full", "ref": "${{ needs.prepare.outputs.source }}",
-                                                    "shards": "${{ inputs.ui_shards }}", "package_tests": False})
+                                                    "shards": "${{ fromJSON(inputs.ui_shards) }}", "package_tests": False})
         document = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/release-set.yml")], text=True))
