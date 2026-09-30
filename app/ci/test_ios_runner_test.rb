@@ -103,6 +103,19 @@ class TestIOSRunnerTest < Minitest::Test
     refute_match(/contract-fixture|LIVE_CONTRACT|CONTRACT_TEST_CLASSES|CONTRACTS_SELECTED/, shard.to_yaml)
   end
 
+  def test_hosted_shards_record_memory_on_every_run
+    # A hosted runner once swapped until every UI query timed out (TAL-419); every shard keeps its memory samples.
+    steps = workflow_jobs("app-tests.yml").fetch("app-test")["steps"].map { |step| [step["name"], step] }.to_h
+    suite = steps.fetch("Test without building")["run"]
+    assert_includes(suite, 'nohup ci/memory-sampler watch "${MEMORY_LOG}" "${XCODEBUILD_LOG}"')
+    assert_includes(suite, "set -euo pipefail")
+    assert_includes(suite, '"${selection[@]}" 2>&1 | tee "${XCODEBUILD_LOG}"')
+    report, upload = steps.values_at("Report memory", "Upload memory samples")
+    assert_equal(["always()"] * 2, [report, upload].map { |step| step["if"] })
+    assert_includes(report["run"], 'ci/memory-sampler summary "${MEMORY_LOG}" | tee -a "${GITHUB_STEP_SUMMARY}"')
+    assert_equal("app/${{ env.MEMORY_LOG }}", upload["with"]["path"])
+  end
+
   def test_package_job_runs_the_live_test_without_a_simulator
     package, probe = workflow_jobs("app-tests.yml").fetch("package-test"), workflow_jobs("ci.yml").fetch("contracts")
     # TalariaKit's tests run with `swift test` on hosted macOS beside the build: no simulator, no app host (TAL-399).
