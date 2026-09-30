@@ -56,6 +56,8 @@ SCRIPTS = {
     "check-releases": {"tooling"},
     "check-hosted-runners.py": {"tooling"},
     "test-check-hosted-runners.py": {"tooling"},
+    "review-agent-range.py": {"tooling"},
+    "test-review-agent-range.py": {"tooling"},
 }
 
 
