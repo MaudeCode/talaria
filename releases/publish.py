@@ -198,12 +198,19 @@ def publish_npm(component, build, directory):
     with timed("npm publish"):
         for name in plan["ordered"]:
             if not published[name]:
-                subprocess.run(["npm", "publish", str(tarballs[name]), "--access", "public", "--tag", dist_tag], check=True)
+                result = subprocess.run(["npm", "publish", str(tarballs[name]), "--access", "public", "--tag", dist_tag],
+                                        capture_output=True, text=True)
+                print(result.stdout + result.stderr, end="", flush=True)
+                # The preflight can read a stale 404 for a version npm already holds, so a resumed publication
+                # meets "cannot publish over" (v1.13.0); the readback below still requires identical bytes (TAL-420).
+                if result.returncode != 0 and "cannot publish over the previously published version" not in result.stderr:
+                    raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)
     with timed("npm readback"):
         return verify_npm(component, build, directory)
 
 
-NPM_READBACK_ATTEMPTS = 60
+# npm served v1.13.0 32 minutes after accepting it; wait up to 40 (TAL-420).
+NPM_READBACK_ATTEMPTS = 240
 NPM_READBACK_DELAY = 10
 
 
