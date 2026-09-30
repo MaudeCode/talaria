@@ -227,6 +227,9 @@ jobs:
       ONLY_TESTING: ${{ inputs.only_testing }}
       TEST_ITERATIONS: ${{ inputs.test_iterations }}
       RESULT_BUNDLE_PATH: TestResults.xcresult
+      # Relative to app/, like the result bundle; the memory log uploads on every run (TAL-419).
+      MEMORY_LOG: memory.log
+      XCODEBUILD_LOG: xcodebuild-test.log
     steps:
       - uses: actions/checkout@v7
         with:
@@ -320,11 +323,14 @@ jobs:
           fi
           echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries"
 
+      # The memory sampler runs for the whole step; "Report memory" stops it, summarizes it and uploads its log.
       - name: Test without building
         env:
           SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
         run: |
           set -euo pipefail
+          nohup ci/memory-sampler watch "${MEMORY_LOG}" "${XCODEBUILD_LOG}" > /dev/null 2>&1 < /dev/null &
+          echo $! > "${RUNNER_TEMP}/memory-sampler.pid"
           start_seconds=${SECONDS}
           selection=()
           while IFS= read -r option; do selection+=("${option}"); done < selection.txt
@@ -339,10 +345,30 @@ jobs:
             -resultBundlePath "${RESULT_BUNDLE_PATH}" \
             -collect-test-diagnostics never \
             -parallel-testing-enabled NO \
-            "${selection[@]}"
+            "${selection[@]}" 2>&1 | tee "${XCODEBUILD_LOG}"
           duration_seconds=$((SECONDS - start_seconds))
           echo "### App shard ${SHARD} of ${SHARD_COUNT}" >> "${GITHUB_STEP_SUMMARY}"
           echo "- Test without building: ${duration_seconds}s" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Report memory
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          [[ -f "${RUNNER_TEMP}/memory-sampler.pid" ]] || { echo "The memory sampler never started."; exit 0; }
+          kill "$(cat "${RUNNER_TEMP}/memory-sampler.pid")" 2>/dev/null || true
+          ci/memory-sampler summary "${MEMORY_LOG}" | tee -a "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload memory samples
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.BUILD_ARTIFACT }}-memory-shard-${{ matrix.shard }}
+          path: app/${{ env.MEMORY_LOG }}
+          retention-days: 30
+          overwrite: true
+          if-no-files-found: ignore
 
       - name: Report slowest tests
         if: always()

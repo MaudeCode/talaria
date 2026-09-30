@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Records the hosted runner's memory while a UI shard runs, with macOS built-ins only (TAL-419). A 7 GB hosted
+# runner once swapped until every UI query timed out, and nothing but a failure spindump showed it.
+#   ci/memory-sampler watch LOG XCODEBUILD_LOG   appends a sample every MEMORY_SAMPLE_SECONDS (15) until killed
+#   ci/memory-sampler sample LOG XCODEBUILD_LOG  appends one sample
+#   ci/memory-sampler summary LOG                prints the peak swap and SimRenderServer footprint, with their tests
+# A sample holds swap use, the free-memory percentage, compressor and swap counters, the eight largest processes by
+# footprint (top's MEM, which counts the GPU and IOSurface memory ps's RSS leaves out), SimRenderServer's
+# footprint, and the test xcodebuild last started. Its last line is machine-readable:
+#   #sample <TAB> epoch <TAB> swap used MB <TAB> SimRenderServer MB <TAB> test
+set -euo pipefail
+
+# top's MEM (123K, 45M+, 1.5G-) in MB; nothing listed is 0.
+megabytes() {
+  awk -v value="${1:-0}" 'BEGIN {
+    number = value + 0; unit = substr(value, match(value, /[BKMGT]/), 1)
+    scale = unit == "B" ? 1 / 1048576 : unit == "K" ? 1 / 1024 : unit == "G" ? 1024 : unit == "T" ? 1048576 : 1
+    printf "%d", number * scale
+  }'
+}
+
+sample() {
+  local log=$1 xcodebuild_log=$2 test processes swap_used render_server
+  test=$(grep -o "Test Case '-\[[^]]*\]' started" "${xcodebuild_log}" 2>/dev/null | tail -n 1 | sed -E "s/Test Case '-\[([A-Za-z0-9_]+\.)?(.*)\]' started/\2/") || true
+  processes=$(top -l 1 -o mem -stats pid,command,mem 2>/dev/null | awk '/^PID/ { listed = 1 } listed') || true
+  swap_used=$(sysctl -n vm.swapusage | sed -E 's/.*used = ([0-9.]+)M.*/\1/')
+  render_server=$(awk '$2 == "SimRenderServer" { print $3; exit }' <<< "${processes}")
+  {
+    echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ) test: ${test:-none}"
+    echo "swap: $(sysctl -n vm.swapusage)"
+    memory_pressure -Q | grep -i "free percentage" || true
+    vm_stat | grep -E "^(Pages (stored in|occupied by) compressor|Swapins|Swapouts|Pageins)" | tr -s ' ' | paste -sd ';' -
+    head -n 9 <<< "${processes}"
+    echo "SimRenderServer: ${render_server:-not running}"
+    printf '#sample\t%s\t%d\t%s\t%s\n' "$(date +%s)" "${swap_used%.*}" "$(megabytes "${render_server}")" "${test:-none}"
+  } >> "${log}"
+}
+
+summary() {
+  awk -F '\t' '
+    $1 == "#sample" {
+      samples++
+      if (samples == 1 || $3 > swap) { swap = $3; swap_test = $5 }
+      if (samples == 1 || $4 > render) { render = $4; render_test = $5 }
+    }
+    END {
+      if (!samples) { print "- Memory: no samples"; exit }
+      printf "- Memory peaks over %d samples: swap used %d MB (%s); SimRenderServer %d MB (%s)\n",
+        samples, swap, swap_test, render, render_test
+    }' "$1"
+}
+
+case "${1:-}" in
+  sample) sample "$2" "$3" ;;
+  watch) while true; do sample "$2" "$3" || true; sleep "${MEMORY_SAMPLE_SECONDS:-15}"; done ;;
+  summary) summary "$2" ;;
+  *) echo "usage: ci/memory-sampler watch|sample LOG XCODEBUILD_LOG | summary LOG" >&2; exit 2 ;;
+esac
