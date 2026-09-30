@@ -1,0 +1,1 @@
+{"skip": "CI only: a release that runs its own UI suite passes the shard count as a number, so its suite starts instead of hanging pending; no app behavior changes."}
