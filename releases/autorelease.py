@@ -57,6 +57,12 @@ def ensure_component_tags(root, request, changed, release_tag):
             continue
         git(root, "tag", "-a", "-m", f"Talaria {name.title()} {tag.rsplit('-v', 1)[1]}; release {release_tag}", tag, source)
         created.append(tag)
+    # publish-set attaches the manifest to this tag. Create it now, while main still matches the source:
+    # GITHUB_TOKEN may not create a ref whose workflows differ from main's, which failed v1.13.0 (TAL-421).
+    root_tag = "release-set-" + request["sourceRevision"]
+    if not git(root, "rev-parse", "--verify", "--quiet", f"refs/tags/{root_tag}", check=False):
+        git(root, "tag", root_tag, request["sourceRevision"])
+        created.append(root_tag)
     return created
 
 

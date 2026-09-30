@@ -68,9 +68,13 @@ class AutoReleaseTests(unittest.TestCase):
         self.write("app/source.txt", "changed")
         source = self.commit("app change")
         request, changed = self.release()
-        self.assertEqual(ensure_component_tags(self.root, request, changed, "v1.10.1"), ["app-v1.10.1"])
+        self.assertEqual(ensure_component_tags(self.root, request, changed, "v1.10.1"),
+                         ["app-v1.10.1", f"release-set-{source}"])
         self.assertEqual(self.git("rev-parse", "app-v1.10.1^{commit}"), source)
         self.assertEqual(self.git("cat-file", "-t", "app-v1.10.1"), "tag")
+        # The manifest's tag is created up front, plain, as publish-set would (TAL-421).
+        self.assertEqual(self.git("cat-file", "-t", f"release-set-{source}"), "commit")
+        self.assertEqual(self.git("rev-parse", f"release-set-{source}"), source)
         # A retried run reuses the tag it made.
         self.assertEqual(ensure_component_tags(self.root, request, changed, "v1.10.1"), [])
 

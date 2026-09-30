@@ -1,0 +1,1 @@
+{"skip": "Release tooling only: a release creates its release-set tag at the start, so later workflow changes on main cannot block its manifest; no app behavior changes."}
