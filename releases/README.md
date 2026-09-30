@@ -87,7 +87,8 @@ unscoped suite of that commit (`app/ci/find-ui-suite-run`). A match skips the
 as before. `build-gate` accepts only a successful lookup with a reused run URL
 and a skipped call, or a successful lookup without one and a successful call; a
 lookup error fails the lookup, skips the call and fails `build-gate`. A
-release's own call leaves no `ui-suite.yml` run, so it is never reused. To
+release runs the suite by calling `app-tests.yml` directly (TAL-417), which
+leaves no `ui-suite.yml` run, so it is never reused. To
 reuse one, let a suite finish on the source before pushing the release tag:
 the nightly run counts when the source is its `main` head, or dispatch
 `gh workflow run ui-suite.yml --repo MaudeCode/talaria --ref main` while `main`

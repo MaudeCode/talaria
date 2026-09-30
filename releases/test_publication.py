@@ -424,8 +424,9 @@ class PublicationTests(unittest.TestCase):
         self.assertIn("Upload the test build", [step.get("name") for step in app_tests["jobs"]["app-build"]["steps"]])
         # The full UI suite runs on the release source whenever the App ships and no reusable run exists, dry runs
         # included, in the release's shard count; contracts runs its package tests (--package-suite).
-        self.assertEqual(jobs["ui-suite"]["uses"], "./.github/workflows/ui-suite.yml")
-        self.assertEqual(jobs["ui-suite"]["with"], {"ref": "${{ needs.prepare.outputs.source }}",
+        # app-tests.yml, not ui-suite.yml, whose concurrency left a called suite pending forever (TAL-417).
+        self.assertEqual(jobs["ui-suite"]["uses"], "./.github/workflows/app-tests.yml")
+        self.assertEqual(jobs["ui-suite"]["with"], {"mode": "full", "ref": "${{ needs.prepare.outputs.source }}",
                                                     "shards": "${{ inputs.ui_shards }}", "package_tests": False})
         document = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
@@ -443,15 +444,12 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(jobs["ui-suite"]["if"],
                          "needs.prepare.outputs.app_changed == 'true' && needs.ui-suite-lookup.outputs.reused == 'false'")
         self.assertEqual(jobs["ui-suite"]["permissions"], {"contents": "read", "actions": "read"})
-        # Nightly and dispatched suites queue one at a time; the release's call, evaluated in its caller's context,
-        # gets a group of its own, so it never waits for one and a newer run never replaces it (TAL-413).
+        # Nightly and dispatched suites queue one at a time (TAL-413); nothing calls ui-suite.yml (TAL-417).
         suite = json.loads(subprocess.check_output([
             "ruby", "-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load_file(ARGV[0], aliases: true))",
             str(root / ".github/workflows/ui-suite.yml")], text=True))
-        self.assertEqual(suite["concurrency"], {
-            "group": "${{ contains(github.workflow_ref, '/.github/workflows/ui-suite.yml@') && 'ui-suite' || "
-                     "format('ui-suite-call-{0}', github.run_id) }}",
-            "cancel-in-progress": False})
+        self.assertEqual(suite["concurrency"], {"group": "ui-suite", "cancel-in-progress": False})
+        self.assertNotIn("workflow_call", suite["true"])  # Ruby YAML reads `on` as true
         # The lookup only reads Actions runs.
         self.assertEqual(jobs["ui-suite-lookup"]["if"], "needs.prepare.outputs.app_changed == 'true'")
         self.assertEqual(jobs["ui-suite-lookup"]["permissions"], {"contents": "read", "actions": "read"})
