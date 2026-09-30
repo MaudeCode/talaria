@@ -21,7 +21,7 @@ megabytes() {
 
 sample() {
   local log=$1 xcodebuild_log=$2 test processes swap_used render_server
-  test=$(grep -o "Test Case '-\[[^]]*\]' started" "${xcodebuild_log}" 2>/dev/null | tail -n 1 | sed -E "s/Test Case '-\[(.*)\]' started/\1/") || true
+  test=$(grep -o "Test Case '-\[[^]]*\]' started" "${xcodebuild_log}" 2>/dev/null | tail -n 1 | sed -E "s/Test Case '-\[([A-Za-z0-9_]+\.)?(.*)\]' started/\2/") || true
   processes=$(top -l 1 -o mem -stats pid,command,mem 2>/dev/null | awk '/^PID/ { listed = 1 } listed') || true
   swap_used=$(sysctl -n vm.swapusage | sed -E 's/.*used = ([0-9.]+)M.*/\1/')
   render_server=$(awk '$2 == "SimRenderServer" { print $3; exit }' <<< "${processes}")
