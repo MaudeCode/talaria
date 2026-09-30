@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Numbered lists in chat replies, shared transcripts, task output, and workspace previews show their numbers again.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
