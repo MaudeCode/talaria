@@ -1,0 +1,1 @@
+{"skip": "CI only: a release runs its UI suite through app-tests.yml, so it no longer hangs pending; no app behavior changes."}

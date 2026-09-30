@@ -1,4 +1,4 @@
-# Interface (stable; ci.yml, ui-suite.yml and TAL-381's release graph call it):
+# Interface (stable; ci.yml, ui-suite.yml and release-set.yml call it):
 #   uses: ./.github/workflows/app-tests.yml   (the caller grants contents: read and actions: read)
 #   with:
 #     mode: pull-request | contracts | full

@@ -1,17 +1,7 @@
 # The full iOS unit and UI suite on GitHub-hosted runners: App build plus four simulator shards (the hosted unit
-# tests, the launch smoke and every UI test; a release passes three) and the TalariaKit package tests (app-tests.yml,
-# full mode; a release runs those in its contracts job). It is
-# too long for every main push (about an hour of hosted test time), so it runs nightly, on demand, and as a
-# release gate.
-#
-# Interface (stable; TAL-381's release graph calls it on the release commit):
-#   uses: ./.github/workflows/ui-suite.yml   (the caller grants contents: read and actions: read)
-#   with:
-#     ref: <commit SHA>   # required for workflow_call
-#     shards: <1 to 6>    # optional test shard count (default 4, as nightly; a release passes its own, TAL-414)
-#     package_tests: false  # optional: leave out the package tests job (a release runs them in its contracts job)
-#   No outputs: the calling job's result is the suite's result. Its jobs are named "UI suite build",
-#   "UI suite build started", "UI suite tests (shard N)" and "UI suite package tests", and its build artifact is ui-suite-build.
+# tests, the launch smoke and every UI test) and the TalariaKit package tests (app-tests.yml, full mode). It is too
+# long for every main push, so it runs nightly and on demand. A release calls app-tests.yml directly instead
+# (TAL-417), so this workflow's concurrency never holds a release's suite.
 #
 # A manual run can scope and repeat the suite instead (TAL-401), for example 10 runs in a row of one flaky test:
 #   gh workflow run ui-suite.yml --repo MaudeCode/talaria --ref <branch> \
@@ -42,31 +32,17 @@ on:
         description: Runs of each selected test (a positive integer); above 1 stops at the first failure.
         type: string
         default: "1"
-  workflow_call:
-    inputs:
-      ref:
-        description: Commit to test.
-        type: string
-        required: true
-      shards:
-        description: Simulator test shards, 1 to 6.
-        type: number
-        default: 4
-      package_tests:
-        description: Run the TalariaKit package tests job.
-        type: boolean
-        default: true
 
 permissions:
   contents: read
 
 # Nightly and dispatched suites run one at a time; the next waits (TAL-413). GitHub keeps one waiting run per group, so
 # a third run replaces the waiting one: a replaced nightly just means a release runs the suite itself. A release's
-# call is evaluated in its caller's context (workflow_ref names the caller) and gets a group of its own, so it never
-# waits for an hour-long or iterated suite and is never replaced. Suites may still overlap a release's call: the
-# shards queue only once their build holds a macOS runner (app-tests.yml), so overlapping suites cannot deadlock.
+# suite may overlap one: the shards queue only once their build holds a macOS runner (app-tests.yml), so overlapping
+# suites cannot deadlock. A called workflow's concurrency left a release's jobs pending forever (TAL-417), so
+# nothing calls this one.
 concurrency:
-  group: ${{ contains(github.workflow_ref, '/.github/workflows/ui-suite.yml@') && 'ui-suite' || format('ui-suite-call-{0}', github.run_id) }}
+  group: ui-suite
   cancel-in-progress: false
 
 jobs:
@@ -80,9 +56,5 @@ jobs:
       mode: full
       ref: ${{ inputs.ref }}
       only_testing: ${{ inputs.only_testing }}
-      # Strings end to end: schedule and workflow_call runs have no such input, so they pass "1".
+      # Strings end to end: schedule runs have no such input, so they pass "1".
       test_iterations: ${{ inputs.test_iterations || '1' }}
-      # Schedule and dispatch runs have neither input (null): four shards and the package tests. A null boolean
-      # compares equal to false, so only its text tells an explicit false apart.
-      shards: ${{ inputs.shards || 4 }}
-      package_tests: ${{ format('{0}', inputs.package_tests) != 'false' }}

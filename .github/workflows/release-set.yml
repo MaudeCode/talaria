@@ -143,9 +143,10 @@ jobs:
           printf '### UI suite\n\nNo successful UI suite run on %s; running the suite.\n' "$SOURCE" | tee -a "$GITHUB_STEP_SUMMARY"
         fi
   ui-suite:
-    # The full unit and UI suite (TAL-380's ui-suite.yml: a build, four macOS test shards and the package tests) on
-    # the release source, beside every other gate, unless ui-suite-lookup found one to reuse; build-gate, and so every
-    # publication, requires one or the other when the App ships.
+    # The full unit and UI suite (app-tests.yml in full mode: a build and the release's macOS test shards) on the
+    # release source, beside every other gate, unless ui-suite-lookup found one to reuse; build-gate, and so every
+    # publication, requires one or the other when the App ships. It calls app-tests.yml, not ui-suite.yml: a called
+    # workflow's concurrency left these jobs pending forever (TAL-417).
     needs:
     - prepare
     - ui-suite-lookup
@@ -153,8 +154,9 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: ./.github/workflows/ui-suite.yml
+    uses: ./.github/workflows/app-tests.yml
     with:
+      mode: full
       ref: ${{ needs.prepare.outputs.source }}
       shards: ${{ inputs.ui_shards }}
       # The contracts job runs the package tests on the release source instead (TAL-414).
