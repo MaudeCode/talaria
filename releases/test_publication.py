@@ -903,6 +903,43 @@ class PublicationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "never became available"):
                     publish.verify_npm(component, build, root)
 
+    def test_npm_publication_resumes_over_a_version_the_preflight_read_as_missing(self):
+        """A stale 404 lets a resumed run publish again; npm's "cannot publish over" is accepted, then bytes verified."""
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "npm").mkdir()
+            server = root / "npm/maudecode-talaria-web-1.0.0.tgz"
+            contracts = root / "npm/maudecode-talaria-web-contracts-1.0.0.tgz"
+            server.write_bytes(b"server tarball")
+            contracts.write_bytes(b"contracts tarball")
+            component, build = {"version": "1.0.0", "tag": "web-v1.0.0"}, {"npm": "@maudecode/talaria-web@1.0.0"}
+            views = {}
+
+            def run(args, **kwargs):
+                if args[:2] == ["npm", "view"]:
+                    views[args[2]] = views.get(args[2], 0) + 1
+                    if views[args[2]] == 1:  # the preflight's stale read
+                        return SimpleNamespace(returncode=1, stdout="", stderr="npm ERR! code E404")
+                    path = contracts if "contracts" in args[2] else server
+                    return SimpleNamespace(returncode=0, stdout=json.dumps(publish._npm_integrity(path)), stderr="")
+                self.assertEqual(args[:2], ["npm", "publish"])
+                return SimpleNamespace(returncode=1, args=args, stdout="", stderr=(
+                    "npm error 403 403 Forbidden - PUT https://registry.npmjs.org/x - "
+                    "You cannot publish over the previously published versions: 1.0.0."))
+
+            with patch.dict(os.environ, {"ACTIONS_ID_TOKEN_REQUEST_URL": "https://oidc.invalid",
+                                          "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "synthetic"}), \
+                    patch("publish.subprocess.run", side_effect=run), \
+                    patch("publish.subprocess.check_output", return_value=json.dumps({"latest": "1.0.0"})), \
+                    patch("publish.time.sleep"):
+                self.assertEqual(publish.publish_npm(component, build, root), "@maudecode/talaria-web@1.0.0")
+                # Any other publish failure still fails.
+                views.clear()
+                with patch("publish.subprocess.run", side_effect=lambda args, **kwargs: run(args) if args[1] == "view"
+                           else SimpleNamespace(returncode=1, args=args, stdout="", stderr="npm error code E401")):
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        publish.publish_npm(component, build, root)
+
     def test_npm_12_array_wrapped_views_are_read_as_their_value(self):
         """npm 12 prints `npm view <spec> <field> --json` as a one-element array; identical bytes must still match."""
         with TemporaryDirectory() as temporary:

@@ -632,7 +632,7 @@ jobs:
     concurrency:
       group: talaria-web-publication
       cancel-in-progress: false
-    timeout-minutes: 45
+    timeout-minutes: 60  # npm readback may wait 40 minutes (TAL-420)
     steps:
     - uses: actions/checkout@v7
       with:
