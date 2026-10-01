@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "While a response is running, typing a message shows a send arrow beside Stop, so you can steer the response with a click or tap.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

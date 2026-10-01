@@ -349,6 +349,7 @@ export function Composer(props: ComposerProps) {
   const contextUsed = compressedEstimate && compressedEstimate > 0 ? compressedEstimate : (session?.last_prompt_tokens ?? null)
   const contextTotal = session?.context_length ?? null
   const canSend = (text.trim() !== '' || files.some((f) => f.status === 'done')) && !sending && !locked
+  const busyLabel = busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
 
   // The server marks sessions Web may not continue (TAL-312); it would refuse every send, so none is offered.
   if (session?.read_only) return <div className="composer-wrap" id="composerWrap"><div className="mx-auto max-w-(--msg-max) px-3 py-2 text-center text-xs text-muted" role="note">{m.session_read_only_notice()}</div></div>
@@ -419,9 +420,17 @@ export function Composer(props: ComposerProps) {
               </button>
             )}
             {busy ? (
-              <button type="button" onClick={() => { if (sessionId) void cancelTurn(sessionId) }} className="send-btn stop has-tooltip has-tooltip--left" id="btnStop" data-tooltip={m.composer_stop()} aria-label={m.composer_stop()} title={m.composer_stop()}>
-                <Square size={14} aria-hidden="true" />
-              </button>
+              <>
+                <button type="button" onClick={() => { if (sessionId) void cancelTurn(sessionId) }} className="send-btn stop has-tooltip has-tooltip--left" id="btnStop" data-tooltip={m.composer_stop()} aria-label={m.composer_stop()} title={m.composer_stop()}>
+                  <Square size={14} aria-hidden="true" />
+                </button>
+                {/* A typed draft steers, queues or interrupts mid-turn like Enter does, so it gets a send arrow beside Stop. */}
+                {!clarify && canSend && (
+                  <button type="button" onClick={() => { void send() }} className="send-btn has-tooltip has-tooltip--left" id="btnSend" data-tooltip={busyLabel} aria-label={busyLabel} title={busyLabel}>
+                    <ArrowUp size={16} aria-hidden="true" />
+                  </button>
+                )}
+              </>
             ) : !clarify && (
               <button type="button" onClick={() => { void send() }} disabled={!canSend} className="send-btn has-tooltip has-tooltip--left" id="btnSend" data-tooltip={m.composer_send()} aria-label={m.composer_send()} title={m.composer_send()}>
                 <ArrowUp size={16} aria-hidden="true" />

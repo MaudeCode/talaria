@@ -50,12 +50,9 @@
 .mic-status{font-size:11px;color:var(--error);padding:4px 12px;display:flex;align-items:center;gap:6px}
 .mic-dot{width:6px;height:6px;border-radius:50%;background:var(--error);animation:mic-pulse 1.2s ease-in-out infinite;flex-shrink:0}
 .send-btn{width:34px;height:34px;border-radius:50%;background:var(--send-bg);border:none;color:var(--send-fg);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s,transform .15s,box-shadow .15s;box-shadow:var(--send-shadow);font-weight:var(--send-weight)}
-.send-btn.stop,.send-btn.interrupt{background:var(--error);box-shadow:0 2px 10px rgba(0,0,0,.18)}
-.send-btn.steer{background:var(--purple);box-shadow:0 2px 10px color-mix(in srgb,var(--purple) 25%,transparent)}
-.send-btn.queue{background:var(--accent)}
+.send-btn.stop{background:var(--error);box-shadow:0 2px 10px rgba(0,0,0,.18)}
 .send-btn:hover{background:var(--send-hover-bg);transform:scale(1.08);box-shadow:var(--send-hover-shadow)}
-.send-btn.stop:hover,.send-btn.interrupt:hover{background:var(--error);box-shadow:0 4px 14px rgba(0,0,0,.25);filter:brightness(1.1)}
-.send-btn.steer:hover{background:var(--purple);box-shadow:0 4px 14px color-mix(in srgb,var(--purple) 30%,transparent);filter:brightness(1.08)}
+.send-btn.stop:hover{background:var(--error);box-shadow:0 4px 14px rgba(0,0,0,.25);filter:brightness(1.1)}
 .send-btn:active{transform:scale(0.95);box-shadow:0 1px 4px var(--accent-bg)}
 .send-btn:disabled{opacity:var(--send-disabled-opacity);cursor:not-allowed;transform:none;box-shadow:none}
 .send-btn.visible{animation:send-pop-in .18s cubic-bezier(.34,1.56,.64,1) forwards}
