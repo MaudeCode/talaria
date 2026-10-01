@@ -1,4 +1,5 @@
-import { ChevronDown, UserRound } from 'lucide-react'
+import { UserRound } from 'lucide-react'
+import { Chip } from '../features/composer/chips'
 import { m } from '../paraglide/messages.js'
 import { useProfilesQuery, useSwitchProfile } from '../app/queries'
 import { useBootstrap } from '../app/bootstrap'
@@ -23,11 +24,7 @@ export function ProfileMenu({ row }: { row?: boolean } = {}) {
           <span className="composer-mobile-config-copy"><span className="composer-mobile-config-kicker">{m.composer_control_profile()}</span><span className="composer-mobile-config-value">{active}</span></span>
         </button>
       ) : (
-        <button type="button" className="composer-chip inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-border2 bg-transparent px-2 text-[11px] font-medium text-muted hover:bg-hover" aria-label={m.profile_switch_title()}>
-          <UserRound size={14} aria-hidden="true" />
-          <span>{active}</span>
-          <ChevronDown size={8} aria-hidden="true" />
-        </button>
+        <Chip size="xs" icon={<UserRound size={13} aria-hidden="true" />} label={active} title={m.profile_switch_title()} />
       )}
     >
       <MenuRadioGroup value={active} onValueChange={(value: string) => { if (value !== active) switchProfile.mutate(value, { onSuccess: () => { showToast(m.profile_switched({ name: value })); window.location.reload() } }) }}>

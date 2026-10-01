@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The chat composer is redesigned as a floating card with model and effort on the left, status above it, and workspace, toolsets, and profile tucked underneath; new chats start with the composer centred and it glides into place when you send.",
+      "highlight": true,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "The terminal toggle now sits in the chat header.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Sending a message while scrolled up now returns the conversation to its latest message.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

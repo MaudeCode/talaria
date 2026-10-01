@@ -22,6 +22,7 @@ import { ProfileMenu } from '../../shell/ProfileMenu'
 import { setTheme } from '../../app/appearance'
 import { ThemeSchema } from '../../contracts/persisted'
 import type { Clarify } from '../chat/useClarify'
+import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, requestScrollToEnd, useFirstSend } from '../chat/sendMotion'
 
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
 /** A message waiting for the live turn to settle: it owns its text, upload receipts and the request it was composed against. */
@@ -211,6 +212,14 @@ export function Composer(props: ComposerProps) {
     addFiles(h.files)
   }, [sessionId, session, addFiles])
 
+  // A first send that failed hands its text back to the composer now mounted for it (sendMotion.ts).
+  const firstSend = useFirstSend()
+  useEffect(() => {
+    if (!firstSend?.failed || !ownsFirstSend(firstSend, sessionId)) return
+    setText(firstSend.text)
+    endFirstSend()
+  }, [firstSend, sessionId])
+
   const removeFile = (key: string) => {
     const f = files.find((p) => p.key === key)
     setFiles((prev) => prev.filter((p) => p.key !== key))
@@ -265,10 +274,11 @@ export function Composer(props: ComposerProps) {
         const handled = await onLocalCommand(cmd.name, cmd.args)
         if (handled) { setText(''); return }
       }
-      if (cmd.name === 'queue' && busy) { onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
-      if (cmd.name === 'steer' && busy && sessionId) { if (!cmd.args) { showToast(m.cmd_steer_no_msg(), 2000); return } if (await trySteer(cmd.args)) setText(''); return }
-      if (cmd.name === 'interrupt' && busy && sessionId) { await cancelTurn(sessionId); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
+      if (cmd.name === 'queue' && busy) { requestScrollToEnd(); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
+      if (cmd.name === 'steer' && busy && sessionId) { if (!cmd.args) { showToast(m.cmd_steer_no_msg(), 2000); return } requestScrollToEnd(); if (await trySteer(cmd.args)) setText(''); return }
+      if (cmd.name === 'interrupt' && busy && sessionId) { requestScrollToEnd(); await cancelTurn(sessionId); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
     }
+    requestScrollToEnd()
     if (busy && sessionId) {
       if (busyMode === 'queue') { onQueue(queueEntry(value)); setText(''); setFiles([]); return }
       if (busyMode === 'steer') { if (await trySteer(value)) setText(''); return }
@@ -278,9 +288,29 @@ export function Composer(props: ComposerProps) {
       setFiles([])
       return
     }
+    // First send from the unsaved chat: the hero gives way and the text shows as the pending user row at once, before
+    // the session or the turn exists. The index view unmounts mid-send, so a failure returns the text through the store.
+    if (!session) {
+      if (getFirstSend()) return
+      beginFirstSend(value)
+      setText('')
+      try {
+        const target = await onEnsureSession()
+        const started = await startTurn({ sessionId: target.session_id, message: value, request: { model: target.model ?? undefined, model_provider: target.model_provider ?? undefined, workspace: target.workspace, profile: bootstrap.profile?.name ?? 'default' } })
+        // A turn admitted without a stream leaves no live row; hold the pending one until the session payload carries it.
+        if (!started.stream_id) await qc.refetchQueries({ queryKey: keys.sessions.detail(target.session_id) })
+        clearDraft(target.session_id)
+        endFirstSend()
+        void qc.invalidateQueries({ queryKey: keys.sessions.all })
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
+        failFirstSend()
+      }
+      return
+    }
     setSending(true)
     try {
-      const target = session ?? (await onEnsureSession())
+      const target = session
       const attachments = files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : []))
       await startTurn({ sessionId: target.session_id, message: value, request: { model: target.model ?? undefined, model_provider: target.model_provider ?? undefined, workspace: target.workspace, profile: bootstrap.profile?.name ?? 'default', ...(attachments.length ? { attachments } : {}) } })
       setText('')
@@ -349,6 +379,9 @@ export function Composer(props: ComposerProps) {
   const contextUsed = compressedEstimate && compressedEstimate > 0 ? compressedEstimate : (session?.last_prompt_tokens ?? null)
   const contextTotal = session?.context_length ?? null
   const canSend = (text.trim() !== '' || files.some((f) => f.status === 'done')) && !sending && !locked
+  // Phone composer at rest: one prompt row (UIUX guide), and the strip under it folds away too.
+  const collapsed = phone && !text && files.length === 0 && !busy && !focusWithin && !configOpen && !dragOver
+  const showYolo = yolo && !hide('hide_composer_yolo')
   const busyLabel = busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
 
   // The server marks sessions Web may not continue (TAL-312); it would refuse every send, so none is offered.
@@ -356,14 +389,21 @@ export function Composer(props: ComposerProps) {
 
   return (
     <div className="composer-wrap" id="composerWrap">
-      {queued.length > 0 && (
-        <div className="queue-card" role="region" aria-label={m.queued_count({ n: queued.length })} aria-live="polite">
-          <div className="queue-card-title">{m.queued_count({ n: queued.length })}</div>
-          <ul className="queue-card-list">{queued.map((q, i) => <li key={i}>{q.text}{q.attachments.length ? ` (+${q.attachments.length})` : ''}</li>)}</ul>
+      {/* T3 Code's attached banner: status that belongs to the next message rides on the card's top edge. */}
+      {(dictating || showYolo || queued.length > 0) && (
+        <div className={cn('composer-tab', showYolo && 'composer-tab--warning')}>
+          {dictating && <div className="composer-tab-row mic-status" id="micStatus" role="status"><span className="mic-dot" aria-hidden="true" /> {m.voice_listening()}</div>}
+          {showYolo && <button type="button" onClick={onToggleYolo} className="composer-tab-row composer-tab-yolo" id="yoloPill" title={m.yolo_pill_title_active()}><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_pill_title_active()}</span></button>}
+          {queued.length > 0 && (
+            <div className="composer-tab-row queue-card" role="region" aria-label={m.queued_count({ n: queued.length })} aria-live="polite">
+              <div className="queue-card-title">{m.queued_count({ n: queued.length })}</div>
+              <ul className="queue-card-list">{queued.map((q, i) => <li key={i} className="truncate">{q.text}{q.attachments.length ? ` (+${q.attachments.length})` : ''}</li>)}</ul>
+            </div>
+          )}
         </div>
       )}
       <div
-        className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) bg-(--composer-bg) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-[12px]', dragOver && 'drag-over', clarify && 'clarify-active')}
+        className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-[20px]', dragOver && 'drag-over', clarify && 'clarify-active')}
         id="composerBox"
         ref={box}
         onFocus={() => setFocusWithin(true)}
@@ -375,7 +415,6 @@ export function Composer(props: ComposerProps) {
         {palette.open && <CommandPaletteList items={palette.items} active={palette.active} listId={palette.listId} onPick={applySuggestion} onHover={palette.setActive} />}
         {dragOver && <div className="drop-hint active" id="dropHint" aria-hidden="true">{m.drop_files_to_attach()}</div>}
         {!clarify && <AttachmentTray files={files} onRemove={removeFile} />}
-        {dictating && <div className="mic-status active" id="micStatus" role="status"><span className="mic-dot" aria-hidden="true" /> {m.voice_listening()}</div>}
         <textarea
           ref={textarea}
           id="msg"
@@ -392,27 +431,24 @@ export function Composer(props: ComposerProps) {
           role={palette.open ? 'combobox' : undefined}
           aria-expanded={palette.open ? true : undefined}
         />
-        <div ref={footer} className={cn('composer-footer', stage !== 'full' && 'cf-icons', stage === 'burger' && 'cf-burger', phone && !text && files.length === 0 && !busy && !focusWithin && !configOpen && !dragOver && 'cf-collapsed')}>
+        <div ref={footer} className={cn('composer-footer', stage !== 'full' && 'cf-icons', stage === 'burger' && 'cf-burger', collapsed && 'cf-collapsed')}>
           <div className="composer-left flex items-center gap-1 min-w-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] max-[641px]:flex-[1_1_auto] max-[641px]:w-auto max-[641px]:flex-nowrap max-[641px]:items-center max-[641px]:gap-x-2.5 max-[641px]:gap-y-0 max-[641px]:max-h-none max-[641px]:[-webkit-overflow-scrolling:touch] max-[341px]:gap-x-0.5">
-            {!hide('hide_composer_attach') && (
-              <>
-                <input type="file" id="fileInput" multiple className="file-input-visually-hidden" onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }} accept="image/*,text/*,application/pdf,application/json,.csv,.md" />
-                <button type="button" className="icon-btn has-tooltip" id="btnAttach" data-tooltip={m.composer_control_attach()} aria-label={m.composer_control_attach()} onClick={() => document.getElementById('fileInput')?.click()}><Paperclip size={16} aria-hidden="true" /></button>
-              </>
-            )}
-            {!hide('hide_composer_mic') && dictationSupported() && <button type="button" className={cn('icon-btn mic-btn has-tooltip', dictating && 'active')} id="btnMic" data-tooltip={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-label={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-pressed={dictating} onClick={toggleDictation}><Mic size={16} aria-hidden="true" /></button>}
-            <button type="button" className={cn('icon-btn has-tooltip', terminalOpen && 'active')} id="btnTerminalInline" data-tooltip={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={onToggleTerminal}><TerminalSquare size={16} aria-hidden="true" /></button>
-            {yolo && !hide('hide_composer_yolo') && <button type="button" onClick={onToggleYolo} className="yolo-pill" id="yoloPill" title={m.yolo_pill_title_active()}><span className="yolo-pill-icon" aria-hidden="true">⚡</span><span className="yolo-pill-label">{m.yolo_pill_label()}</span></button>}
-            {!hide('hide_composer_profile') && <div className="composer-profile-wrap" id="profileChipWrap"><ProfileMenu /></div>}
-            {!hide('hide_composer_workspace') && <div className="composer-ws-wrap"><WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} onChange={onWorkspaceChange} /></div>}
             {!hide('hide_composer_model') && <div className="composer-model-wrap"><ModelChip value={session?.model ?? pendingChoices?.model ?? null} defaultModel={settings?.default_model} onChange={onModelChange} /></div>}
             {!hide('hide_composer_reasoning') && reasoningSupported && <div className="composer-reasoning-wrap"><ReasoningChip value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} /></div>}
-            {!hide('hide_composer_toolsets') && <div className="composer-toolsets-wrap"><ToolsetsChip value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} /></div>}
             <button className="icon-btn composer-mobile-config-btn has-tooltip" id="composerMobileConfigBtn" type="button" data-tooltip={m.composer_config_title()} aria-label={m.composer_config_title()} aria-expanded={configOpen} aria-controls="composerMobileConfigPanel" onClick={() => setConfigOpen((o) => !o)}>
               <SlidersHorizontal size={16} aria-hidden="true" />
             </button>
           </div>
-          <div className="composer-right flex gap-2 items-center shrink-0 max-[641px]:flex-none max-[641px]:w-auto max-[641px]:justify-end max-[641px]:gap-1.5 max-[641px]:min-w-0">
+          <div className="composer-right flex gap-1.5 items-center shrink-0 max-[641px]:flex-none max-[641px]:w-auto max-[641px]:justify-end max-[641px]:min-w-0">
+            <div className="composer-tools flex items-center gap-0.5">
+              {!hide('hide_composer_attach') && (
+                <>
+                  <input type="file" id="fileInput" multiple className="file-input-visually-hidden" onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }} accept="image/*,text/*,application/pdf,application/json,.csv,.md" />
+                  <button type="button" className="icon-btn has-tooltip" id="btnAttach" data-tooltip={m.composer_control_attach()} aria-label={m.composer_control_attach()} onClick={() => document.getElementById('fileInput')?.click()}><Paperclip size={16} aria-hidden="true" /></button>
+                </>
+              )}
+              {!hide('hide_composer_mic') && dictationSupported() && <button type="button" className={cn('icon-btn mic-btn has-tooltip', dictating && 'active')} id="btnMic" data-tooltip={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-label={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-pressed={dictating} onClick={toggleDictation}><Mic size={16} aria-hidden="true" /></button>}
+            </div>
             {!hide('hide_composer_context') && <ContextRing used={contextUsed} total={contextTotal} threshold={session?.threshold_tokens} />}
             {clarify && (
               <button type="button" onClick={clarify.send} disabled={!clarify.canSend} className="send-btn has-tooltip has-tooltip--left" id="btnClarifySend" data-tooltip={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()} aria-label={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()}>
@@ -422,7 +458,7 @@ export function Composer(props: ComposerProps) {
             {busy ? (
               <>
                 <button type="button" onClick={() => { if (sessionId) void cancelTurn(sessionId) }} className="send-btn stop has-tooltip has-tooltip--left" id="btnStop" data-tooltip={m.composer_stop()} aria-label={m.composer_stop()} title={m.composer_stop()}>
-                  <Square size={14} aria-hidden="true" />
+                  <Square size={12} fill="currentColor" strokeWidth={0} aria-hidden="true" />
                 </button>
                 {/* A typed draft steers, queues or interrupts mid-turn like Enter does, so it gets a send arrow beside Stop. */}
                 {!clarify && canSend && (
@@ -438,16 +474,21 @@ export function Composer(props: ComposerProps) {
             )}
           </div>
           <div className={cn('composer-mobile-config-panel', configOpen && 'open')} id="composerMobileConfigPanel" role="group" aria-label={m.composer_config_title()}>
-            {stage === 'burger' && !hide('hide_composer_profile') && <ProfileMenu row />}
-            {stage === 'burger' && !hide('hide_composer_workspace') && <WorkspaceChip row value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} onChange={onWorkspaceChange} />}
             {stage === 'burger' && !hide('hide_composer_model') && <ModelChip row value={session?.model ?? pendingChoices?.model ?? null} defaultModel={settings?.default_model} onChange={onModelChange} />}
             {stage === 'burger' && !hide('hide_composer_reasoning') && reasoningSupported && <ReasoningChip row value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} />}
             {stage === 'burger' && <button type="button" className={cn('icon-btn', terminalOpen && 'active')} id="btnTerminal" title={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => { setConfigOpen(false); onToggleTerminal() }}><TerminalSquare size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.composer_terminal_toggle()}</span></button>}
-            {stage === 'burger' && !hide('hide_composer_toolsets') && <ToolsetsChip row value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
             {stage === 'burger' && !hide('hide_composer_context') && <ContextRow used={contextUsed} total={contextTotal} threshold={session?.threshold_tokens} />}
           </div>
         </div>
       </div>
+      {/* T3 Code's context strip: where the message runs (workspace, toolsets, profile), tucked under the card. */}
+      {!collapsed && (!hide('hide_composer_workspace') || !hide('hide_composer_toolsets') || !hide('hide_composer_profile')) && (
+        <div className="composer-strip" role="group" aria-label={m.composer_config_title()}>
+          {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} onChange={onWorkspaceChange} />}
+          {!hide('hide_composer_toolsets') && <ToolsetsChip value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
+          {!hide('hide_composer_profile') && <ProfileMenu />}
+        </div>
+      )}
     </div>
   )
 }

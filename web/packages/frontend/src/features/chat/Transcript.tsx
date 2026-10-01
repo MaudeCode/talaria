@@ -12,6 +12,7 @@ import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
 import { groupAssistantTurns } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
+import { onScrollToEndRequest } from './sendMotion'
 
 const VIRTUALIZE_AT = 200
 
@@ -34,6 +35,8 @@ export interface TranscriptProps {
   onLoadOlder: () => void
   loadingOlder: boolean
   emptyState: React.ReactNode
+  /** A new chat's first send, shown as the live user row before its session and turn exist (sendMotion.ts). */
+  pendingUserText?: string | undefined
   showJumpButtons: boolean
   /** `virtualize_transcript` setting; off by default because variable-height rows made long chats oscillate. */
   virtualizeLongTranscripts: boolean
@@ -46,7 +49,7 @@ export interface TranscriptProps {
  * virtualized with TanStack Virtual.
  */
 export function Transcript(props: TranscriptProps) {
-  const { rows: rawRows, live, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, emptyState, showJumpButtons, virtualizeLongTranscripts } = props
+  const { rows: rawRows, live, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, emptyState, pendingUserText, showJumpButtons, virtualizeLongTranscripts } = props
   const scrollRef = useRef<HTMLDivElement>(null)
   const [pinned, setPinned] = useState(true)
   const [atTop, setAtTop] = useState(true)
@@ -61,7 +64,9 @@ export function Transcript(props: TranscriptProps) {
   }, [grouped, live, showLive])
   const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user'
   const showLiveUser = !!live && !isTerminal(live.status) && live.userText.trim() !== '' && !lastRowIsUser && !rows.some((r) => r.message.role === 'user' && messageKey(r.message) === live.userMessageId)
-  const liveUserText = live?.userText ?? ''
+  // One slot for the user's newest text: the pending first send until the turn starts, then the live user row, so the
+  // handover neither flashes nor duplicates.
+  const liveUserText = showLiveUser ? (live?.userText ?? '') : !live && pendingUserText ? pendingUserText : ''
   const lastAssistantIndex = useMemo(() => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i]?.message.role === 'assistant') return i; return -1 }, [rows])
   const virtualize = virtualizeLongTranscripts && rows.length > VIRTUALIZE_AT
 
@@ -99,7 +104,7 @@ export function Transcript(props: TranscriptProps) {
   // Follow while pinned: track every size change of the content (each streamed line, each
   // folding disclosure) and of the pane itself before paint, instead of catching up in jumps.
   const innerRef = useRef<HTMLDivElement>(null)
-  const empty = rows.length === 0 && !showLive && !showLiveUser
+  const empty = rows.length === 0 && !showLive && !liveUserText
   // The disclosure provider below is keyed by this scope, so a new session brings a new pane to observe.
   const scope = props.disclosureScope ?? sessionId
   useLayoutEffect(() => {
@@ -114,6 +119,9 @@ export function Transcript(props: TranscriptProps) {
     observer.observe(pane)
     return () => observer.disconnect()
   }, [empty, scope, scrollToBottom])
+
+  // A submit returns to the end wherever the reader was, and the next layout follows it there (T3 Code's scrollToEnd).
+  useEffect(() => onScrollToEndRequest(() => { settlingRef.current = true; scrollToBottom(false) }), [scrollToBottom])
 
   const virtualizer = useVirtualizer({
     count: virtualize ? rows.length : 0,
@@ -157,7 +165,7 @@ export function Transcript(props: TranscriptProps) {
     <div className="messages-shell relative flex flex-1 min-h-0 flex-col">
       <div ref={scrollRef} onScroll={onScroll} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:auto] [@media(hover:hover)_and_(pointer:fine)]:[overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
         {empty ? emptyState : (
-          <div ref={innerRef} className="messages-inner mx-auto w-full flex flex-col max-w-(--msg-max) pt-5 pb-12 max-[641px]:pt-3 max-[641px]:pb-11 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
+          <div ref={innerRef} className="messages-inner mx-auto w-full flex flex-col max-w-(--msg-max) pt-5 pb-[calc(var(--composer-h,0px)+2rem)] max-[641px]:pt-3 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
             {truncated && (
               <div className="flex justify-center py-2">
                 <Button variant="ghost" onClick={onLoadOlder} disabled={loadingOlder}>{loadingOlder ? m.loading() : m.load_older()}</Button>
@@ -176,7 +184,7 @@ export function Transcript(props: TranscriptProps) {
                 })}
               </div>
             ) : rows.map((row, i) => renderRow(row, i))}
-            {showLiveUser && (
+            {liveUserText && (
               <div className="msg-row" data-role="user" data-live-user="1">
                 <div className="msg-body whitespace-pre-wrap break-words">{liveUserText}</div>
               </div>

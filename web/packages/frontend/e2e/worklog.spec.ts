@@ -133,8 +133,10 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   const scrollerBox = (await page.locator('#messages').boundingBox())!
   const spinnerBox = (await spinner.boundingBox())!
   expect(Math.abs(spinnerBox.x + spinnerBox.width / 2 - (scrollerBox.x + scrollerBox.width / 2))).toBeLessThanOrEqual(2)
-  expect(spinnerBox.y + spinnerBox.height).toBeLessThanOrEqual(scrollerBox.y + scrollerBox.height)
-  expect(spinnerBox.y + spinnerBox.height).toBeGreaterThan(scrollerBox.y + scrollerBox.height - 60)
+  // The transcript runs under the floating composer (TAL-429); the pill docks just above the card.
+  const composerTop = (await page.locator('#composerBox').boundingBox())!.y
+  expect(spinnerBox.y + spinnerBox.height).toBeLessThanOrEqual(composerTop)
+  expect(spinnerBox.y + spinnerBox.height).toBeGreaterThan(composerTop - 60)
   if (!limited && testInfo.project.name === 'desktop') {
     await page.screenshot({ path: testInfo.outputPath('live-worklog-desktop.png'), fullPage: true })
     await page.setViewportSize({ width: 800, height: 800 })

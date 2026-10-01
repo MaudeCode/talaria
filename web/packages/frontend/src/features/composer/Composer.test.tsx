@@ -9,18 +9,19 @@ import * as api from '../../api/endpoints'
 import { dispatch, getStreamState, resetStreamStoreForTests } from '../../stream/store'
 import type { LiveTurn } from '../../stream/reducer'
 import type { QueuedTurn } from './Composer'
+import { endFirstSend, getFirstSend } from '../chat/sendMotion'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), steerChat: vi.fn() }))
 import { Composer } from './Composer'
 
 const noop = (): void => undefined
-function renderComposer(session: Session, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings) {
+function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!)) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
       <BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}>
         <Composer
-          sessionId={session.session_id} session={session} live={live} settings={settings} onEnsureSession={() => Promise.resolve(session)} onLocalCommand={() => Promise.resolve(false)}
+          sessionId={session?.session_id ?? null} session={session} live={live} settings={settings} onEnsureSession={onEnsureSession} onLocalCommand={() => Promise.resolve(false)}
           terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null}
           yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue}
         />
@@ -105,5 +106,21 @@ describe('Composer', () => {
     renderComposer({ session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true })
     expect(screen.getByRole('textbox')).toBeInTheDocument()
     expect(screen.queryByRole('note')).toBeNull()
+  })
+  it("shows a new chat's first send at once, sends it once, and hands the text back when it fails (TAL-429)", async () => {
+    endFirstSend()
+    let fail!: (e: Error) => void
+    const ensure = vi.fn(() => new Promise<Session>((_, reject) => { fail = reject }))
+    renderComposer(null, null, noop, undefined, ensure)
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, 'Plan the release{Enter}')
+    expect(getFirstSend()).toEqual({ text: 'Plan the release', sessionId: null, failed: false })
+    expect(box).toHaveValue('')
+    await userEvent.type(box, 'again{Enter}')
+    expect(ensure).toHaveBeenCalledTimes(1)
+    await userEvent.clear(box)
+    fail(new Error('synthetic failure'))
+    await waitFor(() => expect(box).toHaveValue('Plan the release'))
+    expect(getFirstSend()).toBeNull()
   })
 })
