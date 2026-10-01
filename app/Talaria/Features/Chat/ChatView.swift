@@ -999,7 +999,11 @@ struct ChatView: View {
                 }
 
                 if showsApprovalBypassStatus {
-                    StatusChip(label: String(localized: "Approval bypass active"), icon: .symbol("bolt.slash.fill"))
+                    StatusChip(
+                        label: String(localized: "Approval bypass active"),
+                        icon: .symbol("bolt.slash.fill"),
+                        emphasis: .warning
+                    )
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
             }

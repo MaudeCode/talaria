@@ -7,7 +7,7 @@
     },
     {
       "category": "Changed",
-      "summary": "Chat status chips share one style and show a still dot instead of a spinner when Reduce Motion is on.",
+      "summary": "Chat status chips share one style, the approval bypass chip marks itself with an orange warning icon, and spinners become a still dot when Reduce Motion is on.",
       "highlight": false
     }
   ]
