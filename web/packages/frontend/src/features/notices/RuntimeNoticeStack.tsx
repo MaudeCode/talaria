@@ -51,8 +51,8 @@ export function useRuntimeNotices({ live, onRetry, compressing }: { live: LiveTu
     content: (
       <>
         {n.kind === 'compressing' && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
-        <span className="font-medium">{n.title}</span>
-        {n.detail && <span className="min-w-0 truncate opacity-80" title={n.detail}>{n.detail}</span>}
+        {/* One sentence that wraps (two lines at most) rather than a title and detail squeezed into columns. */}
+        <span className="min-w-0 line-clamp-2 leading-snug" title={n.detail ? `${n.title} · ${n.detail}` : undefined}><span className="font-medium">{n.title}</span>{n.detail && <span className="opacity-80"> · {n.detail}</span>}</span>
       </>
     ),
     action: n.action,
