@@ -456,3 +456,34 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 })
+
+test('a draft typed mid-turn gets a steer arrow beside Stop (TAL-428)', async ({ page }, testInfo) => {
+  const sid = 'busy-send'
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: sid, title: 'Busy send', messages: [{ role: 'user', id: 1, content: 'Inspect the files', _turn_id: 'busy-run' }], active_stream_id: 'busy-run' } } }))
+  await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'busy-run', replay_available: true } }))
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+    response.write(`id: busy-run:1\nevent: server_turn_started\ndata: ${JSON.stringify({ session_id: sid, stream_id: 'busy-run', user_message_id: 1 })}\n\n`)
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+  await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${address.port}/stream` }))
+  try {
+    await page.goto(`/session/${sid}`)
+    const stop = page.getByRole('button', { name: 'Stop response' })
+    const steer = page.getByRole('button', { name: 'Steer current response' })
+    await expect(stop).toBeVisible()
+    await expect(steer).toHaveCount(0)
+    await page.locator('#msg').fill('Check b.txt too')
+    await expect(steer).toBeVisible()
+    // Stop stays put and the arrow sits to its right, both inside the composer.
+    const [s, a, box] = await Promise.all([stop.boundingBox(), steer.boundingBox(), page.locator('#composerBox').boundingBox()])
+    expect(a!.x).toBeGreaterThanOrEqual(s!.x + s!.width)
+    expect(a!.x + a!.width).toBeLessThanOrEqual(box!.x + box!.width)
+    await page.locator('#composerWrap').screenshot({ path: testInfo.outputPath(`busy-send-${testInfo.project.name}.png`) })
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})

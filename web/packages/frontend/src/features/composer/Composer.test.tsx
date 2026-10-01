@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BootstrapContext } from '../../app/bootstrap'
 import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
-import type { Session } from '../../contracts'
+import type { Session, Settings } from '../../contracts'
 import * as api from '../../api/endpoints'
 import { dispatch, getStreamState, resetStreamStoreForTests } from '../../stream/store'
 import type { LiveTurn } from '../../stream/reducer'
@@ -14,13 +14,13 @@ vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await im
 import { Composer } from './Composer'
 
 const noop = (): void => undefined
-function renderComposer(session: Session, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop) {
+function renderComposer(session: Session, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
       <BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}>
         <Composer
-          sessionId={session.session_id} session={session} live={live} settings={undefined} onEnsureSession={() => Promise.resolve(session)} onLocalCommand={() => Promise.resolve(false)}
+          sessionId={session.session_id} session={session} live={live} settings={settings} onEnsureSession={() => Promise.resolve(session)} onLocalCommand={() => Promise.resolve(false)}
           terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null}
           yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue}
         />
@@ -67,6 +67,31 @@ describe('Composer', () => {
     await waitFor(() => expect(api.steerChat).toHaveBeenCalled())
     await waitFor(() => expect(getStreamState().turns.s1!.pendingSteers).toEqual([]))
     expect(screen.getByRole('textbox')).toHaveValue('Check b too')
+  })
+
+  it('keeps only Stop while a turn runs and the draft is empty', () => {
+    renderComposer(writable, running())
+    expect(screen.getByRole('button', { name: 'Stop response' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Steer current response' })).toBeNull()
+  })
+
+  it('shows a steer arrow beside Stop once a draft is typed mid-turn, and steers on click (TAL-428)', async () => {
+    vi.mocked(api.steerChat).mockResolvedValue({ accepted: true, steer_id: 'ignored' })
+    renderComposer(writable, running())
+    await userEvent.type(screen.getByRole('textbox'), 'Check b too')
+    expect(screen.getByRole('button', { name: 'Stop response' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Steer current response' }))
+    await waitFor(() => expect(api.steerChat).toHaveBeenCalledWith(expect.objectContaining({ session_id: 's1', text: 'Check b too' })))
+    expect(screen.getByRole('textbox')).toHaveValue('')
+  })
+
+  it('labels the mid-turn arrow by the queue busy mode and queues on click', async () => {
+    const onQueue = vi.fn()
+    renderComposer(writable, running(), onQueue, { default_message_mode: 'queue' })
+    await userEvent.type(screen.getByRole('textbox'), 'Then do z')
+    await userEvent.click(screen.getByRole('button', { name: 'Queue message' }))
+    expect(onQueue).toHaveBeenCalledWith(expect.objectContaining({ text: 'Then do z' }))
+    expect(screen.getByRole('textbox')).toHaveValue('')
   })
 
   it('queues a steer the turn ended without taking as the next turn, once', () => {
