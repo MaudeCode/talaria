@@ -116,9 +116,11 @@ extension ChatViewModelSendTests {
 
         let pullTask = Task { @MainActor in await viewModel.loadMessages(isUserRefresh: true) }
         await fulfillment(of: [pullRequestStarted], timeout: 10)
-        // An automatic reload starts while the pull is in flight; it marks itself loading before its first await.
+        // An automatic reload starts while the pull is in flight. The main actor runs queued jobs in order,
+        // so yielding lets the reload run up to its first await, past where it marks itself loading;
+        // before per-load tracking that cleared the pull's suppression (red on 657c7e90e).
         let reloadTask = Task { @MainActor in await viewModel.loadMessages() }
-        for _ in 0..<10 { await Task.yield() }
+        await Task.yield()
 
         XCTAssertFalse(viewModel.isSyncingTranscript, "The pull-to-refresh spinner is still up.")
         releasePull.signal()

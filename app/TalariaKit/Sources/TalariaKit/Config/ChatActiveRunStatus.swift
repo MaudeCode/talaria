@@ -58,13 +58,22 @@ public struct ChatActiveRunStatusPresentation: Equatable {
         kind.accessibilityLabel
     }
 
-    /// Syncing has no inline twin at the transcript tail, so it never stands in for one.
+    /// Whether this is the "Syncing messages" pill (TAL-436).
     public var isSyncing: Bool {
         kind == .syncing
     }
 }
 
 public enum ChatActiveRunStatusPolicy {
+    /// The transcript tail's recovery chip. While the syncing pill shows, it stands in for the
+    /// chip so the two never compete (TAL-436).
+    public static func transcriptRecoveryState(
+        _ state: ActiveStreamRecoveryState,
+        statusPresentation: ChatActiveRunStatusPresentation?
+    ) -> ActiveStreamRecoveryState {
+        statusPresentation?.isSyncing == true ? .idle : state
+    }
+
     public static func presentation(
         isStartingChat: Bool,
         hasActiveStream: Bool,

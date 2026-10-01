@@ -698,7 +698,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         ))
     }
 
-    // TAL-436: syncing has no inline twin at the transcript tail, so it shows at any scroll position.
+    // TAL-436: syncing shows at any scroll position.
     func testSyncingShowsEvenWhenTranscriptBottomIsVisible() {
         let presentation = ChatActiveRunStatusPolicy.presentation(
             isStartingChat: false,
@@ -726,6 +726,18 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(presentation?.kind, .syncing)
+    }
+
+    func testSyncingPillHidesTheTranscriptRecoveryChip() {
+        XCTAssertEqual(ChatActiveRunStatusPolicy.transcriptRecoveryState(
+            .reconnecting,
+            statusPresentation: ChatActiveRunStatusPresentation(kind: .syncing)
+        ), .idle)
+        XCTAssertEqual(ChatActiveRunStatusPolicy.transcriptRecoveryState(
+            .checking,
+            statusPresentation: ChatActiveRunStatusPresentation(kind: .checking)
+        ), .checking)
+        XCTAssertEqual(ChatActiveRunStatusPolicy.transcriptRecoveryState(.checking, statusPresentation: nil), .checking)
     }
 
     func testStoppingAndStartingOutrankSyncing() {
