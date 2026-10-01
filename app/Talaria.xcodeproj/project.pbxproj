@@ -165,6 +165,7 @@
 		C0DE12000000000000000005 /* TranscriptLinkPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE12000000000000000006 /* TranscriptLinkPreviewView.swift */; };
 		C0DE20000000000000000001 /* ChatTactileButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000002 /* ChatTactileButtonStyle.swift */; };
 		C09300000000000000000001 /* HapticButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09300000000000000000002 /* HapticButton.swift */; };
+		C43600000000000000000001 /* StatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43600000000000000000002 /* StatusChip.swift */; };
 		C0FF000000000000000000B1 /* CustomHeadersEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FF000000000000000000B2 /* CustomHeadersEditor.swift */; };
 		C09500000000000000000001 /* AdaptiveGlassModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09500000000000000000002 /* AdaptiveGlassModifier.swift */; };
 		C09500000000000000000005 /* AdaptiveGlassDebugFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09500000000000000000006 /* AdaptiveGlassDebugFixture.swift */; };
@@ -173,7 +174,7 @@
 		C12800000000000000000001 /* ToolActivityGroupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12800000000000000000002 /* ToolActivityGroupView.swift */; };
 		1A2B3C4D5E6F7000000000E0 /* ToolCallCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */; };
 		C12800000000000000000003 /* ChatTimelineAccessorySurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12800000000000000000004 /* ChatTimelineAccessorySurface.swift */; };
-		C12900000000000000000001 /* ChatActiveRunStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12900000000000000000002 /* ChatActiveRunStatusView.swift */; };
+		C12900000000000000000001 /* StatusChip+RunStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12900000000000000000002 /* StatusChip+RunStatus.swift */; };
 		1A2B3C4D5E6F7000000000E2 /* ReasoningBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E3 /* ReasoningBlockView.swift */; };
 		1A2B3C4D5E6F7000000000E4 /* FileBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E5 /* FileBrowserView.swift */; };
 		1A2B3C4D5E6F7000000000E8 /* FilePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7000000000E9 /* FilePreviewView.swift */; };
@@ -217,7 +218,6 @@
 		C107O0000000000000000002 /* ChatVerticalScrollAxisGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */; };
 		C107O0000000000000000003 /* AssistantTypingIndicatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */; };
 		C107O0000000000000000004 /* BottomComposerMaterialFade.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000104 /* BottomComposerMaterialFade.swift */; };
-		C107O0000000000000000005 /* StreamRecoveryStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000105 /* StreamRecoveryStatusView.swift */; };
 		C107O0000000000000000006 /* ChatTranscriptLoadingSkeletonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */; };
 		C107O0000000000000000007 /* ChatTranscriptLoadingSkeletonRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */; };
 		C107O0000000000000000008 /* ChatOfflineCacheBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107O0000000000000000108 /* ChatOfflineCacheBanner.swift */; };
@@ -278,7 +278,6 @@
 		C107N0000000000000000038 /* ComposerTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000138 /* ComposerTextView.swift */; };
 		C107N0000000000000000039 /* ComposerWorkspacePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000139 /* ComposerWorkspacePickerSheet.swift */; };
 		C107N0000000000000000040 /* ComposerAttachmentThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000140 /* ComposerAttachmentThumbnailView.swift */; };
-		C107N0000000000000000041 /* ApprovalBypassStatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000141 /* ApprovalBypassStatusPill.swift */; };
 		C107L0000000000000000001 /* ModelBreakdownRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000101 /* ModelBreakdownRow.swift */; };
 		C107L0000000000000000002 /* DailyTokenRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000102 /* DailyTokenRow.swift */; };
 		C107L0000000000000000003 /* ActivitySummaryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107L0000000000000000103 /* ActivitySummaryRow.swift */; };
@@ -587,6 +586,7 @@
 		C0DE12000000000000000006 /* TranscriptLinkPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptLinkPreviewView.swift; sourceTree = "<group>"; };
 		C0DE20000000000000000002 /* ChatTactileButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTactileButtonStyle.swift; sourceTree = "<group>"; };
 		C09300000000000000000002 /* HapticButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticButton.swift; sourceTree = "<group>"; };
+		C43600000000000000000002 /* StatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusChip.swift; sourceTree = "<group>"; };
 		C0FF000000000000000000B2 /* CustomHeadersEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomHeadersEditor.swift; sourceTree = "<group>"; };
 		C09500000000000000000002 /* AdaptiveGlassModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveGlassModifier.swift; sourceTree = "<group>"; };
 		C09500000000000000000006 /* AdaptiveGlassDebugFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveGlassDebugFixture.swift; sourceTree = "<group>"; };
@@ -595,7 +595,7 @@
 		C12800000000000000000002 /* ToolActivityGroupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolActivityGroupView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCallCardView.swift; sourceTree = "<group>"; };
 		C12800000000000000000004 /* ChatTimelineAccessorySurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTimelineAccessorySurface.swift; sourceTree = "<group>"; };
-		C12900000000000000000002 /* ChatActiveRunStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatActiveRunStatusView.swift; sourceTree = "<group>"; };
+		C12900000000000000000002 /* StatusChip+RunStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatusChip+RunStatus.swift"; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000E3 /* ReasoningBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReasoningBlockView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000E5 /* FileBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileBrowserView.swift; sourceTree = "<group>"; };
 		1A2B3C4D5E6F7000000000E9 /* FilePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePreviewView.swift; sourceTree = "<group>"; };
@@ -639,7 +639,6 @@
 		C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatVerticalScrollAxisGuard.swift; sourceTree = "<group>"; };
 		C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantTypingIndicatorView.swift; sourceTree = "<group>"; };
 		C107O0000000000000000104 /* BottomComposerMaterialFade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomComposerMaterialFade.swift; sourceTree = "<group>"; };
-		C107O0000000000000000105 /* StreamRecoveryStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamRecoveryStatusView.swift; sourceTree = "<group>"; };
 		C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptLoadingSkeletonView.swift; sourceTree = "<group>"; };
 		C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptLoadingSkeletonRow.swift; sourceTree = "<group>"; };
 		C107O0000000000000000108 /* ChatOfflineCacheBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatOfflineCacheBanner.swift; sourceTree = "<group>"; };
@@ -700,7 +699,6 @@
 		C107N0000000000000000138 /* ComposerTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerTextView.swift; sourceTree = "<group>"; };
 		C107N0000000000000000139 /* ComposerWorkspacePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerWorkspacePickerSheet.swift; sourceTree = "<group>"; };
 		C107N0000000000000000140 /* ComposerAttachmentThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerAttachmentThumbnailView.swift; sourceTree = "<group>"; };
-		C107N0000000000000000141 /* ApprovalBypassStatusPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalBypassStatusPill.swift; sourceTree = "<group>"; };
 		C107L0000000000000000101 /* ModelBreakdownRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelBreakdownRow.swift; sourceTree = "<group>"; };
 		C107L0000000000000000102 /* DailyTokenRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyTokenRow.swift; sourceTree = "<group>"; };
 		C107L0000000000000000103 /* ActivitySummaryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitySummaryRow.swift; sourceTree = "<group>"; };
@@ -1051,6 +1049,7 @@
 			isa = PBXGroup;
 			children = (
 				C09300000000000000000002 /* HapticButton.swift */,
+				C43600000000000000000002 /* StatusChip.swift */,
 				C09500000000000000000002 /* AdaptiveGlassModifier.swift */,
 				C09500000000000000000006 /* AdaptiveGlassDebugFixture.swift */,
 				C0FF000000000000000000B2 /* CustomHeadersEditor.swift */,
@@ -1135,14 +1134,12 @@
 				C107N0000000000000000138 /* ComposerTextView.swift */,
 				C107N0000000000000000139 /* ComposerWorkspacePickerSheet.swift */,
 				C107N0000000000000000140 /* ComposerAttachmentThumbnailView.swift */,
-				C107N0000000000000000141 /* ApprovalBypassStatusPill.swift */,
 				C05100000000000000000013 /* ChatGoalControls.swift */,
 				C05100000000000000000014 /* ChatTranscriptSupportingViews.swift */,
 				C107O0000000000000000101 /* ChatScrollObserver.swift */,
 				C107O0000000000000000102 /* ChatVerticalScrollAxisGuard.swift */,
 				C107O0000000000000000103 /* AssistantTypingIndicatorView.swift */,
 				C107O0000000000000000104 /* BottomComposerMaterialFade.swift */,
-				C107O0000000000000000105 /* StreamRecoveryStatusView.swift */,
 				C107O0000000000000000106 /* ChatTranscriptLoadingSkeletonView.swift */,
 				C107O0000000000000000107 /* ChatTranscriptLoadingSkeletonRow.swift */,
 				C107O0000000000000000108 /* ChatOfflineCacheBanner.swift */,
@@ -1169,7 +1166,7 @@
 				C12800000000000000000002 /* ToolActivityGroupView.swift */,
 				1A2B3C4D5E6F7000000000E1 /* ToolCallCardView.swift */,
 				C12800000000000000000004 /* ChatTimelineAccessorySurface.swift */,
-				C12900000000000000000002 /* ChatActiveRunStatusView.swift */,
+				C12900000000000000000002 /* StatusChip+RunStatus.swift */,
 				1A2B3C4D5E6F7000000000E3 /* ReasoningBlockView.swift */,
 				B5A220000000000000000004 /* MarkerMessageCardView.swift */,
 				1A2B3C4D5E6F7000000000DB /* MarkdownRenderer.swift */,
@@ -1764,7 +1761,6 @@
 				C107O0000000000000000002 /* ChatVerticalScrollAxisGuard.swift in Sources */,
 				C107O0000000000000000003 /* AssistantTypingIndicatorView.swift in Sources */,
 				C107O0000000000000000004 /* BottomComposerMaterialFade.swift in Sources */,
-				C107O0000000000000000005 /* StreamRecoveryStatusView.swift in Sources */,
 				C107O0000000000000000006 /* ChatTranscriptLoadingSkeletonView.swift in Sources */,
 				C107O0000000000000000007 /* ChatTranscriptLoadingSkeletonRow.swift in Sources */,
 				C107O0000000000000000008 /* ChatOfflineCacheBanner.swift in Sources */,
@@ -1825,7 +1821,6 @@
 				C107N0000000000000000038 /* ComposerTextView.swift in Sources */,
 				C107N0000000000000000039 /* ComposerWorkspacePickerSheet.swift in Sources */,
 				C107N0000000000000000040 /* ComposerAttachmentThumbnailView.swift in Sources */,
-				C107N0000000000000000041 /* ApprovalBypassStatusPill.swift in Sources */,
 				C107L0000000000000000001 /* ModelBreakdownRow.swift in Sources */,
 				C107L0000000000000000002 /* DailyTokenRow.swift in Sources */,
 				C107L0000000000000000003 /* ActivitySummaryRow.swift in Sources */,
@@ -1858,6 +1853,7 @@
 				C06900000000000000000005 /* UITestFixture+Panels.swift in Sources */,
 				C06900000000000000000007 /* UITestFixture+Workspace.swift in Sources */,
 				C09300000000000000000001 /* HapticButton.swift in Sources */,
+				C43600000000000000000001 /* StatusChip.swift in Sources */,
 				C0FF000000000000000000B1 /* CustomHeadersEditor.swift in Sources */,
 				C09500000000000000000001 /* AdaptiveGlassModifier.swift in Sources */,
 				C09500000000000000000005 /* AdaptiveGlassDebugFixture.swift in Sources */,
@@ -1883,7 +1879,7 @@
 				C12800000000000000000001 /* ToolActivityGroupView.swift in Sources */,
 				1A2B3C4D5E6F7000000000E0 /* ToolCallCardView.swift in Sources */,
 				C12800000000000000000003 /* ChatTimelineAccessorySurface.swift in Sources */,
-				C12900000000000000000001 /* ChatActiveRunStatusView.swift in Sources */,
+				C12900000000000000000001 /* StatusChip+RunStatus.swift in Sources */,
 				1A2B3C4D5E6F7000000000E2 /* ReasoningBlockView.swift in Sources */,
 				B5A220000000000000000003 /* MarkerMessageCardView.swift in Sources */,
 				1A2B3C4D5E6F7000000000E4 /* FileBrowserView.swift in Sources */,

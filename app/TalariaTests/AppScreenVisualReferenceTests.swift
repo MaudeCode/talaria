@@ -62,6 +62,20 @@ final class AppScreenVisualReferenceTests: XCTestCase {
         }
     }
 
+    /// The shared status chip's surface, padding and type, through its symbol form. The activity
+    /// form's `ProgressView` draws as a placeholder under `ImageRenderer`, so it is not referenced.
+    func testStatusChipReferences() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            try VisualReference.assertMatchesReference(
+                StatusChip(label: "Approval bypass active", icon: .symbol("bolt.slash.fill"))
+                    .padding(.horizontal, 16),
+                named: "status-chip-symbol-\(name(for: scheme))",
+                size: CGSize(width: 390, height: 48),
+                colorScheme: scheme
+            )
+        }
+    }
+
     /// `ChatTranscriptLoadingSkeletonView` wraps these rows in a `ScrollView`,
     /// which `ImageRenderer` draws empty, so the reference covers the rows the
     /// loading state is actually made of.

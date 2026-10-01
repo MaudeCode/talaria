@@ -728,6 +728,12 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         XCTAssertEqual(presentation?.kind, .syncing)
     }
 
+    func testRecoveryStatesMapToTheirChipsAndAHealthyStreamToNone() {
+        XCTAssertNil(ChatActiveRunStatusPresentation(recoveryState: .idle))
+        XCTAssertEqual(ChatActiveRunStatusPresentation(recoveryState: .checking)?.kind, .checking)
+        XCTAssertEqual(ChatActiveRunStatusPresentation(recoveryState: .reconnecting)?.label, "Reconnecting stream")
+    }
+
     func testSyncingPillHidesTheTranscriptRecoveryChip() {
         XCTAssertEqual(ChatActiveRunStatusPolicy.transcriptRecoveryState(
             .reconnecting,

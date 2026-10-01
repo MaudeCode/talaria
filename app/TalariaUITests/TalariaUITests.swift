@@ -71,8 +71,8 @@ final class ChatSyncStatusUITests: ChatUITestCase {
 
         let syncing = element(label: "Syncing messages with the server")
         XCTAssertTrue(syncing.awaitExistence(timeout: 10), "The reopened chat never showed Syncing messages")
-        XCTAssertFalse(element(label: "Checking stream").exists, "Checking stream competed with Syncing messages")
-        XCTAssertFalse(element(label: "Reconnecting stream").exists, "Reconnecting stream competed with Syncing messages")
+        XCTAssertFalse(element(label: "Hermes is checking the response stream").exists, "Checking stream competed with Syncing messages")
+        XCTAssertFalse(element(label: "Hermes is reconnecting the response stream").exists, "Reconnecting stream competed with Syncing messages")
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = "Syncing messages"
         screenshot.lifetime = .keepAlways

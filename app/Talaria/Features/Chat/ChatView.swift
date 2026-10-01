@@ -994,12 +994,12 @@ struct ChatView: View {
                 }
 
                 if let activeRunStatusPresentation {
-                    ChatActiveRunStatusView(presentation: activeRunStatusPresentation)
+                    StatusChip(activeRunStatusPresentation)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
                 if showsApprovalBypassStatus {
-                    ApprovalBypassStatusPill()
+                    StatusChip(label: String(localized: "Approval bypass active"), icon: .symbol("bolt.slash.fill"))
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
             }

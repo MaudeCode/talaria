@@ -50,6 +50,18 @@ public struct ChatActiveRunStatusPresentation: Equatable {
         self.kind = kind
     }
 
+    /// The status for a stream recovery state; nil while the stream is healthy.
+    public init?(recoveryState: ActiveStreamRecoveryState) {
+        switch recoveryState {
+        case .idle:
+            return nil
+        case .checking:
+            self.init(kind: .checking)
+        case .reconnecting:
+            self.init(kind: .reconnecting)
+        }
+    }
+
     public var label: String {
         kind.label
     }
@@ -99,13 +111,8 @@ public enum ChatActiveRunStatusPolicy {
 
         guard !isScrolledNearBottom else { return nil }
 
-        switch activeStreamRecoveryState {
-        case .checking:
-            return ChatActiveRunStatusPresentation(kind: .checking)
-        case .reconnecting:
-            return ChatActiveRunStatusPresentation(kind: .reconnecting)
-        case .idle:
-            break
+        if let recovery = ChatActiveRunStatusPresentation(recoveryState: activeStreamRecoveryState) {
+            return recovery
         }
 
         guard hasActiveStream else { return nil }
