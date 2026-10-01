@@ -166,11 +166,11 @@ describe('run-journal retention sweep', () => {
 
   it('answers HTTP while a retention sweep over a large backlog is still running', async () => {
     const s = await bootTestServer()
+    // The sweep yields normally for its first units of work, then holds until HTTP has been answered.
+    const { gate, release } = gated()
     try {
       const journal = s.deps.journal
       for (let i = 0; i < 40; i += 1) for (let r = 0; r < 5; r += 1) writeRun(journal, `sess${String(i)}`, `run${String(r)}`, { bytes: 64 * 1024, mtime: old + r })
-      // The sweep yields normally for its first units of work, then holds until HTTP has been answered.
-      const { gate, release } = gated()
       let reached!: () => void
       const midSweep = new Promise<void>((resolve) => { reached = resolve })
       let pauses = 0
@@ -187,6 +187,32 @@ describe('run-journal retention sweep', () => {
       expect(existsSync(journal.pathFor('sess39', 'run0'))).toBe(false)
       expect(existsSync(journal.pathFor('sess39', 'run2'))).toBe(true)
     } finally {
+      // A failed assertion must not leave close() waiting on a held sweep.
+      release()
+      await s.close()
+    }
+  })
+
+  it('waits for a running sweep on server close and stops it there', async () => {
+    const s = await bootTestServer()
+    const { gate, release } = gated()
+    try {
+      const journal = s.deps.journal
+      for (let r = 0; r < 5; r += 1) writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r })
+      const prune = journal.pruneSettled.bind(journal)
+      journal.pruneSettled = (opts) => prune({ ...opts, pause: () => gate })
+      void s.deps.hygiene.tick()
+      const before = tree(s.state)
+      // The server's own close (the harness close also deletes the state dir).
+      let closed = false
+      const closing = s.running.close().then(() => { closed = true })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(closed).toBe(false)
+      release()
+      await closing
+      expect(tree(s.state)).toEqual(before)
+    } finally {
+      release()
       await s.close()
     }
   })
@@ -234,27 +260,28 @@ describe('run-journal retention sweep', () => {
     const paths = ['run0', 'run1', 'run2', 'run3', 'run4', 'run5'].map((r, i) => writeRun(journal, 'sess', r, { mtime: old + i }))
     const [activated, appended, replaced, racing, pruned] = paths as [string, string, string, string, string]
     const active = new Set<string>()
-    // The racing journal already has a summary; rolling back must not delete it.
-    writeFileSync(racing.replace(/\.jsonl$/, '.summary.json'), '{}')
+    // The racing journal already has a summary; rolling back restores it.
+    writeFileSync(racing.replace(/\.jsonl$/, '.summary.json'), '{"prior":true}')
     let racingChecks = 0
     let pauses = 0
     const result = await journal.pruneSettled({
       now: Date.now() / 1000, retentionSeconds: 14 * DAY, keepRecent: 1,
       isActive: (p) => active.has(p) || (p === racing && (racingChecks += 1) > 1),
       // One pause opens the session and one follows each of its six parsed journals; the last precedes compaction.
-      pause: () => {
+      pause: async () => {
         pauses += 1
         if (pauses === 7) {
           active.add(activated)
           appendFileSync(appended, '\n')
           utimesSync(appended, old, old)
-          // A new file under the same name; Linux may hand it the freed inode number, so its content differs as a real one's would.
+          // A byte-identical copy with the original mtime; it may even reuse the freed inode number. Wait past the
+          // filesystem's ctime granularity so only ctime tells it apart.
+          await new Promise((resolve) => setTimeout(resolve, 20))
           const body = readFileSync(replaced)
           unlinkSync(replaced)
-          writeFileSync(replaced, Buffer.concat([body, body]))
+          writeFileSync(replaced, body)
           utimesSync(replaced, old + 2, old + 2)
         }
-        return Promise.resolve()
       },
     })
     expect(result.pruned).toBe(1)
@@ -262,8 +289,18 @@ describe('run-journal retention sweep', () => {
       expect(existsSync(p)).toBe(true)
       expect(existsSync(p.replace(/\.jsonl$/, '.summary.json'))).toBe(p === racing)
     }
+    expect(readFileSync(racing.replace(/\.jsonl$/, '.summary.json'), 'utf8')).toBe('{"prior":true}')
     expect(existsSync(pruned)).toBe(false)
     expect(existsSync(paths[5] ?? '')).toBe(true)
+  })
+
+  it('stops during the metadata pass before parsing any journal', async () => {
+    const journal = new RunJournal(tempDir())
+    for (let r = 0; r < 6; r += 1) writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r })
+    const controller = new AbortController()
+    // The abort lands on the next loop turn, while the sweep is listing and stat-ing the session's journals.
+    const result = await journal.pruneSettled({ now: Date.now() / 1000, retentionSeconds: 14 * DAY, keepRecent: 1, signal: controller.signal, pause: () => { setImmediate(() => { controller.abort() }); return Promise.resolve() } })
+    expect(result).toEqual({ examined: 6, terminal: 0, pruned: 0, bytes_reclaimed: 0 })
   })
 
   it('keeps nonterminal and recent journals, writes faithful summaries, and leaves dry runs and disabled retention untouched', async () => {

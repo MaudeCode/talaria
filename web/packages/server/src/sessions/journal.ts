@@ -5,7 +5,7 @@
  */
 import { rmSync } from 'node:fs'
 import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, constants as fsConstants, type BigIntStats } from 'node:fs'
-import { open, readdir, stat, unlink } from 'node:fs/promises'
+import { open, readdir, readFile, stat, unlink } from 'node:fs/promises'
 import { setImmediate as nextTurn } from 'node:timers/promises'
 import { atomicWriteTextAsync, writeFully } from '../fs/atomic.js'
 import { join } from 'node:path'
@@ -54,6 +54,18 @@ export interface RunSummary {
   journal_pruned?: boolean
   path?: string
 }
+
+export interface PruneOptions {
+  now?: number
+  retentionSeconds?: number
+  keepRecent?: number
+  isActive?: (path: string) => boolean
+  dryRun?: boolean
+  signal?: AbortSignal
+  pause?: () => Promise<unknown>
+}
+
+export interface PruneResult { examined: number; terminal: number; pruned: number; bytes_reclaimed: number }
 
 export function validateId(value: string, field: string): string {
   const v = value || ''
@@ -254,8 +266,8 @@ export class RunJournal {
    * the journals inspected. `signal` stops the sweep at its next yield;
    * `pause` replaces the default yield (`setImmediate`).
    */
-  async pruneSettled(opts: { now?: number; retentionSeconds?: number; keepRecent?: number; isActive?: (path: string) => boolean; dryRun?: boolean; signal?: AbortSignal; pause?: () => Promise<unknown> } = {}): Promise<{ examined: number; terminal: number; pruned: number; bytes_reclaimed: number }> {
-    const result = { examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0 }
+  async pruneSettled(opts: PruneOptions = {}): Promise<PruneResult> {
+    const result: PruneResult = { examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0 }
     const days = Number.parseFloat(this.env.HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS ?? '14')
     const retention = opts.retentionSeconds ?? (Number.isFinite(days) ? Math.max(0, days) * 86400 : 14 * 86400)
     const keepEnv = Number.parseInt(this.env.HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT ?? '3', 10)
@@ -296,23 +308,27 @@ export class RunJournal {
       for (const { st, path, summary } of terminalRuns.slice(keep)) {
         if (opts.signal?.aborted) return result
         const mtime = Number(st.mtimeNs) / 1e9
-        // The journal is still the one that was parsed, settled past the cutoff, with no live writer.
-        const unchanged = (): boolean => {
+        if (mtime > cutoff) continue
+        // Still the parsed file with no live writer. ctime catches a replacement that reuses the inode, size, and mtime.
+        const stillPrunable = (): boolean => {
           if (opts.isActive?.(path)) return false
           let cur
           try { cur = lstatSync(path, { bigint: true }) } catch { return false }
-          return cur.isFile() && cur.dev === st.dev && cur.ino === st.ino && cur.size === st.size && cur.mtimeNs === st.mtimeNs && mtime <= cutoff
+          return cur.isFile() && cur.dev === st.dev && cur.ino === st.ino && cur.size === st.size && cur.mtimeNs === st.mtimeNs && cur.ctimeNs === st.ctimeNs
         }
-        if (!unchanged()) continue
+        if (!stillPrunable()) continue
         const size = Number(st.size)
         if (opts.dryRun) { result.pruned += 1; result.bytes_reclaimed += size; continue }
         const summaryPath = path.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX)
         const pruned = { ...summary, journal_pruned: true, journal_pruned_at: now, original_size: size, original_mtime: mtime }
-        // A rollback removes only a summary this sweep created.
-        const hadSummary = existsSync(summaryPath)
+        const prior = await readFile(summaryPath, 'utf8').catch(() => null)
         try { await atomicWriteTextAsync(summaryPath, JSON.stringify(pruned)) } catch { continue }
         // Re-check after the write's async gap; no await separates this check from the unlink.
-        if (!unchanged()) { if (!hadSummary) await unlink(summaryPath).catch(() => undefined); continue }
+        if (!stillPrunable()) {
+          // Roll back to the summary that was there before, if any.
+          await (prior === null ? unlink(summaryPath) : atomicWriteTextAsync(summaryPath, prior)).catch(() => undefined)
+          continue
+        }
         try { unlinkSync(path) } catch { continue }
         result.pruned += 1
         result.bytes_reclaimed += size
