@@ -338,16 +338,6 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.trustedReauthenticationArgument)
     }
     private static let chatStreamID = "ui-fixture-stream"
-
-    private static func holdsTranscriptReload(for url: URL) -> Bool {
-        guard url.path == "/api/session",
-              ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdTranscriptReloadsArgument)
-        else { return false }
-        return recoveryState.withLock {
-            transcriptReads += 1
-            return transcriptReads > 1
-        }
-    }
     private static let chatState = UITestChatFixtureState.shared
     private let lifecycleLock = NSLock()
     private var stopped = false
@@ -389,6 +379,16 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         }
 
         sendResponse(for: url)
+    }
+
+    private static func holdsTranscriptReload(for url: URL) -> Bool {
+        guard url.path == "/api/session",
+              ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdTranscriptReloadsArgument)
+        else { return false }
+        return recoveryState.withLock {
+            transcriptReads += 1
+            return transcriptReads > 1
+        }
     }
 
     private func sendResponse(for url: URL) {

@@ -101,7 +101,7 @@ struct ChatView: View {
         }
     }
     @State private var isScrolledNearBottom = true
-    /// Debounced "Syncing messages" pill (TAL-436); `.id(session.id)` resets it per chat.
+    /// Debounced "Syncing messages" pill (TAL-436); each chat's view starts it hidden.
     @State private var syncStatus = DelayedStatusVisibility()
     @State private var isReadingOlderTranscript = false
     @State private var followLatch = ChatScrollPolicy.FollowLatch()

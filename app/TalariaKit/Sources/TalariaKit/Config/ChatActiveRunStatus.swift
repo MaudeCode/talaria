@@ -73,16 +73,17 @@ public enum ChatActiveRunStatusPolicy {
         isSyncingTranscript: Bool = false,
         isScrolledNearBottom: Bool
     ) -> ChatActiveRunStatusPresentation? {
-        if !isScrolledNearBottom, isCancellingStream {
-            return ChatActiveRunStatusPresentation(kind: .stopping)
-        }
-
-        if !isScrolledNearBottom, isStartingChat {
-            return ChatActiveRunStatusPresentation(kind: .starting)
+        if !isScrolledNearBottom {
+            if isCancellingStream {
+                return ChatActiveRunStatusPresentation(kind: .stopping)
+            }
+            if isStartingChat {
+                return ChatActiveRunStatusPresentation(kind: .starting)
+            }
         }
 
         // Syncing has no inline twin at the transcript tail, so it shows at any scroll
-        // position, and it hides run progress the way T3 Code's thread sync does.
+        // position, and it stands in for run progress until the transcript is current.
         if isSyncingTranscript {
             return ChatActiveRunStatusPresentation(kind: .syncing)
         }

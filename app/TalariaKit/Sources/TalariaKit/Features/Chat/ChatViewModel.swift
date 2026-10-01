@@ -78,12 +78,13 @@ public final class ChatViewModel {
     /// True from the first paint until the first session load answers, unless the
     /// selected row reported the session idle.
     private var isConfirmingRunState = false
-    /// Shows that the run state is still being confirmed while no run is adopted.
-    public var showsRunStateCheck: Bool { isConfirmingRunState && activeStreamID == nil }
-    /// True while a pull-to-refresh load runs; the system refresh spinner covers it.
-    private var isUserRefreshing = false
+    /// Shows that the run state is still being confirmed while no run is adopted. Over a populated
+    /// transcript the "Syncing messages" pill already says the server is being checked (TAL-436).
+    public var showsRunStateCheck: Bool { isConfirmingRunState && activeStreamID == nil && !isSyncingTranscript }
+    /// Loads started by pull-to-refresh; the system refresh spinner covers them.
+    private var userRefreshLoadGenerations: Set<Int> = []
     /// True while a populated transcript is being reconciled with the server (TAL-436).
-    public var isSyncingTranscript: Bool { isLoading && !isUserRefreshing && !messages.isEmpty }
+    public var isSyncingTranscript: Bool { isLoading && userRefreshLoadGenerations.isEmpty && !messages.isEmpty }
     @ObservationIgnored private var pendingStreamingScrollTriggerTask: Task<Void, Never>?
     @ObservationIgnored private var pendingAssistantTokenText = ""
     @ObservationIgnored private var pendingReasoningText = ""
@@ -1188,13 +1189,15 @@ public final class ChatViewModel {
         let loadRequestGeneration = sessionLoadRequestGeneration
         activeSessionLoadRequestGenerations.insert(loadRequestGeneration)
         isLoading = true
-        isUserRefreshing = isUserRefresh
+        if isUserRefresh {
+            userRefreshLoadGenerations.insert(loadRequestGeneration)
+        }
         errorMessage = nil
         cacheErrorMessage = nil
         lastError = nil
         defer {
             isLoading = false
-            isUserRefreshing = false
+            userRefreshLoadGenerations.remove(loadRequestGeneration)
             finishSessionLoadRequest(loadRequestGeneration)
         }
 

@@ -379,10 +379,11 @@ extension ChatViewModelSendTests {
         XCTAssertFalse(viewModel.isViewingCachedData)
     }
 
-    // TAL-250: a row without a run state (a deep link) shows the check over the cached transcript until the first
-    // load answers; a failed load keeps the transcript and ends the check without claiming the run finished.
+    // TAL-250, TAL-436: a row without a run state (a deep link) is checked while its cached transcript shows; the
+    // "Syncing messages" pill says so, so the transcript's own check chip stays hidden. A failed load keeps the
+    // transcript and ends the sync without claiming the run finished.
     @MainActor
-    func testUnknownRunStateShowsCheckUntilTheFirstLoadAnswersAndFailureKeepsTheTranscript() async throws {
+    func testUnknownRunStateSyncsUntilTheFirstLoadAnswersAndFailureKeepsTheTranscript() async throws {
         let context = try makeContext()
         try cacheQuestionAndAnswer(in: context)
         let viewModel = try makeViewModel { request in
@@ -397,10 +398,12 @@ extension ChatViewModelSendTests {
         }
 
         viewModel.prepareInitialMessageLoad(modelContext: context)
-        XCTAssertTrue(viewModel.showsRunStateCheck)
+        XCTAssertTrue(viewModel.isSyncingTranscript)
+        XCTAssertFalse(viewModel.showsRunStateCheck, "The syncing pill already says the server is being checked.")
 
         await viewModel.loadMessages(modelContext: context)
 
+        XCTAssertFalse(viewModel.isSyncingTranscript)
         XCTAssertFalse(viewModel.showsRunStateCheck)
         XCTAssertNil(viewModel.activeStreamID)
         XCTAssertEqual(viewModel.messages.compactMap(\.content), ["Cached question", "Cached answer"])

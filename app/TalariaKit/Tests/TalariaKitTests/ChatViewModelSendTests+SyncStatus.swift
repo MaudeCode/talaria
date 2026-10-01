@@ -100,6 +100,32 @@ extension ChatViewModelSendTests {
         XCTAssertFalse(viewModel.isSyncingTranscript)
     }
 
+    func testReloadOverlappingPullToRefreshStillLeavesItToTheSystemSpinner() async throws {
+        let requests = LockedCounter()
+        let pullRequestStarted = expectation(description: "pull-to-refresh request started")
+        let releasePull = DispatchSemaphore(value: 0)
+        let viewModel = try makeViewModel { request in
+            if requests.increment() == 2 {
+                pullRequestStarted.fulfill()
+                XCTAssertEqual(releasePull.wait(timeout: .now() + .seconds(5)), .success)
+            }
+            return apiTestJSONResponse(Self.syncStatusSessionJSON, for: request)
+        }
+        await viewModel.loadMessages()
+        defer { releasePull.signal() }
+
+        let pullTask = Task { @MainActor in await viewModel.loadMessages(isUserRefresh: true) }
+        await fulfillment(of: [pullRequestStarted], timeout: 10)
+        // An automatic reload starts while the pull is in flight; it marks itself loading before its first await.
+        let reloadTask = Task { @MainActor in await viewModel.loadMessages() }
+        for _ in 0..<10 { await Task.yield() }
+
+        XCTAssertFalse(viewModel.isSyncingTranscript, "The pull-to-refresh spinner is still up.")
+        releasePull.signal()
+        await pullTask.value
+        await reloadTask.value
+    }
+
     private static let syncStatusSessionJSON = """
     {"session": {"session_id": "session-abc", "title": "Planning", "messages": [
       {"role": "user", "content": "Fresh question", "timestamp": 1770000100, "message_id": "fresh-user"},
