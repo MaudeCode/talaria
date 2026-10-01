@@ -192,6 +192,14 @@ footer control is therefore hidden until the composer is expanded — anything t
 must stay reachable while the user is reading belongs beside the primary action in
 `.composer-right`, or in an action-required surface that blocks the collapse.
 
+Above phone width the composer rests like T3 Code's: a hand scroll (wheel or
+touch) of a transcript taller than its pane flattens the card to one prompt row
+with only the right-hand actions, until the next composer interaction (focus,
+pointer down, typing, drag-over). Losing focus never rests it, and a multi-line
+draft, attachments, an open menu or slash list, or a clarification keep it
+expanded. A pinned transcript re-pins as it expands, so the newest message is
+never covered.
+
 ### Composer placement and send motion
 
 `ChatView` renders the composer in `.composer-dock`, absolutely positioned in

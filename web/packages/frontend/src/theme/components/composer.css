@@ -94,7 +94,7 @@
 .composer-dock{position:absolute;left:0;right:0;bottom:0;z-index:10;pointer-events:none}
 .composer-dock--hero{bottom:calc(50% - var(--composer-h,0px) / 2 - var(--composer-hero-shift,0px))}
 /* The fade the band used to carry: messages dim as they pass under the card, still visible through its glass. */
-.composer-dock::before{content:"";position:absolute;inset:-32px 0 0;z-index:-1;pointer-events:none;border-top:var(--composer-wrap-border-top);background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--composer-wrap-bg) 70%,transparent) 32px)}
+.composer-dock::before{content:"";position:absolute;inset:-32px 0 0;z-index:-1;pointer-events:none;border-top:var(--composer-wrap-border-top);background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--composer-wrap-bg) 70%,transparent) 32px,var(--composer-wrap-bg) 72px)}
 .composer-dock--hero::before{display:none}
 .composer-dock .composer-box,.composer-dock .composer-tab,.composer-dock .composer-strip,.composer-dock .composer-terminal-panel,.composer-dock [role="note"]{pointer-events:auto}
 .composer-hero-title{position:absolute;left:20px;right:20px;bottom:100%;max-width:var(--msg-max);margin:0 auto;padding-bottom:28px;text-align:center;font-size:var(--composer-hero-title-size);line-height:1.25;font-weight:500;letter-spacing:-.02em;color:var(--text)}
@@ -145,4 +145,12 @@
 @media (max-width:640px){.composer-tab,.composer-strip{width:calc(100% - 24px)}}
 .composer-model-wrap,.composer-reasoning-wrap{position:relative;flex:0 0 auto}
 .composer-footer.cf-burger .composer-left > .composer-model-wrap,.composer-footer.cf-burger .composer-left > .composer-reasoning-wrap{display:none !important}
+/* Resting composer (T3 Code): above phone width, a hand scroll of the transcript flattens the card to one row: the
+   prompt clamps to a single line and only the right-hand actions stay, inline. Phones keep .cf-collapsed. */
+@media (min-width:641px){
+.composer-box.is-resting{flex-direction:row;align-items:center}
+.composer-box.is-resting textarea#msg{flex:1;width:auto;min-width:0;height:auto;min-height:44px;max-height:44px;padding-top:11px;padding-bottom:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.composer-box.is-resting > .composer-footer{flex:0 0 auto;padding:0 6px 0 0;container-type:normal}
+.composer-box.is-resting .composer-left{display:none}
+}
 }

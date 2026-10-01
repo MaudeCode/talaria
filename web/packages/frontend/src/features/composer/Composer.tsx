@@ -25,7 +25,8 @@ import type { Clarify } from '../chat/useClarify'
 import { LiveStatusPill } from '../chat/LiveTurnView'
 import { ComposerTab, type ComposerNotice } from './ComposerTab'
 import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, useFirstSend } from '../chat/firstSend'
-import { requestScroll } from '../chat/sendMotion'
+import { onScrollRequest, requestScroll } from '../chat/sendMotion'
+import { prefersReducedMotion } from '../../lib/motion'
 
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
 /** A message waiting for the live turn to settle: it owns its text, upload receipts and the request it was composed against. */
@@ -164,6 +165,12 @@ export function Composer(props: ComposerProps) {
   const palette = useCommandPalette(clarify ? '' : text)
   useDraftPersistence(sessionId, text)
 
+  // T3 Code's resting composer: a hand scroll of an overflowing transcript flattens the card to one row until the next
+  // composer interaction. Losing focus never rests it.
+  const [restRequested, setRestRequested] = useState(false)
+  useEffect(() => onScrollRequest('reader', () => setRestRequested(true)), [])
+  const wake = () => { if (restRequested) setRestRequested(false) }
+
   // Session change resets the draft and tray, unless this session's composer just adopted a hand-off (below); the
   // guard also keeps StrictMode's effect replay from wiping the adopted state.
   const adopted = useRef<string | null>(null)
@@ -171,6 +178,7 @@ export function Composer(props: ComposerProps) {
     if (adopted.current === sessionId) return
     setText(sessionId ? readLocalDraft(sessionId) : '')
     setFiles([])
+    setRestRequested(false)
   }, [sessionId])
 
   // Autosize.
@@ -337,6 +345,7 @@ export function Composer(props: ComposerProps) {
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    wake()
     if (palette.handleKey(e, applySuggestion)) return
     if (e.key !== 'Enter') return
     // A clarification answer is short: Enter answers on every width, whatever the chat send-key rule.
@@ -391,6 +400,26 @@ export function Composer(props: ComposerProps) {
   const canSend = (text.trim() !== '' || files.some((f) => f.status === 'done')) && !sending && !locked
   // Phone composer at rest: one prompt row (UIUX guide), and the strip under it folds away too.
   const collapsed = phone && !text && files.length === 0 && !busy && !focusWithin && !configOpen && !dragOver
+  // Phones keep their own collapsed row; a multi-line draft, attachments, an open menu, or a clarification stay expanded.
+  const resting = restRequested && !phone && !value.includes('\n') && files.length === 0 && !configOpen && !palette.open && !clarify && !dragOver
+  // Flattening and lifting ease the card's height (~200 ms) instead of snapping; reduced motion snaps. A ResizeObserver
+  // keeps the last settled height, so typing never forces a layout read (UIUX guide, Composer sizing).
+  const lastHeight = useRef(0)
+  useEffect(() => {
+    const el = box.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([entry]) => { if (entry) lastHeight.current = entry.borderBoxSize[0]?.blockSize ?? el.offsetHeight })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const restMounted = useRef(false)
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!restMounted.current) { restMounted.current = true; return }
+    if (!el || !lastHeight.current || typeof el.animate !== 'function' || prefersReducedMotion()) return
+    const height = el.offsetHeight
+    if (height !== lastHeight.current) el.animate([{ height: `${lastHeight.current}px`, overflow: 'hidden' }, { height: `${height}px`, overflow: 'hidden' }], { duration: 200, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' })
+  }, [resting])
   const showYolo = yolo && !hide('hide_composer_yolo')
   // The top tab (T3 Code's attached banner): the running turn first, then runtime notices and this message's state.
   const tabNotices: ComposerNotice[] = [
@@ -409,12 +438,13 @@ export function Composer(props: ComposerProps) {
     <div className="composer-wrap" id="composerWrap">
       <ComposerTab notices={tabNotices} />
       <div
-        className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-(--composer-radius-phone)', dragOver && 'drag-over', clarify && 'clarify-active')}
+        className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-(--composer-radius-phone)', dragOver && 'drag-over', clarify && 'clarify-active', resting && 'is-resting')}
         id="composerBox"
         ref={box}
-        onFocus={() => setFocusWithin(true)}
+        onFocus={() => { setFocusWithin(true); wake() }}
+        onPointerDown={wake}
         onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setFocusWithin(false) }}
-        onDragOver={(e) => { e.preventDefault(); if (!clarify) setDragOver(true) }}
+        onDragOver={(e) => { e.preventDefault(); wake(); if (!clarify) setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
       >

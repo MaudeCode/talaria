@@ -24,8 +24,9 @@ export function playDock(el: HTMLElement): void {
 /**
  * Transcript scroll requests. `end`: every submit (send, steer, queue) brings the transcript to its end, wherever the
  * reader had scrolled. `follow`: the composer's height changed, so a pinned transcript follows in the same frame.
+ * `reader`: the reader scrolled an overflowing transcript by hand, which rests the composer (T3 Code's resting row).
  */
-type ScrollRequest = 'end' | 'follow'
+type ScrollRequest = 'end' | 'follow' | 'reader'
 const scrollRequests = new EventTarget()
 export const requestScroll = (kind: ScrollRequest) => { scrollRequests.dispatchEvent(new Event(kind)) }
 export function onScrollRequest(kind: ScrollRequest, fn: () => void): () => void {

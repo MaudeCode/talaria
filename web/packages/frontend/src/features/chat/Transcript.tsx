@@ -12,7 +12,7 @@ import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
 import { groupAssistantTurns } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
-import { onScrollRequest } from './sendMotion'
+import { onScrollRequest, requestScroll } from './sendMotion'
 
 const VIRTUALIZE_AT = 200
 
@@ -82,6 +82,13 @@ export function Transcript(props: TranscriptProps) {
   followsRef.current = () => pinnedRef.current && (autoFollow || (settlingRef.current && !streaming))
   useEffect(() => { if (streaming) settlingRef.current = false }, [streaming])
   const lastTopRef = useRef(0)
+
+  // A hand scroll (wheel or touch) of a transcript taller than its pane asks the composer to rest; programmatic
+  // follow and entry jumps never do.
+  const onReaderScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (el && el.scrollHeight > el.clientHeight + 1) requestScroll('reader')
+  }, [])
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current
@@ -167,7 +174,7 @@ export function Transcript(props: TranscriptProps) {
   return (
     <WorklogDisclosureProvider key={scope} scope={scope ?? ""}>
     <div className="messages-shell relative flex flex-1 min-h-0 flex-col">
-      <div ref={scrollRef} onScroll={onScroll} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:auto] [@media(hover:hover)_and_(pointer:fine)]:[overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
+      <div ref={scrollRef} onScroll={onScroll} onWheel={(e) => { if (e.deltaY !== 0) onReaderScroll() }} onTouchMove={onReaderScroll} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:auto] [@media(hover:hover)_and_(pointer:fine)]:[overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
         {empty ? emptyState : (
           <div ref={innerRef} className="messages-inner mx-auto w-full flex flex-col max-w-(--msg-max) pt-5 pb-[calc(var(--composer-h,0px)+2rem)] max-[641px]:pt-3 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
             {truncated && (
