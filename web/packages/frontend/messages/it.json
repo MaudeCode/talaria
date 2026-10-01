@@ -927,8 +927,6 @@
 	"settings_label_theme": "Tema",
 	"settings_label_skin": "Skin",
 	"settings_label_font_size": "Dimensione font",
-	"settings_label_full_width_chat": "Usa la chat a tutta larghezza",
-	"settings_desc_full_width_chat": "Consente alla conversazione e al compositore di usare il riquadro centrale disponibile invece della colonna di lettura compatta.",
 	"font_size_small": "Piccolo",
 	"font_size_default": "Predefinito",
 	"font_size_large": "Grande",

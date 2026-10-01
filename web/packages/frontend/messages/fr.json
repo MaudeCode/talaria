@@ -914,8 +914,6 @@
 	"settings_label_theme": "Thème",
 	"settings_label_skin": "Style",
 	"settings_label_font_size": "Taille de police",
-	"settings_label_full_width_chat": "Utiliser le chat en pleine largeur",
-	"settings_desc_full_width_chat": "Permet à la conversation et au champ de saisie d’utiliser toute la largeur disponible du panneau central au lieu de la colonne de lecture compacte.",
 	"font_size_small": "Petite",
 	"font_size_default": "Par défaut",
 	"font_size_large": "Grande",

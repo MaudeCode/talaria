@@ -946,8 +946,6 @@
 	"settings_label_theme": "Тема",
 	"settings_label_skin": "Скин",
 	"settings_label_font_size": "Размер шрифта",
-	"settings_label_full_width_chat": "Использовать чат на всю ширину",
-	"settings_desc_full_width_chat": "Разрешить истории чата и полю ввода использовать всю доступную ширину центральной области вместо компактной колонки.",
 	"font_size_small": "Маленький",
 	"font_size_default": "Стандарт",
 	"font_size_large": "Большой",

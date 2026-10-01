@@ -936,8 +936,6 @@
 	"settings_label_theme": "Motiv",
 	"settings_label_skin": "Vzhled",
 	"settings_label_font_size": "Velikost písma",
-	"settings_label_full_width_chat": "Použít chat v plné šířce",
-	"settings_desc_full_width_chat": "Konverzace a editor využijí celou dostupnou šířku středního panelu namísto kompaktního sloupce pro čtení.",
 	"font_size_small": "Malá",
 	"font_size_default": "Výchozí",
 	"font_size_large": "Velká",

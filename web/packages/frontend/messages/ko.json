@@ -914,8 +914,6 @@
 	"settings_label_theme": "테마",
 	"settings_label_skin": "스킨",
 	"settings_label_font_size": "글꼴 크기",
-	"settings_label_full_width_chat": "전체 너비 채팅 사용",
-	"settings_desc_full_width_chat": "대화 내용과 작성기가 좁은 읽기 열 대신 사용 가능한 중앙 창 너비를 모두 사용합니다.",
 	"font_size_small": "작게",
 	"font_size_default": "기본",
 	"font_size_large": "크게",

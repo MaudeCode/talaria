@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Choose a Comfortable, Wide, or Full chat width in Appearance settings to size the conversation and composer on large screens.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

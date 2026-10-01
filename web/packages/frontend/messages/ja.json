@@ -914,8 +914,6 @@
 	"settings_label_theme": "テーマ",
 	"settings_label_skin": "スキン",
 	"settings_label_font_size": "フォントサイズ",
-	"settings_label_full_width_chat": "チャットを全幅で表示",
-	"settings_desc_full_width_chat": "会話履歴と入力欄をコンパクトな閲覧列ではなく、中央ペインの利用可能な幅いっぱいに表示します。",
 	"font_size_small": "小",
 	"font_size_default": "デフォルト",
 	"font_size_large": "大",

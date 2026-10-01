@@ -914,8 +914,6 @@
 	"settings_label_theme": "Theme",
 	"settings_label_skin": "Skin",
 	"settings_label_font_size": "Cỡ chữ",
-	"settings_label_full_width_chat": "Sử dụng trò chuyện toàn chiều rộng",
-	"settings_desc_full_width_chat": "Cho phép nội dung trò chuyện và ô soạn thảo sử dụng toàn bộ vùng trung tâm thay vì cột đọc thu gọn.",
 	"font_size_small": "Nhỏ",
 	"font_size_default": "Mặc định",
 	"font_size_large": "Lớn",
