@@ -12,7 +12,7 @@ import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
 import { groupAssistantTurns } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
-import { onScrollRequest, requestScroll } from './sendMotion'
+import { onScrollRequest, requestComposerRest } from './sendMotion'
 
 const VIRTUALIZE_AT = 200
 
@@ -84,11 +84,9 @@ export function Transcript(props: TranscriptProps) {
   const lastTopRef = useRef(0)
 
   // A hand scroll (wheel or touch) of a transcript taller than its pane asks the composer to rest; programmatic
-  // follow and entry jumps never do.
-  const onReaderScroll = useCallback(() => {
-    const el = scrollRef.current
-    if (el && el.scrollHeight > el.clientHeight + 1) requestScroll('reader')
-  }, [])
+  // follow and entry jumps never do. Overflow comes from the resize observer below, so a wheel tick reads no layout.
+  const overflowsRef = useRef(false)
+  const onReaderScroll = useCallback(() => { if (overflowsRef.current) requestComposerRest() }, [])
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current
@@ -124,15 +122,18 @@ export function Transcript(props: TranscriptProps) {
     const follow = () => { if (followsRef.current()) scrollToBottom(false) }
     follow()
     if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(follow)
+    // Layout is settled inside the observer callback, so reading the pane's overflow here costs nothing extra.
+    const observer = new ResizeObserver(() => { overflowsRef.current = pane.scrollHeight > pane.clientHeight + 1; follow() })
     observer.observe(inner)
     observer.observe(pane)
-    return () => observer.disconnect()
+    return () => { observer.disconnect(); overflowsRef.current = false }
   }, [empty, scope, scrollToBottom])
 
   // A submit returns to the end wherever the reader was, and the next layout follows it there (T3 Code's scrollToEnd).
   useEffect(() => onScrollRequest('end', () => { settlingRef.current = true; scrollToBottom(false) }), [scrollToBottom])
-  useEffect(() => onScrollRequest('follow', () => { if (followsRef.current()) scrollToBottom(false) }), [scrollToBottom])
+  // The composer grew (a tab row, the resting card lifting): a reader at the end stays there, whatever auto-follow
+  // says, because this is the composer covering the end rather than new content arriving.
+  useEffect(() => onScrollRequest('follow', () => { if (pinnedRef.current) scrollToBottom(false) }), [scrollToBottom])
 
   const virtualizer = useVirtualizer({
     count: virtualize ? rows.length : 0,

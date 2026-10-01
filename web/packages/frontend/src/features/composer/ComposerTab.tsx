@@ -24,16 +24,14 @@ export function ComposerTab({ notices }: { notices: ComposerNotice[] }) {
   // The entries are rebuilt on every composer render; only a change in which ids are present can start an exit.
   const latest = useRef(notices)
   const lastRender = useRef(notices)
-  const previous = useRef(notices)
   useEffect(() => { lastRender.current = latest.current; latest.current = notices })
   const idKey = notices.map((n) => n.id).join('\n')
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>())
   useEffect(() => {
     const current = latest.current
     const ids = new Set(current.map((n) => n.id))
-    // A leaving entry keeps the content it last rendered with (the live row's final rate, not its first).
-    const gone = prefersReducedMotion() ? [] : previous.current.flatMap((notice, index) => (ids.has(notice.id) ? [] : [{ notice: lastRender.current.find((n) => n.id === notice.id) ?? notice, index }]))
-    previous.current = current
+    // The previous render's entries: a leaving one keeps the content it last rendered with (the live row's final rate).
+    const gone = prefersReducedMotion() ? [] : lastRender.current.flatMap((notice, index) => (ids.has(notice.id) ? [] : [{ notice, index }]))
     setLeaving((l) => {
       const kept = l.filter((x) => !ids.has(x.notice.id))
       return gone.length || kept.length !== l.length ? [...kept, ...gone] : l

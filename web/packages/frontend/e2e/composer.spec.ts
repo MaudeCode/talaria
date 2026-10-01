@@ -181,29 +181,46 @@ test('a manual compression shows in the top tab while it runs', async ({ page })
   await expect(page.locator('.composer-tab [data-notice="runtime:compressing"]')).toContainText('Compressing context…')
 })
 
-test('a hand scroll flattens the composer until it is used again, without covering the end', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'desktop', 'phones keep their own collapsed row')
-  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'rest', title: 'Rest', messages: transcript('rest', 20) } } }))
-  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
-  await page.goto('/session/rest')
-  await expect.poll(() => distance(page)).toBeLessThan(2)
-  const card = page.locator('#composerBox')
-  const expanded = (await box(page, '#composerBox')).height
-  await page.locator('#messages').hover()
-  await page.mouse.wheel(0, -400)
-  await expect(card).toHaveClass(/is-resting/)
-  await expect.poll(async () => (await box(page, '#composerBox')).height).toBeLessThan(expanded - 30)
-  // Back at the end while resting; using the composer lifts it and the newest message stays in view.
-  await page.mouse.wheel(0, 8000)
-  await expect.poll(() => distance(page)).toBeLessThan(2)
-  await page.locator('#msg').click()
-  await expect(card).not.toHaveClass(/is-resting/)
-  await expect.poll(async () => (await box(page, '#composerBox')).height).toBeGreaterThan(expanded - 2)
-  await expect.poll(() => distance(page)).toBeLessThan(2)
-  // A multi-line draft stays readable: scrolling never flattens it.
-  await page.locator('#msg').fill('line one\nline two')
-  await page.locator('#messages').hover()
-  await page.mouse.wheel(0, -400)
-  await page.waitForTimeout(300)
-  await expect(card).not.toHaveClass(/is-resting/)
-})
+for (const { name, settings } of [{ name: 'auto-follow on', settings: {} }, { name: 'auto-follow off', settings: { auto_scroll_follow: false } }]) {
+  test(`a hand scroll flattens the composer until it is used again, without covering the end: ${name}`, async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'phones keep their own collapsed row')
+    await page.route('**/api/settings', (route) => route.fulfill({ json: settings }))
+    await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'rest', title: 'Rest', messages: transcript('rest', 20) } } }))
+    await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+    await page.goto('/session/rest')
+    await expect.poll(() => distance(page)).toBeLessThan(2)
+    const card = page.locator('#composerBox')
+    const expanded = (await box(page, '#composerBox')).height
+    await page.locator('#messages').hover()
+    await page.mouse.wheel(0, -400)
+    await expect(card).toHaveClass(/is-resting/)
+    await expect.poll(async () => (await box(page, '#composerBox')).height).toBeLessThan(expanded - 30)
+    // Back at the end while resting. Focus alone (no pointer) lifts it, and every frame of the 200 ms expansion keeps
+    // the newest message in view.
+    await page.mouse.wheel(0, 8000)
+    await expect.poll(() => distance(page)).toBeLessThan(2)
+    await page.evaluate(() => {
+      const w = window as unknown as { gaps: number[] }
+      w.gaps = []
+      const el = document.getElementById('messages')!
+      const t0 = performance.now()
+      const tick = () => { w.gaps.push(el.scrollHeight - el.scrollTop - el.clientHeight); if (performance.now() - t0 < 500) requestAnimationFrame(tick) }
+      requestAnimationFrame(tick)
+    })
+    await page.locator('#msg').focus()
+    await expect(card).not.toHaveClass(/is-resting/)
+    await expect.poll(async () => (await box(page, '#composerBox')).height).toBeGreaterThan(expanded - 2)
+    await page.waitForTimeout(600)
+    const gaps = await page.evaluate(() => (window as unknown as { gaps: number[] }).gaps)
+    expect(gaps.length).toBeGreaterThan(10)
+    expect(Math.max(...gaps)).toBeLessThan(2)
+    // A multi-line draft stays readable: an explicit line break or a soft wrap never flattens it.
+    for (const draft of ['line one\nline two', 'a long single line that wraps. '.repeat(12)]) {
+      await page.locator('#msg').fill(draft)
+      await page.locator('#messages').hover()
+      await page.mouse.wheel(0, -400)
+      await page.waitForTimeout(300)
+      await expect(card).not.toHaveClass(/is-resting/)
+    }
+  })
+}

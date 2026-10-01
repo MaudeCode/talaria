@@ -196,9 +196,12 @@ Above phone width the composer rests like T3 Code's: a hand scroll (wheel or
 touch) of a transcript taller than its pane flattens the card to one prompt row
 with only the right-hand actions, until the next composer interaction (focus,
 pointer down, typing, drag-over). Losing focus never rests it, and a multi-line
-draft, attachments, an open menu or slash list, or a clarification keep it
-expanded. A pinned transcript re-pins as it expands, so the newest message is
-never covered.
+draft (an explicit line break or a soft wrap, measured once when the scroll
+arrives), attachments, an open menu or slash list, or a clarification keep it
+expanded; a scroll that arrives while one of those holds is dropped, not kept
+for later. The card's height eases over 200 ms both ways (instant under reduced
+motion). A transcript pinned at its end re-pins as the composer grows, whatever
+the auto-follow setting, so the newest message is never covered.
 
 ### Composer placement and send motion
 
@@ -206,8 +209,10 @@ never covered.
 `.chat-stage` over the transcript. A new or empty chat centres the dock (the
 hero) with its headline hanging above the card; otherwise it docks to the
 bottom. The dock's measured height is `--composer-h`, the transcript's bottom
-inset and the offset for the scroll-to-end pill, so no
-surface sits behind the card at rest. Leaving the hero plays a 340 ms FLIP from
+inset and the offset for the scroll-to-end pill. Behind the card itself nothing
+is drawn, so messages show through its glass; a fade above the dock dims them as
+they arrive, and an opaque shelf below the card keeps a scrolled-up transcript
+from showing around the context strip. Leaving the hero plays a 340 ms FLIP from
 the centred position (`sendMotion.ts`; instant under reduced motion). A new
 chat's first send shows its text as the pending user row and leaves the hero
 before the session or turn exists; the index and session routes mount separate

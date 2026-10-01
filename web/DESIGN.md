@@ -18,7 +18,7 @@ Every colour, radius, font, and spacing value is a token in `packages/frontend/s
 
 Functional UI uses `--font-ui`, assistant prose uses `--font-conversation` (the UI stack unless a skin sets an editorial face), and `--font-mono` is only for code, file paths, commands, tool names, and compact metadata. Avoid making whole cards feel like terminal output unless they actually are logs.
 
-Scale should stay tight: 11px metadata, 12px labels, 14px body, 16–18px headings. Do not proliferate 10px/10.5px/12.5px one-offs unless there is a real layout constraint.
+Scale should stay tight: 11px metadata, 12px labels, 14px body, 16–18px headings. Do not proliferate 10px/10.5px/12.5px one-offs unless there is a real layout constraint. The new-chat hero title is the one display size, `--composer-hero-title-size` (24px).
 
 ## Layout
 

@@ -5,9 +5,10 @@ import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts/common'
-type AgentHealth = Awaited<ReturnType<typeof api.fetchAgentHealth>>
 import type { LiveTurn } from '../../stream/reducer'
 import type { ComposerNotice } from '../composer/ComposerTab'
+
+type AgentHealth = Awaited<ReturnType<typeof api.fetchAgentHealth>>
 
 type Kind = 'thread_error' | 'server_unreachable' | 'offline' | 'agent_unavailable' | 'provider_failure' | 'compressing'
 interface Notice { kind: Kind; tone: 'error' | 'warning' | 'info'; title: string; detail?: string | undefined; /** A short state shown on the right, keeping the row to one line. */ status?: React.ReactNode; action?: { label: string; run: () => void } | undefined; dismissible: boolean }

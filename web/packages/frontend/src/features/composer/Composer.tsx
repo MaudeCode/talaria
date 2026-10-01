@@ -25,8 +25,8 @@ import type { Clarify } from '../chat/useClarify'
 import { LiveStatusPill } from '../chat/LiveTurnView'
 import { ComposerTab, type ComposerNotice } from './ComposerTab'
 import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, useFirstSend } from '../chat/firstSend'
-import { onScrollRequest, requestScroll } from '../chat/sendMotion'
-import { prefersReducedMotion } from '../../lib/motion'
+import { REST_MS, onComposerRestRequest, requestScroll } from '../chat/sendMotion'
+import { MOTION_EASE, prefersReducedMotion } from '../../lib/motion'
 
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
 /** A message waiting for the live turn to settle: it owns its text, upload receipts and the request it was composed against. */
@@ -80,6 +80,19 @@ function usePhone(): boolean {
 /** What a turn posts besides its text: the session's model and workspace, and the active profile. */
 function turnRequest(target: Session, profile: string): QueuedTurn['request'] {
   return { model: target.model ?? undefined, model_provider: target.model_provider ?? undefined, workspace: target.workspace, profile }
+}
+
+/**
+ * Whether a one-line draft would soft-wrap in the box. Measured once per rest request with a canvas, never per
+ * keystroke (UIUX guide, Composer sizing): a draft that wraps is multi-line and keeps the composer expanded.
+ */
+function draftWraps(el: HTMLTextAreaElement, text: string): boolean {
+  if (!text) return false
+  const ctx = document.createElement('canvas').getContext('2d')
+  if (!ctx) return false
+  const style = getComputedStyle(el)
+  ctx.font = style.font
+  return ctx.measureText(text).width > el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
 }
 
 function fileKey(f: File): string {
@@ -166,9 +179,11 @@ export function Composer(props: ComposerProps) {
   useDraftPersistence(sessionId, text)
 
   // T3 Code's resting composer: a hand scroll of an overflowing transcript flattens the card to one row until the next
-  // composer interaction. Losing focus never rests it.
+  // composer interaction. Losing focus never rests it. A request is decided when it arrives and never left pending, so
+  // closing a menu later cannot flatten the card without a new scroll.
   const [restRequested, setRestRequested] = useState(false)
-  useEffect(() => onScrollRequest('reader', () => setRestRequested(true)), [])
+  const restBlocked = useRef<() => boolean>(() => true)
+  useEffect(() => onComposerRestRequest(() => { if (!restBlocked.current()) setRestRequested(true) }), [])
   const wake = () => { if (restRequested) setRestRequested(false) }
 
   // Session change resets the draft and tray, unless this session's composer just adopted a hand-off (below); the
@@ -401,7 +416,9 @@ export function Composer(props: ComposerProps) {
   // Phone composer at rest: one prompt row (UIUX guide), and the strip under it folds away too.
   const collapsed = phone && !text && files.length === 0 && !busy && !focusWithin && !configOpen && !dragOver
   // Phones keep their own collapsed row; a multi-line draft, attachments, an open menu, or a clarification stay expanded.
-  const resting = restRequested && !phone && !value.includes('\n') && files.length === 0 && !configOpen && !palette.open && !clarify && !dragOver
+  const restAllowed = !phone && !value.includes('\n') && files.length === 0 && !configOpen && !palette.open && !clarify && !dragOver
+  const resting = restRequested && restAllowed
+  useEffect(() => { restBlocked.current = () => !restAllowed || (!!textarea.current && draftWraps(textarea.current, value)) })
   // Flattening and lifting ease the card's height (~200 ms) instead of snapping; reduced motion snaps. A ResizeObserver
   // keeps the last settled height, so typing never forces a layout read (UIUX guide, Composer sizing).
   const lastHeight = useRef(0)
@@ -413,21 +430,28 @@ export function Composer(props: ComposerProps) {
     return () => ro.disconnect()
   }, [])
   const restMounted = useRef(false)
+  const restAnimation = useRef<Animation | null>(null)
   useLayoutEffect(() => {
     const el = box.current
     if (!restMounted.current) { restMounted.current = true; return }
     if (!el || !lastHeight.current || typeof el.animate !== 'function' || prefersReducedMotion()) return
-    const height = el.offsetHeight
-    if (height !== lastHeight.current) el.animate([{ height: `${lastHeight.current}px`, overflow: 'hidden' }, { height: `${height}px`, overflow: 'hidden' }], { duration: 200, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' })
+    // A toggle mid-animation starts from where the card is now, not from a height it never reached.
+    const from = restAnimation.current ? el.getBoundingClientRect().height : lastHeight.current
+    restAnimation.current?.cancel()
+    const to = el.offsetHeight
+    if (Math.abs(to - from) < 1) { restAnimation.current = null; return }
+    const animation = el.animate([{ height: `${from}px`, overflow: 'hidden' }, { height: `${to}px`, overflow: 'hidden' }], { duration: REST_MS, easing: MOTION_EASE })
+    restAnimation.current = animation
+    animation.onfinish = () => { if (restAnimation.current === animation) restAnimation.current = null }
   }, [resting])
   const showYolo = yolo && !hide('hide_composer_yolo')
   // The top tab (T3 Code's attached banner): the running turn first, then runtime notices and this message's state.
   const tabNotices: ComposerNotice[] = [
     ...(busy && live ? [{ id: 'live', content: <LiveStatusPill turn={live} /> }] : []),
     ...notices,
-    ...(dictating ? [{ id: 'dictation', content: <><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</> }] : []),
+    ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
-    ...(queued.length > 0 ? [{ id: 'queue', content: <span className="queue-card flex min-w-0 flex-col gap-0.5" role="region" aria-label={m.queued_count({ n: queued.length })}><span className="queue-card-title">{m.queued_count({ n: queued.length })}</span><span className="queue-card-list flex flex-col">{queued.map((q, i) => <span key={i} className="truncate">{q.text}{q.attachments.length ? ` (+${q.attachments.length})` : ''}</span>)}</span></span> }] : []),
+    ...(queued.length > 0 ? [{ id: 'queue', content: <span className="queue-card flex min-w-0 flex-col gap-0.5" role="region" aria-label={m.queued_count({ n: queued.length })} aria-live="polite"><span className="queue-card-title">{m.queued_count({ n: queued.length })}</span><span className="queue-card-list flex flex-col">{queued.map((q, i) => <span key={i} className="truncate">{q.text}{q.attachments.length ? ` (+${q.attachments.length})` : ''}</span>)}</span></span> }] : []),
   ]
   const busyLabel = busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
 
@@ -518,14 +542,17 @@ export function Composer(props: ComposerProps) {
           </div>
         </div>
       </div>
-      {/* T3 Code's context strip: where the message runs (workspace, toolsets, profile), tucked under the card. */}
-      {!collapsed && (!hide('hide_composer_workspace') || !hide('hide_composer_toolsets') || !hide('hide_composer_profile')) && (
-        <div className="composer-strip" role="group" aria-label={m.composer_config_title()}>
-          {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} onChange={onWorkspaceChange} />}
-          {!hide('hide_composer_toolsets') && <ToolsetsChip value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
-          {!hide('hide_composer_profile') && <ProfileMenu />}
-        </div>
-      )}
+      {/* The shelf under the card carries an opaque band, so a scrolled-up transcript never shows below the card. */}
+      <div className="composer-shelf">
+        {/* T3 Code's context strip: where the message runs (workspace, toolsets, profile), tucked under the card. */}
+        {!collapsed && (!hide('hide_composer_workspace') || !hide('hide_composer_toolsets') || !hide('hide_composer_profile')) && (
+          <div className="composer-strip" role="group" aria-label={m.composer_config_title()}>
+            {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} onChange={onWorkspaceChange} />}
+            {!hide('hide_composer_toolsets') && <ToolsetsChip value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
+            {!hide('hide_composer_profile') && <ProfileMenu />}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
