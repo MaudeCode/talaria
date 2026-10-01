@@ -38,7 +38,7 @@ Use almost no shadows in the transcript. Shadows are reserved for popovers, drop
 ## Shapes
 
 - Rows/list items: `4–8px` radius.
-- Cards/panels: `8–12px` radius.
+- Cards/panels: `8–12px` radius. The composer card is the one exception: `--composer-radius` (24px in the base skin) for T3 Code's floating card.
 - Pills: only true chips/badges use `999px`.
 - Avoid stacks of nested rounded rectangles. If a card contains another card, one of them is probably unnecessary.
 

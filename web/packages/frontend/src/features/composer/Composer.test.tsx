@@ -9,25 +9,27 @@ import * as api from '../../api/endpoints'
 import { dispatch, getStreamState, resetStreamStoreForTests } from '../../stream/store'
 import type { LiveTurn } from '../../stream/reducer'
 import type { QueuedTurn } from './Composer'
-import { endFirstSend, getFirstSend } from '../chat/sendMotion'
+import { endFirstSend, getFirstSend } from '../chat/firstSend'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), steerChat: vi.fn() }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn() }))
 import { Composer } from './Composer'
 
 const noop = (): void => undefined
 function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!)) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(
+  const tree = (turn: LiveTurn | null) => (
     <QueryClientProvider client={qc}>
       <BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}>
         <Composer
-          sessionId={session?.session_id ?? null} session={session} live={live} settings={settings} onEnsureSession={onEnsureSession} onLocalCommand={() => Promise.resolve(false)}
+          sessionId={session?.session_id ?? null} session={session} live={turn} settings={settings} onEnsureSession={onEnsureSession} onLocalCommand={() => Promise.resolve(false)}
           terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null}
           yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue}
         />
       </BootstrapContext.Provider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
+  const view = render(tree(live))
+  return { ...view, rerenderWith: (turn: LiveTurn | null) => view.rerender(tree(turn)) }
 }
 
 describe('Composer', () => {
@@ -124,14 +126,24 @@ describe('Composer', () => {
     expect(getFirstSend()).toBeNull()
   })
   it('shows the running turn in the top tab and slides it out when the turn ends (TAL-429)', async () => {
-    const live = running()
-    const { container, rerender } = render(<QueryClientProvider client={new QueryClient()}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><Composer sessionId="s1" session={writable} live={live} settings={undefined} onEnsureSession={() => Promise.resolve(writable)} onLocalCommand={() => Promise.resolve(false)} terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null} yolo={false} onToggleYolo={noop} queued={[]} onQueue={noop} /></BootstrapContext.Provider></QueryClientProvider>)
+    const { container, rerenderWith } = renderComposer(writable, running())
     expect(container.querySelector('.composer-tab .live-run-status')).toHaveTextContent('Responding…')
     dispatch({ type: 'event', sessionId: 's1', streamId: 'run', event: { event: 'done', data: {} }, lastEventId: 'run:1', now: 1 })
-    rerender(<QueryClientProvider client={new QueryClient()}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><Composer sessionId="s1" session={writable} live={getStreamState().turns.s1!} settings={undefined} onEnsureSession={() => Promise.resolve(writable)} onLocalCommand={() => Promise.resolve(false)} terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null} yolo={false} onToggleYolo={noop} queued={[]} onQueue={noop} /></BootstrapContext.Provider></QueryClientProvider>)
+    rerenderWith(getStreamState().turns.s1!)
     // The ended row stays for its exit slide, with the tab leaving alongside it, then both are gone.
     expect(container.querySelector('[data-notice="live"]')).toHaveClass('is-leaving')
     expect(container.querySelector('.composer-tab')).toHaveClass('is-leaving')
     await waitFor(() => expect(container.querySelector('.composer-tab')).toBeNull())
+  })
+  it('hands the text back when the chat start fails after the session exists (TAL-274)', async () => {
+    endFirstSend()
+    vi.mocked(api.startChat).mockRejectedValue(new Error('synthetic start failure'))
+    const created: Session = { ...writable, session_id: 'fresh', is_streaming: false }
+    renderComposer(null, null, noop, undefined, () => Promise.resolve(created))
+    const box = screen.getByRole('textbox')
+    await userEvent.type(box, 'Plan the release{Enter}')
+    await waitFor(() => expect(box).toHaveValue('Plan the release'))
+    expect(api.startChat).toHaveBeenCalledTimes(1)
+    expect(getFirstSend()).toBeNull()
   })
 })

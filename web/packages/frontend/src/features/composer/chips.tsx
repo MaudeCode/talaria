@@ -21,7 +21,7 @@ export function Chip({ icon, label, title, className, disabled, row, size = 'sm'
     )
   }
   return (
-    <button type="button" {...rest} id={id} disabled={disabled} title={title} aria-label={`${title}: ${label}`} className={cn('composer-chip inline-flex shrink-0 items-center whitespace-nowrap rounded-(--control-radius) border border-transparent text-muted outline-none hover:bg-hover hover:text-text data-[popup-open]:bg-hover data-[popup-open]:text-text focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:pointer-events-none disabled:opacity-60', size === 'sm' ? 'h-7 max-w-[240px] gap-1.5 px-2.5 text-[13px] font-medium' : 'h-6 max-w-[220px] gap-1 px-1.5 text-xs font-normal', className)}>
+    <button type="button" {...rest} id={id} disabled={disabled} title={title} aria-label={`${title}: ${label}`} className={cn('composer-chip inline-flex shrink-0 items-center whitespace-nowrap rounded-(--control-radius) border border-(--chip-border) bg-(--chip-bg) text-(--chip-fg) outline-none hover:border-(--chip-hover-border) hover:bg-(--chip-hover-bg) hover:text-(--chip-hover-fg) data-[popup-open]:bg-(--chip-hover-bg) data-[popup-open]:text-(--chip-hover-fg) focus-visible:ring-2 focus-visible:ring-(--focus-ring) disabled:pointer-events-none disabled:opacity-60', size === 'sm' ? 'h-7 max-w-[240px] gap-1.5 px-2.5 text-[13px] font-medium' : 'h-6 max-w-[220px] gap-1 px-1.5 text-xs font-normal', className)}>
       {icon}
       <span className="truncate">{label}</span>
       <ChevronDown size={12} className="-me-0.5 shrink-0 opacity-50" aria-hidden="true" />

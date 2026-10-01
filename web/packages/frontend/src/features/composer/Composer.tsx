@@ -24,7 +24,8 @@ import { ThemeSchema } from '../../contracts/persisted'
 import type { Clarify } from '../chat/useClarify'
 import { LiveStatusPill } from '../chat/LiveTurnView'
 import { ComposerTab, type ComposerNotice } from './ComposerTab'
-import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, requestScrollToEnd, useFirstSend } from '../chat/sendMotion'
+import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, useFirstSend } from '../chat/firstSend'
+import { requestScroll } from '../chat/sendMotion'
 
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
 /** A message waiting for the live turn to settle: it owns its text, upload receipts and the request it was composed against. */
@@ -73,6 +74,11 @@ function usePhone(): boolean {
     return () => mq.removeEventListener('change', on)
   }, [])
   return phone
+}
+
+/** What a turn posts besides its text: the session's model and workspace, and the active profile. */
+function turnRequest(target: Session, profile: string): QueuedTurn['request'] {
+  return { model: target.model ?? undefined, model_provider: target.model_provider ?? undefined, workspace: target.workspace, profile }
 }
 
 function fileKey(f: File): string {
@@ -249,7 +255,7 @@ export function Composer(props: ComposerProps) {
   }, [sessionId])
 
   // Snapshot of what a send would post right now, for the queue.
-  const queueEntry = useCallback((text: string): QueuedTurn => ({ text, attachments: files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : [])), request: { model: session?.model ?? undefined, model_provider: session?.model_provider ?? undefined, workspace: session?.workspace, profile: bootstrap.profile?.name ?? 'default' } }), [files, session, bootstrap.profile])
+  const queueEntry = useCallback((text: string): QueuedTurn => ({ text, attachments: files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : [])), request: session ? turnRequest(session, bootstrap.profile?.name ?? 'default') : { profile: bootstrap.profile?.name ?? 'default' } }), [files, session, bootstrap.profile])
 
   // A steer the turn ended without taking is queued as the next turn, once, as the app does.
   const steerLeftovers = live?.steerLeftovers
@@ -278,11 +284,11 @@ export function Composer(props: ComposerProps) {
         const handled = await onLocalCommand(cmd.name, cmd.args)
         if (handled) { setText(''); return }
       }
-      if (cmd.name === 'queue' && busy) { requestScrollToEnd(); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
-      if (cmd.name === 'steer' && busy && sessionId) { if (!cmd.args) { showToast(m.cmd_steer_no_msg(), 2000); return } requestScrollToEnd(); if (await trySteer(cmd.args)) setText(''); return }
-      if (cmd.name === 'interrupt' && busy && sessionId) { requestScrollToEnd(); await cancelTurn(sessionId); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
+      if (cmd.name === 'queue' && busy) { requestScroll('end'); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
+      if (cmd.name === 'steer' && busy && sessionId) { if (!cmd.args) { showToast(m.cmd_steer_no_msg(), 2000); return } requestScroll('end'); if (await trySteer(cmd.args)) setText(''); return }
+      if (cmd.name === 'interrupt' && busy && sessionId) { requestScroll('end'); await cancelTurn(sessionId); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
     }
-    requestScrollToEnd()
+    requestScroll('end')
     if (busy && sessionId) {
       if (busyMode === 'queue') { onQueue(queueEntry(value)); setText(''); setFiles([]); return }
       if (busyMode === 'steer') { if (await trySteer(value)) setText(''); return }
@@ -300,7 +306,7 @@ export function Composer(props: ComposerProps) {
       setText('')
       try {
         const target = await onEnsureSession()
-        const started = await startTurn({ sessionId: target.session_id, message: value, request: { model: target.model ?? undefined, model_provider: target.model_provider ?? undefined, workspace: target.workspace, profile: bootstrap.profile?.name ?? 'default' } })
+        const started = await startTurn({ sessionId: target.session_id, message: value, request: turnRequest(target, bootstrap.profile?.name ?? 'default') })
         // A turn admitted without a stream leaves no live row; hold the pending one until the session payload carries it.
         if (!started.stream_id) await qc.refetchQueries({ queryKey: keys.sessions.detail(target.session_id) })
         clearDraft(target.session_id)
@@ -316,7 +322,7 @@ export function Composer(props: ComposerProps) {
     try {
       const target = session
       const attachments = files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : []))
-      await startTurn({ sessionId: target.session_id, message: value, request: { model: target.model ?? undefined, model_provider: target.model_provider ?? undefined, workspace: target.workspace, profile: bootstrap.profile?.name ?? 'default', ...(attachments.length ? { attachments } : {}) } })
+      await startTurn({ sessionId: target.session_id, message: value, request: { ...turnRequest(target, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
       setText('')
       setFiles([])
       clearDraft(target.session_id)
@@ -386,13 +392,13 @@ export function Composer(props: ComposerProps) {
   // Phone composer at rest: one prompt row (UIUX guide), and the strip under it folds away too.
   const collapsed = phone && !text && files.length === 0 && !busy && !focusWithin && !configOpen && !dragOver
   const showYolo = yolo && !hide('hide_composer_yolo')
-  // The top tab (T3 Code's attached banner): runtime notices first, then the running turn and this message's state.
+  // The top tab (T3 Code's attached banner): the running turn first, then runtime notices and this message's state.
   const tabNotices: ComposerNotice[] = [
-    ...notices,
     ...(busy && live ? [{ id: 'live', content: <LiveStatusPill turn={live} /> }] : []),
-    ...(dictating ? [{ id: 'dictation', tone: 'error' as const, role: 'status' as const, content: <><span className="mic-dot" aria-hidden="true" /> {m.voice_listening()}</> }] : []),
-    ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, onClick: onToggleYolo, title: m.yolo_pill_title_active(), content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_pill_title_active()}</span></> }] : []),
-    ...(queued.length > 0 ? [{ id: 'queue', role: 'region' as const, label: m.queued_count({ n: queued.length }), content: <span className="queue-card flex min-w-0 flex-col gap-0.5" aria-live="polite"><span className="queue-card-title">{m.queued_count({ n: queued.length })}</span><span className="queue-card-list flex flex-col">{queued.map((q, i) => <span key={i} className="truncate">{q.text}{q.attachments.length ? ` (+${q.attachments.length})` : ''}</span>)}</span></span> }] : []),
+    ...notices,
+    ...(dictating ? [{ id: 'dictation', content: <><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</> }] : []),
+    ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
+    ...(queued.length > 0 ? [{ id: 'queue', content: <span className="queue-card flex min-w-0 flex-col gap-0.5" role="region" aria-label={m.queued_count({ n: queued.length })}><span className="queue-card-title">{m.queued_count({ n: queued.length })}</span><span className="queue-card-list flex flex-col">{queued.map((q, i) => <span key={i} className="truncate">{q.text}{q.attachments.length ? ` (+${q.attachments.length})` : ''}</span>)}</span></span> }] : []),
   ]
   const busyLabel = busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
 
@@ -403,7 +409,7 @@ export function Composer(props: ComposerProps) {
     <div className="composer-wrap" id="composerWrap">
       <ComposerTab notices={tabNotices} />
       <div
-        className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-[20px]', dragOver && 'drag-over', clarify && 'clarify-active')}
+        className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-(--composer-radius-phone)', dragOver && 'drag-over', clarify && 'clarify-active')}
         id="composerBox"
         ref={box}
         onFocus={() => setFocusWithin(true)}
@@ -452,7 +458,7 @@ export function Composer(props: ComposerProps) {
             {!hide('hide_composer_context') && <ContextRing used={contextUsed} total={contextTotal} threshold={session?.threshold_tokens} />}
             {clarify && (
               <button type="button" onClick={clarify.send} disabled={!clarify.canSend} className="send-btn has-tooltip has-tooltip--left" id="btnClarifySend" data-tooltip={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()} aria-label={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()}>
-                <ArrowUp size={16} aria-hidden="true" />
+                <ArrowUp size={14} aria-hidden="true" />
               </button>
             )}
             {busy ? (
@@ -463,20 +469,21 @@ export function Composer(props: ComposerProps) {
                 {/* A typed draft steers, queues or interrupts mid-turn like Enter does, so it gets a send arrow beside Stop. */}
                 {!clarify && canSend && (
                   <button type="button" onClick={() => { void send() }} className="send-btn has-tooltip has-tooltip--left" id="btnSend" data-tooltip={busyLabel} aria-label={busyLabel} title={busyLabel}>
-                    <ArrowUp size={16} aria-hidden="true" />
+                    <ArrowUp size={14} aria-hidden="true" />
                   </button>
                 )}
               </>
             ) : !clarify && (
               <button type="button" onClick={() => { void send() }} disabled={!canSend} className="send-btn has-tooltip has-tooltip--left" id="btnSend" data-tooltip={m.composer_send()} aria-label={m.composer_send()} title={m.composer_send()}>
-                <ArrowUp size={16} aria-hidden="true" />
+                <ArrowUp size={14} aria-hidden="true" />
               </button>
             )}
           </div>
           <div className={cn('composer-mobile-config-panel', configOpen && 'open')} id="composerMobileConfigPanel" role="group" aria-label={m.composer_config_title()}>
             {stage === 'burger' && !hide('hide_composer_model') && <ModelChip row value={session?.model ?? pendingChoices?.model ?? null} defaultModel={settings?.default_model} onChange={onModelChange} />}
             {stage === 'burger' && !hide('hide_composer_reasoning') && reasoningSupported && <ReasoningChip row value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} />}
-            {stage === 'burger' && <button type="button" className={cn('icon-btn', terminalOpen && 'active')} id="btnTerminal" title={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => { setConfigOpen(false); onToggleTerminal() }}><TerminalSquare size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.composer_terminal_toggle()}</span></button>}
+            {/* The chat header carries the terminal toggle above phone width. */}
+            {stage === 'burger' && phone && <button type="button" className={cn('icon-btn', terminalOpen && 'active')} id="btnTerminal" title={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => { setConfigOpen(false); onToggleTerminal() }}><TerminalSquare size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.composer_terminal_toggle()}</span></button>}
             {stage === 'burger' && !hide('hide_composer_context') && <ContextRow used={contextUsed} total={contextTotal} threshold={session?.threshold_tokens} />}
           </div>
         </div>

@@ -1897,8 +1897,6 @@
 	"yolo_no_session": "Нет активного сеанса",
 	"yolo_enabled": "⚡ YOLO режим ВКЛ — подтверждения пропущены",
 	"yolo_disabled": "YOLO режим ВЫКЛ",
-	"yolo_pill_label": "YOLO",
-	"yolo_pill_title_active": "YOLO режим активен — нажмите для отключения",
 	"approval_skip_all": "⚡ Пропустить все в этом сеансе",
 	"approval_skip_all_title": "Пропустить все запросы подтверждения в этом сеансе",
 	"composer_send": "Отправить сообщение",

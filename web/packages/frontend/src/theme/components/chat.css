@@ -29,8 +29,6 @@
 :root[data-font-size="large"] #msg{font-size:18px}
 :root[data-font-size="xlarge"] #msg{font-size:20px}
 .msg-row,.msg-row *{transition-property:none !important;transition-duration:0s !important;transition-delay:0s !important}
-.chat-runtime-notice{position:fixed;left:0;right:0;top:0;z-index:1050;display:flex;flex-direction:column;max-height:min(46vh,320px);overflow-y:auto;overscroll-behavior:contain;border-bottom:1px solid color-mix(in srgb,var(--accent) 50%,var(--surface));background:color-mix(in srgb,var(--surface) 88%,var(--accent));color:var(--text);box-shadow:0 12px 40px rgba(0,0,0,.22);backdrop-filter:blur(10px)}
-.chat-runtime-notice[hidden]{display:none !important}
 .scroll-to-bottom-btn{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--composer-h,0px) + 12px);height:32px;min-width:32px;max-width:min(260px,calc(100% - 40px));border-radius:999px;border:1px solid var(--border2);background:var(--scroll-btn-bg);color:var(--muted);font-size:12px;font-weight:600;gap:5px;padding:0 12px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:var(--scroll-btn-shadow);z-index:10;transition:color .12s,border-color .12s,background .12s}
 .scroll-to-bottom-btn:hover{color:var(--text);border-color:var(--border);background:var(--hover-bg)}
 .msg-row{padding:10px 0}
@@ -160,7 +158,7 @@ textarea#msg::placeholder{color:var(--muted)}
 .msg-body{line-height:1.6;letter-spacing:var(--msg-tracking)}
 .msg-role,.msg-time{font-family:var(--font-mono);font-size:11px;letter-spacing:0}
 #msg{padding:16px 16px 6px;font-size:14.5px;line-height:1.6}
-@media (max-width:640px){#msg{padding:12px 14px 4px}}
+@media (max-width:640px){#msg{padding:12px 12px 4px}}
 #panelChat{position:relative}
 #panelChat .sidebar-search{position:absolute;top:0;left:0;right:0;height:44px;margin:0;padding:7px 8px 7px 10px;display:flex;align-items:center;background:var(--sidebar);z-index:3;opacity:0;pointer-events:none;transform:scaleX(.97);transform-origin:right center;transition:opacity .15s ease,transform .15s ease}
 #panelChat.search-open .sidebar-search{opacity:1;pointer-events:auto;transform:none}
@@ -198,5 +196,5 @@ textarea#msg::-webkit-scrollbar{display:var(--composer-scrollbar-display)}
 /* Live-turn indicator: laurel wreath plus a gold shimmer on the label, both from theme tokens. */
 .live-laurel{flex-shrink:0;color:var(--accent)}
 .live-laurel .laurel-leaf{animation:laurel-leaf 1s linear infinite}
-.live-run-label{font-size:12.5px;line-height:1.3;color:transparent;background:linear-gradient(100deg,var(--muted) 34%,var(--accent) 50%,var(--muted) 66%);background-size:240% 100%;background-clip:text;-webkit-background-clip:text;animation:reasoning-title-glow 2.2s ease-in-out infinite}
+.live-run-label{font-size:var(--font-size-sm);line-height:1.3;color:transparent;background:linear-gradient(100deg,var(--muted) 34%,var(--accent) 50%,var(--muted) 66%);background-size:240% 100%;background-clip:text;-webkit-background-clip:text;animation:reasoning-title-glow 2.2s ease-in-out infinite}
 @media (prefers-reduced-motion:reduce){.live-laurel .laurel-leaf{animation:none}.live-run-label{color:var(--muted);background:none;animation:none}}

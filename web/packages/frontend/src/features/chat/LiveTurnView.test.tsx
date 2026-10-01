@@ -55,3 +55,33 @@ describe('live status', () => {
     expect(pills(view.container)[0]).toHaveTextContent('Reconnecting…')
   })
 })
+
+describe('live steering', () => {
+  it('shows a sent steer as a pending user message until the Agent takes it', () => {
+    const run = liveRun()
+    run.emit({ event: 'tool', data: { id: 'a', name: 'read_file', args: { path: 'a.txt' } } })
+    run.dispatch({ type: 'steer', sessionId: 's', steerId: 's1', text: 'Check b too', status: 'sending' })
+    const view = render(<View run={run} />)
+    const pending = view.getByText('Check b too').closest('[data-role="user"]')
+    expect(pending).toHaveTextContent('Steering hint · Sending')
+    run.dispatch({ type: 'steer', sessionId: 's', steerId: 's1', text: 'Check b too', status: 'waiting' })
+    view.rerender(<View run={run} />)
+    expect(view.getByText('Check b too').closest('[data-role="user"]')).toHaveTextContent('Steering hint · Waiting for agent')
+    run.emit({ event: 'steer_consumed', data: { steer_id: 's1', text: 'Check b too', after_tool_call_id: null } })
+    view.rerender(<View run={run} />)
+    expect(view.getAllByText('Check b too')).toHaveLength(1)
+    expect(view.getByText('Check b too').closest('[data-role="user"]')).not.toHaveTextContent('Waiting')
+  })
+
+  it('renders a consumed steer as a user message where the agent took it', () => {
+    const run = liveRun()
+    run.emit({ event: 'tool', data: { id: 'a', name: 'read_file', args: { path: 'a.txt' } } })
+    run.emit({ event: 'tool_complete', data: { id: 'a', name: 'read_file' } })
+    run.emit({ event: 'steer_consumed', data: { steer_id: 's1', text: 'Check b too', after_tool_call_id: 'a' } })
+    run.emit({ event: 'token', data: { text: 'Checking b.' } })
+    const view = render(<View run={run} />)
+    const steer = view.getByText(/Check b too/)
+    expect(steer.closest('[data-role="user"]')).not.toBeNull()
+    expect(steer.compareDocumentPosition(view.getByText('Checking b.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { isApiError } from '../../contracts/common'
+type AgentHealth = Awaited<ReturnType<typeof api.fetchAgentHealth>>
 import type { LiveTurn } from '../../stream/reducer'
 import type { ComposerNotice } from '../composer/ComposerTab'
 
@@ -17,15 +18,22 @@ export function retryDelay(failures: number): number {
   return Math.min(30_000, 1_000 * 2 ** Math.max(0, failures - 1))
 }
 
+/**
+ * One server probe: the agent health answer, or how many probes in a row got no HTTP answer at all and when the last
+ * one failed. Carrying the count in the query data lets `refetchInterval` back off without extra component state.
+ */
+interface Probe { health: AgentHealth | null; failures: number; failedAt: number }
+const PROBE_KEY = [...keys.health.agent, 'probe'] as const
+
 /** "Retrying in 8s", counting down to the next probe; a spinner while a probe is in flight. */
-function RetryCountdown({ at, busy }: { at: number | null; busy: boolean }) {
+function RetryCountdown({ at, busy }: { at: number; busy: boolean }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    if (busy || at === null) return
+    if (busy) return
     const tick = setInterval(() => setNow(Date.now()), 250)
     return () => clearInterval(tick)
   }, [at, busy])
-  if (busy || at === null) return <span className="inline-flex items-center gap-1"><Loader2 size={12} className="animate-spin" aria-hidden="true" />{m.notice_server_detail()}</span>
+  if (busy) return <span className="inline-flex items-center gap-1"><Loader2 size={12} className="animate-spin" aria-hidden="true" />{m.notice_server_detail()}</span>
   return <span className="tabular-nums">{m.notice_server_retry_in({ seconds: String(Math.max(1, Math.ceil((at - now) / 1000))) })}</span>
 }
 
@@ -41,33 +49,43 @@ export function useOnline(): boolean {
   return online
 }
 
+/** The first notice, for the screen-reader regions: errors are assertive, everything else polite. */
+export interface Announcement { assertive: boolean; text: string }
+
 /**
  * Connection and runtime state as composer top-tab entries (legacy HWEB-11, moved into the tab by TAL-429): thread
  * error, unreachable Talaria server, offline, agent unavailable, provider failure, manual compression. A live turn's
- * reconnect is the live row's own label. The first entry is announced through a polite or assertive region.
+ * reconnect is the live row's own label.
  */
-export function useRuntimeNotices({ live, onRetry, compressing }: { live: LiveTurn | null; onRetry?: (() => void) | undefined; compressing: boolean }): { notices: ComposerNotice[]; announcer: React.ReactNode } {
+export function useRuntimeNotices({ live, onRetry, compressing }: { live: LiveTurn | null; onRetry?: (() => void) | undefined; compressing: boolean }): { notices: ComposerNotice[]; announcement: Announcement | null } {
   const online = useOnline()
+  const qc = useQueryClient()
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
   // The agent health poll doubles as the server probe: a request that never got an HTTP answer means this browser
-  // cannot reach the Talaria server. While it cannot, probes back off exponentially (retryDelay) instead of polling.
-  const agent = useQuery({ queryKey: keys.health.agent, queryFn: api.fetchAgentHealth, refetchInterval: (q) => (q.state.status === 'error' ? false : 10_000), staleTime: 2_000, retry: false, enabled: online })
-  const unreachable = online && agent.isError && isApiError(agent.error) && (agent.error.kind === 'network' || agent.error.kind === 'timeout')
-  const { refetch, isFetching, errorUpdatedAt } = agent
-  const [backoff, setBackoff] = useState({ failures: 0, seenError: 0 })
-  // Count consecutive failed probes; a success (or going offline) resets the backoff.
-  if (unreachable && backoff.seenError !== errorUpdatedAt) setBackoff({ failures: backoff.failures + 1, seenError: errorUpdatedAt })
-  if (!unreachable && backoff.failures !== 0) setBackoff({ failures: 0, seenError: 0 })
-  const nextAt = unreachable && backoff.failures > 0 ? errorUpdatedAt + retryDelay(backoff.failures) : null
-  useEffect(() => {
-    if (nextAt === null || isFetching) return
-    const timer = setTimeout(() => { void refetch() }, Math.max(0, nextAt - Date.now()))
-    return () => clearTimeout(timer)
-  }, [nextAt, isFetching, refetch])
+  // cannot reach the Talaria server. Those probes back off exponentially; an HTTP error keeps the healthy cadence.
+  const probe = useQuery({
+    queryKey: PROBE_KEY,
+    queryFn: async (): Promise<Probe> => {
+      try {
+        return { health: await api.fetchAgentHealth(), failures: 0, failedAt: 0 }
+      } catch (e) {
+        if (!isApiError(e) || (e.kind !== 'network' && e.kind !== 'timeout')) throw e
+        const last = qc.getQueryData<Probe>(PROBE_KEY)
+        return { health: last?.health ?? null, failures: (last?.failures ?? 0) + 1, failedAt: Date.now() }
+      }
+    },
+    refetchInterval: (q) => (q.state.data && q.state.data.failures > 0 ? retryDelay(q.state.data.failures) : 10_000),
+    staleTime: 2_000,
+    retry: false,
+    enabled: online,
+  })
+  const failures = online ? (probe.data?.failures ?? 0) : 0
+  const health = probe.data?.health
+  const retry = () => { void probe.refetch() }
   const list: Notice[] = []
   if (!online) list.push({ kind: 'offline', tone: 'warning', title: m.notice_offline_title(), detail: m.notice_offline_detail(), dismissible: true })
-  if (unreachable) list.push({ kind: 'server_unreachable', tone: 'warning', title: m.notice_server_title(), status: <RetryCountdown at={nextAt} busy={isFetching} />, action: { label: m.retry(), run: () => { void refetch() } }, dismissible: false })
-  if (!unreachable && agent.data?.alive === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: m.notice_agent_title(), detail: agent.data.details?.reason ?? agent.data.error, dismissible: true })
+  if (failures > 0) list.push({ kind: 'server_unreachable', tone: 'warning', title: m.notice_server_title(), status: <RetryCountdown at={(probe.data?.failedAt ?? 0) + retryDelay(failures)} busy={probe.isFetching} />, action: { label: m.retry(), run: retry }, dismissible: false })
+  if (failures === 0 && health?.alive === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: m.notice_agent_title(), detail: health.details?.reason ?? health.error, dismissible: true })
   if (live?.warning) list.push({ kind: 'provider_failure', tone: 'warning', title: live.warning, dismissible: true })
   if (live?.status === 'error' && live.error) list.push({ kind: 'thread_error', tone: 'error', title: m.live_error(), detail: live.error.message, action: onRetry ? { label: m.retry(), run: onRetry } : undefined, dismissible: true })
   if (compressing) list.push({ kind: 'compressing', tone: 'info', title: m.live_compressing(), dismissible: false })
@@ -87,11 +105,5 @@ export function useRuntimeNotices({ live, onRetry, compressing }: { live: LiveTu
     action: n.action,
     onDismiss: n.dismissible ? () => setDismissed((d) => new Set([...d, `${n.kind}:${n.title}`])) : undefined,
   }))
-  const announcer = (
-    <>
-      <div className="sr-only" role="alert" aria-live="assertive" aria-atomic="true">{first?.tone === 'error' ? `${first.title} ${first.detail ?? ''}` : ''}</div>
-      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true" aria-label={m.runtime_notice_region()}>{first && first.tone !== 'error' ? first.title : ''}</div>
-    </>
-  )
-  return { notices, announcer }
+  return { notices, announcement: first ? { assertive: first.tone === 'error', text: first.tone === 'error' ? `${first.title} ${first.detail ?? ''}`.trim() : first.title } : null }
 }

@@ -24,14 +24,15 @@ import { useClarify } from './useClarify'
 import { TerminalPanel } from '../terminal/TerminalPanel'
 import { WorkspacePanel } from '../workspace/WorkspacePanel'
 import { workspaceLabel } from '../workspaces/label'
-import { useRuntimeNotices } from '../notices/RuntimeNoticeStack'
+import { useRuntimeNotices } from '../notices/useRuntimeNotices'
 import { showToast } from '../toast/toast'
 import { isApiError } from '../../contracts/common'
 import { ErrorState, formatDate } from '../../ui/States'
 import { readPersisted, removePersisted, writePersisted } from '../../lib/persisted'
 import type { ActivityMode } from './blocks/Worklog'
 import { createSessionNow } from '../sessions/useNewChat'
-import { beginDock, bindFirstSend, ownsFirstSend, playDock, requestFollow, useFirstSend } from './sendMotion'
+import { beginDock, playDock, requestScroll } from './sendMotion'
+import { bindFirstSend, ownsFirstSend, useFirstSend } from './firstSend'
 
 export function ChatView({ sessionId }: { sessionId: string | null }) {
   const bootstrap = useBootstrap()
@@ -235,7 +236,14 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     if (!stageEl || !dockEl) return
     const measure = () => {
       const height = `${dockEl.offsetHeight}px`
-      if (stageEl.style.getPropertyValue('--composer-h') !== height) { stageEl.style.setProperty('--composer-h', height); requestFollow() }
+      if (stageEl.style.getPropertyValue('--composer-h') !== height) { stageEl.style.setProperty('--composer-h', height); requestScroll('follow') }
+      // The hero centres the card, not the dock: the strip under it and the wrap's padding would lift it off centre.
+      const box = dockEl.querySelector('#composerBox')
+      if (box) {
+        const d = dockEl.getBoundingClientRect()
+        const b = box.getBoundingClientRect()
+        stageEl.style.setProperty('--composer-hero-shift', `${((d.bottom - b.bottom) - (b.top - d.top)) / 2}px`)
+      }
       heroTop.current = dockEl.classList.contains('composer-dock--hero') ? dockEl.getBoundingClientRect().top : null
     }
     measure()
@@ -265,7 +273,9 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           {/* T3 Code keeps the terminal toggle in the thread header; phones reach it from the composer's overflow menu. */}
           {sessionId && <button type="button" className={cn('icon-btn has-tooltip has-tooltip--left', terminalOpen && 'active')} id="btnTerminalInline" data-tooltip={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => setTerminalOpen((t) => !t)}><TerminalSquare size={16} aria-hidden="true" /></button>}
         </div>
-        {runtime.announcer}
+        {/* The first runtime notice, for screen readers: errors interrupt, everything else waits its turn. */}
+        <div className="sr-only" role="alert" aria-live="assertive" aria-atomic="true">{runtime.announcement?.assertive ? runtime.announcement.text : ''}</div>
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{runtime.announcement && !runtime.announcement.assertive ? runtime.announcement.text : ''}</div>
         {notFound && <div className="p-4"><ErrorState error={new Error(m.transcript_not_found())} onRetry={() => { void navigate({ to: '/', search: { action: 'new-chat' } }) }} /></div>}
         {otherProfile && <div className="p-4"><ErrorState error={new Error(m.transcript_other_profile({ profile: ((query.error as { body?: { profile?: string } }).body?.profile ?? '') }))} /></div>}
         {query.isError && !notFound && !otherProfile && <div className="p-4"><ErrorState error={query.error} onRetry={() => { void refresh() }} /></div>}

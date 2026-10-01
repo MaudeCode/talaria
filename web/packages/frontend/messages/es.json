@@ -1773,8 +1773,6 @@
 	"yolo_no_session": "No hay sesión activa",
 	"yolo_enabled": "⚡ Modo YOLO activado — aprobaciones omitidas",
 	"yolo_disabled": "Modo YOLO desactivado",
-	"yolo_pill_label": "YOLO",
-	"yolo_pill_title_active": "Modo YOLO activo — haz clic para desactivar",
 	"approval_skip_all": "⚡ Saltar todo en esta sesión",
 	"approval_skip_all_title": "Saltar todas las solicitudes de aprobación en esta sesión",
 	"composer_send": "Enviar mensaje",

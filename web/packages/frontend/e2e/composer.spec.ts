@@ -25,7 +25,7 @@ test('a new chat centres the composer card with the headline above it', async ({
   await expect(page.locator('.composer-dock--hero')).toBeVisible()
   const stage = await box(page, '.chat-stage')
   const card = await box(page, '#composerBox')
-  expect(Math.abs(card.y + card.height / 2 - (stage.y + stage.height / 2))).toBeLessThan(24)
+  expect(Math.abs(card.y + card.height / 2 - (stage.y + stage.height / 2))).toBeLessThan(4)
   const title = await box(page, '#emptyHeroTitle')
   expect(title.y + title.height).toBeLessThanOrEqual(card.y)
 })
@@ -48,6 +48,17 @@ test('the first send leaves the hero and shows the message before the session or
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'first-send', title: 'First', messages: persisted ? [{ role: 'user', id: 1, content: 'Plan the release' }] : [] } } }))
   await page.goto('/')
   await page.locator('#msg').fill('Plan the release')
+  // Every frame from the click on: how many rows show the text, and whether the hero is back.
+  await page.evaluate(() => {
+    const w = window as unknown as { frames_: { rows: number; hero: boolean }[] }
+    w.frames_ = []
+    const tick = () => {
+      const rows = [...document.querySelectorAll('#messages .msg-row[data-role="user"]')].filter((r) => r.textContent?.includes('Plan the release')).length
+      w.frames_.push({ rows, hero: !!document.querySelector('.composer-dock--hero') })
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
   await page.locator('#btnSend').click()
 
   // Neither request has answered: the message already shows once and the composer is docked and empty.
@@ -65,9 +76,31 @@ test('the first send leaves the hero and shows the message before the session or
   await expect.poll(() => persisted).toBe(true)
   await expect(messages.getByText('Plan the release', { exact: true })).toHaveCount(1)
   await expect(page.locator('.composer-dock--hero')).toHaveCount(0)
+  // Through session creation, the route change, and reconciliation: never two rows, and once shown never gone or back in the hero.
+  const frames = await page.evaluate(() => (window as unknown as { frames_: { rows: number; hero: boolean }[] }).frames_)
+  const shown = frames.findIndex((f) => f.rows > 0)
+  expect(shown).toBeGreaterThanOrEqual(0)
+  expect(Math.max(...frames.map((f) => f.rows))).toBe(1)
+  expect(frames.slice(shown).every((f) => f.rows === 1 && !f.hero)).toBe(true)
 })
 
-test('a failed first send returns the text to the composer', async ({ page, errors }) => {
+test('a chat start that fails after the session exists returns the text to its composer', async ({ page, errors }) => {
+  await page.route('**/api/session/new', (route) => route.fulfill({ json: { session: { session_id: 'start-fails', title: '', messages: [] } } }))
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'start-fails', title: '', messages: [] } } }))
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.route('**/api/chat/start', (route) => route.fulfill({ status: 500, json: { error: 'synthetic start failure' } }))
+  await page.goto('/')
+  await page.locator('#msg').fill('Keep this draft')
+  await page.locator('#btnSend').click()
+  // The index view unmounted with the navigation; the session view's composer takes the text back.
+  await expect(page).toHaveURL(/\/session\/start-fails$/)
+  await expect(page.locator('#msg')).toHaveValue('Keep this draft')
+  await expect(page.locator('#messages').getByText('Keep this draft')).toHaveCount(0)
+  // The synthetic 500 is the point of this test.
+  errors.splice(0, errors.length, ...errors.filter((e) => !/api\/chat\/start|status of 500/.test(e)))
+})
+
+test('a failed session create returns the text to the composer', async ({ page, errors }) => {
   await page.route('**/api/session/new', (route) => route.fulfill({ status: 500, json: { error: 'synthetic failure' } }))
   await page.goto('/')
   await page.locator('#msg').fill('Keep this draft')

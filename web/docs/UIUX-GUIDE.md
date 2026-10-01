@@ -203,16 +203,17 @@ surface sits behind the card at rest. Leaving the hero plays a 340 ms FLIP from
 the centred position (`sendMotion.ts`; instant under reduced motion). A new
 chat's first send shows its text as the pending user row and leaves the hero
 before the session or turn exists; the index and session routes mount separate
-views, so that state and the dock animation live in `sendMotion.ts` and survive
-the remount, and a failed send returns the text to the box. Every send, steer,
+views, so that state (`firstSend.ts`) and the dock animation (`sendMotion.ts`)
+survive the remount, and a failed send returns the text to the box. Every send, steer,
 or queue returns the transcript to its end.
 
 The top tab is a list of `ComposerNotice` entries (`ComposerTab.tsx`): an id,
-a tone (`neutral`, `info`, `warning`, `error`), content, and an optional action,
-dismiss, or row click. New transient status is a new entry, not new composer
+a tone (`neutral`, `info`, `warning`, `error`), content, and an optional action
+or dismiss. New transient status is a new entry, not new composer
 chrome; `useRuntimeNotices` supplies the connection and runtime ones (offline,
 Talaria server unreachable, agent unavailable, provider failure, turn error with
-Retry, compressing). Entries slide up from behind the card and sink back on exit;
+Retry, compressing); an unreachable server is probed with exponential backoff
+and shows its countdown and a Retry action. Entries slide up from behind the card and sink back on exit;
 every height change of the composer re-pins a following transcript in the same
 frame, so streamed lines never hide behind a growing tab.
 

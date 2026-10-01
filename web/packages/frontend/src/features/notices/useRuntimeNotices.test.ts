@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { retryDelay } from './RuntimeNoticeStack'
+import { retryDelay } from './useRuntimeNotices'
 
 describe('retryDelay', () => {
   it('waits 1 s after the first failure and doubles to a 30 s cap', () => {

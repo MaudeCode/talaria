@@ -12,7 +12,7 @@ import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
 import { groupAssistantTurns } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
-import { onFollowRequest, onScrollToEndRequest } from './sendMotion'
+import { onScrollRequest } from './sendMotion'
 
 const VIRTUALIZE_AT = 200
 
@@ -66,7 +66,8 @@ export function Transcript(props: TranscriptProps) {
   const showLiveUser = !!live && !isTerminal(live.status) && live.userText.trim() !== '' && !lastRowIsUser && !rows.some((r) => r.message.role === 'user' && messageKey(r.message) === live.userMessageId)
   // One slot for the user's newest text: the pending first send until the turn starts, then the live user row, so the
   // handover neither flashes nor duplicates.
-  const liveUserText = showLiveUser ? (live?.userText ?? '') : !live && pendingUserText ? pendingUserText : ''
+  // A persisted user row as the tail means the server already carries the pending text; never show it twice.
+  const liveUserText = showLiveUser ? (live?.userText ?? '') : !live && pendingUserText && !lastRowIsUser ? pendingUserText : ''
   const lastAssistantIndex = useMemo(() => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i]?.message.role === 'assistant') return i; return -1 }, [rows])
   const virtualize = virtualizeLongTranscripts && rows.length > VIRTUALIZE_AT
 
@@ -123,8 +124,8 @@ export function Transcript(props: TranscriptProps) {
   }, [empty, scope, scrollToBottom])
 
   // A submit returns to the end wherever the reader was, and the next layout follows it there (T3 Code's scrollToEnd).
-  useEffect(() => onScrollToEndRequest(() => { settlingRef.current = true; scrollToBottom(false) }), [scrollToBottom])
-  useEffect(() => onFollowRequest(() => { if (followsRef.current()) scrollToBottom(false) }), [scrollToBottom])
+  useEffect(() => onScrollRequest('end', () => { settlingRef.current = true; scrollToBottom(false) }), [scrollToBottom])
+  useEffect(() => onScrollRequest('follow', () => { if (followsRef.current()) scrollToBottom(false) }), [scrollToBottom])
 
   const virtualizer = useVirtualizer({
     count: virtualize ? rows.length : 0,

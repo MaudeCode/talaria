@@ -1751,8 +1751,6 @@
 	"yolo_no_session": "無活動工作階段",
 	"yolo_enabled": "⚡ YOLO 模式已開啟，將略過所有核准",
 	"yolo_disabled": "YOLO 模式已關閉",
-	"yolo_pill_label": "YOLO",
-	"yolo_pill_title_active": "YOLO 模式已啟用，點選即可關閉",
 	"approval_skip_all": "⚡ 本次工作階段全部跳過",
 	"approval_skip_all_title": "略過本次工作階段的所有核准提示",
 	"composer_send": "傳送訊息",

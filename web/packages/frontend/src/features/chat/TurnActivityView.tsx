@@ -11,6 +11,7 @@ import { ToolCard, toolCardLabel } from './blocks/ToolCard'
 import { DisclosureTurnContext, terminalOutcomeLabel, Worklog, type ActivityMode } from './blocks/Worklog'
 import { useLocale } from '../../i18n/useLocale'
 import type { ActivityItem, TurnActivity } from './turnActivity'
+import { prefersReducedMotion } from '../../lib/motion'
 
 // The live turn's last rendered height, so the settled row that replaces it can fold from that height.
 let lastLiveTurn: { key: string; height: number } | null = null
@@ -31,7 +32,7 @@ function SettleSpacer({ turnKey }: { turnKey: string }) {
     const row = el?.closest('.assistant-turn')
     if (live?.key !== turnKey || !el || !row) return
     lastLiveTurn = null
-    if (typeof el.animate !== 'function' || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)) return
+    if (typeof el.animate !== 'function' || prefersReducedMotion()) return
     // Grow before measuring: a layout forced while the row is shorter than the live turn would clamp the scroll first.
     el.style.height = `${live.height}px`
     const body = row.querySelector<HTMLElement>(':scope > .assistant-turn-blocks > .activity:not(.open) > .activity-body')

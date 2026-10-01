@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
+import { prefersReducedMotion } from '../../lib/motion'
 
 /**
  * One row of the composer's top tab (TAL-429, after T3 Code's ComposerBanner). A feature adds an entry; the tab
@@ -12,26 +13,27 @@ export interface ComposerNotice {
   content: ReactNode
   action?: { label: string; run: () => void } | undefined
   onDismiss?: (() => void) | undefined
-  /** Click target for the whole row (the YOLO warning turns YOLO off). */
-  onClick?: (() => void) | undefined
-  title?: string | undefined
-  role?: 'status' | 'region' | undefined
-  label?: string | undefined
 }
 
 const LEAVE_MS = 220
-const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /** The tab on the card's top edge: entries slide up from behind the card and back down when they end. */
 export function ComposerTab({ notices }: { notices: ComposerNotice[] }) {
   // An entry that leaves stays for its exit slide at its old place; the tab leaves with its last entry.
   const [leaving, setLeaving] = useState<{ notice: ComposerNotice; index: number }[]>([])
+  // The entries are rebuilt on every composer render; only a change in which ids are present can start an exit.
+  const latest = useRef(notices)
+  const lastRender = useRef(notices)
   const previous = useRef(notices)
+  useEffect(() => { lastRender.current = latest.current; latest.current = notices })
+  const idKey = notices.map((n) => n.id).join('\n')
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>())
   useEffect(() => {
-    const ids = new Set(notices.map((n) => n.id))
-    const gone = reducedMotion() ? [] : previous.current.flatMap((notice, index) => (ids.has(notice.id) ? [] : [{ notice, index }]))
-    previous.current = notices
+    const current = latest.current
+    const ids = new Set(current.map((n) => n.id))
+    // A leaving entry keeps the content it last rendered with (the live row's final rate, not its first).
+    const gone = prefersReducedMotion() ? [] : previous.current.flatMap((notice, index) => (ids.has(notice.id) ? [] : [{ notice: lastRender.current.find((n) => n.id === notice.id) ?? notice, index }]))
+    previous.current = current
     setLeaving((l) => {
       const kept = l.filter((x) => !ids.has(x.notice.id))
       return gone.length || kept.length !== l.length ? [...kept, ...gone] : l
@@ -42,7 +44,7 @@ export function ComposerTab({ notices }: { notices: ComposerNotice[] }) {
       setLeaving((l) => l.filter((x) => !gone.some((g) => g.notice.id === x.notice.id)))
     }, LEAVE_MS)
     timers.current.add(timer)
-  }, [notices])
+  }, [idKey])
   useEffect(() => { const pending = timers.current; return () => { for (const t of pending) clearTimeout(t) } }, [])
 
   const rows = notices.map((notice) => ({ notice, out: false }))
@@ -50,18 +52,15 @@ export function ComposerTab({ notices }: { notices: ComposerNotice[] }) {
   if (rows.length === 0) return null
   return (
     <div className={cn('composer-tab', notices.length === 0 && 'is-leaving')}>
-      {rows.map(({ notice: n, out }) => {
-        const Row = n.onClick ? 'button' : 'div'
-        return (
-          <div key={n.id} className={cn('composer-tab-item', out && 'is-leaving')} data-notice={n.id}>
-            <div className="composer-tab-row" data-tone={n.tone ?? 'neutral'}>
-              <Row {...(n.onClick ? { type: 'button' as const, onClick: n.onClick } : {})} className="composer-tab-content" title={n.title} role={n.role} aria-label={n.label}>{n.content}</Row>
-              {n.action && <button type="button" className="composer-tab-action" onClick={n.action.run}>{n.action.label}</button>}
-              {n.onDismiss && <button type="button" className="composer-tab-action" onClick={n.onDismiss}>{m.notice_dismiss()}</button>}
-            </div>
+      {rows.map(({ notice: n, out }) => (
+        <div key={n.id} className={cn('composer-tab-item', out && 'is-leaving')} data-notice={n.id}>
+          <div className="composer-tab-row" data-tone={n.tone ?? 'neutral'}>
+            <div className="composer-tab-content">{n.content}</div>
+            {n.action && <button type="button" className="composer-tab-action" onClick={n.action.run}>{n.action.label}</button>}
+            {n.onDismiss && <button type="button" className="composer-tab-action" onClick={n.onDismiss}>{m.notice_dismiss()}</button>}
           </div>
-        )
-      })}
+        </div>
+      ))}
     </div>
   )
 }
