@@ -2145,6 +2145,7 @@
 	"notice_agent_title": "Hermes Agent is unavailable",
 	"notice_server_title": "Can't reach the Talaria server",
 	"notice_server_detail": "Retrying…",
+	"notice_server_retry_in": "Retrying in {seconds}s",
 	"notice_dismiss": "Dismiss",
 	"terminal_open": "Open terminal",
 	"terminal_unavailable": "The terminal could not start.",

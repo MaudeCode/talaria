@@ -127,8 +127,12 @@ test('the top tab reports a Talaria server it cannot reach and clears when it an
   down = true
   const row = page.locator('.composer-tab [data-notice="runtime:server_unreachable"]')
   await expect(row).toContainText("Can't reach the Talaria server", { timeout: 15_000 })
+  // Probes back off exponentially (1 s, 2 s, 4 s, …) and the row counts down to the next one.
+  await expect(row).toContainText('Retrying in 4s', { timeout: 10_000 })
+  // Retry probes now: with the server back, the row clears well before the scheduled probe would run.
   down = false
-  await expect(row).toHaveCount(0, { timeout: 8_000 })
+  await row.getByRole('button', { name: 'Retry' }).click()
+  await expect(row).toHaveCount(0, { timeout: 1_500 })
   // The refused requests are the point of this test.
   errors.splice(0, errors.length, ...errors.filter((e) => !/health\/agent|ERR_CONNECTION_REFUSED|Failed to load resource/.test(e)))
 })
