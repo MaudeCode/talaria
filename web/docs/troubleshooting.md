@@ -133,7 +133,8 @@ age, and never prunes a journal whose last event is nonterminal. The hygiene
 ticker runs retention one minute after startup and then at most once every six
 hours, one sweep at a time. The sweep is incremental: it reads journals
 asynchronously and yields between them, so `/health` and other requests keep
-answering while it runs, and shutdown stops it at its next yield. Sessions with
+answering while it runs. Shutdown and self-update restarts stop it at its next
+yield and wait for that before exiting. Sessions with
 no more journals than the keep count, or none past the retention age, are not
 read. A journal that gains a live writer or changes while the sweep runs is left
 for the next sweep.

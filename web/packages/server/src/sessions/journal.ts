@@ -65,7 +65,12 @@ export interface PruneOptions {
   pause?: () => Promise<unknown>
 }
 
-export interface PruneResult { examined: number; terminal: number; pruned: number; bytes_reclaimed: number }
+export interface PruneResult {
+  examined: number
+  terminal: number
+  pruned: number
+  bytes_reclaimed: number
+}
 
 export function validateId(value: string, field: string): string {
   const v = value || ''

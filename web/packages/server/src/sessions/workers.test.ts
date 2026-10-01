@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -170,7 +170,11 @@ describe('run-journal retention sweep', () => {
     const { gate, release } = gated()
     try {
       const journal = s.deps.journal
-      for (let i = 0; i < 40; i += 1) for (let r = 0; r < 5; r += 1) writeRun(journal, `sess${String(i)}`, `run${String(r)}`, { bytes: 64 * 1024, mtime: old + r })
+      // Terminal and nonterminal journals, a few with tails past the 4 MiB read bound.
+      for (let i = 0; i < 40; i += 1) {
+        for (let r = 0; r < 5; r += 1) writeRun(journal, `sess${String(i)}`, `run${String(r)}`, { bytes: i < 2 ? 5 * 1024 * 1024 : 64 * 1024, mtime: old + r })
+        writeRun(journal, `sess${String(i)}`, 'open', { terminal: false, mtime: old - 1 })
+      }
       let reached!: () => void
       const midSweep = new Promise<void>((resolve) => { reached = resolve })
       let pauses = 0
@@ -184,8 +188,11 @@ describe('run-journal retention sweep', () => {
       expect(settled).toBe(false)
       release()
       await sweep
-      expect(existsSync(journal.pathFor('sess39', 'run0'))).toBe(false)
-      expect(existsSync(journal.pathFor('sess39', 'run2'))).toBe(true)
+      for (const sid of ['sess0', 'sess39']) {
+        expect(existsSync(journal.pathFor(sid, 'run0'))).toBe(false)
+        expect(existsSync(journal.pathFor(sid, 'run2'))).toBe(true)
+        expect(existsSync(journal.pathFor(sid, 'open'))).toBe(true)
+      }
     } finally {
       // A failed assertion must not leave close() waiting on a held sweep.
       release()
@@ -274,12 +281,10 @@ describe('run-journal retention sweep', () => {
           active.add(activated)
           appendFileSync(appended, '\n')
           utimesSync(appended, old, old)
-          // A byte-identical copy with the original mtime; it may even reuse the freed inode number. Wait past the
-          // filesystem's ctime granularity so only ctime tells it apart.
+          // Rewritten in place with the same bytes and mtime: inode, size, and mtime all match, so only ctime tells it
+          // apart. Wait past the filesystem's ctime granularity first.
           await new Promise((resolve) => setTimeout(resolve, 20))
-          const body = readFileSync(replaced)
-          unlinkSync(replaced)
-          writeFileSync(replaced, body)
+          writeFileSync(replaced, readFileSync(replaced))
           utimesSync(replaced, old + 2, old + 2)
         }
       },
