@@ -426,11 +426,11 @@ export function Composer(props: ComposerProps) {
     const el = box.current
     if (!el || typeof ResizeObserver === 'undefined') return
     const wrap = el.parentElement
-    // The same observer places the opaque band under the card (`--composer-band-top`): layout is settled inside the
-    // callback, so reading the card's offset there costs nothing on the typing path.
+    // The same observer records the card's bottom edge (`--composer-card-bottom`), where the wash under the composer turns
+    // opaque: layout is settled inside the callback, so reading the card's offset costs nothing on the typing path.
     const ro = new ResizeObserver(() => {
       lastHeight.current = el.offsetHeight
-      wrap?.style.setProperty('--composer-band-top', `${el.offsetTop + el.offsetHeight}px`)
+      wrap?.style.setProperty('--composer-card-bottom', `${el.offsetTop + el.offsetHeight}px`)
     })
     ro.observe(el)
     if (wrap) ro.observe(wrap)

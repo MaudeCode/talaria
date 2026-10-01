@@ -184,7 +184,7 @@ export const BASE: { tokens: Record<TokenName, string>; dark: TokenMap } = {
     '--composer-glass-mix': '82%',
     '--composer-backdrop': 'blur(12px) saturate(1.14)',
     '--composer-hero-title-size': '24px',
-    '--composer-fade-height': '32px',
+    '--composer-fade-height': '0px',
     '--composer-rest-height': '44px',
     '--chip-bg': 'transparent',
     '--chip-border': 'transparent',

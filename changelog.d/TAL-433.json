@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Messages scrolled behind the composer now fade smoothly instead of showing a hard square edge around it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
