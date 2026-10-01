@@ -9,7 +9,7 @@ import type { LiveTurn } from '../../stream/reducer'
 import type { ComposerNotice } from '../composer/ComposerTab'
 
 type Kind = 'thread_error' | 'server_unreachable' | 'offline' | 'agent_unavailable' | 'provider_failure' | 'compressing'
-interface Notice { kind: Kind; tone: 'error' | 'warning' | 'info'; title: string; detail?: string | undefined; action?: { label: string; run: () => void } | undefined; dismissible: boolean }
+interface Notice { kind: Kind; tone: 'error' | 'warning' | 'info'; title: string; detail?: string | undefined; /** A short state shown on the right, keeping the row to one line. */ status?: string | undefined; action?: { label: string; run: () => void } | undefined; dismissible: boolean }
 const PRIORITY: Kind[] = ['thread_error', 'server_unreachable', 'offline', 'agent_unavailable', 'provider_failure', 'compressing']
 
 export function useOnline(): boolean {
@@ -38,7 +38,7 @@ export function useRuntimeNotices({ live, onRetry, compressing }: { live: LiveTu
   const unreachable = online && agent.isError && isApiError(agent.error) && (agent.error.kind === 'network' || agent.error.kind === 'timeout')
   const list: Notice[] = []
   if (!online) list.push({ kind: 'offline', tone: 'warning', title: m.notice_offline_title(), detail: m.notice_offline_detail(), dismissible: true })
-  if (unreachable) list.push({ kind: 'server_unreachable', tone: 'warning', title: m.notice_server_title(), detail: m.notice_server_detail(), dismissible: false })
+  if (unreachable) list.push({ kind: 'server_unreachable', tone: 'warning', title: m.notice_server_title(), status: m.notice_server_detail(), dismissible: false })
   if (!unreachable && agent.data?.alive === false) list.push({ kind: 'agent_unavailable', tone: 'warning', title: m.notice_agent_title(), detail: agent.data.details?.reason ?? agent.data.error, dismissible: true })
   if (live?.warning) list.push({ kind: 'provider_failure', tone: 'warning', title: live.warning, dismissible: true })
   if (live?.status === 'error' && live.error) list.push({ kind: 'thread_error', tone: 'error', title: m.live_error(), detail: live.error.message, action: onRetry ? { label: m.retry(), run: onRetry } : undefined, dismissible: true })
@@ -53,6 +53,7 @@ export function useRuntimeNotices({ live, onRetry, compressing }: { live: LiveTu
         {n.kind === 'compressing' && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
         {/* One sentence that wraps (two lines at most) rather than a title and detail squeezed into columns. */}
         <span className="min-w-0 line-clamp-2 leading-snug" title={n.detail ? `${n.title} · ${n.detail}` : undefined}><span className="font-medium">{n.title}</span>{n.detail && <span className="opacity-80"> · {n.detail}</span>}</span>
+        {n.status && <span className="ms-auto shrink-0 ps-2 opacity-80">{n.status}</span>}
       </>
     ),
     action: n.action,
