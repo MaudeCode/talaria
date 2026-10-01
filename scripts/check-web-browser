@@ -19,10 +19,30 @@ const probe = (p) => new Promise((resolve) => { const s = net.createServer(); s.
 })()')
 cd "$root/web/packages/frontend"
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$root/web/.codex-tmp/playwright}"
-# Hosted Linux CI runners lack Chromium's system libraries; Playwright installs them with apt (sudo).
+# Hosted Linux CI runners lack Chromium's system libraries; Playwright installs them with apt (sudo). With
+# PLAYWRIGHT_APT_CACHE set (the e2e workflow caches it per runner image, TAL-432), cached .debs install offline and
+# skip the apt mirror; a miss or a failed offline install takes the apt path and refills the cache.
 with_deps=""
-if [[ -n "${CI:-}" && "$(uname -s)" == Linux ]]; then with_deps=--with-deps; fi
+apt_cache="${PLAYWRIGHT_APT_CACHE:-}"
+if [[ -n "${CI:-}" && "$(uname -s)" == Linux ]]; then
+  with_deps=--with-deps
+  if [[ -n "$apt_cache" ]] && compgen -G "$apt_cache/*.deb" >/dev/null; then
+    echo "Installing Chromium's system packages offline from $apt_cache ($(compgen -G "$apt_cache/*.deb" | wc -l) .debs)"
+    if sudo dpkg -i "$apt_cache"/*.deb >/dev/null; then
+      with_deps=""
+    else
+      # A partial dpkg run leaves packages unconfigured; let apt repair them before Playwright's own apt install.
+      echo "Offline install failed; falling back to apt" >&2
+      sudo apt-get install -f -y >/dev/null
+    fi
+  fi
+fi
 npx playwright install ${with_deps:+"$with_deps"} chromium
+if [[ -n "$with_deps" && -n "$apt_cache" ]]; then
+  mkdir -p "$apt_cache"
+  if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then cp /var/cache/apt/archives/*.deb "$apt_cache"/; fi
+  echo "Cached $(compgen -G "$apt_cache/*.deb" | wc -l) .debs in $apt_cache for the next run"
+fi
 run_env=(env -i PATH="$(dirname "$node_bin"):$PATH" HOME="$state" TMPDIR="$state" \
   PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" HERMES_E2E_PORT="$port")
 if [[ -n "${HERMES_WEBUI_AGENT_DIR:-}" ]]; then

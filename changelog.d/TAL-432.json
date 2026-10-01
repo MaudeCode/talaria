@@ -1,0 +1,1 @@
+{"skip": "CI only: Web e2e caches Chromium's system packages per runner image; no app behavior changes."}
