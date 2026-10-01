@@ -1847,8 +1847,6 @@
 	"yolo_no_session": "Brak aktywnej sesji",
 	"yolo_enabled": "⚡ Tryb YOLO WŁĄCZONY — pomijanie aprobat w tej sesji",
 	"yolo_disabled": "Tryb YOLO WYŁĄCZONY",
-	"yolo_pill_label": "YOLO",
-	"yolo_pill_title_active": "Tryb YOLO aktywny — kliknij, aby wyłączyć",
 	"approval_skip_all": "⚡ Pomiń wszystkie w tej sesji",
 	"approval_skip_all_title": "Pomiń wszystkie monity o aprobatę w tej sesji",
 	"composer_send": "Wyślij wiadomość",

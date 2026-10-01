@@ -42,7 +42,7 @@ export function LiveStatusPill({ turn }: { turn: LiveTurn }) {
     <div className="live-run-status flex items-center gap-2 text-muted" role="status" aria-live="polite">
       <LaurelSpinner />
       <span className="live-run-label">{turn.status === 'reconnecting' ? m.live_reconnecting() : m.live_streaming()}</span>
-      {turn.tps !== null && <span className="font-mono text-[11px] tabular-nums opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</span>}
+      {turn.tps != null && <span className="font-mono text-[11px] tabular-nums opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</span>}
     </div>
   )
 }

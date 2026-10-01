@@ -1818,8 +1818,6 @@
 	"yolo_no_session": "Aktif oturum yok",
 	"yolo_enabled": "⚡ YOLO modu AÇIK — onaylar bu oturumu atladı",
 	"yolo_disabled": "YOLO modu KAPALI",
-	"yolo_pill_label": "YOLO",
-	"yolo_pill_title_active": "YOLO modu etkin — devre dışı bırakmak için tıklayın",
 	"approval_skip_all": "⚡ Tüm bu oturumu atla",
 	"approval_skip_all_title": "Bu oturuma ilişkin tüm onay istemlerini atla",
 	"composer_send": "Mesaj gönder",

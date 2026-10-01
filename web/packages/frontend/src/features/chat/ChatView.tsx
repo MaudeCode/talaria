@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { MAIN_VIEW } from '../../shell/AppShell'
+import { TerminalSquare } from 'lucide-react'
 
-/** Legacy `.chat-context-item`; the `·` separator between items stays a legacy `::before` rule. */
-const CONTEXT_ITEM = 'chat-context-item border-0 bg-transparent text-muted text-[12px] font-medium py-px px-1.5 -mx-0.5 rounded-[5px] cursor-pointer whitespace-nowrap overflow-hidden text-ellipsis max-w-[220px] transition-[background,color] duration-(--dur) ease-(--ease) hover:bg-hover hover:text-text'
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
 import { useBootstrap } from '../../app/bootstrap'
@@ -25,13 +24,15 @@ import { useClarify } from './useClarify'
 import { TerminalPanel } from '../terminal/TerminalPanel'
 import { WorkspacePanel } from '../workspace/WorkspacePanel'
 import { workspaceLabel } from '../workspaces/label'
-import { RuntimeNoticeStack } from '../notices/RuntimeNoticeStack'
+import { useRuntimeNotices } from '../notices/useRuntimeNotices'
 import { showToast } from '../toast/toast'
 import { isApiError } from '../../contracts/common'
 import { ErrorState, formatDate } from '../../ui/States'
 import { readPersisted, removePersisted, writePersisted } from '../../lib/persisted'
 import type { ActivityMode } from './blocks/Worklog'
 import { createSessionNow } from '../sessions/useNewChat'
+import { beginDock, playDock, requestScroll } from './sendMotion'
+import { bindFirstSend, ownsFirstSend, useFirstSend } from './firstSend'
 
 export function ChatView({ sessionId }: { sessionId: string | null }) {
   const bootstrap = useBootstrap()
@@ -77,6 +78,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     if (session) return session
     const created = await createSessionNow({ ...(settings.data?.default_workspace ? { workspace: settings.data.default_workspace } : {}), ...pending, profile: bootstrap.profile?.name ?? 'default' })
     qc.setQueryData(keys.sessions.detail(created.session_id), { session: created })
+    bindFirstSend(created.session_id)
     await navigate({ to: '/session/$sessionId', params: { sessionId: created.session_id }, replace: true })
     return created
   }, [session, settings.data, bootstrap.profile, qc, navigate, pending])
@@ -123,7 +125,6 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const [compressing, setCompressing] = useState(false)
   const runCompression = useCallback(async (sid: string) => {
     setCompressing(true)
-    showToast(m.live_compressing())
     try {
       await api.compressSession(sid)
       for (let i = 0; i < 600; i++) {
@@ -208,43 +209,77 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   // Composer placement. A session is assumed to have content until the transcript says otherwise;
   // only a session remembered as empty (legacy `hermes-webui-session-empty`) opens in the hero layout
   // before its transcript has loaded, so the composer never starts mid-screen and slides down.
+  // A first send in flight has already left the hero (sendMotion.ts).
   const knownEmpty = !sessionId || readPersisted('hermes-webui-session-empty') === sessionId
-  const hero = !live && (!sessionId || (query.isSuccess ? rows.length === 0 : knownEmpty))
+  const firstSend = useFirstSend()
+  const pendingUserText = firstSend && !firstSend.failed && ownsFirstSend(firstSend, sessionId) ? firstSend.text : undefined
+  const hero = !live && !pendingUserText && (!sessionId || (query.isSuccess ? rows.length === 0 : knownEmpty))
   useEffect(() => {
     if (!sessionId || !query.isSuccess) return
     if (rows.length === 0) writePersisted('hermes-webui-session-empty', sessionId)
     else if (readPersisted('hermes-webui-session-empty') === sessionId) removePersisted('hermes-webui-session-empty')
   }, [sessionId, query.isSuccess, rows.length])
 
+  const runtime = useRuntimeNotices({ live, onRetry: () => { void onRegenerate() }, compressing })
   const notFound = query.isError && isApiError(query.error) && query.error.status === 404
   const otherProfile = query.isError && isApiError(query.error) && query.error.status === 409
 
-  const emptyState = (
-    <div className="empty-state" id="emptyState">
-      <h2 className="empty-hero-title ready" id="emptyHeroTitle">{wsLabel ? m.empty_hero_title_workspace({ a0: wsLabel }) : m.empty_hero_title()}</h2>
-    </div>
-  )
-  const openChip = (id: string) => { const el = document.getElementById(id); if (el instanceof HTMLElement) el.click() }
+  // The composer floats over the transcript (T3 Code's composer overlay): centred in the stage as the hero, docked to its
+  // bottom otherwise. Its measured height is the transcript's bottom inset (`--composer-h`), and leaving the hero moves
+  // it down with a FLIP that a first send's remount resumes (sendMotion.ts).
+  const stage = useRef<HTMLDivElement>(null)
+  const dock = useRef<HTMLDivElement>(null)
+  const heroTop = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const stageEl = stage.current
+    const dockEl = dock.current
+    if (!stageEl || !dockEl) return
+    const measure = () => {
+      const height = `${dockEl.offsetHeight}px`
+      if (stageEl.style.getPropertyValue('--composer-h') !== height) { stageEl.style.setProperty('--composer-h', height); requestScroll('follow') }
+      // The hero centres the card, not the dock: the strip under it and the wrap's padding would lift it off centre.
+      const box = dockEl.classList.contains('composer-dock--hero') ? dockEl.querySelector('.composer-box') : null
+      if (box) {
+        const d = dockEl.getBoundingClientRect()
+        const b = box.getBoundingClientRect()
+        stageEl.style.setProperty('--composer-hero-shift', `${((d.bottom - b.bottom) - (b.top - d.top)) / 2}px`)
+      }
+      heroTop.current = dockEl.classList.contains('composer-dock--hero') ? dockEl.getBoundingClientRect().top : null
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(dockEl)
+    ro.observe(stageEl)
+    return () => ro.disconnect()
+  }, [])
+  const wasHero = useRef(hero)
+  useLayoutEffect(() => {
+    const dockEl = dock.current
+    if (wasHero.current && !hero && heroTop.current !== null) beginDock(heroTop.current)
+    wasHero.current = hero
+    heroTop.current = hero && dockEl ? dockEl.getBoundingClientRect().top : null
+    if (!hero && dockEl) playDock(dockEl)
+  }, [hero])
 
   return (
     <>
-      <div id="mainChat" className={cn(MAIN_VIEW, 'active', hero && 'composer-hero')}>
+      <div id="mainChat" className={cn(MAIN_VIEW, 'active')}>
         <div className="chat-header flex items-center gap-3 min-h-[52px] px-5 py-1.5 border-b border-border shrink-0 max-[641px]:hidden">
           <div className="chat-header-text min-w-0 flex-1 flex flex-col gap-px">
             <h1 className="chat-header-title m-0 text-[13.5px] font-[550] text-text whitespace-nowrap overflow-hidden text-ellipsis tracking-[-.01em]" id="topbarTitle">{session || listedTitle ? (title || m.untitled()) : bootstrap.bot_name}</h1>
             {session && meta && <div className="chat-header-meta hidden text-[11px] text-muted whitespace-nowrap overflow-hidden text-ellipsis font-mono" id="topbarMeta">{meta}</div>}
-            <div className="chat-context flex items-center gap-0.5 mt-0.5 min-w-0 overflow-hidden max-[641px]:hidden">
-              <button type="button" className={cn(CONTEXT_ITEM, 'chat-context-profile')} onClick={() => openChip('profileChip')}>{bootstrap.profile?.name ?? 'default'}</button>
-              {(session?.model ?? settings.data?.default_model) && <button type="button" className={cn(CONTEXT_ITEM, 'chat-context-model')} onClick={() => openChip('composerModelChip')}>{session?.model ?? settings.data?.default_model}</button>}
-              {reasoning && reasoningSupported && <button type="button" className={cn(CONTEXT_ITEM, 'chat-context-effort')} onClick={() => openChip('composerReasoningChip')}>{reasoning}</button>}
-              {wsLabel && <button type="button" className={cn(CONTEXT_ITEM, 'chat-context-workspace')} onClick={() => openChip('composerWorkspaceChip')}>{wsLabel}</button>}
-            </div>
           </div>
+          {/* T3 Code keeps the terminal toggle in the thread header; phones reach it from the composer's overflow menu. */}
+          {sessionId && <button type="button" className={cn('icon-btn has-tooltip has-tooltip--left', terminalOpen && 'active')} id="btnTerminalInline" data-tooltip={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => setTerminalOpen((t) => !t)}><TerminalSquare size={16} aria-hidden="true" /></button>}
         </div>
-        <RuntimeNoticeStack live={live} onRetry={() => { void onRegenerate() }} />
+        {/* The first runtime notice, for screen readers: errors interrupt, everything else waits its turn. */}
+        <div className="sr-only" role="alert" aria-live="assertive" aria-atomic="true">{runtime.announcement?.assertive ? runtime.announcement.text : ''}</div>
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{runtime.announcement && !runtime.announcement.assertive ? runtime.announcement.text : ''}</div>
         {notFound && <div className="p-4"><ErrorState error={new Error(m.transcript_not_found())} onRetry={() => { void navigate({ to: '/', search: { action: 'new-chat' } }) }} /></div>}
         {otherProfile && <div className="p-4"><ErrorState error={new Error(m.transcript_other_profile({ profile: ((query.error as { body?: { profile?: string } }).body?.profile ?? '') }))} /></div>}
         {query.isError && !notFound && !otherProfile && <div className="p-4"><ErrorState error={query.error} onRetry={() => { void refresh() }} /></div>}
+        <div ref={stage} className="chat-stage relative flex flex-1 min-h-0 flex-col">
         {!query.isError && (
           <Transcript
             disclosureScope={JSON.stringify([bootstrap.profile?.name ?? 'default', sessionId])}
@@ -262,11 +297,14 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
             loadedFrom={base}
             onLoadOlder={() => { void loadOlder() }}
             loadingOlder={loadingOlder}
-            emptyState={query.isPending && !knownEmpty ? <TranscriptSkeleton /> : emptyState}
+            emptyState={query.isPending && !knownEmpty ? <TranscriptSkeleton /> : null}
+            pendingUserText={pendingUserText}
             showJumpButtons={(settings.data as Record<string, unknown> | undefined)?.session_jump_buttons !== false}
             virtualizeLongTranscripts={(settings.data as Record<string, unknown> | undefined)?.virtualize_transcript === true}
           />
         )}
+        <div ref={dock} className={cn('composer-dock', hero && 'composer-dock--hero')}>
+        {hero && <h2 className="composer-hero-title" id="emptyHeroTitle">{wsLabel ? m.empty_hero_title_workspace({ a0: wsLabel }) : m.empty_hero_title()}</h2>}
         <div className="composer-flyout">
           {sessionId && live?.approval && <ApprovalCard sessionId={sessionId} pending={live.approval} onResolved={() => dispatch({ type: 'clear_approval', sessionId })} />}
           {clarify && <ClarifyCard key={clarify.pending.clarify_id} clarify={clarify} />}
@@ -295,7 +333,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           locked={compressing}
           onQueue={(entry) => setQueued((q) => [...q, entry])}
           clarify={clarify}
+          notices={runtime.notices}
         />
+        </div>
+        </div>
         <span className="sr-only" aria-live="polite" id="a11yAnnouncer">{live?.status === 'done' ? m.done() : ''}</span>
       </div>
       {/* Always mounted beside main (its queries run only while open) so opening and closing animate and the edge tab is always there. */}

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { Transcript } from './Transcript'
+import { LiveStatusPill } from './LiveTurnView'
 import { initialStreamState, streamReducer, type StreamAction } from '../../stream/reducer'
 import type { ChatEvent } from '../../contracts/sse'
 import type { ActivityMode } from './blocks/Worklog'
@@ -31,40 +32,27 @@ function View({ run, mode = 'compact_worklog' }: { run: ReturnType<typeof liveRu
 
 const pills = (container: HTMLElement) => [...container.querySelectorAll('.live-run-status')]
 
-describe('live status pill', () => {
-  it('shows one labelled laurel pill outside the transcript flow before content arrives', () => {
+describe('live status', () => {
+  it("stays out of the transcript: the composer's top tab carries it (TAL-429)", () => {
     const run = liveRun()
+    run.emit({ event: 'token', data: { text: 'Still generating' } })
     const view = render(<View run={run} />)
+    expect(pills(view.container)).toHaveLength(0)
+  })
+
+  it('labels the run with the laurel, the rate, and the reconnect state', () => {
+    const run = liveRun()
+    run.emit({ event: 'metering', data: { tps: 42.14 } })
+    const view = render(<LiveStatusPill turn={run.turn} />)
     const [pill, ...rest] = pills(view.container)
     expect(rest).toHaveLength(0)
     expect(pill).toHaveAttribute('role', 'status')
-    // Docked over the transcript, not inside it, so it can come and go without moving any message.
-    expect(pill!.closest('#msgInner')).toBeNull()
     expect(pill).toHaveTextContent('Responding…')
-    const wreath = pill!.querySelector('svg.live-laurel')!
-    expect(wreath).toHaveAttribute('width', '24')
-    expect(wreath.querySelectorAll('.laurel-leaf')).toHaveLength(10)
-  })
-
-  it.each(['compact_worklog', 'transparent_stream', 'hide_all_activity'] as const)('keeps one pill while streaming and removes it on done in %s', (mode) => {
-    const run = liveRun()
-    run.emit({ event: 'token', data: { text: 'Before tools' } })
-    run.emit({ event: 'tool', data: { id: 'a', name: 'read_file', args: { path: 'a.txt' } } })
-    run.emit({ event: 'token', data: { text: 'Still generating' } })
-    run.emit({ event: 'metering', data: { tps: 42.14 } })
-    const view = render(<View run={run} mode={mode} />)
-    expect(pills(view.container)).toHaveLength(1)
-    expect(view.container.querySelector('.live-turn .live-run-status')).toBeNull()
-    expect(pills(view.container)[0]).toHaveTextContent('Responding…')
-    expect(pills(view.container)[0]).toHaveTextContent('42.1 tok/s')
+    expect(pill).toHaveTextContent('42.1 tok/s')
+    expect(pill!.querySelectorAll('svg.live-laurel .laurel-leaf')).toHaveLength(10)
     run.reconnect()
-    view.rerender(<View run={run} mode={mode} />)
-    expect(pills(view.container)).toHaveLength(1)
-    expect(view.container.querySelectorAll('[role="status"]')).toHaveLength(1)
+    view.rerender(<LiveStatusPill turn={run.turn} />)
     expect(pills(view.container)[0]).toHaveTextContent('Reconnecting…')
-    run.emit({ event: 'done', data: {} })
-    view.rerender(<View run={run} mode={mode} />)
-    expect(pills(view.container)).toHaveLength(0)
   })
 })
 

@@ -1,0 +1,40 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The chat composer is redesigned as a floating card: model and effort sit in the card, workspace, toolsets, and profile tuck underneath, and new chats start with the composer centred and glide it into place when you send.",
+      "highlight": true,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Status now rides on a tab above the composer: the running response, dictation, YOLO mode, queued messages, connection problems, and context compression, sliding in and out as they start and end.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Added",
+      "summary": "When the server cannot be reached, the composer says so, retries with growing waits, counts down to the next try, and offers Retry now.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Added",
+      "summary": "Scrolling up through a conversation flattens the composer to one row so you can read more; clicking or typing in it brings it back.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "The terminal toggle now sits in the chat header.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Sending a message while scrolled up now returns the conversation to its latest message.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

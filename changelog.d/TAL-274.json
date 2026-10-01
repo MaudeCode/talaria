@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The first message of a new chat appears immediately when you send it, and returns to the composer if sending fails.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

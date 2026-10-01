@@ -1697,8 +1697,6 @@
 	"yolo_no_session": "无活动会话",
 	"yolo_enabled": "⚡ YOLO 模式已开启 — 将跳过所有审批",
 	"yolo_disabled": "YOLO 模式已关闭",
-	"yolo_pill_label": "YOLO",
-	"yolo_pill_title_active": "YOLO 模式激活 — 点击关闭",
 	"approval_skip_all": "⚡ 本次会话全部跳过",
 	"approval_skip_all_title": "跳过本次会话的所有审批提示",
 	"composer_send": "发送消息",

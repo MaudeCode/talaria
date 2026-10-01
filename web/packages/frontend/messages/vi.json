@@ -1751,8 +1751,6 @@
 	"yolo_no_session": "Không có phiên hoạt động",
 	"yolo_enabled": "⚡ Chế độ YOLO BẬT — phê duyệt sẽ bị bỏ qua trong phiên này",
 	"yolo_disabled": "Chế độ YOLO TẮT",
-	"yolo_pill_label": "YOLO",
-	"yolo_pill_title_active": "Chế độ YOLO đang bật — bấm để tắt",
 	"approval_skip_all": "⚡ Bỏ qua tất cả trong phiên này",
 	"approval_skip_all_title": "Bỏ qua mọi yêu cầu phê duyệt cho phiên này",
 	"composer_send": "Gửi tin nhắn",

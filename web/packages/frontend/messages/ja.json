@@ -1753,8 +1753,6 @@
 	"yolo_no_session": "アクティブなセッションがありません",
 	"yolo_enabled": "⚡ YOLO モード ON — このセッションは承認をスキップ",
 	"yolo_disabled": "YOLO モード OFF",
-	"yolo_pill_label": "YOLO",
-	"yolo_pill_title_active": "YOLO モード有効 — クリックで無効化",
 	"approval_skip_all": "⚡ このセッションはすべてスキップ",
 	"approval_skip_all_title": "このセッションのすべての承認プロンプトをスキップ",
 	"composer_send": "メッセージを送信",

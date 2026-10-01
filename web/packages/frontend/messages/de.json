@@ -1749,8 +1749,6 @@
 	"yolo_no_session": "Keine aktive Sitzung",
 	"yolo_enabled": "⚡ YOLO-Modus AN — Genehmigungen übersprungen",
 	"yolo_disabled": "YOLO-Modus AUS",
-	"yolo_pill_label": "YOLO",
-	"yolo_pill_title_active": "YOLO-Modus aktiv — Klicken zum Deaktivieren",
 	"approval_skip_all": "⚡ Alle in dieser Sitzung überspringen",
 	"approval_skip_all_title": "Alle Genehmigungsanfragen in dieser Sitzung überspringen",
 	"composer_send": "Nachricht senden",

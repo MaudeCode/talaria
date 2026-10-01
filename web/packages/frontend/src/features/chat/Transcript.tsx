@@ -6,12 +6,13 @@ import { m } from '../../paraglide/messages.js'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import { AssistantMessageRow, UserMessageRow, type RowActions } from './MessageRow'
-import { LiveStatusPill, LiveTurnView } from './LiveTurnView'
+import { LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
 import { groupAssistantTurns } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
+import { onScrollRequest, requestComposerRest } from './sendMotion'
 
 const VIRTUALIZE_AT = 200
 
@@ -34,6 +35,8 @@ export interface TranscriptProps {
   onLoadOlder: () => void
   loadingOlder: boolean
   emptyState: React.ReactNode
+  /** A new chat's first send, shown as the live user row before its session and turn exist (sendMotion.ts). */
+  pendingUserText?: string | undefined
   showJumpButtons: boolean
   /** `virtualize_transcript` setting; off by default because variable-height rows made long chats oscillate. */
   virtualizeLongTranscripts: boolean
@@ -46,7 +49,7 @@ export interface TranscriptProps {
  * virtualized with TanStack Virtual.
  */
 export function Transcript(props: TranscriptProps) {
-  const { rows: rawRows, live, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, emptyState, showJumpButtons, virtualizeLongTranscripts } = props
+  const { rows: rawRows, live, assistantName, mode, renderUserMarkdown, autoFollow, sessionId, focusKey, actions, tts, truncated, loadedFrom, onLoadOlder, loadingOlder, emptyState, pendingUserText, showJumpButtons, virtualizeLongTranscripts } = props
   const scrollRef = useRef<HTMLDivElement>(null)
   const [pinned, setPinned] = useState(true)
   const [atTop, setAtTop] = useState(true)
@@ -61,7 +64,10 @@ export function Transcript(props: TranscriptProps) {
   }, [grouped, live, showLive])
   const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user'
   const showLiveUser = !!live && !isTerminal(live.status) && live.userText.trim() !== '' && !lastRowIsUser && !rows.some((r) => r.message.role === 'user' && messageKey(r.message) === live.userMessageId)
-  const liveUserText = live?.userText ?? ''
+  // One slot for the user's newest text: the pending first send until the turn starts, then the live user row, so the
+  // handover neither flashes nor duplicates.
+  // A persisted user row as the tail means the server already carries the pending text; never show it twice.
+  const liveUserText = showLiveUser ? (live?.userText ?? '') : !live && pendingUserText && !lastRowIsUser ? pendingUserText : ''
   const lastAssistantIndex = useMemo(() => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i]?.message.role === 'assistant') return i; return -1 }, [rows])
   const virtualize = virtualizeLongTranscripts && rows.length > VIRTUALIZE_AT
 
@@ -76,6 +82,11 @@ export function Transcript(props: TranscriptProps) {
   followsRef.current = () => pinnedRef.current && (autoFollow || (settlingRef.current && !streaming))
   useEffect(() => { if (streaming) settlingRef.current = false }, [streaming])
   const lastTopRef = useRef(0)
+
+  // A hand scroll (wheel or touch) of a transcript taller than its pane asks the composer to rest; programmatic
+  // follow and entry jumps never do. Overflow comes from the resize observer below, so a wheel tick reads no layout.
+  const overflowsRef = useRef(false)
+  const onReaderScroll = useCallback(() => { if (overflowsRef.current) requestComposerRest() }, [])
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current
@@ -93,13 +104,15 @@ export function Transcript(props: TranscriptProps) {
     const el = scrollRef.current
     if (!el) return
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+    // Record our own jump now: a reader scroll merged into the same scroll event must still read as upward.
+    if (!smooth) lastTopRef.current = el.scrollTop
     pin(true)
   }, [pin])
 
   // Follow while pinned: track every size change of the content (each streamed line, each
   // folding disclosure) and of the pane itself before paint, instead of catching up in jumps.
   const innerRef = useRef<HTMLDivElement>(null)
-  const empty = rows.length === 0 && !showLive && !showLiveUser
+  const empty = rows.length === 0 && !showLive && !liveUserText
   // The disclosure provider below is keyed by this scope, so a new session brings a new pane to observe.
   const scope = props.disclosureScope ?? sessionId
   useLayoutEffect(() => {
@@ -109,11 +122,18 @@ export function Transcript(props: TranscriptProps) {
     const follow = () => { if (followsRef.current()) scrollToBottom(false) }
     follow()
     if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(follow)
+    // Layout is settled inside the observer callback, so reading the pane's overflow here costs nothing extra.
+    const observer = new ResizeObserver(() => { overflowsRef.current = pane.scrollHeight > pane.clientHeight + 1; follow() })
     observer.observe(inner)
     observer.observe(pane)
-    return () => observer.disconnect()
+    return () => { observer.disconnect(); overflowsRef.current = false }
   }, [empty, scope, scrollToBottom])
+
+  // A submit returns to the end wherever the reader was, and the next layout follows it there (T3 Code's scrollToEnd).
+  useEffect(() => onScrollRequest('end', () => { settlingRef.current = true; scrollToBottom(false) }), [scrollToBottom])
+  // The composer grew (a tab row, the resting card lifting): a reader at the end stays there, whatever auto-follow
+  // says, because this is the composer covering the end rather than new content arriving.
+  useEffect(() => onScrollRequest('follow', () => { if (pinnedRef.current) scrollToBottom(false) }), [scrollToBottom])
 
   const virtualizer = useVirtualizer({
     count: virtualize ? rows.length : 0,
@@ -155,9 +175,9 @@ export function Transcript(props: TranscriptProps) {
   return (
     <WorklogDisclosureProvider key={scope} scope={scope ?? ""}>
     <div className="messages-shell relative flex flex-1 min-h-0 flex-col">
-      <div ref={scrollRef} onScroll={onScroll} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:auto] [@media(hover:hover)_and_(pointer:fine)]:[overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
+      <div ref={scrollRef} onScroll={onScroll} onWheel={(e) => { if (e.deltaY !== 0) onReaderScroll() }} onTouchMove={onReaderScroll} className={cn('messages relative z-0 flex flex-1 flex-col min-h-0 px-5 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch] touch-pan-y overscroll-y-contain [overflow-anchor:auto] [@media(hover:hover)_and_(pointer:fine)]:[overflow-anchor:none] max-[641px]:pl-[max(10px,env(safe-area-inset-left,0))] max-[641px]:pr-[max(10px,env(safe-area-inset-right,0))]', empty && 'messages-empty')} id="messages" role="log" aria-live="off" aria-relevant="additions">
         {empty ? emptyState : (
-          <div ref={innerRef} className="messages-inner mx-auto w-full flex flex-col max-w-(--msg-max) pt-5 pb-12 max-[641px]:pt-3 max-[641px]:pb-11 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
+          <div ref={innerRef} className="messages-inner mx-auto w-full flex flex-col max-w-(--msg-max) pt-5 pb-[calc(var(--composer-h,0px)+2rem)] max-[641px]:pt-3 max-[641px]:max-w-full max-[641px]:overflow-x-clip max-[641px]:[word-break:break-word] max-[641px]:min-w-0" id="msgInner">
             {truncated && (
               <div className="flex justify-center py-2">
                 <Button variant="ghost" onClick={onLoadOlder} disabled={loadingOlder}>{loadingOlder ? m.loading() : m.load_older()}</Button>
@@ -176,7 +196,7 @@ export function Transcript(props: TranscriptProps) {
                 })}
               </div>
             ) : rows.map((row, i) => renderRow(row, i))}
-            {showLiveUser && (
+            {liveUserText && (
               <div className="msg-row" data-role="user" data-live-user="1">
                 <div className="msg-body whitespace-pre-wrap break-words">{liveUserText}</div>
               </div>
@@ -197,7 +217,6 @@ export function Transcript(props: TranscriptProps) {
           <ArrowDown size={12} aria-hidden="true" /> <span className="max-[640px]:hidden">{m.scroll_to_bottom()}</span>
         </button>
       )}
-      {showLive && live && !isTerminal(live.status) && <LiveStatusPill turn={live} />}
     </div>
     </WorklogDisclosureProvider>
   )

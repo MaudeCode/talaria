@@ -22,17 +22,19 @@ The primary layout is three-panel:
 - center panel for chat,
 - right panel for workspace file browsing and previews.
 
-The composer footer carries only what the current message needs: attachments,
-dictation, the selected model, the active reasoning mode, context usage, and
-Stop/Send. Profile, workspace, toolsets, saved prompts, voice mode and provider
-quota live one level down, in the composer's overflow menu
-(`#composerMobileConfigBtn` / `#composerMobileConfigPanel`) — one menu at every
-width, not a second desktop-only surface. Saved prompts is the exception: it
-stays a desktop-only affordance and is absent from the menu at phone widths.
-Settings and session-level tools live in the Control Center. Pending attachments and action-required states
-(approvals, clarifications, the queue card) never move into overflow. Preserve
-this shape unless the change explicitly justifies a different interaction
-model.
+The composer is a floating glass card over the transcript, after T3 Code's
+composer (TAL-429). Its footer carries only what the next message needs: model
+and reasoning effort on the left; attachments, dictation, context usage, and
+Stop/Send on the right. Two attached extensions share the card's edges: a top
+tab for status (connection and runtime notices, manual compression, the
+running turn, dictation, the YOLO warning, queued messages) and a bottom context strip for where it runs (workspace,
+toolsets, profile). The terminal toggle lives in the chat header; phones reach
+it from the composer's overflow menu (`#composerMobileConfigBtn` /
+`#composerMobileConfigPanel`), which also takes model and reasoning when the
+footer runs out of width. Settings and session-level tools live in the Control
+Center. Pending attachments and action-required states (approvals,
+clarifications, the queue) never move into overflow. Preserve this shape unless
+the change explicitly justifies a different interaction model.
 
 ## Core feeling: calm developer console
 
@@ -189,6 +191,44 @@ footer-fit stage alongside `cf-icons`/`cf-burger` in `Composer.tsx`). A new
 footer control is therefore hidden until the composer is expanded — anything that
 must stay reachable while the user is reading belongs beside the primary action in
 `.composer-right`, or in an action-required surface that blocks the collapse.
+
+Above phone width the composer rests like T3 Code's: a hand scroll (wheel or
+touch) of a transcript taller than its pane flattens the card to one prompt row
+with only the right-hand actions, until the next composer interaction (focus,
+pointer down, typing, drag-over). Losing focus never rests it, and a multi-line
+draft (an explicit line break or a soft wrap, measured once when the scroll
+arrives), attachments, an open menu or slash list, or a clarification keep it
+expanded; a scroll that arrives while one of those holds is dropped, not kept
+for later. The card's height eases over 200 ms both ways (instant under reduced
+motion). A transcript pinned at its end re-pins as the composer grows, whatever
+the auto-follow setting, so the newest message is never covered.
+
+### Composer placement and send motion
+
+`ChatView` renders the composer in `.composer-dock`, absolutely positioned in
+`.chat-stage` over the transcript. A new or empty chat centres the dock (the
+hero) with its headline hanging above the card; otherwise it docks to the
+bottom. The dock's measured height is `--composer-h`, the transcript's bottom
+inset and the offset for the scroll-to-end pill. Behind the card itself nothing
+is drawn, so messages show through its glass; a fade above the dock dims them as
+they arrive, and an opaque shelf below the card keeps a scrolled-up transcript
+from showing around the context strip. Leaving the hero plays a 340 ms FLIP from
+the centred position (`sendMotion.ts`; instant under reduced motion). A new
+chat's first send shows its text as the pending user row and leaves the hero
+before the session or turn exists; the index and session routes mount separate
+views, so that state (`firstSend.ts`) and the dock animation (`sendMotion.ts`)
+survive the remount, and a failed send returns the text to the box. Every send, steer,
+or queue returns the transcript to its end.
+
+The top tab is a list of `ComposerNotice` entries (`ComposerTab.tsx`): an id,
+a tone (`neutral`, `info`, `warning`, `error`), content, and an optional action
+or dismiss. New transient status is a new entry, not new composer
+chrome; `useRuntimeNotices` supplies the connection and runtime ones (offline,
+Talaria server unreachable, agent unavailable, provider failure, turn error with
+Retry, compressing); an unreachable server is probed with exponential backoff
+and shows its countdown and a Retry action. Entries slide up from behind the card and sink back on exit;
+every height change of the composer re-pins a following transcript in the same
+frame, so streamed lines never hide behind a growing tab.
 
 ### Composer sizing
 

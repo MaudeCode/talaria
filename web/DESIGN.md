@@ -18,7 +18,7 @@ Every colour, radius, font, and spacing value is a token in `packages/frontend/s
 
 Functional UI uses `--font-ui`, assistant prose uses `--font-conversation` (the UI stack unless a skin sets an editorial face), and `--font-mono` is only for code, file paths, commands, tool names, and compact metadata. Avoid making whole cards feel like terminal output unless they actually are logs.
 
-Scale should stay tight: 11px metadata, 12px labels, 14px body, 16–18px headings. Do not proliferate 10px/10.5px/12.5px one-offs unless there is a real layout constraint.
+Scale should stay tight: 11px metadata, 12px labels, 14px body, 16–18px headings. Do not proliferate 10px/10.5px/12.5px one-offs unless there is a real layout constraint. The new-chat hero title is the one display size, `--composer-hero-title-size` (24px).
 
 ## Layout
 
@@ -38,7 +38,7 @@ Use almost no shadows in the transcript. Shadows are reserved for popovers, drop
 ## Shapes
 
 - Rows/list items: `4–8px` radius.
-- Cards/panels: `8–12px` radius.
+- Cards/panels: `8–12px` radius. The composer card is the one exception: `--composer-radius` (24px in the base skin) for T3 Code's floating card.
 - Pills: only true chips/badges use `999px`.
 - Avoid stacks of nested rounded rectangles. If a card contains another card, one of them is probably unnecessary.
 
@@ -46,7 +46,7 @@ Use almost no shadows in the transcript. Shadows are reserved for popovers, drop
 
 ### Tool/thinking activity group
 
-Compact Worklog keeps live prose inline without a turn-level disclosure. Consecutive reasoning and tool rows share one quiet activity summary until prose breaks the sequence; a single supporting row stays inline. The current activity summary tracks the latest action and shimmers while active, with a static label for reduced-motion users. The live status is a pill docked bottom-center above the composer, over the transcript's bottom padding, so it appears and disappears without moving any message. The pinned transcript follows every size change, so streamed lines never hide below the fold. Once the turn settles, the work visibly folds into the "Worked" summary above the final answer rather than snapping. Explicit choices on settled disclosures persist per profile, chat, and turn. Settled turns keep the same consecutive activity groups and prose boundaries. Individual arguments and results remain behind their own disclosure. Error-family turns retain readable partial work. These defaults follow the accepted disclosure addenda in `docs/rfcs/live-to-final-assistant-replies.md`.
+Compact Worklog keeps live prose inline without a turn-level disclosure. Consecutive reasoning and tool rows share one quiet activity summary until prose breaks the sequence; a single supporting row stays inline. The current activity summary tracks the latest action and shimmers while active, with a static label for reduced-motion users. The live status (laurel, "Responding…", tokens per second) is the first row of the composer's attached top tab rather than a pill over the transcript. The pinned transcript follows every size change, so streamed lines never hide below the fold. Once the turn settles, the work visibly folds into the "Worked" summary above the final answer rather than snapping. Explicit choices on settled disclosures persist per profile, chat, and turn. Settled turns keep the same consecutive activity groups and prose boundaries. Individual arguments and results remain behind their own disclosure. Error-family turns retain readable partial work. These defaults follow the accepted disclosure addenda in `docs/rfcs/live-to-final-assistant-replies.md`.
 
 ### Tool card
 
@@ -66,7 +66,7 @@ needed to explain a visible recovery or error state.
 
 ### Composer
 
-The composer is the command surface. Keep it legible and focused: modest radius, subtle border, transparent inactive chips, no theatrical hover scaling.
+The composer is the command surface: a floating glass card (24 px radius in the default skin) with borderless, muted controls, a status tab attached above it and a context strip below. Keep it legible and focused: transparent inactive controls, circular primary actions, no theatrical hover scaling.
 
 ## Do's and Don'ts
 
