@@ -79,6 +79,7 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   const port = typeof address === 'object' && address ? address.port : config.port
   log(`  Talaria Web listening on ${scheme}://${config.host}:${port}`)
   const close = async () => {
+    app.deps.hygiene.stop()
     await new Promise<void>((resolve) => {
       server.close(() => { resolve() })
       server.closeAllConnections()

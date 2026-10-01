@@ -75,27 +75,43 @@ export interface HygieneDeps {
 export class HygieneTicker {
   private timer: NodeJS.Timeout | null = null
   private retentionLastRun: number | null = null
+  private retention: Promise<void> | null = null
+  private abort = new AbortController()
   constructor(private readonly deps: HygieneDeps) {}
 
   start(intervalMs = HYGIENE_INTERVAL_MS): void {
     if (this.timer) return
-    this.timer = setInterval(() => { this.tick() }, intervalMs)
+    if (this.abort.signal.aborted) this.abort = new AbortController()
+    this.timer = setInterval(() => { void this.tick() }, intervalMs)
     this.timer.unref()
   }
 
-  stop(): void { if (this.timer) { clearInterval(this.timer); this.timer = null } }
+  /** Stops the schedule; an in-flight retention sweep stops at its next yield. */
+  stop(): void {
+    if (this.timer) { clearInterval(this.timer); this.timer = null }
+    this.abort.abort()
+  }
 
-  /** Python `_run_process_hygiene`: every step is best effort. */
-  tick(): void {
-    const step = (label: string, run: () => void): void => { try { run() } catch (error) { this.deps.log(`[webui] WARNING: ${label} failed: ${(error as Error).message}`) } }
+  /**
+   * Python `_run_process_hygiene`: every step is best effort. Retention runs in
+   * the background, one sweep at a time; the returned promise settles when the
+   * current sweep (if any) does.
+   */
+  tick(): Promise<void> {
+    const step = (label: string, run: () => void): void => { try { run() } catch (error) { this.warn(label, error) } }
     step('WebUI log rotation', () => { rotateWebuiLog(webuiLogPaths(this.deps.env, this.deps.stateDir, this.deps.port()), webuiLogMaxBytes(this.deps.env), this.deps.log) })
     for (const sweep of this.deps.sweeps ?? []) step('hygiene sweep', sweep)
+    if (this.retention) return this.retention
     const now = this.deps.now()
-    if (this.retentionLastRun !== null && now - this.retentionLastRun < RETENTION_INTERVAL_S) return
+    const { signal } = this.abort
+    if (signal.aborted || (this.retentionLastRun !== null && now - this.retentionLastRun < RETENTION_INTERVAL_S)) return Promise.resolve()
     this.retentionLastRun = now
-    step('run-journal retention', () => {
-      const result = this.deps.journal.pruneSettled({ now, isActive: (path) => this.deps.activeJournalPaths().has(path) })
-      if (result.pruned) this.deps.log(`[webui] run-journal retention pruned ${String(result.pruned)} files (${String(result.bytes_reclaimed)} bytes)`)
-    })
+    this.retention = this.deps.journal.pruneSettled({ now, signal, isActive: (path) => this.deps.activeJournalPaths().has(path) })
+      .then((result) => { if (result.pruned) this.deps.log(`[webui] run-journal retention pruned ${String(result.pruned)} files (${String(result.bytes_reclaimed)} bytes)`) })
+      .catch((error: unknown) => { this.warn('run-journal retention', error) })
+      .finally(() => { this.retention = null })
+    return this.retention
   }
+
+  private warn(label: string, error: unknown): void { this.deps.log(`[webui] WARNING: ${label} failed: ${(error as Error).message}`) }
 }
