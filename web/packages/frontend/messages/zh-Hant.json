@@ -357,7 +357,6 @@
 	"cmd_interrupt_confirm": "已中斷，正在傳送新訊息",
 	"cmd_steer_no_msg": "用法：/steer <訊息>",
 	"cmd_steer_fallback": "Steer 不可用 — 已恢復草稿",
-	"cmd_steer_delivered": "Steer 已送達，Agent 會在下一個工具結果中看到",
 	"steer_leftover_queued": "Steer 已加入下一輪佇列",
 	"busy_steer_fallback": "Steer 不可用 — 已恢復草稿",
 	"steer_fail_no_cached_agent": "No cached agent is available for steering this run",

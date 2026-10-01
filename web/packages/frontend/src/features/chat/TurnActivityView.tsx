@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { Fragment, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { CornerUpRight } from 'lucide-react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { fetchAnchorScene } from '../../api/endpoints'
 import { m } from '../../paraglide/messages.js'
@@ -56,6 +57,16 @@ function SettleSpacer({ turnKey }: { turnKey: string }) {
   return <div ref={ref} aria-hidden="true" />
 }
 
+/** A steer as the user's message, as the app shows it: labelled, with its delivery state until the Agent takes it. */
+export function SteerMessage({ text, state }: { text: string; state?: 'sending' | 'waiting' | undefined }) {
+  return (
+    <div className="msg-row steer-message" data-role="user" data-activity-steering="1" data-steer-state={state ?? 'consumed'}>
+      <div className="steer-message-label"><CornerUpRight size={12} aria-hidden="true" />{m.steer_hint_label()}{state && <> · {state === 'sending' ? m.steer_sending() : m.steer_waiting()}</>}</div>
+      <div className="msg-body whitespace-pre-wrap">{text}</div>
+    </div>
+  )
+}
+
 /** Live events and persisted history share ordering, nesting and final-answer boundaries. */
 export function TurnActivityView({ activity, mode, sessionId, scope }: { activity: TurnActivity; mode: ActivityMode; sessionId?: string | undefined; scope?: string | undefined }) {
   if (activity.history && sessionId && mode !== 'hide_all_activity') return <ActivityHistory key={JSON.stringify([scope, sessionId, activity.history])} activity={activity} history={activity.history} mode={mode} sessionId={sessionId} scope={scope} />
@@ -86,34 +97,49 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
     switch (item.kind) {
       case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.text} streaming={running && last} /></div>
       case 'reasoning': return <ReasoningBlock key={item.key} text={item.text} titles={item.titles} live={running && last} />
-      case 'steering': return <div key={item.key} className="anchor-steering-message mt-1 text-[12px] text-muted" data-activity-steering="1">{item.consumed ? m.live_steer_consumed({ text: item.text }) : item.text}</div>
+      case 'steering': return <SteerMessage key={item.key} text={item.text} />
       case 'tool': return <ToolCard key={item.key} call={item.call} />
     }
   }
-  const blocks: ReactNode[] = []
-  for (let i = 0; i < items.length;) {
-    const item = items[i]
-    if (!item) break
-    if (item.kind === 'text' || item.kind === 'steering' || mode !== 'compact_worklog') { blocks.push(render(item, i === items.length - 1)); i++; continue }
-    const start = i
-    while (i < items.length && items[i]?.kind !== 'text' && items[i]?.kind !== 'steering') i++
-    const run = items.slice(start, i)
-    const contents = run.map((entry, j) => render(entry, start + j === items.length - 1))
-    const active = running && i === items.length
-    const current = run.at(-1)
-    const activeLabel = active && current?.kind === 'tool'
-      ? toolCardLabel(current.call, locale)
-      : active && current?.kind === 'reasoning' ? current.titles?.at(-1) ?? m.voice_thinking() : undefined
-    blocks.push(run.length === 1 ? contents[0] : <Worklog key={item.key} sequenceKey={`sequence:${item.key}`} calls={run.flatMap((entry) => entry.kind === 'tool' ? [entry.call] : [])} status={status} active={active} activeLabel={activeLabel}>{contents}</Worklog>)
+  // `tail` marks the list that ends the turn: only its last item can still be streaming.
+  const blocksOf = (list: ActivityItem[], tail: boolean): ReactNode[] => {
+    const blocks: ReactNode[] = []
+    for (let i = 0; i < list.length;) {
+      const item = list[i]
+      if (!item) break
+      if (item.kind === 'text' || item.kind === 'steering' || mode !== 'compact_worklog') { blocks.push(render(item, tail && i === list.length - 1)); i++; continue }
+      const start = i
+      while (i < list.length && list[i]?.kind !== 'text' && list[i]?.kind !== 'steering') i++
+      const run = list.slice(start, i)
+      const contents = run.map((entry, j) => render(entry, tail && start + j === list.length - 1))
+      const active = running && tail && i === list.length
+      const current = run.at(-1)
+      const activeLabel = active && current?.kind === 'tool'
+        ? toolCardLabel(current.call, locale)
+        : active && current?.kind === 'reasoning' ? current.titles?.at(-1) ?? m.voice_thinking() : undefined
+      blocks.push(run.length === 1 ? contents[0] : <Worklog key={item.key} sequenceKey={`sequence:${item.key}`} calls={run.flatMap((entry) => entry.kind === 'tool' ? [entry.call] : [])} status={status} active={active} activeLabel={activeLabel}>{contents}</Worklog>)
+    }
+    return blocks
   }
-  const calls = items.flatMap((item) => item.kind === 'tool' ? [item.call] : [])
+  const callsOf = (list: ActivityItem[]) => list.flatMap((item) => item.kind === 'tool' ? [item.call] : [])
+  // The server marks a steer the Agent took; it ends a Worked phase and stays visible as the user's message, as in the app.
+  let phase: { work: ActivityItem[]; steer?: ActivityItem } = { work: [] }
+  const phases = [phase]
+  for (const item of items) {
+    if (item.kind === 'steering' && item.consumed) { phase.steer = item; phase = { work: [] }; phases.push(phase) } else phase.work.push(item)
+  }
   // A settled turn shows "Worked" whenever the server sent rows for it; live work has no turn-level disclosure.
   const hasWork = !!earlier || (running ? items.some((item) => item.kind !== 'text') : items.length > 0)
   return (
     <DisclosureTurnContext value={activity.key}>
       {mode !== 'hide_all_activity' && (mode === 'compact_worklog' && hasWork && (running || !activity.live)
-        ? <Worklog calls={calls} status={status} expandedByDefault={activity.expandedByDefault === true}>{earlier}{blocks}</Worklog>
-        : <>{earlier}{blocks}</>)}
+        ? phases.map((phase, n) => (
+          <Fragment key={n}>
+            {(phase.work.length > 0 || (n === 0 && earlier)) && <Worklog disclosureId={n === 0 ? 'turn' : `turn:phase:${n}`} calls={callsOf(phase.work)} status={status} expandedByDefault={activity.expandedByDefault === true}>{n === 0 && earlier}{blocksOf(phase.work, n === phases.length - 1)}</Worklog>}
+            {phase.steer && render(phase.steer, false)}
+          </Fragment>
+        ))
+        : <>{earlier}{blocksOf(items, true)}</>)}
       {mode === 'hide_all_activity' && items.filter((item) => item.kind === 'steering').map((item) => render(item, false))}
       {!running && <SettleSpacer turnKey={activity.key} />}
       {outcome && <div role="status" className="text-muted">{outcome}</div>}

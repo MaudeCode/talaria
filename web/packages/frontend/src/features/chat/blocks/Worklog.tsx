@@ -48,7 +48,7 @@ export function terminalOutcomeLabel(status: string): string | null {
   }
 }
 
-export function Worklog({ calls, status, children, sequenceKey, active = false, activeLabel, expandedByDefault = false }: { calls: ToolCardData[]; status: string; children: ReactNode; sequenceKey?: string; active?: boolean; activeLabel?: string | undefined; expandedByDefault?: boolean }) {
+export function Worklog({ calls, status, children, sequenceKey, disclosureId = 'turn', active = false, activeLabel, expandedByDefault = false }: { calls: ToolCardData[]; status: string; children: ReactNode; sequenceKey?: string; /** A turn-level disclosure's key, one per phase of a steered turn. */ disclosureId?: string; active?: boolean; activeLabel?: string | undefined; expandedByDefault?: boolean }) {
   const locale = useLocale()
   const nested = sequenceKey !== undefined
   const running = status === 'running'
@@ -56,7 +56,7 @@ export function Worklog({ calls, status, children, sequenceKey, active = false, 
   const live = !nested && running
   // The server decides whether a settled turn's work opens by default; nested groups start closed.
   const defaultOpen = !nested && expandedByDefault
-  const [chosen, toggle] = useDisclosure(sequenceKey ?? 'turn', defaultOpen)
+  const [chosen, toggle] = useDisclosure(sequenceKey ?? disclosureId, defaultOpen)
   const open = live || chosen
   const bodyId = useId()
   const text = toolText(locale)

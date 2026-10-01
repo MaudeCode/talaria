@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A steering message sent while a reply is running now stays in the chat as your message: it shows Sending and Waiting for agent until the agent takes it, and it stays visible after the reply finishes.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

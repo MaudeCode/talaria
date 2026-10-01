@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from 'react'
 import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import type { LiveTurn } from '../../stream/reducer'
-import { rememberLiveTurnHeight, TurnActivityView } from './TurnActivityView'
+import { rememberLiveTurnHeight, SteerMessage, TurnActivityView } from './TurnActivityView'
 import { liveActivity } from './turnActivity'
 import type { ActivityMode } from './blocks/Worklog'
 
@@ -19,6 +19,7 @@ export function LiveTurnView({ turn, name, mode, userVisible }: { turn: LiveTurn
       <div className="msg-role assistant"><span className="msg-role-name">{name}</span></div>
       <div className="assistant-turn-blocks">
         <TurnActivityView activity={activity} mode={mode} />
+        {turn.pendingSteers.map((steer) => <SteerMessage key={steer.steerId} text={steer.text} state={steer.state} />)}
         {turn.warning && <div className="mt-1 text-[12px] text-warning" role="status">{turn.warning}</div>}
         {turn.compression && <div className="compression-card mt-2 rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-muted" role="status">{turn.compression.state === 'compressing' ? m.live_compressing() : m.live_compressed()}{turn.compression.newSessionId && turn.compression.state === 'compressed' && <> <Link to="/session/$sessionId" params={{ sessionId: turn.compression.newSessionId }} className="text-accent-text underline">{m.live_continuation()}</Link></>}</div>}
         {turn.status === 'cancelled' && turn.cancelledMessage && <div className="status-card mt-2 text-[13px] text-muted">{turn.cancelledMessage}</div>}

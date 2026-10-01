@@ -379,7 +379,6 @@
 	"cmd_interrupt_confirm": "Přerušeno — odeslání nové zprávy",
 	"cmd_steer_no_msg": "Použití: /steer <zpráva>",
 	"cmd_steer_fallback": "Řízení není k dispozici — návrh byl obnoven",
-	"cmd_steer_delivered": "Řízení dodáno — agent to uvidí ve svém dalším výsledku nástroje",
 	"steer_leftover_queued": "Řízení ve frontě na další tah",
 	"busy_steer_fallback": "Řízení není k dispozici — návrh byl obnoven",
 	"steer_fail_no_cached_agent": "Pro tento běh není k dispozici žádný agent pro směrování",

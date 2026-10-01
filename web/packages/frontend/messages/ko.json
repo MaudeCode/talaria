@@ -357,7 +357,6 @@
 	"cmd_interrupt_confirm": "Interrupted — sending new message",
 	"cmd_steer_no_msg": "Usage: /steer <message>",
 	"cmd_steer_fallback": "Steer unavailable — draft restored",
-	"cmd_steer_delivered": "Steer delivered — agent will see it on its next tool result",
 	"steer_leftover_queued": "Steer queued for next turn",
 	"busy_steer_fallback": "Steer unavailable — draft restored",
 	"steer_fail_no_cached_agent": "No cached agent is available for steering this run",

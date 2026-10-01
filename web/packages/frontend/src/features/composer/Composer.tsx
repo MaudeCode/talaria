@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Mic, Paperclip, Square, ArrowUp, TerminalSquare, SlidersHorizontal } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import * as api from '../../api/endpoints'
@@ -8,6 +8,7 @@ import type { UploadResponse, Session, Settings } from '../../contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import { cancelTurn, startTurn } from '../../stream/connection'
+import { dispatch } from '../../stream/store'
 import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
 import { showToast } from '../toast/toast'
@@ -216,17 +217,40 @@ export function Composer(props: ComposerProps) {
     if (f?.upload?.rollback_token && session) void api.rollbackUpload(session.session_id, [f.upload.rollback_token]).catch(() => undefined)
   }
 
-  // Steer: deliver mid-run; if the server did not accept it, the draft stays in the box.
-  const steer = useMutation({ mutationFn: (text: string) => api.steerChat({ session_id: sessionId ?? '', text }) })
+  // Steer: deliver mid-run, shown in the turn as a pending user message; if the server did not accept it, the draft stays in the box.
   const trySteer = useCallback(async (text: string): Promise<boolean> => {
-    const r = await steer.mutateAsync(text)
-    if (!r.accepted) { showToast(r.fallback === 'gateway_steer_queued' ? m.steer_leftover_queued() : m.busy_steer_fallback(), 2500); return false }
-    showToast(m.cmd_steer_delivered(), 1500)
-    return true
-  }, [steer])
+    if (!sessionId) return false
+    // getRandomValues, unlike randomUUID, also works on plain-HTTP LAN installs.
+    const steerId = `steer-${Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')}`
+    dispatch({ type: 'steer', sessionId, steerId, text, status: 'sending' })
+    try {
+      const r = await api.steerChat({ session_id: sessionId, text, steer_id: steerId })
+      if (r.accepted) { dispatch({ type: 'steer', sessionId, steerId, text, status: 'waiting' }); return true }
+      dispatch({ type: 'steer', sessionId, steerId, text, status: 'failed' })
+      showToast(r.fallback === 'gateway_steer_queued' ? m.steer_leftover_queued() : m.busy_steer_fallback(), 2500)
+    } catch (e) {
+      dispatch({ type: 'steer', sessionId, steerId, text, status: 'failed' })
+      showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
+    }
+    return false
+  }, [sessionId])
 
   // Snapshot of what a send would post right now, for the queue.
   const queueEntry = useCallback((text: string): QueuedTurn => ({ text, attachments: files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : [])), request: { model: session?.model ?? undefined, model_provider: session?.model_provider ?? undefined, workspace: session?.workspace, profile: bootstrap.profile?.name ?? 'default' } }), [files, session, bootstrap.profile])
+
+  // A steer the turn ended without taking is queued as the next turn, once, as the app does.
+  const steerLeftovers = live?.steerLeftovers
+  const queuedSteers = useRef(new Set<string>())
+  useEffect(() => {
+    const fresh = steerLeftovers?.filter((leftover) => !queuedSteers.current.has(leftover.steerId)) ?? []
+    if (!sessionId || !fresh.length) return
+    for (const leftover of fresh) {
+      queuedSteers.current.add(leftover.steerId)
+      onQueue({ ...queueEntry(leftover.text), attachments: [] })
+      dispatch({ type: 'steer', sessionId, steerId: leftover.steerId, text: leftover.text, status: 'queued' })
+    }
+    showToast(m.steer_leftover_queued(), 2500)
+  }, [steerLeftovers, sessionId, onQueue, queueEntry])
 
   const send = useCallback(async () => {
     if (locked) { showToast(m.live_compressing(), 1500); return }
