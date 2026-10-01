@@ -94,7 +94,9 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   const spinner = page.locator('.live-run-status')
   await expect(spinner).toHaveCount(1)
   await expect(spinner.locator('svg.live-laurel')).toBeVisible()
-  await expect(spinner.locator('svg.live-laurel')).toHaveCSS('width', '24px')
+  await expect(spinner.locator('svg.live-laurel')).toHaveCSS('width', '18px')
+  // The status is the first row of the composer's top tab (TAL-429), not a pill over the transcript.
+  await expect(page.locator('.composer-tab .live-run-status')).toHaveCount(1)
   const group = page.locator('[data-activity-sequence-group]')
   const groupLabel = group.locator(':scope > button .tool-worklog-label')
   await expect(group).toHaveCount(1)
@@ -130,13 +132,10 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
   await expect(groupLabel).toHaveCSS('background-image', /linear-gradient/)
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await expect(groupLabel).toHaveCSS('background-image', 'none')
-  const scrollerBox = (await page.locator('#messages').boundingBox())!
   const spinnerBox = (await spinner.boundingBox())!
-  expect(Math.abs(spinnerBox.x + spinnerBox.width / 2 - (scrollerBox.x + scrollerBox.width / 2))).toBeLessThanOrEqual(2)
-  // The transcript runs under the floating composer (TAL-429); the pill docks just above the card.
   const composerTop = (await page.locator('#composerBox').boundingBox())!.y
   expect(spinnerBox.y + spinnerBox.height).toBeLessThanOrEqual(composerTop)
-  expect(spinnerBox.y + spinnerBox.height).toBeGreaterThan(composerTop - 60)
+  expect(spinnerBox.y + spinnerBox.height).toBeGreaterThan(composerTop - 40)
   if (!limited && testInfo.project.name === 'desktop') {
     await page.screenshot({ path: testInfo.outputPath('live-worklog-desktop.png'), fullPage: true })
     await page.setViewportSize({ width: 800, height: 800 })

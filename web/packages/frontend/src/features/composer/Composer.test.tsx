@@ -123,4 +123,13 @@ describe('Composer', () => {
     await waitFor(() => expect(box).toHaveValue('Plan the release'))
     expect(getFirstSend()).toBeNull()
   })
+  it('shows the running turn in the top tab and drops it when the turn ends (TAL-429)', () => {
+    const live = running()
+    const { container, rerender } = render(<QueryClientProvider client={new QueryClient()}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><Composer sessionId="s1" session={writable} live={live} settings={undefined} onEnsureSession={() => Promise.resolve(writable)} onLocalCommand={() => Promise.resolve(false)} terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null} yolo={false} onToggleYolo={noop} queued={[]} onQueue={noop} /></BootstrapContext.Provider></QueryClientProvider>)
+    expect(container.querySelector('.composer-tab .live-run-status')).toHaveTextContent('Responding…')
+    dispatch({ type: 'event', sessionId: 's1', streamId: 'run', event: { event: 'done', data: {} }, lastEventId: 'run:1', now: 1 })
+    rerender(<QueryClientProvider client={new QueryClient()}><BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}><Composer sessionId="s1" session={writable} live={getStreamState().turns.s1!} settings={undefined} onEnsureSession={() => Promise.resolve(writable)} onLocalCommand={() => Promise.resolve(false)} terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null} yolo={false} onToggleYolo={noop} queued={[]} onQueue={noop} /></BootstrapContext.Provider></QueryClientProvider>)
+    expect(container.querySelector('.live-run-status')).toBeNull()
+    expect(container.querySelector('.composer-tab')).toBeNull()
+  })
 })

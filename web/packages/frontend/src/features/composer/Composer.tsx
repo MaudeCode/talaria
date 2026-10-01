@@ -22,6 +22,7 @@ import { ProfileMenu } from '../../shell/ProfileMenu'
 import { setTheme } from '../../app/appearance'
 import { ThemeSchema } from '../../contracts/persisted'
 import type { Clarify } from '../chat/useClarify'
+import { LiveStatusPill } from '../chat/LiveTurnView'
 import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, requestScrollToEnd, useFirstSend } from '../chat/sendMotion'
 
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
@@ -390,8 +391,9 @@ export function Composer(props: ComposerProps) {
   return (
     <div className="composer-wrap" id="composerWrap">
       {/* T3 Code's attached banner: status that belongs to the next message rides on the card's top edge. */}
-      {(dictating || showYolo || queued.length > 0) && (
-        <div className={cn('composer-tab', showYolo && 'composer-tab--warning')}>
+      {(busy || dictating || showYolo || queued.length > 0) && (
+        <div className="composer-tab">
+          {busy && live && <div className="composer-tab-row"><LiveStatusPill turn={live} /></div>}
           {dictating && <div className="composer-tab-row mic-status" id="micStatus" role="status"><span className="mic-dot" aria-hidden="true" /> {m.voice_listening()}</div>}
           {showYolo && <button type="button" onClick={onToggleYolo} className="composer-tab-row composer-tab-yolo" id="yoloPill" title={m.yolo_pill_title_active()}><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_pill_title_active()}</span></button>}
           {queued.length > 0 && (

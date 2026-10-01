@@ -6,7 +6,7 @@ import { m } from '../../paraglide/messages.js'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import { AssistantMessageRow, UserMessageRow, type RowActions } from './MessageRow'
-import { LiveStatusPill, LiveTurnView } from './LiveTurnView'
+import { LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
 import { groupAssistantTurns } from './turnActivity'
@@ -207,7 +207,6 @@ export function Transcript(props: TranscriptProps) {
           <ArrowDown size={12} aria-hidden="true" /> <span className="max-[640px]:hidden">{m.scroll_to_bottom()}</span>
         </button>
       )}
-      {showLive && live && !isTerminal(live.status) && <LiveStatusPill turn={live} />}
     </div>
     </WorklogDisclosureProvider>
   )

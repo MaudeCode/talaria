@@ -26,8 +26,8 @@ The composer is a floating glass card over the transcript, after T3 Code's
 composer (TAL-429). Its footer carries only what the next message needs: model
 and reasoning effort on the left; attachments, dictation, context usage, and
 Stop/Send on the right. Two attached extensions share the card's edges: a top
-tab for status that belongs to the next message (dictation, the YOLO warning,
-queued messages) and a bottom context strip for where it runs (workspace,
+tab for status (the running turn, dictation, the YOLO warning, queued
+messages) and a bottom context strip for where it runs (workspace,
 toolsets, profile). The terminal toggle lives in the chat header; phones reach
 it from the composer's overflow menu (`#composerMobileConfigBtn` /
 `#composerMobileConfigPanel`), which also takes model and reasoning when the
@@ -198,7 +198,7 @@ must stay reachable while the user is reading belongs beside the primary action 
 `.chat-stage` over the transcript. A new or empty chat centres the dock (the
 hero) with its headline hanging above the card; otherwise it docks to the
 bottom. The dock's measured height is `--composer-h`, the transcript's bottom
-inset and the offset for the scroll-to-end pill and live status pill, so no
+inset and the offset for the scroll-to-end pill, so no
 surface sits behind the card at rest. Leaving the hero plays a 340 ms FLIP from
 the centred position (`sendMotion.ts`; instant under reduced motion). A new
 chat's first send shows its text as the pending user row and leaves the hero

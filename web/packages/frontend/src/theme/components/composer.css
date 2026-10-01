@@ -118,9 +118,9 @@
 .composer-tab{display:flex;flex-direction:column;border-bottom:0;border-radius:14px 14px 0 0;font-size:12px;color:var(--muted)}
 .composer-tab-row{display:flex;align-items:center;gap:6px;min-width:0;padding:6px 14px;border:0;background:none;font:inherit;color:inherit;text-align:left}
 .composer-tab-row + .composer-tab-row{border-top:1px solid var(--border)}
-.composer-tab--warning{border-color:color-mix(in srgb,var(--amber) 35%,transparent);background:linear-gradient(color-mix(in srgb,var(--amber) 8%,transparent),color-mix(in srgb,var(--amber) 8%,transparent)),color-mix(in srgb,var(--composer-bg) 82%,transparent)}
-.composer-tab-yolo{color:var(--amber);cursor:pointer}
-.composer-tab-yolo:hover{color:var(--amber-strong)}
+.composer-tab-yolo{color:var(--amber);background:color-mix(in srgb,var(--amber) 9%,transparent);cursor:pointer}
+.composer-tab-row:first-child{border-radius:13px 13px 0 0}
+.composer-tab-yolo:hover{color:var(--amber-strong);background:color-mix(in srgb,var(--amber) 14%,transparent)}
 .composer-tab .queue-card{flex-direction:column;align-items:stretch;gap:2px}
 .queue-card-title{font-weight:600;color:var(--text)}
 .queue-card-list{margin:0;padding:0;list-style:none;max-height:72px;overflow-y:auto}
