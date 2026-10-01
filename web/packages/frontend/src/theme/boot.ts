@@ -1,13 +1,13 @@
 /**
  * Apply persisted appearance before first paint. Ported from the legacy inline
  * <head> scripts: theme axis (light/dark/system plus legacy aliases), skin axis,
- * font size, full-width chat, RTL, sidebar collapse, workspace panel state.
+ * font size, chat width, RTL, sidebar collapse, workspace panel state.
  * Runs synchronously from the module entry. The first paint happens before the
  * module arrives, so theme/prepaint.js (a blocking head script) sets the theme
  * and skin ahead of it; this pass validates and completes the rest.
  */
 import { readPersisted, writePersisted } from '../lib/persisted'
-import { ThemeSchema, SkinSchema, FontSizeSchema, type Theme, type Skin } from '../contracts/persisted'
+import { ThemeSchema, SkinSchema, FontSizeSchema, ChatWidthSchema, type ChatWidth, type Theme, type Skin } from '../contracts/persisted'
 import { skinByKey } from './skins'
 const LEGACY_THEME_ALIASES: Record<string, [Theme, Skin]> = {
   slate: ['dark', 'slate'],
@@ -52,6 +52,13 @@ export function applyAppearance(a: ResolvedAppearance, root: HTMLElement = docum
   }
 }
 
+/** Saved chat width; a browser with only the legacy full-width toggle reads as Full. */
+export function readChatWidth(): ChatWidth {
+  const width = ChatWidthSchema.safeParse(readPersisted('hermes-chat-width'))
+  if (width.success) return width.data
+  return readPersisted('hermes-full-width-chat') === 'true' ? 'full' : 'comfortable'
+}
+
 export function applyBootAppearance(): void {
   const root = document.documentElement
   const rawTheme = readPersisted('hermes-theme')
@@ -67,7 +74,8 @@ export function applyBootAppearance(): void {
 
   const fontSize = FontSizeSchema.safeParse(readPersisted('hermes-font-size'))
   if (fontSize.success && fontSize.data !== 'default') root.dataset.fontSize = fontSize.data
-  if (readPersisted('hermes-full-width-chat') === 'true') root.dataset.chatWidth = 'full'
+  const chatWidth = readChatWidth()
+  if (chatWidth !== 'comfortable') root.dataset.chatWidth = chatWidth
   if (readPersisted('hermes-rtl') === 'true') root.dir = 'rtl'
   root.dataset.workspacePanel = readPersisted('hermes-webui-workspace-panel') === 'open' ? 'open' : 'closed'
   if (readPersisted('hermes-webui-sidebar-collapsed') === '1') root.dataset.sidebarCollapsed = '1'

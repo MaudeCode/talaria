@@ -235,7 +235,7 @@ export const TranscribeCapabilitySchema = z.looseObject({ ok: z.literal(true), a
 export const LoginResponseSchema = z.looseObject({ ok: z.literal(true), message: z.string().optional() })
 export const SettingsSchema = z.looseObject({
   bot_name: z.string().optional(), default_model: z.string().optional(), default_workspace: z.string().optional(), language: z.string().optional(), send_key: z.string().optional(), font_size: z.string().optional(),
-  full_width_chat: z.boolean().optional(), auto_scroll_follow: z.boolean().optional(), render_user_markdown: z.boolean().optional(), chat_activity_display_mode: z.string().optional(), default_message_mode: z.string().optional(),
+  full_width_chat: z.boolean().optional(), chat_width: z.enum(['comfortable', 'wide', 'full']).optional(), auto_scroll_follow: z.boolean().optional(), render_user_markdown: z.boolean().optional(), chat_activity_display_mode: z.string().optional(), default_message_mode: z.string().optional(),
   fade_text_effect: z.boolean().optional(), hidden_tabs: z.array(z.string()).optional(), composer_control_order: z.array(z.string()).optional(), show_cli_sessions: z.boolean().optional(), show_claude_code_sessions: z.boolean().optional(),
   show_cron_sessions: z.boolean().optional(), show_webhook_sessions: z.boolean().optional(), show_kanban_sessions: z.boolean().optional(), check_for_updates: z.boolean().optional(), ignore_agent_updates: z.boolean().optional(),
   auth_enabled: z.boolean().optional(), password_auth_enabled: z.boolean().optional(), password_env_var: z.boolean().optional(), passkeys_enabled: z.boolean().optional(), passwordless_enabled: z.boolean().optional(),

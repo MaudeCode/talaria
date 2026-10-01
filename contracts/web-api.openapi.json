@@ -20270,6 +20270,14 @@
                     "full_width_chat": {
                       "type": "boolean"
                     },
+                    "chat_width": {
+                      "enum": [
+                        "comfortable",
+                        "wide",
+                        "full"
+                      ],
+                      "type": "string"
+                    },
                     "auto_scroll_follow": {
                       "type": "boolean"
                     },
@@ -20463,6 +20471,14 @@
                     },
                     "full_width_chat": {
                       "type": "boolean"
+                    },
+                    "chat_width": {
+                      "enum": [
+                        "comfortable",
+                        "wide",
+                        "full"
+                      ],
+                      "type": "string"
                     },
                     "auto_scroll_follow": {
                       "type": "boolean"

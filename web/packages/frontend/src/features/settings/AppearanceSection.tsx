@@ -2,7 +2,7 @@ import { Moon, Monitor, Sun } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { FieldRow, Switch } from '../../ui/Field'
 import { Select } from '../../ui/Select'
-import { setFontSize, setFullWidthChat, setLanguage, setRtl, setSkin, setTheme, useAppearance } from '../../app/appearance'
+import { setChatWidth, setFontSize, setLanguage, setRtl, setSkin, setTheme, useAppearance } from '../../app/appearance'
 import { SKINS } from '../../theme/skins'
 import { FontSizeSchema, SkinSchema } from '../../contracts/persisted'
 import { LOCALE_INFO } from '../../i18n/locales'
@@ -75,9 +75,14 @@ export function AppearanceSection() {
         </div>
       </div>
       <div className="settings-field">
-        <FieldRow label={m.settings_label_full_width_chat()} htmlFor="settingsFullWidth" inline>
-          <Switch id="settingsFullWidth" checked={appearance.fullWidth} onCheckedChange={(checked) => { setFullWidthChat(checked); save.mutate({ full_width_chat: checked }) }} />
-        </FieldRow>
+        <label>{m.settings_label_chat_width()}</label>
+        <div id="chatWidthPickerGrid" className="grid gap-2 mt-1 grid-cols-3">
+          {([['comfortable', '45%', m.chat_width_comfortable()], ['wide', '70%', m.chat_width_wide()], ['full', '100%', m.chat_width_full()]] as const).map(([width, bar, label]) => (
+            <PickButton key={width} className="chat-width-pick-btn" data-chat-width-val={width} active={appearance.chatWidth === width} onClick={() => { setChatWidth(width); save.mutate({ chat_width: width, full_width_chat: width === 'full' }) }} label={label}>
+              <div className={PICK_PREVIEW + ' bg-surface border border-border px-2'}><span className="block h-2 rounded-full bg-muted opacity-40" style={{ width: bar }} /></div>
+            </PickButton>
+          ))}
+        </div>
       </div>
       <div className="settings-field">
         <FieldRow label={m.settings_label_rtl()} htmlFor="settingsRtl" inline>

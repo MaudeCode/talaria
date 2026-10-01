@@ -147,7 +147,7 @@ only renders what the server allows.
 | Server resources (sessions list, session metadata, settings, profiles, models, panels) | TanStack Query | keys in `api/queryKeys.ts`; mutations invalidate by key family; profile switch resets the whole cache |
 | Active chat stream | `stream/` reducer store (`useSyncExternalStore`) | connection state, event projection, in-flight turn, approvals/clarify prompts, metering, notices; never routed through Query |
 | Local interaction state | React component state | menus, drafts before persist, collapse toggles |
-| Persisted browser state | `lib/persisted.ts` | validated JSON only (`contracts/persisted.ts`); keys keep their legacy names where semantics are unchanged (`hermes-theme`, `hermes-skin`, `hermes-lang`, `hermes-webui-session`, `hermes-webui-sidebar-collapsed`, `hermes-webui-tab-order`, `hermes-webui-hidden-tabs`, `hermes-font-size`, `hermes-full-width-chat`, `hermes-rtl`) |
+| Persisted browser state | `lib/persisted.ts` | validated JSON only (`contracts/persisted.ts`); keys keep their legacy names where semantics are unchanged (`hermes-theme`, `hermes-skin`, `hermes-lang`, `hermes-webui-session`, `hermes-webui-sidebar-collapsed`, `hermes-webui-tab-order`, `hermes-webui-hidden-tabs`, `hermes-font-size`, `hermes-full-width-chat`, `hermes-chat-width`, `hermes-rtl`) |
 | Extension channels | `extensions/host.ts` | one `MessageChannel` per iframe, nonce and version handshake, capability table from the sanitized manifest |
 | Service worker state | `sw.ts` | precache list injected by the build; runtime caches for hashed assets only |
 

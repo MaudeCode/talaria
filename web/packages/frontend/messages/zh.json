@@ -858,8 +858,6 @@
 	"settings_label_theme": "主题",
 	"settings_label_skin": "皮肤",
 	"settings_label_font_size": "字体大小",
-	"settings_label_full_width_chat": "使用全宽聊天",
-	"settings_desc_full_width_chat": "让对话记录和输入框使用中间区域的可用宽度，而不是紧凑的阅读栏。",
 	"font_size_small": "小",
 	"font_size_default": "默认",
 	"font_size_large": "大",

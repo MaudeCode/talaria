@@ -1,11 +1,11 @@
 /**
- * Appearance actions: theme, skin, font size, full-width chat, RTL, language.
+ * Appearance actions: theme, skin, font size, chat width, RTL, language.
  * Each applies immediately, persists the legacy localStorage key, and (where
  * the legacy app did) mirrors to server settings through the caller.
  */
 import { readPersisted, writePersisted } from '../lib/persisted'
-import { FontSizeSchema, type FontSize, type Skin, type Theme } from '../contracts/persisted'
-import { applyAppearance, resolveAppearance } from '../theme/boot'
+import { FontSizeSchema, type ChatWidth, type FontSize, type Skin, type Theme } from '../contracts/persisted'
+import { applyAppearance, readChatWidth, resolveAppearance } from '../theme/boot'
 import { applyLocale } from '../i18n/runtime'
 import { useSyncExternalStore } from 'react'
 import { applyExtensionSkin, extensionSkin } from '../extensions/registry'
@@ -14,15 +14,15 @@ const listeners = new Set<() => void>()
 let version = 0
 const bump = () => { version += 1; for (const l of listeners) l() }
 
-export interface AppearanceState { theme: Theme; skin: Skin; fontSize: FontSize; fullWidth: boolean; rtl: boolean }
+export interface AppearanceState { theme: Theme; skin: Skin; fontSize: FontSize; chatWidth: ChatWidth; rtl: boolean }
 
 export function readAppearance(): AppearanceState {
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
   const rawSkin = readPersisted('hermes-skin')
   const ext = rawSkin ? extensionSkin(rawSkin.toLowerCase()) : undefined
   const r = resolveAppearance(readPersisted('hermes-theme'), ext ? 'default' : rawSkin, prefersDark)
-  if (ext) return { theme: r.theme, skin: ext.key as Skin, fontSize: fontSizeOf(), fullWidth: readPersisted('hermes-full-width-chat') === 'true', rtl: readPersisted('hermes-rtl') === 'true' }
-  return { theme: r.theme, skin: r.skin, fontSize: fontSizeOf(), fullWidth: readPersisted('hermes-full-width-chat') === 'true', rtl: readPersisted('hermes-rtl') === 'true' }
+  if (ext) return { theme: r.theme, skin: ext.key as Skin, fontSize: fontSizeOf(), chatWidth: readChatWidth(), rtl: readPersisted('hermes-rtl') === 'true' }
+  return { theme: r.theme, skin: r.skin, fontSize: fontSizeOf(), chatWidth: readChatWidth(), rtl: readPersisted('hermes-rtl') === 'true' }
 }
 
 function fontSizeOf(): FontSize {
@@ -61,10 +61,12 @@ export function setFontSize(size: FontSize): void {
   else document.documentElement.dataset.fontSize = size
   bump()
 }
-export function setFullWidthChat(on: boolean): void {
-  writePersisted('hermes-full-width-chat', on ? 'true' : 'false')
-  if (on) document.documentElement.dataset.chatWidth = 'full'
-  else delete document.documentElement.dataset.chatWidth
+export function setChatWidth(width: ChatWidth): void {
+  writePersisted('hermes-chat-width', width)
+  // Stable still reads the legacy boolean (TAL-343); drop it once Stable reads hermes-chat-width.
+  writePersisted('hermes-full-width-chat', width === 'full' ? 'true' : 'false')
+  if (width === 'comfortable') delete document.documentElement.dataset.chatWidth
+  else document.documentElement.dataset.chatWidth = width
   bump()
 }
 export function setRtl(on: boolean): void {

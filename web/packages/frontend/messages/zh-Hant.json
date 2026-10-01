@@ -914,8 +914,6 @@
 	"settings_label_theme": "主題",
 	"settings_label_skin": "佈景",
 	"settings_label_font_size": "字型大小",
-	"settings_label_full_width_chat": "使用全寬聊天",
-	"settings_desc_full_width_chat": "讓對話記錄和輸入框使用中央區域的可用寬度，而不是緊湊的閱讀欄。",
 	"font_size_small": "小",
 	"font_size_default": "預設",
 	"font_size_large": "大",

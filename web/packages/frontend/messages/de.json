@@ -858,8 +858,6 @@
 	"settings_label_theme": "Theme",
 	"settings_label_skin": "Skin",
 	"settings_label_font_size": "Font size",
-	"settings_label_full_width_chat": "Chat in voller Breite verwenden",
-	"settings_desc_full_width_chat": "Chatverlauf und Eingabefeld nutzen den verfügbaren mittleren Bereich anstelle der kompakten Lesespalte.",
 	"font_size_small": "Small",
 	"font_size_default": "Default",
 	"font_size_large": "Large",

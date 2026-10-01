@@ -10,6 +10,7 @@
 :root[data-font-size="small"] { --message-body-font-size: 12px; --message-code-font-size: 10.5px; --message-pre-code-font-size: 11px; --message-table-font-size: 11px; font-size: 12px; }
 :root[data-font-size="large"] { --message-body-font-size: 16px; --message-code-font-size: 14.5px; --message-pre-code-font-size: 15px; --message-table-font-size: 14px; font-size: 16px; }
 :root[data-font-size="xlarge"] { --message-body-font-size: 18px; --message-code-font-size: 16px; --message-pre-code-font-size: 16.5px; --message-table-font-size: 16px; font-size: 18px; }
+:root[data-chat-width="wide"] { --msg-max: 1152px; }
 :root[data-chat-width="full"] { --msg-max: 100%; }
 
 /* Skin traits: the two structural variants a skin can opt into (SkinSpec.traits). Everything else a skin

@@ -927,8 +927,6 @@
 	"settings_label_theme": "Motyw",
 	"settings_label_skin": "Skórka",
 	"settings_label_font_size": "Rozmiar czcionki",
-	"settings_label_full_width_chat": "Użyj czatu o pełnej szerokości",
-	"settings_desc_full_width_chat": "Transkrypcja i pole wpisywania wykorzystują całą dostępną szerokość środkowego panelu zamiast zwartej kolumny do czytania.",
 	"font_size_small": "Mała",
 	"font_size_default": "Domyślna",
 	"font_size_large": "Duża",

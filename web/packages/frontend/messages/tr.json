@@ -914,8 +914,6 @@
 	"settings_label_theme": "Tema",
 	"settings_label_skin": "Deri",
 	"settings_label_font_size": "Yazı tipi boyutu",
-	"settings_label_full_width_chat": "Tam genişlikte sohbet kullan",
-	"settings_desc_full_width_chat": "Sohbet geçmişi ve yazma alanı, kompakt okuma sütunu yerine kullanılabilir orta panelin tamamını kullanır.",
 	"font_size_small": "Küçük",
 	"font_size_default": "Varsayılan",
 	"font_size_large": "Büyük",
