@@ -1855,7 +1855,7 @@
 	"yolo_no_session": "No active session",
 	"yolo_enabled": "⚡ YOLO mode ON — approvals skipped this session",
 	"yolo_disabled": "YOLO mode OFF",
-	"yolo_tab_active": "YOLO mode is on — approvals are skipped",
+	"yolo_tab_active": "YOLO: approvals off",
 	"yolo_turn_off": "Turn off",
 	"approval_skip_all": "Skip all",
 	"approval_skip_all_title": "Skip all approval prompts for this session",
