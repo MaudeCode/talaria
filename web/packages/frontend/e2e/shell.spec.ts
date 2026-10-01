@@ -100,6 +100,8 @@ test.describe('shell', () => {
       await page.locator(`[data-chat-width-val="${width}"]`).click()
       expect((await saved).postDataJSON()).toMatchObject({ chat_width: width, full_width_chat: width === 'full' })
       await expect(page.locator(`[data-chat-width-val="${width}"]`)).toHaveAttribute('aria-pressed', 'true')
+      const border = (sel: string) => page.locator(sel).first().evaluate((el) => getComputedStyle(el).borderColor)
+      expect(await border(`[data-chat-width-val="${width}"]`)).not.toBe(await border('.chat-width-pick-btn[aria-pressed="false"]'))
       expect((await (await page.request.get('/api/settings')).json()).chat_width).toBe(width)
       await page.goto('/')
       await settle(page)
