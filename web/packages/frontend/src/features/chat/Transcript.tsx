@@ -98,6 +98,8 @@ export function Transcript(props: TranscriptProps) {
     const el = scrollRef.current
     if (!el) return
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+    // Record our own jump now: a reader scroll merged into the same scroll event must still read as upward.
+    if (!smooth) lastTopRef.current = el.scrollTop
     pin(true)
   }, [pin])
 
