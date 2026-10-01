@@ -1196,9 +1196,10 @@ public final class ChatViewModel {
         cacheErrorMessage = nil
         lastError = nil
         defer {
-            isLoading = false
             userRefreshLoadGenerations.remove(loadRequestGeneration)
             finishSessionLoadRequest(loadRequestGeneration)
+            // An older load can still apply after a newer one fails, so loading lasts until the last ends.
+            isLoading = !activeSessionLoadRequestGenerations.isEmpty
         }
 
         // Cache-first render (#289): capture the pre-reload window *before* painting

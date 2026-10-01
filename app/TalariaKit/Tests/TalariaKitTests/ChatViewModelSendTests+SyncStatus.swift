@@ -128,6 +128,53 @@ extension ChatViewModelSendTests {
         await reloadTask.value
     }
 
+    // A newer load that fails ends before an older one still on the network; the older one then applies,
+    // so the transcript stays loading (and syncing) until the last load ends, not the first.
+    func testTranscriptStaysSyncingUntilTheLastOverlappingLoadEnds() async throws {
+        let requests = DeferredRequests()
+        let host = "tal436-overlapping-loads.test"
+        let requestStarted = [
+            expectation(description: "initial load started"),
+            expectation(description: "older reload started"),
+            expectation(description: "newer reload started")
+        ]
+        DeferredMockURLProtocol.setOnRequest({ request in
+            requestStarted[requests.append(request) - 1].fulfill()
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+        let viewModel = try makeViewModel(
+            server: URL(string: "https://\(host)")!,
+            protocolClasses: [DeferredMockURLProtocol.self]
+        ) { request in
+            XCTFail("Synchronous handler should not receive \(request.url?.path ?? "nil")")
+            throw URLError(.badURL)
+        }
+
+        let initialLoad = Task { @MainActor in await viewModel.loadMessages() }
+        await fulfillment(of: [requestStarted[0]], timeout: 10)
+        requests.request(at: 0).complete(withJSON: Self.syncStatusSessionJSON)
+        await initialLoad.value
+
+        let olderReload = Task { @MainActor in await viewModel.loadMessages() }
+        await fulfillment(of: [requestStarted[1]], timeout: 10)
+        let newerReload = Task { @MainActor in await viewModel.loadMessages() }
+        await fulfillment(of: [requestStarted[2]], timeout: 10)
+        requests.request(at: 2).complete(withJSON: #"{"error":"boom"}"#, statusCode: 500)
+        await newerReload.value
+
+        XCTAssertTrue(viewModel.isLoading, "The older reload is still on the network.")
+        XCTAssertTrue(viewModel.isSyncingTranscript)
+
+        requests.request(at: 1).complete(withJSON: """
+        {"session": {"session_id": "session-abc", "title": "Planning", "messages": [
+          {"role": "user", "content": "Older reload question", "timestamp": 1770000200, "message_id": "older-user"}
+        ]}}
+        """)
+        await olderReload.value
+        XCTAssertFalse(viewModel.isLoading)
+        XCTAssertFalse(viewModel.isSyncingTranscript)
+    }
+
     private static let syncStatusSessionJSON = """
     {"session": {"session_id": "session-abc", "title": "Planning", "messages": [
       {"role": "user", "content": "Fresh question", "timestamp": 1770000100, "message_id": "fresh-user"},
