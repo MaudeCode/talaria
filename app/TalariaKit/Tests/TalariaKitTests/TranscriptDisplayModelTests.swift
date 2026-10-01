@@ -697,6 +697,73 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             isScrolledNearBottom: false
         ))
     }
+
+    // TAL-436: syncing shows at any scroll position.
+    func testSyncingShowsEvenWhenTranscriptBottomIsVisible() {
+        let presentation = ChatActiveRunStatusPolicy.presentation(
+            isStartingChat: false,
+            hasActiveStream: false,
+            activeStreamRecoveryState: .idle,
+            isCancellingStream: false,
+            isSyncingTranscript: true,
+            isScrolledNearBottom: true
+        )
+
+        XCTAssertEqual(presentation?.kind, .syncing)
+        XCTAssertEqual(presentation?.label, "Syncing messages")
+        XCTAssertEqual(presentation?.accessibilityLabel, "Syncing messages with the server")
+        XCTAssertEqual(presentation?.isSyncing, true)
+    }
+
+    func testSyncingHidesRunProgressAndRecovery() {
+        let presentation = ChatActiveRunStatusPolicy.presentation(
+            isStartingChat: false,
+            hasActiveStream: true,
+            activeStreamRecoveryState: .reconnecting,
+            isCancellingStream: false,
+            isSyncingTranscript: true,
+            isScrolledNearBottom: false
+        )
+
+        XCTAssertEqual(presentation?.kind, .syncing)
+    }
+
+    func testRecoveryStatesMapToTheirChipsAndAHealthyStreamToNone() {
+        XCTAssertNil(ChatActiveRunStatusPresentation(recoveryState: .idle))
+        XCTAssertEqual(ChatActiveRunStatusPresentation(recoveryState: .checking)?.kind, .checking)
+        XCTAssertEqual(ChatActiveRunStatusPresentation(recoveryState: .reconnecting)?.label, "Reconnecting stream")
+    }
+
+    func testSyncingPillHidesTheTranscriptRecoveryChip() {
+        XCTAssertEqual(ChatActiveRunStatusPolicy.transcriptRecoveryState(
+            .reconnecting,
+            statusPresentation: ChatActiveRunStatusPresentation(kind: .syncing)
+        ), .idle)
+        XCTAssertEqual(ChatActiveRunStatusPolicy.transcriptRecoveryState(
+            .checking,
+            statusPresentation: ChatActiveRunStatusPresentation(kind: .checking)
+        ), .checking)
+        XCTAssertEqual(ChatActiveRunStatusPolicy.transcriptRecoveryState(.checking, statusPresentation: nil), .checking)
+    }
+
+    func testStoppingAndStartingOutrankSyncing() {
+        XCTAssertEqual(ChatActiveRunStatusPolicy.presentation(
+            isStartingChat: false,
+            hasActiveStream: true,
+            activeStreamRecoveryState: .idle,
+            isCancellingStream: true,
+            isSyncingTranscript: true,
+            isScrolledNearBottom: false
+        )?.kind, .stopping)
+        XCTAssertEqual(ChatActiveRunStatusPolicy.presentation(
+            isStartingChat: true,
+            hasActiveStream: false,
+            activeStreamRecoveryState: .idle,
+            isCancellingStream: false,
+            isSyncingTranscript: true,
+            isScrolledNearBottom: false
+        )?.kind, .starting)
+    }
 }
 
 final class AssistantTurnTimestampFormatterTests: XCTestCase {

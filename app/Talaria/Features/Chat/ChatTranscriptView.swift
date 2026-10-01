@@ -100,7 +100,7 @@ struct ChatTranscriptView: View {
                 .overlay(alignment: .bottomLeading) {
                     // A cold open has nothing to paint yet; the check still says the run state is unconfirmed.
                     if showsRunStateCheck {
-                        StreamRecoveryStatusView(state: .checking)
+                        StatusChip(ChatActiveRunStatusPresentation(kind: .checking))
                             .padding()
                             .padding(.bottom, transcriptBottomInsetHeight)
                     }
@@ -435,14 +435,14 @@ struct ChatTranscriptView: View {
                 }
             }
 
-            if activeStreamRecoveryState != .idle {
-                StreamRecoveryStatusView(state: activeStreamRecoveryState)
+            if let recovery = ChatActiveRunStatusPresentation(recoveryState: activeStreamRecoveryState) {
+                StatusChip(recovery)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityHidden(hidesRunStatusAccessibility)
                     .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
             }
         } else if showsRunStateCheck {
-            StreamRecoveryStatusView(state: .checking)
+            StatusChip(ChatActiveRunStatusPresentation(kind: .checking))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
         }

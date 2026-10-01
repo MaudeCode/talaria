@@ -1108,15 +1108,18 @@ extension ChatViewModelSendTests {
 
         reopenedViewModel.prepareInitialMessageLoad(modelContext: context)
 
-        // The row's hint paints; only the session load may adopt the run.
+        // The row's hint paints; only the session load may adopt the run. The "Syncing messages" pill (TAL-436)
+        // covers the unconfirmed run state, so the transcript's own check chip stays hidden.
         XCTAssertNil(reopenedViewModel.activeStreamID)
-        XCTAssertTrue(reopenedViewModel.showsRunStateCheck)
+        XCTAssertTrue(reopenedViewModel.isSyncingTranscript)
+        XCTAssertFalse(reopenedViewModel.showsRunStateCheck)
         assertLiveTigerRun(reopenedViewModel)
 
         let load = Task { @MainActor in await reopenedViewModel.loadMessages(modelContext: context) }
         await fulfillment(of: [sessionRequested], timeout: 10)
         assertLiveTigerRun(reopenedViewModel)
-        XCTAssertTrue(reopenedViewModel.showsRunStateCheck)
+        XCTAssertTrue(reopenedViewModel.isSyncingTranscript)
+        XCTAssertFalse(reopenedViewModel.showsRunStateCheck)
 
         releaseSession.signal()
         await load.value

@@ -26,6 +26,9 @@ struct UITestFixtureEnvironment {
     /// scrolling and layout assertions stay fast.
     nonisolated static let denseArgument = "--ui-test-dense"
     nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
+    /// Answers the chat's first transcript load, so the cache exists, then holds every reopen
+    /// until the test releases it, so "Syncing messages" stays over the cached rows (TAL-436).
+    nonisolated static let holdTranscriptReloadsArgument = "--ui-test-hold-transcript-reloads"
     nonisolated static var isDense: Bool {
         ProcessInfo.processInfo.arguments.contains(denseArgument)
     }
@@ -323,6 +326,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     static let sessionTitle = "UI Fixture Session"
     private static let recoveryState = NSLock()
     nonisolated(unsafe) private static var sessionReads = 0
+    nonisolated(unsafe) private static var transcriptReads = 0
     nonisolated(unsafe) private static var recovered = false
     nonisolated(unsafe) private static var urgentNotificationAcknowledged = false
     nonisolated(unsafe) private static var readUpdateNotificationIDs: Set<String> = ["ui-update-succeeded"]
@@ -366,7 +370,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
 
-        if Self.holdsPanelLoad(for: url) || Self.holdsWorkspaceRead(for: url) {
+        if Self.holdsPanelLoad(for: url) || Self.holdsWorkspaceRead(for: url) || Self.holdsTranscriptReload(for: url) {
             UITestFixtureHold.shared.hold { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)
@@ -375,6 +379,16 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         }
 
         sendResponse(for: url)
+    }
+
+    private static func holdsTranscriptReload(for url: URL) -> Bool {
+        guard url.path == "/api/session",
+              ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdTranscriptReloadsArgument)
+        else { return false }
+        return recoveryState.withLock {
+            transcriptReads += 1
+            return transcriptReads > 1
+        }
     }
 
     private func sendResponse(for url: URL) {

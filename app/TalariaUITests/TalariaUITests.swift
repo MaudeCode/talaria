@@ -56,6 +56,32 @@ final class ChatNavigationUITests: ChatUITestCase {
     }
 }
 
+/// Reopening a chat paints its cached transcript at once and shows "Syncing messages" above
+/// the composer until the server answers (TAL-436).
+final class ChatSyncStatusUITests: ChatUITestCase {
+    func testReopenedChatShowsSyncingUntilTheServerAnswers() throws {
+        launchFixture(additionalArguments: ["--ui-test-hold-transcript-reloads"])
+        _ = try openFixtureSession()
+        let back = app.navigationBars.buttons["BackButton"].firstMatch
+        XCTAssertTrue(back.awaitExistence(timeout: 5))
+        back.tap()
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.awaitExistence(timeout: 10))
+        tapFixtureSession(session)
+
+        let syncing = element(label: "Syncing messages with the server")
+        XCTAssertTrue(syncing.awaitExistence(timeout: 10), "The reopened chat never showed Syncing messages")
+        XCTAssertFalse(element(label: "Hermes is checking the response stream").exists, "Checking stream competed with Syncing messages")
+        XCTAssertFalse(element(label: "Hermes is reconnecting the response stream").exists, "Reconnecting stream competed with Syncing messages")
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Syncing messages"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        XCTAssertTrue(releaseHeldLoads { !syncing.exists }, "Syncing messages stayed after the server answered")
+    }
+}
+
 final class ChatPrimaryStreamUITests: ChatUITestCase {
     func testBatchClarificationShowsChoicesAndDeliversTypedAndMultiSelectAnswers() throws {
         launchChatFixture(argument: "--ui-test-chat-batch-clarification", trace: "batch prompt -> typed answer -> next -> selected answers -> agent result")

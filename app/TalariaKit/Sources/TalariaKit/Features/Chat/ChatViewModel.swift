@@ -78,8 +78,13 @@ public final class ChatViewModel {
     /// True from the first paint until the first session load answers, unless the
     /// selected row reported the session idle.
     private var isConfirmingRunState = false
-    /// Shows that the run state is still being confirmed while no run is adopted.
-    public var showsRunStateCheck: Bool { isConfirmingRunState && activeStreamID == nil }
+    /// Shows that the run state is still being confirmed while no run is adopted. Over a populated
+    /// transcript the "Syncing messages" pill already says the server is being checked (TAL-436).
+    public var showsRunStateCheck: Bool { isConfirmingRunState && activeStreamID == nil && !isSyncingTranscript }
+    /// Loads started by pull-to-refresh; the system refresh spinner covers them.
+    private var userRefreshLoadGenerations: Set<Int> = []
+    /// True while a populated transcript is being reconciled with the server (TAL-436).
+    public var isSyncingTranscript: Bool { isLoading && userRefreshLoadGenerations.isEmpty && !messages.isEmpty }
     @ObservationIgnored private var pendingStreamingScrollTriggerTask: Task<Void, Never>?
     @ObservationIgnored private var pendingAssistantTokenText = ""
     @ObservationIgnored private var pendingReasoningText = ""
@@ -1169,7 +1174,8 @@ public final class ChatViewModel {
 
     public func loadMessages(
         modelContext: ModelContext? = nil,
-        waitsForPendingMessageSend: Bool = true
+        waitsForPendingMessageSend: Bool = true,
+        isUserRefresh: Bool = false
     ) async {
         guard let sessionID else {
             errorMessage = String(localized: "The server did not provide a session ID.")
@@ -1183,12 +1189,17 @@ public final class ChatViewModel {
         let loadRequestGeneration = sessionLoadRequestGeneration
         activeSessionLoadRequestGenerations.insert(loadRequestGeneration)
         isLoading = true
+        if isUserRefresh {
+            userRefreshLoadGenerations.insert(loadRequestGeneration)
+        }
         errorMessage = nil
         cacheErrorMessage = nil
         lastError = nil
         defer {
-            isLoading = false
+            userRefreshLoadGenerations.remove(loadRequestGeneration)
             finishSessionLoadRequest(loadRequestGeneration)
+            // An older load can still apply after a newer one fails, so loading lasts until the last ends.
+            isLoading = !activeSessionLoadRequestGenerations.isEmpty
         }
 
         // Cache-first render (#289): capture the pre-reload window *before* painting

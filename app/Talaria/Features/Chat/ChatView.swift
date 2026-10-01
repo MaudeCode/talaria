@@ -101,6 +101,8 @@ struct ChatView: View {
         }
     }
     @State private var isScrolledNearBottom = true
+    /// Debounced "Syncing messages" pill (TAL-436); each chat's view starts it hidden.
+    @State private var syncStatus = DelayedStatusVisibility()
     @State private var isReadingOlderTranscript = false
     @State private var followLatch = ChatScrollPolicy.FollowLatch()
     @State private var followScrollGeneration = 0
@@ -487,6 +489,9 @@ struct ChatView: View {
         }
         .task(id: didCompleteInitialAppearance) {
             await handleInitialAppearanceTask()
+        }
+        .task(id: viewModel.isSyncingTranscript) {
+            await updateSyncStatus()
         }
         .onChange(of: scenePhase) {
                 handleScenePhaseChange(scenePhase)
@@ -989,12 +994,16 @@ struct ChatView: View {
                 }
 
                 if let activeRunStatusPresentation {
-                    ChatActiveRunStatusView(presentation: activeRunStatusPresentation)
+                    StatusChip(activeRunStatusPresentation)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
                 if showsApprovalBypassStatus {
-                    ApprovalBypassStatusPill()
+                    StatusChip(
+                        label: String(localized: "Approval bypass active"),
+                        icon: .symbol("bolt.slash.fill"),
+                        emphasis: .warning
+                    )
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
             }
@@ -1037,10 +1046,13 @@ struct ChatView: View {
             toolCallAnchorMessageID: viewModel.toolCallAnchorMessageID,
             streamingAssistantMessageID: viewModel.streamingAssistantMessageID,
             liveTokensPerSecond: viewModel.liveTokensPerSecond,
-            activeStreamRecoveryState: viewModel.activeStreamRecoveryState,
+            activeStreamRecoveryState: ChatActiveRunStatusPolicy.transcriptRecoveryState(
+                viewModel.activeStreamRecoveryState,
+                statusPresentation: activeRunStatusPresentation
+            ),
             showsRunStateCheck: viewModel.showsRunStateCheck,
             clarificationPrompt: viewModel.clarificationPrompt,
-            hidesRunStatusAccessibility: activeRunStatusPresentation != nil,
+            hidesRunStatusAccessibility: activeRunStatusPresentation.map { !$0.isSyncing } ?? false,
             showsThinkingAndToolCards: showsThinkingAndToolCards,
             showsAssistantTypingIndicator: showsAssistantTypingIndicator,
             showsScrollToBottomButton: showsScrollToBottomButton,
@@ -1084,7 +1096,7 @@ struct ChatView: View {
             },
             shouldRenderMessageRow: shouldRenderMessageRow,
             onLoadMessages: {
-                await loadMessages()
+                await loadMessages(isUserRefresh: true)
             },
             onLoadOlderMessages: {
                 await loadOlderMessages()
@@ -1288,8 +1300,19 @@ struct ChatView: View {
             hasActiveStream: viewModel.activeStreamID != nil,
             activeStreamRecoveryState: viewModel.activeStreamRecoveryState,
             isCancellingStream: viewModel.isCancellingStream,
+            isSyncingTranscript: syncStatus.isVisible,
             isScrolledNearBottom: isScrolledNearBottom
         )
+    }
+
+    /// Feeds the sync state to the debouncer and wakes at each deadline until it settles.
+    private func updateSyncStatus() async {
+        syncStatus.update(isActive: viewModel.isSyncingTranscript, now: Date())
+        while let deadline = syncStatus.nextDeadline {
+            try? await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)))
+            guard !Task.isCancelled else { return }
+            syncStatus.update(isActive: viewModel.isSyncingTranscript, now: Date())
+        }
     }
 
     private var showsApprovalBypassStatus: Bool {
@@ -1443,8 +1466,8 @@ struct ChatView: View {
         viewModel.isViewingCachedData || viewModel.activeStreamID != nil || viewModel.isSubmittingGoal
     }
 
-    private func loadMessages(appliesInitialFocus: Bool = true) async {
-        await viewModel.loadMessages(modelContext: modelContext)
+    private func loadMessages(appliesInitialFocus: Bool = true, isUserRefresh: Bool = false) async {
+        await viewModel.loadMessages(modelContext: modelContext, isUserRefresh: isUserRefresh)
         await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
         if appliesInitialFocus {
             applyInitialComposerFocusPolicyIfNeeded()

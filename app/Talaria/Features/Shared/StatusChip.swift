@@ -1,0 +1,72 @@
+import SwiftUI
+
+/// The app's status chip: a short status with a leading activity indicator or symbol. Features
+/// supply the content and emphasis; the chip owns the look, Reduce Motion, Dynamic Type and
+/// accessibility.
+struct StatusChip: View {
+    enum Icon: Equatable {
+        /// Work in progress: a spinner, or a still dot with Reduce Motion.
+        case activity
+        /// A standing state, drawn as an SF Symbol.
+        case symbol(String)
+    }
+
+    enum Emphasis {
+        /// Background progress the user can ignore.
+        case standard
+        /// A state the user should notice.
+        case prominent
+        /// A state that changes what the agent may do without asking. Only the icon takes the
+        /// warning colour, so the caption keeps its text contrast.
+        case warning
+    }
+
+    let label: String
+    var accessibilityLabel: String?
+    let icon: Icon
+    var emphasis: Emphasis = .standard
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        HStack(spacing: 8) {
+            iconView
+                .foregroundStyle(emphasis == .warning ? AnyShapeStyle(.orange) : textStyle)
+                .accessibilityHidden(true)
+
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(textStyle)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .minimumScaleFactor(0.88)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .accessorySurface(fallbackMaterial: .regularMaterial, cornerRadius: 16)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel ?? label)
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        switch icon {
+        case .activity:
+            if reduceMotion {
+                Circle()
+                    .frame(width: 7, height: 7)
+            } else {
+                ProgressView()
+                    .controlSize(.mini)
+            }
+        case .symbol(let name):
+            Image(systemName: name)
+                .font(.caption.weight(.semibold))
+        }
+    }
+
+    private var textStyle: AnyShapeStyle {
+        emphasis == .standard ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary)
+    }
+}
