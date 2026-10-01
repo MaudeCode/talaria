@@ -115,6 +115,8 @@ test('a failed session create returns the text to the composer', async ({ page, 
 test('sending from a session scrolled up returns the transcript to its end', async ({ page }) => {
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'scrolled', title: 'Scrolled', messages: transcript('scrolled', 20) } } }))
   await page.route('**/api/chat/start', (route) => route.fulfill({ json: { status: 'suppressed' } }))
+  // The draft autosave fires 1.2 s after typing; on a slow runner it lands before the test ends.
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
   await page.goto('/session/scrolled')
   await expect.poll(() => distance(page)).toBeLessThan(2)
   await page.locator('#messages').evaluate((el) => { el.scrollTop = el.scrollHeight / 3 })
