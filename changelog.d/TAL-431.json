@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Talaria Web stays responsive while it cleans up old run history, so servers with long chat histories no longer stop answering or restart repeatedly shortly after starting.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -129,9 +129,15 @@ Recovery is incremental: the marker records how far into the journal it has repl
 
 Completed runs retain their full replay journal for 14 days by default. WebUI
 also keeps at least the three newest terminal journals per session regardless of
-age, and never prunes a journal whose last event is nonterminal. Retention runs
-in a background thread at startup and is coalesced to at most once every six
-hours after terminal events.
+age, and never prunes a journal whose last event is nonterminal. The hygiene
+ticker runs retention one minute after startup and then at most once every six
+hours, one sweep at a time. The sweep is incremental: it reads journals
+asynchronously and yields between them, so `/health` and other requests keep
+answering while it runs. Shutdown and self-update restarts stop it at its next
+yield and wait for that before exiting. Sessions with
+no more journals than the keep count, or none past the retention age, are not
+read. A journal that gains a live writer or changes while the sweep runs is left
+for the next sweep.
 
 Before removing an expired full journal, WebUI atomically writes a compact
 `<run_id>.summary.json` beside it. Status lookups remain auditable from that
@@ -147,10 +153,6 @@ The policy can be adjusted with:
   terminal journals preserved per session.
 
 Changing these values does not affect active/nonterminal run recovery.
-
-Retention also runs from the SessionChannel reaper thread, at most once every
-six hours. Before that it fired only after a terminal run event, so a server
-left idle with a large journal directory never reclaimed anything.
 
 ---
 

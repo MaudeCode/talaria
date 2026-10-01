@@ -4,8 +4,10 @@
  * `seq` from 1, `event_id = <stream_id>:<seq>`, fsync on terminal rows.
  */
 import { rmSync } from 'node:fs'
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync, constants as fsConstants } from 'node:fs'
-import { writeFully } from '../fs/atomic.js'
+import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, constants as fsConstants, type BigIntStats } from 'node:fs'
+import { open, readdir, readFile, stat, unlink } from 'node:fs/promises'
+import { setImmediate as nextTurn } from 'node:timers/promises'
+import { atomicWriteTextAsync, writeFully } from '../fs/atomic.js'
 import { join } from 'node:path'
 import { str } from '../util.js'
 
@@ -51,6 +53,23 @@ export interface RunSummary {
   journal_truncated?: boolean
   journal_pruned?: boolean
   path?: string
+}
+
+export interface PruneOptions {
+  now?: number
+  retentionSeconds?: number
+  keepRecent?: number
+  isActive?: (path: string) => boolean
+  dryRun?: boolean
+  signal?: AbortSignal
+  pause?: () => Promise<unknown>
+}
+
+export interface PruneResult {
+  examined: number
+  terminal: number
+  pruned: number
+  bytes_reclaimed: number
 }
 
 export function validateId(value: string, field: string): string {
@@ -164,6 +183,11 @@ export class RunJournal {
     } catch {
       return { events: [], truncated: false }
     }
+    return RunJournal.parseTail(raw, start, maxRows)
+  }
+
+  /** The bounded tail of `raw`, read from byte `start`: drop the partial first line, keep the last `maxRows` rows. */
+  private static parseTail(raw: Buffer, start: number, maxRows: number): { events: JournalEvent[]; truncated: boolean } {
     let text = raw.toString('utf8')
     if (start) {
       const nl = text.indexOf('\n')
@@ -173,6 +197,26 @@ export class RunJournal {
     const rowsTruncated = lines.length > maxRows
     const { events } = RunJournal.parseLines(lines.slice(-maxRows).join('\n'))
     return { events, truncated: start > 0 || rowsTruncated }
+  }
+
+  /** `readRunEventTail` off the event loop, plus the identity of the file it read. */
+  private static async readTailAsync(path: string, maxBytes: number, maxRows: number): Promise<{ events: JournalEvent[]; st: BigIntStats }> {
+    const handle = await open(path, 'r')
+    try {
+      const st = await handle.stat({ bigint: true })
+      const size = Number(st.size)
+      const start = Math.max(0, size - maxBytes)
+      const raw = Buffer.alloc(Math.min(size, maxBytes))
+      let got = 0
+      while (got < raw.length) {
+        const { bytesRead } = await handle.read(raw, got, raw.length - got, start + got)
+        if (bytesRead <= 0) break
+        got += bytesRead
+      }
+      return { events: RunJournal.parseTail(raw.subarray(0, got), start, maxRows).events, st }
+    } finally {
+      await handle.close()
+    }
   }
 
   static selectAuthoritativeTerminalEvent(events: JournalEvent[]): JournalEvent | null {
@@ -219,9 +263,16 @@ export class RunJournal {
    * `HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS` (14) into `.summary.json`, keeping
    * the `HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT` (3) newest per session and any
    * path with a live writer.
+   *
+   * The sweep is incremental so requests keep running on the event loop: I/O is
+   * async and it yields after every session and every parsed journal. Sessions
+   * whose metadata already rules out pruning (no more journals than the keep
+   * count, or none past the cutoff) are not parsed, so `terminal` counts only
+   * the journals inspected. `signal` stops the sweep at its next yield;
+   * `pause` replaces the default yield (`setImmediate`).
    */
-  pruneSettled(opts: { now?: number; retentionSeconds?: number; keepRecent?: number; isActive?: (path: string) => boolean; dryRun?: boolean } = {}): { examined: number; terminal: number; pruned: number; bytes_reclaimed: number } {
-    const result = { examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0 }
+  async pruneSettled(opts: PruneOptions = {}): Promise<PruneResult> {
+    const result: PruneResult = { examined: 0, terminal: 0, pruned: 0, bytes_reclaimed: 0 }
     const days = Number.parseFloat(this.env.HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS ?? '14')
     const retention = opts.retentionSeconds ?? (Number.isFinite(days) ? Math.max(0, days) * 86400 : 14 * 86400)
     const keepEnv = Number.parseInt(this.env.HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT ?? '3', 10)
@@ -229,41 +280,64 @@ export class RunJournal {
     const now = opts.now ?? Date.now() / 1000
     const cutoff = now - retention
     const root = this.root()
+    // Yield to queued requests, then report whether the sweep may continue.
+    const proceed = async (): Promise<boolean> => { await (opts.pause ?? nextTurn)(); return !opts.signal?.aborted }
     if (retention <= 0 || !existsSync(root)) return result
-    for (const sessionRoot of readdirSync(root, { withFileTypes: true })) {
-      if (!sessionRoot.isDirectory() || !SAFE_ID_RE.test(sessionRoot.name)) continue
-      const sid = sessionRoot.name
+    const sessions = (await readdir(root, { withFileTypes: true })).filter((d) => d.isDirectory() && SAFE_ID_RE.test(d.name)).map((d) => d.name).sort()
+    for (const sid of sessions) {
+      if (!(await proceed())) return result
       const dir = join(root, sid)
-      const terminalRuns: { mtimeNs: bigint; path: string; runId: string }[] = []
-      for (const name of readdirSync(dir)) {
-        if (!name.endsWith('.jsonl')) continue
-        result.examined += 1
-        const path = join(dir, name)
-        const runId = name.slice(0, -'.jsonl'.length)
-        let st
-        try { st = statSync(path, { bigint: true }) } catch { continue }
-        const summary = RunJournal.summaryFromEvents(sid, runId, this.readRunEventTail(sid, runId, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS).events)
-        if (!summary.terminal) continue
-        result.terminal += 1
-        terminalRuns.push({ mtimeNs: st.mtimeNs, path, runId })
+      // The session may be deleted while the sweep runs.
+      let names: string[]
+      try { names = (await readdir(dir)).filter((n) => n.endsWith('.jsonl')).sort() } catch { continue }
+      result.examined += names.length
+      let expired = 0
+      for (const name of names) {
+        if (opts.signal?.aborted) return result
+        try { if ((await stat(join(dir, name))).mtimeMs / 1000 <= cutoff) expired += 1 } catch { /* vanished */ }
       }
-      terminalRuns.sort((a, b) => (b.mtimeNs > a.mtimeNs ? 1 : b.mtimeNs < a.mtimeNs ? -1 : b.path.localeCompare(a.path)))
-      terminalRuns.slice(keep).forEach(({ path, runId }) => {
-        if (opts.isActive?.(path)) return
-        let st
-        try { st = statSync(path) } catch { return }
-        if (st.mtimeMs / 1000 > cutoff) return
-        const summary = RunJournal.summaryFromEvents(sid, runId, this.readRunEventTail(sid, runId, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS).events)
-        if (!summary.terminal) return
-        if (opts.dryRun) { result.pruned += 1; result.bytes_reclaimed += st.size; return }
-        const pruned = { ...summary, journal_pruned: true, journal_pruned_at: now, original_size: st.size, original_mtime: st.mtimeMs / 1000 }
-        try {
-          writeFileSync(path.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX), JSON.stringify(pruned))
-          unlinkSync(path)
-        } catch { return }
+      if (names.length <= keep || expired === 0) continue
+      const terminalRuns: { st: BigIntStats; path: string; summary: RunSummary }[] = []
+      for (const name of names) {
+        const path = join(dir, name)
+        let tail
+        try { tail = await RunJournal.readTailAsync(path, RUN_SUMMARY_MAX_BYTES, RUN_SUMMARY_MAX_ROWS) } catch { continue }
+        const summary = RunJournal.summaryFromEvents(sid, name.slice(0, -'.jsonl'.length), tail.events)
+        if (summary.terminal) {
+          result.terminal += 1
+          terminalRuns.push({ st: tail.st, path, summary })
+        }
+        if (!(await proceed())) return result
+      }
+      terminalRuns.sort((a, b) => (b.st.mtimeNs > a.st.mtimeNs ? 1 : b.st.mtimeNs < a.st.mtimeNs ? -1 : b.path.localeCompare(a.path)))
+      for (const { st, path, summary } of terminalRuns.slice(keep)) {
+        if (opts.signal?.aborted) return result
+        const mtime = Number(st.mtimeNs) / 1e9
+        if (mtime > cutoff) continue
+        // Still the parsed file with no live writer. ctime catches a replacement that reuses the inode, size, and mtime.
+        const stillPrunable = (): boolean => {
+          if (opts.isActive?.(path)) return false
+          let cur
+          try { cur = lstatSync(path, { bigint: true }) } catch { return false }
+          return cur.isFile() && cur.dev === st.dev && cur.ino === st.ino && cur.size === st.size && cur.mtimeNs === st.mtimeNs && cur.ctimeNs === st.ctimeNs
+        }
+        if (!stillPrunable()) continue
+        const size = Number(st.size)
+        if (opts.dryRun) { result.pruned += 1; result.bytes_reclaimed += size; continue }
+        const summaryPath = path.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX)
+        const pruned = { ...summary, journal_pruned: true, journal_pruned_at: now, original_size: size, original_mtime: mtime }
+        const prior = await readFile(summaryPath, 'utf8').catch(() => null)
+        try { await atomicWriteTextAsync(summaryPath, JSON.stringify(pruned)) } catch { continue }
+        // Re-check after the write's async gap; no await separates this check from the unlink.
+        if (!stillPrunable()) {
+          // Roll back to the summary that was there before, if any.
+          await (prior === null ? unlink(summaryPath) : atomicWriteTextAsync(summaryPath, prior)).catch(() => undefined)
+          continue
+        }
+        try { unlinkSync(path) } catch { continue }
         result.pruned += 1
-        result.bytes_reclaimed += st.size
-      })
+        result.bytes_reclaimed += size
+      }
     }
     return result
   }
