@@ -99,9 +99,21 @@ test.describe('shell', () => {
       const saved = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/settings'))
       await page.locator(`[data-chat-width-val="${width}"]`).click()
       expect((await saved).postDataJSON()).toMatchObject({ chat_width: width, full_width_chat: width === 'full' })
-      await expect(page.locator(`[data-chat-width-val="${width}"]`)).toHaveAttribute('aria-pressed', 'true')
-      const border = (sel: string) => page.locator(sel).first().evaluate((el) => getComputedStyle(el).borderColor)
-      expect(await border(`[data-chat-width-val="${width}"]`)).not.toBe(await border('.chat-width-pick-btn[aria-pressed="false"]'))
+      const tile = page.locator(`[data-chat-width-val="${width}"]`)
+      await expect(tile).toHaveAttribute('aria-pressed', 'true')
+      // The selected tile carries the theme accent border. The pointer moves off first so the hover border cannot stand in
+      // for it, and toHaveCSS retries past the frame in which the new class has not reached the computed style yet.
+      await page.mouse.move(0, 0)
+      const accent = await tile.evaluate((el) => {
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--accent)'
+        el.append(probe)
+        const color = getComputedStyle(probe).color
+        probe.remove()
+        return color
+      })
+      await expect(tile).toHaveCSS('border-color', accent)
+      await expect(page.locator('.chat-width-pick-btn[aria-pressed="false"]').first()).not.toHaveCSS('border-color', accent)
       expect((await (await page.request.get('/api/settings')).json()).chat_width).toBe(width)
       await page.goto('/')
       await settle(page)
