@@ -93,12 +93,11 @@
    transcript's bottom inset. */
 .composer-dock{position:absolute;left:0;right:0;bottom:0;z-index:10;pointer-events:none}
 .composer-dock--hero{bottom:calc(50% - var(--composer-h,0px) / 2 - var(--composer-hero-shift,0px))}
-/* The fade the band used to carry, above the dock only: messages dim as they reach the card and stay visible through its glass. */
-.composer-dock::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:var(--composer-fade-height);pointer-events:none;border-top:var(--composer-wrap-border-top);background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--composer-wrap-bg) var(--composer-glass-mix),transparent))}
-/* An opaque band from the card's bottom edge down (Composer measures `--composer-band-top`), so a scrolled-up transcript never shows around the strip. */
-.composer-wrap::after{content:"";position:absolute;left:0;right:0;bottom:0;top:var(--composer-band-top,100%);z-index:-1;pointer-events:none;background:var(--composer-wrap-bg)}
-.composer-dock--hero .composer-wrap::after{display:none}
-.composer-dock--hero::before{display:none}
+/* One continuous wash from above the dock to its bottom, so no edge shows around the card: messages fade in over
+   --composer-fade-height, deepen behind the card's glass, and are opaque from the card's bottom edge (Composer measures
+   `--composer-band-top`), where a scrolled-up transcript would otherwise show around the strip. */
+.composer-wrap::before{content:"";position:absolute;left:0;right:0;top:calc(-1 * var(--composer-fade-height));bottom:0;z-index:-1;pointer-events:none;border-top:var(--composer-wrap-border-top);background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--composer-wrap-bg) var(--composer-glass-mix),transparent) var(--composer-fade-height),var(--composer-wrap-bg) calc(var(--composer-fade-height) + var(--composer-band-top,100%)))}
+.composer-dock--hero .composer-wrap::before{display:none}
 .composer-dock .composer-box,.composer-dock .composer-tab,.composer-dock .composer-strip,.composer-dock .composer-terminal-panel,.composer-dock [role="note"]{pointer-events:auto}
 .composer-hero-title{position:absolute;left:var(--space-4);right:var(--space-4);bottom:100%;max-width:var(--msg-max);margin:0 auto;padding-bottom:calc(var(--space-4) * 2);text-align:center;font-size:var(--composer-hero-title-size);line-height:1.25;font-weight:500;letter-spacing:-.02em;color:var(--text)}
 .composer-wrap{position:relative;padding:8px 20px 20px}

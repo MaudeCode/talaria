@@ -209,10 +209,12 @@ the auto-follow setting, so the newest message is never covered.
 `.chat-stage` over the transcript. A new or empty chat centres the dock (the
 hero) with its headline hanging above the card; otherwise it docks to the
 bottom. The dock's measured height is `--composer-h`, the transcript's bottom
-inset and the offset for the scroll-to-end pill. Behind the card itself nothing
-is drawn, so messages show through its glass; a fade above the dock dims them as
-they arrive, and an opaque shelf below the card keeps a scrolled-up transcript
-from showing around the context strip. Leaving the hero plays a 340 ms FLIP from
+inset and the offset for the scroll-to-end pill. One continuous wash
+(`.composer-wrap::before`) runs from just above the dock to its bottom: messages
+fade in as they approach, deepen behind the card's glass, and are opaque from the
+card's bottom edge so a scrolled-up transcript never shows around the context
+strip. Keep it one layer: two layers that meet leave a visible edge around the
+card (TAL-433). Leaving the hero plays a 340 ms FLIP from
 the centred position (`sendMotion.ts`; instant under reduced motion). A new
 chat's first send shows its text as the pending user row and leaves the hero
 before the session or turn exists; the index and session routes mount separate

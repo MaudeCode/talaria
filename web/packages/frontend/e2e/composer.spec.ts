@@ -226,3 +226,43 @@ for (const { name, settings } of [{ name: 'auto-follow on', settings: {} }, { na
     }
   })
 }
+
+test('the wash under the composer has no edge where the dock begins', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'one geometry is enough: the wash is the same at every width')
+  const long = 'A background subagent you dispatched earlier has finished; the full task source is below. '.repeat(12)
+  const messages = Array.from({ length: 6 }, (_, i) => [{ role: 'user', id: i * 2 + 1, content: long }, { role: 'assistant', id: i * 2 + 2, content: `Answer ${i + 1}. `.repeat(40) }]).flat()
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'wash', title: 'Wash', messages } } }))
+  await page.goto('/session/wash')
+  await expect.poll(() => distance(page)).toBeLessThan(2)
+  // A user bubble (a light surface) across the dock's top edge, sampled in its right padding where no text runs.
+  const { x, y } = await page.evaluate(() => {
+    const pane = document.getElementById('messages')!
+    const dock = document.querySelector('.composer-dock')!.getBoundingClientRect()
+    const bubbles = [...document.querySelectorAll('.msg-row[data-role="user"] .msg-body')]
+    const bubble = bubbles[bubbles.length - 2]!.getBoundingClientRect()
+    pane.scrollTop += bubble.bottom - (dock.top + 40)
+    const moved = bubbles[bubbles.length - 2]!.getBoundingClientRect()
+    return { x: Math.round(moved.right - 8), y: Math.round(document.querySelector('.composer-dock')!.getBoundingClientRect().top) }
+  })
+  await expect.poll(async () => (await box(page, '.composer-dock')).y).toBe(y)
+  const shot = await page.screenshot({ clip: { x, y: y - 8, width: 4, height: 16 } })
+  const rows = await page.evaluate(async (png) => {
+    const img = new Image()
+    img.src = `data:image/png;base64,${png}`
+    await img.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = img.width
+    canvas.height = img.height
+    const ctx = canvas.getContext('2d')!
+    ctx.drawImage(img, 0, 0)
+    return Array.from({ length: img.height }, (_, row) => {
+      const d = ctx.getImageData(0, row, img.width, 1).data
+      let sum = 0
+      for (let i = 0; i < d.length; i += 4) sum += 0.2126 * d[i]! + 0.7152 * d[i + 1]! + 0.0722 * d[i + 2]!
+      return sum / (d.length / 4)
+    })
+  }, shot.toString('base64'))
+  // A continuous wash changes by a fraction of a level per pixel; the old fade stopped at the dock's edge and jumped.
+  const jumps = rows.slice(1).map((v, i) => Math.abs(v - rows[i]!))
+  expect(Math.max(...jumps)).toBeLessThan(4)
+})
