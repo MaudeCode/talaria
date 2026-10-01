@@ -86,10 +86,11 @@ export class HygieneTicker {
     this.timer.unref()
   }
 
-  /** Stops the schedule; an in-flight retention sweep stops at its next yield. */
-  stop(): void {
+  /** Stops the schedule; an in-flight retention sweep stops at its next yield, and the result settles when it has. */
+  stop(): Promise<void> {
     if (this.timer) { clearInterval(this.timer); this.timer = null }
     this.abort.abort()
+    return this.retention ?? Promise.resolve()
   }
 
   /**

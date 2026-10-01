@@ -79,11 +79,13 @@ export async function startServer(app: App, config: ServerConfig, opts: { log?: 
   const port = typeof address === 'object' && address ? address.port : config.port
   log(`  Talaria Web listening on ${scheme}://${config.host}:${port}`)
   const close = async () => {
-    app.deps.hygiene.stop()
+    const hygiene = app.deps.hygiene.stop()
     await new Promise<void>((resolve) => {
       server.close(() => { resolve() })
       server.closeAllConnections()
     })
+    // A retention sweep finishes its current file step before the process exits.
+    await hygiene
     // Auth state is persisted write-behind: land pending session and login-attempt writes before the process exits.
     await app.deps.auth.flushPersistence()
   }

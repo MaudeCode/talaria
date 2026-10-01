@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, unlinkSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -155,6 +155,9 @@ describe('run-journal retention sweep', () => {
   const tree = (dir: string): string[] => readdirSync(dir, { recursive: true, withFileTypes: true }).filter((d) => d.isFile()).map((d) => { const p = join(d.parentPath, d.name); return `${p}:${String(statSync(p).size)}:${String(statSync(p).mtimeMs)}` }).sort()
   const ticker = (journal: RunJournal, clock: { now: number }, log: string[] = [], active = new Set<string>()) =>
     new HygieneTicker({ env: {}, stateDir: journal.sessionDir, port: () => 0, journal, activeJournalPaths: () => active, now: () => clock.now, log: (line) => log.push(line) })
+  const dirs: string[] = []
+  const tempDir = (): string => { const dir = mkdtempSync(join(tmpdir(), 'talaria-retention-')); dirs.push(dir); return dir }
+  afterAll(() => { for (const dir of dirs) rmSync(dir, { recursive: true, force: true }) })
   const gated = () => {
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
@@ -189,7 +192,7 @@ describe('run-journal retention sweep', () => {
   })
 
   it('runs one sweep at a time, recovers after a failure, and stops on shutdown', async () => {
-    const journal = new RunJournal(mkdtempSync(join(tmpdir(), 'talaria-retention-')))
+    const journal = new RunJournal(tempDir())
     for (let r = 0; r < 5; r += 1) writeRun(journal, 'sess', `run${String(r)}`, { mtime: old + r })
     const clock = { now: Date.now() / 1000 }
     const log: string[] = []
@@ -214,10 +217,12 @@ describe('run-journal retention sweep', () => {
     ;({ gate, release } = gated())
     clock.now += 6 * 3600
     const stopped = t.tick()
-    t.stop()
     const before = tree(journal.sessionDir)
+    // stop() hands back the in-flight sweep so shutdown can wait for it.
+    const stopping = t.stop()
+    expect(stopping).toBe(stopped)
     release()
-    await stopped
+    await stopping
     expect(tree(journal.sessionDir)).toEqual(before)
     clock.now += 6 * 3600
     await t.tick()
@@ -225,10 +230,12 @@ describe('run-journal retention sweep', () => {
   })
 
   it('never compacts a journal that gains a writer or changes while the sweep yields', async () => {
-    const journal = new RunJournal(mkdtempSync(join(tmpdir(), 'talaria-retention-')))
+    const journal = new RunJournal(tempDir())
     const paths = ['run0', 'run1', 'run2', 'run3', 'run4', 'run5'].map((r, i) => writeRun(journal, 'sess', r, { mtime: old + i }))
     const [activated, appended, replaced, racing, pruned] = paths as [string, string, string, string, string]
     const active = new Set<string>()
+    // The racing journal already has a summary; rolling back must not delete it.
+    writeFileSync(racing.replace(/\.jsonl$/, '.summary.json'), '{}')
     let racingChecks = 0
     let pauses = 0
     const result = await journal.pruneSettled({
@@ -241,9 +248,10 @@ describe('run-journal retention sweep', () => {
           active.add(activated)
           appendFileSync(appended, '\n')
           utimesSync(appended, old, old)
+          // A new file under the same name; Linux may hand it the freed inode number, so its content differs as a real one's would.
           const body = readFileSync(replaced)
           unlinkSync(replaced)
-          writeFileSync(replaced, body)
+          writeFileSync(replaced, Buffer.concat([body, body]))
           utimesSync(replaced, old + 2, old + 2)
         }
         return Promise.resolve()
@@ -252,14 +260,14 @@ describe('run-journal retention sweep', () => {
     expect(result.pruned).toBe(1)
     for (const p of [activated, appended, replaced, racing]) {
       expect(existsSync(p)).toBe(true)
-      expect(existsSync(p.replace(/\.jsonl$/, '.summary.json'))).toBe(false)
+      expect(existsSync(p.replace(/\.jsonl$/, '.summary.json'))).toBe(p === racing)
     }
     expect(existsSync(pruned)).toBe(false)
     expect(existsSync(paths[5] ?? '')).toBe(true)
   })
 
   it('keeps nonterminal and recent journals, writes faithful summaries, and leaves dry runs and disabled retention untouched', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'talaria-retention-'))
+    const dir = tempDir()
     const journal = new RunJournal(dir)
     const now = Date.now() / 1000
     writeRun(journal, 'sess', 'a', { mtime: old })
@@ -281,7 +289,8 @@ describe('run-journal retention sweep', () => {
     expect(existsSync(live)).toBe(true)
     expect(existsSync(journal.pathFor('small', 'only'))).toBe(true)
     const summary = JSON.parse(readFileSync(join(dir, '_run_journal', 'sess', 'a.summary.json'), 'utf8')) as Json
-    expect(summary).toMatchObject({ ...expected, journal_pruned: true, journal_pruned_at: now, original_mtime: old })
+    expect(summary).toMatchObject({ ...expected, journal_pruned: true, journal_pruned_at: now })
+    expect(summary.original_mtime).toBeCloseTo(old, 3)
     expect(journal.latestRunSummary('sess', 'a')).toMatchObject({ journal_pruned: true, terminal_state: 'completed' })
   })
 })

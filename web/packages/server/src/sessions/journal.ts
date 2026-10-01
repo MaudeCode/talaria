@@ -274,11 +274,12 @@ export class RunJournal {
       let names: string[]
       try { names = (await readdir(dir)).filter((n) => n.endsWith('.jsonl')).sort() } catch { continue }
       result.examined += names.length
-      let old = 0
+      let expired = 0
       for (const name of names) {
-        try { if ((await stat(join(dir, name))).mtimeMs / 1000 <= cutoff) old += 1 } catch { /* vanished */ }
+        if (opts.signal?.aborted) return result
+        try { if ((await stat(join(dir, name))).mtimeMs / 1000 <= cutoff) expired += 1 } catch { /* vanished */ }
       }
-      if (names.length <= keep || old === 0) continue
+      if (names.length <= keep || expired === 0) continue
       const terminalRuns: { st: BigIntStats; path: string; summary: RunSummary }[] = []
       for (const name of names) {
         const path = join(dir, name)
@@ -307,9 +308,11 @@ export class RunJournal {
         if (opts.dryRun) { result.pruned += 1; result.bytes_reclaimed += size; continue }
         const summaryPath = path.replace(/\.jsonl$/, PRUNED_SUMMARY_SUFFIX)
         const pruned = { ...summary, journal_pruned: true, journal_pruned_at: now, original_size: size, original_mtime: mtime }
+        // A rollback removes only a summary this sweep created.
+        const hadSummary = existsSync(summaryPath)
         try { await atomicWriteTextAsync(summaryPath, JSON.stringify(pruned)) } catch { continue }
         // Re-check after the write's async gap; no await separates this check from the unlink.
-        if (!unchanged()) { await unlink(summaryPath).catch(() => undefined); continue }
+        if (!unchanged()) { if (!hadSummary) await unlink(summaryPath).catch(() => undefined); continue }
         try { unlinkSync(path) } catch { continue }
         result.pruned += 1
         result.bytes_reclaimed += size
