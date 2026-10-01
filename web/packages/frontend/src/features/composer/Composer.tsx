@@ -426,7 +426,7 @@ export function Composer(props: ComposerProps) {
                 </button>
                 {/* A typed draft steers, queues or interrupts mid-turn like Enter does, so it gets a send arrow beside Stop. */}
                 {!clarify && canSend && (
-                  <button type="button" onClick={() => { void send() }} className={cn('send-btn has-tooltip has-tooltip--left', busyMode)} id="btnSend" data-tooltip={busyLabel} aria-label={busyLabel} title={busyLabel}>
+                  <button type="button" onClick={() => { void send() }} className="send-btn has-tooltip has-tooltip--left" id="btnSend" data-tooltip={busyLabel} aria-label={busyLabel} title={busyLabel}>
                     <ArrowUp size={16} aria-hidden="true" />
                   </button>
                 )}
