@@ -357,7 +357,6 @@
 	"cmd_interrupt_confirm": "中断 — 新しいメッセージを送信中",
 	"cmd_steer_no_msg": "使い方: /steer <メッセージ>",
 	"cmd_steer_fallback": "ステア利用不可 — 下書きを復元しました",
-	"cmd_steer_delivered": "ステア送信完了 — 次のツール結果でエージェントが認識します",
 	"steer_leftover_queued": "ステアを次のターンへキュー",
 	"busy_steer_fallback": "ステア利用不可 — 下書きを復元しました",
 	"steer_fail_no_cached_agent": "この実行を操作割り込み（Steer）するためのキャッシュされたエージェントがありません",

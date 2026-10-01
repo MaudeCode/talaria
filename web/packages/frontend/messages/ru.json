@@ -357,7 +357,6 @@
 	"cmd_interrupt_confirm": "Прервано — отправка нового сообщения",
 	"cmd_steer_no_msg": "Использование: /steer <сообщение>",
 	"cmd_steer_fallback": "Steer недоступен — черновик восстановлен",
-	"cmd_steer_delivered": "Steer доставлен — агент увидит его в следующем ответе инструмента",
 	"steer_leftover_queued": "Steer поставлен в очередь на следующий ход",
 	"busy_steer_fallback": "Steer недоступен — черновик восстановлен",
 	"steer_fail_no_cached_agent": "Для этой задачи нет кэшированного агента, которому можно отправить steer",

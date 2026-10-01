@@ -357,7 +357,6 @@
 	"cmd_interrupt_confirm": "Interrompu — envoi d'un nouveau message",
 	"cmd_steer_no_msg": "Utilisation : /steer <message>",
 	"cmd_steer_fallback": "Steer indisponible — brouillon restauré",
-	"cmd_steer_delivered": "Steer délivré — l'agent le verra lors de son prochain résultat d'outil",
 	"steer_leftover_queued": "Steer en file d'attente pour le prochain tour",
 	"busy_steer_fallback": "Steer indisponible — brouillon restauré",
 	"steer_fail_no_cached_agent": "No cached agent is available for steering this run",

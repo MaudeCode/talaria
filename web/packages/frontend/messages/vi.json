@@ -357,7 +357,6 @@
 	"cmd_interrupt_confirm": "Đã ngắt — đang gửi tin nhắn mới",
 	"cmd_steer_no_msg": "Cách dùng: /steer <tin nhắn>",
 	"cmd_steer_fallback": "Steer không khả dụng — đã đưa vào hàng chờ lượt tiếp theo",
-	"cmd_steer_delivered": "Steer đã được gửi — agent sẽ thấy ở kết quả tool tiếp theo",
 	"steer_leftover_queued": "Steer đã được đưa vào hàng chờ lượt tiếp theo",
 	"busy_steer_fallback": "Steer không khả dụng — đã đưa vào hàng chờ lượt tiếp theo",
 	"steer_fail_no_cached_agent": "No cached agent is available for steering this run",

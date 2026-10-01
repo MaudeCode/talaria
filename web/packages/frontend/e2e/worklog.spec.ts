@@ -313,7 +313,7 @@ for (const name of ['explicitFinal', 'steering', 'activeSteering'] as const) {
     } else {
       await expect(page.locator('[data-activity-steering]')).toContainText(name === 'steering' ? 'Stop after the next sleep' : 'Stop now')
       await expect(page.locator('[data-activity-sequence-group]')).toHaveCount(0)
-      const kinds = await page.locator('.assistant-turn .msg-body, .assistant-turn [data-tool-id], .assistant-turn [data-activity-steering]').evaluateAll((nodes) => nodes.map((node) => node.hasAttribute('data-activity-steering') ? 'steering' : node.hasAttribute('data-tool-id') ? 'tool' : 'prose'))
+      const kinds = await page.locator('.assistant-turn .msg-body:not([data-activity-steering] *), .assistant-turn [data-tool-id], .assistant-turn [data-activity-steering]').evaluateAll((nodes) => nodes.map((node) => node.hasAttribute('data-activity-steering') ? 'steering' : node.hasAttribute('data-tool-id') ? 'tool' : 'prose'))
       expect(kinds).toEqual(name === 'steering' ? ['prose', 'tool', 'steering', 'tool', 'prose'] : ['prose', 'steering'])
       if (name === 'activeSteering') {
         await expect(page.locator('[data-final-answer]')).toHaveCount(0)

@@ -109,6 +109,47 @@ describe('stream reducer: consumed steering', () => {
   })
 })
 
+describe('stream reducer: pending steers', () => {
+  const steer = (s: StreamState, steerId: string, status: 'sending' | 'waiting' | 'failed' | 'queued', text = steerId) => streamReducer(s, { type: 'steer', sessionId: SID, steerId, text, status })
+
+  it('shows a sent steer until the Agent takes it, then only at its causal place', () => {
+    let s = steer(started(), 's1', 'sending', 'check b too')
+    expect(s.turns[SID]!.pendingSteers).toEqual([{ steerId: 's1', text: 'check b too', state: 'sending' }])
+    s = steer(s, 's1', 'waiting', 'check b too')
+    expect(s.turns[SID]!.pendingSteers[0]!.state).toBe('waiting')
+    s = ev(s, 'steer_consumed', { steer_id: 's1', text: 'check b too', after_tool_call_id: null })
+    expect(s.turns[SID]!.pendingSteers).toEqual([])
+    expect(s.turns[SID]!.segments).toEqual([{ kind: 'steering', steerId: 's1', text: 'check b too' }])
+  })
+
+  it('does not bring back a steer the Agent took before its POST returned', () => {
+    let s = steer(started(), 's1', 'sending')
+    s = ev(s, 'steer_consumed', { steer_id: 's1', text: 's1' })
+    s = steer(s, 's1', 'waiting')
+    expect(s.turns[SID]!.pendingSteers).toEqual([])
+  })
+
+  it('drops a refused steer, even one the turn already reported as a leftover', () => {
+    let s = steer(steer(started(), 's1', 'sending'), 's2', 'sending')
+    s = steer(s, 's1', 'failed')
+    expect(s.turns[SID]!.pendingSteers.map((p) => p.steerId)).toEqual(['s2'])
+    s = ev(s, 'pending_steer_leftover', { steer_id: 's2', text: 's2' })
+    s = steer(s, 's2', 'failed')
+    expect(s.turns[SID]!.steerLeftovers).toEqual([])
+  })
+
+  it('hands this tab\'s leftover to the queue once and ignores leftovers it did not send', () => {
+    let s = steer(started(), 's1', 'sending', 'also do y')
+    s = ev(s, 'pending_steer_leftover', { steer_id: 'other-tab', text: 'not mine' })
+    s = ev(s, 'pending_steer_leftover', { steer_id: 's1', text: 'also do y' })
+    s = ev(s, 'pending_steer_leftover', { steer_id: 's1', text: 'also do y' })
+    expect(s.turns[SID]!.pendingSteers).toEqual([])
+    expect(s.turns[SID]!.steerLeftovers).toEqual([{ steerId: 's1', text: 'also do y' }])
+    s = steer(s, 's1', 'queued', 'also do y')
+    expect(s.turns[SID]!.steerLeftovers).toEqual([])
+  })
+})
+
 describe('stream reducer: idempotency and ownership', () => {
   it('drops replayed events at or below the last applied cursor and keeps newer ones', () => {
     let s = started()

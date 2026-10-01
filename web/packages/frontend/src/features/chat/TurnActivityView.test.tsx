@@ -247,6 +247,15 @@ describe('turn worklog presentation', () => {
     if (mode === 'hide_all_activity') expect(view.container.querySelectorAll('[data-tool-id]')).toHaveLength(0)
   })
 
+  it('keeps a consumed steer visible as a user message between Worked phases after the turn settles', () => {
+    const steering = { row_id: 'steering:s1', role: 'steering', text: 'Check b too', steering: { steer_id: 's1', consumed: true, submitted_at: 1, consumed_at: 2 } }
+    const view = render(<View activity={settled({ activity_rows: rows(toolRow('a'), steering, toolRow('b')), final_answer: 'Done.' })} />)
+    const steer = screen.getByText(/Check b too/)
+    expect(steer).toBeVisible()
+    expect(steer.closest('[data-role="user"]')).not.toBeNull()
+    expect(view.container.querySelectorAll('.tool-worklog-summary')).toHaveLength(2)
+  })
+
   it('copies a partial reply when there is no final answer', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })

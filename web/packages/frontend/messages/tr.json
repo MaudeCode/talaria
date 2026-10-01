@@ -357,7 +357,6 @@
 	"cmd_interrupt_confirm": "Kesintiye uğradı — yeni mesaj gönderilir",
 	"cmd_steer_no_msg": "Kullanım: /steer <mesaj>",
 	"cmd_steer_fallback": "Yönlendirme kullanılamıyor — taslak geri yüklendi",
-	"cmd_steer_delivered": "Yönlendirme teslim edildi — temsilci bunu bir sonraki takım sonucunda görecek",
 	"steer_leftover_queued": "Direksiyon bir sonraki dönüş için kuyruğa alındı",
 	"busy_steer_fallback": "Yönlendirme kullanılamıyor — taslak geri yüklendi",
 	"steer_fail_no_cached_agent": "No cached agent is available for steering this run",
