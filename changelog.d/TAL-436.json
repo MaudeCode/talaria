@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Chats show a Syncing messages status above the composer while they check the server for newer messages.",
+      "highlight": false
+    }
+  ]
+}

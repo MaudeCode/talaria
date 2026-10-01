@@ -80,6 +80,10 @@ public final class ChatViewModel {
     private var isConfirmingRunState = false
     /// Shows that the run state is still being confirmed while no run is adopted.
     public var showsRunStateCheck: Bool { isConfirmingRunState && activeStreamID == nil }
+    /// True while a pull-to-refresh load runs; the system refresh spinner covers it.
+    private var isUserRefreshing = false
+    /// True while a populated transcript is being reconciled with the server (TAL-436).
+    public var isSyncingTranscript: Bool { isLoading && !isUserRefreshing && !messages.isEmpty }
     @ObservationIgnored private var pendingStreamingScrollTriggerTask: Task<Void, Never>?
     @ObservationIgnored private var pendingAssistantTokenText = ""
     @ObservationIgnored private var pendingReasoningText = ""
@@ -1169,7 +1173,8 @@ public final class ChatViewModel {
 
     public func loadMessages(
         modelContext: ModelContext? = nil,
-        waitsForPendingMessageSend: Bool = true
+        waitsForPendingMessageSend: Bool = true,
+        isUserRefresh: Bool = false
     ) async {
         guard let sessionID else {
             errorMessage = String(localized: "The server did not provide a session ID.")
@@ -1183,11 +1188,13 @@ public final class ChatViewModel {
         let loadRequestGeneration = sessionLoadRequestGeneration
         activeSessionLoadRequestGenerations.insert(loadRequestGeneration)
         isLoading = true
+        isUserRefreshing = isUserRefresh
         errorMessage = nil
         cacheErrorMessage = nil
         lastError = nil
         defer {
             isLoading = false
+            isUserRefreshing = false
             finishSessionLoadRequest(loadRequestGeneration)
         }
 

@@ -6,6 +6,7 @@ public enum ChatActiveRunStatusKind: Equatable {
     case checking
     case reconnecting
     case stopping
+    case syncing
 
     var label: String {
         switch self {
@@ -19,6 +20,8 @@ public enum ChatActiveRunStatusKind: Equatable {
             return String(localized: "Reconnecting stream")
         case .stopping:
             return String(localized: "Stopping response")
+        case .syncing:
+            return String(localized: "Syncing messages")
         }
     }
 
@@ -34,6 +37,8 @@ public enum ChatActiveRunStatusKind: Equatable {
             return String(localized: "Hermes is reconnecting the response stream")
         case .stopping:
             return String(localized: "Hermes is stopping the response")
+        case .syncing:
+            return String(localized: "Syncing messages with the server")
         }
     }
 }
@@ -52,6 +57,11 @@ public struct ChatActiveRunStatusPresentation: Equatable {
     public var accessibilityLabel: String {
         kind.accessibilityLabel
     }
+
+    /// Syncing has no inline twin at the transcript tail, so it never stands in for one.
+    public var isSyncing: Bool {
+        kind == .syncing
+    }
 }
 
 public enum ChatActiveRunStatusPolicy {
@@ -60,17 +70,24 @@ public enum ChatActiveRunStatusPolicy {
         hasActiveStream: Bool,
         activeStreamRecoveryState: ActiveStreamRecoveryState,
         isCancellingStream: Bool,
+        isSyncingTranscript: Bool = false,
         isScrolledNearBottom: Bool
     ) -> ChatActiveRunStatusPresentation? {
-        guard !isScrolledNearBottom else { return nil }
-
-        if isCancellingStream {
+        if !isScrolledNearBottom, isCancellingStream {
             return ChatActiveRunStatusPresentation(kind: .stopping)
         }
 
-        if isStartingChat {
+        if !isScrolledNearBottom, isStartingChat {
             return ChatActiveRunStatusPresentation(kind: .starting)
         }
+
+        // Syncing has no inline twin at the transcript tail, so it shows at any scroll
+        // position, and it hides run progress the way T3 Code's thread sync does.
+        if isSyncingTranscript {
+            return ChatActiveRunStatusPresentation(kind: .syncing)
+        }
+
+        guard !isScrolledNearBottom else { return nil }
 
         switch activeStreamRecoveryState {
         case .checking:
