@@ -83,4 +83,33 @@ test.describe('shell', () => {
     expect(after).not.toBe(before)
     expect(after ?? '').not.toContain('dark')
   })
+
+  test('chat width setting sizes the chat column and persists', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'chat width only applies above the phone breakpoint')
+    await page.setViewportSize({ width: 1600, height: 900 })
+    const composerMax = () => page.locator('.composer-box').evaluate((el) => getComputedStyle(el).maxWidth)
+    await page.goto('/')
+    await settle(page)
+    expect(await composerMax()).toBe('768px')
+
+    for (const [width, max] of [['wide', '1152px'], ['full', 'none'], ['comfortable', '768px']] as const) {
+      await page.goto('/settings/appearance')
+      await settle(page)
+      await expect(page.locator(`[data-chat-width-val="${width}"]`)).toBeVisible()
+      const saved = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/settings'))
+      await page.locator(`[data-chat-width-val="${width}"]`).click()
+      expect((await saved).postDataJSON()).toMatchObject({ chat_width: width, full_width_chat: width === 'full' })
+      await expect(page.locator(`[data-chat-width-val="${width}"]`)).toHaveAttribute('aria-pressed', 'true')
+      expect((await (await page.request.get('/api/settings')).json()).chat_width).toBe(width)
+      await page.goto('/')
+      await settle(page)
+      expect(await composerMax()).toBe(max)
+    }
+
+    // A browser that only has the legacy full-width toggle boots in Full.
+    await page.evaluate(() => { localStorage.removeItem('hermes-chat-width'); localStorage.setItem('hermes-full-width-chat', 'true') })
+    await page.reload()
+    await settle(page)
+    expect(await composerMax()).toBe('none')
+  })
 })
