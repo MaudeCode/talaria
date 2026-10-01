@@ -93,10 +93,11 @@
    transcript's bottom inset. */
 .composer-dock{position:absolute;left:0;right:0;bottom:0;z-index:10;pointer-events:none}
 .composer-dock--hero{bottom:calc(50% - var(--composer-h,0px) / 2 - var(--composer-hero-shift,0px))}
-/* One continuous wash from above the dock to its bottom, so no edge shows around the card: messages fade in over
-   --composer-fade-height, deepen behind the card's glass, and are opaque from the card's bottom edge (Composer measures
-   `--composer-band-top`), where a scrolled-up transcript would otherwise show around the strip. */
-.composer-wrap::before{content:"";position:absolute;left:0;right:0;top:calc(-1 * var(--composer-fade-height));bottom:0;z-index:-1;pointer-events:none;border-top:var(--composer-wrap-border-top);background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--composer-wrap-bg) var(--composer-glass-mix),transparent) var(--composer-fade-height),var(--composer-wrap-bg) calc(var(--composer-fade-height) + var(--composer-band-top,100%)))}
+/* One continuous wash under the composer, so no edge shows around the card (TAL-433): clear at the dock's top (or
+   --composer-fade-height above it, 0 in the base skin, like T3 Code), deepening behind the card's glass to opaque at the
+   card's bottom edge (`--composer-card-bottom`, measured by Composer), where a scrolled-up transcript would otherwise
+   show around the strip. Without a card (the read-only note) it ends opaque at the wrap's bottom. */
+.composer-wrap::before{content:"";position:absolute;left:0;right:0;top:calc(-1 * var(--composer-fade-height));bottom:0;z-index:-1;pointer-events:none;border-top:var(--composer-wrap-border-top);background:linear-gradient(to bottom,transparent,var(--composer-wrap-bg) calc(var(--composer-fade-height) + var(--composer-card-bottom,calc(100% - var(--composer-fade-height)))))}
 .composer-dock--hero .composer-wrap::before{display:none}
 .composer-dock .composer-box,.composer-dock .composer-tab,.composer-dock .composer-strip,.composer-dock .composer-terminal-panel,.composer-dock [role="note"]{pointer-events:auto}
 .composer-hero-title{position:absolute;left:var(--space-4);right:var(--space-4);bottom:100%;max-width:var(--msg-max);margin:0 auto;padding-bottom:calc(var(--space-4) * 2);text-align:center;font-size:var(--composer-hero-title-size);line-height:1.25;font-weight:500;letter-spacing:-.02em;color:var(--text)}

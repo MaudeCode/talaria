@@ -5,8 +5,8 @@ test.use({ serviceWorkers: 'block' })
 
 /** T3 Code-style composer placement and send motion (TAL-429), against synthetic sessions. */
 
-const transcript = (sid: string, turns: number) => Array.from({ length: turns }, (_, i) => [
-  { role: 'user', id: i * 2 + 1, content: `${sid} question ${i + 1}` },
+const transcript = (sid: string, turns: number, question = (i: number) => `${sid} question ${i + 1}`) => Array.from({ length: turns }, (_, i) => [
+  { role: 'user', id: i * 2 + 1, content: question(i) },
   { role: 'assistant', id: i * 2 + 2, content: `${sid} answer ${i + 1}. `.repeat(12) },
 ]).flat()
 
@@ -227,42 +227,53 @@ for (const { name, settings } of [{ name: 'auto-follow on', settings: {} }, { na
   })
 }
 
-test('the wash under the composer has no edge where the dock begins', async ({ page }, testInfo) => {
+test('the wash under the composer has no edge around the card', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'one geometry is enough: the wash is the same at every width')
-  const long = 'A background subagent you dispatched earlier has finished; the full task source is below. '.repeat(12)
-  const messages = Array.from({ length: 6 }, (_, i) => [{ role: 'user', id: i * 2 + 1, content: long }, { role: 'assistant', id: i * 2 + 2, content: `Answer ${i + 1}. `.repeat(40) }]).flat()
-  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'wash', title: 'Wash', messages } } }))
+  const long = 'A background subagent you dispatched earlier has finished; the full task source is below. '.repeat(14)
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'wash', title: 'Wash', messages: transcript('wash', 6, () => long) } } }))
   await page.goto('/session/wash')
   await expect.poll(() => distance(page)).toBeLessThan(2)
-  // A user bubble (a light surface) across the dock's top edge, sampled in its right padding where no text runs.
-  const { x, y } = await page.evaluate(() => {
-    const pane = document.getElementById('messages')!
+  // A user bubble (a light surface) runs behind the whole dock, from above its top edge to below the card.
+  const place = () => page.evaluate(() => {
     const dock = document.querySelector('.composer-dock')!.getBoundingClientRect()
     const bubbles = [...document.querySelectorAll('.msg-row[data-role="user"] .msg-body')]
-    const bubble = bubbles[bubbles.length - 2]!.getBoundingClientRect()
-    pane.scrollTop += bubble.bottom - (dock.top + 40)
-    const moved = bubbles[bubbles.length - 2]!.getBoundingClientRect()
-    return { x: Math.round(moved.right - 8), y: Math.round(document.querySelector('.composer-dock')!.getBoundingClientRect().top) }
+    const bubble = bubbles[bubbles.length - 2]!
+    document.getElementById('messages')!.scrollTop += bubble.getBoundingClientRect().bottom - (dock.bottom + 24)
+    const b = bubble.getBoundingClientRect()
+    return { top: Math.round(b.top), bottom: Math.round(b.bottom), right: Math.round(b.right) }
   })
-  await expect.poll(async () => (await box(page, '.composer-dock')).y).toBe(y)
-  const shot = await page.screenshot({ clip: { x, y: y - 8, width: 4, height: 16 } })
-  const rows = await page.evaluate(async (png) => {
-    const img = new Image()
-    img.src = `data:image/png;base64,${png}`
-    await img.decode()
-    const canvas = document.createElement('canvas')
-    canvas.width = img.width
-    canvas.height = img.height
-    const ctx = canvas.getContext('2d')!
-    ctx.drawImage(img, 0, 0)
-    return Array.from({ length: img.height }, (_, row) => {
-      const d = ctx.getImageData(0, row, img.width, 1).data
-      let sum = 0
-      for (let i = 0; i < d.length; i += 4) sum += 0.2126 * d[i]! + 0.7152 * d[i + 1]! + 0.0722 * d[i + 2]!
-      return sum / (d.length / 4)
-    })
-  }, shot.toString('base64'))
-  // A continuous wash changes by a fraction of a level per pixel; the old fade stopped at the dock's edge and jumped.
-  const jumps = rows.slice(1).map((v, i) => Math.abs(v - rows[i]!))
-  expect(Math.max(...jumps)).toBeLessThan(4)
+  const placed = await place()
+  // Layout settles (lazy markdown, the virtualizer): the bubble must still span the dock before sampling.
+  await expect.poll(async () => JSON.stringify(await place())).toBe(JSON.stringify(placed))
+  const dock = await box(page, '.composer-dock')
+  const card = await box(page, '#composerBox')
+  expect(placed.top).toBeLessThan(dock.y - 16)
+  expect(placed.bottom).toBeGreaterThan(card.y + card.height + 8)
+  const brightness = async (clip: { x: number; y: number; width: number; height: number }) => {
+    const shot = await page.screenshot({ clip })
+    return page.evaluate(async (png) => {
+      const img = new Image()
+      img.src = `data:image/png;base64,${png}`
+      await img.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = img.width
+      canvas.height = img.height
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0)
+      return Array.from({ length: img.height }, (_, row) => {
+        const d = ctx.getImageData(0, row, img.width, 1).data
+        let sum = 0
+        for (let i = 0; i < d.length; i += 4) sum += 0.2126 * d[i]! + 0.7152 * d[i + 1]! + 0.0722 * d[i + 2]!
+        return sum / (d.length / 4)
+      })
+    }, shot.toString('base64'))
+  }
+  const biggestJump = (rows: number[]) => Math.max(...rows.slice(1).map((v, i) => Math.abs(v - rows[i]!)))
+  // Across the dock's top edge, in the bubble's right padding where no text runs.
+  const top = await brightness({ x: placed.right - 8, y: Math.round(dock.y) - 8, width: 4, height: 16 })
+  // Across the card's bottom edge, in the rounded corner where the card itself does not paint.
+  const bottom = await brightness({ x: Math.round(card.x + card.width) - 3, y: Math.round(card.y + card.height) - 6, width: 2, height: 12 })
+  // A continuous wash changes by a fraction of a level per pixel; two layers that do not meet leave a jump.
+  expect(biggestJump(top)).toBeLessThan(4)
+  expect(biggestJump(bottom)).toBeLessThan(4)
 })

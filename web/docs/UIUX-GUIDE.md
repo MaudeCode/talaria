@@ -210,11 +210,12 @@ the auto-follow setting, so the newest message is never covered.
 hero) with its headline hanging above the card; otherwise it docks to the
 bottom. The dock's measured height is `--composer-h`, the transcript's bottom
 inset and the offset for the scroll-to-end pill. One continuous wash
-(`.composer-wrap::before`) runs from just above the dock to its bottom: messages
-fade in as they approach, deepen behind the card's glass, and are opaque from the
-card's bottom edge so a scrolled-up transcript never shows around the context
-strip. Keep it one layer: two layers that meet leave a visible edge around the
-card (TAL-433). Leaving the hero plays a 340 ms FLIP from
+(`.composer-wrap::before`) runs from the dock's top edge to its bottom, like T3
+Code's: clear at the top, deepening behind the card's glass, and opaque from the
+card's bottom edge (`--composer-card-bottom`, measured by `Composer`) so a
+scrolled-up transcript never shows around the context strip. A skin can start it
+higher with `--composer-fade-height` (0 in the base skin). Keep it one layer: two
+layers that meet leave a visible edge around the card (TAL-433). Leaving the hero plays a 340 ms FLIP from
 the centred position (`sendMotion.ts`; instant under reduced motion). A new
 chat's first send shows its text as the pending user row and leaves the hero
 before the session or turn exists; the index and session routes mount separate
