@@ -425,8 +425,15 @@ export function Composer(props: ComposerProps) {
   useEffect(() => {
     const el = box.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(([entry]) => { if (entry) lastHeight.current = entry.borderBoxSize[0]?.blockSize ?? el.offsetHeight })
+    const wrap = el.parentElement
+    // The same observer places the opaque band under the card (`--composer-band-top`): layout is settled inside the
+    // callback, so reading the card's offset there costs nothing on the typing path.
+    const ro = new ResizeObserver(() => {
+      lastHeight.current = el.offsetHeight
+      wrap?.style.setProperty('--composer-band-top', `${el.offsetTop + el.offsetHeight}px`)
+    })
     ro.observe(el)
+    if (wrap) ro.observe(wrap)
     return () => ro.disconnect()
   }, [])
   const restMounted = useRef(false)
@@ -542,17 +549,14 @@ export function Composer(props: ComposerProps) {
           </div>
         </div>
       </div>
-      {/* The shelf under the card carries an opaque band, so a scrolled-up transcript never shows below the card. */}
-      <div className="composer-shelf">
-        {/* T3 Code's context strip: where the message runs (workspace, toolsets, profile), tucked under the card. */}
-        {!collapsed && (!hide('hide_composer_workspace') || !hide('hide_composer_toolsets') || !hide('hide_composer_profile')) && (
-          <div className="composer-strip" role="group" aria-label={m.composer_config_title()}>
-            {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} onChange={onWorkspaceChange} />}
-            {!hide('hide_composer_toolsets') && <ToolsetsChip value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
-            {!hide('hide_composer_profile') && <ProfileMenu />}
-          </div>
-        )}
-      </div>
+      {/* T3 Code's context strip: where the message runs (workspace, toolsets, profile), tucked under the card. */}
+      {!collapsed && (!hide('hide_composer_workspace') || !hide('hide_composer_toolsets') || !hide('hide_composer_profile')) && (
+        <div className="composer-strip" role="group" aria-label={m.composer_config_title()}>
+          {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} onChange={onWorkspaceChange} />}
+          {!hide('hide_composer_toolsets') && <ToolsetsChip value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
+          {!hide('hide_composer_profile') && <ProfileMenu />}
+        </div>
+      )}
     </div>
   )
 }
