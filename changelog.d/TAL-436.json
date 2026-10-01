@@ -4,6 +4,11 @@
       "category": "Added",
       "summary": "Chats show a Syncing messages status above the composer while they check the server for newer messages.",
       "highlight": false
+    },
+    {
+      "category": "Changed",
+      "summary": "Chat status chips share one style and show a still dot instead of a spinner when Reduce Motion is on.",
+      "highlight": false
     }
   ]
 }
