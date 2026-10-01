@@ -12,7 +12,7 @@ import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
 import { groupAssistantTurns } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
-import { onScrollToEndRequest } from './sendMotion'
+import { onFollowRequest, onScrollToEndRequest } from './sendMotion'
 
 const VIRTUALIZE_AT = 200
 
@@ -124,6 +124,7 @@ export function Transcript(props: TranscriptProps) {
 
   // A submit returns to the end wherever the reader was, and the next layout follows it there (T3 Code's scrollToEnd).
   useEffect(() => onScrollToEndRequest(() => { settlingRef.current = true; scrollToBottom(false) }), [scrollToBottom])
+  useEffect(() => onFollowRequest(() => { if (followsRef.current()) scrollToBottom(false) }), [scrollToBottom])
 
   const virtualizer = useVirtualizer({
     count: virtualize ? rows.length : 0,

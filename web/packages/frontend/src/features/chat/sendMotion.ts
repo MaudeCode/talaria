@@ -49,3 +49,10 @@ export function onScrollToEndRequest(fn: () => void): () => void {
   scrollRequests.addEventListener('end', fn)
   return () => scrollRequests.removeEventListener('end', fn)
 }
+
+/** The composer's height changed (a tab row sliding in, the box growing): a pinned transcript follows in the same frame. */
+export const requestFollow = () => { scrollRequests.dispatchEvent(new Event('follow')) }
+export function onFollowRequest(fn: () => void): () => void {
+  scrollRequests.addEventListener('follow', fn)
+  return () => scrollRequests.removeEventListener('follow', fn)
+}

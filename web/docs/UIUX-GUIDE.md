@@ -26,8 +26,8 @@ The composer is a floating glass card over the transcript, after T3 Code's
 composer (TAL-429). Its footer carries only what the next message needs: model
 and reasoning effort on the left; attachments, dictation, context usage, and
 Stop/Send on the right. Two attached extensions share the card's edges: a top
-tab for status (the running turn, dictation, the YOLO warning, queued
-messages) and a bottom context strip for where it runs (workspace,
+tab for status (connection and runtime notices, manual compression, the
+running turn, dictation, the YOLO warning, queued messages) and a bottom context strip for where it runs (workspace,
 toolsets, profile). The terminal toggle lives in the chat header; phones reach
 it from the composer's overflow menu (`#composerMobileConfigBtn` /
 `#composerMobileConfigPanel`), which also takes model and reasoning when the
@@ -206,6 +206,15 @@ before the session or turn exists; the index and session routes mount separate
 views, so that state and the dock animation live in `sendMotion.ts` and survive
 the remount, and a failed send returns the text to the box. Every send, steer,
 or queue returns the transcript to its end.
+
+The top tab is a list of `ComposerNotice` entries (`ComposerTab.tsx`): an id,
+a tone (`neutral`, `info`, `warning`, `error`), content, and an optional action,
+dismiss, or row click. New transient status is a new entry, not new composer
+chrome; `useRuntimeNotices` supplies the connection and runtime ones (offline,
+Talaria server unreachable, agent unavailable, provider failure, turn error with
+Retry, compressing). Entries slide up from behind the card and sink back on exit;
+every height change of the composer re-pins a following transcript in the same
+frame, so streamed lines never hide behind a growing tab.
 
 ### Composer sizing
 

@@ -117,3 +117,29 @@ test('opening a session paints every frame at its end', async ({ page }) => {
   expect(frames.length).toBeGreaterThan(10)
   expect(Math.max(...frames)).toBeLessThan(2)
 })
+
+test('the top tab reports a Talaria server it cannot reach and clears when it answers again', async ({ page, errors }) => {
+  let down = false
+  await page.route('**/api/health/agent', (route) => (down ? route.abort('connectionrefused') : route.fulfill({ json: { alive: true } })))
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'reach', title: 'Reach', messages: transcript('reach', 2) } } }))
+  await page.goto('/session/reach')
+  await expect(page.locator('#msg')).toBeVisible()
+  down = true
+  const row = page.locator('.composer-tab [data-notice="runtime:server_unreachable"]')
+  await expect(row).toContainText("Can't reach the Talaria server", { timeout: 15_000 })
+  down = false
+  await expect(row).toHaveCount(0, { timeout: 8_000 })
+  // The refused requests are the point of this test.
+  errors.splice(0, errors.length, ...errors.filter((e) => !/health\/agent|ERR_CONNECTION_REFUSED|Failed to load resource/.test(e)))
+})
+
+test('a manual compression shows in the top tab while it runs', async ({ page }) => {
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'squeeze', title: 'Squeeze', messages: transcript('squeeze', 2) } } }))
+  await page.route('**/api/session/compress/start', (route) => route.fulfill({ json: { status: 'running' } }))
+  await page.route('**/api/session/compress/status?**', (route) => route.fulfill({ json: { status: 'running' } }))
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.goto('/session/squeeze')
+  await page.locator('#msg').fill('/compress')
+  await page.locator('#btnSend').click()
+  await expect(page.locator('.composer-tab [data-notice="runtime:compressing"]')).toContainText('Compressing context…')
+})

@@ -2143,6 +2143,8 @@
 	"notice_offline_detail": "Hermes is unreachable from this browser right now.",
 	"notice_reconnect_title": "Reconnecting to the response…",
 	"notice_agent_title": "Hermes Agent is unavailable",
+	"notice_server_title": "Can't reach the Talaria server",
+	"notice_server_detail": "Retrying until it answers again.",
 	"notice_dismiss": "Dismiss",
 	"terminal_open": "Open terminal",
 	"terminal_unavailable": "The terminal could not start.",

@@ -18,7 +18,6 @@
 .ctx-indicator{width:34px;height:34px;padding:0;border:none;background:none;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .15s,transform .15s}
 .ctx-indicator:hover{opacity:.88;transform:translateY(-1px)}
 .mic-btn{transition:color .15s,background .15s}
-.mic-status{color:var(--error)}
 .mic-dot{width:6px;height:6px;border-radius:50%;background:var(--error);animation:mic-pulse 1.2s ease-in-out infinite;flex-shrink:0}
 .send-btn.visible{animation:send-pop-in .18s cubic-bezier(.34,1.56,.64,1) forwards}
 .composer-terminal-panel{position:absolute;left:0;right:0;bottom:8px;width:min(calc(100% - 64px),720px);margin:0 auto;box-sizing:border-box;overflow:hidden;z-index:1}
@@ -115,13 +114,25 @@
 /* Attached extensions (T3 ComposerBanner / ContextStrip): inset from the card, seamed to its top or bottom edge. */
 .composer-tab,.composer-strip{box-sizing:border-box;width:calc(100% - 32px);max-width:calc(var(--msg-max) - 32px);margin:0 auto;border:1px solid var(--composer-border-color);background:color-mix(in srgb,var(--composer-bg) 82%,transparent);-webkit-backdrop-filter:blur(12px) saturate(1.14);backdrop-filter:blur(12px) saturate(1.14)}
 :root[data-chat-width="full"] .composer-tab,:root[data-chat-width="full"] .composer-strip{max-width:none}
-.composer-tab{display:flex;flex-direction:column;border-bottom:0;border-radius:14px 14px 0 0;font-size:12px;color:var(--muted)}
-.composer-tab-row{display:flex;align-items:center;gap:6px;min-width:0;padding:6px 14px;border:0;background:none;font:inherit;color:inherit;text-align:left}
-.composer-tab-row + .composer-tab-row{border-top:1px solid var(--border)}
-.composer-tab-yolo{color:var(--amber);background:color-mix(in srgb,var(--amber) 9%,transparent);cursor:pointer}
-.composer-tab-row:first-child{border-radius:13px 13px 0 0}
-.composer-tab-yolo:hover{color:var(--amber-strong);background:color-mix(in srgb,var(--amber) 14%,transparent)}
-.composer-tab .queue-card{flex-direction:column;align-items:stretch;gap:2px}
+.composer-tab{position:relative;z-index:1;display:flex;flex-direction:column;overflow:hidden;border-bottom:0;border-radius:14px 14px 0 0;font-size:12px;color:var(--muted);animation:composer-tab-in .18s cubic-bezier(.2,.8,.2,1)}
+.composer-tab.is-leaving{animation:composer-tab-out .22s ease-in forwards;pointer-events:none}
+.composer-tab-item{display:grid;grid-template-rows:1fr;overflow:hidden;animation:composer-tab-item-in .18s ease-out}
+.composer-tab-item.is-leaving{animation:composer-tab-item-out .22s ease-in forwards;pointer-events:none}
+.composer-tab-item + .composer-tab-item .composer-tab-row{border-top:1px solid var(--border)}
+.composer-tab-row{display:flex;align-items:center;gap:8px;min-height:0;overflow:hidden;padding:6px 14px}
+.composer-tab-content{display:flex;flex:1;align-items:center;gap:6px;min-width:0;padding:0;border:0;background:none;font:inherit;color:inherit;text-align:left}
+button.composer-tab-content{cursor:pointer}
+.composer-tab-row[data-tone="warning"]{color:var(--amber);background:color-mix(in srgb,var(--amber) 9%,transparent)}
+.composer-tab-row[data-tone="warning"]:has(button.composer-tab-content:hover){color:var(--amber-strong);background:color-mix(in srgb,var(--amber) 14%,transparent)}
+.composer-tab-row[data-tone="error"]{color:var(--error);background:color-mix(in srgb,var(--error) 8%,transparent)}
+.composer-tab-action{flex-shrink:0;padding:2px 6px;border:0;border-radius:6px;background:none;font:inherit;font-weight:500;color:var(--text);cursor:pointer}
+.composer-tab-action:hover{background:var(--hover-bg)}
+/* Entries rise from behind the card and sink back into it (T3 Code's banner timing); the tab moves as one when it opens or closes. */
+@keyframes composer-tab-in{from{opacity:0;transform:translateY(100%)}}
+@keyframes composer-tab-out{to{opacity:0;transform:translateY(100%)}}
+@keyframes composer-tab-item-in{from{grid-template-rows:0fr;opacity:0}}
+@keyframes composer-tab-item-out{to{grid-template-rows:0fr;opacity:0}}
+@media (prefers-reduced-motion:reduce){.composer-tab,.composer-tab-item{animation:none}}
 .queue-card-title{font-weight:600;color:var(--text)}
 .queue-card-list{margin:0;padding:0;list-style:none;max-height:72px;overflow-y:auto}
 .composer-strip{display:flex;align-items:center;gap:2px;padding:2px 6px;border-top:0;border-radius:0 0 14px 14px;overflow-x:auto;scrollbar-width:none}

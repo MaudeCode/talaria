@@ -24,14 +24,14 @@ import { useClarify } from './useClarify'
 import { TerminalPanel } from '../terminal/TerminalPanel'
 import { WorkspacePanel } from '../workspace/WorkspacePanel'
 import { workspaceLabel } from '../workspaces/label'
-import { RuntimeNoticeStack } from '../notices/RuntimeNoticeStack'
+import { useRuntimeNotices } from '../notices/RuntimeNoticeStack'
 import { showToast } from '../toast/toast'
 import { isApiError } from '../../contracts/common'
 import { ErrorState, formatDate } from '../../ui/States'
 import { readPersisted, removePersisted, writePersisted } from '../../lib/persisted'
 import type { ActivityMode } from './blocks/Worklog'
 import { createSessionNow } from '../sessions/useNewChat'
-import { beginDock, bindFirstSend, ownsFirstSend, playDock, useFirstSend } from './sendMotion'
+import { beginDock, bindFirstSend, ownsFirstSend, playDock, requestFollow, useFirstSend } from './sendMotion'
 
 export function ChatView({ sessionId }: { sessionId: string | null }) {
   const bootstrap = useBootstrap()
@@ -124,7 +124,6 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const [compressing, setCompressing] = useState(false)
   const runCompression = useCallback(async (sid: string) => {
     setCompressing(true)
-    showToast(m.live_compressing())
     try {
       await api.compressSession(sid)
       for (let i = 0; i < 600; i++) {
@@ -220,6 +219,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     else if (readPersisted('hermes-webui-session-empty') === sessionId) removePersisted('hermes-webui-session-empty')
   }, [sessionId, query.isSuccess, rows.length])
 
+  const runtime = useRuntimeNotices({ live, onRetry: () => { void onRegenerate() }, compressing })
   const notFound = query.isError && isApiError(query.error) && query.error.status === 404
   const otherProfile = query.isError && isApiError(query.error) && query.error.status === 409
 
@@ -234,7 +234,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     const dockEl = dock.current
     if (!stageEl || !dockEl) return
     const measure = () => {
-      stageEl.style.setProperty('--composer-h', `${dockEl.offsetHeight}px`)
+      const height = `${dockEl.offsetHeight}px`
+      if (stageEl.style.getPropertyValue('--composer-h') !== height) { stageEl.style.setProperty('--composer-h', height); requestFollow() }
       heroTop.current = dockEl.classList.contains('composer-dock--hero') ? dockEl.getBoundingClientRect().top : null
     }
     measure()
@@ -264,7 +265,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           {/* T3 Code keeps the terminal toggle in the thread header; phones reach it from the composer's overflow menu. */}
           {sessionId && <button type="button" className={cn('icon-btn has-tooltip has-tooltip--left', terminalOpen && 'active')} id="btnTerminalInline" data-tooltip={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => setTerminalOpen((t) => !t)}><TerminalSquare size={16} aria-hidden="true" /></button>}
         </div>
-        <RuntimeNoticeStack live={live} onRetry={() => { void onRegenerate() }} />
+        {runtime.announcer}
         {notFound && <div className="p-4"><ErrorState error={new Error(m.transcript_not_found())} onRetry={() => { void navigate({ to: '/', search: { action: 'new-chat' } }) }} /></div>}
         {otherProfile && <div className="p-4"><ErrorState error={new Error(m.transcript_other_profile({ profile: ((query.error as { body?: { profile?: string } }).body?.profile ?? '') }))} /></div>}
         {query.isError && !notFound && !otherProfile && <div className="p-4"><ErrorState error={query.error} onRetry={() => { void refresh() }} /></div>}
@@ -322,6 +323,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           locked={compressing}
           onQueue={(entry) => setQueued((q) => [...q, entry])}
           clarify={clarify}
+          notices={runtime.notices}
         />
         </div>
         </div>

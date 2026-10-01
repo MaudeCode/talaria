@@ -23,6 +23,7 @@ import { setTheme } from '../../app/appearance'
 import { ThemeSchema } from '../../contracts/persisted'
 import type { Clarify } from '../chat/useClarify'
 import { LiveStatusPill } from '../chat/LiveTurnView'
+import { ComposerTab, type ComposerNotice } from './ComposerTab'
 import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, requestScrollToEnd, useFirstSend } from '../chat/sendMotion'
 
 export type BusyMode = 'steer' | 'queue' | 'interrupt'
@@ -56,6 +57,8 @@ export interface ComposerProps {
   locked?: boolean | undefined
   /** A pending clarification: the box becomes its answer input and the chat draft and attachments wait untouched. */
   clarify?: Clarify | null | undefined
+  /** Entries for the top tab from outside the composer (connection and runtime state); they lead the tab. */
+  notices?: ComposerNotice[] | undefined
 }
 
 const PHONE = '(max-width: 640px)'
@@ -85,7 +88,7 @@ function fileKey(f: File): string {
 let handoff: { text: string; files: File[] } | null = null
 
 export function Composer(props: ComposerProps) {
-  const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onToolsetsChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, clarify } = props
+  const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onToolsetsChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, clarify, notices = [] } = props
   const bootstrap = useBootstrap()
   const qc = useQueryClient()
   const [text, setText] = useState(() => (sessionId ? readLocalDraft(sessionId) : ''))
@@ -383,6 +386,14 @@ export function Composer(props: ComposerProps) {
   // Phone composer at rest: one prompt row (UIUX guide), and the strip under it folds away too.
   const collapsed = phone && !text && files.length === 0 && !busy && !focusWithin && !configOpen && !dragOver
   const showYolo = yolo && !hide('hide_composer_yolo')
+  // The top tab (T3 Code's attached banner): runtime notices first, then the running turn and this message's state.
+  const tabNotices: ComposerNotice[] = [
+    ...notices,
+    ...(busy && live ? [{ id: 'live', content: <LiveStatusPill turn={live} /> }] : []),
+    ...(dictating ? [{ id: 'dictation', tone: 'error' as const, role: 'status' as const, content: <><span className="mic-dot" aria-hidden="true" /> {m.voice_listening()}</> }] : []),
+    ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, onClick: onToggleYolo, title: m.yolo_pill_title_active(), content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_pill_title_active()}</span></> }] : []),
+    ...(queued.length > 0 ? [{ id: 'queue', role: 'region' as const, label: m.queued_count({ n: queued.length }), content: <span className="queue-card flex min-w-0 flex-col gap-0.5" aria-live="polite"><span className="queue-card-title">{m.queued_count({ n: queued.length })}</span><span className="queue-card-list flex flex-col">{queued.map((q, i) => <span key={i} className="truncate">{q.text}{q.attachments.length ? ` (+${q.attachments.length})` : ''}</span>)}</span></span> }] : []),
+  ]
   const busyLabel = busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()
 
   // The server marks sessions Web may not continue (TAL-312); it would refuse every send, so none is offered.
@@ -390,20 +401,7 @@ export function Composer(props: ComposerProps) {
 
   return (
     <div className="composer-wrap" id="composerWrap">
-      {/* T3 Code's attached banner: status that belongs to the next message rides on the card's top edge. */}
-      {(busy || dictating || showYolo || queued.length > 0) && (
-        <div className="composer-tab">
-          {busy && live && <div className="composer-tab-row"><LiveStatusPill turn={live} /></div>}
-          {dictating && <div className="composer-tab-row mic-status" id="micStatus" role="status"><span className="mic-dot" aria-hidden="true" /> {m.voice_listening()}</div>}
-          {showYolo && <button type="button" onClick={onToggleYolo} className="composer-tab-row composer-tab-yolo" id="yoloPill" title={m.yolo_pill_title_active()}><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_pill_title_active()}</span></button>}
-          {queued.length > 0 && (
-            <div className="composer-tab-row queue-card" role="region" aria-label={m.queued_count({ n: queued.length })} aria-live="polite">
-              <div className="queue-card-title">{m.queued_count({ n: queued.length })}</div>
-              <ul className="queue-card-list">{queued.map((q, i) => <li key={i} className="truncate">{q.text}{q.attachments.length ? ` (+${q.attachments.length})` : ''}</li>)}</ul>
-            </div>
-          )}
-        </div>
-      )}
+      <ComposerTab notices={tabNotices} />
       <div
         className={cn('composer-box relative z-[2] flex flex-col mx-auto max-w-(--msg-max) border-(length:--composer-border-width) border-(--composer-border-color) rounded-(--composer-radius) shadow-(--composer-shadow) transition-[border-color,box-shadow] duration-(--dur) ease-(--ease) focus-within:border-(--composer-focus-border) focus-within:shadow-(--composer-focus-shadow) focus-within:outline-none max-[641px]:rounded-[20px]', dragOver && 'drag-over', clarify && 'clarify-active')}
         id="composerBox"
