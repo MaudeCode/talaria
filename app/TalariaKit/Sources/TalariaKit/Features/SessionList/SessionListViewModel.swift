@@ -109,9 +109,11 @@ public final class SessionListViewModel {
     private let client: APIClient
     private let sessionMutator: SessionMutator
     private let server: URL
+    private let responseCache: ResponseCache
 
-    public init(server: URL, client: APIClient? = nil) {
+    public init(server: URL, client: APIClient? = nil, responseCache: ResponseCache? = nil) {
         self.server = server
+        self.responseCache = responseCache ?? ResponseCache(server: server)
         let resolvedClient = client ?? APIClient(baseURL: server)
         self.client = resolvedClient
         self.sessionMutator = SessionMutator(client: resolvedClient)
@@ -214,17 +216,26 @@ public final class SessionListViewModel {
         )
     }
 
-    /// Shows the last list this device saw on the first frame of a cold launch (TAL-437), so the
-    /// list never starts empty; the next `load` replaces it with the server's rows. This is the
-    /// expected-success window, so it stays out of offline mode.
-    public func paintCachedSessionsIfEmpty(modelContext: ModelContext) {
-        guard sessions.isEmpty,
-              let cachedSessions = try? CacheStore.cachedSessions(serverURL: server, in: modelContext)
-                .filter(\.shouldAppearInSessionList),
-              !cachedSessions.isEmpty
-        else { return }
-        sessions = cachedSessions
+    /// Shows the last rows, projects and active profile this device saw on the first frame of a
+    /// cold launch (TAL-437), so the list never starts empty; the next loads replace each with the
+    /// server's. This is the expected-success window, so it stays out of offline mode.
+    public func paintCachedStateIfEmpty(modelContext: ModelContext) {
+        if sessions.isEmpty,
+           let cachedSessions = try? CacheStore.cachedSessions(serverURL: server, in: modelContext)
+            .filter(\.shouldAppearInSessionList),
+           !cachedSessions.isEmpty {
+            sessions = cachedSessions
+        }
+        if projects.isEmpty, let cachedProjects = responseCache.entry(Self.projectsCacheKind).load(ProjectsResponse.self) {
+            projects = cachedProjects.projects ?? []
+        }
+        if activeProfileName == nil, let cachedProfiles = responseCache.entry(Self.profilesCacheKind).load(ProfilesResponse.self) {
+            applyActiveProfile(cachedProfiles)
+        }
     }
+
+    static let projectsCacheKind = "projects"
+    static let profilesCacheKind = "profiles"
 
     @discardableResult
     public func load(
@@ -339,7 +350,7 @@ public final class SessionListViewModel {
 
         let generation = activeProfileGeneration
         do {
-            let response = try await client.profiles()
+            let response = try await client.profiles(caching: responseCache.entry(Self.profilesCacheKind))
             // A switch the user made while this request was in flight is newer
             // than the profile it reports, so reapplying it would show the wrong
             // active profile and rebuild profile-dependent views for it.
@@ -905,7 +916,7 @@ public final class SessionListViewModel {
         projectsGeneration += 1
         let generation = projectsGeneration
         do {
-            let response = try await client.projects()
+            let response = try await client.projects(caching: responseCache.entry(Self.projectsCacheKind))
             // A project the user created, renamed or deleted while this request
             // was in flight is newer than the snapshot it returns, so adopting
             // it would make that mutation disappear until the next refresh.

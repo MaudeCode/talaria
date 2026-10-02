@@ -69,6 +69,10 @@ extension APIClient {
         try await send(endpoint: .profiles, method: "GET")
     }
 
+    public func profiles(caching cache: ResponseCache.Entry?) async throws -> ProfilesResponse {
+        try await send(endpoint: .profiles, caching: cache)
+    }
+
     public func switchProfile(name: String) async throws -> ProfileSwitchResponse {
         let response: ProfileSwitchResponse = try await send(
             endpoint: .switchProfile,

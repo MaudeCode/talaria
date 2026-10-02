@@ -1209,8 +1209,12 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         let insights = try decoder.decode(InsightsResponse.self, from: Data(#"{"total_sessions": 3}"#.utf8))
         let draftPersistence = InMemoryChatDraftPersistence()
         let draftStore = ChatDraftStore(persistence: draftPersistence, debounceDuration: .seconds(10))
+        let responseCacheRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: responseCacheRoot) }
         // Seed identical server-scoped state for both servers.
         for (server, tag) in [(signedOut, "removed"), (kept, "kept")] {
+            ResponseCache(server: server, root: responseCacheRoot).entry("projects")
+                .save(Data(#"{"projects": [{"project_id": "\#(tag)"}]}"#.utf8))
             let session = try decoder.decode(
                 SessionSummary.self,
                 from: Data(#"{"session_id": "\#(tag)-session", "title": "Thread", "archived": false}"#.utf8)
@@ -1248,7 +1252,8 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
             resetServerScopedState: AuthManager.serverScopedStateReset(
                 cacheContainer: container,
                 draftStore: draftStore,
-                defaults: defaults
+                defaults: defaults,
+                responseCacheRoot: responseCacheRoot
             ),
             serverRegistry: registry
         )
@@ -1265,6 +1270,11 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertNil(defaults.object(forKey: SessionRowDisplaySettings.showClaudeCodeSessionsKey(for: signedOut)))
         XCTAssertNil(InsightsResponseCache(server: signedOut, defaults: defaults).load(timeframe: .today))
         XCTAssertNil(defaults.string(forKey: KanbanFeatureState.browsedBoardKey(for: signedOut)))
+        XCTAssertNil(ResponseCache(server: signedOut, root: responseCacheRoot).entry("projects").load(ProjectsResponse.self))
+        XCTAssertEqual(
+            ResponseCache(server: kept, root: responseCacheRoot).entry("projects").load(ProjectsResponse.self)?.projects?.compactMap(\.projectId),
+            ["kept"]
+        )
         let removedDraft = await draftStore.draft(for: .newChat(server: signedOut))
         XCTAssertNil(removedDraft)
         // The other server's state is untouched, including the flushed draft document.

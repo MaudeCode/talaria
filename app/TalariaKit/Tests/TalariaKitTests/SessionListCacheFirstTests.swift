@@ -26,7 +26,7 @@ extension SessionListMutationTests {
             )
         }
 
-        viewModel.paintCachedSessionsIfEmpty(modelContext: context)
+        viewModel.paintCachedStateIfEmpty(modelContext: context)
 
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["cached-1"], "Only this server's saved rows")
         XCTAssertFalse(viewModel.isViewingCachedData, "Painting from cache is not offline mode")
@@ -36,6 +36,41 @@ extension SessionListMutationTests {
 
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["server-1"])
         XCTAssertFalse(viewModel.isViewingCachedData)
+    }
+
+    func testRelaunchShowsTheLastProjectsAndActiveProfileBeforeTheyLoad() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let cache = makeResponseCache(server: server)
+        let client = try makeClient(server: server) { request in
+            switch request.url?.path {
+            case "/api/projects":
+                return apiTestJSONResponse(#"{"projects": [{"project_id": "p1", "name": "Launch"}]}"#, for: request)
+            case "/api/profiles":
+                return apiTestJSONResponse(
+                    #"{"active": "work", "profiles": [{"name": "default", "is_default": true}, {"name": "work", "is_active": true}]}"#,
+                    for: request
+                )
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+        let firstLaunch = SessionListViewModel(server: server, client: client, responseCache: cache)
+        await firstLaunch.loadProjects(silently: true)
+        await firstLaunch.loadActiveProfile()
+
+        let requests = LockedCounter()
+        let relaunchClient = try makeClient(server: server) { request in
+            _ = requests.increment()
+            throw URLError(.notConnectedToInternet)
+        }
+        let relaunch = SessionListViewModel(server: server, client: relaunchClient, responseCache: cache)
+        relaunch.paintCachedStateIfEmpty(modelContext: try makeContext())
+
+        XCTAssertEqual(relaunch.projects.compactMap(\.projectId), ["p1"])
+        XCTAssertEqual(relaunch.activeProfileName, "work")
+        XCTAssertEqual(requests.count, 0)
+        XCTAssertFalse(relaunch.isViewingCachedData)
     }
 
     func testCachedPaintNeverReplacesRowsAlreadyLoaded() async throws {
@@ -50,7 +85,7 @@ extension SessionListMutationTests {
             in: context
         )
 
-        viewModel.paintCachedSessionsIfEmpty(modelContext: context)
+        viewModel.paintCachedStateIfEmpty(modelContext: context)
 
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["server-1"])
     }

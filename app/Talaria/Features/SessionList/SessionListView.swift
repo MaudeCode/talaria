@@ -326,8 +326,9 @@ struct SessionListView: View {
                 )
             }
             .onAppear {
-                // TAL-437: the last-known chats show at once; the initial load then replaces them.
-                viewModel.paintCachedSessionsIfEmpty(modelContext: modelContext)
+                // TAL-437: the last-known chats, projects and profile show at once; the initial
+                // load then replaces them.
+                viewModel.paintCachedStateIfEmpty(modelContext: modelContext)
                 openPendingSharedImportIfNeeded()
                 openPendingQuotaSourceIfNeeded()
                 openProviderQuotaWidgetSettingsIfNeeded()

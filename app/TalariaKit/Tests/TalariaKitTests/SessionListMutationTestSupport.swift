@@ -14,7 +14,14 @@ extension SessionListMutationTests {
         let server = try XCTUnwrap(URL(string: "https://example.test"))
         let client = try makeClient(server: server, handler: handler)
 
-        return SessionListViewModel(server: server, client: client)
+        return SessionListViewModel(server: server, client: client, responseCache: makeResponseCache(server: server))
+    }
+
+    /// A response cache in a fresh temporary directory, so no test reads another's entries.
+    func makeResponseCache(server: URL) -> ResponseCache {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        return ResponseCache(server: server, root: root)
     }
 
     func makeClient(
