@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { SessionSchema } from './session'
+import { MessageSchema, SessionSchema } from './session'
 import { groupAssistantTurns, persistedActivity } from '../features/chat/turnActivity'
 import { projectMessages } from '../features/chat/useTranscript'
 
@@ -42,6 +42,14 @@ describe('shared monorepo contracts', () => {
     const journaled = SessionSchema.parse(fixture.journaled_session)
     expect(journaled.transcript_seq).toEqual({ stream_id: journaled.active_stream_id, seq: 0 })
     expect(journaled.messages?.at(-1)?.role).toBe('user')
+  })
+
+  it('collapses only the long bodies of the long-body example (TAL-456)', () => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Record<string, unknown>
+    const messages = MessageSchema.array().parse((fixture.long_body_session as { messages: unknown }).messages)
+    expect(messages.map((message) => message._display_truncated === true)).toEqual([true, true, false, false])
+    const reply = groupAssistantTurns(projectMessages(messages)).find((row) => row.message.message_id === 'long-body-reply')!
+    expect(persistedActivity(reply).finalAnswerExcerpt).toBe(messages[1]?._display_excerpt)
   })
 
   it('carries the server streaming and read-only flags on every session example (TAL-312)', () => {
