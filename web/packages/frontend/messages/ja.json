@@ -1814,5 +1814,10 @@
 	"project_new_prompt": "Project name",
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
-	"system_apply_agent_update": "Agent を更新"
+	"system_apply_agent_update": "Agent を更新",
+	"background_update_delegation": "委任バッチが完了しました",
+	"background_update_process": "バックグラウンドプロセスの更新",
+	"background_update_mixed": "バックグラウンドの更新（{count}）",
+	"background_update_other": "バックグラウンドの更新",
+	"background_update_attention": "要確認"
 }

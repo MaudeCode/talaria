@@ -174,6 +174,65 @@ describe('async delegation delivery claims (TAL-459)', () => {
   })
 })
 
+describe('background wakeups carry their update metadata (TAL-371)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+  })
+  afterAll(() => s.close())
+
+  const newSid = async (): Promise<string> => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'user', content: 'start the work', timestamp: 1 }, { role: 'assistant', content: 'Started.', timestamp: 2 }]
+    s.deps.sessionStore.save(session)
+    return sid
+  }
+  const wakeupRow = async (sid: string): Promise<Json | undefined> => {
+    for (let i = 0; i < 60; i += 1) {
+      const messages = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+      const row = messages.find((m) => m._source === 'process_wakeup')
+      if (row && !s.deps.registry.activeRuns.size) return row
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    return undefined
+  }
+  beforeAll(() => {
+    sidecar.respond('chat.start', (params) => ({ ...completed('Handled.'), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Handled.' }] }))
+    sidecar.respond('process.mark_consumed', () => ({ ok: true }))
+    sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
+    sidecar.respond('process.format_notification', (params) => ({ text: `[ASYNC DELEGATION BATCH COMPLETE — ${str((params.event as Json).delegation_id)}]\nresults` }))
+  })
+
+  it('a finished delegation batch is a delegation update', async () => {
+    const sid = await newSid()
+    await s.deps.completions.processOne({ process_id: 'deleg_ok', delegation_id: 'deleg_ok', type: 'async_delegation', origin_ui_session_id: sid, consumed: false, results: [{ status: 'completed' }, { status: 'success' }] })
+    const row = await wakeupRow(sid)
+    expect(row, 'the wakeup row settled into the transcript').toBeDefined()
+    expect(row?._background_update).toEqual({ kind: 'delegation', attention: false, count: 1, summary: 'ASYNC DELEGATION BATCH COMPLETE — deleg_ok' })
+  })
+
+  it('a failed process completion is a process update that needs attention', async () => {
+    const sid = await newSid()
+    await s.deps.completions.processOne({ process_id: 'proc_fail', session_id: 'proc_fail', type: 'completion', command: 'make test', exit_code: 2, output: '1 failed', origin_ui_session_id: sid, consumed: false })
+    const row = await wakeupRow(sid)
+    expect(row, 'the wakeup row settled into the transcript').toBeDefined()
+    expect(row?._background_update).toEqual({ kind: 'process', attention: true, count: 1, summary: 'IMPORTANT: Background process proc_fail completed (exit_code=2).' })
+  })
+
+  it('a batch delivered after a turn is one mixed update', async () => {
+    const sid = await newSid()
+    s.deps.completions.recordDeferred(sid, 'deleg_mix', '[ASYNC DELEGATION BATCH COMPLETE — deleg_mix]\nresults', { process_id: 'deleg_mix', delegation_id: 'deleg_mix', type: 'async_delegation', results: [{ status: 'failed' }] })
+    s.deps.completions.recordDeferred(sid, 'proc_mix', '[IMPORTANT: Background process proc_mix completed (exit_code=0).\nCommand: ls]', { process_id: 'proc_mix', type: 'completion', exit_code: 0 })
+    await s.deps.completions.drainDeferred(sid)
+    const row = await wakeupRow(sid)
+    expect(row, 'the wakeup row settled into the transcript').toBeDefined()
+    expect(row?._background_update).toEqual({ kind: 'mixed', attention: true, count: 2, summary: 'ASYNC DELEGATION BATCH COMPLETE — deleg_mix' })
+  })
+})
+
 describe('hygiene tick', () => {
   it('copy-truncates oversized logs into <log>.1 and honours the size cap', () => {
     const dir = join(process.env.TMPDIR ?? '/tmp', `talaria-hygiene-${String(process.pid)}-${String(Date.now())}`)

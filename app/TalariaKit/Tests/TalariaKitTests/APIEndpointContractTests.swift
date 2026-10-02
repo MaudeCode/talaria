@@ -479,6 +479,28 @@ final class SharedContractTests: XCTestCase {
         XCTAssertNil(try decoded().assistantName)
     }
 
+    func testSharedWebSessionMarksOnlyWakeupsAsBackgroundUpdates() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-371 has no such example.
+        guard let example = object["background_update_session"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(withJSONObject: example["messages"] ?? []))
+        let byID = Dictionary(uniqueKeysWithValues: messages.compactMap { m in m.messageId.map { ($0, m) } })
+        // A person typing the marker text stays an ordinary user message.
+        XCTAssertNil(byID["typed-marker-user"]?.backgroundUpdate)
+        XCTAssertEqual(byID["wakeup-mixed-user"]?.backgroundUpdate, BackgroundUpdate(kind: .mixed, attention: true, count: 2, summary: "ASYNC DELEGATION BATCH COMPLETE — deleg_contract"))
+        XCTAssertEqual(byID["wakeup-legacy-user"]?.backgroundUpdate?.kind, .other)
+        XCTAssertNil(byID["wakeup-mixed-reply"]?.backgroundUpdate)
+    }
+
+    func testAnUnknownBackgroundUpdateKindFallsBackToTheGenericUpdate() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"user","content":"x","_background_update":{"kind":"future_kind","attention":"yes","count":0,"summary":"s"}}"#.utf8))
+        XCTAssertEqual(message.backgroundUpdate, BackgroundUpdate(kind: .other, attention: false, count: 1, summary: "s"))
+    }
+
     func testSharedWebSessionResolvesEveryToolCallOutcome() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-313 has no such example.

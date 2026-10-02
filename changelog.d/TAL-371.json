@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Background results such as finished delegations and background processes now appear as collapsible updates in chats instead of messages you sent.",
+      "highlight": true,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Added",
+      "summary": "A background update that needs your attention, such as a failed task, shows a warning before you expand it.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

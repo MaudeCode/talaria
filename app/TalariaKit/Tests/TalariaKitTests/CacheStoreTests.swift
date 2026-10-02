@@ -483,6 +483,18 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertEqual(restored.displayExcerpt, "Long")
     }
 
+    func testCachedMessagesKeepTheBackgroundUpdate() throws {
+        let context = try makeContext()
+        let serverURL = URL(string: "https://example.test")!
+        let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
+        let update = BackgroundUpdate(kind: .delegation, attention: true, count: 1, summary: "Batch done")
+        let message = ChatMessage(role: "user", content: "[ASYNC DELEGATION BATCH COMPLETE]", timestamp: 1, messageId: "wake-1", backgroundUpdate: update)
+        try CacheStore.cacheMessages([message], serverURL: serverURL, sessionID: "abc123", in: context, cachedAt: cachedAt)
+        let restored = try XCTUnwrap(CacheStore.cachedMessages(serverURL: serverURL, sessionID: "abc123", in: context, now: cachedAt.addingTimeInterval(60)).first)
+        // A cache-first open shows the update, not a user bubble that flips once the server answers (TAL-371).
+        XCTAssertEqual(restored.backgroundUpdate, update)
+    }
+
     func testCachedMessagesRoundTripOrderedAssistantActivityScene() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!

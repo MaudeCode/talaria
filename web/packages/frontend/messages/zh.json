@@ -1758,5 +1758,10 @@
 	"project_new_prompt": "Project name",
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
-	"system_apply_agent_update": "更新 Agent"
+	"system_apply_agent_update": "更新 Agent",
+	"background_update_delegation": "委托批次已完成",
+	"background_update_process": "后台进程更新",
+	"background_update_mixed": "后台更新（{count}）",
+	"background_update_other": "后台更新",
+	"background_update_attention": "需要关注"
 }

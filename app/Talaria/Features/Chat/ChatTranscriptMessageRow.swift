@@ -66,7 +66,16 @@ struct ChatTranscriptMessageRow: View {
         }
     }
 
+    @ViewBuilder
     private var bubble: some View {
+        if let update = message.backgroundUpdate {
+            BackgroundUpdateCardView(update: update, message: message)
+        } else {
+            messageBubble
+        }
+    }
+
+    private var messageBubble: some View {
         MessageBubbleView(
             message: message,
             loadAttachmentImage: loadAttachmentImage,

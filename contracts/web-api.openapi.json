@@ -2897,6 +2897,38 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_background_update": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "delegation",
+                                      "process",
+                                      "mixed",
+                                      "other"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "attention": {
+                                    "type": "boolean"
+                                  },
+                                  "count": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "summary": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "attention",
+                                  "count",
+                                  "summary"
+                                ]
                               }
                             },
                             "required": [
@@ -4366,6 +4398,38 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_background_update": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "delegation",
+                                      "process",
+                                      "mixed",
+                                      "other"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "attention": {
+                                    "type": "boolean"
+                                  },
+                                  "count": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "summary": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "attention",
+                                  "count",
+                                  "summary"
+                                ]
                               }
                             },
                             "required": [
@@ -5596,6 +5660,38 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_background_update": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "delegation",
+                                      "process",
+                                      "mixed",
+                                      "other"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "attention": {
+                                    "type": "boolean"
+                                  },
+                                  "count": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "summary": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "attention",
+                                  "count",
+                                  "summary"
+                                ]
                               }
                             },
                             "required": [
@@ -7703,6 +7799,38 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_background_update": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "delegation",
+                                      "process",
+                                      "mixed",
+                                      "other"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "attention": {
+                                    "type": "boolean"
+                                  },
+                                  "count": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "summary": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "attention",
+                                  "count",
+                                  "summary"
+                                ]
                               }
                             },
                             "required": [
@@ -9717,6 +9845,38 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_background_update": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "delegation",
+                                      "process",
+                                      "mixed",
+                                      "other"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "attention": {
+                                    "type": "boolean"
+                                  },
+                                  "count": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "summary": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "attention",
+                                  "count",
+                                  "summary"
+                                ]
                               }
                             },
                             "required": [
@@ -18790,6 +18950,38 @@
                               },
                               "_display_excerpt": {
                                 "type": "string"
+                              },
+                              "_background_update": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "delegation",
+                                      "process",
+                                      "mixed",
+                                      "other"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "attention": {
+                                    "type": "boolean"
+                                  },
+                                  "count": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991,
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "summary": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "attention",
+                                  "count",
+                                  "summary"
+                                ]
                               }
                             },
                             "required": [

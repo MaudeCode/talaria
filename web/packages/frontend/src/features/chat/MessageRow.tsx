@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { ArrowUp, Copy, GitBranch, Pencil, RotateCcw, Volume2 } from 'lucide-react'
+import { AlertTriangle, ArrowUp, Copy, GitBranch, Pencil, RotateCcw, Volume2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { Message } from '../../contracts'
 import { Markdown } from './render/Markdown'
@@ -55,6 +55,39 @@ export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown
         {actions.onEdit && <IconButton label={m.edit_message()} className="h-6 w-6" onClick={() => actions.onEdit?.(row, text)}><Pencil size={12} aria-hidden="true" /></IconButton>}
         {actions.onBranch && <IconButton label={m.branch_from_here()} className="h-6 w-6" onClick={() => actions.onBranch?.(row)}><GitBranch size={12} aria-hidden="true" /></IconButton>}
       </div>
+    </div>
+  )
+})
+
+/**
+ * TAL-371: an automatic background wakeup the server marked `_background_update`. It sits in its chronological place as a
+ * quiet disclosure, never as the user's own bubble: a localized label, a warning that stays visible while collapsed, the
+ * server's one-line summary, and the full notification (copyable) when expanded.
+ */
+export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { row: VisibleMessage }) {
+  const update = row.message._background_update
+  if (!update) return null
+  const text = messageText(row.message.content)
+  const label = update.kind === 'delegation' ? m.background_update_delegation()
+    : update.kind === 'process' ? m.background_update_process()
+    : update.kind === 'mixed' ? m.background_update_mixed({ count: String(update.count) })
+    : m.background_update_other()
+  return (
+    <div className="msg-row" data-role="background" data-msg-idx={row.index} data-message-key={row.key}>
+      <details className="background-update rounded-md border border-border bg-surface px-3 py-2 text-[13px]">
+        <summary className="cursor-pointer text-muted">
+          <span className="font-medium text-text">{label}</span>
+          {update.attention && <span className="ml-2 inline-flex items-center gap-1 text-warning"><AlertTriangle size={12} aria-hidden="true" />{m.background_update_attention()}</span>}
+          {update.summary && <span className="mt-0.5 block truncate">{update.summary}</span>}
+        </summary>
+        <CollapsedBody excerpt={row.message._display_truncated ? row.message._display_excerpt : undefined}>
+          {(excerpt) => <div className="msg-body mt-2 whitespace-pre-wrap">{excerpt ?? text}</div>}
+        </CollapsedBody>
+        <div className="msg-foot">
+          {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
+          <IconButton label={m.copy()} className="h-6 w-6" onClick={() => { void navigator.clipboard.writeText(text).then(() => showToast(m.copied())) }}><Copy size={12} aria-hidden="true" /></IconButton>
+        </div>
+      </details>
     </div>
   )
 })

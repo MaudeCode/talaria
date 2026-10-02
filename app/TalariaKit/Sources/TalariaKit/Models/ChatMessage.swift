@@ -40,6 +40,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
     public let steer: [String: JSONValue]?
     /// The server's collapsed excerpt of a body too long to lay out whole (TAL-456); `content` stays whole for actions.
     public let displayExcerpt: String?
+    /// The server marked this row an automatic background wakeup (TAL-371): render it as an update, not the user's bubble.
+    public let backgroundUpdate: BackgroundUpdate?
 
     public init(
         role: String?,
@@ -59,7 +61,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         turnTps: Double? = nil,
         turnId: String? = nil,
         steer: [String: JSONValue]? = nil,
-        displayExcerpt: String? = nil
+        displayExcerpt: String? = nil,
+        backgroundUpdate: BackgroundUpdate? = nil
     ) {
         self.role = role
         self.content = content
@@ -79,6 +82,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         self.turnId = turnId
         self.steer = steer
         self.displayExcerpt = displayExcerpt
+        self.backgroundUpdate = backgroundUpdate
     }
 
     enum CodingKeys: String, CodingKey {
@@ -102,6 +106,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         case underscoredTimestamp = "_ts"
         case displayTruncated = "_displayTruncated"
         case displayExcerpt = "_displayExcerpt"
+        case backgroundUpdate = "_backgroundUpdate"
     }
 
     public init(from decoder: Decoder) throws {
@@ -132,6 +137,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         displayExcerpt = (try? container.decodeIfPresent(Bool.self, forKey: .displayTruncated)) == true
             ? container.decodeLossyStringIfPresent(forKey: .displayExcerpt)
             : nil
+        backgroundUpdate = try? container.decodeIfPresent(BackgroundUpdate.self, forKey: .backgroundUpdate)
     }
 
     private static func attachments(
@@ -294,6 +300,38 @@ extension ChatMessage {
             turnId: turnId,
             steer: steer
         )
+    }
+}
+
+/// An automatic background wakeup the server classified (TAL-371): the client maps `kind` to a localized label.
+public struct BackgroundUpdate: Codable, Equatable {
+    public enum Kind: String, Codable, Equatable {
+        case delegation, process, mixed, other
+    }
+
+    public let kind: Kind
+    /// A failure or watch notice the reader should see without expanding.
+    public let attention: Bool
+    public let count: Int
+    public let summary: String
+
+    public init(kind: Kind, attention: Bool, count: Int, summary: String) {
+        self.kind = kind
+        self.attention = attention
+        self.count = count
+        self.summary = summary
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case kind, attention, count, summary
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = container.decodeLossyStringIfPresent(forKey: .kind).flatMap(Kind.init(rawValue:)) ?? .other
+        attention = (try? container.decodeIfPresent(Bool.self, forKey: .attention)) ?? false
+        count = max(1, container.decodeLossyIntIfPresent(forKey: .count) ?? 1)
+        summary = container.decodeLossyStringIfPresent(forKey: .summary) ?? ""
     }
 }
 
