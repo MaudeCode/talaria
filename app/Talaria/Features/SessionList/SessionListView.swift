@@ -530,10 +530,8 @@ struct SessionListView: View {
                     DefaultToolbarItem(kind: .search, placement: .bottomBar)
                     ToolbarSpacer(.flexible, placement: .bottomBar)
 
-                    if !isSearchingSessions {
-                        ToolbarItem(placement: .bottomBar) {
-                            newChatToolbarButton
-                        }
+                    ToolbarItem(placement: .bottomBar) {
+                        newChatToolbarButton
                     }
                 }
             }
