@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats with very long messages open instead of closing the app; long messages show a preview with Show more.",
+      "highlight": true,
+      "components": ["app"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Very long messages open collapsed with Show full message, so long chats load quickly.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
