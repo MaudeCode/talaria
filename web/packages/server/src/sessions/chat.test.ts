@@ -511,6 +511,20 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await s.get('/api/chat/cancel?stream_id=nope'))).toEqual({ ok: true, cancelled: false, stream_id: 'nope' })
   })
 
+  it('announces every started turn on the session-list stream so an open chat elsewhere can attach (TAL-434)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'answer' }]))
+    const first = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'first' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(first.stream_id)}`, (f) => f.event === 'done')
+
+    const started = s.sse('/api/sessions/events', (f) => f.event === 'sessions_changed' && (f.data as Json).reason === 'turn_started')
+    await new Promise((r) => setTimeout(r, 50))
+    const second = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'second' }))
+    const frames = await started
+    expect(frames.find((f) => (f.data as Json).reason === 'turn_started')?.data).toMatchObject({ type: 'sessions_changed', reason: 'turn_started', session_id: sid })
+    await s.sse(`/api/chat/stream?stream_id=${String(second.stream_id)}`, (f) => f.event === 'done')
+  })
+
   it('a follow-up message is admitted as soon as the turn is done, while title generation is still running', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'first answer' }]))

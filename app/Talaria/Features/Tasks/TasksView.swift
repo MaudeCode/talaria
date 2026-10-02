@@ -6,6 +6,7 @@ struct TasksView: View {
     let onAPIError: (Error) -> Void
 
     @State private var viewModel: TasksViewModel
+    @State private var showsLoading = false
     @State private var isPresentingCreateTask = false
 
     init(server: URL, onAPIError: @escaping (Error) -> Void) {
@@ -30,7 +31,7 @@ struct TasksView: View {
                     Button {
                         Task { await loadTasks() }
                     } label: {
-                        if viewModel.isLoading {
+                        if showsLoading {
                             ProgressView()
                         } else {
                             Label("Refresh", systemImage: "arrow.clockwise")
@@ -59,6 +60,10 @@ struct TasksView: View {
             .task {
                 await loadTasks()
             }
+            .refreshesLive(on: .cronRun, every: .seconds(30), showsStatus: false) {
+                await loadTasks()
+            }
+            .delayedStatus(viewModel.isLoading, isVisible: $showsLoading)
     }
 
     @ViewBuilder

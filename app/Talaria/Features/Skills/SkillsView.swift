@@ -36,6 +36,9 @@ struct SkillsView: View {
             .task {
                 await loadSkills()
             }
+            .refreshesLive(on: .runEnded, showsStatus: false) {
+                await loadSkills()
+            }
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search skills...")
     }
 

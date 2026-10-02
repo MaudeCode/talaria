@@ -129,6 +129,7 @@ public enum Endpoint {
     case kanbanAssignees(board: String)
     case kanbanEvents(KanbanEventsRequest)
     case kanbanEventsStream(KanbanEventsStreamRequest)
+    case sessionEvents
     case kanbanCardDetail(KanbanCardDetailRequest)
     case kanbanWorkerLog(KanbanWorkerLogRequest)
     case kanbanAddComment(KanbanAddCommentRequest)
@@ -390,6 +391,8 @@ public enum Endpoint {
             return "/api/kanban/events"
         case .kanbanEventsStream:
             return "/api/kanban/events/stream"
+        case .sessionEvents:
+            return "/api/sessions/events"
         case let .kanbanCardDetail(request):
             return "/api/kanban/tasks/\(request.cardID)"
         case let .kanbanWorkerLog(request):

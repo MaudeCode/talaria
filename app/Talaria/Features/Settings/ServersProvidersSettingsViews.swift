@@ -159,6 +159,7 @@ struct ServersSettingsView: View {
             }
         }
         .task { await loadDefaults() }
+        .refreshesLive(showsStatus: false) { await loadDefaults() }
         .sheet(isPresented: $isPresentingAddServer) {
             AddServerView(authManager: authManager)
         }

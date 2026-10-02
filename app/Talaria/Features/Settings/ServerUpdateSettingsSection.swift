@@ -44,6 +44,7 @@ struct ServerUpdateSettingsSection: View {
             serverUpdateAction
         }
         .task { await loadServerSettings() }
+        .refreshesLive(showsStatus: false) { await loadServerSettings() }
         .alert("Update server?", isPresented: $isConfirmingUpdate) {
             Button("Cancel", role: .cancel) {}
             Button("Update") {

@@ -154,6 +154,16 @@ struct TaskDetailView: View {
         .task {
             await loadOutput()
         }
+        .refreshable {
+            await viewModel.refresh()
+        }
+        .refreshesLive(
+            on: .cronRun,
+            every: viewModel.runningElapsed == nil ? .seconds(30) : .seconds(5),
+            showsStatus: true
+        ) {
+            await viewModel.refresh()
+        }
     }
 
     @ViewBuilder

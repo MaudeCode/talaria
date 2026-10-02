@@ -107,6 +107,9 @@ struct WorkspaceManagerView: View {
             .task {
                 await viewModel.load()
             }
+            .refreshesLive(showsStatus: !viewModel.rows.isEmpty) {
+                await viewModel.load()
+            }
             .sheet(isPresented: $showsAddSheet) {
                 WorkspaceAddSheet(viewModel: viewModel)
             }

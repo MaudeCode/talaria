@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Tasks, task details, skills, memory, insights, archived chats, settings and workspace screens refresh when you return to the app and when a run finishes, with an Updating status for slow refreshes.",
+      "highlight": true
+    },
+    {
+      "category": "Fixed",
+      "summary": "A task's Running badge clears when the run finishes, and task details support pull to refresh.",
+      "highlight": false
+    }
+  ]
+}

@@ -98,6 +98,7 @@ struct GitWorkspaceView: View {
             .padding(16)
         }
         .refreshable { await reload() }
+        .refreshesLive(on: .runEnded, showsStatus: viewModel.status != nil) { await reload() }
     }
 
     private func summaryHeader(_ status: GitStatus) -> some View {

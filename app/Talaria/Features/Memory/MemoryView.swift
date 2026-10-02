@@ -48,6 +48,10 @@ struct MemoryView: View {
             .task {
                 await loadMemory()
             }
+            .refreshesLive(on: .runEnded, showsStatus: false) {
+                guard editingSection == nil else { return }
+                await loadMemory()
+            }
     }
 
     @ViewBuilder

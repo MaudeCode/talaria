@@ -262,7 +262,8 @@ export class TurnRunner {
     if (this.deps.saveMode() === 'eager') this.checkpointUserMessage(s, opts.msg, attachments, s.pending_started_at, source, streamId)
     this.deps.store.save(s)
     this.registry.writebackOwners.set(s.session_id, streamId)
-    if (wasHiddenEmpty) this.deps.events.publish('session_new', { profile: s.profile, sessionId: s.session_id })
+    // A new chat appears in the list; every turn tells open clients a run started (TAL-434).
+    this.deps.events.publish(wasHiddenEmpty ? 'session_new' : 'turn_started', { profile: s.profile, sessionId: s.session_id })
     try { this.deps.workspaces.setLastWorkspace(opts.workspace, s.profile) } catch { /* best effort */ }
     const channel = this.registry.create(streamId, s.session_id)
     if (opts.goalRelated) this.registry.goalRelated.add(streamId)

@@ -30,6 +30,9 @@ struct ProvidersView: View {
             .task {
                 await viewModel.load()
             }
+            .refreshesLive(showsStatus: !viewModel.providers.isEmpty) {
+                await viewModel.load()
+            }
             .refreshable {
                 await viewModel.load()
             }

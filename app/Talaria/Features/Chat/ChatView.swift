@@ -102,7 +102,7 @@ struct ChatView: View {
     }
     @State private var isScrolledNearBottom = true
     /// Debounced "Syncing messages" pill (TAL-436); each chat's view starts it hidden.
-    @State private var syncStatus = DelayedStatusVisibility()
+    @State private var showsSyncingPill = false
     @State private var isReadingOlderTranscript = false
     @State private var followLatch = ChatScrollPolicy.FollowLatch()
     @State private var followScrollGeneration = 0
@@ -490,9 +490,7 @@ struct ChatView: View {
         .task(id: didCompleteInitialAppearance) {
             await handleInitialAppearanceTask()
         }
-        .task(id: viewModel.isSyncingTranscript) {
-            await updateSyncStatus()
-        }
+        .delayedStatus(viewModel.isSyncingTranscript, isVisible: $showsSyncingPill)
         .onChange(of: scenePhase) {
                 handleScenePhaseChange(scenePhase)
             }
@@ -526,6 +524,7 @@ struct ChatView: View {
                 guard notification.object as? URL == server else { return }
                 Task { await loadMessages(appliesInitialFocus: false) }
             }
+            .modifier(ChatLiveSync(viewModel: viewModel, onAPIError: onAPIError))
             .onChange(of: showsLiveActivityResponseExcerpts) {
                 viewModel.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
             }
@@ -1300,19 +1299,9 @@ struct ChatView: View {
             hasActiveStream: viewModel.activeStreamID != nil,
             activeStreamRecoveryState: viewModel.activeStreamRecoveryState,
             isCancellingStream: viewModel.isCancellingStream,
-            isSyncingTranscript: syncStatus.isVisible,
+            isSyncingTranscript: showsSyncingPill,
             isScrolledNearBottom: isScrolledNearBottom
         )
-    }
-
-    /// Feeds the sync state to the debouncer and wakes at each deadline until it settles.
-    private func updateSyncStatus() async {
-        syncStatus.update(isActive: viewModel.isSyncingTranscript, now: Date())
-        while let deadline = syncStatus.nextDeadline {
-            try? await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)))
-            guard !Task.isCancelled else { return }
-            syncStatus.update(isActive: viewModel.isSyncingTranscript, now: Date())
-        }
     }
 
     private var showsApprovalBypassStatus: Bool {
@@ -2772,5 +2761,37 @@ private struct ChatDraftSyncModifier: ViewModifier {
             .onChange(of: composerSettings) { _, newSettings in
                 onSettingsChange(newSettings)
             }
+    }
+}
+
+/// Keeps an open chat current (TAL-434): it catches up after the app was away and whenever the
+/// server announces a change to this chat; a run the chat is already streaming is left alone.
+private struct ChatLiveSync: ViewModifier {
+    let viewModel: ChatViewModel
+    let onAPIError: (Error) -> Void
+    @Environment(\.modelContext) private var modelContext
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .talariaReturnedToForeground)) { _ in
+                Task {
+                    await viewModel.syncWithServer(modelContext: modelContext)
+                    reportLastError()
+                    await viewModel.loadComposerConfiguration()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .talariaSessionsChanged)) { notification in
+                guard let change = notification.userInfo?[SessionsChange.userInfoKey] as? SessionsChange else { return }
+                Task {
+                    await viewModel.handleSessionsChange(change, modelContext: modelContext)
+                    reportLastError()
+                }
+            }
+    }
+
+    private func reportLastError() {
+        if let lastError = viewModel.lastError {
+            onAPIError(lastError)
+        }
     }
 }

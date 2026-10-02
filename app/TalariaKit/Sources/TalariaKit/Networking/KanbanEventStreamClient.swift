@@ -85,47 +85,15 @@ public final class KanbanEventStreamClient: KanbanEventStreamingClient {
         onFailure: @escaping @MainActor () -> Void
     ) {
         stop()
-        let handler = Handler(onFrame: onFrame, onFailure: onFailure)
-        let customHeaders = customHeaderProvider()
-        var config = EventSource.Config(handler: handler, url: url)
-        config.connectionErrorHandler = { _ in .shutdown }
-        let cookieStorage = ServerCookieStore.shared.storage(for: url)
-        var builtInHeaders = [
-            AppConfig.clientIdentityHeaderName: AppConfig.clientIdentity,
-            "Accept": "text/event-stream",
-            "Cache-Control": "no-cache, no-transform",
-            "Accept-Encoding": "identity"
-        ]
-        if let cookie = HTTPCookie.requestHeaderFields(
-            with: cookieStorage.cookies(for: url) ?? []
-        )["Cookie"] {
-            builtInHeaders["Cookie"] = cookie
-        }
-        config.headers = customHeaders.merged(under: builtInHeaders)
-
-        let configuration = baseConfiguration.copy() as? URLSessionConfiguration ?? .default
-        #if DEBUG
-        UITestURLSessionHook.configure(configuration)
-        #endif
-        configuration.httpCookieStorage = cookieStorage
-        configuration.httpCookieAcceptPolicy = .always
-        configuration.httpShouldSetCookies = true
-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        let policyHeader = CrossOriginRedirectGuardURLProtocol.register(
-            configuration: configuration,
-            baseURL: url,
-            customHeaders: customHeaders,
-            builtInHeaders: builtInHeaders
+        let made = ServerEventSource.make(
+            url: url,
+            handler: Handler(onFrame: onFrame, onFailure: onFailure),
+            baseConfiguration: baseConfiguration,
+            customHeaders: customHeaderProvider()
         )
-        redirectPolicyHeader = policyHeader
-        configuration.protocolClasses = [CrossOriginRedirectGuardURLProtocol.self]
-            + (configuration.protocolClasses ?? []).filter { $0 != CrossOriginRedirectGuardURLProtocol.self }
-        config.headers[policyHeader] = "1"
-        config.urlSessionConfiguration = configuration
-
-        let source = EventSource(config: config)
-        eventSource = source
-        source.start()
+        redirectPolicyHeader = made.redirectPolicyHeader
+        eventSource = made.source
+        made.source.start()
     }
 
     public func stop() {

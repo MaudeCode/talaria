@@ -35,6 +35,9 @@ struct GitDiffView: View {
                     hasLoaded = true
                     await load()
                 }
+                .refreshesLive(on: .runEnded, showsStatus: diff != nil) {
+                    await load()
+                }
         }
         .presentationDetents([.medium, .large])
         .adaptivePagePresentation()

@@ -8,6 +8,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
     @State private var pendingSharedImport: SharedImportReservation?
+    @State private var foregroundReturn = ForegroundReturnDetector()
     @State private var hasWaitingSharedImport = false
     @State private var hasRoutedSharedImport = false
     @State private var pendingDeepLinkedSessionID: String?
@@ -51,6 +52,10 @@ struct ContentView: View {
                 await reconcileOrphanedLiveActivities(notifiesOnCompletion: true)
             }
             .onChange(of: scenePhase) {
+                if foregroundReturn.didReturnToForeground(on: scenePhase) {
+                    // Every server-backed screen refreshes through `refreshesLive` (TAL-435).
+                    NotificationCenter.default.post(name: .talariaReturnedToForeground, object: nil)
+                }
                 if scenePhase == .background {
                     ProviderQuotaBackgroundRefresh.schedule()
                     return

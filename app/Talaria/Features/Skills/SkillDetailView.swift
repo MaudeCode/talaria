@@ -31,6 +31,9 @@ struct SkillDetailView: View {
             .task {
                 await loadDetail()
             }
+            .refreshesLive(on: .runEnded, showsStatus: false) {
+                await loadDetail()
+            }
             .sheet(item: $linkedFile) { file in
                 NavigationStack {
                     SkillLinkedFileView(

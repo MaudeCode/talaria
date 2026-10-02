@@ -31,6 +31,9 @@ struct ArchivedSessionsView: View {
             .task {
                 await load()
             }
+            .refreshesLive(on: .anyChange, showsStatus: !viewModel.sessions.isEmpty) {
+                await load()
+            }
             .refreshable {
                 await load()
             }

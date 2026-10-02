@@ -75,6 +75,27 @@ public final class TaskDetailViewModel {
         await history
     }
 
+    /// Brings the job, its running state, recent output and history current without closing a run
+    /// the user opened (TAL-435): the screen calls it on foreground return, cron events and its poll.
+    public func refresh() async {
+        guard let jobID = job.jobId else { return }
+        async let statusResponse = try? client.cronStatus(jobID: jobID)
+        async let jobsResponse = try? client.crons()
+        async let outputResponse = try? client.cronOutput(jobID: jobID, limit: 5)
+        async let history: Void = loadRunHistory(reset: true)
+
+        if let status = await statusResponse {
+            runningElapsed = status.running == true ? (status.elapsed ?? runningElapsed ?? 0) : nil
+        }
+        if let latest = await jobsResponse?.jobs?.first(where: { $0.jobId == jobID }) {
+            job = latest
+        }
+        if let output = await outputResponse {
+            outputs = output.outputs ?? []
+        }
+        await history
+    }
+
     /// Loads the first page (`reset`) or appends the next one. A reset fences
     /// every in-flight page so a refresh never interleaves stale rows.
     public func loadRunHistory(reset: Bool = false) async {

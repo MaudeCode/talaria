@@ -321,3 +321,25 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         XCTAssertTrue(sessions.exists, "Switching the analytics timeframe lost the loaded analytics")
     }
 }
+
+/// TAL-435: a task added on the server while the app was in the background appears in the open
+/// Tasks list as soon as the app returns, without a pull.
+final class AgentPanelLiveRefreshUITests: AgentPanelUITestCase {
+    func testOpenTasksListCatchesUpAfterTheAppReturnsFromTheBackground() throws {
+        launchFixture(additionalArguments: ["--ui-test-panels", "--ui-test-change-while-backgrounded"])
+        XCTAssertTrue(app.buttons["Open navigation"].awaitExistence(timeout: 15), "Missing deterministic app fixture")
+        openPanel("Tasks")
+        let knownJob = element(labelContaining: "Fixture Nightly Digest")
+        XCTAssertTrue(releaseHeldLoads { knownJob.exists }, "Tasks did not render the fixture jobs")
+        let jobAddedElsewhere = element(labelContaining: "FixtureJobAddedElsewhere")
+        XCTAssertFalse(jobAddedElsewhere.exists)
+
+        sendToBackground()
+        app.activate()
+
+        XCTAssertTrue(
+            jobAddedElsewhere.awaitExistence(timeout: 15),
+            "The open Tasks list never caught up with the job added while the app was away"
+        )
+    }
+}

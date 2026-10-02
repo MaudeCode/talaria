@@ -58,6 +58,9 @@ struct InsightsView: View {
             .task(id: viewModel.selectedTimeframe) {
                 await loadInsights()
             }
+            .refreshesLive(on: .runEnded, showsStatus: false) {
+                await loadInsights()
+            }
             .task {
                 if quotaViewModel.quotaSources.isEmpty, !quotaViewModel.isQuotaLoading {
                     await loadQuotas()

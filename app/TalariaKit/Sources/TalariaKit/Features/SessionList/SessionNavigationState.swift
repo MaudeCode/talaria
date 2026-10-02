@@ -22,6 +22,17 @@ public enum SessionNavigationDestination: Hashable, Identifiable {
         }
     }
 
+    /// Scheduled and webhook lists show the session list's own rows, so the list keeps polling
+    /// while they are on screen (TAL-434).
+    public var showsSessionListRows: Bool {
+        switch self {
+        case .utility(.scheduled), .utility(.webhook):
+            return true
+        default:
+            return false
+        }
+    }
+
     public var compactPushedDestination: Self? {
         guard compactRootUtility == nil else { return nil }
         return self

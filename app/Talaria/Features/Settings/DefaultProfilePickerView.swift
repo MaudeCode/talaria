@@ -65,6 +65,9 @@ struct DefaultProfilePickerView: View {
             .task {
                 await loadProfiles()
             }
+            .refreshesLive(showsStatus: !profiles.isEmpty) {
+                await loadProfiles()
+            }
             .sheet(isPresented: $showsCreateProfile) {
                 CreateProfileSheet(server: server) { createdProfile in
                     // Optimistic append so the new profile is visible immediately,
