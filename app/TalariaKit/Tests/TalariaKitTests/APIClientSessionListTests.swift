@@ -133,13 +133,15 @@ final class APIClientSessionListTests: APIClientTestCase {
                   "raw_source": "subagent",
                   "session_source": "other",
                   "source_label": "Subagent",
+                  "source_kind": "subagent",
                   "parent_session_id": "parent-1",
                   "relationship_type": "child_session",
                   "read_only": true
                 },
                 {
                   "session_id": "subagent-without-flag",
-                  "source_tag": "subagent"
+                  "source_tag": "subagent",
+                  "source_kind": "subagent"
                 },
                 {
                   "session_id": "older-server-row"

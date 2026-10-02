@@ -8,98 +8,52 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension SessionListMutationTests {
-    func testCronSessionDetectedBySessionIdPrefix() {
-        XCTAssertTrue(SessionSummary(sessionId: "cron_abc123").isCronSession)
-        // Case-insensitive.
-        XCTAssertTrue(SessionSummary(sessionId: "CRON_abc123").isCronSession)
-    }
+    /// The server classifies every row (`source_kind`, TAL-310); the app reads that kind and
+    /// never scans source markers, so markers alone classify nothing here.
+    func testSourceClassifiersReadTheServerKind() {
+        XCTAssertTrue(SessionSummary(sessionId: "s1", sourceKind: .cron).isCronSession)
+        XCTAssertTrue(SessionSummary(sessionId: "s2", sourceKind: .webhook).isWebhookSession)
+        XCTAssertTrue(SessionSummary(sessionId: "s3", sourceKind: .subagent).isDelegatedSubagentSession)
+        XCTAssertTrue(SessionSummary(sessionId: "s4", sourceKind: .claudeCode).isClaudeCodeSession)
+        XCTAssertTrue(SessionSummary(sessionId: "s5", sourceKind: .messaging).isMessagingSession)
 
-    func testCronSessionDetectedBySourceMarkers() {
-        XCTAssertTrue(SessionSummary(sessionId: "s1", sourceTag: "cron").isCronSession)
-        XCTAssertTrue(SessionSummary(sessionId: "s2", sessionSource: "cron").isCronSession)
-        XCTAssertTrue(SessionSummary(sessionId: "s3", sourceLabel: "cron").isCronSession)
-        // Tolerates surrounding whitespace / casing from the server.
-        XCTAssertTrue(SessionSummary(sessionId: "s4", sourceTag: "  Cron  ").isCronSession)
-    }
-
-    func testNonCronSessionsAreNotFlagged() {
-        // A `cron_` substring that is not a prefix must not match.
-        XCTAssertFalse(SessionSummary(sessionId: "session_cron_x").isCronSession)
-        // Plain WebUI session with no automation markers.
-        XCTAssertFalse(SessionSummary(sessionId: "s5", sessionSource: "webui").isCronSession)
-        // No source metadata at all (tolerant default → treated as normal).
-        XCTAssertFalse(SessionSummary(sessionId: "s6").isCronSession)
-    }
-
-    func testWebhookSessionRequiresExplicitSourceMarker() {
-        XCTAssertTrue(SessionSummary(sessionId: "s1", sourceTag: "webhook").isWebhookSession)
-        XCTAssertTrue(SessionSummary(sessionId: "s2", sessionSource: " WEBHOOK ").isWebhookSession)
-        XCTAssertTrue(SessionSummary(sessionId: "s3", rawSource: "Webhook").isWebhookSession)
-        XCTAssertTrue(SessionSummary(sessionId: "s4", sourceLabel: "webhook").isWebhookSession)
-
-        XCTAssertFalse(SessionSummary(sessionId: "webhook_123").isWebhookSession)
-        XCTAssertFalse(SessionSummary(sessionId: "s5", sourceTag: "webhook-listener").isWebhookSession)
-        XCTAssertFalse(SessionSummary(sessionId: "s6", sessionSource: "other").isWebhookSession)
-        XCTAssertFalse(SessionSummary(sessionId: "s7").isWebhookSession)
-    }
-
-    func testDelegatedSubagentRequiresExplicitSourceMarker() {
-        XCTAssertTrue(SessionSummary(sessionId: "s1", sourceTag: "subagent").isDelegatedSubagentSession)
-        XCTAssertTrue(SessionSummary(sessionId: "s2", rawSource: " SubAgent ").isDelegatedSubagentSession)
-        XCTAssertTrue(SessionSummary(sessionId: "s3", sessionSource: "subagent").isDelegatedSubagentSession)
-        XCTAssertTrue(SessionSummary(sessionId: "s4", sourceLabel: "Subagent").isDelegatedSubagentSession)
-
-        XCTAssertFalse(
-            SessionSummary(
-                sessionId: "fork",
-                sourceTag: "fork",
-                parentSessionId: "parent",
-                relationshipType: "fork"
-            ).isDelegatedSubagentSession
+        let markersOnly = SessionSummary(
+            sessionId: "cron_1",
+            sourceTag: "webhook",
+            rawSource: "signal",
+            sessionSource: "subagent",
+            sourceLabel: "claude_code"
         )
-        XCTAssertFalse(
-            SessionSummary(
-                sessionId: "continuation",
-                sessionSource: "webui",
-                parentSessionId: "parent",
-                relationshipType: "compression_continuation"
-            ).isDelegatedSubagentSession
-        )
-        XCTAssertFalse(SessionSummary(sessionId: "parent-only", parentSessionId: "parent").isDelegatedSubagentSession)
-        XCTAssertFalse(SessionSummary(sessionId: "cron_1", sourceTag: "cron").isDelegatedSubagentSession)
-        XCTAssertFalse(SessionSummary(sessionId: "cli", isCliSession: true).isDelegatedSubagentSession)
-        XCTAssertFalse(SessionSummary(sessionId: "normal").isDelegatedSubagentSession)
+        XCTAssertFalse(markersOnly.isCronSession)
+        XCTAssertFalse(markersOnly.isWebhookSession)
+        XCTAssertFalse(markersOnly.isDelegatedSubagentSession)
+        XCTAssertFalse(markersOnly.isClaudeCodeSession)
+        XCTAssertFalse(markersOnly.isMessagingSession)
     }
 
-    func testClaudeCodeSessionRequiresExplicitSourceMetadata() {
-        XCTAssertTrue(SessionSummary(sessionId: "s1", sourceTag: "claude_code").isClaudeCodeSession)
-        XCTAssertTrue(
-            SessionSummary(sessionId: "s2", rawSource: "  Claude_Code ").isClaudeCodeSession
-        )
-
-        XCTAssertFalse(
-            SessionSummary(
-                sessionId: "descriptive-only",
-                title: "Claude Code session",
-                model: "claude-sonnet",
-                isCliSession: true,
-                sessionSource: "claude_code",
-                sourceLabel: "Claude Code"
-            ).isClaudeCodeSession
-        )
-        XCTAssertFalse(SessionSummary(sessionId: "normal").isClaudeCodeSession)
+    /// An older server sends no `source_kind`: the row is ordinary. A kind this build
+    /// does not know is `.other`, also ordinary.
+    func testSourceKindDecodesAbsentAndUnknownValuesAsOrdinary() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let absent = try decoder.decode(SessionSummary.self, from: Data(#"{"session_id":"cron_old","source_tag":"cron"}"#.utf8))
+        XCTAssertNil(absent.sourceKind)
+        XCTAssertFalse(absent.isCronSession)
+        let unknown = try decoder.decode(SessionSummary.self, from: Data(#"{"session_id":"s","source_kind":"future_kind"}"#.utf8))
+        XCTAssertEqual(unknown.sourceKind, .other)
+        XCTAssertTrue(AutomatedSessionVisibility(showsCron: false, showsCli: false).shows(unknown))
     }
 
     func testAutomatedVisibilityShowAllKeepsEveryKind() {
         let visibility = AutomatedSessionVisibility.showAll
-        XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "cron_1")))
+        XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "cron_1", sourceKind: .cron)))
         XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "cli-1", isCliSession: true)))
-        XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "subagent", sourceTag: "subagent")))
+        XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "subagent", sourceKind: .subagent)))
         XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "normal")))
     }
 
     func testAutomatedVisibilityHidesSubagentsByDefaultAndShowsThemWhenEnabled() {
-        let child = SessionSummary(sessionId: "subagent", sourceTag: "subagent")
+        let child = SessionSummary(sessionId: "subagent", sourceKind: .subagent)
         XCTAssertFalse(AutomatedSessionVisibility(showsCron: true, showsCli: true).shows(child))
         XCTAssertTrue(
             AutomatedSessionVisibility(
@@ -112,8 +66,8 @@ extension SessionListMutationTests {
 
     func testAutomatedVisibilityHidesCronIndependently() {
         let visibility = AutomatedSessionVisibility(showsCron: false, showsCli: true)
-        XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "cron_1")))
-        XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "c1", sourceTag: "cron")))
+        XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "cron_1", sourceKind: .cron)))
+        XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "c1", sourceKind: .cron)))
         // CLI and normal sessions stay visible.
         XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "cli-1", isCliSession: true)))
         XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "normal")))
@@ -123,7 +77,7 @@ extension SessionListMutationTests {
         let visibility = AutomatedSessionVisibility(showsCron: true, showsCli: false)
         XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "cli-1", isCliSession: true)))
         // Cron and normal sessions stay visible.
-        XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "cron_1")))
+        XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "cron_1", sourceKind: .cron)))
         XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "normal")))
     }
 
@@ -131,7 +85,7 @@ extension SessionListMutationTests {
         let claudeCode = SessionSummary(
             sessionId: "claude-code",
             isCliSession: true,
-            sourceTag: "claude_code"
+            sourceKind: .claudeCode
         )
         let ordinaryCli = SessionSummary(sessionId: "ordinary-cli", isCliSession: true)
 
@@ -161,7 +115,7 @@ extension SessionListMutationTests {
 
     func testAutomatedVisibilityHidesBothKinds() {
         let visibility = AutomatedSessionVisibility(showsCron: false, showsCli: false)
-        XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "cron_1")))
+        XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "cron_1", sourceKind: .cron)))
         XCTAssertFalse(visibility.shows(SessionSummary(sessionId: "cli-1", isCliSession: true)))
         XCTAssertTrue(visibility.shows(SessionSummary(sessionId: "normal")))
     }
@@ -198,14 +152,14 @@ extension SessionListMutationTests {
             {
               "sessions": [
                 {"session_id":"ordinary","title":"Ordinary","updated_at":50},
-                {"session_id":"cron_1","title":"Scheduled 1","updated_at":10},
-                {"session_id":"cron_2","title":"Scheduled 2","updated_at":20},
-                {"session_id":"cron_3","title":"Scheduled 3","updated_at":30},
-                {"session_id":"cron_4","title":"Scheduled 4","updated_at":40},
-                {"session_id":"cron_5","title":"Scheduled 5","updated_at":50},
-                {"session_id":"cron_6","title":"Scheduled 6","updated_at":60},
-                {"session_id":"cron_7","title":"Scheduled 7","updated_at":70},
-                {"session_id":"cron_archived","title":"Archived scheduled","updated_at":80,"archived":true}
+                {"session_id":"cron_1","title":"Scheduled 1","updated_at":10,"source_kind":"cron"},
+                {"session_id":"cron_2","title":"Scheduled 2","updated_at":20,"source_kind":"cron"},
+                {"session_id":"cron_3","title":"Scheduled 3","updated_at":30,"source_kind":"cron"},
+                {"session_id":"cron_4","title":"Scheduled 4","updated_at":40,"source_kind":"cron"},
+                {"session_id":"cron_5","title":"Scheduled 5","updated_at":50,"source_kind":"cron"},
+                {"session_id":"cron_6","title":"Scheduled 6","updated_at":60,"source_kind":"cron"},
+                {"session_id":"cron_7","title":"Scheduled 7","updated_at":70,"source_kind":"cron"},
+                {"session_id":"cron_archived","title":"Archived scheduled","updated_at":80,"archived":true,"source_kind":"cron"}
               ]
             }
             """, for: request)
@@ -235,9 +189,9 @@ extension SessionListMutationTests {
             apiTestJSONResponse("""
             {
               "sessions": [
-                {"session_id":"cron_1","title":"Scheduled 1","updated_at":10},
-                {"session_id":"cron_2","title":"Scheduled 2","updated_at":20},
-                {"session_id":"hook-1","title":"Hook","updated_at":30,"source_tag":"webhook"}
+                {"session_id":"cron_1","title":"Scheduled 1","updated_at":10,"source_kind":"cron"},
+                {"session_id":"cron_2","title":"Scheduled 2","updated_at":20,"source_kind":"cron"},
+                {"session_id":"hook-1","title":"Hook","updated_at":30,"source_tag":"webhook","source_kind":"webhook"}
               ],
               "scheduled_session_count": 200,
               "scheduled_sessions_truncated": true,
@@ -272,12 +226,12 @@ extension SessionListMutationTests {
             {
               "sessions": [
                 {"session_id":"ordinary","title":"Needle ordinary","updated_at":5},
-                {"session_id":"cron_1","title":"Needle scheduled 1","updated_at":10},
-                {"session_id":"cron_2","title":"Needle scheduled 2","updated_at":20},
-                {"session_id":"cron_3","title":"Needle scheduled 3","updated_at":30},
-                {"session_id":"cron_4","title":"Needle scheduled 4","updated_at":40},
-                {"session_id":"cron_5","title":"Needle scheduled 5","updated_at":50},
-                {"session_id":"cron_6","title":"Needle scheduled 6","updated_at":60}
+                {"session_id":"cron_1","title":"Needle scheduled 1","updated_at":10,"source_kind":"cron"},
+                {"session_id":"cron_2","title":"Needle scheduled 2","updated_at":20,"source_kind":"cron"},
+                {"session_id":"cron_3","title":"Needle scheduled 3","updated_at":30,"source_kind":"cron"},
+                {"session_id":"cron_4","title":"Needle scheduled 4","updated_at":40,"source_kind":"cron"},
+                {"session_id":"cron_5","title":"Needle scheduled 5","updated_at":50,"source_kind":"cron"},
+                {"session_id":"cron_6","title":"Needle scheduled 6","updated_at":60,"source_kind":"cron"}
               ]
             }
             """, for: request)
@@ -317,8 +271,8 @@ extension SessionListMutationTests {
               "sessions": [
                 {"session_id":"ordinary-1","title":"Ordinary one","project_id":"project-1"},
                 {"session_id":"ordinary-2","title":"Ordinary two","project_id":"project-2"},
-                {"session_id":"cron_1","title":"Scheduled one","project_id":"project-1"},
-                {"session_id":"cron_2","title":"Scheduled two","project_id":"project-2"}
+                {"session_id":"cron_1","title":"Scheduled one","project_id":"project-1","source_kind":"cron"},
+                {"session_id":"cron_2","title":"Scheduled two","project_id":"project-2","source_kind":"cron"}
               ]
             }
             """, for: request)
@@ -345,15 +299,15 @@ extension SessionListMutationTests {
             {
               "sessions": [
                 {"session_id":"ordinary","title":"Ordinary","updated_at":50},
-                {"session_id":"cron_1","title":"Scheduled","updated_at":60},
-                {"session_id":"webhook_1","title":"Webhook 1","session_source":"webhook","updated_at":10},
-                {"session_id":"webhook_2","title":"Webhook 2","source_tag":"webhook","updated_at":20},
-                {"session_id":"webhook_3","title":"Webhook 3","source_tag":"webhook","updated_at":30},
-                {"session_id":"webhook_4","title":"Webhook 4","source_tag":"webhook","updated_at":40},
-                {"session_id":"webhook_5","title":"Webhook 5","source_tag":"webhook","updated_at":50},
-                {"session_id":"webhook_6","title":"Webhook 6","source_tag":"webhook","updated_at":60},
-                {"session_id":"webhook_7","title":"Webhook 7","source_tag":"webhook","updated_at":70},
-                {"session_id":"webhook_archived","title":"Archived webhook","source_tag":"webhook","updated_at":80,"archived":true}
+                {"session_id":"cron_1","title":"Scheduled","updated_at":60,"source_kind":"cron"},
+                {"session_id":"webhook_1","title":"Webhook 1","session_source":"webhook","updated_at":10,"source_kind":"webhook"},
+                {"session_id":"webhook_2","title":"Webhook 2","source_tag":"webhook","updated_at":20,"source_kind":"webhook"},
+                {"session_id":"webhook_3","title":"Webhook 3","source_tag":"webhook","updated_at":30,"source_kind":"webhook"},
+                {"session_id":"webhook_4","title":"Webhook 4","source_tag":"webhook","updated_at":40,"source_kind":"webhook"},
+                {"session_id":"webhook_5","title":"Webhook 5","source_tag":"webhook","updated_at":50,"source_kind":"webhook"},
+                {"session_id":"webhook_6","title":"Webhook 6","source_tag":"webhook","updated_at":60,"source_kind":"webhook"},
+                {"session_id":"webhook_7","title":"Webhook 7","source_tag":"webhook","updated_at":70,"source_kind":"webhook"},
+                {"session_id":"webhook_archived","title":"Archived webhook","source_tag":"webhook","updated_at":80,"archived":true,"source_kind":"webhook"}
               ]
             }
             """, for: request)
@@ -399,8 +353,8 @@ extension SessionListMutationTests {
             {
               "sessions": [
                 {"session_id":"ordinary-1","title":"Needle ordinary","project_id":"project-1"},
-                {"session_id":"webhook-1","title":"Needle webhook","source_tag":"webhook","project_id":"project-1"},
-                {"session_id":"webhook-2","title":"Other webhook","session_source":"webhook","project_id":"project-2"}
+                {"session_id":"webhook-1","title":"Needle webhook","source_tag":"webhook","project_id":"project-1","source_kind":"webhook"},
+                {"session_id":"webhook-2","title":"Other webhook","session_source":"webhook","project_id":"project-2","source_kind":"webhook"}
               ]
             }
             """, for: request)
@@ -433,9 +387,9 @@ extension SessionListMutationTests {
             {
               "sessions": [
                 {"session_id": "normal-1", "title": "Normal one", "last_message_at": 50, "archived": false},
-                {"session_id": "cron_job_1", "title": "Nightly digest", "last_message_at": 40, "archived": false},
-                {"session_id": "tagged-cron", "title": "Tagged cron", "source_tag": "cron", "last_message_at": 30, "archived": false},
-                {"session_id": "cli-1", "title": "CLI import", "is_cli_session": true, "last_message_at": 20, "archived": false},
+                {"session_id": "cron_job_1", "title": "Nightly digest", "last_message_at": 40, "archived": false, "source_kind": "cron"},
+                {"session_id": "tagged-cron", "title": "Tagged cron", "source_tag": "cron", "last_message_at": 30, "archived": false, "source_kind": "cron"},
+                {"session_id": "cli-1", "title": "CLI import", "is_cli_session": true, "last_message_at": 20, "archived": false, "source_kind": "cli"},
                 {"session_id": "normal-2", "title": "Normal two", "last_message_at": 10, "archived": false}
               ]
             }
@@ -490,7 +444,7 @@ extension SessionListMutationTests {
                 {
                   "sessions": [
                     {"session_id": "normal-p1", "title": "Planning", "project_id": "p1", "last_message_at": 40},
-                    {"session_id": "subagent-p1", "title": "Delegated research", "project_id": "p1", "source_tag": "subagent", "read_only": true, "last_message_at": 30},
+                    {"session_id": "subagent-p1", "title": "Delegated research", "project_id": "p1", "source_tag": "subagent", "read_only": true, "last_message_at": 30, "source_kind": "subagent"},
                     {"session_id": "fork-p1", "title": "Ordinary fork", "project_id": "p1", "parent_session_id": "normal-p1", "relationship_type": "fork", "last_message_at": 20},
                     {"session_id": "normal-p2", "title": "Other project", "project_id": "p2", "last_message_at": 10}
                   ]
@@ -581,8 +535,8 @@ extension SessionListMutationTests {
                 {
                   "sessions": [
                     {"session_id": "normal-p1", "title": "Planning", "project_id": "p1", "last_message_at": 40},
-                    {"session_id": "claude-p1", "title": "Imported transcript", "project_id": "p1", "source_tag": "claude_code", "raw_source": "claude_code", "is_cli_session": true, "read_only": true, "last_message_at": 30},
-                    {"session_id": "cli-p1", "title": "Terminal chat", "project_id": "p1", "source_tag": "cli", "is_cli_session": true, "last_message_at": 20},
+                    {"session_id": "claude-p1", "title": "Imported transcript", "project_id": "p1", "source_tag": "claude_code", "raw_source": "claude_code", "is_cli_session": true, "read_only": true, "last_message_at": 30, "source_kind": "claude_code"},
+                    {"session_id": "cli-p1", "title": "Terminal chat", "project_id": "p1", "source_tag": "cli", "is_cli_session": true, "last_message_at": 20, "source_kind": "cli"},
                     {"session_id": "normal-p2", "title": "Other project", "project_id": "p2", "last_message_at": 10}
                   ]
                 }
