@@ -518,7 +518,7 @@ struct SessionListView: View {
                     } label: {
                         Image(systemName: "square.and.pencil")
                     }
-                    .disabled(viewModel.isViewingCachedData || navigationState.isCreatingNewChat)
+                    .disabled(isNewChatDisabled)
                     .accessibilityLabel("New Chat")
                 }
             }
@@ -538,6 +538,10 @@ struct SessionListView: View {
                 }
             }
         }
+    }
+
+    private var isNewChatDisabled: Bool {
+        viewModel.isViewingCachedData || navigationState.isCreatingNewChat
     }
 
     private var showsFloatingNewChatButton: Bool {
@@ -998,7 +1002,7 @@ struct SessionListView: View {
                 )
         }
         .buttonStyle(SessionListFloatingChatButtonStyle())
-        .disabled(viewModel.isViewingCachedData || navigationState.isCreatingNewChat)
+        .disabled(isNewChatDisabled)
         .opacity(viewModel.isViewingCachedData ? 0.45 : 1)
         .accessibilityLabel("New Chat")
     }
@@ -1013,7 +1017,7 @@ struct SessionListView: View {
         }
         .buttonStyle(.glassProminent)
         .tint(newSessionButtonGlassTint)
-        .disabled(viewModel.isViewingCachedData || navigationState.isCreatingNewChat)
+        .disabled(isNewChatDisabled)
         .opacity(viewModel.isViewingCachedData ? 0.45 : 1)
         .accessibilityLabel("New Chat")
     }

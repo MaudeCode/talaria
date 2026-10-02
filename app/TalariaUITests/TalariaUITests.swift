@@ -111,6 +111,9 @@ final class ChatNavigationUITests: ChatUITestCase {
 /// TAL-461: New Chat sits on the bottom row beside Search instead of floating above it.
 final class SessionListBottomBarUITests: ChatUITestCase {
     func testNewChatSharesTheSearchRowHidesWhileSearchingAndOpensTheComposer() throws {
+        guard #available(iOS 26.0, *) else {
+            throw XCTSkip("Search minimizes into the bottom bar from iOS 26; earlier versions keep the floating button")
+        }
         launchFixture()
         XCTAssertTrue(fixtureSessionButton.awaitExistence(timeout: 15), "Missing deterministic session fixture")
         let search = try XCTUnwrap(waitForSessionSearchControl(timeout: 15), "Missing the session search control")
@@ -131,7 +134,7 @@ final class SessionListBottomBarUITests: ChatUITestCase {
         search.tap()
         XCTAssertTrue(sessionSearchField.awaitExistence(timeout: 5))
         XCTAssertTrue(poll(timeout: 5) { visibleNewChat() == nil }, "New Chat should hide while searching")
-        let closeSearch = app.buttons["close"]
+        let closeSearch = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "close")).firstMatch
         XCTAssertTrue(closeSearch.awaitExistence(timeout: 3))
         closeSearch.tap()
         XCTAssertTrue(poll(timeout: 5) { visibleNewChat() != nil }, "New Chat should return when search closes")
