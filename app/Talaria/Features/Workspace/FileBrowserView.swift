@@ -138,13 +138,12 @@ struct FileBrowserView: View {
             }
 
             HStack(spacing: 8) {
-                // Icons alone when the titles cannot fit whole, as at accessibility text sizes;
-                // the labels still name them for VoiceOver (TAL-466).
+                // Icons alone when the titles cannot fit whole in their share of the row, as at
+                // accessibility text sizes; the labels still name them for VoiceOver (TAL-466).
                 ViewThatFits(in: .horizontal) {
                     rootAndUpButtons
                     rootAndUpButtons.labelStyle(.iconOnly)
                 }
-                .layoutPriority(1)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {

@@ -667,7 +667,8 @@ final class HeaderTextSizeUITests: WorkspaceUITestCase {
         XCTAssertTrue(root.awaitExistence(timeout: 10), "Missing the Root control at AX3")
         XCTAssertEqual(root.label, "Root")
         XCTAssertEqual(up.label, "Up")
-        XCTAssertEqual(root.frame.height, up.frame.height, accuracy: 1, "Root wrapped at AX3")
+        // Icon-only glyphs differ by a few points; a wrapped title was 2.6× Up's height.
+        XCTAssertLessThan(root.frame.height, up.frame.height * 1.5, "Root wrapped at AX3")
     }
 
     /// Opens Memory at `textSize` and returns each section title's height, checking whether the
@@ -680,7 +681,7 @@ final class HeaderTextSizeUITests: WorkspaceUITestCase {
         XCTAssertTrue(releaseHeldLoads { firstTitle.exists }, "Memory did not render its sections [\(textSize)]")
 
         let title = firstTitle.settledFrame
-        let caption = element(labelBeginningWith: "Modified").frame
+        let caption = element(labelBeginningWith: "Modified").settledFrame
         if captionBelow {
             XCTAssertGreaterThanOrEqual(caption.minY, title.maxY - 1, "The caption must sit below the title [\(textSize)]")
         } else {
