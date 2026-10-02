@@ -226,13 +226,13 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
             ))
             .firstMatch
         XCTAssertTrue(disabledSkill.awaitExistence(timeout: 10), "The disabled fixture skill is missing")
-        // The archivist is the fixture's only disabled skill, so its switch is the only one
-        // offering Enable. The row dims its text, never the switch that turns it back on.
+        // The switch that turns a disabled skill back on stays interactive. Its full strength
+        // is pinned by the `skill-row-disabled` visual references, which XCUI cannot see.
         // List rows report `isHittable == false` to XCUI even when visible (see `tapCenter`),
         // so the tap flipping fixture state below is what proves the switch takes a touch.
-        let enable = app.switches["Enable"].firstMatch
+        let enable = disabledSkill.switches["Enable"].firstMatch
         XCTAssertTrue(enable.awaitExistence(timeout: 5), "The disabled skill row offered no Enable switch")
-        XCTAssertTrue(enable.isEnabled, "The disabled skill's Enable switch reads as disabled")
+        XCTAssertTrue(enable.isEnabled, "The disabled skill's Enable switch is not interactive")
         tapCenter(of: enable)
         XCTAssertTrue(
             disabledSkill.awaitNonExistence(timeout: 15),
@@ -254,11 +254,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         )
 
         // The row's context menu is the other toggle path.
-        let archivist = element(labelContaining: "fixture-archivist")
-        app.coordinate(withNormalizedOffset: CGVector(
-            dx: archivist.frame.midX / app.frame.width,
-            dy: archivist.frame.midY / app.frame.height
-        )).press(forDuration: 1.2)
+        longPress(at: settledCenter(of: element(labelContaining: "fixture-archivist")))
         let disable = app.buttons["Disable"].firstMatch
         XCTAssertTrue(disable.awaitExistence(timeout: 5), "The skill row offered no Disable action")
         tapCenter(of: disable)
