@@ -73,7 +73,7 @@ function BackgroundLineRow({ line }: { line: BackgroundLine }) {
     ? <LineText label={line.label} text={(goal) => (failed ? m.background_line_agent_failed({ goal }) : m.background_line_agent_completed({ goal }))} />
     : line.kind === 'command'
     ? <LineText code label={line.label} text={(command) => (failed && exit !== null ? m.background_line_command_failed_exit({ command, code: exit }) : failed ? m.background_line_command_failed({ command }) : m.background_line_command_finished({ command }))} />
-    : <span className="text-text">{line.label}</span>
+    : line.label
   return (
     <li className="flex items-start gap-2">
       <Icon size={14} aria-hidden="true" className={cn('mt-0.5 shrink-0', failed ? 'text-warning' : 'text-muted')} />

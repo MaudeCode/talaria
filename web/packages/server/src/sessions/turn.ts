@@ -364,6 +364,8 @@ export class TurnRunner {
     let tokenSent = false
     let firstTokenAt: number | null = null
     // TAL-460: a background turn's text is held back while it could still be a silence marker, so one never flashes by.
+    // ponytail: checks the turn's whole text, so a marker after earlier prose streams until the settled row hides it;
+    // check the last text segment instead if that shows up.
     const holdSilence = turnOrigin(opts.source) === 'background'
     let heldText = ''
     const titles = new ReasoningTitleTracker()
