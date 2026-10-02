@@ -5,7 +5,7 @@ import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
-import { AssistantMessageRow, UserMessageRow, type RowActions } from './MessageRow'
+import { AssistantMessageRow, BackgroundUpdateRow, UserMessageRow, type RowActions } from './MessageRow'
 import { LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
@@ -167,7 +167,9 @@ export function Transcript(props: TranscriptProps) {
   }, [rows, loadedFrom, virtualize, virtualizer, truncated, loadingOlder, onLoadOlder, pin, scrollToBottom])
 
   const renderRow = (row: VisibleMessage, i: number) => (
-    row.message.role === 'user'
+    row.message._background_update
+      ? <BackgroundUpdateRow key={row.key} row={row} />
+      : row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
       : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} />
   )

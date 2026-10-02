@@ -1847,5 +1847,10 @@
 	"project_new_prompt": "Project name",
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
-	"system_apply_agent_update": "Actualizar Agent"
+	"system_apply_agent_update": "Actualizar Agent",
+	"background_update_delegation": "Lote de delegaciones completado",
+	"background_update_process": "Actualización de proceso en segundo plano",
+	"background_update_mixed": "Actualizaciones en segundo plano ({count})",
+	"background_update_other": "Actualización en segundo plano",
+	"background_update_attention": "Requiere atención"
 }

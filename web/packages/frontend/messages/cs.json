@@ -1914,5 +1914,10 @@
 	"project_new_prompt": "Project name",
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
-	"system_apply_agent_update": "Aktualizovat Agent"
+	"system_apply_agent_update": "Aktualizovat Agent",
+	"background_update_delegation": "Dávka delegací dokončena",
+	"background_update_process": "Aktualizace procesu na pozadí",
+	"background_update_mixed": "Aktualizace na pozadí ({count})",
+	"background_update_other": "Aktualizace na pozadí",
+	"background_update_attention": "Vyžaduje pozornost"
 }

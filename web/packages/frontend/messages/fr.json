@@ -1905,5 +1905,10 @@
 	"project_new_prompt": "Project name",
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
-	"system_apply_agent_update": "Mettre à jour Agent"
+	"system_apply_agent_update": "Mettre à jour Agent",
+	"background_update_delegation": "Lot de délégations terminé",
+	"background_update_process": "Mise à jour d’un processus en arrière-plan",
+	"background_update_mixed": "Mises à jour en arrière-plan ({count})",
+	"background_update_other": "Mise à jour en arrière-plan",
+	"background_update_attention": "Nécessite votre attention"
 }

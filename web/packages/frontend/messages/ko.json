@@ -1879,5 +1879,10 @@
 	"project_new_prompt": "Project name",
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
-	"system_apply_agent_update": "Agent 업데이트"
+	"system_apply_agent_update": "Agent 업데이트",
+	"background_update_delegation": "위임 배치 완료",
+	"background_update_process": "백그라운드 프로세스 업데이트",
+	"background_update_mixed": "백그라운드 업데이트 ({count})",
+	"background_update_other": "백그라운드 업데이트",
+	"background_update_attention": "확인 필요"
 }

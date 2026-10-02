@@ -2229,5 +2229,10 @@
 	"field_help": "More info",
 	"field_help_about": "About {label}",
 	"system_check_web": "Check Web now",
-	"system_checking_named": "Checking {name} for updates…"
+	"system_checking_named": "Checking {name} for updates…",
+	"background_update_delegation": "Delegation batch complete",
+	"background_update_process": "Background process update",
+	"background_update_mixed": "Background updates ({count})",
+	"background_update_other": "Background update",
+	"background_update_attention": "Needs attention"
 }

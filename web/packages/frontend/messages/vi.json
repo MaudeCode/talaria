@@ -1812,5 +1812,10 @@
 	"project_new_prompt": "Project name",
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
-	"system_apply_agent_update": "Cập nhật Agent"
+	"system_apply_agent_update": "Cập nhật Agent",
+	"background_update_delegation": "Đã hoàn tất lô ủy quyền",
+	"background_update_process": "Cập nhật tiến trình nền",
+	"background_update_mixed": "Cập nhật nền ({count})",
+	"background_update_other": "Cập nhật nền",
+	"background_update_attention": "Cần chú ý"
 }
