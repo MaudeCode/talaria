@@ -985,11 +985,11 @@ final class SidebarGestureUITests: SidebarUITestCase {
                 swipe(rtl: rtl, from: 0.005, to: 0.2, velocity: 60, hold: 0.3)
                 XCTAssertNotNil(waitForComposer(timeout: 5), "A cancelled back swipe left the chat")
                 XCTAssertFalse(chats.exists, "A cancelled back swipe left the chat")
-                XCTAssertFalse(sidebar.isHittable, "A cancelled back swipe opened the sidebar")
+                assertSidebarStaysClosed("A cancelled back swipe opened the sidebar")
             }
             swipe(rtl: rtl, from: 0.005, to: 0.75)
             XCTAssertTrue(chats.awaitExistence(timeout: 5), "The edge swipe did not go back (attempt \(attempt))")
-            XCTAssertFalse(sidebar.isHittable, "The edge swipe opened the sidebar over a chat (attempt \(attempt))")
+            assertSidebarStaysClosed("The edge swipe opened the sidebar over a chat (attempt \(attempt))")
             _ = fixtureSessionButton.settledFrame
         }
 
@@ -998,7 +998,7 @@ final class SidebarGestureUITests: SidebarUITestCase {
             XCTAssertNotNil(waitForComposer(timeout: 15), "The chat did not open")
             swipe(rtl: rtl, from: 0.35, to: 0.95)
             XCTAssertTrue(chats.awaitExistence(timeout: 5), "A mid-screen swipe did not go back")
-            XCTAssertFalse(sidebar.isHittable, "A mid-screen swipe opened the sidebar")
+            assertSidebarStaysClosed("A mid-screen swipe opened the sidebar")
             _ = fixtureSessionButton.settledFrame
         }
 
@@ -1013,7 +1013,7 @@ final class SidebarGestureUITests: SidebarUITestCase {
         swipe(rtl: rtl, from: 0.005, to: 0.75)
         XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: 5), "The edge swipe did not return to Settings")
         XCTAssertFalse(app.navigationBars["User Profile"].exists, "The edge swipe did not return to Settings")
-        XCTAssertFalse(sidebar.isHittable, "The edge swipe opened the sidebar over a Settings page")
+        assertSidebarStaysClosed("The edge swipe opened the sidebar over a Settings page")
     }
 
     /// A horizontal drag between leading-relative offsets (0 is the leading edge), mirrored
@@ -1033,6 +1033,11 @@ final class SidebarGestureUITests: SidebarUITestCase {
     private func assertSidebarOpens(_ context: String) {
         XCTAssertTrue(poll(timeout: 3) { sidebar.isHittable }, "The edge swipe did not open the sidebar \(context)")
         _ = app.buttons["Close navigation"].settledFrame
+    }
+
+    /// Watches past the opening animation, so a sidebar that started to open is caught.
+    private func assertSidebarStaysClosed(_ message: String) {
+        XCTAssertFalse(poll(timeout: 1) { sidebar.isHittable }, message)
     }
 
     private func assertSidebarCloses(_ context: String) {

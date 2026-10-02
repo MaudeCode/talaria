@@ -47,6 +47,7 @@
 		C15210000000000000000006 /* OnboardingConnectPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000006 /* OnboardingConnectPage.swift */; };
 		C03910000000000000000016 /* TranscriptDisplayModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03900000000000000000016 /* TranscriptDisplayModelTests.swift */; };
 		C13000000000000000000001 /* ChatVerticalScrollAxisGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C13000000000000000000002 /* ChatVerticalScrollAxisGuardTests.swift */; };
+		C46200000000000000000001 /* SidebarEdgePanGestureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46200000000000000000002 /* SidebarEdgePanGestureTests.swift */; };
 		C0410000000000000000015A /* ComposerTextViewMarkedTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0410000000000000000015B /* ComposerTextViewMarkedTextTests.swift */; };
 		C05000000000000000000001 /* ChatComposerAttachmentStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05000000000000000000002 /* ChatComposerAttachmentStripView.swift */; };
 		C042A000000000000000003 /* ChatComposerSelectorSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = C042A000000000000000004 /* ChatComposerSelectorSheets.swift */; };
@@ -482,6 +483,7 @@
 		C15200000000000000000006 /* OnboardingConnectPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingConnectPage.swift; sourceTree = "<group>"; };
 		C03900000000000000000016 /* TranscriptDisplayModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptDisplayModelTests.swift; sourceTree = "<group>"; };
 		C13000000000000000000002 /* ChatVerticalScrollAxisGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatVerticalScrollAxisGuardTests.swift; sourceTree = "<group>"; };
+		C46200000000000000000002 /* SidebarEdgePanGestureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarEdgePanGestureTests.swift; sourceTree = "<group>"; };
 		C0410000000000000000015B /* ComposerTextViewMarkedTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerTextViewMarkedTextTests.swift; sourceTree = "<group>"; };
 		C05000000000000000000002 /* ChatComposerAttachmentStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerAttachmentStripView.swift; sourceTree = "<group>"; };
 		C042A000000000000000004 /* ChatComposerSelectorSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerSelectorSheets.swift; sourceTree = "<group>"; };
@@ -941,6 +943,7 @@
 					C1TAL49E0000000000000001 /* ChatMessageLinkInteractionTests.swift */,
 				C03900000000000000000016 /* TranscriptDisplayModelTests.swift */,
 				C13000000000000000000002 /* ChatVerticalScrollAxisGuardTests.swift */,
+				C46200000000000000000002 /* SidebarEdgePanGestureTests.swift */,
 				C22600000000000000000106 /* PerformanceBudgetTests.swift */,
 				C22600000000000000000104 /* ReplayCatchUpPerformanceTests.swift */,
 				C107Z0000000000000000101 /* KanbanFeatureStateLoadTests.swift */,
@@ -1981,6 +1984,7 @@
 					C1TAL49E0000000000000002 /* ChatMessageLinkInteractionTests.swift in Sources */,
 				C03910000000000000000016 /* TranscriptDisplayModelTests.swift in Sources */,
 				C13000000000000000000001 /* ChatVerticalScrollAxisGuardTests.swift in Sources */,
+				C46200000000000000000001 /* SidebarEdgePanGestureTests.swift in Sources */,
 				C22600000000000000000105 /* PerformanceBudgetTests.swift in Sources */,
 				C22600000000000000000103 /* ReplayCatchUpPerformanceTests.swift in Sources */,
 				C107Z0000000000000000001 /* KanbanFeatureStateLoadTests.swift in Sources */,

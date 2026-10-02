@@ -25,6 +25,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
         GeometryReader { proxy in
             let revealWidth = min(360, proxy.size.width * 0.84)
             let progress = progress(revealWidth: revealWidth)
+            let horizontalDirection: CGFloat = layoutDirection == .rightToLeft ? -1 : 1
             let surfaceTint = colorScheme == .dark ? Color.white : Color.black
             let surfaceWidth = proxy.size.width
                 + proxy.safeAreaInsets.leading
@@ -66,10 +67,10 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
                     .shadow(
                         color: .black.opacity(0.28 * progress),
                         radius: 24 * progress,
-                        x: -8 * progress
+                        x: -8 * horizontalDirection * progress
                     )
-                    // SwiftUI mirrors the offset under RTL, which slides the surface toward the
-                    // trailing edge there too.
+                    // Unlike the shadow, SwiftUI mirrors the offset under RTL, which slides the
+                    // surface toward the trailing edge there too.
                     .offset(
                         x: revealWidth * progress - proxy.safeAreaInsets.leading,
                         y: -proxy.safeAreaInsets.top
@@ -165,7 +166,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
 /// navigation stacks' back gestures. UIKit arbitrates it: it never begins over a sheet or while
 /// the visible stack can pop or is mid-transition, and the system pop gestures win any race
 /// (TAL-462).
-private struct SidebarEdgePanGesture: UIGestureRecognizerRepresentable {
+struct SidebarEdgePanGesture: UIGestureRecognizerRepresentable {
     let isSidebarPresented: Bool
     let isRightToLeft: Bool
     let onChanged: (CGFloat) -> Void
@@ -212,13 +213,12 @@ private struct SidebarEdgePanGesture: UIGestureRecognizerRepresentable {
             // The open sidebar's own drag closes it.
             guard !isSidebarPresented,
                   let pan = gestureRecognizer as? UIPanGestureRecognizer,
-                  let window = pan.view?.window,
-                  window.rootViewController?.presentedViewController == nil
+                  let window = pan.view?.window
             else { return false }
             let translation = pan.translation(in: nil)
             return AppSidebarGesturePolicy.accepts(
                 isPresented: false,
-                canPopVisibleStack: Self.canPop(window.rootViewController),
+                canPopVisibleStack: SidebarEdgePanGesture.visibleStackOwnsEdgeSwipe(in: window),
                 startX: pan.location(in: nil).x - translation.x,
                 containerWidth: window.bounds.width,
                 translation: CGSize(width: translation.x, height: translation.y),
@@ -239,17 +239,21 @@ private struct SidebarEdgePanGesture: UIGestureRecognizerRepresentable {
                 return otherGestureRecognizer === navigation.interactivePopGestureRecognizer
             }
         }
+    }
 
-        /// Whether an on-screen navigation stack, the chat list's or a utility's or a split
-        /// view's detail, shows a pushed screen or is moving between screens.
-        private static func canPop(_ controller: UIViewController?) -> Bool {
-            guard let controller else { return false }
-            if let navigation = controller as? UINavigationController,
-               navigation.viewIfLoaded?.window != nil,
-               navigation.viewControllers.count > 1 || navigation.transitionCoordinator != nil {
-                return true
-            }
-            return controller.children.contains { canPop($0) }
+    /// Whether a sheet covers the app, or an on-screen navigation stack (the chat list's, a
+    /// utility's or a split view's detail) shows a pushed screen or is moving between screens.
+    static func visibleStackOwnsEdgeSwipe(in window: UIWindow) -> Bool {
+        guard let root = window.rootViewController else { return false }
+        return root.presentedViewController != nil || canPop(root)
+    }
+
+    private static func canPop(_ controller: UIViewController) -> Bool {
+        if let navigation = controller as? UINavigationController,
+           navigation.viewIfLoaded?.window != nil,
+           navigation.viewControllers.count > 1 || navigation.transitionCoordinator != nil {
+            return true
         }
+        return controller.children.contains { canPop($0) }
     }
 }
