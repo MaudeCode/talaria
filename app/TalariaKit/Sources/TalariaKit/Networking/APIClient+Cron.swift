@@ -5,6 +5,10 @@ extension APIClient {
         try await send(endpoint: .crons, method: "GET")
     }
 
+    public func crons(caching cache: ResponseCache.Entry?) async throws -> CronJobsResponse {
+        try await send(endpoint: .crons, caching: cache)
+    }
+
     public func createCron(
         prompt: String,
         schedule: String,

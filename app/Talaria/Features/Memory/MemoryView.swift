@@ -11,7 +11,7 @@ struct MemoryView: View {
     init(server: URL, onAPIError: @escaping (Error) -> Void) {
         self.server = server
         self.onAPIError = onAPIError
-        _viewModel = State(initialValue: MemoryViewModel(server: server))
+        _viewModel = State(initialValue: MemoryViewModel(server: server, responseCache: ResponseCache(server: server)))
     }
 
     var body: some View {
@@ -83,7 +83,8 @@ struct MemoryView: View {
                         MemorySectionHeader(
                             section: section,
                             modifiedAt: viewModel.modifiedAt(for: section),
-                            isEditingDisabled: viewModel.isSaving
+                            // Saves carry no version check, so cached notes are not editable (TAL-437).
+                            isEditingDisabled: viewModel.isSaving || viewModel.isShowingCachedContent
                         ) {
                             viewModel.clearActionError()
                             editingSection = section

@@ -22,6 +22,9 @@ public struct ResponseCache: Sendable {
         public static let models = "models"
         public static let workspaces = "workspaces"
         public static let commands = "commands"
+        public static let crons = "crons"
+        public static let skills = "skills"
+        public static let memory = "memory"
     }
 
     public func entry(_ kind: String) -> Entry {

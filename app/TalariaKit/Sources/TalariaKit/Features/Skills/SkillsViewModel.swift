@@ -11,13 +11,17 @@ public final class SkillsViewModel {
     public private(set) var togglingSkillNames: Set<String> = []
 
     private let client: APIClient
+    private let responseCache: ResponseCache?
 
-    public init(server: URL) {
-        client = APIClient(baseURL: server)
+    public convenience init(server: URL, responseCache: ResponseCache? = nil) {
+        self.init(client: APIClient(baseURL: server), responseCache: responseCache)
     }
 
-    public init(client: APIClient) {
+    public init(client: APIClient, responseCache: ResponseCache? = nil) {
         self.client = client
+        self.responseCache = responseCache
+        // The last list shows at once (TAL-437); `load` replaces it.
+        skills = responseCache?.entry(ResponseCache.Kind.skills).load(SkillsResponse.self)?.skills ?? []
     }
 
     public func load() async {
@@ -27,7 +31,7 @@ public final class SkillsViewModel {
         defer { isLoading = false }
 
         do {
-            let response = try await client.skills()
+            let response = try await client.skills(caching: responseCache?.entry(ResponseCache.Kind.skills))
             skills = response.skills ?? []
         } catch {
             lastError = error

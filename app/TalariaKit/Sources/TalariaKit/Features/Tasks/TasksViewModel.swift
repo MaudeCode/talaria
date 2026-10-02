@@ -22,9 +22,15 @@ public final class TasksViewModel {
 
     /// Shared with the task editor so its catalog loads use the same scope.
     public let client: APIClient
+    private let responseCache: ResponseCache?
 
-    public init(server: URL, client: APIClient? = nil) {
+    public init(server: URL, client: APIClient? = nil, responseCache: ResponseCache? = nil) {
         self.client = client ?? APIClient(baseURL: server)
+        self.responseCache = responseCache
+        // The last jobs show at once (TAL-437); running state is never cached, it goes stale too fast.
+        if let cached = responseCache?.entry(ResponseCache.Kind.crons).load(CronJobsResponse.self) {
+            jobs = (cached.jobs ?? []).sorted(by: sortJobs)
+        }
     }
 
     public func load() async {
@@ -34,7 +40,7 @@ public final class TasksViewModel {
         defer { isLoading = false }
 
         do {
-            async let jobsResponse = client.crons()
+            async let jobsResponse = client.crons(caching: responseCache?.entry(ResponseCache.Kind.crons))
             async let statusResponse = client.cronStatus()
             // Optional endpoint: failure must not break the task list, and a
             // nil result keeps the editor's free-text deliver fallback.
