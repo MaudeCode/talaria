@@ -300,3 +300,29 @@ describe('state.db windows and probes', () => {
     expect(rows.find((r) => r.session_id === 'stale-json')).toMatchObject({ is_cli_session: false })
   })
 })
+
+describe('sidebar automated-session counts (TAL-482)', () => {
+  let s: TestServer
+  beforeAll(async () => {
+    s = await bootTestServer()
+    const db = createStateDb(join(s.state, 'state.db'))
+    // One past the server's 200-row per-kind window, so the count has to say more exist.
+    for (let i = 0; i < 201; i += 1) insertSession(db, { id: `cron_job_${String(i)}`, source: 'cron', started_at: 1_000 + i, messages: [['user', 1_000 + i]] })
+    for (let i = 0; i < 3; i += 1) insertSession(db, { id: `hook-${String(i)}`, source: 'webhook', started_at: 2_000 + i, messages: [['user', 2_000 + i]] })
+    db.close()
+    s.deps.cliSessions.invalidate()
+  })
+  afterAll(() => s.close())
+
+  it('counts listed scheduled and webhook sessions and flags the capped kind', async () => {
+    const body = await json(await s.get('/api/sessions?show_cron_sessions=1&show_webhook_sessions=1'))
+    expect(body).toMatchObject({ scheduled_session_count: 200, scheduled_sessions_truncated: true, webhook_session_count: 3, webhook_sessions_truncated: false })
+  })
+
+  it('leaves archived sessions out of the count', async () => {
+    expect((await post(s, '/api/session/archive', { session_id: 'hook-0', archived: true })).status).toBe(200)
+    s.deps.cliSessions.invalidate()
+    const body = await json(await s.get('/api/sessions?show_cron_sessions=1&show_webhook_sessions=1'))
+    expect(body).toMatchObject({ webhook_session_count: 2, webhook_sessions_truncated: false })
+  })
+})

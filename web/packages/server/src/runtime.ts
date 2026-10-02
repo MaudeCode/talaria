@@ -223,6 +223,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     journal,
     store,
     cliSessions: (profile, o) => cliSessions.load(profile, o),
+    cliTruncatedSources: (profile) => cliSessions.truncatedSources(profile),
     profileHome,
     // The commit runs detached from the request, so it is registered as profile activity until it settles: profile
     // deletion must not remove the memory files the cached Agent is still writing.

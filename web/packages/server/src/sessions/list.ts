@@ -44,6 +44,20 @@ export function hideFromDefaultSidebar(row: Row, opts: { showCron?: boolean; sho
   return false
 }
 
+function sourceMarkers(row: Row): string[] {
+  return [row.session_source, row.source_tag, row.raw_source, row.source_label].map((v) => str(v).trim().toLowerCase()).filter(Boolean)
+}
+
+/** A row the sidebar files under "Scheduled sessions" (TAL-482); webhook rows are excluded by the caller. */
+export function isScheduledSessionRow(row: Row): boolean {
+  return str(row.session_id).trim().toLowerCase().startsWith('cron_') || sourceMarkers(row).includes('cron')
+}
+
+/** A row the sidebar files under "Webhook sessions" (TAL-482). */
+export function isWebhookSessionRow(row: Row): boolean {
+  return sourceMarkers(row).includes('webhook')
+}
+
 export function isIntentionallyBackground(row: Row): boolean {
   const source = sourceOf(row)
   return ['cron', 'webhook', 'kanban'].includes(source) || str(row.session_id).startsWith('cron_')
@@ -357,6 +371,8 @@ export interface ListParams {
   sourceFilter?: string | null
   /** TAL-358: batched active-profile state.db owner lookup (`stateDbSessionSources`) for the sidecar owner lock. */
   stateDbSources?: (ids: string[]) => Map<string, string> | null
+  /** TAL-482: background kinds whose state.db rows stopped at the per-kind cap, so more exist than `cliRows` holds. */
+  truncatedSources?: ReadonlySet<string>
 }
 
 export interface GatewayIdentity { session_key: string; chat_id: string; thread_id: string; chat_type: string; user_id: string; platform: string; raw_source: string }
@@ -603,6 +619,10 @@ export interface ListPayload {
   archived_cli_count: number
   webui_session_count: number
   cli_session_count: number
+  scheduled_session_count: number
+  scheduled_sessions_truncated: boolean
+  webhook_session_count: number
+  webhook_sessions_truncated: boolean
   include_archived: boolean
   archived_limit: number | null
   archived_offset: number
@@ -682,6 +702,7 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
     result = [...visibleFiltered.filter((r) => !r.archived), ...archivedFiltered.filter((r) => Boolean(r.archived)).slice(offset, offset + limit)]
   }
   const references = params.includeArchived ? [] : hiddenArchivedReferences(visibleFiltered, archivedFiltered)
+  const truncated = params.truncatedSources ?? new Set<string>()
   return {
     sessions: result.map((r) => ({ ...r })),
     sidebar_reference_sessions: references.map((r) => ({ ...r })),
@@ -691,6 +712,10 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
     archived_cli_count: archivedCliCount,
     webui_session_count: webuiSessionCount,
     cli_session_count: cliSessionCount,
+    scheduled_session_count: visibleFiltered.filter((r) => isScheduledSessionRow(r) && !isWebhookSessionRow(r)).length,
+    scheduled_sessions_truncated: truncated.has('cron'),
+    webhook_session_count: visibleFiltered.filter(isWebhookSessionRow).length,
+    webhook_sessions_truncated: truncated.has('webhook'),
     include_archived: params.includeArchived,
     archived_limit: params.archivedLimit,
     archived_offset: params.archivedOffset,
@@ -779,6 +804,10 @@ export interface ListResponse extends Record<string, unknown> {
   cli_count: number
   webui_session_count: number
   cli_session_count: number
+  scheduled_session_count: number
+  scheduled_sessions_truncated: boolean
+  webhook_session_count: number
+  webhook_sessions_truncated: boolean
   archived_limit?: number
   archived_offset?: number
 }
@@ -811,6 +840,10 @@ export function sessionListResponse(payload: ListPayload, overlay: RuntimeOverla
     other_profile_count: payload.other_profile_count,
     webui_session_count: payload.webui_session_count,
     cli_session_count: payload.cli_session_count,
+    scheduled_session_count: payload.scheduled_session_count,
+    scheduled_sessions_truncated: payload.scheduled_sessions_truncated,
+    webhook_session_count: payload.webhook_session_count,
+    webhook_sessions_truncated: payload.webhook_sessions_truncated,
   }
   if (payload.archived_limit !== null) {
     body.archived_limit = Math.trunc(payload.archived_limit) || 0

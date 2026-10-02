@@ -76,6 +76,8 @@ export interface SessionServiceDeps {
   yolo: { isEnabled: (sid: string) => boolean; set: (sid: string, enabled: boolean) => void }
   /** state.db sidebar rows for a profile (Python `get_cli_sessions`); null when the projection is unavailable. */
   cliSessions: (profile: string, opts: { sourceFilter: string | null }) => Row[]
+  /** Background kinds whose rows stopped at the per-kind cap on the last unfiltered `cliSessions` read (TAL-482). */
+  cliTruncatedSources?: (profile: string) => ReadonlySet<string>
   profileHome: (profile: string) => string
   /** Python `commit_session_memory` (fire-and-forget): the cached Agent flushes memory for a session the user left. */
   commitSessionMemory?: (sid: string) => void
@@ -485,13 +487,14 @@ export class SessionService {
 
   // ── list / search ────────────────────────────────────────────────────────
 
-  list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources'>): { body: ListResponse; etag: string } {
+  list(params: Omit<ListParams, 'activeProfile' | 'isolatedProfileMode' | 'profilesMatch' | 'cliRows' | 'gatewayIdentity' | 'stateDbSources' | 'truncatedSources'>): { body: ListResponse; etag: string } {
     const activeProfile = this.deps.activeProfile()
     const wantState = params.showCliSessions || params.showCronSessions || params.showWebhookSessions || params.showKanbanSessions
     // Python reads every profile's state.db under all_profiles; this port projects the active profile only.
     const cliRows = wantState ? this.deps.cliSessions(activeProfile, { sourceFilter: params.sourceFilter ?? null }) : undefined
     const gatewayIdentity = loadGatewaySessionIdentityMap(join(this.deps.profileHome(activeProfile), 'sessions', 'sessions.json'))
-    const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), gatewayIdentity, stateDbSources: this.stateDbSources, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
+    const truncatedSources = cliRows ? this.deps.cliTruncatedSources?.(activeProfile) : undefined
+    const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), gatewayIdentity, stateDbSources: this.stateDbSources, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
     return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now())
   }
 

@@ -34,7 +34,7 @@ function dbStamp(path: string): string {
 }
 
 export class CliSessionSource {
-  private readonly cache = new Map<string, { key: string; until: number; rows: Dict[] }>()
+  private readonly cache = new Map<string, { key: string; until: number; rows: Dict[]; truncated: ReadonlySet<string> }>()
   constructor(private readonly deps: CliSessionsDeps) {}
 
   dbPath(profile: string): string { return join(this.deps.profileHome(profile), 'state.db') }
@@ -51,14 +51,20 @@ export class CliSessionSource {
     const now = this.deps.now()
     if (hit?.key === key && hit.until > now) return hit.rows.map((r) => ({ ...r }))
     let rows: Dict[]
+    const truncated = new Set<string>()
     try {
-      rows = this.loadUncached(profile, dbPath, sourceFilter)
+      rows = this.loadUncached(profile, dbPath, sourceFilter, truncated)
     } catch (error) {
       this.deps.log(`[webui] get_cli_sessions() failed; check state.db schema or path (${dbPath}): ${(error as Error).message}`)
       rows = []
     }
-    this.cache.set(cacheKey, { key, until: now + CACHE_TTL_S, rows })
+    this.cache.set(cacheKey, { key, until: now + CACHE_TTL_S, rows, truncated })
     return rows.map((r) => ({ ...r }))
+  }
+
+  /** Background kinds (`cron`, `webhook`, `kanban`) whose rows stopped at the per-kind cap on the last unfiltered `load`. */
+  truncatedSources(profile: string): ReadonlySet<string> {
+    return this.cache.get(`${profile}\n`)?.truncated ?? new Set()
   }
 
   private sidecarMeta(sid: string): { title: string | null; archived: boolean } {
@@ -78,7 +84,7 @@ export class CliSessionSource {
     return names
   }
 
-  private loadUncached(profile: string, dbPath: string, sourceFilter: string | null): Dict[] {
+  private loadUncached(profile: string, dbPath: string, sourceFilter: string | null, truncated: Set<string>): Dict[] {
     if (!existsSync(dbPath)) return []
     const home = this.deps.profileHome(profile)
     let workspace: string | null = null
@@ -134,7 +140,10 @@ export class CliSessionSource {
     if (sourceFilter !== null) return out
     for (const kind of background) {
       try {
-        for (const row of readImportableAgentSessionRows(dbPath, { limit: BACKGROUND_PROJECT_CHIP_LIMIT, excludeSources: null, includeSources: [kind], log: this.deps.log })) {
+        // One row past the cap tells the sidebar that more sessions of this kind exist than it lists (TAL-482).
+        const rows = readImportableAgentSessionRows(dbPath, { limit: BACKGROUND_PROJECT_CHIP_LIMIT + 1, excludeSources: null, includeSources: [kind], log: this.deps.log })
+        if (rows.length > BACKGROUND_PROJECT_CHIP_LIMIT) truncated.add(kind)
+        for (const row of rows.slice(0, BACKGROUND_PROJECT_CHIP_LIMIT)) {
           const sid = str(row.id)
           if (seen.has(sid) || (str(row.source) || kind) !== kind) continue
           out.push(toRow(row, kind, `${kind.charAt(0).toUpperCase()}${kind.slice(1)} Session`))

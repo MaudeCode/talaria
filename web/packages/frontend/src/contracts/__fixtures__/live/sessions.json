@@ -9,6 +9,8 @@
     "cli_session_count": 20,
     "include_archived": false,
     "other_profile_count": 0,
+    "scheduled_session_count": 0,
+    "scheduled_sessions_truncated": false,
     "server_time": 1789438265.279802,
     "server_tz": "-0400",
     "sessions": [
@@ -554,6 +556,8 @@
       }
     ],
     "sidebar_reference_sessions": [],
+    "webhook_session_count": 0,
+    "webhook_sessions_truncated": false,
     "webui_session_count": 0
   },
   "method": "GET",
