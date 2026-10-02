@@ -263,19 +263,7 @@ public struct CronHistoryResponse: Decodable, Equatable {
         offset = container.decodeLossyIntIfPresent(forKey: .offset)
 
         // Skip malformed rows instead of dropping the whole page.
-        guard var rows = try? container.nestedUnkeyedContainer(forKey: .runs) else {
-            runs = nil
-            return
-        }
-        var decoded: [CronRunSummary] = []
-        while !rows.isAtEnd {
-            if let run = try? rows.decode(CronRunSummary.self) {
-                decoded.append(run)
-            } else if (try? rows.decode(JSONValue.self)) == nil {
-                break
-            }
-        }
-        runs = decoded
+        runs = container.decodeLossyArrayIfPresent(CronRunSummary.self, forKey: .runs)
     }
 }
 
@@ -379,19 +367,7 @@ public struct CronRecentCompletionsResponse: Decodable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         // Skip malformed rows instead of dropping the whole feed.
-        guard var rows = try? container.nestedUnkeyedContainer(forKey: .completions) else {
-            completions = nil
-            return
-        }
-        var decoded: [CronRecentCompletion] = []
-        while !rows.isAtEnd {
-            if let row = try? rows.decode(CronRecentCompletion.self) {
-                decoded.append(row)
-            } else if (try? rows.decode(JSONValue.self)) == nil {
-                break
-            }
-        }
-        completions = decoded
+        completions = container.decodeLossyArrayIfPresent(CronRecentCompletion.self, forKey: .completions)
     }
 }
 
