@@ -326,6 +326,8 @@ struct SessionListView: View {
                 )
             }
             .onAppear {
+                // TAL-437: the last-known chats show at once; the initial load then replaces them.
+                viewModel.paintCachedSessionsIfEmpty(modelContext: modelContext)
                 openPendingSharedImportIfNeeded()
                 openPendingQuotaSourceIfNeeded()
                 openProviderQuotaWidgetSettingsIfNeeded()

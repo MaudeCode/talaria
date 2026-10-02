@@ -214,6 +214,18 @@ public final class SessionListViewModel {
         )
     }
 
+    /// Shows the last list this device saw on the first frame of a cold launch (TAL-437), so the
+    /// list never starts empty; the next `load` replaces it with the server's rows. This is the
+    /// expected-success window, so it stays out of offline mode.
+    public func paintCachedSessionsIfEmpty(modelContext: ModelContext) {
+        guard sessions.isEmpty,
+              let cachedSessions = try? CacheStore.cachedSessions(serverURL: server, in: modelContext)
+                .filter(\.shouldAppearInSessionList),
+              !cachedSessions.isEmpty
+        else { return }
+        sessions = cachedSessions
+    }
+
     @discardableResult
     public func load(
         modelContext: ModelContext? = nil,
