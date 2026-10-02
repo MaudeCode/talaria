@@ -395,6 +395,7 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertTrue(
             AppSidebarGesturePolicy.accepts(
                 isPresented: false,
+                canPopVisibleStack: false,
                 startX: 20,
                 containerWidth: 390,
                 translation: CGSize(width: 80, height: 4),
@@ -404,6 +405,7 @@ final class SessionNavigationStateTests: XCTestCase {
         XCTAssertFalse(
             AppSidebarGesturePolicy.accepts(
                 isPresented: false,
+                canPopVisibleStack: false,
                 startX: 100,
                 containerWidth: 390,
                 translation: CGSize(width: 80, height: 4),
@@ -419,6 +421,35 @@ final class SessionNavigationStateTests: XCTestCase {
             ),
             0.5
         )
+    }
+
+    /// A screen that can go back owns the edge swipe; only a stack root opens the sidebar, and
+    /// an open sidebar always tracks its closing drag (TAL-462).
+    func testSidebarGestureLeavesEdgeSwipeToAStackThatCanPop() {
+        for isRightToLeft in [false, true] {
+            let edgeX: CGFloat = isRightToLeft ? 380 : 10
+            let opening = CGSize(width: isRightToLeft ? -80 : 80, height: 4)
+            func accepts(isPresented: Bool, canPop: Bool, translation: CGSize) -> Bool {
+                AppSidebarGesturePolicy.accepts(
+                    isPresented: isPresented,
+                    canPopVisibleStack: canPop,
+                    startX: edgeX,
+                    containerWidth: 390,
+                    translation: translation,
+                    isRightToLeft: isRightToLeft
+                )
+            }
+
+            XCTAssertTrue(accepts(isPresented: false, canPop: false, translation: opening), "RTL \(isRightToLeft)")
+            XCTAssertFalse(accepts(isPresented: false, canPop: true, translation: opening), "RTL \(isRightToLeft)")
+            // The screen-edge pan asks before the touch has moved.
+            XCTAssertTrue(accepts(isPresented: false, canPop: false, translation: .zero), "RTL \(isRightToLeft)")
+            XCTAssertFalse(accepts(isPresented: false, canPop: true, translation: .zero), "RTL \(isRightToLeft)")
+            XCTAssertFalse(accepts(isPresented: false, canPop: false, translation: CGSize(width: 4, height: 60)), "RTL \(isRightToLeft)")
+            let closing = CGSize(width: -opening.width, height: 4)
+            XCTAssertTrue(accepts(isPresented: true, canPop: false, translation: closing), "RTL \(isRightToLeft)")
+            XCTAssertTrue(accepts(isPresented: true, canPop: true, translation: closing), "RTL \(isRightToLeft)")
+        }
     }
 
     func testPersistenceUsesIndependentKeysPerServer() throws {

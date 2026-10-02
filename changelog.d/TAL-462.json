@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Swiping from the edge of a chat or any other pushed screen now always goes back; the sidebar opens from the edge only on the Chats list and other top-level screens.",
+      "highlight": true,
+      "components": ["app"]
+    }
+  ]
+}

@@ -87,15 +87,20 @@ public enum AppSidebarDestination: Hashable {
 public enum AppSidebarGesturePolicy {
     public static let edgeActivationWidth: CGFloat = 28
 
+    /// An open sidebar tracks any horizontal drag; a closed one opens only from the leading
+    /// edge of a stack root, since a stack that can pop owns the edge swipe as Back (TAL-462).
+    /// A screen-edge pan asks before it has moved, so a zero translation is judged by its start.
     public static func accepts(
         isPresented: Bool,
+        canPopVisibleStack: Bool,
         startX: CGFloat,
         containerWidth: CGFloat,
         translation: CGSize,
         isRightToLeft: Bool
     ) -> Bool {
-        guard abs(translation.width) > abs(translation.height) else { return false }
+        guard translation == .zero || abs(translation.width) > abs(translation.height) else { return false }
         guard !isPresented else { return true }
+        guard !canPopVisibleStack else { return false }
 
         return isRightToLeft
             ? startX >= containerWidth - edgeActivationWidth
