@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Deleted chats no longer linger on your iPhone Live Activity, and tapping it no longer opens a chat that was deleted.",
+      "highlight": false,
+      "components": ["app", "web", "relay"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Tapping a chat on the Live Activity opens that chat, and the newest finished chat is listed first.",
+      "highlight": false,
+      "components": ["app", "relay"]
+    }
+  ]
+}

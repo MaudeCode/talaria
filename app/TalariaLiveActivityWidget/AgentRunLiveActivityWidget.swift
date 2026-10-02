@@ -23,18 +23,7 @@ struct TalariaAggregateLiveActivityWidget: Widget {
             VStack(alignment: .leading, spacing: 6) {
                 TalariaAggregateHeader(state: context.state, isStale: isStale)
                 ForEach(context.state.rows.prefix(TalariaAggregateLiveActivityPresentation.lockScreenRowLimit)) { row in
-                    HStack(spacing: 7) {
-                        Text(row.title)
-                            .font(.system(size: 13, weight: .semibold))
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        AggregateStatusLabel(
-                            status: row.status,
-                            phase: row.phase,
-                            isStale: isStale
-                        )
-                            .layoutPriority(1)
-                    }
+                    AggregateRowLink(row: row, isStale: isStale)
                 }
             }
             .padding(14)
@@ -70,18 +59,7 @@ struct TalariaAggregateLiveActivityWidget: Widget {
                         ForEach(context.state.rows.prefix(
                             TalariaAggregateLiveActivityPresentation.expandedIslandRowLimit
                         )) { row in
-                            HStack(spacing: 7) {
-                                Text(row.title)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .lineLimit(1)
-                                Spacer(minLength: 8)
-                                AggregateStatusLabel(
-                                    status: row.status,
-                                    phase: row.phase,
-                                    isStale: isStale
-                                )
-                                    .layoutPriority(1)
-                            }
+                            AggregateRowLink(row: row, isStale: isStale)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -104,6 +82,33 @@ struct TalariaAggregateLiveActivityWidget: Widget {
 
 
 
+
+/// One aggregate row that opens its own session. The card's `widgetURL` only covers taps
+/// outside a row and the compact and minimal presentations, which show no rows.
+private struct AggregateRowLink: View {
+    let row: TalariaAggregateActivityAttributes.ContentState.Row
+    let isStale: Bool
+
+    var body: some View {
+        let content = HStack(spacing: 7) {
+            Text(row.title)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            AggregateStatusLabel(
+                status: row.status,
+                phase: row.phase,
+                isStale: isStale
+            )
+                .layoutPriority(1)
+        }
+        if let url = TalariaDeepLink.sessionURL(sessionID: row.sessionId, publisherID: row.publisherId) {
+            Link(destination: url) { content }
+        } else {
+            content
+        }
+    }
+}
 
 enum AggregatePhaseStyle {
     static func color(
