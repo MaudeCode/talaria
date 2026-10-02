@@ -9,7 +9,7 @@ struct KanbanView: View {
             initialValue: KanbanFeatureState(
                 server: server,
                 onAPIError: onAPIError,
-                responseCache: ResponseCache(server: server)
+                responseCache: .app(server: server)
             )
         )
     }

@@ -12,7 +12,7 @@ struct SkillsView: View {
     init(server: URL, onAPIError: @escaping (Error) -> Void) {
         self.server = server
         self.onAPIError = onAPIError
-        _viewModel = State(initialValue: SkillsViewModel(server: server, responseCache: ResponseCache(server: server)))
+        _viewModel = State(initialValue: SkillsViewModel(server: server, responseCache: .app(server: server)))
     }
 
     var body: some View {

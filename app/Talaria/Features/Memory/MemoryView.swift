@@ -11,7 +11,7 @@ struct MemoryView: View {
     init(server: URL, onAPIError: @escaping (Error) -> Void) {
         self.server = server
         self.onAPIError = onAPIError
-        _viewModel = State(initialValue: MemoryViewModel(server: server, responseCache: ResponseCache(server: server)))
+        _viewModel = State(initialValue: MemoryViewModel(server: server, responseCache: .app(server: server)))
     }
 
     var body: some View {

@@ -119,6 +119,21 @@ extension SessionListMutationTests {
         )
     }
 
+    func testCachedRowsKeepTheServersLatestOrder() throws {
+        let context = try makeContext()
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        func rows(_ ids: [String]) -> [SessionSummary] {
+            ids.map { SessionSummary(sessionId: $0, title: $0, archived: false) }
+        }
+        try CacheStore.cacheSessions(rows(["a", "b", "c", "d"]), serverURL: server, in: context)
+        try CacheStore.cacheSessions(rows(["c", "a", "d", "b"]), serverURL: server, in: context)
+
+        XCTAssertEqual(
+            try CacheStore.cachedSessions(serverURL: server, in: context).compactMap(\.sessionId),
+            ["c", "a", "d", "b"]
+        )
+    }
+
     func testCachedPaintNeverReplacesRowsAlreadyLoaded() async throws {
         let context = try makeContext()
         let viewModel = try makeViewModel { request in

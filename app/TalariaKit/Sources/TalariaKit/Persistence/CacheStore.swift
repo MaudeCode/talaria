@@ -17,6 +17,7 @@ public enum CacheStore {
 
         return try context.fetch(descriptor)
             .filter { $0.archived != true && $0.expiresAt > now }
+            .sorted { ($0.listPosition ?? .max) < ($1.listPosition ?? .max) }
             .map(SessionSummary.init(cachedSession:))
     }
 
@@ -78,17 +79,19 @@ public enum CacheStore {
         let existingSessions = try context.fetch(descriptor)
         var existingByKey = Dictionary(uniqueKeysWithValues: existingSessions.map { ($0.cacheKey, $0) })
 
-        for session in cacheableSessions {
+        for (position, session) in cacheableSessions.enumerated() {
             guard let sessionID = session.sessionId else { continue }
             let cacheKey = CachedSession.cacheKey(serverURLString: serverURLString, sessionID: sessionID)
             if let cachedSession = existingByKey[cacheKey] {
                 cachedSession.apply(session, cachedAt: cachedAt)
+                cachedSession.listPosition = position
             } else {
                 let cachedSession = CachedSession(
                     serverURLString: serverURLString,
                     session: session,
                     cachedAt: cachedAt
                 )
+                cachedSession.listPosition = position
                 context.insert(cachedSession)
                 existingByKey[cacheKey] = cachedSession
             }
