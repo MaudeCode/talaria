@@ -223,16 +223,21 @@ export type ChatStartResponse = z.infer<typeof ChatStartResponseSchema>
 export const StreamStatusSchema = z.looseObject({ active: z.boolean(), stream_id: z.string(), replay_available: z.boolean().optional(), journal: Json.optional() })
 export type StreamStatus = z.infer<typeof StreamStatusSchema>
 export const CancelResponseSchema = z.looseObject({ ok: z.boolean(), cancelled: z.boolean(), stream_id: z.string().optional(), error: z.string().optional() })
-/** `text` is delivered to the running agent; `display_text` is what the transcript shows. */
-/** TAL-424: a pending steer taken back: Edit and Cancel by the user, or `stopped` by a Stop (`text` goes back to the composer). */
-export const SteerWithdrawnSchema = z.object({ steer_id: z.string().nullable(), reason: z.enum(['edit', 'cancel', 'stopped']), text: z.string() })
+/**
+ * TAL-424: a pending steer is no longer pending without the Agent taking it: Edit and Cancel by the user, `stopped` by a
+ * Stop (`text` goes back to the composer), or `followup` when the server sends it as the next turn. `steer_id` is null
+ * for text another surface queued with the Agent.
+ */
+export const SteerWithdrawnSchema = z.object({ steer_id: z.string().nullable(), reason: z.enum(['edit', 'cancel', 'stopped', 'followup']), text: z.string() })
 export const SteerWithdrawRequestSchema = z.object({ session_id: SessionIdSchema, steer_id: z.string().min(1), reason: z.enum(['edit', 'cancel']) })
+export type SteerWithdrawRequest = z.infer<typeof SteerWithdrawRequestSchema>
 /** `withdrawn: false` when the steer is unknown, already taken by the Agent (it then settles as consumed), or being sent. */
 export const SteerWithdrawResponseSchema = z.object({ withdrawn: z.boolean(), text: z.string().optional() })
 export const SteerSendNowRequestSchema = z.object({ session_id: SessionIdSchema, steer_id: z.string().min(1) })
 /** `redirected: false` when nothing is live to deliver it to now; the steer stays pending. */
 export const SteerSendNowResponseSchema = z.object({ redirected: z.boolean() })
 
+/** `text` is delivered to the running agent; `display_text` is what the transcript shows. */
 export const SteerRequestSchema = z.looseObject({ session_id: SessionIdSchema, text: z.string().min(1), display_text: z.string().optional(), steer_id: z.string().optional() })
 /** `accepted: false` with a `fallback` reason means the message was not delivered; the caller keeps the draft. */
 /** TAL-460: a steer sent while a background turn runs starts the user's own turn instead; `started_turn` is its start response. */

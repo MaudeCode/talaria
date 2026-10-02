@@ -257,19 +257,21 @@ def _clarify_timeout(params: dict) -> int:
         return 3600
 
 
-def _agent_pending_steer_text(agent) -> str:
-    """Predecessor ``_agent_pending_steer_text``: the Agent's not-yet-applied steer text."""
-    lock = agent.__dict__.get("_pending_steer_lock") if hasattr(agent, "__dict__") else None
-    if lock is None:
-        return str(getattr(agent, "_pending_steer", "") or "")
-    with lock:
-        return str(agent.__dict__.get("_pending_steer") or "")
-
-
 def _steer_slot_lock(agent):
-    """The Agent's own pending-steer lock (a plain ``Lock``), so a slot rewrite is atomic against its drains."""
+    """The Agent's own pending-steer lock (a plain ``Lock``), so a slot read or rewrite is atomic against its drains."""
     lock = agent.__dict__.get("_pending_steer_lock") if hasattr(agent, "__dict__") else None
     return contextlib.nullcontext() if lock is None else lock
+
+
+def _steer_slot(agent) -> str:
+    """The Agent's not-yet-applied steer text; call under ``_steer_slot_lock``."""
+    return str(getattr(agent, "_pending_steer", "") or "")
+
+
+def _agent_pending_steer_text(agent) -> str:
+    """Predecessor ``_agent_pending_steer_text``: the Agent's not-yet-applied steer text."""
+    with _steer_slot_lock(agent):
+        return _steer_slot(agent)
 
 
 def _slot_without(slot: str, pending: list[str], index: int) -> str | None:
@@ -290,7 +292,7 @@ def withdraw_steer(agent, pending: list[str], index: int) -> bool:
     """TAL-424: take a not-yet-applied steer back out of the Agent's slot, keeping the others in order. False when the
     Agent already took it; the slot is then left as it was, so no text is ever lost."""
     with _steer_slot_lock(agent):
-        rest = _slot_without(str(agent.__dict__.get("_pending_steer") or ""), pending, index)
+        rest = _slot_without(_steer_slot(agent), pending, index)
         if rest is None:
             return False
         agent._pending_steer = rest or None
@@ -303,7 +305,7 @@ def steer_now(agent, pending: list[str], index: int) -> dict:
     With no live request the steer stays pending: back in its place, or last when the slot changed meanwhile."""
     text = pending[index]
     with _steer_slot_lock(agent):
-        before = str(agent.__dict__.get("_pending_steer") or "")
+        before = _steer_slot(agent)
         rest = _slot_without(before, pending, index)
         if rest is None:
             return {"redirected": False, "withdrawn": False}
@@ -316,13 +318,13 @@ def steer_now(agent, pending: list[str], index: int) -> dict:
         redirected = False
     if not redirected:
         with _steer_slot_lock(agent):
-            if str(agent.__dict__.get("_pending_steer") or "") == rest:
+            if _steer_slot(agent) == rest:
                 agent._pending_steer = before or None
                 return {"redirected": False, "withdrawn": True, "requeued": "kept"}
         agent.steer(text)
         return {"redirected": False, "withdrawn": True, "requeued": "last"}
     with _steer_slot_lock(agent):
-        slot = str(agent.__dict__.get("_pending_steer") or "")
+        slot = _steer_slot(agent)
     delivery = "steer" if slot == text or slot.endswith("\n" + text) else "redirect"
     return {"redirected": True, "withdrawn": True, "delivery": delivery}
 

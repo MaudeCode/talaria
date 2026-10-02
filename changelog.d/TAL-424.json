@@ -4,19 +4,25 @@
       "category": "Changed",
       "summary": "A steer you send while the agent works is now kept by the server until the agent takes it, so every open tab and device sees the same pending message, also after a reload.",
       "highlight": true,
-      "components": ["web"]
+      "components": [
+        "web"
+      ]
     },
     {
       "category": "Added",
       "summary": "The server can take back a pending steer for editing or cancelling, or deliver it right away, so apps can offer Edit, Cancel and Send now.",
       "highlight": false,
-      "components": ["web"]
+      "components": [
+        "web"
+      ]
     },
     {
       "category": "Fixed",
-      "summary": "A steer the agent never got to is sent once as the next message, no matter how many tabs are open; stopping a reply hands its pending steers back instead of sending them.",
+      "summary": "A steer the agent never got to is sent once as the next message, no matter how many tabs are open.",
       "highlight": false,
-      "components": ["web"]
+      "components": [
+        "web"
+      ]
     }
   ]
 }

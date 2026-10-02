@@ -690,6 +690,7 @@ describe('chat turns through the sidecar', () => {
     expect(frames.filter((f) => f.event === 'steer_consumed')).toHaveLength(1)
     // TAL-424: the server, not each client, sends the steer the turn ended without taking: one follow-up turn.
     expect(frames.some((f) => f.event === 'pending_steer_leftover')).toBe(false)
+    expect(frames.find((f) => f.event === 'steer_withdrawn')?.data).toEqual({ steer_id: 'steer-2', reason: 'followup', text: 'second' })
     await vi.waitFor(() => { expect(prompts).toHaveLength(2) })
     expect(prompts[1]).toMatch(/\nsecond$/)
     await vi.waitFor(() => { expect(s.deps.sessionStore.get(sid).active_stream_id).toBeNull() })
@@ -961,7 +962,7 @@ describe('chat turns through the sidecar', () => {
     const sid = await newSession(s)
     sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
     // The sidecar drains the Agent's unapplied steer text on interrupt (Python `_finalize_webui_steers`).
-    sidecar.respond('chat.interrupt', () => ({ ok: true, pending_steer: 'never applied' }))
+    sidecar.respond('chat.interrupt', () => ({ ok: true, pending_steer: 'never applied\nalso held' }))
     let starts = 0
     sidecar.respond('chat.start', (params, _emit, opts) => new Promise((resolve) => {
       starts += 1
@@ -970,18 +971,23 @@ describe('chat turns through the sidecar', () => {
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'long task' }))
     const streamId = String(start.stream_id)
     expect((await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'never applied', display_text: 'Never applied', steer_id: 'steer-x' }))).accepted).toBe(true)
+    expect((await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'also held', steer_id: 'steer-y' }))).accepted).toBe(true)
     expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toMatchObject({ ok: true, cancelled: true })
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel')
     const names = frames.map((f) => f.event)
-    expect(names).not.toContain('pending_steer_leftover')
-    expect(names.indexOf('steer_withdrawn')).toBeGreaterThan(-1)
-    expect(names.indexOf('steer_withdrawn')).toBeLessThan(names.indexOf('cancel'))
-    expect(frames.find((f) => f.event === 'steer_withdrawn')?.data).toEqual({ steer_id: 'steer-x', reason: 'stopped', text: 'Never applied' })
+    expect(names.lastIndexOf('steer_withdrawn')).toBeLessThan(names.indexOf('cancel'))
+    expect(frames.filter((f) => f.event === 'steer_withdrawn').map((f) => f.data)).toEqual([
+      { steer_id: 'steer-x', reason: 'stopped', text: 'Never applied' }, { steer_id: 'steer-y', reason: 'stopped', text: 'also held' },
+    ])
+    // Until TAL-425 / TAL-426 read `steer_withdrawn`, today's clients still get the leftovers they requeue.
+    expect(frames.filter((f) => f.event === 'pending_steer_leftover').map((f) => (f.data as Json).steer_id)).toEqual(['steer-x', 'steer-y'])
+    expect(names.lastIndexOf('pending_steer_leftover')).toBeLessThan(names.indexOf('cancel'))
+    expect(starts).toBe(1)
     // The worker's unwind adds nothing after the terminal row: replay from the start still ends on that one cancel.
     await new Promise((r) => setTimeout(r, 100))
     const replay = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, () => false, { timeoutMs: 300 })
     expect(replay.filter((f) => f.event === 'cancel')).toHaveLength(1)
-    expect(replay.filter((f) => f.event === 'steer_withdrawn')).toHaveLength(1)
+    expect(replay.filter((f) => f.event === 'steer_withdrawn')).toHaveLength(2)
     expect(starts).toBe(1)
   })
 
@@ -1087,6 +1093,10 @@ describe('chat turns through the sidecar', () => {
       sidecar.respond('chat.steer_now', () => ({ redirected: false, withdrawn: true, requeued: 'kept' }))
       expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-t1' }))).toEqual({ redirected: false })
       expect((await detailSteers(sid)).map((p) => [p.steer_id, p.state])).toEqual([['steer-t1', 'pending'], ['steer-t2', 'pending']])
+      // The Agent's queue changed meanwhile: it went back last, and clients follow the new order.
+      sidecar.respond('chat.steer_now', () => ({ redirected: false, withdrawn: true, requeued: 'last' }))
+      expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-t1' }))).toEqual({ redirected: false })
+      expect((await detailSteers(sid)).map((p) => p.steer_id)).toEqual(['steer-t2', 'steer-t1'])
       sidecar.respond('chat.steer_now', () => ({ redirected: true, withdrawn: true, delivery: 'steer' }))
       expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'steer-t1' }))).toEqual({ redirected: true })
       expect(await detailSteers(sid)).toMatchObject([
@@ -1099,6 +1109,43 @@ describe('chat turns through the sidecar', () => {
       expect(await json(await post(s, '/api/chat/steer/send-now', { session_id: sid, steer_id: 'nope' }))).toEqual({ redirected: false })
       run.release({ pending_steer: '' })
       await frames(run.streamId, (f) => f.event === 'stream_end')
+    })
+
+    it('does not misread the Agent\'s pending text while a withdraw rewrites its queue', async () => {
+      const sid = await newSession(s)
+      const run = await running(sid)
+      await post(s, '/api/chat/steer', { session_id: sid, text: 'aa', steer_id: 'steer-d1' })
+      await post(s, '/api/chat/steer', { session_id: sid, text: 'bb', steer_id: 'steer-d2' })
+      // Mid-rewrite the Agent reports its queue without the steer being withdrawn: read against the old list, that
+      // would wrongly mark it consumed.
+      sidecar.respond('chat.steer_withdraw', () => { run.emit('steer_pending', { text: 'bb' }); run.emit('token', { text: ' x' }); return { withdrawn: true } })
+      expect(await json(await post(s, '/api/chat/steer/withdraw', { session_id: sid, steer_id: 'steer-d1', reason: 'cancel' }))).toEqual({ withdrawn: true, text: 'aa' })
+      expect((await detailSteers(sid)).map((p) => p.steer_id)).toEqual(['steer-d2'])
+      const seen = await frames(run.streamId, (f) => f.event === 'steer_withdrawn')
+      expect(seen.some((f) => f.event === 'steer_consumed')).toBe(false)
+      run.release({ pending_steer: '' })
+      await frames(run.streamId, (f) => f.event === 'stream_end')
+    })
+
+    it('finishes a withdraw that is in flight before the turn ends, so the steer is neither sent nor recorded', async () => {
+      const sid = await newSession(s)
+      const run = await running(sid)
+      let reply: (v: { withdrawn: boolean }) => void = () => undefined
+      let asked: () => void = () => undefined
+      const inFlight = new Promise<void>((resolve) => { asked = resolve })
+      sidecar.respond('chat.steer_withdraw', () => new Promise((resolve) => { reply = resolve; asked() }))
+      await post(s, '/api/chat/steer', { session_id: sid, text: 'drop me', steer_id: 'steer-x1' })
+      const withdraw = post(s, '/api/chat/steer/withdraw', { session_id: sid, steer_id: 'steer-x1', reason: 'cancel' })
+      await inFlight
+      // The Agent's queue no longer holds it when the turn ends; the server must not call that a consumed steer.
+      run.release({ pending_steer: '' })
+      reply({ withdrawn: true })
+      expect(await json(await withdraw)).toEqual({ withdrawn: true, text: 'drop me' })
+      const all = await frames(run.streamId, (f) => f.event === 'stream_end')
+      expect(all.filter((f) => f.event === 'steer_consumed')).toEqual([])
+      expect(all.filter((f) => f.event === 'steer_withdrawn').map((f) => (f.data as Json).reason)).toEqual(['cancel'])
+      const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+      expect(messages.some((m) => m._steer)).toBe(false)
     })
 
     it('offers no Send now when the Agent cannot redirect', async () => {
