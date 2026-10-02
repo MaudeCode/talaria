@@ -490,8 +490,9 @@ export function cheapChangeFingerprint(dbPath: string, onError?: (reason: string
 // ── message reader ────────────────────────────────────────────────────────
 
 const STATE_DB_CONTENT_JSON_PREFIX = '\0json:'
-const OPTIONAL_MESSAGE_COLUMNS = ['tool_call_id', 'tool_calls', 'tool_name', 'reasoning', 'reasoning_details', 'codex_reasoning_items', 'reasoning_content', 'codex_message_items', 'api_content'] as const
-const JSON_MESSAGE_COLUMNS = new Set(['tool_calls', 'reasoning_details', 'codex_reasoning_items', 'codex_message_items'])
+// `display_kind` / `display_metadata`: the Agent's own tag for rows it writes itself (steers, delivered notifications; TAL-371).
+const OPTIONAL_MESSAGE_COLUMNS = ['tool_call_id', 'tool_calls', 'tool_name', 'reasoning', 'reasoning_details', 'codex_reasoning_items', 'reasoning_content', 'codex_message_items', 'api_content', 'display_kind', 'display_metadata'] as const
+const JSON_MESSAGE_COLUMNS = new Set(['tool_calls', 'reasoning_details', 'codex_reasoning_items', 'codex_message_items', 'display_metadata'])
 
 /** Python `_decode_state_db_content`: the Agent's sentinel-prefixed structured content, left untouched otherwise. */
 function decodeStateDbContent(value: unknown): unknown {

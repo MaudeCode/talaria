@@ -562,6 +562,61 @@ describe('projects, workspaces, and files over HTTP', () => {
   })
 })
 
+describe('session detail marks background wakeups as updates (TAL-371)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  const detail = async (sid: string, query = ''): Promise<Json[]> => ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json).messages as Json[]
+
+  it('labels a stored wakeup, keeps a typed marker a user message, and agrees in every window', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [
+      { role: 'user', content: '[ASYNC DELEGATION BATCH COMPLETE — deleg_typed]\nI typed this myself', timestamp: 1000 },
+      { role: 'assistant', content: 'Noted.', timestamp: 1001 },
+      { role: 'user', content: '[IMPORTANT: Background process proc_1 completed (exit_code=0).]\nCommand: make', timestamp: 1002, _source: 'process_wakeup', _turn_id: 'wake-legacy' },
+      { role: 'assistant', content: 'The build passed.', timestamp: 1003, _turn_id: 'wake-legacy' },
+    ]
+    s.deps.sessionStore.save(session)
+    for (const query of ['', '&msg_limit=120', '&msg_limit=2', '&msg_limit=1&msg_before=3']) {
+      for (const m of await detail(sid, query)) {
+        if (m.timestamp === 1000) expect(m, query).not.toHaveProperty('_background_update')
+        // No event metadata survives for an older wakeup, so it gets the generic label.
+        if (m.timestamp === 1002) expect(m._background_update, query).toEqual({ kind: 'other', attention: false, count: 1, summary: 'IMPORTANT: Background process proc_1 completed (exit_code=0).' })
+        if (m.role === 'assistant') expect(m).not.toHaveProperty('_background_update')
+      }
+    }
+  })
+
+  it('labels the Agent\'s own delivery row from its state.db display kind', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'user', content: 'dispatch', timestamp: 1000 }, { role: 'assistant', content: 'Dispatched.', timestamp: 1001 }]
+    s.deps.sessionStore.save(session)
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, display_kind TEXT, display_metadata TEXT)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
+    db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', 'dispatch', 1000)
+    db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'assistant', 'Dispatched.', 1001)
+    db.prepare('INSERT INTO messages (session_id, role, content, timestamp, display_kind, display_metadata) VALUES (?, ?, ?, ?, ?, ?)').run(sid, 'user', '[IMPORTANT: 3 background subagent delegations completed for this session.]\n…', 1002, 'async_delegation_complete', JSON.stringify({ delegation_id: 'deleg_db', task_count: 3, completed_count: 2, failed_count: 1 }))
+    db.close()
+    const row = (await detail(sid)).find((m) => m.timestamp === 1002)
+    expect(row?._background_update).toEqual({ kind: 'delegation', attention: true, count: 1, summary: 'IMPORTANT: 3 background subagent delegations completed for this session.' })
+  })
+  it('serves the shared background-update example exactly as the contract fixture records it', async () => {
+    const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).background_update_session as Json
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    // The stored rows are what the server reads; `_background_update` is what it adds on the way out.
+    session.messages = (fixture.messages as Json[]).map((m) => { const stored = { ...m }; delete stored._background_update; return stored })
+    session.extra.background_updates = fixture.background_updates
+    s.deps.sessionStore.save(session)
+    const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
+    expect(served).toEqual(fixture.messages)
+  })
+})
+
 describe('session detail collapses very long message bodies (TAL-456)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

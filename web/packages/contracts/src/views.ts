@@ -101,6 +101,12 @@ export const MessageSchema = z.looseObject({
   /** A settled body too long to lay out whole: clients render `_display_excerpt` collapsed, with a local "Show more" for `content`. */
   _display_truncated: z.boolean().optional(),
   _display_excerpt: z.string().optional(),
+  /**
+   * TAL-371: an automatic background wakeup (delegation results, background process or watch notice), not a message the
+   * user sent. Clients render it as a "Background update" disclosure: a localized label per `kind` (with `count`), a
+   * warning when `attention`, the server's one-line `summary`, and `content` in full on expansion.
+   */
+  _background_update: z.object({ kind: z.enum(['delegation', 'process', 'mixed', 'other']), attention: z.boolean(), count: z.number().int().positive(), summary: z.string() }).optional(),
 })
 export type Message = z.infer<typeof MessageSchema>
 

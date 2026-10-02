@@ -30,6 +30,7 @@ import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './a
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
 import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, toolOutcome, withAttachmentObjects, withBodyExcerpts, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
+import { withBackgroundUpdates } from './background-updates.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
@@ -750,7 +751,7 @@ export class TurnRunner {
   private terminalSessionPayload(s: Session): Record<string, unknown> {
     const payload = withSessionWireFlags(s.compact(), this.registry.liveIds)
     payload.assistant_name = this.deps.service().assistantName(s)
-    const scened = withBodyExcerpts(hydrateAnchorActivityScenes(withToolCallOutcomes(withTurnIds(withAttachmentObjects(s.messages)), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true }), s.active_stream_id)
+    const scened = withBodyExcerpts(hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withTurnIds(withAttachmentObjects(s.messages)), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true }), s.active_stream_id)
     const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
     const limited = messagesForLimitedPayload(window)
     payload.messages = limited

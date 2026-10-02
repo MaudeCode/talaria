@@ -1301,5 +1301,119 @@
         "_turn_id": "legacy:2"
       }
     ]
+  },
+  "background_update_session": {
+    "session_id": "contract-background-update",
+    "background_updates": {
+      "wake-contract": {
+        "kind": "mixed",
+        "attention": true,
+        "count": 2,
+        "summary": "ASYNC DELEGATION BATCH COMPLETE — deleg_contract"
+      }
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "[ASYNC DELEGATION BATCH COMPLETE — deleg_typed]\nA person typed this marker.",
+        "message_id": "typed-marker-user",
+        "timestamp": 1770000200,
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "assistant",
+        "content": "Noted.",
+        "message_id": "typed-marker-reply",
+        "timestamp": 1770000201,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Noted.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "35adb76679f1bef805c4ffc861566c752887aadf278fabf7b73773d45193f656"
+        },
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "user",
+        "content": "[ASYNC DELEGATION BATCH COMPLETE — deleg_contract]\nSynthetic consolidated results.\n\n[IMPORTANT: Background process proc_contract completed (exit_code=1).\nCommand: make test\nOutput:\n1 failed]",
+        "message_id": "wakeup-mixed-user",
+        "timestamp": 1770000202,
+        "_turn_id": "wake-contract",
+        "_background_update": {
+          "kind": "mixed",
+          "attention": true,
+          "count": 2,
+          "summary": "ASYNC DELEGATION BATCH COMPLETE — deleg_contract"
+        },
+        "_source": "process_wakeup"
+      },
+      {
+        "role": "assistant",
+        "content": "One delegation finished and the test run failed.",
+        "message_id": "wakeup-mixed-reply",
+        "timestamp": 1770000203,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "One delegation finished and the test run failed.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "b6d39b931f042595e2cd2b45f7cc8f6f8520a343258292c8a80f55005df2289f"
+        },
+        "_turn_id": "wake-contract"
+      },
+      {
+        "role": "user",
+        "content": "[IMPORTANT: Background process proc_old completed (exit_code=0).\nCommand: ls]",
+        "message_id": "wakeup-legacy-user",
+        "timestamp": 1770000204,
+        "_turn_id": "wake-legacy",
+        "_background_update": {
+          "kind": "other",
+          "attention": false,
+          "count": 1,
+          "summary": "IMPORTANT: Background process proc_old completed (exit_code=0)."
+        },
+        "_source": "process_wakeup"
+      },
+      {
+        "role": "assistant",
+        "content": "Done.",
+        "message_id": "wakeup-legacy-reply",
+        "timestamp": 1770000205,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Done.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "204102a5062ace423c9cf6ce25c757318f56e00b76181cb4e69baef967868857"
+        },
+        "_turn_id": "wake-legacy"
+      }
+    ]
   }
 }

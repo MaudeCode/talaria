@@ -12,6 +12,7 @@ import type { SessionChannels, StreamRegistry } from './streams.js'
 import type { SessionStore } from './store.js'
 import type { Session } from './session.js'
 import { str } from '../util.js'
+import { batchUpdate, recordBackgroundUpdate } from './background-updates.js'
 
 type Dict = Record<string, unknown>
 export const COMPLETION_POLL_MS = 1000
@@ -34,7 +35,8 @@ export interface CompletionDrainDeps {
   pollMs?: number
 }
 
-/** `event` is the raw async-delegation event, kept so delivery can claim and acknowledge it in the Agent's ledger (TAL-459). */
+/** `event` is the raw completion event: async delegations claim and acknowledge it in the Agent's ledger (TAL-459), and every
+ * kind describes the wakeup's background update (TAL-371). */
 interface Deferred { process_id: string; wakeup_prompt: string; event?: Dict }
 interface HeldClaim { event: Dict; claim_id: string }
 const DELIVERY_CONSUMER = 'webui'
@@ -148,9 +150,8 @@ export class CompletionDrain {
     const prompt = await this.wakeupPrompt(evt)
     this.emitCoalesced(sid, this.buildPayload(evt, sid, prompt))
     if (!prompt) return true
-    const event = evt.type === 'async_delegation' ? evt : undefined
-    if (this.hasActiveTurn(sid)) this.recordDeferred(sid, processId, prompt, event)
-    else await this.startWakeup(sid, [{ process_id: processId, wakeup_prompt: prompt, ...(event ? { event } : {}) }])
+    if (this.hasActiveTurn(sid)) this.recordDeferred(sid, processId, prompt, evt)
+    else await this.startWakeup(sid, [{ process_id: processId, wakeup_prompt: prompt, event: evt }])
     return true
   }
 
@@ -223,7 +224,7 @@ export class CompletionDrain {
     const deliver: Deferred[] = []
     const held: HeldClaim[] = []
     for (const entry of batched) {
-      if (!entry.event) { deliver.push(entry); continue }
+      if (entry.event?.type !== 'async_delegation') { deliver.push(entry); continue }
       const sidecar = this.deps.sidecar()
       let claimId: string | null
       try {
@@ -287,6 +288,7 @@ export class CompletionDrain {
     if (status === 409) { await giveBack('process.defer_delivery'); return false }
     if (status >= 400) { await giveBack(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup failed for session ${sid}: status=${String(status)} err=${str(resp.error)}; re-deferred for redelivery`); return false }
     this.retryAttempts.delete(sid)
+    recordBackgroundUpdate(session, str(resp.stream_id), batchUpdate(deliver.map((e) => ({ event: e.event ?? {}, prompt: e.wakeup_prompt }))))
     await this.settleClaims('process.complete_delivery', held)
     await this.markConsumed(batched.map((e) => e.process_id))
     this.deps.log(`[webui] server-side wakeup turn started for session ${sid} (stream_id=${str(resp.stream_id)})`)
