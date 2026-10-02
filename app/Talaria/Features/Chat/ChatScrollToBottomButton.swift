@@ -38,3 +38,10 @@ struct ChatScrollToBottomButton: View {
         .accessibilityLabel("Scroll to latest message")
     }
 }
+
+/// The run status chip's footprint above the composer, so the scroll button can sit beside it.
+struct ChatRunStatusChipSlot: Equatable {
+    let width: CGFloat
+    /// Bottom padding that centres the button on the chip's row.
+    let buttonBottomPadding: CGFloat
+}

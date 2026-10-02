@@ -137,6 +137,7 @@ struct ChatView: View {
     @State private var gitToastState = GitActionToastState()
     @State private var gitAlert: GitChatAlert?
     @State private var composerHeight: CGFloat = 52
+    @State private var runStatusChipSize: CGSize = .zero
     @State private var clarificationPanelHeight: CGFloat = 320
     @State private var composerAvailableHeight: CGFloat = 0
     @State private var composerIsFocused = false
@@ -995,6 +996,7 @@ struct ChatView: View {
                 // when it comes and goes.
                 if let activeRunStatusPresentation, !activeRunStatusPresentation.reservesTranscriptSpace {
                     StatusChip(activeRunStatusPresentation, agentName: viewModel.assistantName)
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { runStatusChipSize = $0 }
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
@@ -1005,6 +1007,7 @@ struct ChatView: View {
 
                 if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
                     StatusChip(activeRunStatusPresentation, agentName: viewModel.assistantName)
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { runStatusChipSize = $0 }
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
@@ -1081,6 +1084,7 @@ struct ChatView: View {
             scrollToBottomButtonAlignment: ChatScrollToBottomButtonSide
                 .storedValue(scrollToBottomButtonSideRawValue)
                 .alignment(in: chatLayoutDirection),
+            runStatusChipSlot: runStatusChipSlot,
             assistantName: viewModel.assistantName,
             localAttachmentPreviews: viewModel.localAttachmentPreviews,
             listeningMessageID: viewModel.listeningMessageID,
@@ -1247,12 +1251,13 @@ struct ChatView: View {
         return max(96, composerHeight + 44 + composerAccessorySpacerHeight(includesFloatingStatus: false))
     }
 
-    /// Sets the scroll-to-latest button on the run status chip's row, beside the chip. With no
-    /// run status it clears the whole accessory stack.
     private var scrollToBottomButtonBottomPadding: CGFloat {
-        guard let activeRunStatusPresentation else {
-            return composerHeight + 12 + composerAccessorySpacerHeight(includesFloatingStatus: true)
-        }
+        return composerHeight + 12 + composerAccessorySpacerHeight(includesFloatingStatus: true)
+    }
+
+    /// The run status chip's width and row, for the scroll-to-latest button to sit beside it.
+    private var runStatusChipSlot: ChatRunStatusChipSlot? {
+        guard let activeRunStatusPresentation, runStatusChipSize.width > 0 else { return nil }
         // The syncing pill tops the stack, so the pinned notices sit below it too.
         var heightBelowStatus: CGFloat = 0
         if !activeRunStatusPresentation.reservesTranscriptSpace, !viewModel.pinnedLocalNotices.isEmpty {
@@ -1261,8 +1266,11 @@ struct ChatView: View {
         if showsApprovalBypassStatus {
             heightBelowStatus += approvalBypassStatusSpacerHeight + composerAccessoryVerticalSpacing
         }
-        return composerHeight + 8 + heightBelowStatus
-            + (activeRunStatusSpacerHeight - ChatScrollToBottomButton.diameter) / 2
+        return ChatRunStatusChipSlot(
+            width: runStatusChipSize.width,
+            buttonBottomPadding: composerHeight + 8 + heightBelowStatus
+                + (runStatusChipSize.height - ChatScrollToBottomButton.diameter) / 2
+        )
     }
 
     private var isComposerBusyOrUnavailable: Bool {
