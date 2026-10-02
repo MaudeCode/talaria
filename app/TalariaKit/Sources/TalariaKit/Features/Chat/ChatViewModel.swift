@@ -46,6 +46,10 @@ public final class ChatViewModel {
     public private(set) var isCancellingStream = false
     public private(set) var isViewingCachedData = false
     public var activeStreamID: String? { streamCoordinator.activeStreamID }
+    /// The stream the server last reported a background result started (`active_turn_origin`, TAL-460).
+    private var backgroundTurnStreamID: String?
+    /// The running turn was started by a background result, not by the user.
+    public var isBackgroundTurnActive: Bool { backgroundTurnStreamID != nil && backgroundTurnStreamID == activeStreamID }
     public var activeStreamRecoveryState: ActiveStreamRecoveryState { streamCoordinator.recoveryState }
     public var liveTokensPerSecond: Double? { streamCoordinator.liveTokensPerSecond }
     public private(set) var errorMessage: String?
@@ -1403,6 +1407,7 @@ public final class ChatViewModel {
             reasoningAnchorMessageID = nil
             attachmentCoordinator.removeAllLocalPreviews()
             loadedPendingStartedAt = session?.pendingStartedAt
+            backgroundTurnStreamID = session?.activeTurnOrigin == "background" ? loadedActiveStreamID : nil
             streamCoordinator.reconcileSessionLoad(
                 loadedActiveStreamID: loadedActiveStreamID,
                 preparation: streamLoadPreparation,
@@ -2529,15 +2534,7 @@ public final class ChatViewModel {
                 rollbackOptimisticMessage(id: localMessageID)
                 cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
                 restorePendingAttachments(attachmentsToRestoreOnFailure)
-                // The existing run may have started outside this view model. Reconcile
-                // the server transcript first so the SSE tokens attach to the persisted
-                // assistant turn instead of creating a second bubble with only the tail.
-                await loadMessages(modelContext: modelContext, waitsForPendingMessageSend: false)
-                _ = restoreActiveStreamSnapshotIfAvailable(streamID: streamID)
-                streamingAssistantMessageID = TranscriptTurnClassifier
-                    .currentTurnAssistantAnchorIDs(in: messages, messageOffset: messagesOffset)
-                    .first
-                streamCoordinator.start(streamID: streamID)
+                await attachToServerStartedRun(streamID: streamID, modelContext: modelContext)
                 // The server kept the earlier run, not this newly submitted text.
                 // Report an unaccepted send so ChatView restores the draft while
                 // the coordinator reconnects to the existing response.
@@ -2550,6 +2547,17 @@ public final class ChatViewModel {
             restorePendingAttachments(attachmentsToRestoreOnFailure)
             return false
         }
+    }
+
+    /// Follows a run that started outside this view model's own send. The server transcript is reconciled first,
+    /// so the SSE tokens attach to the persisted turn instead of creating a second bubble with only the tail.
+    private func attachToServerStartedRun(streamID: String, modelContext: ModelContext?) async {
+        await loadMessages(modelContext: modelContext, waitsForPendingMessageSend: false)
+        _ = restoreActiveStreamSnapshotIfAvailable(streamID: streamID)
+        streamingAssistantMessageID = TranscriptTurnClassifier
+            .currentTurnAssistantAnchorIDs(in: messages, messageOffset: messagesOffset)
+            .first
+        streamCoordinator.start(streamID: streamID)
     }
 
     private func waitForMessageSendToFinish() async {
@@ -2894,6 +2902,12 @@ public final class ChatViewModel {
                 text: message,
                 steerID: steeringHint.messageID
             )
+            // TAL-460: sent during a background turn, the message started the user's own turn; follow it.
+            if let streamID = response.startedTurn?.streamId {
+                removeSteeringHint(id: steeringHint.messageID)
+                await attachToServerStartedRun(streamID: streamID, modelContext: nil)
+                return .executed(message: nil)
+            }
             if response.accepted == true {
                 updateSteeringHint(id: steeringHint.messageID, state: .waiting)
                 finalizeSteeringPhase(

@@ -95138,532 +95138,744 @@
         }
       }
     },
-    "Delegation batch complete" : {
+    "Agent “%@” completed" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "اكتملت دفعة التفويض"
+            "value" : "اكتمل الوكيل “%@”"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Delegationsstapel abgeschlossen"
+            "value" : "Agent „%@“ abgeschlossen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Lote de delegaciones completado"
+            "value" : "Agente «%@» completado"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Lot de délégations terminé"
+            "value" : "Agent « %@ » terminé"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "אצוות ההאצלה הושלמה"
+            "value" : "הסוכן ״%@״ הושלם"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Lotto di deleghe completato"
+            "value" : "Agente «%@» completato"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "委任バッチが完了しました"
+            "value" : "エージェント「%@」が完了しました"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "위임 배치 완료"
+            "value" : "에이전트 “%@” 완료"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Delegatiebatch voltooid"
+            "value" : "Agent ‘%@’ voltooid"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Partia delegacji zakończona"
+            "value" : "Agent „%@” ukończony"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Lote de delegações concluído"
+            "value" : "Agente “%@” concluído"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Пакет делегирований завершён"
+            "value" : "Агент «%@» завершён"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Yetki devri grubu tamamlandı"
+            "value" : "Ajan “%@” tamamlandı"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "تفویض کا بیچ مکمل ہو گیا"
+            "value" : "ایجنٹ “%@” مکمل ہو گیا"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "委派批次已完成"
+            "value" : "代理「%@」已完成"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "委托批次已完成"
+            "value" : "代理“%@”已完成"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "委派批次已完成"
+            "value" : "代理「%@」已完成"
           }
         }
       }
     },
-    "Background process update" : {
+    "Agent “%@” failed" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "تحديث عملية في الخلفية"
+            "value" : "فشل الوكيل “%@”"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Hintergrundprozess-Update"
+            "value" : "Agent „%@“ fehlgeschlagen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Actualización de proceso en segundo plano"
+            "value" : "Agente «%@» falló"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Mise à jour d’un processus en arrière-plan"
+            "value" : "Agent « %@ » en échec"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "עדכון תהליך ברקע"
+            "value" : "הסוכן ״%@״ נכשל"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Aggiornamento del processo in background"
+            "value" : "Agente «%@» non riuscito"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "バックグラウンドプロセスの更新"
+            "value" : "エージェント「%@」が失敗しました"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "백그라운드 프로세스 업데이트"
+            "value" : "에이전트 “%@” 실패"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Update van achtergrondproces"
+            "value" : "Agent ‘%@’ mislukt"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Aktualizacja procesu w tle"
+            "value" : "Agent „%@” nie powiódł się"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Atualização de processo em segundo plano"
+            "value" : "Agente “%@” falhou"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Обновление фонового процесса"
+            "value" : "Агент «%@» завершился с ошибкой"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Arka plan işlemi güncellemesi"
+            "value" : "Ajan “%@” başarısız oldu"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "پس منظر کے عمل کی اپ ڈیٹ"
+            "value" : "ایجنٹ “%@” ناکام ہو گیا"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "背景處理程序更新"
+            "value" : "代理「%@」失敗"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "后台进程更新"
+            "value" : "代理“%@”失败"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "背景處理程序更新"
+            "value" : "代理「%@」失敗"
           }
         }
       }
     },
-    "Background updates (%lld)" : {
+    "Background command %@ finished" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "تحديثات في الخلفية (%lld)"
+            "value" : "انتهى أمر الخلفية %@"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Hintergrund-Updates (%lld)"
+            "value" : "Hintergrundbefehl %@ beendet"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Actualizaciones en segundo plano (%lld)"
+            "value" : "Comando en segundo plano %@ terminado"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Mises à jour en arrière-plan (%lld)"
+            "value" : "Commande en arrière-plan %@ terminée"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "עדכונים ברקע (%lld)"
+            "value" : "פקודת הרקע %@ הסתיימה"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Aggiornamenti in background (%lld)"
+            "value" : "Comando in background %@ terminato"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "バックグラウンドの更新（%lld）"
+            "value" : "バックグラウンドコマンド %@ が終了しました"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "백그라운드 업데이트 (%lld)"
+            "value" : "백그라운드 명령 %@ 완료"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Achtergrondupdates (%lld)"
+            "value" : "Achtergrondopdracht %@ voltooid"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Aktualizacje w tle (%lld)"
+            "value" : "Polecenie w tle %@ zakończone"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Atualizações em segundo plano (%lld)"
+            "value" : "Comando em segundo plano %@ terminou"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Фоновые обновления (%lld)"
+            "value" : "Фоновая команда %@ завершена"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Arka plan güncellemeleri (%lld)"
+            "value" : "Arka plan komutu %@ bitti"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "پس منظر کی اپ ڈیٹس (%lld)"
+            "value" : "پس منظر کمانڈ %@ مکمل ہو گئی"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "背景更新（%lld）"
+            "value" : "背景命令 %@ 已結束"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "后台更新（%lld）"
+            "value" : "后台命令 %@ 已结束"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "背景更新（%lld）"
+            "value" : "背景命令 %@ 已結束"
           }
         }
       }
     },
-    "Background update" : {
+    "Background command %@ failed" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "تحديث في الخلفية"
+            "value" : "فشل أمر الخلفية %@"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Hintergrund-Update"
+            "value" : "Hintergrundbefehl %@ fehlgeschlagen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Actualización en segundo plano"
+            "value" : "Comando en segundo plano %@ falló"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Mise à jour en arrière-plan"
+            "value" : "Commande en arrière-plan %@ en échec"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "עדכון ברקע"
+            "value" : "פקודת הרקע %@ נכשלה"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Aggiornamento in background"
+            "value" : "Comando in background %@ non riuscito"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "バックグラウンドの更新"
+            "value" : "バックグラウンドコマンド %@ が失敗しました"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "백그라운드 업데이트"
+            "value" : "백그라운드 명령 %@ 실패"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Achtergrondupdate"
+            "value" : "Achtergrondopdracht %@ mislukt"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Aktualizacja w tle"
+            "value" : "Polecenie w tle %@ nie powiodło się"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Atualização em segundo plano"
+            "value" : "Comando em segundo plano %@ falhou"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Фоновое обновление"
+            "value" : "Фоновая команда %@ завершилась с ошибкой"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Arka plan güncellemesi"
+            "value" : "Arka plan komutu %@ başarısız oldu"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "پس منظر کی اپ ڈیٹ"
+            "value" : "پس منظر کمانڈ %@ ناکام ہو گئی"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "背景更新"
+            "value" : "背景命令 %@ 失敗"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "后台更新"
+            "value" : "后台命令 %@ 失败"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "背景更新"
+            "value" : "背景命令 %@ 失敗"
           }
         }
       }
     },
-    "Needs attention" : {
+    "Background command %@ failed (exit %lld)" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "يحتاج إلى انتباه"
+            "value" : "فشل أمر الخلفية %@ (رمز الخروج %lld)"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Erfordert Aufmerksamkeit"
+            "value" : "Hintergrundbefehl %@ fehlgeschlagen (Exit %lld)"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Requiere atención"
+            "value" : "Comando en segundo plano %@ falló (salida %lld)"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Nécessite votre attention"
+            "value" : "Commande en arrière-plan %@ en échec (code %lld)"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "דורש תשומת לב"
+            "value" : "פקודת הרקע %@ נכשלה (קוד יציאה %lld)"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Richiede attenzione"
+            "value" : "Comando in background %@ non riuscito (uscita %lld)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "要確認"
+            "value" : "バックグラウンドコマンド %@ が失敗しました（終了コード %lld）"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "확인 필요"
+            "value" : "백그라운드 명령 %@ 실패 (종료 코드 %lld)"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Vereist aandacht"
+            "value" : "Achtergrondopdracht %@ mislukt (exitcode %lld)"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Wymaga uwagi"
+            "value" : "Polecenie w tle %@ nie powiodło się (kod %lld)"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Requer atenção"
+            "value" : "Comando em segundo plano %@ falhou (saída %lld)"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Требует внимания"
+            "value" : "Фоновая команда %@ завершилась с ошибкой (код %lld)"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "İlgi gerektiriyor"
+            "value" : "Arka plan komutu %@ başarısız oldu (çıkış %lld)"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "توجہ درکار ہے"
+            "value" : "پس منظر کمانڈ %@ ناکام ہو گئی (ایگزٹ کوڈ %lld)"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "需要注意"
+            "value" : "背景命令 %@ 失敗（結束碼 %lld）"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "需要关注"
+            "value" : "后台命令 %@ 失败（退出码 %lld）"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "需要注意"
+            "value" : "背景命令 %@ 失敗（結束碼 %lld）"
+          }
+        }
+      }
+    },
+    "Working on background results" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يعمل على نتائج الخلفية"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bearbeitet Hintergrundergebnisse"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Procesando resultados en segundo plano"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Traitement des résultats en arrière-plan"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "עובד על תוצאות רקע"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Elaborazione dei risultati in background"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "バックグラウンドの結果を処理中"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "백그라운드 결과 처리 중"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Werkt aan achtergrondresultaten"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Przetwarza wyniki w tle"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Processando resultados em segundo plano"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обрабатывает фоновые результаты"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Arka plan sonuçları işleniyor"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "پس منظر کے نتائج پر کام جاری ہے"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在處理背景結果"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在处理后台结果"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在處理背景結果"
+          }
+        }
+      }
+    },
+    "%@ is working on background results" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ يعمل على نتائج الخلفية"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ bearbeitet Hintergrundergebnisse"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ está procesando resultados en segundo plano"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ traite des résultats en arrière-plan"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ עובד על תוצאות רקע"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ sta elaborando i risultati in background"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ がバックグラウンドの結果を処理中"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@이(가) 백그라운드 결과를 처리하는 중"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ werkt aan achtergrondresultaten"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ przetwarza wyniki w tle"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ está processando resultados em segundo plano"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ обрабатывает фоновые результаты"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ arka plan sonuçlarını işliyor"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ پس منظر کے نتائج پر کام کر رہا ہے"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 正在處理背景結果"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 正在处理后台结果"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 正在處理背景結果"
           }
         }
       }

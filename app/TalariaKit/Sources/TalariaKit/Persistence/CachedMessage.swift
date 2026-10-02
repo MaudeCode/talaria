@@ -25,6 +25,7 @@ public final class CachedMessage {
     var steerData: Data?
     var displayExcerpt: String?
     var backgroundUpdateData: Data?
+    var backgroundSilent: Bool?
     var cachedAt: Date
     var expiresAt: Date
 
@@ -86,6 +87,7 @@ public final class CachedMessage {
         steerData = message.steer.flatMap { try? JSONEncoder().encode($0) }
         displayExcerpt = message.displayExcerpt
         backgroundUpdateData = message.backgroundUpdate.flatMap { try? JSONEncoder().encode($0) }
+        backgroundSilent = message.backgroundSilent ? true : nil
         if let attachments = message.attachments, !attachments.isEmpty {
             attachmentsData = try? JSONEncoder().encode(attachments)
         } else {

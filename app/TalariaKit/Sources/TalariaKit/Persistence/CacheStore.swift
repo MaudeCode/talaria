@@ -374,7 +374,8 @@ private extension ChatMessage {
             turnId: cachedMessage.turnId,
             steer: cachedMessage.steerData.flatMap { try? JSONDecoder().decode([String: JSONValue].self, from: $0) },
             displayExcerpt: cachedMessage.displayExcerpt,
-            backgroundUpdate: cachedMessage.backgroundUpdateData.flatMap { try? JSONDecoder().decode(BackgroundUpdate.self, from: $0) }
+            backgroundUpdate: cachedMessage.backgroundUpdateData.flatMap { try? JSONDecoder().decode(BackgroundUpdate.self, from: $0) },
+            backgroundSilent: cachedMessage.backgroundSilent == true
         )
     }
 }

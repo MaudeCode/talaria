@@ -1352,6 +1352,7 @@ struct ChatView: View {
             activeStreamRecoveryState: viewModel.activeStreamRecoveryState,
             isCancellingStream: viewModel.isCancellingStream,
             isSyncingTranscript: showsSyncingPill,
+            isBackgroundTurn: viewModel.isBackgroundTurnActive,
             isScrolledNearBottom: isScrolledNearBottom
         )
     }

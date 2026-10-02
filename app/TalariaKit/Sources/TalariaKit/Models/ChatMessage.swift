@@ -40,8 +40,10 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
     public let steer: [String: JSONValue]?
     /// The server's collapsed excerpt of a body too long to lay out whole (TAL-456); `content` stays whole for actions.
     public let displayExcerpt: String?
-    /// The server marked this row an automatic background wakeup (TAL-371): render it as an update, not the user's bubble.
+    /// The server marked this row an automatic background wakeup (TAL-371): render its completion lines, not the user's bubble.
     public let backgroundUpdate: BackgroundUpdate?
+    /// The server marked this row part of a background reply that is only a silence marker (TAL-460): it is not shown.
+    public let backgroundSilent: Bool
 
     public init(
         role: String?,
@@ -62,7 +64,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         turnId: String? = nil,
         steer: [String: JSONValue]? = nil,
         displayExcerpt: String? = nil,
-        backgroundUpdate: BackgroundUpdate? = nil
+        backgroundUpdate: BackgroundUpdate? = nil,
+        backgroundSilent: Bool = false
     ) {
         self.role = role
         self.content = content
@@ -83,6 +86,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         self.steer = steer
         self.displayExcerpt = displayExcerpt
         self.backgroundUpdate = backgroundUpdate
+        self.backgroundSilent = backgroundSilent
     }
 
     enum CodingKeys: String, CodingKey {
@@ -107,6 +111,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         case displayTruncated = "_displayTruncated"
         case displayExcerpt = "_displayExcerpt"
         case backgroundUpdate = "_backgroundUpdate"
+        case backgroundSilent = "_backgroundSilent"
     }
 
     public init(from decoder: Decoder) throws {
@@ -138,6 +143,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
             ? container.decodeLossyStringIfPresent(forKey: .displayExcerpt)
             : nil
         backgroundUpdate = try? container.decodeIfPresent(BackgroundUpdate.self, forKey: .backgroundUpdate)
+        backgroundSilent = (try? container.decodeIfPresent(Bool.self, forKey: .backgroundSilent)) == true
     }
 
     private static func attachments(
@@ -303,35 +309,68 @@ extension ChatMessage {
     }
 }
 
-/// An automatic background wakeup the server classified (TAL-371): the client maps `kind` to a localized label.
+/// An automatic background wakeup the server classified (TAL-371), as one completion line per finished item (TAL-460).
 public struct BackgroundUpdate: Codable, Equatable {
-    public enum Kind: String, Codable, Equatable {
-        case delegation, process, mixed, other
-    }
+    public let lines: [BackgroundLine]
 
-    public let kind: Kind
-    /// A failure or watch notice the reader should see without expanding.
-    public let attention: Bool
-    public let count: Int
-    public let summary: String
-
-    public init(kind: Kind, attention: Bool, count: Int, summary: String) {
-        self.kind = kind
-        self.attention = attention
-        self.count = count
-        self.summary = summary
+    public init(lines: [BackgroundLine]) {
+        self.lines = lines
     }
 
     enum CodingKeys: String, CodingKey {
-        case kind, attention, count, summary
+        case lines, attention, summary
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decoded = (try? container.decodeIfPresent([BackgroundLine].self, forKey: .lines)) ?? []
+        // Older servers (TAL-371) sent one summary instead of lines; it becomes the one line.
+        let summary = container.decodeLossyStringIfPresent(forKey: .summary) ?? ""
+        let attention = (try? container.decodeIfPresent(Bool.self, forKey: .attention)) == true
+        lines = decoded.isEmpty
+            ? [BackgroundLine(kind: .other, status: attention ? .failed : .completed, label: summary)]
+            : decoded
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(lines, forKey: .lines)
+    }
+}
+
+/// One finished background item: the client words it per `kind` and `status` around the server's `label`.
+public struct BackgroundLine: Codable, Equatable {
+    public enum Kind: String, Codable, Equatable {
+        case agent, command, other
+    }
+
+    public enum Status: String, Codable, Equatable {
+        case completed, failed, notice
+    }
+
+    public let kind: Kind
+    public let status: Status
+    /// An agent's goal, a command, or any other notice as written.
+    public let label: String
+    public let exitCode: Int?
+
+    public init(kind: Kind, status: Status, label: String, exitCode: Int? = nil) {
+        self.kind = kind
+        self.status = status
+        self.label = label
+        self.exitCode = exitCode
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case kind, status, label, exitCode
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         kind = container.decodeLossyStringIfPresent(forKey: .kind).flatMap(Kind.init(rawValue:)) ?? .other
-        attention = (try? container.decodeIfPresent(Bool.self, forKey: .attention)) ?? false
-        count = max(1, container.decodeLossyIntIfPresent(forKey: .count) ?? 1)
-        summary = container.decodeLossyStringIfPresent(forKey: .summary) ?? ""
+        status = container.decodeLossyStringIfPresent(forKey: .status).flatMap(Status.init(rawValue:)) ?? .notice
+        label = container.decodeLossyStringIfPresent(forKey: .label) ?? ""
+        exitCode = container.decodeLossyIntIfPresent(forKey: .exitCode)
     }
 }
 
