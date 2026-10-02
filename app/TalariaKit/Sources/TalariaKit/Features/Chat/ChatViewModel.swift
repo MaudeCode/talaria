@@ -1708,25 +1708,17 @@ public final class ChatViewModel {
                   })
             else { return loadedMessage }
 
-            return ChatMessage(
-                role: loadedMessage.role,
-                content: loadedMessage.content,
-                timestamp: loadedMessage.timestamp,
-                messageId: loadedMessage.messageId,
-                name: loadedMessage.name,
-                toolCallId: loadedMessage.toolCallId,
-                toolUseId: loadedMessage.toolUseId,
-                toolCalls: loadedMessage.toolCalls ?? cachedMessage.toolCalls,
-                contentParts: loadedMessage.contentParts ?? cachedMessage.contentParts,
-                reasoning: loadedMessage.reasoning ?? cachedMessage.reasoning,
-                reasoningTitles: loadedMessage.reasoningTitles ?? cachedMessage.reasoningTitles,
-                activityScene: loadedMessage.activityScene ?? cachedMessage.activityScene,
-                attachments: loadedMessage.attachments,
-                turnDuration: loadedMessage.turnDuration ?? cachedMessage.turnDuration,
-                turnTps: loadedMessage.turnTps ?? cachedMessage.turnTps,
-                turnId: loadedMessage.turnId ?? cachedMessage.turnId,
-                steer: loadedMessage.steer ?? cachedMessage.steer
-            )
+            var merged = loadedMessage
+            merged.toolCalls = loadedMessage.toolCalls ?? cachedMessage.toolCalls
+            merged.contentParts = loadedMessage.contentParts ?? cachedMessage.contentParts
+            merged.reasoning = loadedMessage.reasoning ?? cachedMessage.reasoning
+            merged.reasoningTitles = loadedMessage.reasoningTitles ?? cachedMessage.reasoningTitles
+            merged.activityScene = loadedMessage.activityScene ?? cachedMessage.activityScene
+            merged.turnDuration = loadedMessage.turnDuration ?? cachedMessage.turnDuration
+            merged.turnTps = loadedMessage.turnTps ?? cachedMessage.turnTps
+            merged.turnId = loadedMessage.turnId ?? cachedMessage.turnId
+            merged.steer = loadedMessage.steer ?? cachedMessage.steer
+            return merged
         }
         let mergedMessages = preservingLocalSteeringTurns(
             serverMergedMessages,
@@ -1989,28 +1981,27 @@ public final class ChatViewModel {
 
         if let assistantIndex = assistantSearchRange.reversed().first(where: { mergedMessages[$0].role == "assistant" }) {
             let loadedAssistant = mergedMessages[assistantIndex]
-            mergedMessages[assistantIndex] = ChatMessage(
-                role: loadedAssistant.role,
-                content: reconciledActiveStreamContent(
-                    loadedContent: loadedAssistant.content,
-                    snapshotContent: snapshotAssistant.content
-                ),
-                timestamp: loadedAssistant.timestamp ?? snapshotAssistant.timestamp,
-                messageId: loadedAssistant.messageId ?? snapshotAssistant.messageId,
-                name: loadedAssistant.name ?? snapshotAssistant.name,
-                toolCallId: loadedAssistant.toolCallId ?? snapshotAssistant.toolCallId,
-                toolUseId: loadedAssistant.toolUseId ?? snapshotAssistant.toolUseId,
-                toolCalls: loadedAssistant.toolCalls ?? snapshotAssistant.toolCalls,
-                contentParts: loadedAssistant.contentParts ?? snapshotAssistant.contentParts,
-                reasoning: loadedAssistant.reasoning ?? snapshotAssistant.reasoning,
-                reasoningTitles: loadedAssistant.reasoningTitles ?? snapshotAssistant.reasoningTitles,
-                activityScene: loadedAssistant.activityScene ?? snapshotAssistant.activityScene,
-                attachments: loadedAssistant.attachments ?? snapshotAssistant.attachments,
-                turnDuration: loadedAssistant.turnDuration ?? snapshotAssistant.turnDuration,
-                turnTps: loadedAssistant.turnTps ?? snapshotAssistant.turnTps,
-                turnId: loadedAssistant.turnId ?? snapshotAssistant.turnId,
-                steer: loadedAssistant.steer ?? snapshotAssistant.steer
+            var merged = loadedAssistant
+            merged.content = reconciledActiveStreamContent(
+                loadedContent: loadedAssistant.content,
+                snapshotContent: snapshotAssistant.content
             )
+            merged.timestamp = loadedAssistant.timestamp ?? snapshotAssistant.timestamp
+            merged.messageId = loadedAssistant.messageId ?? snapshotAssistant.messageId
+            merged.name = loadedAssistant.name ?? snapshotAssistant.name
+            merged.toolCallId = loadedAssistant.toolCallId ?? snapshotAssistant.toolCallId
+            merged.toolUseId = loadedAssistant.toolUseId ?? snapshotAssistant.toolUseId
+            merged.toolCalls = loadedAssistant.toolCalls ?? snapshotAssistant.toolCalls
+            merged.contentParts = loadedAssistant.contentParts ?? snapshotAssistant.contentParts
+            merged.reasoning = loadedAssistant.reasoning ?? snapshotAssistant.reasoning
+            merged.reasoningTitles = loadedAssistant.reasoningTitles ?? snapshotAssistant.reasoningTitles
+            merged.activityScene = loadedAssistant.activityScene ?? snapshotAssistant.activityScene
+            merged.attachments = loadedAssistant.attachments ?? snapshotAssistant.attachments
+            merged.turnDuration = loadedAssistant.turnDuration ?? snapshotAssistant.turnDuration
+            merged.turnTps = loadedAssistant.turnTps ?? snapshotAssistant.turnTps
+            merged.turnId = loadedAssistant.turnId ?? snapshotAssistant.turnId
+            merged.steer = loadedAssistant.steer ?? snapshotAssistant.steer
+            mergedMessages[assistantIndex] = merged
             return ActiveStreamMessageMerge(
                 messages: mergedMessages,
                 streamingAssistantMessageID: mergedMessages[assistantIndex].messageId,
@@ -3804,25 +3795,9 @@ public final class ChatViewModel {
         _ message: ChatMessage,
         state: SteeringHintState
     ) -> ChatMessage {
-        ChatMessage(
-            role: message.role,
-            content: message.content,
-            timestamp: message.timestamp,
-            messageId: message.messageId,
-            name: state.rawValue,
-            toolCallId: message.toolCallId,
-            toolUseId: message.toolUseId,
-            toolCalls: message.toolCalls,
-            contentParts: message.contentParts,
-            reasoning: message.reasoning,
-            reasoningTitles: message.reasoningTitles,
-            activityScene: message.activityScene,
-            attachments: message.attachments,
-            turnDuration: message.turnDuration,
-            turnTps: message.turnTps,
-            turnId: message.turnId,
-            steer: message.steer
-        )
+        var hint = message
+        hint.name = state.rawValue
+        return hint
     }
 
     private func appendLocalMessage(_ text: String, role: String, idPrefix: String) -> String? {
@@ -3845,25 +3820,9 @@ public final class ChatViewModel {
     private func updateLocalMessage(id: String, content: String) {
         guard let index = messages.firstIndex(where: { $0.messageId == id }) else { return }
         let existing = messages[index]
-        messages[index] = ChatMessage(
-            role: existing.role,
-            content: content,
-            timestamp: existing.timestamp,
-            messageId: existing.messageId,
-            name: existing.name,
-            toolCallId: existing.toolCallId,
-            toolUseId: existing.toolUseId,
-            toolCalls: existing.toolCalls,
-            contentParts: existing.contentParts,
-            reasoning: existing.reasoning,
-            reasoningTitles: existing.reasoningTitles,
-            activityScene: existing.activityScene,
-            attachments: existing.attachments,
-            turnDuration: existing.turnDuration,
-            turnTps: existing.turnTps,
-            turnId: existing.turnId,
-            steer: existing.steer
-        )
+        var updated = existing
+        updated.content = content
+        messages[index] = updated
         scheduleStreamingScrollTrigger()
     }
 
@@ -4612,25 +4571,9 @@ public final class ChatViewModel {
             let currentContent = existing.content ?? ""
             let shouldUseSeparator = currentContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             let separator = shouldUseSeparator ? "\n\n" : ""
-            messages[index] = ChatMessage(
-                role: existing.role,
-                content: currentContent + separator + text,
-                timestamp: existing.timestamp,
-                messageId: existing.messageId,
-                name: existing.name,
-                toolCallId: existing.toolCallId,
-                toolUseId: existing.toolUseId,
-                toolCalls: existing.toolCalls,
-                contentParts: existing.contentParts,
-                reasoning: existing.reasoning,
-                reasoningTitles: existing.reasoningTitles,
-                activityScene: existing.activityScene,
-                attachments: existing.attachments,
-                turnDuration: existing.turnDuration,
-                turnTps: existing.turnTps,
-                turnId: existing.turnId,
-                steer: existing.steer
-            )
+            var updated = existing
+            updated.content = currentContent + separator + text
+            messages[index] = updated
             liveAssistantActivity.appendProse(separator + text)
             scheduleStreamingScrollTrigger()
             return true
@@ -4769,24 +4712,9 @@ public final class ChatViewModel {
             }) else { return }
             let message = messages[messageIndex]
             guard message.activityScene == nil, message.contentParts == nil else { return }
-            messages[messageIndex] = ChatMessage(
-                role: message.role,
-                content: message.content,
-                timestamp: message.timestamp,
-                messageId: message.messageId,
-                name: message.name,
-                toolCallId: message.toolCallId,
-                toolUseId: message.toolUseId,
-                toolCalls: message.toolCalls,
-                contentParts: liveAssistantActivity.persistedContentParts,
-                reasoning: message.reasoning,
-                reasoningTitles: message.reasoningTitles,
-                attachments: message.attachments,
-                turnDuration: message.turnDuration,
-                turnTps: message.turnTps,
-                turnId: message.turnId,
-                steer: message.steer
-            )
+            var archived = message
+            archived.contentParts = liveAssistantActivity.persistedContentParts
+            messages[messageIndex] = archived
         }
     }
 
@@ -5001,25 +4929,8 @@ public final class ChatViewModel {
 
         if let index = messages.firstIndex(where: { $0.messageId == messageID }) {
             let existing = messages[index]
-            let updatedMessage = ChatMessage(
-                role: existing.role,
-                content: (existing.content ?? "") + appendedContent,
-                timestamp: existing.timestamp,
-                messageId: existing.messageId,
-                name: existing.name,
-                toolCallId: existing.toolCallId,
-                toolUseId: existing.toolUseId,
-                toolCalls: existing.toolCalls,
-                contentParts: existing.contentParts,
-                reasoning: existing.reasoning,
-                reasoningTitles: existing.reasoningTitles,
-                activityScene: existing.activityScene,
-                attachments: existing.attachments,
-                turnDuration: existing.turnDuration,
-                turnTps: existing.turnTps,
-                turnId: existing.turnId,
-                steer: existing.steer
-            )
+            var updatedMessage = existing
+            updatedMessage.content = (existing.content ?? "") + appendedContent
             updateStreamingAssistantMessage(at: index, with: updatedMessage)
             liveAssistantActivity.appendProse(appendedContent)
             return true

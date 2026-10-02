@@ -19,31 +19,31 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         messageId ?? "\(role ?? "unknown")-\(timestamp ?? 0)-\(content ?? "")"
     }
 
-    public let role: String?
-    public let content: String?
-    public let timestamp: Double?
-    public let messageId: String?
-    public let name: String?
-    public let toolCallId: String?
-    public let toolUseId: String?
-    public let toolCalls: [JSONValue]?
-    public let contentParts: [JSONValue]?
-    public let reasoning: String?
-    public let reasoningTitles: [String]?
-    public let activityScene: AssistantActivityScene?
-    public let attachments: [MessageAttachment]?
-    public let turnDuration: Double?
-    public let turnTps: Double?
+    public internal(set) var role: String?
+    public internal(set) var content: String?
+    public internal(set) var timestamp: Double?
+    public internal(set) var messageId: String?
+    public internal(set) var name: String?
+    public internal(set) var toolCallId: String?
+    public internal(set) var toolUseId: String?
+    public internal(set) var toolCalls: [JSONValue]?
+    public internal(set) var contentParts: [JSONValue]?
+    public internal(set) var reasoning: String?
+    public internal(set) var reasoningTitles: [String]?
+    public internal(set) var activityScene: AssistantActivityScene?
+    public internal(set) var attachments: [MessageAttachment]?
+    public internal(set) var turnDuration: Double?
+    public internal(set) var turnTps: Double?
     /// The server turn this row belongs to; turns are grouped by equality of this id.
-    public let turnId: String?
+    public internal(set) var turnId: String?
     /// A consumed steer the server persisted in its turn: shown inside the turn's scene, never as its own row.
-    public let steer: [String: JSONValue]?
+    public internal(set) var steer: [String: JSONValue]?
     /// The server's collapsed excerpt of a body too long to lay out whole (TAL-456); `content` stays whole for actions.
-    public let displayExcerpt: String?
+    public internal(set) var displayExcerpt: String?
     /// The server marked this row an automatic background wakeup (TAL-371): render its completion lines, not the user's bubble.
-    public let backgroundUpdate: BackgroundUpdate?
+    public internal(set) var backgroundUpdate: BackgroundUpdate?
     /// The server marked this row part of a background reply that is only a silence marker (TAL-460): it is not shown.
-    public let backgroundSilent: Bool
+    public internal(set) var backgroundSilent: Bool
 
     public init(
         role: String?,
@@ -287,25 +287,10 @@ extension ChatMessage {
     }
 
     public func applyingTurnMetrics(duration: Double? = nil, tokensPerSecond: Double? = nil) -> ChatMessage {
-        ChatMessage(
-            role: role,
-            content: content,
-            timestamp: timestamp,
-            messageId: messageId,
-            name: name,
-            toolCallId: toolCallId,
-            toolUseId: toolUseId,
-            toolCalls: toolCalls,
-            contentParts: contentParts,
-            reasoning: reasoning,
-            reasoningTitles: reasoningTitles,
-            activityScene: activityScene,
-            attachments: attachments,
-            turnDuration: duration ?? turnDuration,
-            turnTps: tokensPerSecond ?? turnTps,
-            turnId: turnId,
-            steer: steer
-        )
+        var message = self
+        message.turnDuration = duration ?? turnDuration
+        message.turnTps = tokensPerSecond ?? turnTps
+        return message
     }
 }
 

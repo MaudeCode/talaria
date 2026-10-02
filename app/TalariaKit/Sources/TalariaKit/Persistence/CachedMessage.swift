@@ -17,6 +17,7 @@ public final class CachedMessage {
     var toolCallsData: Data?
     var contentPartsData: Data?
     var reasoning: String?
+    var reasoningTitlesData: Data?
     var activitySceneData: Data?
     var attachmentsData: Data?
     var turnDuration: Double?
@@ -80,6 +81,7 @@ public final class CachedMessage {
             contentPartsData = nil
         }
         reasoning = message.reasoning
+        reasoningTitlesData = message.reasoningTitles.flatMap { try? JSONEncoder().encode($0) }
         activitySceneData = message.activityScene.flatMap { try? JSONEncoder().encode($0) }
         turnDuration = message.turnDuration
         turnTps = message.turnTps

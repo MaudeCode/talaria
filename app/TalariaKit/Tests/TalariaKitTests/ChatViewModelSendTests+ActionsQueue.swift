@@ -833,6 +833,36 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testSettledSilentBackgroundReplyStaysHidden() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-bg"}"#, for: request)
+            default:
+                return apiTestJSONResponse(#"{}"#, for: request)
+            }
+        }
+        let didStart = await viewModel.sendMessage("Start the job")
+        XCTAssertTrue(didStart)
+        let settled = try makeSessionDetail(
+            #"{"session_id":"session-abc","messages":[{"role":"user","content":"Start the job","_turn_id":"stream-bg"},{"role":"assistant","content":"Started.","_turn_id":"stream-bg"},{"role":"user","content":"[IMPORTANT: Background process proc_1 completed (exit_code=0).]","_turn_id":"wake","_source":"process_wakeup","_background_update":{"lines":[{"kind":"command","status":"completed","label":"make","exit_code":0}]}},{"role":"assistant","content":"[SILENT]","_turn_id":"wake","_background_reply":true,"_background_silent":true,"_display_truncated":true,"_display_excerpt":"[SIL","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"[SILENT]","turn_duration":7,"activity_rows":[]}}]}"#
+        )
+        streamClient.emit(.reasoning(ReasoningStreamEvent(text: "Nothing here needs the user.")))
+        streamClient.emit(.done(DoneStreamEvent(
+            usage: ContextWindowSnapshot(contextLength: nil, thresholdTokens: nil, lastPromptTokens: nil, inputTokens: nil, outputTokens: nil, estimatedCost: nil, durationSeconds: 7),
+            session: settled
+        )))
+
+        // TAL-460: the settled turn's metrics never strip the server's display fields, so a silent reply stays hidden.
+        let reply = try XCTUnwrap(viewModel.messages.last)
+        XCTAssertEqual(reply.content, "[SILENT]")
+        XCTAssertTrue(reply.backgroundSilent)
+        XCTAssertEqual(reply.displayExcerpt, "[SIL")
+        XCTAssertFalse(viewModel.displayedTranscriptMessages.contains { $0.message.content == "[SILENT]" || $0.assistantSegments.contains { $0.message.content == "[SILENT]" } })
+    }
+
+    @MainActor
     func testSteerDuringBackgroundTurnFollowsTheUsersOwnTurn() async throws {
         let streamClient = SpySSEStreamingClient()
         var sessionReads = 0

@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On iPhone, a reply that just finished keeps how the server shows it, so a quiet background reply stays hidden and a long answer stays collapsed.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Each finished background agent or command stays on one line, with only its goal or command shortened, and its full notice fades in when opened.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "On iPhone, chats opened from the offline cache keep their reasoning titles.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

@@ -483,6 +483,17 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertEqual(restored.displayExcerpt, "Long")
     }
 
+    func testCachedMessagesKeepReasoningTitles() throws {
+        let context = try makeContext()
+        let serverURL = URL(string: "https://example.test")!
+        let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
+        let message = ChatMessage(role: "assistant", content: "Done.", timestamp: 1, messageId: "a-1", reasoning: "Checked both.", reasoningTitles: ["Checking A", "Checking B"])
+        try CacheStore.cacheMessages([message], serverURL: serverURL, sessionID: "abc123", in: context, cachedAt: cachedAt)
+        let restored = try XCTUnwrap(CacheStore.cachedMessages(serverURL: serverURL, sessionID: "abc123", in: context, now: cachedAt.addingTimeInterval(60)).first)
+        // TAL-470: a cache-first open keeps every field the server sent, including the reasoning titles.
+        XCTAssertEqual(restored, message)
+    }
+
     func testCachedMessagesKeepTheBackgroundUpdate() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!
