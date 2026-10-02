@@ -109,11 +109,11 @@ public final class SessionListViewModel {
     private let client: APIClient
     private let sessionMutator: SessionMutator
     private let server: URL
-    private let responseCache: ResponseCache
+    private let responseCache: ResponseCache?
 
     public init(server: URL, client: APIClient? = nil, responseCache: ResponseCache? = nil) {
         self.server = server
-        self.responseCache = responseCache ?? ResponseCache(server: server)
+        self.responseCache = responseCache
         let resolvedClient = client ?? APIClient(baseURL: server)
         self.client = resolvedClient
         self.sessionMutator = SessionMutator(client: resolvedClient)
@@ -226,16 +226,14 @@ public final class SessionListViewModel {
            !cachedSessions.isEmpty {
             sessions = cachedSessions
         }
-        if projects.isEmpty, let cachedProjects = responseCache.entry(Self.projectsCacheKind).load(ProjectsResponse.self) {
+        if projects.isEmpty, let cachedProjects = responseCache?.entry(ResponseCache.Kind.projects).load(ProjectsResponse.self) {
             projects = cachedProjects.projects ?? []
         }
-        if activeProfileName == nil, let cachedProfiles = responseCache.entry(Self.profilesCacheKind).load(ProfilesResponse.self) {
+        if activeProfileName == nil, let cachedProfiles = responseCache?.entry(ResponseCache.Kind.profiles).load(ProfilesResponse.self) {
             applyActiveProfile(cachedProfiles)
         }
     }
 
-    static let projectsCacheKind = "projects"
-    static let profilesCacheKind = "profiles"
 
     /// Runs already prefetched, as `session|stream`, so each run costs one request at most.
     private var prefetchedRuns: Set<String> = []
@@ -375,7 +373,7 @@ public final class SessionListViewModel {
 
         let generation = activeProfileGeneration
         do {
-            let response = try await client.profiles(caching: responseCache.entry(Self.profilesCacheKind))
+            let response = try await client.profiles(caching: responseCache?.entry(ResponseCache.Kind.profiles))
             // A switch the user made while this request was in flight is newer
             // than the profile it reports, so reapplying it would show the wrong
             // active profile and rebuild profile-dependent views for it.
@@ -941,7 +939,7 @@ public final class SessionListViewModel {
         projectsGeneration += 1
         let generation = projectsGeneration
         do {
-            let response = try await client.projects(caching: responseCache.entry(Self.projectsCacheKind))
+            let response = try await client.projects(caching: responseCache?.entry(ResponseCache.Kind.projects))
             // A project the user created, renamed or deleted while this request
             // was in flight is newer than the snapshot it returns, so adopting
             // it would make that mutation disappear until the next refresh.

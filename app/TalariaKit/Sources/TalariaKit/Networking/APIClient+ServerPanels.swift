@@ -5,6 +5,10 @@ extension APIClient {
         try await send(endpoint: .models, method: "GET")
     }
 
+    public func models(caching cache: ResponseCache.Entry?) async throws -> ModelsResponse {
+        try await send(endpoint: .models, caching: cache)
+    }
+
     /// Live (uncached) model list for the active provider. The server resolves
     /// the provider itself when no `provider` param is sent and echoes it back,
     /// so callers can match the result against the cached catalog's groups.
@@ -14,6 +18,10 @@ extension APIClient {
 
     public func commands() async throws -> CommandsResponse {
         try await send(endpoint: .commands, method: "GET")
+    }
+
+    public func commands(caching cache: ResponseCache.Entry?) async throws -> CommandsResponse {
+        try await send(endpoint: .commands, caching: cache)
     }
 
     /// Saves the default model. Pass `provider` whenever the row names its

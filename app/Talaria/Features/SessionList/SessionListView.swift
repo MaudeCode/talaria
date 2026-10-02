@@ -105,7 +105,7 @@ struct SessionListView: View {
         _pendingQuotaSourceID = pendingQuotaSourceID
         _opensProviderQuotaWidgetSettings = opensProviderQuotaWidgetSettings
         _requestedNewChat = requestedNewChat
-        _viewModel = State(initialValue: SessionListViewModel(server: server))
+        _viewModel = State(initialValue: SessionListViewModel(server: server, responseCache: ResponseCache(server: server)))
         _quotaViewModel = State(initialValue: ProvidersViewModel(server: server))
         _updateNotificationViewModel = State(initialValue: UpdateNotificationCenterViewModel(server: server))
         #if DEBUG

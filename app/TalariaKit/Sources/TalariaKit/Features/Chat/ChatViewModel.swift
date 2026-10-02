@@ -364,6 +364,8 @@ public final class ChatViewModel {
     private var needsComposerConfigurationReload = false
     private var pendingExplicitModelPick = false
     public private(set) var composerConfigurationInteractionGeneration = 0
+    /// Last composer catalogs per server, so a chat's choices show before they load (TAL-437).
+    private let responseCache: ResponseCache?
 
     public init(
         session: SessionSummary,
@@ -384,8 +386,10 @@ public final class ChatViewModel {
         listenRemoteControlCenter: (any ListenRemoteControlControlling)? = nil,
         serverTTSAudioPlayerFactory: (@MainActor (Data) throws -> any ListenAudioPlaying)? = nil,
         draftAttachmentStore: any ChatDraftAttachmentStoring = ChatDraftAttachmentStore.shared,
-        userDefaults: UserDefaults = .standard
+        userDefaults: UserDefaults = .standard,
+        responseCache: ResponseCache? = nil
     ) {
+        self.responseCache = responseCache
         sessionID = session.sessionId
         currentWorkspace = session.workspace
         currentModel = session.model
@@ -435,6 +439,11 @@ public final class ChatViewModel {
         self.streamCoordinator.attach(delegate: self)
         self.pendingActionCoordinator.delegate = self
         self.attachmentCoordinator.delegate = self
+        if let responseCache {
+            applyComposerConfigurationState(
+                ChatComposerConfigLoader.cachedState(from: composerConfigurationState, cache: responseCache)
+            )
+        }
     }
 
     deinit {
@@ -654,7 +663,7 @@ public final class ChatViewModel {
             needsComposerConfigurationReload = false
 
             let initialState = composerConfigurationState
-            let result = await ChatComposerConfigLoader(client: client)
+            let result = await ChatComposerConfigLoader(client: client, cache: responseCache)
                 .loadConfiguration(from: initialState)
 
             guard composerConfigurationState == initialState else {

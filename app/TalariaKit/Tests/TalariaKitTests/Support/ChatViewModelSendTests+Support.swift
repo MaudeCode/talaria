@@ -44,6 +44,7 @@ extension ChatViewModelSendTests {
         userDefaults: UserDefaults = .standard,
         server: URL = URL(string: "https://example.test")!,
         protocolClasses: [AnyClass] = [MockURLProtocol.self],
+        responseCache: ResponseCache? = nil,
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) throws -> ChatViewModel {
         let configuration = URLSessionConfiguration.ephemeral
@@ -79,7 +80,8 @@ extension ChatViewModelSendTests {
             listenRemoteControlCenter: listenRemoteControlCenter ?? SpyListenRemoteControlCenter(),
             serverTTSAudioPlayerFactory: serverTTSAudioPlayerFactory,
             draftAttachmentStore: draftAttachmentStore,
-            userDefaults: userDefaults
+            userDefaults: userDefaults,
+            responseCache: responseCache
         )
 
         if let spyStreamClient = resolvedStreamClient as? SpySSEStreamingClient {

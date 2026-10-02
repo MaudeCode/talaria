@@ -15,6 +15,15 @@ public struct ResponseCache: Sendable {
         directory = base.appendingPathComponent(Self.folderName(for: server), isDirectory: true)
     }
 
+    /// One file per endpoint; screens that read the same endpoint share its entry.
+    public enum Kind {
+        public static let profiles = "profiles"
+        public static let projects = "projects"
+        public static let models = "models"
+        public static let workspaces = "workspaces"
+        public static let commands = "commands"
+    }
+
     public func entry(_ kind: String) -> Entry {
         Entry(url: directory.appendingPathComponent("\(kind).json"))
     }

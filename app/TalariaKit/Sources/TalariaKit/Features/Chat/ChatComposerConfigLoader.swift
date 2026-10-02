@@ -60,9 +60,42 @@ struct ChatComposerConfigLoadResult: Sendable {
 
 struct ChatComposerConfigLoader {
     private let client: APIClient
+    private let cache: ResponseCache?
 
-    init(client: APIClient) {
+    init(client: APIClient, cache: ResponseCache? = nil) {
         self.client = client
+        self.cache = cache
+    }
+
+    /// The catalogs the last load saw, so a chat's profile, model, workspace and command choices
+    /// show before they load (TAL-437). It fills only empty catalogs and the selected profile
+    /// name, which the live load always resolves again; current selections stay as they are,
+    /// because the live load fills those only while they are empty.
+    static func cachedState(from initialState: ChatComposerConfigState, cache: ResponseCache) -> ChatComposerConfigState {
+        var state = initialState
+        if state.profileOptions.isEmpty,
+           let profiles = cache.entry(ResponseCache.Kind.profiles).load(ProfilesResponse.self) {
+            state.profileOptions = profiles.profiles ?? []
+            state.isSingleProfileMode = profiles.singleProfileMode ?? false
+            state.selectedProfileName = nonEmpty(state.selectedProfileName)
+                ?? nonEmpty(state.currentProfile)
+                ?? nonEmpty(profiles.active)
+                ?? profiles.effectiveDefaultProfileName
+        }
+        if state.modelCatalogGroups.isEmpty,
+           let models = cache.entry(ResponseCache.Kind.models).load(ModelsResponse.self) {
+            state.modelCatalogGroups = models.catalogGroups
+        }
+        if state.workspaceRoots.isEmpty,
+           let workspaces = cache.entry(ResponseCache.Kind.workspaces).load(WorkspacesResponse.self) {
+            state.workspaceRoots = workspaces.workspaces ?? []
+            state.workspaceSuggestions = state.workspaceRoots.compactMap(\.path)
+        }
+        if state.agentCommands.isEmpty,
+           let commands = cache.entry(ResponseCache.Kind.commands).load(CommandsResponse.self) {
+            state.agentCommands = commands.commands ?? []
+        }
+        return state
     }
 
     func loadConfiguration(from initialState: ChatComposerConfigState) async -> ChatComposerConfigLoadResult {
@@ -70,7 +103,7 @@ struct ChatComposerConfigLoader {
         var configurationError: Error?
 
         do {
-            let profilesResponse = try await client.profiles()
+            let profilesResponse = try await client.profiles(caching: cache?.entry(ResponseCache.Kind.profiles))
             state.profileOptions = profilesResponse.profiles ?? []
             state.isSingleProfileMode = profilesResponse.singleProfileMode ?? false
             state.selectedProfileName = Self.nonEmpty(state.currentProfile)
@@ -101,7 +134,7 @@ struct ChatComposerConfigLoader {
                 state.currentModel = Self.nonEmpty(selectedProfile?.model)
             }
 
-            let modelsResponse = try await client.models()
+            let modelsResponse = try await client.models(caching: cache?.entry(ResponseCache.Kind.models))
             state.modelCatalogGroups = modelsResponse.catalogGroups
             if state.currentModel == nil {
                 state.currentModel = modelsResponse.defaultModel
@@ -122,7 +155,7 @@ struct ChatComposerConfigLoader {
             state.supportedReasoningEfforts = reasoningResponse.normalizedSupportedEfforts
             state.supportsReasoningEffort = reasoningResponse.supportsReasoningEffort
 
-            let workspaceResponse = try await client.workspaces()
+            let workspaceResponse = try await client.workspaces(caching: cache?.entry(ResponseCache.Kind.workspaces))
             state.workspaceRoots = workspaceResponse.workspaces ?? []
             if state.currentWorkspace == nil {
                 state.currentWorkspace = workspaceResponse.last ?? state.workspaceRoots.compactMap(\.path).first
@@ -133,7 +166,7 @@ struct ChatComposerConfigLoader {
         }
 
         do {
-            state.agentCommands = (try await client.commands()).commands ?? []
+            state.agentCommands = (try await client.commands(caching: cache?.entry(ResponseCache.Kind.commands))).commands ?? []
         } catch {
             state.agentCommands = []
         }
