@@ -1,6 +1,6 @@
 /**
- * TAL-310: the one place a session's source is classified. Every session payload ships the result as `source_kind`
- * and `is_messaging_session` (`withSessionWireFlags`), so clients render it instead of scanning source markers.
+ * TAL-310: the source family clients file a session under. Every session payload ships it as `source_kind` and
+ * `is_messaging_session` (`withSessionWireFlags`), so clients never scan source markers themselves.
  */
 import { str } from '../util.js'
 
@@ -29,9 +29,9 @@ const lower = (v: unknown): string => str(v).trim().toLowerCase()
  *    whatever a stale `is_cli_session` says);
  * 2. `subagent` on any marker (never parent linkage alone, which forks and compression continuations share);
  * 3. `claude_code` on `source_tag` / `raw_source`;
- * 4. `messaging` as `session_source`, or the first present of `raw_source` / `source_tag` / `source` is `messaging` or a
- *    messaging platform;
- * 5. `cron` on any marker or a `cron_` session id; then `webhook`, `kanban`, `api` / `api_server` on any marker;
+ * 4. `cron` on any marker or a `cron_` session id (a scheduled run stays cron whatever channel it delivers to);
+ * 5. `messaging` as `session_source`, or the first present of `raw_source` / `source_tag` is `messaging` or a
+ *    messaging platform; then `webhook`, `kanban`, `api` / `api_server` on any marker;
  * 6. `is_cli_session`, or a CLI marker (`acp`, `cli`, `tui`, `external_agent`);
  * 7. no marker at all is a WebUI session; an unrecognised marker is `other`.
  */
@@ -41,12 +41,12 @@ export function sourceKind(row: Row): SourceKind {
   if (owner === 'webui' || owner === 'fork') return 'webui'
   if (markers.includes('subagent')) return 'subagent'
   if ([row.source_tag, row.raw_source].map(lower).includes('claude_code')) return 'claude_code'
-  const platform = [row.raw_source, row.source_tag, row.source].map(lower).find(Boolean)
-  if (lower(row.session_source) === 'messaging' || platform === 'messaging' || (platform && MESSAGING_SOURCES.has(platform))) return 'messaging'
   if (markers.includes('cron') || lower(row.session_id).startsWith('cron_')) return 'cron'
+  const platform = [row.raw_source, row.source_tag].map(lower).find(Boolean)
+  if (lower(row.session_source) === 'messaging' || platform === 'messaging' || (platform && MESSAGING_SOURCES.has(platform))) return 'messaging'
   if (markers.includes('webhook')) return 'webhook'
   if (markers.includes('kanban')) return 'kanban'
   if (markers.includes('api') || markers.includes('api_server')) return 'api'
   if (row.is_cli_session === true || markers.some((m) => CLI_MARKERS.has(m))) return 'cli'
-  return markers.length || lower(row.source) ? 'other' : 'webui'
+  return markers.length ? 'other' : 'webui'
 }

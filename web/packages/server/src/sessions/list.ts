@@ -322,6 +322,9 @@ export function isCliSessionRow(row: Row): boolean {
 }
 
 function isCliSessionForSettings(row: Row): boolean {
+  // TAL-310: never count or filter as CLI a row the wire files under another kind.
+  const kind = sourceKind(row)
+  if (kind !== 'cli' && kind !== 'claude_code') return false
   if (isCliSessionRow(row)) return true
   if (!row.is_cli_session) return false
   const source = str(row.source).trim().toLowerCase()
@@ -453,12 +456,12 @@ export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: Rea
   if (!r.is_streaming) r.active_stream_id = null
   // TAL-460: who started the running turn; a `background` one gives way to the user's next message.
   if ('active_turn_origin' in r && !r.is_streaming) r.active_turn_origin = null
-  // TAL-310: the source family clients file the row under; `is_cli_session` never contradicts it.
+  // TAL-310: the source family clients file the row under; `is_cli_session` is derived from it.
   const kind = sourceKind(r)
   r.source_kind = kind
   r.is_messaging_session = kind === 'messaging'
-  if (r.is_cli_session === true && kind !== 'cli' && kind !== 'claude_code') r.is_cli_session = false
-  const subagent = isSubagentRow(r)
+  r.is_cli_session = kind === 'cli' || kind === 'claude_code'
+  const subagent = kind === 'subagent' || isSubagentRow(r)
   if (subagent) { r.read_only = true; r.is_cli_session = false } else r.read_only = Boolean(r.read_only)
   // The branch gate (`SessionService.branch`): never a subagent child, and a read-only source only when it is a cron run.
   r.can_branch = !subagent && (!r.read_only || str(r.source_tag || r.raw_source).trim().toLowerCase() === 'cron')

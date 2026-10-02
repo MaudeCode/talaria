@@ -2,15 +2,21 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "Signal, WhatsApp and other messaging chats now open in the App the same way Telegram chats do, after the server prepares them to continue.",
+      "summary": "Signal and WhatsApp chats are now recognized as messaging chats in the App, the same as Telegram and the other channels.",
       "highlight": false,
-      "components": ["app", "web"]
+      "components": [
+        "app",
+        "web"
+      ]
     },
     {
       "category": "Changed",
       "summary": "The server now decides whether each session is a web chat, CLI, messaging, scheduled, webhook or delegated session, and the App groups and filters sessions by that decision.",
       "highlight": false,
-      "components": ["app", "web"]
+      "components": [
+        "app",
+        "web"
+      ]
     }
   ]
 }
