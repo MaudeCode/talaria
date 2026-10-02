@@ -2689,6 +2689,17 @@ public final class ChatViewModel {
         }
     }
 
+    /// Saves the transcript as it stands, a partial answer included, when the chat leaves the
+    /// screen or the app goes to the background (TAL-437), so reopening it or relaunching the app
+    /// paints it at once while the server load and replay catch up.
+    public func persistTranscript(modelContext: ModelContext) {
+        // An empty or offline transcript has nothing newer than the cache, and writing an empty
+        // one would delete the saved rows.
+        guard let sessionID, !messages.isEmpty, !isViewingCachedData else { return }
+        flushPendingStreamingContent()
+        cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
+    }
+
     public func cacheCompletedResponse(modelContext: ModelContext) {
         guard let sessionID else { return }
         cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)

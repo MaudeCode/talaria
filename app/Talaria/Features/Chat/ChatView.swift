@@ -546,6 +546,7 @@ struct ChatView: View {
                 activeStreamStatusRefreshTask?.cancel()
                 activeStreamStatusRefreshTask = nil
                 viewModel.stopListening()
+                viewModel.persistTranscript(modelContext: modelContext)
                 viewModel.suspendStreamForNavigation()
                 viewModel.cleanupPollingTasks()
             }
@@ -2278,6 +2279,7 @@ struct ChatView: View {
 
         switch phase {
         case .background:
+            viewModel.persistTranscript(modelContext: modelContext)
             if viewModel.activeStreamID != nil {
                 beginResponseCompletionBackgroundTask()
             }
