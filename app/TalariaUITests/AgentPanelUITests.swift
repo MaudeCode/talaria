@@ -339,8 +339,12 @@ final class AgentPanelLiveRefreshUITests: AgentPanelUITestCase {
         sendToBackground()
         app.activate()
 
+        // The new job lands at the end of the list, below the completion feed.
         XCTAssertTrue(
-            jobAddedElsewhere.awaitExistence(timeout: 15),
+            poll(timeout: 15) {
+                if !jobAddedElsewhere.exists { app.swipeUp() }
+                return jobAddedElsewhere.exists
+            },
             "The open Tasks list never caught up with the job added while the app was away"
         )
     }

@@ -146,7 +146,7 @@ extension UITestFixtureURLProtocol {
         case "/api/crons/delivery-options":
             return body(#"{"platforms":[{"value":"local","label":"Local"}]}"#)
         case "/api/crons/recent":
-            return body(isEmpty ? #"{"completions":[],"since":0}"# : cronRecentCompletions)
+            return body(cronRecentCompletions)
         case "/api/skills":
             return body(skills(state))
         case "/api/skills/content":
