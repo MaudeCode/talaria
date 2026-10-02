@@ -11,6 +11,8 @@ struct GroupedSessionsDisclosure: View {
     let viewModel: SessionListViewModel
     let sessions: [SessionSummary]
     let totalCount: Int
+    /// More sessions exist than the server lists, so the count reads "200+" (TAL-482).
+    var countIsPartial = false
     let isSearchActive: Bool
     let searchText: String
     let showsMessageCount: Bool
@@ -35,7 +37,7 @@ struct GroupedSessionsDisclosure: View {
             guard !isSearchActive else { return }
             userIsExpanded.toggle()
         } accessory: {
-            Text("\(totalCount)")
+            Text(verbatim: countIsPartial ? "\(totalCount.formatted())+" : totalCount.formatted())
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)

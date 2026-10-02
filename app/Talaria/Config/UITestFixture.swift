@@ -30,6 +30,9 @@ struct UITestFixtureEnvironment {
     nonisolated static let longBodiesArgument = "--ui-test-long-bodies"
     /// Serves a transcript with automatic background wakeups in the server's `_background_update` shape (TAL-371).
     nonisolated static let backgroundUpdatesArgument = "--ui-test-background-updates"
+    /// Adds a pinned long-titled chat and scheduled and webhook groups whose server counts say
+    /// more exist than are listed, so the sidebar's row and group chrome can be inspected (TAL-482).
+    nonisolated static let sidebarVarietyArgument = "--ui-test-sidebar-variety"
     nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
     /// Answers the chat's first transcript load, so the cache exists, then holds every reopen
     /// until the test releases it, so "Syncing messages" stays over the cached rows (TAL-436).
@@ -80,6 +83,9 @@ struct UITestFixtureEnvironment {
     }
     nonisolated static var hasBackgroundUpdates: Bool {
         ProcessInfo.processInfo.arguments.contains(backgroundUpdatesArgument)
+    }
+    nonisolated static var hasSidebarVariety: Bool {
+        ProcessInfo.processInfo.arguments.contains(sidebarVarietyArgument)
     }
     nonisolated static let serverURL = UITestFixtureLaunch.serverURL
     nonisolated static var relayCredentials: TalariaRelayCredentials { UITestFixtureLaunch.relayCredentials }
@@ -669,7 +675,30 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 title: index == 0 ? firstTitle : String(format: "Fixture Session %02d", index)
             )
         }
-        return json(["sessions": sessions, "archived_count": 0])
+        guard UITestFixtureEnvironment.hasSidebarVariety else {
+            return json(["sessions": sessions, "archived_count": 0])
+        }
+        var pinned = session(id: "ui-fixture-pinned", title: "Pinned fixture chat with a title long enough to wrap")
+        pinned["pinned"] = true
+        sessions.insert(pinned, at: 1)
+        for index in 1...6 {
+            var row = session(id: "cron_fixture_\(index)", title: "Scheduled Fixture \(index)")
+            row["source_tag"] = "cron"
+            sessions.append(row)
+        }
+        for index in 1...2 {
+            var row = session(id: "ui-fixture-webhook-\(index)", title: "Webhook Fixture \(index)")
+            row["source_tag"] = "webhook"
+            sessions.append(row)
+        }
+        return json([
+            "sessions": sessions,
+            "archived_count": 0,
+            "scheduled_session_count": 200,
+            "scheduled_sessions_truncated": true,
+            "webhook_session_count": 2,
+            "webhook_sessions_truncated": false
+        ])
     }
 
     private static func sessionResponse() -> Data {
