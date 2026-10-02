@@ -2,8 +2,6 @@ import SwiftUI
 import TalariaKit
 
 struct SettingsCard<Content: View>: View {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @ScaledMetric(relativeTo: .body) private var contentSpacing: CGFloat = 12
 
     let title: String
@@ -15,8 +13,6 @@ struct SettingsCard<Content: View>: View {
     }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .textCase(.uppercase)
@@ -31,27 +27,15 @@ struct SettingsCard<Content: View>: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                shape.fill(Color(.secondarySystemBackground).opacity(cardFillOpacity))
-            }
-            .adaptiveGlass(
-                .regular,
-                fallbackMaterial: .regularMaterial,
-                in: shape
+            .background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: Self.groupedCellCornerRadius, style: .continuous)
             )
-            .overlay {
-                shape
-                    .stroke(Color.primary.opacity(cardStrokeOpacity), lineWidth: 0.7)
-                    .allowsHitTesting(false)
-            }
         }
     }
 
-    private var cardFillOpacity: Double {
-        reduceTransparency ? 1 : 0.34
-    }
-
-    private var cardStrokeOpacity: Double {
-        colorSchemeContrast == .increased ? 0.16 : 0.06
+    /// The Settings root's inset-grouped cell radius, so category pages read as the same list.
+    private static var groupedCellCornerRadius: CGFloat {
+        if #available(iOS 26, *) { 26 } else { 10 }
     }
 }

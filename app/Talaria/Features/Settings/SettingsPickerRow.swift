@@ -23,25 +23,40 @@ struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
     var body: some View {
         Group {
             if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 8) {
-                    SettingsRowLabel(title: title, systemImage: systemImage)
-                        .accessibilityHidden(true)
-
-                    picker
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                stacked
             } else {
-                HStack(spacing: 12) {
-                    SettingsRowLabel(title: title, systemImage: systemImage)
-                        .accessibilityHidden(true)
+                // Side by side only while the title and the selected value each fit on one
+                // line; otherwise the value moves under the title instead of either wrapping.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        label
+                            .fixedSize()
 
-                    Spacer(minLength: 12)
+                        Spacer(minLength: 12)
 
-                    picker
+                        picker
+                            .fixedSize()
+                    }
+
+                    stacked
                 }
             }
         }
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    }
+
+    private var stacked: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            label
+
+            picker
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var label: some View {
+        SettingsRowLabel(title: title, systemImage: systemImage)
+            .accessibilityHidden(true)
     }
 
     private var picker: some View {
@@ -50,6 +65,8 @@ struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
         }
         .pickerStyle(.menu)
         .labelsHidden()
+        // Secondary like the other settings values; outside a glass card a menu picker turns blue.
+        .tint(.secondary)
         .accessibilityLabel(Text(title))
     }
 }

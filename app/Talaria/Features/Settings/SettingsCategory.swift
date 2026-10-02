@@ -38,7 +38,7 @@ struct SettingsPage<Content: View>: View {
             .padding(.bottom, 36)
             .adaptiveReadableContent(maxWidth: AdaptiveReadableContentWidth.secondaryDestination)
         }
-        .background(Color(.systemBackground))
+        .background(Color(.systemGroupedBackground))
         .navigationTitle(title)
     }
 }

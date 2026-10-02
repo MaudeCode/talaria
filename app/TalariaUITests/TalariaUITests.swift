@@ -497,6 +497,18 @@ final class SettingsStructureUITests: SettingsUITestCase {
             }
             XCTAssertTrue(setting.exists, "Missing composer setting: \(label)")
         }
+        // TAL-468: at the default text size the menu value never wraps onto a second line.
+        let sendWhileRespondingValue = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Send While Responding"))
+            .staticTexts["Steer active response"]
+        let oneLineLabel = app.switches["Workspace"].staticTexts["Workspace"].firstMatch
+        XCTAssertTrue(sendWhileRespondingValue.exists)
+        XCTAssertTrue(oneLineLabel.exists)
+        XCTAssertLessThan(
+            sendWhileRespondingValue.frame.height,
+            oneLineLabel.frame.height * 1.5,
+            "Send While Responding's value wrapped onto a second line"
+        )
 
         app.navigationBars["Chats"].buttons["Settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: Self.navigationTimeout))

@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Settings pages now share the Settings screen's grouped look: the same gray background and plain white or dark cells, without glass, outlines, or shadows.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Settings choices such as Send While Responding no longer wrap onto two lines; when a value doesn't fit beside its title, it moves under it.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

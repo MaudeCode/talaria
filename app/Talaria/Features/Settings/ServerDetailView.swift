@@ -77,7 +77,7 @@ struct ServerDetailView: View {
             .padding(.top, 18)
             .padding(.bottom, 36)
         }
-        .background(Color(.systemBackground))
+        .background(Color(.systemGroupedBackground))
         .navigationTitle(displayName.isEmpty ? hostFallback : displayName)
         .navigationBarTitleDisplayMode(.inline)
         // Persist identity edits to this server's registry entry. When it's the
