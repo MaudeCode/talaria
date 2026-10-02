@@ -56,8 +56,6 @@ final class ChatNavigationUITests: ChatUITestCase {
     }
 }
 
-/// Reopening a chat paints its cached transcript at once and shows "Syncing messages" above
-/// the composer until the server answers (TAL-436).
 /// TAL-437: a relaunch shows the chats the app saw last time before `/api/sessions` answers.
 final class ColdLaunchCacheUITests: ChatUITestCase {
     func testRelaunchShowsTheLastChatsBeforeTheServerAnswers() throws {
@@ -79,6 +77,8 @@ final class ColdLaunchCacheUITests: ChatUITestCase {
     }
 }
 
+/// Reopening a chat paints its cached transcript at once and shows "Syncing messages" above
+/// the composer until the server answers (TAL-436).
 final class ChatSyncStatusUITests: ChatUITestCase {
     /// TAL-434: a reply sent from another client while the app was in the background shows up in
     /// the open chat as soon as the app returns, without a pull or reopening the chat.

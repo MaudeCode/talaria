@@ -552,6 +552,7 @@ struct ChatView: View {
                 viewModel.cleanupPollingTasks()
             }
             .onAppear {
+                viewModel.showCachedComposerChoices()
                 Task {
                     await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
 
@@ -989,12 +990,19 @@ struct ChatView: View {
     private var composerAccessoryStack: some View {
         if composerAccessoryVisibleItemCount > 0 {
             VStack(spacing: composerAccessoryVerticalSpacing) {
+                // A floating status (the syncing pill) tops the stack, so nothing above it moves
+                // when it comes and goes.
+                if let activeRunStatusPresentation, !activeRunStatusPresentation.reservesTranscriptSpace {
+                    StatusChip(activeRunStatusPresentation)
+                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
+                }
+
                 if !viewModel.pinnedLocalNotices.isEmpty {
                     PinnedLocalNoticeStack(notices: viewModel.pinnedLocalNotices)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
-                if let activeRunStatusPresentation {
+                if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
                     StatusChip(activeRunStatusPresentation)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
