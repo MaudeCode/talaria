@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "On iPhone with iOS 26 or later, New Chat now sits in the bottom bar next to Search instead of floating above the chat list.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

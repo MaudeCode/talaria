@@ -108,6 +108,40 @@ final class ChatNavigationUITests: ChatUITestCase {
     }
 }
 
+/// TAL-461: New Chat sits on the bottom row beside Search instead of floating above it.
+final class SessionListBottomBarUITests: ChatUITestCase {
+    func testNewChatSharesTheSearchRowHidesWhileSearchingAndOpensTheComposer() throws {
+        launchFixture()
+        XCTAssertTrue(fixtureSessionButton.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        let search = try XCTUnwrap(waitForSessionSearchControl(timeout: 15), "Missing the session search control")
+        // The closed sidebar keeps its New Chat row on screen behind the list, and the
+        // full-screen toolbar container leaves every button not hittable, so exclude it by frame.
+        let newChat = app.buttons.matching(NSPredicate(format: "label == %@", "New Chat"))
+        let sidebarNewChat = app.descendants(matching: .any)["app-sidebar"].buttons["New Chat"]
+        func visibleNewChat() -> XCUIElement? {
+            let sidebarFrame = sidebarNewChat.exists ? sidebarNewChat.frame : .null
+            return newChat.allElementsBoundByIndex.first { $0.exists && $0.frame != sidebarFrame }
+        }
+        XCTAssertTrue(poll(timeout: 5) { visibleNewChat() != nil }, "Missing the New Chat button")
+        let newChatFrame = try XCTUnwrap(visibleNewChat()).settledFrame
+        let searchFrame = search.settledFrame
+        XCTAssertEqual(newChatFrame.midY, searchFrame.midY, accuracy: 2, "New Chat \(newChatFrame) is off the Search row \(searchFrame)")
+        XCTAssertGreaterThan(newChatFrame.minX, searchFrame.maxX, "New Chat should trail Search")
+
+        search.tap()
+        XCTAssertTrue(sessionSearchField.awaitExistence(timeout: 5))
+        XCTAssertTrue(poll(timeout: 5) { visibleNewChat() == nil }, "New Chat should hide while searching")
+        let closeSearch = app.buttons["close"]
+        XCTAssertTrue(closeSearch.awaitExistence(timeout: 3))
+        closeSearch.tap()
+        XCTAssertTrue(poll(timeout: 5) { visibleNewChat() != nil }, "New Chat should return when search closes")
+
+        tap(at: try XCTUnwrap(visibleNewChat()).frame.center)
+        XCTAssertTrue(app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 15))
+        XCTAssertNotNil(waitForComposer(timeout: 15), "New Chat did not open the composer")
+    }
+}
+
 /// TAL-437: a relaunch shows the chats the app saw last time before `/api/sessions` answers.
 final class ColdLaunchCacheUITests: ChatUITestCase {
     func testRelaunchShowsTheLastChatsBeforeTheServerAnswers() throws {

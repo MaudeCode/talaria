@@ -478,7 +478,7 @@ struct SessionListView: View {
 
             content
 
-            if !isSearchingSessions && horizontalSizeClass != .regular {
+            if showsFloatingNewChatButton {
                 newSessionButton
                     .padding(.trailing, 24)
                     .padding(.bottom, 22)
@@ -522,7 +522,27 @@ struct SessionListView: View {
                     .accessibilityLabel("New Chat")
                 }
             }
+
+            // iOS 26 minimizes search into the bottom bar, so New Chat joins that row instead
+            // of floating above the list (TAL-461).
+            if #available(iOS 26, *) {
+                if horizontalSizeClass != .regular {
+                    DefaultToolbarItem(kind: .search, placement: .bottomBar)
+                    ToolbarSpacer(.flexible, placement: .bottomBar)
+
+                    if !isSearchingSessions {
+                        ToolbarItem(placement: .bottomBar) {
+                            newChatToolbarButton
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    private var showsFloatingNewChatButton: Bool {
+        if #available(iOS 26, *) { return false }
+        return !isSearchingSessions && horizontalSizeClass != .regular
     }
 
     @ViewBuilder
@@ -978,6 +998,21 @@ struct SessionListView: View {
                 )
         }
         .buttonStyle(SessionListFloatingChatButtonStyle())
+        .disabled(viewModel.isViewingCachedData || navigationState.isCreatingNewChat)
+        .opacity(viewModel.isViewingCachedData ? 0.45 : 1)
+        .accessibilityLabel("New Chat")
+    }
+
+    @available(iOS 26, *)
+    private var newChatToolbarButton: some View {
+        HapticButton(feedbackStyle: .medium) {
+            openNewChat()
+        } label: {
+            Image(systemName: "square.and.pencil")
+                .foregroundStyle(newSessionButtonForegroundColor)
+        }
+        .buttonStyle(.glassProminent)
+        .tint(newSessionButtonGlassTint)
         .disabled(viewModel.isViewingCachedData || navigationState.isCreatingNewChat)
         .opacity(viewModel.isViewingCachedData ? 0.45 : 1)
         .accessibilityLabel("New Chat")
