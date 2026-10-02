@@ -134,7 +134,7 @@ extension UITestFixtureURLProtocol {
 
         switch url.path {
         case "/api/crons":
-            return body(populatedCrons)
+            return body(changedWhileBackgrounded ? cronsWithJobAddedElsewhere : populatedCrons)
         case "/api/crons/status":
             return body(#"{"running":{"ui-fixture-cron-digest":42.5}}"#)
         case "/api/crons/output":
@@ -172,6 +172,11 @@ extension UITestFixtureURLProtocol {
       {"id":"ui-fixture-cron-sweep","name":"Fixture Weekly Sweep","prompt":"Sweep the deterministic fixture workspace.","schedule":"0 4 * * 1","schedule_display":"Every Monday at 04:00","enabled":false,"state":"paused","next_run_at":2000090000,"last_status":"paused","deliver":"local","toast_notifications":false}
     ]}
     """
+
+    private static let cronsWithJobAddedElsewhere = populatedCrons.replacingOccurrences(
+        of: "\n]}",
+        with: #",{"id":"ui-fixture-cron-elsewhere","name":"FixtureJobAddedElsewhere","prompt":"Added by another client.","schedule":"0 5 * * *","schedule_display":"Every day at 05:00","enabled":true,"state":"active","deliver":"local"}"# + "\n]}"
+    )
 
     private static let cronOutputs = """
     {"job_id":"ui-fixture-cron-digest","outputs":[

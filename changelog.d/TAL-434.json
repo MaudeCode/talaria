@@ -1,0 +1,21 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An open chat now catches up when you return to the app and shows replies and runs started from another device while it is open.",
+      "highlight": true
+    },
+    {
+      "category": "Changed",
+      "summary": "The chat list updates as soon as the server reports a change, and scheduled and webhook lists keep refreshing while they are open.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Changed",
+      "summary": "The server announces every new run on a session, so other open clients can follow it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

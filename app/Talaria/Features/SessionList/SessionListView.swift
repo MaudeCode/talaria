@@ -299,6 +299,22 @@ struct SessionListView: View {
                 guard immediateRefreshID != nil else { return }
                 await refreshSessionsAndActiveProfile()
             }
+            .task(id: sessionEventsTaskID) {
+                guard scenePhase == .active else { return }
+                // The app's one subscription to server-announced changes (TAL-434): the list
+                // refreshes itself, and every open screen hears it through `refreshesLive`.
+                await SessionEventsMonitor.run(
+                    url: Endpoint.sessionEvents.url(relativeTo: server),
+                    client: SessionEventStreamClient()
+                ) { change in
+                    NotificationCenter.default.post(
+                        name: .talariaSessionsChanged,
+                        object: server,
+                        userInfo: [SessionsChange.userInfoKey: change]
+                    )
+                    Task { await refreshSessionsAndActiveProfile() }
+                }
+            }
             .task(id: autoRefreshTaskID) {
                 guard autoRefreshTaskID.isEnabled else { return }
                 await SessionListAutoRefresh.run(
@@ -903,8 +919,15 @@ struct SessionListView: View {
             // In regular width the sidebar stays beside the detail column, so
             // the list is only off screen when a compact destination has
             // replaced or covered it.
-            isListVisible: horizontalSizeClass == .regular || navigationState.destination == nil
+            isListVisible: horizontalSizeClass == .regular
+                || navigationState.destination == nil
+                || navigationState.destination?.showsSessionListRows == true
         )
+    }
+
+    /// Restarts the session-change subscription when the scene's activity or the server changes.
+    private var sessionEventsTaskID: String {
+        "\(server.absoluteString)|\(scenePhase == .active)"
     }
 
     private var newSessionButton: some View {

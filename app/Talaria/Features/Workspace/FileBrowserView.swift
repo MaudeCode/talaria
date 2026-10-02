@@ -82,6 +82,9 @@ struct FileBrowserView: View {
             .refreshable {
                 await reloadCurrentPath()
             }
+            .refreshesLive(on: .runEnded, showsStatus: false) {
+                await reloadCurrentPath()
+            }
             .listStyle(.plain)
             .safeAreaInset(edge: .top, spacing: 0) {
                 if viewModel.isLoading {

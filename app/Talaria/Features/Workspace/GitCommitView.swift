@@ -129,6 +129,10 @@ struct GitCommitView: View {
             .padding(16)
         }
         .refreshable { await viewModel.load() }
+        .refreshesLive(on: .runEnded, showsStatus: viewModel.status != nil) {
+            guard viewModel.busyOperation == nil else { return }
+            await viewModel.load()
+        }
     }
 
     private var batchActionsBar: some View {

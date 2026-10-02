@@ -167,6 +167,7 @@
 		C09300000000000000000001 /* HapticButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09300000000000000000002 /* HapticButton.swift */; };
 		C43600000000000000000001 /* StatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43600000000000000000002 /* StatusChip.swift */; };
 		C43600000000000000000003 /* AccessorySurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43600000000000000000004 /* AccessorySurface.swift */; };
+		C43400000000000000000001 /* LiveRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43400000000000000000002 /* LiveRefresh.swift */; };
 		C0FF000000000000000000B1 /* CustomHeadersEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FF000000000000000000B2 /* CustomHeadersEditor.swift */; };
 		C09500000000000000000001 /* AdaptiveGlassModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09500000000000000000002 /* AdaptiveGlassModifier.swift */; };
 		C09500000000000000000005 /* AdaptiveGlassDebugFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09500000000000000000006 /* AdaptiveGlassDebugFixture.swift */; };
@@ -589,6 +590,7 @@
 		C09300000000000000000002 /* HapticButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticButton.swift; sourceTree = "<group>"; };
 		C43600000000000000000002 /* StatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusChip.swift; sourceTree = "<group>"; };
 		C43600000000000000000004 /* AccessorySurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessorySurface.swift; sourceTree = "<group>"; };
+		C43400000000000000000002 /* LiveRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRefresh.swift; sourceTree = "<group>"; };
 		C0FF000000000000000000B2 /* CustomHeadersEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomHeadersEditor.swift; sourceTree = "<group>"; };
 		C09500000000000000000002 /* AdaptiveGlassModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveGlassModifier.swift; sourceTree = "<group>"; };
 		C09500000000000000000006 /* AdaptiveGlassDebugFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveGlassDebugFixture.swift; sourceTree = "<group>"; };
@@ -1053,6 +1055,7 @@
 				C09300000000000000000002 /* HapticButton.swift */,
 				C43600000000000000000002 /* StatusChip.swift */,
 				C43600000000000000000004 /* AccessorySurface.swift */,
+				C43400000000000000000002 /* LiveRefresh.swift */,
 				C09500000000000000000002 /* AdaptiveGlassModifier.swift */,
 				C09500000000000000000006 /* AdaptiveGlassDebugFixture.swift */,
 				C0FF000000000000000000B2 /* CustomHeadersEditor.swift */,
@@ -1858,6 +1861,7 @@
 				C09300000000000000000001 /* HapticButton.swift in Sources */,
 				C43600000000000000000001 /* StatusChip.swift in Sources */,
 				C43600000000000000000003 /* AccessorySurface.swift in Sources */,
+				C43400000000000000000001 /* LiveRefresh.swift in Sources */,
 				C0FF000000000000000000B1 /* CustomHeadersEditor.swift in Sources */,
 				C09500000000000000000001 /* AdaptiveGlassModifier.swift in Sources */,
 				C09500000000000000000005 /* AdaptiveGlassDebugFixture.swift in Sources */,

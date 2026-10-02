@@ -96,6 +96,9 @@ struct FilePreviewView: View {
         .task(id: entry.path) {
             await loadFile()
         }
+        .refreshesLive(on: .runEnded, showsStatus: viewModel.preview != nil) {
+            await loadFile()
+        }
         .refreshable {
             await loadFile()
         }

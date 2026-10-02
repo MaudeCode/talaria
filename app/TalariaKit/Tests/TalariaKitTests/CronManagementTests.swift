@@ -904,6 +904,53 @@ final class CronManagementViewModelTests: APIClientTestCase {
         XCTAssertEqual(viewModel.selectedRunDetail?.content, "")
     }
 
+    // TAL-435: a live refresh clears a finished run's "Running" badge, picks up new output and the
+    // job's latest state, and leaves a run the user opened selected.
+    @MainActor
+    func testTaskDetailRefreshTracksAFinishedRunWithoutClosingTheOpenRun() async throws {
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/crons/run":
+                if request.httpMethod == "POST" {
+                    return apiTestJSONResponse(#"{"ok": true, "job": {"id": "job123", "name": "Digest"}}"#, for: request)
+                }
+                return apiTestJSONResponse(#"{"job_id": "job123", "filename": "run-0.md", "content": "opened"}"#, for: request)
+            case "/api/crons/status":
+                XCTAssertEqual(try Self.queryItems(from: request)["job_id"], "job123")
+                return apiTestJSONResponse(#"{"job_id": "job123", "running": false, "elapsed": null}"#, for: request)
+            case "/api/crons":
+                return apiTestJSONResponse(#"{"jobs": [{"id": "job123", "name": "Digest", "last_status": "ok"}]}"#, for: request)
+            case "/api/crons/output":
+                return apiTestJSONResponse(#"{"outputs": [{"filename": "new.md", "content": "fresh"}]}"#, for: request)
+            case "/api/crons/history":
+                return apiTestJSONResponse(Self.historyJSON(offset: 0, count: 2, total: 2), for: request)
+            case "/api/crons/delivery-options":
+                return apiTestJSONResponse(#"{"platforms": []}"#, for: request)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+        let viewModel = TaskDetailViewModel(
+            job: try decodeCronJob(#"{"id": "job123", "name": "Digest"}"#),
+            runningElapsed: nil,
+            server: try XCTUnwrap(URL(string: "https://example.test")),
+            client: client
+        )
+        let didRun = await viewModel.runNow()
+        XCTAssertTrue(didRun)
+        XCTAssertEqual(viewModel.runningElapsed, 0)
+        await viewModel.loadRunDetail(try decodeRun(#"{"filename": "run-0.md", "size": 10}"#))
+
+        await viewModel.refresh()
+
+        XCTAssertNil(viewModel.runningElapsed, "The run finished, so the badge clears")
+        XCTAssertEqual(viewModel.outputs.map(\.filename), ["new.md"])
+        XCTAssertEqual(viewModel.job.lastStatus, "ok")
+        XCTAssertEqual(viewModel.runs.count, 2)
+        XCTAssertEqual(viewModel.selectedRun?.filename, "run-0.md", "A refresh never closes the run the user opened")
+    }
+
     private static func historyJSON(offset: Int, count: Int, total: Int, prefix: String = "run") -> String {
         let runs = (0..<count).map { index in
             #"{"filename": "\#(prefix)-\#(offset + index).md", "size": 10, "modified": \#(2_000_000_000 - offset - index)}"#

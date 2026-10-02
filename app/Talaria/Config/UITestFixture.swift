@@ -29,6 +29,10 @@ struct UITestFixtureEnvironment {
     /// Answers the chat's first transcript load, so the cache exists, then holds every reopen
     /// until the test releases it, so "Syncing messages" stays over the cached rows (TAL-436).
     nonisolated static let holdTranscriptReloadsArgument = "--ui-test-hold-transcript-reloads"
+    /// Changes server data while the app is in the background, the way another client or a
+    /// scheduled run would: the fixture chat gains a reply and Tasks gains a job, so UI tests can
+    /// see open screens catch up on return (TAL-434, TAL-435).
+    nonisolated static let changeWhileBackgroundedArgument = "--ui-test-change-while-backgrounded"
     nonisolated static var isDense: Bool {
         ProcessInfo.processInfo.arguments.contains(denseArgument)
     }
@@ -84,6 +88,7 @@ struct UITestFixtureEnvironment {
         )
 
         prepareSharedImportInbox()
+        UITestFixtureURLProtocol.prepareChangeWhileBackgrounded()
         if ProcessInfo.processInfo.arguments.contains(newChatIntentArgument) {
             Task { _ = try? await NewChatIntent().perform() }
         }
@@ -327,6 +332,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     private static let recoveryState = NSLock()
     nonisolated(unsafe) private static var sessionReads = 0
     nonisolated(unsafe) private static var transcriptReads = 0
+    nonisolated(unsafe) private static var hasChangedWhileBackgrounded = false
+    static let replyFromElsewhere = "FixtureReplyFromElsewhere"
     nonisolated(unsafe) private static var recovered = false
     nonisolated(unsafe) private static var urgentNotificationAcknowledged = false
     nonisolated(unsafe) private static var readUpdateNotificationIDs: Set<String> = ["ui-update-succeeded"]
@@ -379,6 +386,21 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         }
 
         sendResponse(for: url)
+    }
+
+    static var changedWhileBackgrounded: Bool {
+        recoveryState.withLock { hasChangedWhileBackgrounded }
+    }
+
+    static func prepareChangeWhileBackgrounded() {
+        guard ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.changeWhileBackgroundedArgument) else { return }
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            recoveryState.withLock { hasChangedWhileBackgrounded = true }
+        }
     }
 
     private static func holdsTranscriptReload(for url: URL) -> Bool {
@@ -614,6 +636,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         messages.append(contentsOf: linkInteractionMessages)
         if WorkspaceFixture.isEnabled {
             messages.append(workspaceFileLinkMessage)
+        }
+        if changedWhileBackgrounded {
+            messages.append(["role": "user", "content": "Asked from another client", "message_id": "ui-fixture-elsewhere-user", "_ts": 2_000_000_200])
+            messages.append(["role": "assistant", "content": replyFromElsewhere, "message_id": "ui-fixture-elsewhere-assistant", "_ts": 2_000_000_201])
         }
         var detail = session(id: sessionID, title: sessionTitle)
         detail["messages"] = messages

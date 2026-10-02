@@ -77,6 +77,9 @@ struct DefaultModelPickerView: View {
             .task {
                 await loadModels()
             }
+            .refreshesLive(showsStatus: !groups.isEmpty) {
+                await loadModels()
+            }
         }
         .adaptiveFormPresentation()
     }

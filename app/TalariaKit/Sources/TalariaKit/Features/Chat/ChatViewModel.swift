@@ -4256,6 +4256,22 @@ public final class ChatViewModel {
         await streamCoordinator.reconnectIfNeeded(modelContext: modelContext)
     }
 
+    /// Brings an open chat current with the server (TAL-434): an idle chat reloads, which also
+    /// adopts a run started elsewhere; a suspended run reconnects; a run this chat is already
+    /// streaming is left alone.
+    public func syncWithServer(modelContext: ModelContext? = nil) async {
+        if activeStreamID == nil {
+            await loadMessages(modelContext: modelContext)
+        }
+        await reconnectStreamIfNeeded(modelContext: modelContext)
+    }
+
+    /// Syncs when a change the server announced concerns this chat.
+    public func handleSessionsChange(_ change: SessionsChange, modelContext: ModelContext? = nil) async {
+        guard let sessionID, SessionsChangeTrigger.session(sessionID).matches(change) else { return }
+        await syncWithServer(modelContext: modelContext)
+    }
+
     func refreshTranscriptIfActiveStreamCompleted(
         streamID expectedStreamID: String,
         modelContext: ModelContext? = nil

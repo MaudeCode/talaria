@@ -59,6 +59,24 @@ final class ChatNavigationUITests: ChatUITestCase {
 /// Reopening a chat paints its cached transcript at once and shows "Syncing messages" above
 /// the composer until the server answers (TAL-436).
 final class ChatSyncStatusUITests: ChatUITestCase {
+    /// TAL-434: a reply sent from another client while the app was in the background shows up in
+    /// the open chat as soon as the app returns, without a pull or reopening the chat.
+    func testOpenChatCatchesUpAfterTheAppReturnsFromTheBackground() throws {
+        launchFixture(additionalArguments: ["--ui-test-change-while-backgrounded"])
+        _ = try openFixtureSession()
+        let reply = element(labelContaining: "FixtureReplyFromElsewhere")
+        XCTAssertFalse(reply.exists)
+
+        sendToBackground()
+        app.activate()
+
+        XCTAssertTrue(reply.awaitExistence(timeout: 15), "The open chat never caught up with the reply sent while it was away")
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Caught up after foreground"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testReopenedChatShowsSyncingUntilTheServerAnswers() throws {
         launchFixture(additionalArguments: ["--ui-test-hold-transcript-reloads"])
         _ = try openFixtureSession()
