@@ -562,6 +562,53 @@ describe('projects, workspaces, and files over HTTP', () => {
   })
 })
 
+describe('session detail collapses very long message bodies (TAL-456)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('stamps an excerpt on long settled rows in every window, leaves short rows alone, and never rewrites the file', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [
+      { role: 'user', content: `${'w'.repeat(2500)}\n${'r'.repeat(20000)}`, timestamp: 1000 },
+      { role: 'assistant', content: 'short reply', timestamp: 1001 },
+      { role: 'user', content: 'tiny', timestamp: 1002 },
+      { role: 'assistant', content: [{ type: 'text', text: 'p'.repeat(5000) }], timestamp: 1003 },
+    ]
+    s.deps.sessionStore.save(session)
+    s.deps.sessionStore.sessions.delete(sid)
+    const path = join(s.state, 'sessions', `${sid}.json`)
+    const before = readFileSync(path)
+    for (const query of ['', '&msg_limit=120', '&msg_limit=2', '&msg_limit=2&msg_before=2']) {
+      const res = await s.get(`/api/session?session_id=${sid}&messages=1${query}`)
+      expect(res.status, query).toBe(200)
+      for (const m of ((await json(res)).session as Json).messages as Json[]) {
+        const long = m.timestamp === 1000 || m.timestamp === 1003
+        expect(m._display_truncated, `${query} ${String(m.timestamp)}`).toBe(long ? true : undefined)
+        if (m.timestamp === 1000) expect(m._display_excerpt).toBe('w'.repeat(2500))
+        if (m.timestamp === 1003) {
+          expect(m._display_excerpt).toBe('p'.repeat(3000))
+          expect((m._anchor_activity_scene as Json).final_answer_excerpt).toBe('p'.repeat(3000))
+        }
+        if (m.timestamp === 1001) expect(m._anchor_activity_scene).not.toHaveProperty('final_answer_excerpt')
+        if (!long) expect(m).not.toHaveProperty('_display_excerpt')
+      }
+    }
+    expect(readFileSync(path).equals(before)).toBe(true)
+  })
+
+  it('serves the shared long-body example exactly as the contract fixture records it', async () => {
+    const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).long_body_session as Json
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = (fixture.messages as Json[]).map(({ role, content, timestamp, message_id }) => ({ role, content, timestamp, message_id }))
+    s.deps.sessionStore.save(session)
+    const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
+    expect(served).toEqual(fixture.messages)
+  })
+})
+
 describe('session detail with legacy string attachments (TAL-277)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

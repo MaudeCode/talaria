@@ -2773,6 +2773,9 @@
                                   "final_answer": {
                                     "type": "string"
                                   },
+                                  "final_answer_excerpt": {
+                                    "type": "string"
+                                  },
                                   "turn_duration": {
                                     "anyOf": [
                                       {
@@ -2884,6 +2887,12 @@
                               },
                               "_final_phase_duration": {
                                 "type": "number"
+                              },
+                              "_display_truncated": {
+                                "type": "boolean"
+                              },
+                              "_display_excerpt": {
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -4230,6 +4239,9 @@
                                   "final_answer": {
                                     "type": "string"
                                   },
+                                  "final_answer_excerpt": {
+                                    "type": "string"
+                                  },
                                   "turn_duration": {
                                     "anyOf": [
                                       {
@@ -4341,6 +4353,12 @@
                               },
                               "_final_phase_duration": {
                                 "type": "number"
+                              },
+                              "_display_truncated": {
+                                "type": "boolean"
+                              },
+                              "_display_excerpt": {
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -5448,6 +5466,9 @@
                                   "final_answer": {
                                     "type": "string"
                                   },
+                                  "final_answer_excerpt": {
+                                    "type": "string"
+                                  },
                                   "turn_duration": {
                                     "anyOf": [
                                       {
@@ -5559,6 +5580,12 @@
                               },
                               "_final_phase_duration": {
                                 "type": "number"
+                              },
+                              "_display_truncated": {
+                                "type": "boolean"
+                              },
+                              "_display_excerpt": {
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -7543,6 +7570,9 @@
                                   "final_answer": {
                                     "type": "string"
                                   },
+                                  "final_answer_excerpt": {
+                                    "type": "string"
+                                  },
                                   "turn_duration": {
                                     "anyOf": [
                                       {
@@ -7654,6 +7684,12 @@
                               },
                               "_final_phase_duration": {
                                 "type": "number"
+                              },
+                              "_display_truncated": {
+                                "type": "boolean"
+                              },
+                              "_display_excerpt": {
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -9545,6 +9581,9 @@
                                   "final_answer": {
                                     "type": "string"
                                   },
+                                  "final_answer_excerpt": {
+                                    "type": "string"
+                                  },
                                   "turn_duration": {
                                     "anyOf": [
                                       {
@@ -9656,6 +9695,12 @@
                               },
                               "_final_phase_duration": {
                                 "type": "number"
+                              },
+                              "_display_truncated": {
+                                "type": "boolean"
+                              },
+                              "_display_excerpt": {
+                                "type": "string"
                               }
                             },
                             "required": [
@@ -18606,6 +18651,9 @@
                                   "final_answer": {
                                     "type": "string"
                                   },
+                                  "final_answer_excerpt": {
+                                    "type": "string"
+                                  },
                                   "turn_duration": {
                                     "anyOf": [
                                       {
@@ -18717,6 +18765,12 @@
                               },
                               "_final_phase_duration": {
                                 "type": "number"
+                              },
+                              "_display_truncated": {
+                                "type": "boolean"
+                              },
+                              "_display_excerpt": {
+                                "type": "string"
                               }
                             },
                             "required": [

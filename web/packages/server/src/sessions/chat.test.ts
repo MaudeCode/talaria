@@ -394,6 +394,21 @@ describe('chat turns through the sidecar', () => {
     expect(messages.find((m) => m.content === 'look')?.attachments).toEqual([{ name: 'example.png', filename: 'example.png' }])
   })
 
+  it('ships a long reply\'s excerpt on the done frame (TAL-456)', async () => {
+    const sid = await newSession(s)
+    const reply = `${'r'.repeat(2800)} ${'s'.repeat(4000)}`
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: reply }]))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Long"', usage: null }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'write a lot' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const messages = (((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[])
+    const settled = messages.find((m) => m.role === 'assistant')
+    expect(settled?._display_truncated).toBe(true)
+    expect(settled?._display_excerpt).toBe('r'.repeat(2800))
+    expect((settled?._anchor_activity_scene as Json | undefined)?.final_answer_excerpt).toBe('r'.repeat(2800))
+    expect(messages.find((m) => m.role === 'user')).not.toHaveProperty('_display_excerpt')
+  })
+
   it('stamps one terminal_state on every terminal frame and the persisted turn, and keeps the journal vocabulary', async () => {
     const cases: [string, (params: Json, emit: (frame: { event: string; data: Json }) => void) => ChatResult, string, string, string, string][] = [
       ['completed', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Answer' }]), 'done', 'completed', 'completed', 'completed'],

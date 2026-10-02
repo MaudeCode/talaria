@@ -68,7 +68,9 @@ export const TurnTerminalStateSchema = z.enum(['completed', 'no_response', 'canc
 export type TurnTerminalState = z.infer<typeof TurnTerminalStateSchema>
 
 export const ActivitySceneSchema = z.looseObject({
-  version: z.literal('activity_scene_v1'), activity_rows: z.array(ActivitySceneRowSchema), final_answer: z.string().optional(), turn_duration: z.number().nullable().optional(),
+  version: z.literal('activity_scene_v1'), activity_rows: z.array(ActivitySceneRowSchema), final_answer: z.string().optional(),
+  /** TAL-456: a settled final answer too long to lay out whole; clients render it collapsed, with a local "Show more". */
+  final_answer_excerpt: z.string().optional(), turn_duration: z.number().nullable().optional(),
   /** The turn's outcome (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...). */
   terminal_state: z.string().optional(),
   /** Whether the "Worked" disclosure opens by default: an unsuccessful outcome with work to read. */
@@ -96,6 +98,9 @@ export const MessageSchema = z.looseObject({
   _steer: z.looseObject({ steer_id: z.string(), submitted_at: z.number().nullable().optional(), consumed_at: z.number().optional(), phase_duration: z.number().optional() }).optional(),
   /** On a steered turn's last reply: seconds from the last consumed steer to the turn's end. */
   _final_phase_duration: z.number().optional(),
+  /** A settled body too long to lay out whole: clients render `_display_excerpt` collapsed, with a local "Show more" for `content`. */
+  _display_truncated: z.boolean().optional(),
+  _display_excerpt: z.string().optional(),
 })
 export type Message = z.infer<typeof MessageSchema>
 
