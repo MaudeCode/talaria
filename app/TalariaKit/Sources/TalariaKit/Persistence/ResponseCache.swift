@@ -7,12 +7,16 @@ import CryptoKit
 /// `serverScopedStateReset` clears a server's entries with everything else it owns.
 public struct ResponseCache: Sendable {
     private let directory: URL
+    private let server: URL
+    private let generation: Int
 
     /// - Parameter root: tests pass a temporary directory; the app uses its Caches directory.
     public init(server: URL, root: URL? = nil) {
         let base = root ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("ResponseCache", isDirectory: true)
         directory = base.appendingPathComponent(Self.folderName(for: server), isDirectory: true)
+        self.server = server
+        generation = ServerCacheGeneration.current(for: server)
     }
 
     /// One file per endpoint; screens that read the same endpoint share its entry.
@@ -35,7 +39,7 @@ public struct ResponseCache: Sendable {
     }
 
     public func entry(_ kind: String) -> Entry {
-        Entry(url: directory.appendingPathComponent("\(kind).json"))
+        Entry(url: directory.appendingPathComponent("\(kind).json"), server: server, generation: generation)
     }
 
     /// Deletes every cached response for this server.
@@ -45,6 +49,8 @@ public struct ResponseCache: Sendable {
 
     public struct Entry: Sendable {
         let url: URL
+        let server: URL
+        let generation: Int
 
         public func load<Response: Decodable>(_ type: Response.Type) -> Response? {
             guard let data = try? Data(contentsOf: url) else { return nil }
@@ -52,6 +58,7 @@ public struct ResponseCache: Sendable {
         }
 
         func save(_ data: Data) {
+            guard ServerCacheGeneration.current(for: server) == generation else { return }
             try? FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
                 withIntermediateDirectories: true
@@ -62,5 +69,21 @@ public struct ResponseCache: Sendable {
 
     private static func folderName(for server: URL) -> String {
         SHA256.hash(data: Data(server.absoluteString.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// Counts each server's cache resets. A screen captures the count when it is created and writes
+/// only while it is unchanged, so an old screen closing, or a response still in flight, cannot put
+/// the previous identity's data back after a sign-in as another profile (TAL-437).
+public enum ServerCacheGeneration {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var generations: [String: Int] = [:]
+
+    public static func current(for server: URL) -> Int {
+        lock.withLock { generations[server.absoluteString, default: 0] }
+    }
+
+    static func advance(for server: URL) {
+        lock.withLock { generations[server.absoluteString, default: 0] += 1 }
     }
 }

@@ -287,6 +287,9 @@ public final class ChatViewModel {
     /// an older server that omits it allowed branching.
     public private(set) var canBranch: Bool
     private let server: URL
+    /// The server's `ServerCacheGeneration` when this chat opened; the chat writes its cache only
+    /// while it is unchanged.
+    private let cacheGeneration: Int
     public let client: APIClient
     private let streamCoordinator: ChatStreamCoordinator
     private let pendingActionCoordinator: ChatPendingActionCoordinator
@@ -401,6 +404,7 @@ public final class ChatViewModel {
         selectedRowIsStreaming = session.isStreaming
         selectedRowActiveStreamID = Self.nonEmpty(session.activeStreamId)
         self.server = server
+        cacheGeneration = ServerCacheGeneration.current(for: server)
         let resolvedClient = client ?? APIClient(baseURL: server)
         let resolvedStreamClient = streamClient ?? SSEClient()
         let resolvedLiveActivityManager = liveActivityManager ?? PlatformHooks.liveActivityManager()
@@ -1367,7 +1371,7 @@ public final class ChatViewModel {
             )
             if let modelContext {
                 do {
-                    try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+                    try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
                 } catch {
                     cacheErrorMessage = error.localizedDescription
                 }
@@ -1630,7 +1634,7 @@ public final class ChatViewModel {
 
             if let modelContext {
                 do {
-                    try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+                    try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
                 } catch {
                     cacheErrorMessage = error.localizedDescription
                 }
@@ -2702,10 +2706,20 @@ public final class ChatViewModel {
         guard let modelContext else { return }
 
         do {
-            try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+            try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
         } catch {
             cacheErrorMessage = error.localizedDescription
         }
+    }
+
+    /// Whether no server-scoped reset ran since this chat opened (`ServerCacheGeneration`).
+    private var ownsCurrentCache: Bool {
+        ServerCacheGeneration.current(for: server) == cacheGeneration
+    }
+
+    private func cacheMessagesIfCurrent(_ messages: [ChatMessage], sessionID: String, in modelContext: ModelContext) throws {
+        guard ownsCurrentCache else { return }
+        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
     }
 
     /// Saves the transcript as it stands, a partial answer included, when the chat leaves the
@@ -3879,7 +3893,7 @@ public final class ChatViewModel {
             }
 
             let forkedSession = SessionSummary(from: forkedSessionDetail)
-            if let modelContext {
+            if let modelContext, ownsCurrentCache {
                 do {
                     try CacheStore.cacheSession(forkedSession, serverURL: server, in: modelContext)
                 } catch {
@@ -3954,7 +3968,7 @@ public final class ChatViewModel {
 
                 if let modelContext {
                     do {
-                        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+                        try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
                     } catch {
                         cacheErrorMessage = error.localizedDescription
                     }
@@ -4065,7 +4079,7 @@ public final class ChatViewModel {
 
                 if let modelContext {
                     do {
-                        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+                        try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
                     } catch {
                         cacheErrorMessage = error.localizedDescription
                     }

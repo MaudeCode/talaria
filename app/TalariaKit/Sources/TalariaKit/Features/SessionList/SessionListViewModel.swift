@@ -109,10 +109,12 @@ public final class SessionListViewModel {
     private let client: APIClient
     private let sessionMutator: SessionMutator
     private let server: URL
+    private let cacheGeneration: Int
     private let responseCache: ResponseCache?
 
     public init(server: URL, client: APIClient? = nil, responseCache: ResponseCache? = nil) {
         self.server = server
+        cacheGeneration = ServerCacheGeneration.current(for: server)
         self.responseCache = responseCache
         let resolvedClient = client ?? APIClient(baseURL: server)
         self.client = resolvedClient
@@ -256,8 +258,17 @@ public final class SessionListViewModel {
                   !messages.isEmpty,
                   !hasCachedTranscript(sessionID, in: modelContext)
             else { continue }
-            try? CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+            try? writeCacheIfCurrent {
+                try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+            }
         }
+    }
+
+    /// Runs `write` only if no server-scoped reset ran since this list was created
+    /// (`ServerCacheGeneration`), so a list still open on a previous identity cannot cache its rows.
+    private func writeCacheIfCurrent(_ write: () throws -> Void) rethrows {
+        guard ServerCacheGeneration.current(for: server) == cacheGeneration else { return }
+        try write()
     }
 
     private func hasCachedTranscript(_ sessionID: String, in modelContext: ModelContext) -> Bool {
@@ -321,7 +332,7 @@ public final class SessionListViewModel {
                     // The applied rows, not the raw response: a stale list must not
                     // put pre-import metadata back into the cache the offline
                     // fallback reads.
-                    try CacheStore.cacheSessions(sessions, serverURL: server, in: modelContext)
+                    try writeCacheIfCurrent { try CacheStore.cacheSessions(sessions, serverURL: server, in: modelContext) }
                 } catch {
                     cacheErrorMessage = error.localizedDescription
                 }
@@ -580,7 +591,7 @@ public final class SessionListViewModel {
 
             if let modelContext, session.shouldAppearInSessionList {
                 do {
-                    try CacheStore.cacheSession(session, serverURL: server, in: modelContext)
+                    try writeCacheIfCurrent { try CacheStore.cacheSession(session, serverURL: server, in: modelContext) }
                 } catch {
                     cacheErrorMessage = error.localizedDescription
                 }
@@ -673,7 +684,7 @@ public final class SessionListViewModel {
 
         guard let modelContext, session.shouldAppearInSessionList else { return }
         do {
-            try CacheStore.cacheSession(session, serverURL: server, in: modelContext)
+            try writeCacheIfCurrent { try CacheStore.cacheSession(session, serverURL: server, in: modelContext) }
         } catch {
             cacheErrorMessage = error.localizedDescription
         }
@@ -858,7 +869,7 @@ public final class SessionListViewModel {
 
                 if let modelContext {
                     do {
-                        try CacheStore.cacheSessions(sessions, serverURL: server, in: modelContext)
+                        try writeCacheIfCurrent { try CacheStore.cacheSessions(sessions, serverURL: server, in: modelContext) }
                     } catch {
                         cacheErrorMessage = error.localizedDescription
                     }
@@ -1195,7 +1206,7 @@ public final class SessionListViewModel {
 
                 if let modelContext {
                     do {
-                        try CacheStore.cacheSession(newSession, serverURL: server, in: modelContext)
+                        try writeCacheIfCurrent { try CacheStore.cacheSession(newSession, serverURL: server, in: modelContext) }
                     } catch {
                         cacheErrorMessage = error.localizedDescription
                     }

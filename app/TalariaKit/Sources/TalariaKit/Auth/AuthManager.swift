@@ -214,6 +214,8 @@ public final class AuthManager {
         responseCacheRoot: URL? = nil
     ) -> @MainActor (URL) async throws -> Void {
         { server in
+            // First, so a screen still open on the previous identity cannot write back what follows.
+            ServerCacheGeneration.advance(for: server)
             SessionNavigationPersistence.save(nil, for: server, defaults: defaults)
             SessionRowDisplaySettings.clearServerScopedSettings(for: server, in: defaults)
             InsightsResponseCache(server: server, defaults: defaults).clear()

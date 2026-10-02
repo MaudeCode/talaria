@@ -48,4 +48,32 @@ extension ChatViewModelSendTests {
             ["Saved"]
         )
     }
+
+    func testAChatClosingAfterASignInSwitchNeverRestoresThePreviousIdentitysTranscript() async throws {
+        let context = try makeContext()
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
+        }
+        _ = await viewModel.sendMessage("Private to the previous profile")
+        // A sign-in as another profile clears the server's caches before the old screens close.
+        ServerCacheGeneration.advance(for: server)
+
+        viewModel.persistTranscript(modelContext: context)
+
+        XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "session-abc", in: context), [])
+    }
+
+    func testAResponseArrivingAfterAResetIsNotCached() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let cache = ResponseCache(server: server, root: root)
+
+        ServerCacheGeneration.advance(for: server)
+        cache.entry(ResponseCache.Kind.projects).save(Data(#"{"projects": [{"project_id": "old"}]}"#.utf8))
+
+        XCTAssertNil(ResponseCache(server: server, root: root).entry(ResponseCache.Kind.projects).load(ProjectsResponse.self))
+    }
 }
