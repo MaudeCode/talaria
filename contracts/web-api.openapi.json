@@ -29844,6 +29844,109 @@
         }
       }
     },
+    "/api/crons/recent": {
+      "get": {
+        "operationId": "crons.recent",
+        "summary": "Each active-profile job's latest completion after `since` (Unix seconds), newest first. Not a run archive.",
+        "tags": [
+          "automation"
+        ],
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "completions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "job_id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "outcome": {
+                            "enum": [
+                              "succeeded",
+                              "failed",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "completed_at": {
+                            "type": "number"
+                          },
+                          "toast_notifications": {
+                            "type": "boolean"
+                          },
+                          "session_id": {
+                            "type": "string"
+                          },
+                          "message_count": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "job_id",
+                          "name",
+                          "status",
+                          "outcome",
+                          "completed_at",
+                          "toast_notifications",
+                          "session_id"
+                        ]
+                      }
+                    },
+                    "since": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "completions",
+                    "since"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/crons/delivery-options": {
       "get": {
         "operationId": "crons.deliveryOptions",

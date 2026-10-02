@@ -1,8 +1,11 @@
 /** Cron jobs across profiles through the sidecar `cron.*` namespace (Python `api/routes.py` cron section). */
+import { join } from 'node:path'
+import type { CronRecentCompletion } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
+import { latestCronSessionInfo } from '../sessions/state-db.js'
 import { str } from '../util.js'
 
 export interface CronDeps {
@@ -63,6 +66,30 @@ export function validJobId(id: string): boolean {
   return JOB_ID_RE.test(id) && id !== '.' && id !== '..'
 }
 
+const PY_FLOAT_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/
+
+/** Python `float(since)` with its ValueError mapped to 0: a malformed `since` means "from the epoch", never a 500. */
+export function parseSince(raw: string | undefined): number {
+  const t = (raw ?? '').trim()
+  const n = PY_FLOAT_RE.test(t) ? Number(t) : 0
+  return Number.isFinite(n) ? n : 0
+}
+
+/** Python `_handle_cron_recent`'s `last_run_at` read: ISO (`Z` or offset) or numeric seconds; anything else is skipped. */
+export function completedAtSeconds(value: unknown): number | null {
+  if (!value) return null
+  const seconds = typeof value === 'string' ? Date.parse(value) / 1000 : Number(value)
+  return Number.isFinite(seconds) ? seconds : null
+}
+
+/** The one place a job's `last_status` becomes the success/failure the clients render. */
+export function completionOutcome(status: unknown): CronRecentCompletion['outcome'] {
+  const s = str(status).trim().toLowerCase()
+  if (s === 'error' || s === 'failed') return 'failed'
+  if (s === 'ok' || s === 'success' || s === 'completed') return 'succeeded'
+  return 'unknown'
+}
+
 export class CronService {
   constructor(private readonly deps: CronDeps) {}
 
@@ -118,6 +145,46 @@ export class CronService {
     }
     const all = allProfiles && !this.deps.isolatedProfileMode()
     return { jobs: all ? [...activeJobs, ...otherJobs] : activeJobs, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : otherJobs.length }
+  }
+
+  /**
+   * Python `/api/crons/recent`: each active-profile job's latest completion after `since`, newest first (ties by
+   * `job_id`), with the server's `outcome` and the newest cron session for that job. One row per job, not a run archive.
+   */
+  async recent(home: string, rawSince: string | undefined): Promise<{ completions: CronRecentCompletion[]; since: number }> {
+    const since = parseSince(rawSince)
+    let jobs: Dict[]
+    try {
+      jobs = (await this.sidecar().call('cron.list', { profile_home: home })).jobs
+    } catch (error) {
+      if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { completions: [], since }
+      throw error
+    }
+    const completions: CronRecentCompletion[] = []
+    for (const job of jobs) {
+      const jobId = str(job.id).trim()
+      const completedAt = completedAtSeconds(job.last_run_at)
+      if (!jobId || completedAt === null || completedAt <= since) continue
+      const status = 'last_status' in job ? (job.last_status === null ? null : str(job.last_status)) : 'unknown'
+      completions.push({
+        job_id: jobId,
+        name: 'name' in job ? (job.name === null ? null : str(job.name)) : 'Unknown',
+        status,
+        outcome: completionOutcome(status),
+        completed_at: completedAt,
+        toast_notifications: job.toast_notifications !== false,
+        session_id: '',
+      })
+    }
+    completions.sort((a, b) => b.completed_at - a.completed_at || (a.job_id < b.job_id ? -1 : a.job_id > b.job_id ? 1 : 0))
+    const sessions = latestCronSessionInfo(join(home, 'state.db'), jobs.map((job) => str(job.id)), completions.map((c) => c.job_id))
+    for (const completion of completions) {
+      const info = sessions.get(completion.job_id)
+      if (!info) continue
+      completion.session_id = info.session_id
+      if (info.message_count !== null) completion.message_count = info.message_count
+    }
+    return { completions, since }
   }
 
   async create(home: string, body: Dict): Promise<Dict> {

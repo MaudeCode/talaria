@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { request } from 'node:http'
 import { deflateRawSync } from 'node:zlib'
+import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
@@ -175,6 +176,55 @@ describe('crons, kanban, extensions, terminal', () => {
     expect(((await json(res)).platforms as Json[]).map((p) => p.value)).toContain('local')
     expect(jobForApi({ id: 'a', monitor_script: 'run.sh', context_from: ['other', 'SELF'] })).toMatchObject({ profile: null, monitor: 'run.sh', continuity: true })
     expect(jobFieldUpdates({ monitor: '', continuity: true }, ['x'])).toEqual({ monitor_script: '', monitor_url: '', context_from: ['x', 'self'] })
+  })
+
+  it('crons/recent answers each active-profile job\'s latest completion, newest first, with the server outcome and newest cron session', async () => {
+    const home = s.deps.profileHome('default')
+    const db = new DatabaseSync(join(home, 'state.db'))
+    db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, message_count INTEGER)')
+    const insert = db.prepare('INSERT INTO sessions (id, source, started_at, message_count) VALUES (?, ?, ?, ?)')
+    insert.run('cron_a_1', 'cron', 10, 2)
+    insert.run('cron_a_2', 'cron', 20, 4)
+    // `a_b` owns its own sessions even though they also start with `cron_a_`.
+    insert.run('cron_a_b_1', 'cron', 30, 9)
+    insert.run('cron_b_1', 'CLI', 40, 1)
+    db.close()
+    const job = (fields: Json): Json => ({ profile: null, toast_notifications: true, monitor: '', continuity: false, ...fields })
+    sidecar.respond('cron.list', () => ({ jobs: ([
+      { id: 'a', name: 'A', last_status: 'ok', last_run_at: '2026-01-02T00:00:00Z' },
+      { id: 'b', name: 'B', last_status: 'error', last_run_at: 1767312000 },
+      { id: 'c', name: 'C', last_status: 'mystery', last_run_at: 100 },
+      { id: 'f', toast_notifications: false, last_run_at: 1767398400 },
+      { id: 'g', name: null, last_status: 'Completed', last_run_at: '2026-01-01T00:00:00+00:00' },
+      { id: 'a_b', name: 'never ran', last_run_at: null },
+      { id: 'd', name: 'bad date', last_run_at: 'not a date' },
+      { id: '', name: 'no id', last_run_at: 1767398400 },
+    ] as Json[]).map(job) as never[] }))
+    try {
+      const calls = sidecar.calls.length
+      let res = await s.get('/api/crons/recent')
+      let body = await json(res)
+      expect(sidecar.calls.slice(calls).filter((c) => c.method === 'cron.list').map((c) => c.params)).toEqual([{ profile_home: home }])
+      expect(body.since).toBe(0)
+      expect(body.completions).toEqual([
+        { job_id: 'f', name: 'Unknown', status: 'unknown', outcome: 'unknown', completed_at: 1767398400, toast_notifications: false, session_id: '' },
+        { job_id: 'a', name: 'A', status: 'ok', outcome: 'succeeded', completed_at: 1767312000, toast_notifications: true, session_id: 'cron_a_2', message_count: 4 },
+        { job_id: 'b', name: 'B', status: 'error', outcome: 'failed', completed_at: 1767312000, toast_notifications: true, session_id: '' },
+        { job_id: 'g', name: null, status: 'Completed', outcome: 'succeeded', completed_at: 1767225600, toast_notifications: true, session_id: '' },
+        { job_id: 'c', name: 'C', status: 'mystery', outcome: 'unknown', completed_at: 100, toast_notifications: true, session_id: '' },
+      ])
+      body = await json(await s.get('/api/crons/recent?since=1767300000'))
+      expect((body.completions as Json[]).map((c) => c.job_id)).toEqual(['f', 'a', 'b'])
+      res = await s.get('/api/crons/recent?since=abc')
+      expect(res.status).toBe(200)
+      body = await json(res)
+      expect(body.since).toBe(0)
+      expect(body.completions).toHaveLength(5)
+      sidecar.respond('cron.list', () => { throw new SidecarError('cron unavailable', { condition: 'cron_unavailable' }) })
+      expect(await json(await s.get('/api/crons/recent?since=5'))).toEqual({ completions: [], since: 5 })
+    } finally {
+      rmSync(join(home, 'state.db'), { force: true })
+    }
   })
 
   it('blocks Web updates while an embedded terminal is alive and releases the blocker on exit', () => {

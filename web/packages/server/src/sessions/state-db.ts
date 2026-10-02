@@ -377,6 +377,41 @@ export function agentSessionRowsExisting(dbPath: string, sessionIds: Iterable<st
   }
 }
 
+export interface CronSessionInfo { session_id: string; message_count: number | null }
+
+/**
+ * Python `_latest_cron_session_info_for_jobs`: the newest-started cron session for each completed job. A session id
+ * belongs to the job with the longest matching `cron_{job_id}_` prefix, so `a` never claims `a_b`'s sessions. A
+ * missing, locked, or unrecognized state.db answers an empty map; callers send no enrichment.
+ */
+export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, completedIds: Iterable<string>): Map<string, CronSessionInfo> {
+  const found = new Map<string, CronSessionInfo>()
+  const ids = [...new Set([...jobIds].map((id) => id.trim()).filter(Boolean))]
+  const wanted = new Set([...completedIds].map((id) => id.trim()).filter(Boolean))
+  if (!ids.length || !wanted.size || !existsSync(dbPath)) return found
+  let db: DatabaseSync
+  try { db = openStateDbReadonly(dbPath) } catch { return found }
+  try {
+    const cols = tableColumns(db, 'sessions')
+    if (!cols.has('id') || !cols.has('source')) return found
+    const count = cols.has('message_count') ? 's.message_count' : 'NULL'
+    const order = cols.has('started_at') ? 'COALESCE(s.started_at, 0) DESC, s.id DESC' : 's.id DESC'
+    const rows = db.prepare(`SELECT s.id AS id, ${count} AS message_count FROM sessions s WHERE LOWER(COALESCE(s.source, '')) = 'cron' ORDER BY ${order}`).all() as { id: unknown; message_count: unknown }[]
+    for (const row of rows) {
+      const sid = typeof row.id === 'string' ? row.id : ''
+      const owner = ids.filter((id) => sid.startsWith(`cron_${id}_`)).reduce<string | null>((best, id) => (best === null || id.length > best.length ? id : best), null)
+      if (owner === null || !wanted.has(owner) || found.has(owner)) continue
+      found.set(owner, { session_id: sid, message_count: row.message_count === null || row.message_count === undefined ? null : Number(row.message_count) })
+      if (found.size === wanted.size) break
+    }
+    return found
+  } catch {
+    return new Map()
+  } finally {
+    db.close()
+  }
+}
+
 /**
  * TAL-358: the `sessions.source` owner of each present id, in one chunked read. A missing state.db (or one without a
  * `source` column) owns nothing; an unreadable one answers null, so callers fail closed on an unknown owner.
