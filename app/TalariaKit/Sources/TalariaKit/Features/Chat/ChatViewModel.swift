@@ -443,12 +443,20 @@ public final class ChatViewModel {
         self.streamCoordinator.attach(delegate: self)
         self.pendingActionCoordinator.delegate = self
         self.attachmentCoordinator.delegate = self
-        if let responseCache {
-            let initialProfileName = selectedProfileName
-            applyComposerConfigurationState(
-                ChatComposerConfigLoader.cachedState(from: composerConfigurationState, cache: responseCache)
-            )
-            isProfileSelectionFromCache = selectedProfileName != initialProfileName
+    }
+
+    /// Fills the composer's empty catalogs from the last responses (TAL-437). Called when the chat
+    /// appears rather than in `init`, because SwiftUI builds a view model on every `ChatView` init
+    /// and this reads files. Runs once; the live load replaces what it shows.
+    public func showCachedComposerChoices() {
+        guard let responseCache, !didShowCachedComposerChoices else { return }
+        didShowCachedComposerChoices = true
+        let initialProfileName = selectedProfileName
+        applyComposerConfigurationState(
+            ChatComposerConfigLoader.cachedState(from: composerConfigurationState, cache: responseCache)
+        )
+        if selectedProfileName != initialProfileName {
+            isProfileSelectionFromCache = true
         }
     }
 
@@ -639,6 +647,7 @@ public final class ChatViewModel {
     /// A profile name seeded from the last response (TAL-437) only shows; requests wait for the
     /// live load or the user's pick, since another device may have switched profiles since.
     private var isProfileSelectionFromCache = false
+    private var didShowCachedComposerChoices = false
 
     private var requestProfileName: String? {
         (isProfileSelectionFromCache ? nil : Self.nonEmpty(selectedProfileName)) ?? Self.nonEmpty(currentProfile)

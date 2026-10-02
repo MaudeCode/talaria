@@ -41,6 +41,7 @@ extension ChatViewModelSendTests {
             XCTFail("Seeding must not request \(request.url?.path ?? "nil")")
             throw URLError(.badURL)
         }
+        nextChat.showCachedComposerChoices()
 
         XCTAssertEqual(nextChat.profileOptions.compactMap(\.name), ["work"])
         XCTAssertEqual(nextChat.selectedProfileName, "work")
@@ -71,6 +72,7 @@ extension ChatViewModelSendTests {
                 throw URLError(.badURL)
             }
         }
+        viewModel.showCachedComposerChoices()
         XCTAssertEqual(viewModel.selectedProfileName, "work", "The cached profile still shows")
 
         let didStart = await viewModel.sendMessage("Hello")
