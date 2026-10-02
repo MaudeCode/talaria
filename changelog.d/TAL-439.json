@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "While you are actively using the web app, your iPhone no longer gets notifications or new Live Activities for the same chats; they resume once you step away, even if the browser stays open.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
