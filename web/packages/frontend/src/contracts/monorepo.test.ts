@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { MessageSchema, SessionSchema } from './session'
+import { ChatEventSchema } from './sse'
 import { groupAssistantTurns, persistedActivity } from '../features/chat/turnActivity'
 import { projectMessages } from '../features/chat/useTranscript'
 
@@ -50,6 +51,13 @@ describe('shared monorepo contracts', () => {
     expect(messages.map((message) => message._display_truncated === true)).toEqual([true, true, false, false])
     const reply = groupAssistantTurns(projectMessages(messages)).find((row) => row.message.message_id === 'long-body-reply')!
     expect(persistedActivity(reply).finalAnswerExcerpt).toBe(messages[1]?._display_excerpt)
+  })
+
+  it('accepts the server\'s pending steers and their stream events (TAL-424)', () => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Record<string, { events: unknown[] }>
+    const session = SessionSchema.parse(fixture.pending_steers_session)
+    expect(session.pending_steers?.map((steer) => [steer.steer_id, steer.state, steer.actions.send_now])).toEqual([['steer-contract-1', 'pending', true], ['steer-contract-2', 'sending_now', false]])
+    expect(fixture.pending_steers_session!.events.map((event) => ChatEventSchema.parse(event).event)).toEqual(['steer_pending', 'steer_withdrawn', 'steer_withdrawn'])
   })
 
   it('carries the server streaming and read-only flags on every session example (TAL-312)', () => {

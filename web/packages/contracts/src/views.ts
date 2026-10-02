@@ -128,6 +128,16 @@ export type Message = z.infer<typeof MessageSchema>
 
 export const ComposerDraftSchema = z.looseObject({ text: z.string().optional(), files: z.array(Json).optional() })
 
+/**
+ * TAL-424: a steer the Agent has not taken yet, owned by the server and shown by every client in order. `state`
+ * `sending_now`: a Send now is delivering it after the running tools yield. `actions` say what this client may offer.
+ */
+export const PendingSteerSchema = z.object({
+  steer_id: z.string(), text: z.string(), submitted_at: z.number(), state: z.enum(['pending', 'sending_now']),
+  actions: z.object({ edit: z.boolean(), cancel: z.boolean(), send_now: z.boolean() }),
+})
+export type PendingSteer = z.infer<typeof PendingSteerSchema>
+
 // TAL-312: the server validates both flags on every session payload; clients render them and never re-derive them.
 /** TAL-460: who started the running turn; `background` means a background result did, and the user's next message replaces it. */
 const ActiveTurnOriginSchema = z.enum(['user', 'background']).nullable().optional().describe('Who started the running turn; null while idle.')
@@ -145,7 +155,7 @@ export const SessionSchema = z.looseObject({
   messages: z.array(MessageSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(), created_at: UnixSeconds.optional(), updated_at: UnixSeconds.optional(), last_message_at: NullableNumber.optional(),
   message_count: z.number().optional(), user_message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(),
   personality: NullableString.optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), cache_read_tokens: z.number().optional(), cache_write_tokens: z.number().optional(),
-  cache_hit_percent: NullableNumber.optional(), estimated_cost: NullableNumber.optional(), active_stream_id: ActiveStreamIdSchema, is_streaming: IsStreamingSchema, active_turn_origin: ActiveTurnOriginSchema, has_pending_user_message: z.boolean().optional(),
+  cache_hit_percent: NullableNumber.optional(), estimated_cost: NullableNumber.optional(), active_stream_id: ActiveStreamIdSchema, is_streaming: IsStreamingSchema, active_turn_origin: ActiveTurnOriginSchema, pending_steers: z.array(PendingSteerSchema).optional().describe('TAL-424: the active stream\'s pending steers, oldest first.'), has_pending_user_message: z.boolean().optional(),
   pending_user_message: NullableString.optional(), pending_attachments: z.array(AttachmentSchema).optional(), pending_started_at: NullableNumber.optional(), pending_user_source: NullableString.optional(),
   context_length: NullableNumber.optional(), threshold_tokens: NullableNumber.optional(), last_prompt_tokens: NullableNumber.optional(), post_compression_context_tokens_estimate: NullableNumber.optional(),
   enabled_toolsets: z.array(z.string()).nullable().optional(), composer_draft: ComposerDraftSchema.optional(), is_cli_session: z.boolean().optional(), read_only: ReadOnlySchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_duplicate: CanDuplicateSchema, source_tag: NullableString.optional(),
@@ -214,6 +224,15 @@ export const StreamStatusSchema = z.looseObject({ active: z.boolean(), stream_id
 export type StreamStatus = z.infer<typeof StreamStatusSchema>
 export const CancelResponseSchema = z.looseObject({ ok: z.boolean(), cancelled: z.boolean(), stream_id: z.string().optional(), error: z.string().optional() })
 /** `text` is delivered to the running agent; `display_text` is what the transcript shows. */
+/** TAL-424: a pending steer taken back: Edit and Cancel by the user, or `stopped` by a Stop (`text` goes back to the composer). */
+export const SteerWithdrawnSchema = z.object({ steer_id: z.string().nullable(), reason: z.enum(['edit', 'cancel', 'stopped']), text: z.string() })
+export const SteerWithdrawRequestSchema = z.object({ session_id: SessionIdSchema, steer_id: z.string().min(1), reason: z.enum(['edit', 'cancel']) })
+/** `withdrawn: false` when the steer is unknown, already taken by the Agent (it then settles as consumed), or being sent. */
+export const SteerWithdrawResponseSchema = z.object({ withdrawn: z.boolean(), text: z.string().optional() })
+export const SteerSendNowRequestSchema = z.object({ session_id: SessionIdSchema, steer_id: z.string().min(1) })
+/** `redirected: false` when nothing is live to deliver it to now; the steer stays pending. */
+export const SteerSendNowResponseSchema = z.object({ redirected: z.boolean() })
+
 export const SteerRequestSchema = z.looseObject({ session_id: SessionIdSchema, text: z.string().min(1), display_text: z.string().optional(), steer_id: z.string().optional() })
 /** `accepted: false` with a `fallback` reason means the message was not delivered; the caller keeps the draft. */
 /** TAL-460: a steer sent while a background turn runs starts the user's own turn instead; `started_turn` is its start response. */

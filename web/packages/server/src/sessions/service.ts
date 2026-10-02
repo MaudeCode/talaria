@@ -55,6 +55,8 @@ export interface SessionServiceDeps {
     activeRunStream: (sid: string) => string | null
     /** A live run whose journal missed a frame, so a replay cannot restore its whole output. */
     journalDegraded: (streamId: string) => boolean
+    /** TAL-424: the live stream's pending steers, as clients show them. */
+    pendingSteers?: (streamId: string) => Record<string, unknown>[]
     evictAgent: (sid: string) => void
     closeTerminal: (sid: string) => void
     /** Python `delete_cli_session`: remove the session's rows from the profile's state.db; resolves false on failure. */
@@ -376,6 +378,7 @@ export class SessionService {
     raw.read_only = this.isReadOnly(s)
     raw.assistant_name = this.assistantName(s)
     withSessionWireFlags(raw, activeStreamIds)
+    raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
     return redactSessionData(raw, this.deps.redactEnabled())
   }
 

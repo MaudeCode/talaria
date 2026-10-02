@@ -1539,5 +1539,72 @@
         "_turn_id": "user-no-reply"
       }
     ]
+  },
+  "pending_steers_session": {
+    "session_id": "contract-pending-steers",
+    "title": "Pending steers",
+    "active_stream_id": "contract-steer-run",
+    "is_streaming": true,
+    "read_only": false,
+    "can_branch": true,
+    "can_pin": true,
+    "can_archive": true,
+    "can_duplicate": true,
+    "pending_steers": [
+      {
+        "steer_id": "steer-contract-1",
+        "text": "Check the backup logs too",
+        "submitted_at": 1770000300,
+        "state": "pending",
+        "actions": {
+          "edit": true,
+          "cancel": true,
+          "send_now": true
+        }
+      },
+      {
+        "steer_id": "steer-contract-2",
+        "text": "Then summarize",
+        "submitted_at": 1770000301,
+        "state": "sending_now",
+        "actions": {
+          "edit": false,
+          "cancel": false,
+          "send_now": false
+        }
+      }
+    ],
+    "events": [
+      {
+        "event": "steer_pending",
+        "data": {
+          "steer_id": "steer-contract-1",
+          "text": "Check the backup logs too",
+          "submitted_at": 1770000300,
+          "state": "pending",
+          "actions": {
+            "edit": true,
+            "cancel": true,
+            "send_now": true
+          }
+        }
+      },
+      {
+        "event": "steer_withdrawn",
+        "data": {
+          "steer_id": "steer-contract-3",
+          "reason": "edit",
+          "text": "Actually skip the logs"
+        }
+      },
+      {
+        "event": "steer_withdrawn",
+        "data": {
+          "steer_id": null,
+          "reason": "stopped",
+          "text": "Text another surface queued"
+        }
+      }
+    ]
   }
 }

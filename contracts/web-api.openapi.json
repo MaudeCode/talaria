@@ -3229,6 +3229,57 @@
                           ],
                           "description": "Who started the running turn; null while idle."
                         },
+                        "pending_steers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "steer_id": {
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "submitted_at": {
+                                "type": "number"
+                              },
+                              "state": {
+                                "enum": [
+                                  "pending",
+                                  "sending_now"
+                                ],
+                                "type": "string"
+                              },
+                              "actions": {
+                                "type": "object",
+                                "properties": {
+                                  "edit": {
+                                    "type": "boolean"
+                                  },
+                                  "cancel": {
+                                    "type": "boolean"
+                                  },
+                                  "send_now": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "edit",
+                                  "cancel",
+                                  "send_now"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "steer_id",
+                              "text",
+                              "submitted_at",
+                              "state",
+                              "actions"
+                            ]
+                          },
+                          "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
                         "has_pending_user_message": {
                           "type": "boolean"
                         },
@@ -4811,6 +4862,57 @@
                           ],
                           "description": "Who started the running turn; null while idle."
                         },
+                        "pending_steers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "steer_id": {
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "submitted_at": {
+                                "type": "number"
+                              },
+                              "state": {
+                                "enum": [
+                                  "pending",
+                                  "sending_now"
+                                ],
+                                "type": "string"
+                              },
+                              "actions": {
+                                "type": "object",
+                                "properties": {
+                                  "edit": {
+                                    "type": "boolean"
+                                  },
+                                  "cancel": {
+                                    "type": "boolean"
+                                  },
+                                  "send_now": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "edit",
+                                  "cancel",
+                                  "send_now"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "steer_id",
+                              "text",
+                              "submitted_at",
+                              "state",
+                              "actions"
+                            ]
+                          },
+                          "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
                         "has_pending_user_message": {
                           "type": "boolean"
                         },
@@ -6138,6 +6240,57 @@
                             }
                           ],
                           "description": "Who started the running turn; null while idle."
+                        },
+                        "pending_steers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "steer_id": {
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "submitted_at": {
+                                "type": "number"
+                              },
+                              "state": {
+                                "enum": [
+                                  "pending",
+                                  "sending_now"
+                                ],
+                                "type": "string"
+                              },
+                              "actions": {
+                                "type": "object",
+                                "properties": {
+                                  "edit": {
+                                    "type": "boolean"
+                                  },
+                                  "cancel": {
+                                    "type": "boolean"
+                                  },
+                                  "send_now": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "edit",
+                                  "cancel",
+                                  "send_now"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "steer_id",
+                              "text",
+                              "submitted_at",
+                              "state",
+                              "actions"
+                            ]
+                          },
+                          "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -8344,6 +8497,57 @@
                           ],
                           "description": "Who started the running turn; null while idle."
                         },
+                        "pending_steers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "steer_id": {
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "submitted_at": {
+                                "type": "number"
+                              },
+                              "state": {
+                                "enum": [
+                                  "pending",
+                                  "sending_now"
+                                ],
+                                "type": "string"
+                              },
+                              "actions": {
+                                "type": "object",
+                                "properties": {
+                                  "edit": {
+                                    "type": "boolean"
+                                  },
+                                  "cancel": {
+                                    "type": "boolean"
+                                  },
+                                  "send_now": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "edit",
+                                  "cancel",
+                                  "send_now"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "steer_id",
+                              "text",
+                              "submitted_at",
+                              "state",
+                              "actions"
+                            ]
+                          },
+                          "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
                         "has_pending_user_message": {
                           "type": "boolean"
                         },
@@ -10455,6 +10659,57 @@
                             }
                           ],
                           "description": "Who started the running turn; null while idle."
+                        },
+                        "pending_steers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "steer_id": {
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "submitted_at": {
+                                "type": "number"
+                              },
+                              "state": {
+                                "enum": [
+                                  "pending",
+                                  "sending_now"
+                                ],
+                                "type": "string"
+                              },
+                              "actions": {
+                                "type": "object",
+                                "properties": {
+                                  "edit": {
+                                    "type": "boolean"
+                                  },
+                                  "cancel": {
+                                    "type": "boolean"
+                                  },
+                                  "send_now": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "edit",
+                                  "cancel",
+                                  "send_now"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "steer_id",
+                              "text",
+                              "submitted_at",
+                              "state",
+                              "actions"
+                            ]
+                          },
+                          "description": "TAL-424: the active stream's pending steers, oldest first."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -19627,6 +19882,57 @@
                           ],
                           "description": "Who started the running turn; null while idle."
                         },
+                        "pending_steers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "steer_id": {
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "submitted_at": {
+                                "type": "number"
+                              },
+                              "state": {
+                                "enum": [
+                                  "pending",
+                                  "sending_now"
+                                ],
+                                "type": "string"
+                              },
+                              "actions": {
+                                "type": "object",
+                                "properties": {
+                                  "edit": {
+                                    "type": "boolean"
+                                  },
+                                  "cancel": {
+                                    "type": "boolean"
+                                  },
+                                  "send_now": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "edit",
+                                  "cancel",
+                                  "send_now"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "steer_id",
+                              "text",
+                              "submitted_at",
+                              "state",
+                              "actions"
+                            ]
+                          },
+                          "description": "TAL-424: the active stream's pending steers, oldest first."
+                        },
                         "has_pending_user_message": {
                           "type": "boolean"
                         },
@@ -21038,6 +21344,57 @@
                               ],
                               "description": "Who started the running turn; null while idle."
                             },
+                            "pending_steers": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "steer_id": {
+                                    "type": "string"
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "submitted_at": {
+                                    "type": "number"
+                                  },
+                                  "state": {
+                                    "enum": [
+                                      "pending",
+                                      "sending_now"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "actions": {
+                                    "type": "object",
+                                    "properties": {
+                                      "edit": {
+                                        "type": "boolean"
+                                      },
+                                      "cancel": {
+                                        "type": "boolean"
+                                      },
+                                      "send_now": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "edit",
+                                      "cancel",
+                                      "send_now"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "steer_id",
+                                  "text",
+                                  "submitted_at",
+                                  "state",
+                                  "actions"
+                                ]
+                              },
+                              "description": "TAL-424: the active stream's pending steers, oldest first."
+                            },
                             "has_pending_user_message": {
                               "type": "boolean"
                             },
@@ -21408,6 +21765,123 @@
                     "accepted"
                   ],
                   "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat/steer/withdraw": {
+      "post": {
+        "operationId": "chat.steerWithdraw",
+        "summary": "Take a pending steer back (Edit, Cancel) before the Agent takes it.",
+        "tags": [
+          "chat"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                  },
+                  "steer_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "reason": {
+                    "enum": [
+                      "edit",
+                      "cancel"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "steer_id",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "withdrawn": {
+                      "type": "boolean"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "withdrawn"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat/steer/send-now": {
+      "post": {
+        "operationId": "chat.steerSendNow",
+        "summary": "Deliver a pending steer now instead of after the running tools.",
+        "tags": [
+          "chat"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                  },
+                  "steer_id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "steer_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "redirected": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "redirected"
+                  ]
                 }
               }
             }

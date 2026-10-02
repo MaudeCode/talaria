@@ -178,6 +178,15 @@ export const chatRouter = os.router({
       }
       return ctx.deps.turns.steer(sid, text, display, steerId) as Promise<{ accepted: boolean; fallback: string | null; stream_id: string | null; steer_id?: string }>
     })),
+    // TAL-424: Edit, Cancel and Send now on a pending steer; unknown or already-taken steers answer false.
+    steerWithdraw: os.chat.steerWithdraw.handler(({ input, context: { ctx } }) => run(async () => {
+      if (!ctx.deps.sessions.sessionIdVisible(input.session_id)) throw new HttpError(404, 'Session not found')
+      return ctx.deps.turns.withdrawSteer(input.session_id, input.steer_id, input.reason)
+    })),
+    steerSendNow: os.chat.steerSendNow.handler(({ input, context: { ctx } }) => run(async () => {
+      if (!ctx.deps.sessions.sessionIdVisible(input.session_id)) throw new HttpError(404, 'Session not found')
+      return ctx.deps.turns.sendSteerNow(input.session_id, input.steer_id)
+    })),
     cancel: os.chat.cancel.handler(({ input, context: { ctx } }) => run(async () => {
       const streamId = str(input.stream_id)
       if (!streamId) throw new HttpError(400, 'stream_id required')

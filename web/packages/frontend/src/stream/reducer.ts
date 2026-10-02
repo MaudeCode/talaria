@@ -284,6 +284,9 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
     case 'events':
     case 'gateway_status':
     case 'sessions_changed':
+    // Server-owned pending steers (TAL-424); this view renders them in TAL-425.
+    case 'steer_pending':
+    case 'steer_withdrawn':
       return stamped
   }
 }

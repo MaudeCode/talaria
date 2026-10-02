@@ -77,9 +77,17 @@ export interface TurnRunnerDeps {
   homeDisplay?: () => string
 }
 
-interface SteerRecord { steer_id: string; session_id: string; stream_id: string; text: string; display_text: string; created_at: number }
-/** A steer the Agent took, with where it landed: after the last tool that had completed when it was consumed. */
-interface ConsumedSteer { steer_id: string; text: string; agent_text: string; submitted_at: number; consumed_at: number; after_tool_call_id: string | null }
+/**
+ * A steer the Agent has not taken yet (TAL-424: owned by the server, shown to every client). `sending_now`: a Send now
+ * put it back on the Agent's queue while tools yield; `can_redirect`: the Agent can deliver it now at all.
+ */
+interface SteerRecord { steer_id: string; session_id: string; stream_id: string; text: string; display_text: string; created_at: number; state: 'pending' | 'sending_now'; can_redirect: boolean }
+/**
+ * A steer the Agent took, with where it landed: after the last tool that had completed when it was consumed.
+ * `redirected`: delivered by Send now as the Agent's own correction row, which becomes this steer's row.
+ */
+interface ConsumedSteer { steer_id: string; text: string; agent_text: string; submitted_at: number; consumed_at: number; after_tool_call_id: string | null; redirected?: boolean }
+export type SteerWithdrawReason = 'edit' | 'cancel'
 
 export interface StartTurnOptions {
   msg: string
@@ -214,6 +222,11 @@ export class TurnRunner {
   private readonly abortControllers = new Map<string, AbortController>()
   private readonly steers = new Map<string, SteerRecord[]>()
   private readonly consumedSteers = new Map<string, ConsumedSteer[]>()
+  /** Per stream: steer, withdraw and Send now run one at a time, so each sees the queue the Agent holds. */
+  private readonly steerChains = new Map<string, Promise<unknown>>()
+  /** Streams whose Agent steer queue a withdraw or Send now is rewriting right now, and the pending text seen meanwhile. */
+  private readonly steerRewrites = new Set<string>()
+  private readonly deferredPendingSteer = new Map<string, string>()
   private readonly lastCompletedTool = new Map<string, string>()
   /** Streams whose run completed (`done` emitted) and only await title work; a late cancel is a no-op for these. */
   private readonly settledStreams = new Set<string>()
@@ -304,7 +317,7 @@ export class TurnRunner {
     }
     const put = (event: string, data: Record<string, unknown>, meta: { redacted?: boolean } = {}): void => {
       for (const steerEvent of this.takeSteerEventsBefore(streamId, event)) put(steerEvent[0], steerEvent[1])
-      if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'pending_steer_leftover'].includes(event)) return
+      if (this.registry.cancelled.has(streamId) && !['cancel', 'apperror', 'steer_consumed', 'steer_withdrawn'].includes(event)) return
       // `cancel()` already wrote the terminal row and closed the stream: the worker's unwind adds no second one.
       if (event === 'cancel' && !this.registry.streams.has(streamId)) {
         try { deps.onTerminal?.(streamId, 'cancelled') } catch { /* best effort */ }
@@ -379,6 +392,8 @@ export class TurnRunner {
     if (activeRun) activeRun.phase = 'running'
     const settledAt = { value: false }
     let failed = false
+    // TAL-424: steers an errored turn ended without taking, sent as one follow-up turn once this one is torn down.
+    let followUp: string[] = []
     try {
       if (!sidecar) throw new SidecarError('The Agent sidecar is not running; chat is unavailable until it starts.', { condition: 'sidecar_unavailable' })
       // Python: budgets, reasoning config, personality and delivery context come from the profile's config.yaml; the
@@ -435,8 +450,9 @@ export class TurnRunner {
               return
             }
             case 'steer_pending':
-              for (const record of this.takeConsumedSteers(streamId, str(data.text), { keepLeftovers: true })) put('steer_consumed', record)
-              this.saveConsumedSteers(sessionId, streamId)
+              // TAL-424: while a withdraw or Send now rewrites the Agent's queue its pending text is ambiguous; it settles after.
+              if (this.steerRewrites.has(streamId)) { this.deferredPendingSteer.set(streamId, str(data.text)); return }
+              this.settleConsumedSteers(sessionId, streamId, str(data.text))
               return
             case 'tool': {
               const call = { name: data.name, args: data.args ?? {}, tid: str(data.tid), done: false }
@@ -535,8 +551,9 @@ export class TurnRunner {
         const classification = classifyProviderError(lastErr, { silentFailure: !lastErr })
         const errStr = lastErr || `${classification.label}.`
         const payload = providerErrorPayload(errStr, classification.type, classification.hint, deps.redactEnabled())
-        // Settle the steers first so the persisted turn carries every consumed one; the Agent's pending text stays a leftover.
-        const steerEvents = this.finalizeSteerEvents(streamId, str(result.pending_steer))
+        // Settle the steers first so the persisted turn carries every consumed one; the Agent's pending text is sent next.
+        const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, str(result.pending_steer), 'followup')
+        followUp = leftovers
         this.persistError(s, streamId, classification.label, payload, activeTurnToken)
         payload.session = redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled())
         payload.session_id = s.session_id
@@ -548,7 +565,7 @@ export class TurnRunner {
       }
       // ── settle the transcript ──
       // The Agent's last pending-steer text settles the remaining steers before the turn is written back.
-      const steerEvents = this.finalizeSteerEvents(streamId, result.pending_steer)
+      const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, result.pending_steer, 'followup')
       s.messages = mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId })
       s.context_messages = dedupeContext(resultMessages)
       for (const m of s.messages) {
@@ -660,6 +677,7 @@ export class TurnRunner {
       // worker before its daemon-thread title generation).
       this.registry.activeRuns.delete(streamId)
       this.settledStreams.add(streamId)
+      this.startSteerFollowUp(sessionId, leftovers)
       await this.backgroundTitle(s, put)
       // Python: the last non-error assistant reply with content, else "(no answer produced)".
       if (opts.onDone) {
@@ -704,6 +722,7 @@ export class TurnRunner {
       // After persistence and teardown: a background route's failure cleanup deletes the hidden session, which must
       // not race the error writeback above (a re-saved session would resurface in the sidebar).
       if (failed) opts.onFailed?.()
+      this.startSteerFollowUp(sessionId, followUp)
     }
   }
 
@@ -1067,7 +1086,8 @@ export class TurnRunner {
     const leftover = str(reply?.pending_steer)
     const checkpoint = reply?.checkpoint ?? null
     // Settle the steers first so the persisted cancel carries every consumed one.
-    const steerEvents = (this.steers.get(streamId) ?? []).length ? this.finalizeSteerEvents(streamId, leftover) : []
+    // TAL-424: a Stop withdraws the steers the Agent never took, with their text, and starts nothing after.
+    const steerEvents = (this.steers.get(streamId) ?? []).length ? this.finalizeSteers(streamId, leftover, 'stopped').events : []
     if (sessionId) {
       let current: Session | null = null
       try { current = this.deps.store.get(sessionId) } catch { current = null }
@@ -1120,7 +1140,11 @@ export class TurnRunner {
     if (!sidecar) return { accepted: false, fallback: 'no_cached_agent', stream_id: null }
     // Register provisionally before the RPC: the Agent may apply the steer and finish the turn before the steer
     // reply arrives, and the turn's finalisation must then already see the record. A rejection removes it again.
-    const record: SteerRecord = { steer_id: steerId, session_id: sessionId, stream_id: activeStreamId, text, display_text: displayText || text, created_at: this.deps.now() }
+    return this.withSteerChain(activeStreamId, () => this.steerInto(sidecar, sessionId, activeStreamId, text, displayText, steerId))
+  }
+
+  private async steerInto(sidecar: SidecarLike, sessionId: string, activeStreamId: string, text: string, displayText: string, steerId: string): Promise<Record<string, unknown>> {
+    const record: SteerRecord = { steer_id: steerId, session_id: sessionId, stream_id: activeStreamId, text, display_text: displayText || text, created_at: this.deps.now(), state: 'pending', can_redirect: false }
     const records = this.steers.get(activeStreamId) ?? []
     records.push(record)
     this.steers.set(activeStreamId, records)
@@ -1131,7 +1155,7 @@ export class TurnRunner {
       if (index >= 0) current.splice(index, 1)
       if (!current.length) this.steers.delete(activeStreamId)
     }
-    let result: { accepted: boolean; fallback?: string | null | undefined }
+    let result: { accepted: boolean; fallback?: string | null | undefined; can_redirect?: boolean | undefined }
     try {
       result = await sidecar.call('chat.steer', { stream_id: activeStreamId, text })
     } catch {
@@ -1140,6 +1164,11 @@ export class TurnRunner {
     }
     // An accepted steer whose turn finalised while the reply was in flight was already reported by that finalisation.
     if (!result.accepted) withdraw()
+    else {
+      record.can_redirect = result.can_redirect === true
+      // TAL-424: every client shows it until the Agent takes it (unless it already did while the reply was in flight).
+      if (this.steers.get(activeStreamId)?.includes(record)) this.emitToSession(sessionId, 'steer_pending', this.pendingSteerView(record))
+    }
     return { accepted: result.accepted, fallback: result.accepted ? null : (result.fallback ?? 'not_running'), stream_id: activeStreamId, steer_id: steerId }
   }
 
@@ -1147,7 +1176,7 @@ export class TurnRunner {
   private takeSteerEventsBefore(streamId: string, event: string): [string, Record<string, unknown>][] {
     if (event !== 'cancel' && event !== 'apperror') return []
     if (!(this.steers.get(streamId) ?? []).length) return []
-    return this.finalizeSteerEvents(streamId, '')
+    return this.finalizeSteers(streamId, '', 'stopped').events
   }
 
   /** Python `_pending_webui_steer_suffix_start`: the pending text is the newline-joined tail of the records; earlier ones are consumed. */
@@ -1160,15 +1189,15 @@ export class TurnRunner {
     return null
   }
 
-  private consumedSteerPayload(record: SteerRecord): Record<string, unknown> {
+  private consumedSteerPayload(record: SteerRecord, opts: { redirected?: boolean } = {}): Record<string, unknown> {
     const consumedAt = this.deps.now()
     const afterToolCallId = this.lastCompletedTool.get(record.stream_id) ?? null
     const consumed = this.consumedSteers.get(record.stream_id) ?? []
     if (!consumed.some((c) => c.steer_id === record.steer_id)) {
-      consumed.push({ steer_id: record.steer_id, text: record.display_text || record.text, agent_text: record.text, submitted_at: record.created_at, consumed_at: consumedAt, after_tool_call_id: afterToolCallId })
+      consumed.push({ steer_id: record.steer_id, text: record.display_text || record.text, agent_text: record.text, submitted_at: record.created_at, consumed_at: consumedAt, after_tool_call_id: afterToolCallId, ...(opts.redirected ? { redirected: true } : {}) })
       this.consumedSteers.set(record.stream_id, consumed)
     }
-    return { ...record, agent_text: record.text, text: record.display_text || record.text, consumed_at: consumedAt, after_tool_call_id: afterToolCallId }
+    return { steer_id: record.steer_id, session_id: record.session_id, stream_id: record.stream_id, display_text: record.display_text, created_at: record.created_at, agent_text: record.text, text: record.display_text || record.text, consumed_at: consumedAt, after_tool_call_id: afterToolCallId }
   }
 
   /**
@@ -1189,7 +1218,13 @@ export class TurnRunner {
       }
       // An Agent that records the steer it delivered does so at its exact place: that row becomes the steer, not a copy.
       const agentRows = s.messages.flatMap((m, i) => (m._turn_id === streamId && agentSteerText(m) !== null ? [i] : []))
-      const agentRow = agentRows.find((i) => agentSteerText(s.messages[i]!) === steer.agent_text.trim()) ?? agentRows[0]
+      let agentRow = agentRows.find((i) => agentSteerText(s.messages[i]!) === steer.agent_text.trim()) ?? agentRows[0]
+      // A Send now redirect is recorded as a plain user row of the turn: that row becomes the steer too.
+      if (steer.redirected) {
+        const prompt = s.messages.findIndex((m) => m._turn_id === streamId && m.role === 'user' && !m._steer)
+        const own = s.messages.findIndex((m, i) => i > prompt && m._turn_id === streamId && m.role === 'user' && !m._steer && messageText(m.content).trim() === steer.agent_text.trim())
+        if (own >= 0) agentRow = own
+      }
       if (agentRow === undefined) s.messages.splice(steerInsertIndex(s.messages, streamId, steer.after_tool_call_id), 0, row)
       else s.messages[agentRow] = row
       boundary = steer.consumed_at
@@ -1233,19 +1268,142 @@ export class TurnRunner {
     return records.slice(0, start).map((r) => this.consumedSteerPayload(r))
   }
 
-  /** Terminal steer bookkeeping for cancel/error paths: consumed records first, then `pending_steer_leftover` for the rest. */
-  private finalizeSteerEvents(streamId: string, leftoverText: string): [string, Record<string, unknown>][] {
+  /**
+   * Terminal steer bookkeeping: the records the Agent no longer holds are consumed; the rest it never took are either
+   * `stopped` (withdrawn with their text for the composer) or returned as one `followup` turn's texts (TAL-424).
+   */
+  private finalizeSteers(streamId: string, leftoverText: string, mode: 'stopped' | 'followup'): { events: [string, Record<string, unknown>][]; leftovers: string[] } {
     const records = this.steers.get(streamId) ?? []
     this.steers.delete(streamId)
     const start = TurnRunner.pendingSteerSuffixStart(records, leftoverText)
-    if (start === null) return leftoverText ? [['pending_steer_leftover', { stream_id: streamId, text: leftoverText }]] : []
-    const events: [string, Record<string, unknown>][] = records.slice(0, start).map((r) => ['steer_consumed', this.consumedSteerPayload(r)])
-    const leftovers = records.slice(start)
-    for (const r of leftovers) events.push(['pending_steer_leftover', { ...r, leftover_at: this.deps.now() }])
-    const matched = leftovers.map((r) => r.text).join('\n')
+    const consumed = start === null ? [] : records.slice(0, start)
+    const left = start === null ? [] : records.slice(start)
+    const matched = left.map((r) => r.text).join('\n')
     const unmatched = matched ? leftoverText.slice(0, leftoverText.length - matched.length).replace(/\n+$/, '') : leftoverText
-    if (unmatched) events.push(['pending_steer_leftover', { stream_id: streamId, text: unmatched }])
-    return events
+    const events: [string, Record<string, unknown>][] = consumed.map((r) => ['steer_consumed', this.consumedSteerPayload(r)])
+    if (mode === 'followup') return { events, leftovers: [...(unmatched ? [unmatched] : []), ...left.map((r) => r.text)] }
+    for (const r of left) events.push(['steer_withdrawn', { steer_id: r.steer_id, reason: 'stopped', text: r.display_text }])
+    if (unmatched) events.push(['steer_withdrawn', { steer_id: null, reason: 'stopped', text: unmatched }])
+    return { events, leftovers: [] }
+  }
+
+  /**
+   * TAL-424: the steers a finished turn never took go on as one follow-up turn, sent once by the server for every client.
+   * Should another turn already hold the session, they steer into that one instead, so no text is lost.
+   */
+  private startSteerFollowUp(sessionId: string, texts: string[]): void {
+    if (!texts.length) return
+    let s: Session
+    try { s = this.deps.store.get(sessionId) } catch { return }
+    const msg = texts.join('\n')
+    const started = this.start(s, { msg, attachments: [], workspace: s.workspace, model: s.model, modelProvider: s.model_provider })
+    if (!started._status || started._status < 400) return
+    if (started._status === 409 && started.active_stream_id) {
+      void this.steer(sessionId, msg, msg, `steer-${randomUUID()}`)
+      return
+    }
+    this.deps.log(`[webui] WARNING: steer follow-up for ${sessionId} not started (${String(started._status)}): ${str(started.error)}`)
+  }
+
+  /** The Agent's pending steer text settles which steers it has taken: those become `steer_consumed` and their rows. */
+  private settleConsumedSteers(sessionId: string, streamId: string, pendingText: string): void {
+    for (const record of this.takeConsumedSteers(streamId, pendingText, { keepLeftovers: true })) this.emitToSession(sessionId, 'steer_consumed', record)
+    this.saveConsumedSteers(sessionId, streamId)
+  }
+
+  /** What every client shows for a pending steer; the server decides which actions it offers. */
+  private pendingSteerView(r: SteerRecord): Record<string, unknown> {
+    const open = r.state === 'pending'
+    return { steer_id: r.steer_id, text: r.display_text, submitted_at: r.created_at, state: r.state, actions: { edit: open, cancel: open, send_now: open && r.can_redirect } }
+  }
+
+  /** TAL-424: the active stream's pending steers, oldest first (session detail `pending_steers`). */
+  pendingSteers(streamId: string): Record<string, unknown>[] {
+    return (this.steers.get(streamId) ?? []).map((r) => this.pendingSteerView(r))
+  }
+
+  private withSteerChain<T>(streamId: string, fn: () => Promise<T>): Promise<T> {
+    const run = (this.steerChains.get(streamId) ?? Promise.resolve()).then(fn)
+    const settled = run.catch(() => undefined).then(() => { if (this.steerChains.get(streamId) === settled) this.steerChains.delete(streamId) })
+    this.steerChains.set(streamId, settled)
+    return run
+  }
+
+  /**
+   * A withdraw or Send now on one pending steer of the session's active stream. `rewrite` asks the sidecar to change the
+   * Agent's queue and says whether it did; pending text the Agent reported meanwhile is settled after, unless the queue
+   * changed (the next report then reflects it).
+   */
+  private async rewriteSteer<T>(sessionId: string, steerId: string, fallback: T, rewrite: (sidecar: SidecarLike, streamId: string, records: SteerRecord[], index: number) => Promise<{ result: T; changed: boolean }>): Promise<T> {
+    let s: Session | null = null
+    try { s = this.deps.store.get(sessionId, { metadataOnly: true }) } catch { s = null }
+    const streamId = s?.active_stream_id
+    const sidecar = this.deps.sidecar()
+    if (!streamId || !sidecar) return fallback
+    return this.withSteerChain(streamId, async () => {
+      const records = this.steers.get(streamId) ?? []
+      const index = records.findIndex((r) => r.steer_id === steerId)
+      if (index < 0 || records[index]!.state !== 'pending') return fallback
+      this.steerRewrites.add(streamId)
+      let outcome: { result: T; changed: boolean } = { result: fallback, changed: false }
+      try { outcome = await rewrite(sidecar, streamId, records, index) } catch { outcome = { result: fallback, changed: false } } finally {
+        this.steerRewrites.delete(streamId)
+        const deferred = this.deferredPendingSteer.get(streamId)
+        this.deferredPendingSteer.delete(streamId)
+        if (deferred !== undefined && !outcome.changed) this.settleConsumedSteers(sessionId, streamId, deferred)
+      }
+      return outcome.result
+    })
+  }
+
+  private dropSteer(streamId: string, record: SteerRecord): void {
+    const records = this.steers.get(streamId)
+    const index = records?.indexOf(record) ?? -1
+    if (records && index >= 0) records.splice(index, 1)
+  }
+
+  /**
+   * TAL-424 Edit and Cancel: take a pending steer back before the Agent takes it. `withdrawn: false` (and nothing
+   * emitted) when it is unknown, already taken or being sent; a taken one then settles as consumed.
+   */
+  withdrawSteer(sessionId: string, steerId: string, reason: SteerWithdrawReason): Promise<{ withdrawn: boolean; text?: string }> {
+    return this.rewriteSteer<{ withdrawn: boolean; text?: string }>(sessionId, steerId, { withdrawn: false }, async (sidecar, streamId, records, index) => {
+      const record = records[index]!
+      const reply = await sidecar.call('chat.steer_withdraw', { stream_id: streamId, pending: records.map((r) => r.text), index })
+      if (!reply.withdrawn) return { result: { withdrawn: false }, changed: false }
+      this.dropSteer(streamId, record)
+      this.emitToSession(sessionId, 'steer_withdrawn', { steer_id: record.steer_id, reason, text: record.display_text })
+      return { result: { withdrawn: true, text: record.display_text }, changed: true }
+    })
+  }
+
+  /**
+   * TAL-424 Send now: deliver a pending steer with the Agent's redirect. A model request restarts with it (consumed at
+   * once); during tools it goes last on the Agent's queue and stays `sending_now` until taken; with nothing live it
+   * stays pending.
+   */
+  sendSteerNow(sessionId: string, steerId: string): Promise<{ redirected: boolean }> {
+    return this.rewriteSteer<{ redirected: boolean }>(sessionId, steerId, { redirected: false }, async (sidecar, streamId, records, index) => {
+      const record = records[index]!
+      if (!record.can_redirect) return { result: { redirected: false }, changed: false }
+      const reply = await sidecar.call('chat.steer_now', { stream_id: streamId, pending: records.map((r) => r.text), index })
+      if (!reply.withdrawn) return { result: { redirected: false }, changed: false }
+      if (!reply.redirected) {
+        // The Agent's queue changed meanwhile, so it went back last: clients follow the new order.
+        if (reply.requeued === 'last') { this.dropSteer(streamId, record); records.push(record); this.emitToSession(sessionId, 'steer_pending', this.pendingSteerView(record)) }
+        return { result: { redirected: false }, changed: true }
+      }
+      this.dropSteer(streamId, record)
+      if (reply.delivery === 'steer') {
+        record.state = 'sending_now'
+        records.push(record)
+        this.emitToSession(sessionId, 'steer_pending', this.pendingSteerView(record))
+      } else {
+        this.emitToSession(sessionId, 'steer_consumed', this.consumedSteerPayload(record, { redirected: true }))
+        this.saveConsumedSteers(sessionId, streamId)
+      }
+      return { result: { redirected: true }, changed: true }
+    })
   }
 
   // ── approvals / clarify ──────────────────────────────────────────────────
