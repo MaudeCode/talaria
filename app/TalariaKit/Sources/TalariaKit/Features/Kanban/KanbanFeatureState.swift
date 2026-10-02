@@ -79,6 +79,10 @@ public final class KanbanFeatureState {
     private var boardMutationGeneration = 0
     private var dispatchGeneration = 0
     private var boardActivityGeneration = 0
+    /// Last configuration, board list and board per server, shown while a cold load runs (TAL-437).
+    private let responseCache: ResponseCache?
+    /// True while the board shown is the cached one; actions wait for the live board.
+    public private(set) var isShowingCachedBoard = false
 
     public init(
         server: URL,
@@ -91,8 +95,10 @@ public final class KanbanFeatureState {
             try await Task.sleep(for: duration)
         },
         now: @escaping @MainActor @Sendable () -> Date = { Date() },
-        onAPIError: @escaping (Error) -> Void = { _ in }
+        onAPIError: @escaping (Error) -> Void = { _ in },
+        responseCache: ResponseCache? = nil
     ) {
+        self.responseCache = responseCache
         self.server = server
         self.defaults = defaults
         browsedBoardKey = Self.browsedBoardKey(for: server)
@@ -108,7 +114,7 @@ public final class KanbanFeatureState {
     /// Future write slices must use this single seam before exposing any
     /// mutation, Dispatcher, or shared-state action.
     var canUseServerAuthoritativeActions: Bool {
-        snapshot != nil && !isOffline && !isRefreshing && !refreshFailed
+        snapshot != nil && !isShowingCachedBoard && !isOffline && !isRefreshing && !refreshFailed
     }
 
     private var canUseWrites: Bool {
@@ -588,12 +594,17 @@ public final class KanbanFeatureState {
         defer {
             if activeLoadID == loadID { isLoading = false }
         }
+        isShowingCachedBoard = showCachedBoard(preferring: previouslySelectedBoard)
 
         do {
             // Ordered exactly as §17.2 requires; every probe is a verified GET.
-            let configuration = try await client.kanbanConfiguration()
+            let configuration = try await client.kanbanConfiguration(
+                caching: responseCache?.entry(ResponseCache.Kind.kanbanConfiguration)
+            )
             guard isCurrent(loadID) else { return }
-            let boardsResponse = try await client.kanbanBoards()
+            let boardsResponse = try await client.kanbanBoards(
+                caching: responseCache?.entry(ResponseCache.Kind.kanbanBoards)
+            )
             guard isCurrent(loadID) else { return }
             guard let currentBoard = normalized(boardsResponse.current) else {
                 throw KanbanContractViolation.missingCurrentBoard
@@ -618,12 +629,16 @@ public final class KanbanFeatureState {
                 handleRemovedBoard(previouslySelectedBoardName ?? previouslySelectedBoard)
                 self.report = report
                 state = report.isPartial ? .partial : .compatible
+                isShowingCachedBoard = false
                 return
             }
             let boardToLoad = previouslySelectedBoard
                 ?? storedBoardSlug(in: availableBoards)
                 ?? currentBoard
-            let snapshot = try await client.kanbanBoard(KanbanBoardRequest(board: boardToLoad))
+            let snapshot = try await client.kanbanBoard(
+                KanbanBoardRequest(board: boardToLoad),
+                caching: responseCache?.entry(ResponseCache.Kind.kanbanBoard(boardToLoad))
+            )
             guard isCurrent(loadID) else { return }
 
             let report = try KanbanCompatibilityValidator.validate(
@@ -647,19 +662,55 @@ public final class KanbanFeatureState {
             liveCursor = max(0, snapshot.latestEventID ?? 0)
             self.report = report
             state = report.isPartial ? .partial : .compatible
+            isShowingCachedBoard = false
 
             await loadSupplementaryReads(board: boardToLoad, loadID: loadID)
             startLiveUpdatesIfReady()
         } catch is CancellationError {
-            guard activeLoadID == loadID else { return }
+            guard activeLoadID == loadID, !isShowingCachedBoard else { return }
             report = nil
             state = .idle
         } catch {
             guard isCurrent(loadID) else { return }
+            forwardAuthentication(error)
+            // The cached board stays readable; the failed refresh keeps actions off.
+            if isShowingCachedBoard {
+                refreshFailed = true
+                return
+            }
             report = nil
             state = Self.classify(error)
-            forwardAuthentication(error)
         }
+    }
+
+    /// Shows the last configuration, board list and board this device loaded (TAL-437), validated
+    /// the same way as a live load, while the live load runs. Returns whether it showed anything.
+    private func showCachedBoard(preferring previouslySelectedBoard: String?) -> Bool {
+        guard let responseCache,
+              let configuration = responseCache.entry(ResponseCache.Kind.kanbanConfiguration)
+                .load(KanbanConfiguration.self),
+              let boardsResponse = responseCache.entry(ResponseCache.Kind.kanbanBoards)
+                .load(KanbanBoardsResponse.self),
+              let currentBoard = normalized(boardsResponse.current)
+        else { return false }
+        let availableBoards = boardsResponse.boards ?? []
+        let board = previouslySelectedBoard ?? storedBoardSlug(in: availableBoards) ?? currentBoard
+        guard let snapshot = responseCache.entry(ResponseCache.Kind.kanbanBoard(board)).load(KanbanBoardSnapshot.self),
+              let report = try? KanbanCompatibilityValidator.validate(
+                configuration: configuration,
+                boardsResponse: boardsResponse,
+                boardSlug: board,
+                snapshot: snapshot
+              )
+        else { return false }
+        self.configuration = configuration
+        self.boardsResponse = boardsResponse
+        boards = availableBoards
+        selectedBoardSlug = board
+        self.snapshot = snapshot
+        self.report = report
+        state = report.isPartial ? .partial : .compatible
+        return true
     }
 
     public func retry() async {

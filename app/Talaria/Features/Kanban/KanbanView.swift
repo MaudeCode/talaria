@@ -8,7 +8,8 @@ struct KanbanView: View {
         _model = State(
             initialValue: KanbanFeatureState(
                 server: server,
-                onAPIError: onAPIError
+                onAPIError: onAPIError,
+                responseCache: ResponseCache(server: server)
             )
         )
     }

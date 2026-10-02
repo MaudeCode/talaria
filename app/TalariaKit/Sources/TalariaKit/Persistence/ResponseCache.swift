@@ -25,6 +25,13 @@ public struct ResponseCache: Sendable {
         public static let crons = "crons"
         public static let skills = "skills"
         public static let memory = "memory"
+        public static let kanbanConfiguration = "kanban-config"
+        public static let kanbanBoards = "kanban-boards"
+
+        /// One entry per board; the slug is hex-encoded so any slug is a safe file name.
+        public static func kanbanBoard(_ slug: String) -> String {
+            "kanban-board-" + Data(slug.utf8).map { String(format: "%02x", $0) }.joined()
+        }
     }
 
     public func entry(_ kind: String) -> Entry {
