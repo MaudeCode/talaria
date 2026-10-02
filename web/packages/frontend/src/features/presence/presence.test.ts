@@ -48,6 +48,15 @@ it('revokes after two minutes without input and renews at once with a higher seq
   expect(sent().at(-1)!.seq).toBeGreaterThan(before)
 })
 
+it('does not treat a streaming transcript scrolling itself as user activity', () => {
+  stop = startPresence()
+  for (let elapsed = 0; elapsed < IDLE_MS; elapsed += 1_000) {
+    window.dispatchEvent(new Event('scroll'))
+    vi.advanceTimersByTime(1_000)
+  }
+  expect(actives().at(-1)).toBe(false)
+})
+
 it('revokes when the tab is hidden or loses focus, and never counts input on a hidden tab', () => {
   stop = startPresence()
   visibility = 'hidden'

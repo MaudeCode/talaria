@@ -13,7 +13,8 @@ export const IDLE_MS = 120_000
 /** Well inside the server's 90 s lease. */
 export const RENEW_MS = 30_000
 const LeaseSchema = z.object({ ok: z.literal(true), lease_seconds: z.number() })
-const INPUT_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'scroll', 'touchstart']
+// Not `scroll`: a streaming transcript scrolls itself, and user scrolling arrives as wheel, touch, key, or pointer input.
+const INPUT_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart']
 
 export function startPresence(): () => void {
   // Seeded per page load so a reload never reuses an older sequence.
