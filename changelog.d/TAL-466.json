@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "At large accessibility text sizes, Memory section titles and the Files Root and Up buttons no longer break words; the modified time moves below the title.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

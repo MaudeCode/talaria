@@ -640,6 +640,65 @@ final class WorkspaceLoadingUITests: WorkspaceUITestCase {
     }
 }
 
+/// Memory and Files headers keep whole words at accessibility text sizes (TAL-466): each Memory
+/// title stays on one line with its modified caption below it, and Root and Up keep their names.
+final class HeaderTextSizeUITests: WorkspaceUITestCase {
+    static let memoryTitles = ["My Notes", "User Profile", "Agent Soul"]
+
+    func testMemoryAndFilesHeadersKeepWholeWordsAtAccessibilityTextSize() throws {
+        let defaultHeights = launchAndMeasureMemoryTitles(textSize: "UICTContentSizeCategoryL", captionBelow: false)
+        app.terminate()
+        let accessibilityHeights = launchAndMeasureMemoryTitles(
+            textSize: "UICTContentSizeCategoryAccessibilityXL", captionBelow: true
+        )
+        // AX3 scales one header line about 2.4× (20 → 48 pt), so a second line lands past 4×.
+        for title in Self.memoryTitles {
+            let defaultHeight = try XCTUnwrap(defaultHeights[title])
+            let accessibilityHeight = try XCTUnwrap(accessibilityHeights[title])
+            XCTAssertLessThan(accessibilityHeight, defaultHeight * 3, "\(title) wrapped at AX3")
+        }
+
+        openSidebarDestination("Chats")
+        XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: Self.navigationTimeout))
+        openFixtureSessionChat()
+        openFiles()
+        let root = app.buttons["Root"]
+        let up = app.buttons["Up"]
+        XCTAssertTrue(root.awaitExistence(timeout: 10), "Missing the Root control at AX3")
+        XCTAssertEqual(root.label, "Root")
+        XCTAssertEqual(up.label, "Up")
+        XCTAssertEqual(root.frame.height, up.frame.height, accuracy: 1, "Root wrapped at AX3")
+    }
+
+    /// Opens Memory at `textSize` and returns each section title's height, checking whether the
+    /// first section's modified caption sits beside or below its title.
+    private func launchAndMeasureMemoryTitles(textSize: String, captionBelow: Bool) -> [String: CGFloat] {
+        launchFixture(additionalArguments: ["--ui-test-panels", "-UIPreferredContentSizeCategoryName", textSize])
+        XCTAssertTrue(app.buttons["Open navigation"].awaitExistence(timeout: 15), "Missing deterministic app fixture")
+        openSidebarDestination("Memory")
+        let firstTitle = element(label: Self.memoryTitles[0])
+        XCTAssertTrue(releaseHeldLoads { firstTitle.exists }, "Memory did not render its sections [\(textSize)]")
+
+        let title = firstTitle.settledFrame
+        let caption = element(labelBeginningWith: "Modified").frame
+        if captionBelow {
+            XCTAssertGreaterThanOrEqual(caption.minY, title.maxY - 1, "The caption must sit below the title [\(textSize)]")
+        } else {
+            XCTAssertEqual(caption.midY, title.midY, accuracy: title.height / 2, "The caption left the title row [\(textSize)]")
+        }
+
+        var heights: [String: CGFloat] = [:]
+        for name in Self.memoryTitles {
+            let header = element(label: name)
+            repeatStep(6, until: { header.exists && header.frame.maxY < app.frame.maxY }) {
+                app.swipeUp()
+            }
+            heights[name] = header.frame.height
+        }
+        return heights
+    }
+}
+
 /// Previews, a chat file link, a file that fails to read and the push guard share one workspace
 /// launch; the fixture grants its Git write capability partway through (TAL-402).
 final class WorkspaceFilePreviewUITests: WorkspaceUITestCase {
