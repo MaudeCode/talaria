@@ -118,6 +118,11 @@ extension APIClient {
     public func cronRunDetail(jobID: String, filename: String) async throws -> CronRunDetailResponse {
         try await send(endpoint: .cronRunDetail(jobID: jobID, filename: filename), method: "GET")
     }
+
+    /// Each job's latest completion; the server filters by `since` and defaults to the epoch.
+    public func cronRecentCompletions() async throws -> CronRecentCompletionsResponse {
+        try await send(endpoint: .cronRecent, method: "GET")
+    }
 }
 
 private struct CronCreateRequest: Encodable {

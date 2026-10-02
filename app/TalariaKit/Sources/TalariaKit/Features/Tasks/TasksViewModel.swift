@@ -14,11 +14,17 @@ public final class TasksViewModel {
     /// Server-provided deliver targets; `nil` while unknown or when the
     /// endpoint is unavailable (the editor then falls back to free text).
     public private(set) var deliveryOptions: [CronDeliveryOption]?
+    /// Each job's latest completion in server order. The view loads it beside
+    /// `load()` so an older server or a feed failure never blocks jobs, and a
+    /// failed reload keeps the last good feed.
+    public private(set) var recentCompletions: [CronRecentCompletion] = []
     public private(set) var isLoading = false
     public private(set) var isMutating = false
     public private(set) var errorMessage: String?
     public private(set) var actionErrorMessage: String?
     public private(set) var lastError: Error?
+
+    private var recentCompletionsGeneration = 0
 
     /// Shared with the task editor so its catalog loads use the same scope.
     public let client: APIClient
@@ -54,6 +60,22 @@ public final class TasksViewModel {
             lastError = error
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// A reload fences every in-flight feed request so a slow earlier response
+    /// cannot overwrite a newer one. Rows keep the server's order.
+    public func loadRecentCompletions() async {
+        recentCompletionsGeneration += 1
+        let generation = recentCompletionsGeneration
+        guard let response = try? await client.cronRecentCompletions(),
+              generation == recentCompletionsGeneration else { return }
+        recentCompletions = response.completions ?? []
+    }
+
+    /// The job a completion row opens, by job ID only. `nil` leaves the row
+    /// without navigation.
+    public func job(for completion: CronRecentCompletion) -> CronJob? {
+        jobs.first { $0.jobId == completion.jobId }
     }
 
     public func runningElapsed(for job: CronJob) -> Double? {

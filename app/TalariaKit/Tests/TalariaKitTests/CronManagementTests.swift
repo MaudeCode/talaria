@@ -352,6 +352,8 @@ final class CronManagementViewModelTests: APIClientTestCase {
                     #"{"platforms": [{"value": "local", "label": "Local (save output only)"}]}"#,
                     for: request
                 )
+            case "/api/crons/recent":
+                return apiTestJSONResponse(#"{"completions": []}"#, for: request)
             default:
                 XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
                 return apiTestJSONResponse("{}", for: request)
@@ -382,6 +384,8 @@ final class CronManagementViewModelTests: APIClientTestCase {
                     headerFields: ["Content-Type": "application/json"]
                 )!
                 return (response, Data(#"{"error": "not found"}"#.utf8))
+            case "/api/crons/recent":
+                return apiTestJSONResponse(#"{"completions": []}"#, for: request)
             default:
                 XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
                 return apiTestJSONResponse("{}", for: request)
@@ -394,6 +398,144 @@ final class CronManagementViewModelTests: APIClientTestCase {
         XCTAssertNil(viewModel.deliveryOptions, "Endpoint failure must fall back to free-text deliver entry.")
         XCTAssertEqual(viewModel.jobs.map(\.jobId), ["job123"], "Jobs must still load when delivery options fail.")
         XCTAssertNil(viewModel.errorMessage)
+    }
+
+    @MainActor
+    func testTasksViewModelKeepsServerOrderAndNavigatesByJobIDOnly() async throws {
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/crons":
+                return apiTestJSONResponse("""
+                {"jobs": [
+                  {"id": "job-a", "name": "Digest"},
+                  {"id": "job-b", "name": "Renamed"}
+                ]}
+                """, for: request)
+            case "/api/crons/status":
+                return apiTestJSONResponse(#"{"running": {}}"#, for: request)
+            case "/api/crons/delivery-options":
+                return apiTestJSONResponse(#"{"platforms": []}"#, for: request)
+            case "/api/crons/recent":
+                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertNil(request.url?.query, "The app sends no since filter.")
+                // Deliberately not newest first: the app must keep the server's order.
+                return apiTestJSONResponse("""
+                {"completions": [
+                  {"job_id": "job-a", "name": "Digest", "outcome": "succeeded", "completed_at": 1700000100},
+                  {"job_id": "job-old", "name": "Renamed", "outcome": "failed", "completed_at": 1700000300},
+                  {"job_id": "job-gone", "name": "Deleted", "outcome": "unknown", "completed_at": 1700000400}
+                ], "since": 0}
+                """, for: request)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let viewModel = TasksViewModel(server: try XCTUnwrap(URL(string: "https://example.test")), client: client)
+
+        await viewModel.load()
+        await viewModel.loadRecentCompletions()
+
+        XCTAssertEqual(viewModel.recentCompletions.map(\.jobId), ["job-a", "job-old", "job-gone"])
+        XCTAssertEqual(viewModel.job(for: viewModel.recentCompletions[0])?.jobId, "job-a")
+        XCTAssertNil(
+            viewModel.job(for: viewModel.recentCompletions[1]),
+            "A job ID missing from the list must not fall back to a job with the same name."
+        )
+        XCTAssertNil(viewModel.job(for: viewModel.recentCompletions[2]))
+    }
+
+    @MainActor
+    func testTasksViewModelCompletionsFailureKeepsJobsAndLastGoodFeed() async throws {
+        let recentRequests = LockedCounter()
+        let client = makeClient { request in
+            switch request.url?.path {
+            case "/api/crons":
+                return apiTestJSONResponse(#"{"jobs": [{"id": "job123", "name": "Digest"}]}"#, for: request)
+            case "/api/crons/status":
+                return apiTestJSONResponse(#"{"running": {}}"#, for: request)
+            case "/api/crons/delivery-options":
+                return apiTestJSONResponse(#"{"platforms": []}"#, for: request)
+            case "/api/crons/recent":
+                switch recentRequests.increment() {
+                case 1:
+                    // Older server without the endpoint.
+                    return apiTestJSONResponse(#"{"error": "not found"}"#, statusCode: 404, for: request)
+                case 2:
+                    return apiTestJSONResponse(#"{"completions": []}"#, for: request)
+                case 3:
+                    return apiTestJSONResponse(
+                        #"{"completions": [{"job_id": "job123", "name": "Digest", "outcome": "succeeded", "completed_at": 1700000000}]}"#,
+                        for: request
+                    )
+                default:
+                    return apiTestJSONResponse(#"{"error": "boom"}"#, statusCode: 500, for: request)
+                }
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                return apiTestJSONResponse("{}", for: request)
+            }
+        }
+        let viewModel = TasksViewModel(server: try XCTUnwrap(URL(string: "https://example.test")), client: client)
+
+        await viewModel.load()
+        await viewModel.loadRecentCompletions()
+        XCTAssertEqual(viewModel.jobs.map(\.jobId), ["job123"], "Jobs must load when the feed is unsupported.")
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertTrue(viewModel.recentCompletions.isEmpty)
+
+        await viewModel.loadRecentCompletions()
+        XCTAssertTrue(viewModel.recentCompletions.isEmpty, "Empty data renders no rows.")
+
+        await viewModel.loadRecentCompletions()
+        XCTAssertEqual(viewModel.recentCompletions.map(\.jobId), ["job123"])
+
+        await viewModel.loadRecentCompletions()
+        XCTAssertEqual(viewModel.recentCompletions.map(\.jobId), ["job123"], "A transient failure must keep the last good feed.")
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
+    @MainActor
+    func testTasksViewModelReloadFencesStaleCompletions() async throws {
+        let host = "tal167-fence.test"
+        let recentRequests = LockedValues<DeferredMockURLProtocol>()
+        let recentStarted = [expectation(description: "recent 1"), expectation(description: "recent 2")]
+        DeferredMockURLProtocol.setOnRequest({ request in
+            switch request.request.url?.path {
+            case "/api/crons":
+                request.complete(withJSON: #"{"jobs": [{"id": "job123", "name": "Digest"}]}"#)
+            case "/api/crons/status":
+                request.complete(withJSON: #"{"running": {}}"#)
+            case "/api/crons/delivery-options":
+                request.complete(withJSON: #"{"platforms": []}"#)
+            case "/api/crons/recent":
+                recentStarted[recentRequests.append(request) - 1].fulfill()
+            default:
+                XCTFail("Unexpected request: \(request.request.url?.path ?? "nil")")
+            }
+        }, forHost: host)
+        defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let server = try XCTUnwrap(URL(string: "https://\(host)"))
+        let viewModel = TasksViewModel(server: server, client: APIClient(baseURL: server, session: URLSession(configuration: configuration)))
+
+        let staleFeed = Task { @MainActor in await viewModel.loadRecentCompletions() }
+        await viewModel.load()
+        XCTAssertFalse(viewModel.isLoading, "Jobs must finish loading while the feed is still pending.")
+        XCTAssertEqual(viewModel.jobs.map(\.jobId), ["job123"])
+        await fulfillment(of: [recentStarted[0]], timeout: 5)
+        let freshLoad = Task { @MainActor in await viewModel.loadRecentCompletions() }
+        await fulfillment(of: [recentStarted[1]], timeout: 5)
+
+        recentRequests.values[1].complete(withJSON: #"{"completions": [{"job_id": "fresh", "name": "Fresh", "completed_at": 2}]}"#)
+        await freshLoad.value
+        XCTAssertEqual(viewModel.recentCompletions.map(\.jobId), ["fresh"])
+
+        recentRequests.values[0].complete(withJSON: #"{"completions": [{"job_id": "stale", "name": "Stale", "completed_at": 1}]}"#)
+        await staleFeed.value
+        XCTAssertEqual(viewModel.recentCompletions.map(\.jobId), ["fresh"], "A response from before the reload must be dropped.")
     }
 
     @MainActor

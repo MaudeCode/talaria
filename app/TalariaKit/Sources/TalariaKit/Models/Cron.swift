@@ -263,19 +263,7 @@ public struct CronHistoryResponse: Decodable, Equatable {
         offset = container.decodeLossyIntIfPresent(forKey: .offset)
 
         // Skip malformed rows instead of dropping the whole page.
-        guard var rows = try? container.nestedUnkeyedContainer(forKey: .runs) else {
-            runs = nil
-            return
-        }
-        var decoded: [CronRunSummary] = []
-        while !rows.isAtEnd {
-            if let run = try? rows.decode(CronRunSummary.self) {
-                decoded.append(run)
-            } else if (try? rows.decode(JSONValue.self)) == nil {
-                break
-            }
-        }
-        runs = decoded
+        runs = container.decodeLossyArrayIfPresent(CronRunSummary.self, forKey: .runs)
     }
 }
 
@@ -364,6 +352,68 @@ public struct CronRunDetailResponse: Decodable, Equatable {
         content = container.decodeLossyStringIfPresent(forKey: .content)
         snippet = container.decodeLossyStringIfPresent(forKey: .snippet)
         usage = try? container.decodeIfPresent(CronRunUsage.self, forKey: .usage)
+    }
+}
+
+/// `GET /api/crons/recent`: one row per job that has ever completed, carrying
+/// only that job's latest run, newest first. Not a run archive; `cronHistory` is.
+public struct CronRecentCompletionsResponse: Decodable, Equatable {
+    public let completions: [CronRecentCompletion]?
+
+    public enum CodingKeys: String, CodingKey {
+        case completions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Skip malformed rows instead of dropping the whole feed.
+        completions = container.decodeLossyArrayIfPresent(CronRecentCompletion.self, forKey: .completions)
+    }
+}
+
+/// The server orders the feed and owns `outcome`; the app renders both as sent.
+public struct CronRecentCompletion: Decodable, Equatable, Identifiable {
+    public enum Outcome: String, Decodable {
+        case succeeded
+        case failed
+        case unknown
+    }
+
+    public var id: String { jobId }
+
+    public let jobId: String
+    public let name: String?
+    public let outcome: Outcome
+    /// Unix seconds; the server normalizes every completion time to a number.
+    public let completedAt: Date?
+
+    public enum CodingKeys: String, CodingKey {
+        case jobId
+        case name
+        case outcome
+        case completedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // A row without a job id cannot be identified or opened.
+        guard let jobId = container.decodeLossyStringIfPresent(forKey: .jobId), !jobId.isEmpty else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .jobId, in: container, debugDescription: "Completion names no job"
+            )
+        }
+        self.jobId = jobId
+        name = container.decodeLossyStringIfPresent(forKey: .name)
+        outcome = (try? container.decodeIfPresent(Outcome.self, forKey: .outcome)) ?? .unknown
+        completedAt = (try? container.decodeIfPresent(Double.self, forKey: .completedAt))
+            .map { Date(timeIntervalSince1970: $0) }
+    }
+
+    public var displayName: String {
+        if let name, !name.isEmpty {
+            return name
+        }
+        return String(localized: "Untitled Task")
     }
 }
 

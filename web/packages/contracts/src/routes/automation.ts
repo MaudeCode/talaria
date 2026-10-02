@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { CronsSchema, CronHistorySchema, CronRunSchema, CronStatusSchema, CronMutationSchema, KanbanBoardsViewSchema, KanbanBoardViewSchema, ExtensionStatusSchema } from '../views.js'
+import { CronsSchema, CronRecentSchema, CronHistorySchema, CronRunSchema, CronStatusSchema, CronMutationSchema, KanbanBoardsViewSchema, KanbanBoardViewSchema, ExtensionStatusSchema } from '../views.js'
 import { KanbanAssigneeSchema, KanbanBoardMetaSchema, KanbanEventSchema, KanbanTaskSchema } from '../sidecar/namespaces.js'
 
 /** Crons, kanban, extensions, and the embedded terminal. */
@@ -21,6 +21,7 @@ export const automationContract = {
     output: oc.route({ method: 'GET', path: '/api/crons/output', tags }).input(JobId.extend({ limit: z.string().optional() })).output(Loose),
     run: oc.route({ method: 'GET', path: '/api/crons/run', tags }).input(JobId.extend({ filename: z.string().optional() })).output(CronRunSchema),
     status: oc.route({ method: 'GET', path: '/api/crons/status', tags }).input(JobId).output(CronStatusSchema),
+    recent: oc.route({ method: 'GET', path: '/api/crons/recent', tags, summary: "Each active-profile job's latest completion after `since` (Unix seconds), newest first. Not a run archive." }).input(z.object({ since: z.string().optional() })).output(CronRecentSchema),
     deliveryOptions: oc.route({ method: 'GET', path: '/api/crons/delivery-options', tags }).output(z.object({ platforms: z.array(z.object({ value: z.string(), label: z.string() })) })),
     create: oc.route({ method: 'POST', path: '/api/crons/create', tags }).input(Loose).output(CronMutationSchema),
     update: oc.route({ method: 'POST', path: '/api/crons/update', tags }).input(Loose).output(CronMutationSchema),

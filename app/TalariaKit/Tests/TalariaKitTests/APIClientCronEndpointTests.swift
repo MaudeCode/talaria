@@ -374,6 +374,46 @@ final class APIClientCronEndpointTests: APIClientTestCase {
         XCTAssertTrue(expectedRequests.isEmpty)
     }
 
+    func testCronRecentCompletionsDecodesTolerantly() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/crons/recent")
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertNil(request.httpBody)
+
+            return apiTestJSONResponse("""
+            {
+              "completions": [
+                {
+                  "job_id": "job123",
+                  "name": "Digest",
+                  "status": "success",
+                  "outcome": "succeeded",
+                  "completed_at": 1777892400.5,
+                  "toast_notifications": true,
+                  "session_id": "sess-1",
+                  "message_count": 4
+                },
+                {"job_id": "job456", "name": null, "status": "error", "outcome": "failed", "completed_at": 1777892300},
+                {"job_id": "job789", "outcome": "a-new-outcome", "completed_at": "1777892200"},
+                {"job_id": "", "name": "Legacy", "outcome": "failed", "completed_at": 1},
+                "not-a-completion",
+                {}
+              ],
+              "since": 0
+            }
+            """, for: request)
+        }
+
+        let response = try await client.cronRecentCompletions()
+        let completions = try XCTUnwrap(response.completions)
+
+        XCTAssertEqual(completions.map(\.jobId), ["job123", "job456", "job789"], "Rows without a job ID must be skipped.")
+        XCTAssertEqual(completions.map(\.outcome), [.succeeded, .failed, .unknown])
+        XCTAssertEqual(completions[0].completedAt?.timeIntervalSince1970, 1777892400.5)
+        XCTAssertEqual(completions[1].displayName, "Untitled Task")
+        XCTAssertNil(completions[2].completedAt, "The app must not parse string timestamps.")
+    }
+
     func testCronHistoryBuildsExpectedQueryAndSkipsMalformedRows() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/crons/history")

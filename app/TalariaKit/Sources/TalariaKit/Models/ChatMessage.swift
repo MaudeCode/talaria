@@ -533,6 +533,20 @@ public enum TranscriptTurnClassifier {
 }
 
 extension KeyedDecodingContainer {
+    /// Skips elements that fail to decode instead of failing the whole array.
+    func decodeLossyArrayIfPresent<Element: Decodable>(_ type: Element.Type, forKey key: Key) -> [Element]? {
+        guard var rows = try? nestedUnkeyedContainer(forKey: key) else { return nil }
+        var decoded: [Element] = []
+        while !rows.isAtEnd {
+            if let row = try? rows.decode(Element.self) {
+                decoded.append(row)
+            } else if (try? rows.decode(JSONValue.self)) == nil {
+                break
+            }
+        }
+        return decoded
+    }
+
     func decodeLossyStringIfPresent(forKey key: Key) -> String? {
         if let value = try? decodeIfPresent(String.self, forKey: key) {
             return value

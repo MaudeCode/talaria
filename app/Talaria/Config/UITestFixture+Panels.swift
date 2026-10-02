@@ -145,6 +145,8 @@ extension UITestFixtureURLProtocol {
             return body(cronRunDetail)
         case "/api/crons/delivery-options":
             return body(#"{"platforms":[{"value":"local","label":"Local"}]}"#)
+        case "/api/crons/recent":
+            return body(cronRecentCompletions)
         case "/api/skills":
             return body(skills(state))
         case "/api/skills/content":
@@ -182,6 +184,12 @@ extension UITestFixtureURLProtocol {
     {"job_id":"ui-fixture-cron-digest","outputs":[
       {"filename":"fixture-digest.md","content":"Deterministic fixture digest output."}
     ]}
+    """
+
+    private static let cronRecentCompletions = """
+    {"completions":[
+      {"job_id":"ui-fixture-cron-sweep","name":"Fixture Weekly Sweep","status":"error","outcome":"failed","completed_at":1999990000,"toast_notifications":false,"session_id":""}
+    ],"since":0}
     """
 
     private static let cronHistory = """

@@ -73,6 +73,7 @@ export const automationRouter = os.router({
     output: os.crons.output.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.output(home(ctx), str(input.job_id), input.limit))),
     run: os.crons.run.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.runDetail(home(ctx), str(input.job_id), str(input.filename)))),
     status: os.crons.status.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.status(str(input.job_id)))),
+    recent: os.crons.recent.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.recent(home(ctx), input.since))),
     deliveryOptions: os.crons.deliveryOptions.handler(({ context: { ctx } }) => run(() => ctx.deps.crons.deliveryOptions())),
     create: os.crons.create.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.create(home(ctx), input) as Promise<never>)),
     update: os.crons.update.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.update(home(ctx), input) as Promise<never>)),

@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Tasks now lists each scheduled task's latest completion, newest first, and opens the matching task.",
+      "highlight": false
+    }
+  ]
+}

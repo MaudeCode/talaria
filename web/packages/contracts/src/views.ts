@@ -425,6 +425,13 @@ export const CronJobViewSchema = z.looseObject({
 export type CronJob = z.infer<typeof CronJobViewSchema>
 export const CronsSchema = z.looseObject({ jobs: z.array(CronJobViewSchema), active_profile: z.string().optional(), all_profiles: z.boolean().optional(), other_profile_count: z.number().optional(), cron_unavailable: z.boolean().optional() })
 export type Crons = z.infer<typeof CronsSchema>
+/** `GET /api/crons/recent` row: one job's latest completion, ordered and classified by the server. */
+export const CronRecentCompletionSchema = z.object({
+  job_id: z.string(), name: z.string().nullable(), status: z.string().nullable(), outcome: z.enum(['succeeded', 'failed', 'unknown']), completed_at: z.number(),
+  toast_notifications: z.boolean(), session_id: z.string(), message_count: z.number().int().optional(),
+})
+export type CronRecentCompletion = z.infer<typeof CronRecentCompletionSchema>
+export const CronRecentSchema = z.object({ completions: z.array(CronRecentCompletionSchema), since: z.number() })
 export const CronMutationSchema = z.looseObject({ ok: z.boolean().optional(), job: CronJobViewSchema.optional(), job_id: z.string().optional(), status: z.string().optional(), error: z.string().optional(), elapsed: z.number().optional() })
 export const CronRunUsageSchema = z.looseObject({ input_tokens: NullableNumber.optional(), output_tokens: NullableNumber.optional(), total_tokens: NullableNumber.optional(), estimated_cost_usd: NullableNumber.optional(), duration_seconds: NullableNumber.optional(), model: z.string().optional(), provider: z.string().optional() })
 export const CronRunSummarySchema = z.looseObject({ filename: z.string(), size: z.number(), modified: z.number(), usage: CronRunUsageSchema.optional() })

@@ -1,9 +1,10 @@
-import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { agentSessionRowsExisting, cheapChangeFingerprint, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbHasSession, stateDbSessionSources } from './state-db.js'
+import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbHasSession, stateDbSessionSources } from './state-db.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
 
@@ -28,6 +29,29 @@ function insertSession(db: DatabaseSync, row: { id: string; source: string; star
     .run(row.id, row.source, row.started_at, row.title ?? null, row.model ?? null, messages.length, row.parent ?? null, row.ended_at ?? null, row.end_reason ?? null, row.chat_id ?? null)
   for (const [role, ts] of messages) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(row.id, role, `${role} says`, ts)
 }
+
+describe('latestCronSessionInfo', () => {
+  let dir: string
+  beforeAll(() => { dir = realpathSync(mkdtempSync(join(tmpdir(), 'cron-sessions-'))) })
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  it('falls back to id order without started_at and leaves jobs without a session out', () => {
+    const path = join(dir, 'no-started-at.db')
+    const db = new DatabaseSync(path)
+    db.exec("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT); INSERT INTO sessions VALUES ('cron_x_1', 'cron'), ('cron_x_2', 'cron'), ('cron_y_1', 'telegram')")
+    db.close()
+    expect(latestCronSessionInfo(path, ['x', 'y', 'z'], ['x', 'y', 'z'])).toEqual(new Map([['x', { session_id: 'cron_x_2', message_count: null }]]))
+  })
+
+  it('answers no enrichment for a missing or unrecognized state.db', () => {
+    expect(latestCronSessionInfo(join(dir, 'missing.db'), ['x'], ['x']).size).toBe(0)
+    const path = join(dir, 'no-source.db')
+    const db = new DatabaseSync(path)
+    db.exec("CREATE TABLE sessions (id TEXT PRIMARY KEY); INSERT INTO sessions VALUES ('cron_x_1')")
+    db.close()
+    expect(latestCronSessionInfo(path, ['x'], ['x']).size).toBe(0)
+  })
+})
 
 describe('state.db projection', () => {
   let s: TestServer

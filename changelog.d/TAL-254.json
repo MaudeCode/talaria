@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The Web server again reports each scheduled task's latest completion, newest first, with whether it succeeded or failed, so the iPhone app can show it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
