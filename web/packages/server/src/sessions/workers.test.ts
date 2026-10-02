@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { formatWakeupPrompt } from './completions.js'
+import { CompletionDrain, formatWakeupPrompt } from './completions.js'
 import { nextSessionItem } from './streams.js'
 import { HygieneTicker, rotateWebuiLog, webuiLogPaths } from '../tools/hygiene.js'
 import { configFingerprint, McpHealthProber, probeServer } from '../tools/mcp-health.js'
@@ -87,6 +87,88 @@ describe('background completion drain', () => {
     expect(await s.deps.completions.drainOnce()).toBe(0)
     expect(requeued).toHaveLength(1)
     expect((requeued[0] as Json).process_id).toBe('d1')
+  })
+})
+
+describe('async delegation delivery claims (TAL-459)', () => {
+  let s: TestServer
+  let sidecar: FakeSidecar
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+  })
+  afterAll(() => s.close())
+
+  const newSid = async (): Promise<string> => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    // A session is only addressable for routing once it has been persisted.
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'user', content: 'dispatch the delegation' }]
+    s.deps.sessionStore.save(session)
+    return sid
+  }
+  const delegation = (sid: string, id: string): Json => ({ process_id: id, delegation_id: id, type: 'async_delegation', origin_ui_session_id: sid, consumed: false })
+  /** The Agent's durable delivery ledger: a claim holds a pending row, completion marks it delivered for good. */
+  const ledger = (): { delivered: Set<string>; calls: string[] } => {
+    const state = { delivered: new Set<string>(), calls: [] as string[] }
+    sidecar.respond('process.format_notification', (params) => ({ text: `[IMPORTANT: delegation ${str((params.event as Json).delegation_id)} finished]` }))
+    sidecar.respond('process.mark_consumed', () => ({ ok: true }))
+    sidecar.respond('process.claim_delivery', (params) => {
+      const id = str((params.event as Json).delegation_id)
+      state.calls.push(`claim ${id}`)
+      return { claim_id: state.delivered.has(id) ? null : `claim-${id}` }
+    })
+    sidecar.respond('process.complete_delivery', (params) => { const id = str((params.event as Json).delegation_id); state.calls.push(`complete ${id}`); state.delivered.add(id); return { ok: true } })
+    sidecar.respond('process.release_delivery', (params) => { state.calls.push(`release ${str((params.event as Json).delegation_id)}`); return { ok: true } })
+    return state
+  }
+  const drainWith = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): CompletionDrain => new CompletionDrain({
+    sidecar: () => sidecar, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels: s.deps.channels, registry: s.deps.registry,
+    startTurn: (_session, prompt) => startTurn(prompt), now: () => Date.now() / 1000, log: () => undefined,
+  })
+
+  it('a restarted server does not deliver a delegation the previous one already delivered', async () => {
+    const sid = await newSid()
+    const state = ledger()
+    const starts: string[] = []
+    const event = delegation(sid, 'deleg_restart')
+    // The Agent replays every still-pending completion when a new sidecar starts.
+    for (const drain of [drainWith((p) => { starts.push(p); return { stream_id: 'first' } }), drainWith((p) => { starts.push(p); return { stream_id: 'second' } })]) {
+      expect(await drain.processOne({ ...event })).toBe(true)
+    }
+    expect(starts).toHaveLength(1)
+    expect(state.calls).toEqual(['claim deleg_restart', 'complete deleg_restart', 'claim deleg_restart'])
+  })
+
+  it('claims before the wakeup turn and acknowledges after it starts', async () => {
+    const sid = await newSid()
+    const state = ledger()
+    const order: string[] = []
+    const drain = drainWith((p) => { order.push(`start ${p.includes('deleg_order') ? 'deleg_order' : '?'}`); state.calls.push(order.at(-1)!); return { stream_id: 'run' } })
+    expect(await drain.processOne(delegation(sid, 'deleg_order'))).toBe(true)
+    expect(state.calls).toEqual(['claim deleg_order', 'start deleg_order', 'complete deleg_order'])
+  })
+
+  it('releases the claim when the wakeup turn cannot start, so the row stays pending', async () => {
+    const sid = await newSid()
+    const state = ledger()
+    for (const status of [409, 500]) {
+      state.calls.length = 0
+      const drain = drainWith(() => ({ _status: status }))
+      expect(await drain.processOne(delegation(sid, `deleg_${String(status)}`))).toBe(true)
+      expect(state.calls).toEqual([`claim deleg_${String(status)}`, `release deleg_${String(status)}`])
+      expect(state.delivered.has(`deleg_${String(status)}`)).toBe(false)
+      expect(drain.deferredCount(sid)).toBe(1)
+      drain.stop()
+    }
+  })
+
+  it('leaves plain process completions to the in-memory consumed marker', async () => {
+    const sid = await newSid()
+    const state = ledger()
+    const drain = drainWith(() => ({ stream_id: 'run' }))
+    expect(await drain.processOne({ process_id: 'proc_plain', session_id: 'proc_plain', type: 'completion', command: 'make', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })).toBe(true)
+    expect(state.calls).toEqual([])
   })
 })
 
