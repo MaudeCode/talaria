@@ -114,6 +114,8 @@ final class SessionListBottomBarUITests: ChatUITestCase {
         guard #available(iOS 26.0, *) else {
             throw XCTSkip("Search minimizes into the bottom bar from iOS 26; earlier versions keep the floating button")
         }
+        // Regular width keeps New Chat in its own bottom bar without Search (TAL-482).
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "The Search row is the compact-width layout")
         launchFixture()
         XCTAssertTrue(fixtureSessionButton.awaitExistence(timeout: 15), "Missing deterministic session fixture")
         let search = try XCTUnwrap(waitForSessionSearchControl(timeout: 15), "Missing the session search control")
@@ -139,7 +141,7 @@ final class SessionListBottomBarUITests: ChatUITestCase {
         closeSearch.tap()
         XCTAssertTrue(poll(timeout: 5) { visibleNewChat() != nil }, "New Chat should return when search closes")
 
-        tap(at: try XCTUnwrap(visibleNewChat()).frame.center)
+        tap(at: try XCTUnwrap(visibleNewChat()).settledFrame.center)
         XCTAssertTrue(app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 15))
         XCTAssertNotNil(waitForComposer(timeout: 15), "New Chat did not open the composer")
     }
