@@ -3749,10 +3749,57 @@
           "string",
           "null"
         ]
+      },
+      "can_redirect": {
+        "type": "boolean"
       }
     },
     "required": [
       "accepted"
+    ],
+    "additionalProperties": false
+  },
+  "chat.steer_withdraw": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "withdrawn": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "withdrawn"
+    ],
+    "additionalProperties": false
+  },
+  "chat.steer_now": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "redirected": {
+        "type": "boolean"
+      },
+      "withdrawn": {
+        "type": "boolean"
+      },
+      "delivery": {
+        "type": "string",
+        "enum": [
+          "redirect",
+          "steer"
+        ]
+      },
+      "requeued": {
+        "type": "string",
+        "enum": [
+          "kept",
+          "last"
+        ]
+      }
+    },
+    "required": [
+      "redirected",
+      "withdrawn"
     ],
     "additionalProperties": false
   },
