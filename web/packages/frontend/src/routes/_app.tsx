@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { Outlet, createFileRoute, redirect } from '@tanstack/react-router'
+import { startPresence } from '../features/presence/presence'
 import { isAuthenticated } from '../contracts/bootstrap'
 import { legacyHashRoute } from '../contracts/url'
 
@@ -17,5 +19,11 @@ export const Route = createFileRoute('/_app')({
     const hashTarget = legacyHashRoute(location.hash)
     if (hashTarget && hashTarget !== location.pathname) throw redirect({ to: hashTarget })
   },
-  component: () => <Outlet />,
+  component: AppLayout,
 })
+
+function AppLayout() {
+  // One presence lease per tab for the whole authenticated session, not per page.
+  useEffect(() => startPresence(), [])
+  return <Outlet />
+}
