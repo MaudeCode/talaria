@@ -69,40 +69,52 @@ struct SessionRowView: View {
     private var titleArea: some View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 3) {
-                titleAndPin
+                titleText
 
-                if let relativeDate {
-                    relativeDateText(relativeDate)
+                if showsTrailingMeta {
+                    trailingMeta
                 }
             }
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                titleAndPin
+                titleText
 
-                if let relativeDate {
+                if showsTrailingMeta {
                     Spacer(minLength: 8)
 
-                    relativeDateText(relativeDate)
+                    trailingMeta
                 }
             }
         }
     }
 
-    private var titleAndPin: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(displayTitle)
-                .font(AppFont.headline(weight: .semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(titleLineLimit)
-                .truncationMode(.tail)
-                .fixedSize(horizontal: false, vertical: true)
-                .layoutPriority(2)
+    private var titleText: some View {
+        Text(displayTitle)
+            .font(AppFont.headline(weight: .semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(titleLineLimit)
+            .truncationMode(.tail)
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(2)
+    }
 
+    private var showsTrailingMeta: Bool {
+        session.pinned == true || relativeDate != nil
+    }
+
+    /// The pin sits beside the timestamp so every pinned row shows it in the same place,
+    /// however the title wraps (TAL-482).
+    private var trailingMeta: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
             if session.pinned == true {
                 Image(systemName: "pin.fill")
                     .font(.system(size: pinnedIconSize, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
                     .accessibilityHidden(true)
+            }
+
+            if let relativeDate {
+                relativeDateText(relativeDate)
             }
         }
     }

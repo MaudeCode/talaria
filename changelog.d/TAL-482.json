@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On iPad, the chat list's toolbar shows the full title and one sidebar button, New Chat sits in the bottom bar instead of covering rows, and the Scheduled and Webhook group names fit.",
+      "highlight": true,
+      "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Scheduled and Webhook session counts come from the server and read 200+ when more exist than the list shows, instead of stopping at 200.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "The pin on a pinned chat now sits next to its time, in the same place on every row.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

@@ -12,7 +12,7 @@ struct SidebarDisclosureButton<Accessory: View>: View {
 
     var body: some View {
         HapticButton(action: action) {
-            HStack(alignment: .center, spacing: 18) {
+            HStack(alignment: .center, spacing: 12) {
                 if let assetImage {
                     SidebarUtilityIcon(assetImage: assetImage, tint: tint)
                 } else if let systemImage {
@@ -27,8 +27,7 @@ struct SidebarDisclosureButton<Accessory: View>: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-
-                Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 accessory()
 

@@ -7,23 +7,29 @@ public struct SessionsResponse: Decodable {
     /// on every response regardless of `include_archived` (issue #17). Optional so
     /// older servers that omit it decode fine.
     public let archivedCount: Int?
+    /// Server totals for the sidebar's automated-session groups (TAL-482); nil from
+    /// older servers that omit them.
+    public let automatedSessionCounts: AutomatedSessionCounts?
     let serverTime: Double?
     let serverTz: String?
 
     enum CodingKeys: String, CodingKey {
         case sessions, cliCount, archivedCount, serverTime, serverTz
+        case scheduledSessionCount, scheduledSessionsTruncated, webhookSessionCount, webhookSessionsTruncated
     }
 
     init(
         sessions: [SessionSummary]? = nil,
         cliCount: Int? = nil,
         archivedCount: Int? = nil,
+        automatedSessionCounts: AutomatedSessionCounts? = nil,
         serverTime: Double? = nil,
         serverTz: String? = nil
     ) {
         self.sessions = sessions
         self.cliCount = cliCount
         self.archivedCount = archivedCount
+        self.automatedSessionCounts = automatedSessionCounts
         self.serverTime = serverTime
         self.serverTz = serverTz
     }
@@ -33,8 +39,35 @@ public struct SessionsResponse: Decodable {
         sessions = SessionSummary.decodingRowsIndependently(from: container, forKey: .sessions)
         cliCount = container.decodeLossyIntIfPresent(forKey: .cliCount)
         archivedCount = container.decodeLossyIntIfPresent(forKey: .archivedCount)
+        if let scheduled = container.decodeLossyIntIfPresent(forKey: .scheduledSessionCount),
+           let webhook = container.decodeLossyIntIfPresent(forKey: .webhookSessionCount) {
+            automatedSessionCounts = AutomatedSessionCounts(
+                scheduled: scheduled,
+                scheduledIsPartial: container.decodeLossyBoolIfPresent(forKey: .scheduledSessionsTruncated) ?? false,
+                webhook: webhook,
+                webhookIsPartial: container.decodeLossyBoolIfPresent(forKey: .webhookSessionsTruncated) ?? false
+            )
+        } else {
+            automatedSessionCounts = nil
+        }
         serverTime = container.decodeLossyDoubleIfPresent(forKey: .serverTime)
         serverTz = container.decodeLossyStringIfPresent(forKey: .serverTz)
+    }
+}
+
+/// `scheduled_session_count` / `webhook_session_count` and their `_truncated` flags: a
+/// partial count means more sessions of that kind exist than the server lists.
+public struct AutomatedSessionCounts: Equatable, Sendable {
+    public let scheduled: Int
+    public let scheduledIsPartial: Bool
+    public let webhook: Int
+    public let webhookIsPartial: Bool
+
+    public init(scheduled: Int, scheduledIsPartial: Bool, webhook: Int, webhookIsPartial: Bool) {
+        self.scheduled = scheduled
+        self.scheduledIsPartial = scheduledIsPartial
+        self.webhook = webhook
+        self.webhookIsPartial = webhookIsPartial
     }
 }
 

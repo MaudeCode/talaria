@@ -228,6 +228,42 @@ extension SessionListMutationTests {
         XCTAssertTrue(groups.showsDisclosure(isSearchActive: false))
     }
 
+    /// The server's 200-row window would make a loaded-row count stop at 200 (TAL-482).
+    @MainActor
+    func testScheduledSessionGroupsShowServerCountsOverLoadedRows() async throws {
+        let viewModel = try makeViewModel { request in
+            apiTestJSONResponse("""
+            {
+              "sessions": [
+                {"session_id":"cron_1","title":"Scheduled 1","updated_at":10},
+                {"session_id":"cron_2","title":"Scheduled 2","updated_at":20},
+                {"session_id":"hook-1","title":"Hook","updated_at":30,"source_tag":"webhook"}
+              ],
+              "scheduled_session_count": 200,
+              "scheduled_sessions_truncated": true,
+              "webhook_session_count": 3,
+              "webhook_sessions_truncated": false
+            }
+            """, for: request)
+        }
+
+        await viewModel.load()
+        let groups = viewModel.scheduledSessionGroups(searchText: "", selectedProjectID: nil)
+
+        XCTAssertEqual(groups.totalScheduledCount, 200)
+        XCTAssertTrue(groups.scheduledCountIsPartial)
+        XCTAssertEqual(groups.totalWebhookCount, 3)
+        XCTAssertFalse(groups.webhookCountIsPartial)
+        XCTAssertEqual(groups.scheduled.compactMap(\.sessionId), ["cron_2", "cron_1"])
+
+        let hidden = viewModel.scheduledSessionGroups(
+            searchText: "",
+            selectedProjectID: nil,
+            automatedVisibility: AutomatedSessionVisibility(showsCron: false, showsCli: true, showsWebhook: true, showsClaudeCode: true)
+        )
+        XCTAssertEqual(hidden.totalScheduledCount, 0)
+    }
+
     @MainActor
     func testScheduledSessionGroupsRespectCronVisibilityAndSearchWithoutCappingMatches() async throws {
         let viewModel = try makeViewModel { request in

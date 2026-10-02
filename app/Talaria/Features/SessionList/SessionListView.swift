@@ -435,9 +435,14 @@ struct SessionListView: View {
     @ViewBuilder
     private var navigationContainer: some View {
         if horizontalSizeClass == .regular {
-            NavigationSplitView {
+            // The App drawer button is the sessions column's only sidebar control, so the
+            // column stays visible instead of offering the system toggle beside it (TAL-482).
+            NavigationSplitView(columnVisibility: .constant(.all)) {
                 sessionListSurface
-                    .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 420)
+                    .toolbar(removing: .sidebarToggle)
+                    // 340pt is the narrowest width where "Scheduled sessions", a "200+" count
+                    // and the chevron fit at default Dynamic Type.
+                    .navigationSplitViewColumnWidth(min: 340, ideal: 380, max: 440)
             } detail: {
                 NavigationStack {
                     regularWidthDetail
@@ -473,7 +478,7 @@ struct SessionListView: View {
 
             content
 
-            if !isSearchingSessions {
+            if !isSearchingSessions && horizontalSizeClass != .regular {
                 newSessionButton
                     .padding(.trailing, 24)
                     .padding(.bottom, 22)
@@ -500,6 +505,22 @@ struct SessionListView: View {
 
             ToolbarItem(placement: .topBarTrailing) {
                 settingsButton
+            }
+
+            // In regular width the floating button would cover rows in the narrow
+            // column, so New Chat moves to the column's bottom bar (TAL-482).
+            if horizontalSizeClass == .regular {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Spacer()
+
+                    HapticButton(feedbackStyle: .medium) {
+                        openNewChat()
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                    }
+                    .disabled(viewModel.isViewingCachedData || navigationState.isCreatingNewChat)
+                    .accessibilityLabel("New Chat")
+                }
             }
         }
     }
@@ -667,6 +688,7 @@ struct SessionListView: View {
                     viewModel: viewModel,
                     sessions: scheduledSessionGroups.scheduled,
                     totalCount: scheduledSessionGroups.totalScheduledCount,
+                    countIsPartial: scheduledSessionGroups.scheduledCountIsPartial,
                     isSearchActive: isSearchingSessions,
                     searchText: searchText,
                     showsMessageCount: showsSessionMessageCount,
@@ -690,6 +712,7 @@ struct SessionListView: View {
                     viewModel: viewModel,
                     sessions: scheduledSessionGroups.webhook,
                     totalCount: scheduledSessionGroups.totalWebhookCount,
+                    countIsPartial: scheduledSessionGroups.webhookCountIsPartial,
                     isSearchActive: isSearchingSessions,
                     searchText: searchText,
                     showsMessageCount: showsSessionMessageCount,

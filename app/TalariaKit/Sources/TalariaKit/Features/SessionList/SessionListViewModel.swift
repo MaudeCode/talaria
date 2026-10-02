@@ -9,6 +9,9 @@ public struct ScheduledSessionGroups: Equatable {
     public let webhook: [SessionSummary]
     public let totalScheduledCount: Int
     public let totalWebhookCount: Int
+    /// More scheduled / webhook sessions exist than the server lists (TAL-482).
+    public var scheduledCountIsPartial = false
+    public var webhookCountIsPartial = false
 
     var scheduledPreview: [SessionSummary] {
         Array(scheduled.prefix(5))
@@ -77,6 +80,10 @@ public final class SessionListViewModel {
     /// (`archived_count`, issue #17). nil until a load succeeds or when an older
     /// server omits the field — the Archived entry stays hidden then.
     public private(set) var archivedCount: Int?
+    /// Server totals for the automated-session groups from the last successful list
+    /// load (TAL-482). nil until then or from an older server; the groups then count
+    /// the loaded rows instead.
+    public private(set) var automatedSessionCounts: AutomatedSessionCounts?
 
     private(set) var remoteContentSearchSessionIDs: [String] = []
     /// Server-redacted excerpts for `remoteContentSearchSessionIDs`, keyed by
@@ -203,19 +210,25 @@ public final class SessionListViewModel {
             automatedVisibility: automatedVisibility
         )
 
-        return ScheduledSessionGroups(
+        var groups = ScheduledSessionGroups(
             ordinary: candidates.filter { !$0.isCronSession && !$0.isWebhookSession },
             scheduled: candidates.filter {
                 $0.isCronSession && !$0.isWebhookSession && $0.archived != true
             },
             webhook: candidates.filter { $0.isWebhookSession && $0.archived != true },
             totalScheduledCount: automatedVisibility.showsCron
-                ? sessions.filter { $0.isCronSession && !$0.isWebhookSession && $0.archived != true }.count
+                ? automatedSessionCounts?.scheduled
+                    // Old-server fallback (TAL-482): delete once every supported server ships the counts.
+                    ?? sessions.filter { $0.isCronSession && !$0.isWebhookSession && $0.archived != true }.count
                 : 0,
             totalWebhookCount: automatedVisibility.showsWebhook
-                ? sessions.filter { $0.isWebhookSession && $0.archived != true }.count
+                ? automatedSessionCounts?.webhook
+                    ?? sessions.filter { $0.isWebhookSession && $0.archived != true }.count
                 : 0
         )
+        groups.scheduledCountIsPartial = automatedSessionCounts?.scheduledIsPartial ?? false
+        groups.webhookCountIsPartial = automatedSessionCounts?.webhookIsPartial ?? false
+        return groups
     }
 
     /// Shows the last rows, projects and active profile this device saw on the first frame of a
@@ -331,6 +344,7 @@ public final class SessionListViewModel {
                 animation: animation,
                 claimCountAtStart: claimCountAtStart
             )
+            automatedSessionCounts = response.automatedSessionCounts
             isViewingCachedData = false
             isShowingCachedPaint = false
 

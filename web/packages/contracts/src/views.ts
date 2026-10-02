@@ -178,7 +178,11 @@ export type SessionRow = z.infer<typeof SessionRowSchema>
 export const SessionsListSchema = z.looseObject({
   sessions: z.array(SessionRowSchema), sidebar_reference_sessions: z.array(SessionRowSchema), server_time: z.number(), server_tz: z.string(), active_profile: z.string(), all_profiles: z.boolean(), include_archived: z.boolean(),
   archived_count: z.number().int(), archived_webui_count: z.number().int(), archived_cli_count: z.number().int(), other_profile_count: z.number().int(), cli_count: z.number().int(), webui_session_count: z.number().int(),
-  cli_session_count: z.number().int(), archived_limit: z.number().int().nullable().optional(), archived_offset: z.number().int().optional(),
+  cli_session_count: z.number().int(),
+  // TAL-482: sidebar counts for the "Scheduled sessions" / "Webhook sessions" groups; `_truncated` means more exist than are listed.
+  scheduled_session_count: z.number().int().nonnegative(), scheduled_sessions_truncated: z.boolean(),
+  webhook_session_count: z.number().int().nonnegative(), webhook_sessions_truncated: z.boolean(),
+  archived_limit: z.number().int().nullable().optional(), archived_offset: z.number().int().optional(),
 })
 export type SessionsList = z.infer<typeof SessionsListSchema>
 

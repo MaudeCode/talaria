@@ -29,12 +29,17 @@ export interface CliLoadOptions {
   sourceFilter?: string | null
 }
 
+export interface CliSessionRead {
+  rows: Dict[]
+  truncated: ReadonlySet<string>
+}
+
 function dbStamp(path: string): string {
   try { const st = statSync(path, { bigint: true }); return `${st.size.toString()}:${st.mtimeNs.toString()}:${st.ino.toString()}` } catch { return 'missing' }
 }
 
 export class CliSessionSource {
-  private readonly cache = new Map<string, { key: string; until: number; rows: Dict[] }>()
+  private readonly cache = new Map<string, { key: string; until: number; rows: Dict[]; truncated: ReadonlySet<string> }>()
   constructor(private readonly deps: CliSessionsDeps) {}
 
   dbPath(profile: string): string { return join(this.deps.profileHome(profile), 'state.db') }
@@ -43,22 +48,28 @@ export class CliSessionSource {
 
   /** Python `get_cli_sessions(profile=...)` for one profile; Claude Code imports are not projected here. */
   load(profile: string, opts: CliLoadOptions = {}): Dict[] {
+    return this.read(profile, opts).rows
+  }
+
+  /** `load` plus the source kinds whose rows stopped at the per-kind window, from the same read (TAL-482). */
+  read(profile: string, opts: CliLoadOptions = {}): CliSessionRead {
     const dbPath = this.dbPath(profile)
     const sourceFilter = str(opts.sourceFilter).trim().toLowerCase() || null
     const cacheKey = `${profile}\n${sourceFilter ?? ''}`
     const key = `${dbPath}\n${dbStamp(dbPath)}\n${dbStamp(`${dbPath}-wal`)}`
     const hit = this.cache.get(cacheKey)
     const now = this.deps.now()
-    if (hit?.key === key && hit.until > now) return hit.rows.map((r) => ({ ...r }))
+    if (hit?.key === key && hit.until > now) return { rows: hit.rows.map((r) => ({ ...r })), truncated: hit.truncated }
     let rows: Dict[]
+    const truncated = new Set<string>()
     try {
-      rows = this.loadUncached(profile, dbPath, sourceFilter)
+      rows = this.loadUncached(profile, dbPath, sourceFilter, truncated)
     } catch (error) {
       this.deps.log(`[webui] get_cli_sessions() failed; check state.db schema or path (${dbPath}): ${(error as Error).message}`)
       rows = []
     }
-    this.cache.set(cacheKey, { key, until: now + CACHE_TTL_S, rows })
-    return rows.map((r) => ({ ...r }))
+    this.cache.set(cacheKey, { key, until: now + CACHE_TTL_S, rows, truncated })
+    return { rows: rows.map((r) => ({ ...r })), truncated }
   }
 
   private sidecarMeta(sid: string): { title: string | null; archived: boolean } {
@@ -78,7 +89,7 @@ export class CliSessionSource {
     return names
   }
 
-  private loadUncached(profile: string, dbPath: string, sourceFilter: string | null): Dict[] {
+  private loadUncached(profile: string, dbPath: string, sourceFilter: string | null, truncated: Set<string>): Dict[] {
     if (!existsSync(dbPath)) return []
     const home = this.deps.profileHome(profile)
     let workspace: string | null = null
@@ -124,7 +135,10 @@ export class CliSessionSource {
     }
     const background = new Set(['cron', 'webhook', 'kanban'])
     const interactiveLimit = sourceFilter === null ? CLI_VISIBLE_SESSION_LIMIT : BACKGROUND_PROJECT_CHIP_LIMIT
-    for (const row of readImportableAgentSessionRows(dbPath, { limit: interactiveLimit, excludeSources: sourceFilter === null ? ['cron', 'webhook', 'kanban'] : null, includeSources: sourceFilter === null ? null : [sourceFilter], log: this.deps.log })) {
+    // A filtered read takes one row past its window too, so a single-source list knows more exist (TAL-482).
+    const interactive = readImportableAgentSessionRows(dbPath, { limit: sourceFilter === null ? interactiveLimit : interactiveLimit + 1, excludeSources: sourceFilter === null ? ['cron', 'webhook', 'kanban'] : null, includeSources: sourceFilter === null ? null : [sourceFilter], log: this.deps.log })
+    if (sourceFilter !== null && interactive.length > interactiveLimit) truncated.add(sourceFilter)
+    for (const row of sourceFilter === null ? interactive : interactive.slice(0, interactiveLimit)) {
       const sid = str(row.id)
       const source = str(row.source) || 'cli'
       if (source === 'webui' && tombstone.has(sid) && !existsSync(join(this.deps.store.sessionDir, `${sid}.json`))) continue
@@ -134,7 +148,10 @@ export class CliSessionSource {
     if (sourceFilter !== null) return out
     for (const kind of background) {
       try {
-        for (const row of readImportableAgentSessionRows(dbPath, { limit: BACKGROUND_PROJECT_CHIP_LIMIT, excludeSources: null, includeSources: [kind], log: this.deps.log })) {
+        // One row past the cap tells the sidebar that more sessions of this kind exist than it lists (TAL-482).
+        const rows = readImportableAgentSessionRows(dbPath, { limit: BACKGROUND_PROJECT_CHIP_LIMIT + 1, excludeSources: null, includeSources: [kind], log: this.deps.log })
+        if (rows.length > BACKGROUND_PROJECT_CHIP_LIMIT) truncated.add(kind)
+        for (const row of rows.slice(0, BACKGROUND_PROJECT_CHIP_LIMIT)) {
           const sid = str(row.id)
           if (seen.has(sid) || (str(row.source) || kind) !== kind) continue
           out.push(toRow(row, kind, `${kind.charAt(0).toUpperCase()}${kind.slice(1)} Session`))
