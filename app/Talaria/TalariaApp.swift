@@ -47,7 +47,7 @@ final class TalariaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         didReceive response: UNNotificationResponse
     ) async {
         let userInfo = response.notification.request.content.userInfo
-        guard let sessionID = userInfo["sessionId"] as? String,
+        guard let sessionID = userInfo[SessionNotificationRefresh.sessionIDKey] as? String,
               let url = TalariaDeepLink.sessionURL(
                 sessionID: sessionID,
                 publisherID: userInfo["publisherId"] as? String

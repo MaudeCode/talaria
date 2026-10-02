@@ -34,7 +34,7 @@ public struct ResponseCompletionNotificationRequest: Equatable {
 
     var userInfo: [String: String] {
         guard let sessionID, !sessionID.isEmpty else { return [:] }
-        return ["sessionId": sessionID]
+        return [SessionNotificationRefresh.sessionIDKey: sessionID]
     }
 }
 
@@ -182,10 +182,13 @@ extension Notification.Name {
 }
 
 public enum SessionNotificationRefresh {
+    /// The `userInfo` key relay pushes and local notifications share for the session.
+    public static let sessionIDKey = "sessionId"
+
     /// Only a notification that names a session says anything about the list.
     /// Relay and response-completion notifications both carry `sessionId`.
     public static func namesASession(userInfo: [AnyHashable: Any]) -> Bool {
-        guard let sessionID = userInfo["sessionId"] as? String else { return false }
+        guard let sessionID = userInfo[sessionIDKey] as? String else { return false }
         return !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
