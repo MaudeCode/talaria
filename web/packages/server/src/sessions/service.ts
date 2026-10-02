@@ -61,6 +61,8 @@ export interface SessionServiceDeps {
     deleteCliSession: (profile: string | null, sid: string) => Promise<boolean>
   }
   attachmentDir: (sid: string) => string
+  /** A deleted session can never be viewed, so its finished runs are cleared from the relay. */
+  clearRelayCompletions?: (sid: string, profile: string | null) => void
   /** Run journals are removed with their session (Python `delete_run_journal`). */
   journal?: RunJournal
   hermesHome: string
@@ -900,7 +902,8 @@ export class SessionService {
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, 'Subagent sessions are view-only and cannot be deleted from WebUI')
     const retained = (() => { try { return worktreeRetainedPayload(this.store.get(sid, { metadataOnly: true })) } catch { return {} } })()
     let eventProfile: string | null = null
-    try { eventProfile = this.store.get(sid, { metadataOnly: true }).profile } catch { eventProfile = null }
+    let hadSidecar = true
+    try { eventProfile = this.store.get(sid, { metadataOnly: true }).profile } catch { eventProfile = null; hadSidecar = false }
     // Python `_is_messaging_session_id`: decided before the JSON is gone, from WebUI metadata or the Agent's row.
     const isMessaging = (() => { try { if (isMessagingSessionRecord(this.store.get(sid, { metadataOnly: true }).compact())) return true } catch { /* absent */ } const meta = this.lookupCliMeta(sid); return meta !== null && isMessagingSessionRecord(meta) })()
     const blocking = (): string | null => {
@@ -935,6 +938,8 @@ export class SessionService {
       try { stateDbCleanupFailed = !(await this.deps.runtime.deleteCliSession(eventProfile, sid)) } catch { stateDbCleanupFailed = true }
     }
     this.publish('session_delete', eventProfile)
+    // Only a sidecar session is ever published to the relay.
+    if (hadSidecar) this.deps.clearRelayCompletions?.(sid, eventProfile)
     return { ok: true, state_db_cleanup_failed: stateDbCleanupFailed, ...retained }
   }
 

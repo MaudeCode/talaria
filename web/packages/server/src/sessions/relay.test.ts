@@ -151,28 +151,43 @@ describe('Talaria relay pairing and publishing', () => {
     expect((await post(s, '/api/talaria/viewed', { session_id: 'missing_session_0001' })).status).toBe(404)
   })
 
-  it('clears a deleted session\'s finished runs on the relay, and an already-deleted one when it is requested', async () => {
-    const sid = String(((await json(await post(s, '/api/session/new', { title: 'Deleted run' }))).session as Json).session_id)
+  it('clears a deleted session\'s finished runs on the relay once, and an orphan left by an earlier deletion on first lookup', async () => {
     const profileId = loadRelayConfig(s.state)!.profiles.default!.profile_id
-    s.deps.registry.activeRuns.set('stream-d', { stream_id: 'stream-d', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
-    s.deps.relay.noteTerminal('stream-d', 'completed')
-    s.deps.registry.activeRuns.delete('stream-d')
-    await vi.waitFor(() => { expect(relay.snapshots().some((c) => (c.body.states as Json[]).some((state) => state.sessionId === sid && state.phase === 'completed'))).toBe(true) })
-    const deletedAt = Date.now()
-    expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
-    const viewedPath = `/v1/publishers/${encodeURIComponent('https://pub.example')}/profiles/${profileId}/sessions/${sid}/viewed`
-    await vi.waitFor(() => { expect(relay.views().filter((c) => c.url.endsWith(viewedPath))).toHaveLength(1) })
-    const viewed = relay.views().find((c) => c.url.endsWith(viewedPath))!
-    verifySigned(relay, viewed, viewedPath)
-    expect(Number(viewed.body.through)).toBeGreaterThanOrEqual(deletedAt)
+    const viewedPath = (sid: string): string => `/v1/publishers/${encodeURIComponent('https://pub.example')}/profiles/${profileId}/sessions/${sid}/viewed`
+    const viewsOf = (sid: string): Captured[] => relay.views().filter((c) => c.url.endsWith(viewedPath(sid)))
+    const finishedSession = async (title: string, stream: string): Promise<string> => {
+      const sid = String(((await json(await post(s, '/api/session/new', { title }))).session as Json).session_id)
+      s.deps.registry.activeRuns.set(stream, { stream_id: stream, session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
+      s.deps.relay.noteTerminal(stream, 'completed')
+      s.deps.registry.activeRuns.delete(stream)
+      await vi.waitFor(() => { expect(relay.snapshots().some((c) => (c.body.states as Json[]).some((state) => state.sessionId === sid && state.phase === 'completed'))).toBe(true) })
+      return sid
+    }
 
-    // A run left behind by a deletion before this fix clears the first time a client asks for the session.
-    expect((await s.get(`/api/session?session_id=${sid}&messages=0`)).status).toBe(404)
-    await vi.waitFor(() => { expect(relay.views().filter((c) => c.url.endsWith(viewedPath))).toHaveLength(2) })
-    const viewsBefore = relay.views().length
-    expect((await s.get('/api/session?session_id=never_existed_0001&messages=0')).status).toBe(404)
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    expect(relay.views().length).toBe(viewsBefore)
+    const deleted = await finishedSession('Deleted run', 'stream-d')
+    const deletedAt = Date.now()
+    expect((await post(s, '/api/session/delete', { session_id: deleted })).status).toBe(200)
+    await vi.waitFor(() => { expect(viewsOf(deleted)).toHaveLength(1) })
+    verifySigned(relay, viewsOf(deleted)[0]!, viewedPath(deleted))
+    expect(Number(viewsOf(deleted)[0]!.body.through)).toBeGreaterThanOrEqual(deletedAt)
+
+    // A deletion from before this fix left its run on the relay; the first lookup of the tombstoned id clears it.
+    const orphan = await finishedSession('Orphaned run', 'stream-o')
+    expect(s.deps.sessionStore.deleteFiles(orphan)).toBe(true)
+    expect((await s.get(`/api/session?session_id=${orphan}&messages=0`)).status).toBe(404)
+    await vi.waitFor(() => { expect(viewsOf(orphan)).toHaveLength(1) })
+
+    // Later lookups, an already-cleared deletion, and an id that never existed send nothing more. A real view queued
+    // afterwards flushes in the same loop, so once it lands any stray acknowledgement would have landed too.
+    expect((await s.get(`/api/session?session_id=${orphan}&messages=0`)).status).toBe(404)
+    expect((await s.get(`/api/session?session_id=${deleted}&messages=0`)).status).toBe(404)
+    expect((await s.get('/api/session?session_id=neverexisted0001&messages=0')).status).toBe(404)
+    const marker = await finishedSession('Marker run', 'stream-m')
+    expect((await post(s, '/api/talaria/viewed', { session_id: marker })).status).toBe(200)
+    await vi.waitFor(() => { expect(viewsOf(marker)).toHaveLength(1) })
+    expect(viewsOf(orphan)).toHaveLength(1)
+    expect(viewsOf(deleted)).toHaveLength(1)
+    expect(viewsOf('neverexisted0001')).toHaveLength(0)
   })
 
   it('validates presence payloads and ignores stale sequence numbers', async () => {
