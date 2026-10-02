@@ -509,6 +509,19 @@ final class SettingsStructureUITests: SettingsUITestCase {
             oneLineLabel.frame.height * 1.5,
             "Send While Responding's value wrapped onto a second line"
         )
+        // Choosing a longer value keeps the row's layout instead of moving the value under its title.
+        let dictationPicker = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Dictation Provider"))
+            .firstMatch
+        XCTAssertTrue(dictationPicker.staticTexts["Server first"].exists)
+        let dictationFrame = dictationPicker.frame
+        tapCenter(of: dictationPicker)
+        let onDeviceFirst = app.buttons["On-device first"]
+        XCTAssertTrue(onDeviceFirst.awaitExistence(timeout: Self.navigationTimeout))
+        onDeviceFirst.tap()
+        XCTAssertTrue(dictationPicker.staticTexts["On-device first"].awaitExistence(timeout: Self.navigationTimeout))
+        let changedFrame = dictationPicker.settledFrame
+        XCTAssertEqual(changedFrame.minY, dictationFrame.minY, accuracy: 1, "Dictation Provider changed layout with its value")
 
         app.navigationBars["Chats"].buttons["Settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: Self.navigationTimeout))

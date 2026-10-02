@@ -113,6 +113,10 @@ struct UITestFixtureEnvironment {
             StreamingSendBehavior.steer.rawValue,
             forKey: StreamingSendBehavior.storageKey
         )
+        UserDefaults.standard.set(
+            ComposerSTTProviderPreference.defaultValue.rawValue,
+            forKey: ComposerSTTProviderPreference.storageKey
+        )
         UserDefaults.standard.set(chatScenario == nil, forKey: StreamedTextAnimationSettings.isEnabledKey)
         UserDefaults.standard.set(true, forKey: ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey)
         UserDefaults.standard.set(

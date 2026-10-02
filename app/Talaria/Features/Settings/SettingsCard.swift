@@ -27,15 +27,22 @@ struct SettingsCard<Content: View>: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                Color(.secondarySystemGroupedBackground),
-                in: RoundedRectangle(cornerRadius: Self.groupedCellCornerRadius, style: .continuous)
-            )
+            .settingsGroupedCell()
         }
     }
+}
 
-    /// The Settings root's inset-grouped cell radius, so category pages read as the same list.
-    private static var groupedCellCornerRadius: CGFloat {
-        if #available(iOS 26, *) { 26 } else { 10 }
+extension View {
+    /// The Settings root's inset-grouped cell fill and corner radius, so every Settings page
+    /// reads as the same list. Pages showing these cells use `systemGroupedBackground`.
+    func settingsGroupedCell() -> some View {
+        background(
+            Color(.secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: settingsGroupedCellCornerRadius, style: .continuous)
+        )
     }
+}
+
+private var settingsGroupedCellCornerRadius: CGFloat {
+    if #available(iOS 26, *) { 26 } else { 10 }
 }

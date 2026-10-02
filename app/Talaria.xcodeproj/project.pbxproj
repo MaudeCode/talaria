@@ -332,7 +332,6 @@
 		1A2B3C4D5E6F70000000114 /* DefaultModelPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */; };
 		103200000000000000000002 /* DefaultProfilePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 103200000000000000000001 /* DefaultProfilePickerView.swift */; };
 		C107B000000000000000001 /* SettingsPickerSearchField.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000011 /* SettingsPickerSearchField.swift */; };
-		C107B000000000000000002 /* SettingsPickerCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000012 /* SettingsPickerCard.swift */; };
 		C107B000000000000000003 /* ModelPickerButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000013 /* ModelPickerButton.swift */; };
 		C107B000000000000000004 /* CreateProfileSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000014 /* CreateProfileSheet.swift */; };
 		C107B000000000000000005 /* ProfileStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107B000000000000000015 /* ProfileStatusBadge.swift */; };
@@ -754,7 +753,6 @@
 		1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultModelPickerView.swift; sourceTree = "<group>"; };
 		103200000000000000000001 /* DefaultProfilePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultProfilePickerView.swift; sourceTree = "<group>"; };
 		C107B000000000000000011 /* SettingsPickerSearchField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPickerSearchField.swift; sourceTree = "<group>"; };
-		C107B000000000000000012 /* SettingsPickerCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPickerCard.swift; sourceTree = "<group>"; };
 		C107B000000000000000013 /* ModelPickerButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPickerButton.swift; sourceTree = "<group>"; };
 		C107B000000000000000014 /* CreateProfileSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateProfileSheet.swift; sourceTree = "<group>"; };
 		C107B000000000000000015 /* ProfileStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileStatusBadge.swift; sourceTree = "<group>"; };
@@ -1277,7 +1275,6 @@
 				1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */,
 				103200000000000000000001 /* DefaultProfilePickerView.swift */,
 				C107B000000000000000011 /* SettingsPickerSearchField.swift */,
-				C107B000000000000000012 /* SettingsPickerCard.swift */,
 				C107B000000000000000013 /* ModelPickerButton.swift */,
 				C107B000000000000000014 /* CreateProfileSheet.swift */,
 				C107B000000000000000015 /* ProfileStatusBadge.swift */,
@@ -1753,7 +1750,6 @@
 				1A2B3C4D5E6F70000000114 /* DefaultModelPickerView.swift in Sources */,
 				103200000000000000000002 /* DefaultProfilePickerView.swift in Sources */,
 				C107B000000000000000001 /* SettingsPickerSearchField.swift in Sources */,
-				C107B000000000000000002 /* SettingsPickerCard.swift in Sources */,
 				C107B000000000000000003 /* ModelPickerButton.swift in Sources */,
 				C107B000000000000000004 /* CreateProfileSheet.swift in Sources */,
 				C107B000000000000000005 /* ProfileStatusBadge.swift in Sources */,

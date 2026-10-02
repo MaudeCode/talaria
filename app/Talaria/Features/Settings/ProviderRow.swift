@@ -93,10 +93,7 @@ struct ProviderRow: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
+        .settingsGroupedCell()
     }
 
     @ViewBuilder

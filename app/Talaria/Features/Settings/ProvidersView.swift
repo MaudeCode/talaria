@@ -26,7 +26,7 @@ struct ProvidersView: View {
     var body: some View {
         content
             .navigationTitle("Providers")
-            .background(Color(.systemBackground))
+            .background(Color(.systemGroupedBackground))
             .task {
                 await viewModel.load()
             }
