@@ -1231,11 +1231,11 @@ struct ChatView: View {
     }
 
     private var transcriptBottomInsetHeight: CGFloat {
-        return max(96, composerHeight + 44 + composerAccessorySpacerHeight)
+        return max(96, composerHeight + 44 + composerAccessorySpacerHeight(includesFloatingStatus: false))
     }
 
     private var scrollToBottomButtonBottomPadding: CGFloat {
-        return composerHeight + 12 + composerAccessorySpacerHeight
+        return composerHeight + 12 + composerAccessorySpacerHeight(includesFloatingStatus: true)
     }
 
     private var isComposerBusyOrUnavailable: Bool {
@@ -1310,18 +1310,24 @@ struct ChatView: View {
         viewModel.isSessionApprovalBypassEnabled && viewModel.approvalPrompt == nil
     }
 
-    private var composerAccessorySpacerHeight: CGFloat {
+    /// Height of the chips stacked above the composer. The transcript leaves out a floating
+    /// status (the syncing pill) so it never shifts the chat; overlays stacked above the chips
+    /// include it.
+    private func composerAccessorySpacerHeight(includesFloatingStatus: Bool) -> CGFloat {
         var height = pinnedNoticeSpacerHeight
-        if activeRunStatusPresentation != nil {
+        var itemCount = viewModel.pinnedLocalNotices.isEmpty ? 0 : 1
+        if let activeRunStatusPresentation,
+           includesFloatingStatus || activeRunStatusPresentation.reservesTranscriptSpace {
             height += activeRunStatusSpacerHeight
+            itemCount += 1
         }
         if showsApprovalBypassStatus {
             height += approvalBypassStatusSpacerHeight
+            itemCount += 1
         }
 
-        let visibleItemCount = composerAccessoryVisibleItemCount
-        if visibleItemCount > 1 {
-            height += CGFloat(visibleItemCount - 1) * composerAccessoryVerticalSpacing
+        if itemCount > 1 {
+            height += CGFloat(itemCount - 1) * composerAccessoryVerticalSpacing
         }
         return height
     }

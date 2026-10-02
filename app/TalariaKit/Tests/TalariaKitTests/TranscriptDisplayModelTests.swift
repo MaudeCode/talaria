@@ -764,6 +764,13 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
             isScrolledNearBottom: false
         )?.kind, .starting)
     }
+
+    func testSyncingPillFloatsOverTheTranscriptInsteadOfPushingItUp() {
+        XCTAssertFalse(ChatActiveRunStatusPresentation(kind: .syncing).reservesTranscriptSpace)
+        for kind: ChatActiveRunStatusKind in [.starting, .active, .checking, .reconnecting, .stopping] {
+            XCTAssertTrue(ChatActiveRunStatusPresentation(kind: kind).reservesTranscriptSpace, "\(kind)")
+        }
+    }
 }
 
 final class AssistantTurnTimestampFormatterTests: XCTestCase {
