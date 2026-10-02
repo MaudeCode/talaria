@@ -223,10 +223,12 @@ export class RelayPublisher {
     this.changed()
   }
 
-  /** Queue a viewed acknowledgement; the loop sends it after the snapshot carrying the session's terminal state. */
-  markViewed(sid: string): void {
-    const session = this.deps.store.get(sid, { metadataOnly: true })
-    this.views.set(sid, { profile: session.profile, through: Math.floor(this.deps.now() * 1000) })
+  /**
+   * Queue a viewed acknowledgement; the loop sends it after the snapshot carrying the session's terminal state.
+   * A deleted session passes the profile it had, since the store can no longer answer for it.
+   */
+  markViewed(sid: string, profile: string | null = this.deps.store.get(sid, { metadataOnly: true }).profile): void {
+    this.views.set(sid, { profile, through: Math.floor(this.deps.now() * 1000) })
     this.changed()
   }
 
@@ -446,8 +448,8 @@ export class RelayService {
   }
 
   /** A viewed session clears its finished runs on the relay; without a publisher there is nothing to clear. */
-  markViewed(sid: string): void {
-    (this.publisher ?? this.candidate)?.markViewed(sid)
+  markViewed(sid: string, profile?: string | null): void {
+    (this.publisher ?? this.candidate)?.markViewed(sid, profile)
   }
 
   /** Terminal turn events reach the relay even mid-swap (Python `note_talaria_terminal`). */

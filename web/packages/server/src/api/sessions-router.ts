@@ -106,7 +106,14 @@ export const sessionsRouter = os.router({
   session: {
     // No visibility guard here: `detail()` answers 409 `session_profile_mismatch` so the frontend can switch to the owning profile.
     get: os.session.get.handler(({ input, context: { ctx } }) => run(() => {
-      return { session: ctx.deps.sessions.detail(input.session_id, input) as { session_id: string; title: string } }
+      try {
+        return { session: ctx.deps.sessions.detail(input.session_id, input) as { session_id: string; title: string } }
+      } catch (error) {
+        // A run finished before its session was deleted (or before deletions reached the relay) clears on first request.
+        const sid = input.session_id.trim()
+        if (error instanceof HttpFailure && error.status === 404 && ctx.deps.sessionStore.wasDeleted(sid)) ctx.deps.relay.markViewed(sid, ctx.deps.activeProfile())
+        throw error
+      }
     })),
     status: os.session.status.handler(({ input, context: { ctx } }) => run(() => {
       if (!input.session_id) throw new HttpError(400, 'Missing session_id')
@@ -157,7 +164,12 @@ export const sessionsRouter = os.router({
     })),
     delete: os.session.delete.handler(({ input, context: { ctx } }) => run(async () => {
       guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.delete(input.session_id) as Promise<{ ok: true; state_db_cleanup_failed: boolean }>
+      let profile: string | null | undefined
+      try { profile = ctx.deps.sessionStore.get(input.session_id, { metadataOnly: true }).profile } catch { /* no sidecar: the relay never published it */ }
+      const result = await ctx.deps.sessions.delete(input.session_id)
+      // A deleted session can never be viewed, so its finished runs would otherwise stay on the relay indefinitely.
+      if (profile !== undefined) ctx.deps.relay.markViewed(input.session_id, profile)
+      return result as { ok: true; state_db_cleanup_failed: boolean }
     })),
     pin: os.session.pin.handler(({ input, context: { ctx } }) => run(async () => {
       guardVisibility(ctx, input.session_id)

@@ -151,6 +151,30 @@ describe('Talaria relay pairing and publishing', () => {
     expect((await post(s, '/api/talaria/viewed', { session_id: 'missing_session_0001' })).status).toBe(404)
   })
 
+  it('clears a deleted session\'s finished runs on the relay, and an already-deleted one when it is requested', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', { title: 'Deleted run' }))).session as Json).session_id)
+    const profileId = loadRelayConfig(s.state)!.profiles.default!.profile_id
+    s.deps.registry.activeRuns.set('stream-d', { stream_id: 'stream-d', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
+    s.deps.relay.noteTerminal('stream-d', 'completed')
+    s.deps.registry.activeRuns.delete('stream-d')
+    await vi.waitFor(() => { expect(relay.snapshots().some((c) => (c.body.states as Json[]).some((state) => state.sessionId === sid && state.phase === 'completed'))).toBe(true) })
+    const deletedAt = Date.now()
+    expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
+    const viewedPath = `/v1/publishers/${encodeURIComponent('https://pub.example')}/profiles/${profileId}/sessions/${sid}/viewed`
+    await vi.waitFor(() => { expect(relay.views().filter((c) => c.url.endsWith(viewedPath))).toHaveLength(1) })
+    const viewed = relay.views().find((c) => c.url.endsWith(viewedPath))!
+    verifySigned(relay, viewed, viewedPath)
+    expect(Number(viewed.body.through)).toBeGreaterThanOrEqual(deletedAt)
+
+    // A run left behind by a deletion before this fix clears the first time a client asks for the session.
+    expect((await s.get(`/api/session?session_id=${sid}&messages=0`)).status).toBe(404)
+    await vi.waitFor(() => { expect(relay.views().filter((c) => c.url.endsWith(viewedPath))).toHaveLength(2) })
+    const viewsBefore = relay.views().length
+    expect((await s.get('/api/session?session_id=never_existed_0001&messages=0')).status).toBe(404)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(relay.views().length).toBe(viewsBefore)
+  })
+
   it('validates presence payloads and ignores stale sequence numbers', async () => {
     expect((await post(s, '/api/talaria/presence', { tab_id: 'short', active: true, seq: 1 })).status).toBe(400)
     expect((await post(s, '/api/talaria/presence', { tab_id: 'tab_00000002', active: 'yes', seq: 1 })).status).toBe(400)
