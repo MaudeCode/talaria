@@ -3349,6 +3349,19 @@
     ],
     "additionalProperties": false
   },
+  "process.defer_delivery": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "ok": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "additionalProperties": false
+  },
   "process.format_notification": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

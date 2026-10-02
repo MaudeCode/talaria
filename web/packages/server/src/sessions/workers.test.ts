@@ -120,6 +120,7 @@ describe('async delegation delivery claims (TAL-459)', () => {
     })
     sidecar.respond('process.complete_delivery', (params) => { const id = str((params.event as Json).delegation_id); state.calls.push(`complete ${id}`); state.delivered.add(id); return { ok: true } })
     sidecar.respond('process.release_delivery', (params) => { state.calls.push(`release ${str((params.event as Json).delegation_id)}`); return { ok: true } })
+    sidecar.respond('process.defer_delivery', (params) => { state.calls.push(`defer ${str((params.event as Json).delegation_id)}`); return { ok: true } })
     return state
   }
   const drainWith = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): CompletionDrain => new CompletionDrain({
@@ -149,14 +150,15 @@ describe('async delegation delivery claims (TAL-459)', () => {
     expect(state.calls).toEqual(['claim deleg_order', 'start deleg_order', 'complete deleg_order'])
   })
 
-  it('releases the claim when the wakeup turn cannot start, so the row stays pending', async () => {
+  it('hands the claim back when the wakeup turn cannot start, so the row stays pending', async () => {
     const sid = await newSid()
     const state = ledger()
-    for (const status of [409, 500]) {
+    // A busy session (409) never admitted the delivery, so it costs no attempt; a failed start (500) spends one.
+    for (const [status, handBack] of [[409, 'defer'], [500, 'release']] as const) {
       state.calls.length = 0
       const drain = drainWith(() => ({ _status: status }))
       expect(await drain.processOne(delegation(sid, `deleg_${String(status)}`))).toBe(true)
-      expect(state.calls).toEqual([`claim deleg_${String(status)}`, `release deleg_${String(status)}`])
+      expect(state.calls).toEqual([`claim deleg_${String(status)}`, `${handBack} deleg_${String(status)}`])
       expect(state.delivered.has(`deleg_${String(status)}`)).toBe(false)
       expect(drain.deferredCount(sid)).toBe(1)
       drain.stop()

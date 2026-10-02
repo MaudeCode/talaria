@@ -58,6 +58,19 @@ def test_a_released_delivery_stays_pending_and_can_be_claimed_again(handshaken: 
     assert handshaken.result("process.claim_delivery", {**params, "consumer": "webui"})["claim_id"]
 
 
+def test_a_deferred_delivery_returns_without_spending_an_attempt(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    _seed_completed(hermes_home, "deleg_busy")
+    params = {"profile_home": str(hermes_home), "event": _event("deleg_busy")}
+    attempts = lambda: int(_agent(hermes_home, "print(ad.get_durable_delegation(sys.argv[2])['delivery_attempts'])", "deleg_busy"))  # noqa: E731
+    # A busy session can bounce the same delivery many times; none of it may count toward the Agent's drop budget.
+    for _ in range(10):
+        claim = handshaken.result("process.claim_delivery", {**params, "consumer": "webui"})["claim_id"]
+        assert claim
+        assert handshaken.result("process.defer_delivery", {**params, "claim_id": claim}) == {"ok": True}
+    assert attempts() == 0
+    assert _delivery_state(hermes_home, "deleg_busy") == "pending"
+
+
 def test_an_interim_notice_needs_no_acknowledgement(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
     notice = {**_event("deleg_interim"), "task_failure_notice": True}
     assert handshaken.result("process.claim_delivery", {"profile_home": str(hermes_home), "event": notice, "consumer": "webui"}) == {"claim_id": ""}

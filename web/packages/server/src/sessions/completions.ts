@@ -241,8 +241,12 @@ export class CompletionDrain {
     return { deliver, held }
   }
 
-  /** Acknowledge (`complete`) or hand back (`release`) held claims; best effort, the Agent's lease bounds a lost release. */
-  private async settleClaims(method: 'process.complete_delivery' | 'process.release_delivery', held: HeldClaim[]): Promise<void> {
+  /**
+   * Acknowledge (`complete`) or hand back held claims: `defer` when the busy session never admitted the wakeup (no delivery
+   * attempt spent), `release` when it failed (spends one; the Agent drops a row past its budget). Best effort: the Agent's
+   * lease bounds a lost hand-back.
+   */
+  private async settleClaims(method: 'process.complete_delivery' | 'process.release_delivery' | 'process.defer_delivery', held: HeldClaim[]): Promise<void> {
     const sidecar = this.deps.sidecar()
     if (!sidecar) return
     for (const claim of held) {
@@ -275,12 +279,12 @@ export class CompletionDrain {
     // Entries another consumer already delivered are done here too.
     if (!deliver.length) { await this.markConsumed(batched.map((e) => e.process_id)); return true }
     // A wakeup that does not start hands its claims back, so those rows stay pending for the retry or the next restart.
-    const giveBack = async (): Promise<void> => { await this.settleClaims('process.release_delivery', held); redefer(deliver) }
+    const giveBack = async (method: 'process.release_delivery' | 'process.defer_delivery' = 'process.release_delivery'): Promise<void> => { await this.settleClaims(method, held); redefer(deliver) }
     const prompt = deliver.length === 1 ? deliver[0]!.wakeup_prompt : deliver.map((e) => e.wakeup_prompt).join('\n\n')
     let resp: { _status?: number; error?: string; stream_id?: string }
     try { resp = this.deps.startTurn(session, prompt) } catch (error) { await giveBack(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup turn raised for session ${sid}: ${(error as Error).message}`); return false }
     const status = resp._status ?? (resp.stream_id ? 200 : 500)
-    if (status === 409) { await giveBack(); return false }
+    if (status === 409) { await giveBack('process.defer_delivery'); return false }
     if (status >= 400) { await giveBack(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup failed for session ${sid}: status=${String(status)} err=${str(resp.error)}; re-deferred for redelivery`); return false }
     this.retryAttempts.delete(sid)
     await this.settleClaims('process.complete_delivery', held)

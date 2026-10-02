@@ -100,5 +100,20 @@
         "ok": false
       }
     }
+  ],
+  "process.defer_delivery": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "event": {
+          "type": "async_delegation",
+          "delegation_id": "deleg_fixture"
+        },
+        "claim_id": ""
+      },
+      "result": {
+        "ok": false
+      }
+    }
   ]
 }

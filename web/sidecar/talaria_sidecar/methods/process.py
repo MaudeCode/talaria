@@ -131,6 +131,20 @@ def release_delivery(evt: dict, claim_id: str) -> bool:
     return True
 
 
+def defer_delivery(evt: dict, claim_id: str) -> bool:
+    """Hand back a claim the target never admitted (its session was busy) without spending a delivery attempt;
+    the Agent drops a row for good after its attempt budget, so a busy session must not burn it."""
+    api = _delivery_api()
+    if api is None or not claim_id:
+        return False
+    defer = getattr(api, "defer_completion_delivery", None)
+    if not callable(defer) or evt.get("type") != "async_delegation" or not evt.get("delegation_id"):
+        api.release_event_delivery(_ledger_event(evt), claim_id)
+        return True
+    defer(str(evt["delegation_id"]), claim_id)
+    return True
+
+
 def format_notification(evt: dict) -> str:
     if evt.get("type") == "async_delegation":
         try:
@@ -210,6 +224,12 @@ def register(registry_) -> None:
         evt = _delivery_params(params)
         with scoped_home(profile_home_param(params)):
             return {"ok": release_delivery(evt, str(params.get("claim_id") or ""))}
+
+    @registry_.method("process.defer_delivery")
+    def defer_(ctx: CallContext, params: dict) -> dict:
+        evt = _delivery_params(params)
+        with scoped_home(profile_home_param(params)):
+            return {"ok": defer_delivery(evt, str(params.get("claim_id") or ""))}
 
     @registry_.method("process.format_notification")
     def format_(ctx: CallContext, params: dict) -> dict:

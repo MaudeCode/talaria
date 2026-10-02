@@ -187,6 +187,8 @@ export const PROCESS_METHODS = {
   'process.claim_delivery': { params: ProfileHomeParams.extend({ event: Loose, consumer: z.string().min(1) }), result: z.object({ claim_id: z.string().nullable() }) },
   'process.complete_delivery': { params: ProfileHomeParams.extend({ event: Loose, claim_id: z.string() }), result: Ok },
   'process.release_delivery': { params: ProfileHomeParams.extend({ event: Loose, claim_id: z.string() }), result: Ok },
+  /** Hands back a claim the busy target never admitted, without spending one of the Agent's delivery attempts. */
+  'process.defer_delivery': { params: ProfileHomeParams.extend({ event: Loose, claim_id: z.string() }), result: Ok },
   'process.format_notification': { params: z.object({ event: Loose }), result: z.object({ text: z.string() }) },
   'process.list': { params: ProfileHomeParams, result: z.object({ sessions: z.array(Loose) }) },
 } as const
