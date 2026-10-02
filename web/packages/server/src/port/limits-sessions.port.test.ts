@@ -319,6 +319,11 @@ describe('sidebar automated-session counts (TAL-482)', () => {
     expect(body).toMatchObject({ scheduled_session_count: 200, scheduled_sessions_truncated: true, webhook_session_count: 3, webhook_sessions_truncated: false })
   })
 
+  it('does not flag a kind the request hides', async () => {
+    const body = await json(await s.get('/api/sessions?show_cron_sessions=0&show_webhook_sessions=1'))
+    expect(body).toMatchObject({ scheduled_session_count: 0, scheduled_sessions_truncated: false, webhook_session_count: 3 })
+  })
+
   it('leaves archived sessions out of the count', async () => {
     expect((await post(s, '/api/session/archive', { session_id: 'hook-0', archived: true })).status).toBe(200)
     s.deps.cliSessions.invalidate()

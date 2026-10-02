@@ -440,7 +440,9 @@ struct SessionListView: View {
             NavigationSplitView(columnVisibility: .constant(.all)) {
                 sessionListSurface
                     .toolbar(removing: .sidebarToggle)
-                    .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 440)
+                    // 340pt is the narrowest width where "Scheduled sessions", a "200+" count
+                    // and the chevron fit at default Dynamic Type.
+                    .navigationSplitViewColumnWidth(min: 340, ideal: 380, max: 440)
             } detail: {
                 NavigationStack {
                     regularWidthDetail
@@ -511,7 +513,9 @@ struct SessionListView: View {
                 ToolbarItemGroup(placement: .bottomBar) {
                     Spacer()
 
-                    Button(action: openNewChat) {
+                    HapticButton(feedbackStyle: .medium) {
+                        openNewChat()
+                    } label: {
                         Image(systemName: "square.and.pencil")
                     }
                     .disabled(viewModel.isViewingCachedData || navigationState.isCreatingNewChat)

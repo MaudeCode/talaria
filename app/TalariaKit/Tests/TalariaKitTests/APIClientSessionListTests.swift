@@ -95,6 +95,10 @@ final class APIClientSessionListTests: APIClientTestCase {
               ],
               "cli_count": 2,
               "archived_count": 8,
+              "scheduled_session_count": 200,
+              "scheduled_sessions_truncated": true,
+              "webhook_session_count": 4,
+              "webhook_sessions_truncated": false,
               "server_time": 1770000001,
               "server_tz": "-0400"
             }
@@ -110,6 +114,10 @@ final class APIClientSessionListTests: APIClientTestCase {
         XCTAssertEqual(response.sessions?.first?.pinned, true)
         XCTAssertEqual(response.cliCount, 2)
         XCTAssertEqual(response.archivedCount, 8)
+        XCTAssertEqual(
+            response.automatedSessionCounts,
+            AutomatedSessionCounts(scheduled: 200, scheduledIsPartial: true, webhook: 4, webhookIsPartial: false)
+        )
     }
 
     func testSessionsDecodesDelegationAndReadOnlyMetadataTolerantly() async throws {
@@ -200,6 +208,7 @@ final class APIClientSessionListTests: APIClientTestCase {
         XCTAssertEqual(response.sessions?.last?.archived, true)
         // Tolerant decoding: an older server that omits archived_count still decodes.
         XCTAssertNil(response.archivedCount)
+        XCTAssertNil(response.automatedSessionCounts)
     }
 
     func testSessionsVisibilityOverridesStayOnTheReadRequest() async throws {
