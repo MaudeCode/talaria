@@ -119,6 +119,50 @@ extension SessionListMutationTests {
         )
     }
 
+    func testPrefetchNeverOverwritesATranscriptSavedWhileItWasInFlight() async throws {
+        let context = try makeContext()
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let requestArrived = expectation(description: "Prefetch request in flight")
+        let release = DispatchSemaphore(value: 0)
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/sessions":
+                return apiTestJSONResponse("""
+                {"sessions": [{"session_id": "running", "title": "Running", "is_streaming": true, "active_stream_id": "s1"}]}
+                """, for: request)
+            case "/api/session":
+                requestArrived.fulfill()
+                release.wait()
+                return apiTestJSONResponse("""
+                {"session": {"session_id": "running", "messages": [
+                  {"role": "user", "content": "Older page", "timestamp": 1770000100, "message_id": "u1"}
+                ]}}
+                """, for: request)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+        await viewModel.load(modelContext: context)
+
+        let prefetch = Task { await viewModel.prefetchRunningTranscripts(modelContext: context) }
+        await fulfillment(of: [requestArrived], timeout: 5)
+        // The user opens the chat and leaves it while the prefetch waits on the server.
+        try CacheStore.cacheMessages(
+            [ChatMessage(role: "user", content: "Newer, saved by the chat", timestamp: 2, messageId: "u2")],
+            serverURL: server,
+            sessionID: "running",
+            in: context
+        )
+        release.signal()
+        await prefetch.value
+
+        XCTAssertEqual(
+            try CacheStore.cachedMessages(serverURL: server, sessionID: "running", in: context).compactMap(\.content),
+            ["Newer, saved by the chat"]
+        )
+    }
+
     func testCachedRowsKeepTheServersLatestOrder() throws {
         let context = try makeContext()
         let server = try XCTUnwrap(URL(string: "https://example.test"))

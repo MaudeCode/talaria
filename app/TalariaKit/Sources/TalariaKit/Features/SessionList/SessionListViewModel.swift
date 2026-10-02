@@ -234,7 +234,6 @@ public final class SessionListViewModel {
         }
     }
 
-
     /// Runs already prefetched, as `session|stream`, so each run costs one request at most.
     private var prefetchedRuns: Set<String> = []
 
@@ -246,18 +245,24 @@ public final class SessionListViewModel {
             let runKey = "\(sessionID)|\(session.activeStreamId ?? "")"
             guard !prefetchedRuns.contains(runKey) else { continue }
             prefetchedRuns.insert(runKey)
-            // A chat opened here already has its own cache, which the chat keeps current.
-            let cached = try? CacheStore.cachedMessages(serverURL: server, sessionID: sessionID, in: modelContext, limit: 1)
-            guard cached?.isEmpty ?? true,
+            // A chat opened here already has its own cache, which the chat keeps current. Checked
+            // again after the request, in case the chat saved a newer transcript meanwhile.
+            guard !hasCachedTranscript(sessionID, in: modelContext),
                   let messages = try? await client.session(
                     id: sessionID,
                     messageLimit: ChatViewModel.messagePageLimit,
                     expandRenderable: true
                   ).session?.messages,
-                  !messages.isEmpty
+                  !messages.isEmpty,
+                  !hasCachedTranscript(sessionID, in: modelContext)
             else { continue }
             try? CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
         }
+    }
+
+    private func hasCachedTranscript(_ sessionID: String, in modelContext: ModelContext) -> Bool {
+        let cached = try? CacheStore.cachedMessages(serverURL: server, sessionID: sessionID, in: modelContext, limit: 1)
+        return !(cached?.isEmpty ?? true)
     }
 
     @discardableResult
