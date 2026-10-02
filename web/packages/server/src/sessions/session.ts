@@ -7,6 +7,7 @@
 import { str } from '../util.js'
 import { randomUUID } from 'node:crypto'
 import { resolvePathLikePython } from '../workspace/paths.js'
+import { turnOrigin } from './background-updates.js'
 
 export type Message = Record<string, unknown>
 export type ToolCall = Record<string, unknown>
@@ -461,6 +462,7 @@ export class Session {
       share_token: this.share_token,
       share_created_at: this.share_created_at,
       is_streaming: opts.includeRuntime ? Boolean(this.active_stream_id && activeStreamIds.has(this.active_stream_id)) : false,
+      active_turn_origin: this.active_stream_id ? turnOrigin(this.pending_user_source) : null,
     })
     if (opts.sidebarMetadataOnly) stripSidebarHeavyMetadata(compact)
     return compact

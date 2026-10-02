@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { coerceReasoningEffort, dict, isDict, personalityPrompt, type Config } from '../config/agent-config.js'
+import { BACKGROUND_TURN_PROMPT } from './background-updates.js'
 import { VALID_REASONING_EFFORTS } from '../providers/tables.js'
 import { str } from '../util.js'
 
@@ -117,12 +118,13 @@ export function deliveryContextPrompt(config: Config, hermesHome: string, homeDi
 }
 
 /** Python `_webui_ephemeral_system_prompt`: personality, surface context, progress guidance, delivery context. */
-export function webuiEphemeralSystemPrompt(opts: { config: Config; personality: string | null; sessionId: string; profile: string | null; workspace: string; hermesHome: string; homeDisplay: string }): string {
+export function webuiEphemeralSystemPrompt(opts: { config: Config; personality: string | null; sessionId: string; profile: string | null; workspace: string; hermesHome: string; homeDisplay: string; background?: boolean }): string {
   const parts: string[] = []
   const prompt = opts.personality ? personalityPrompt(opts.config, opts.personality) : null
   if (prompt) parts.push(prompt.trim())
   parts.push(surfaceContextPrompt({ source: 'webui', session_id: opts.sessionId, profile: opts.profile, workspace: opts.workspace }))
   parts.push(WEBUI_PROGRESS_PROMPT)
   parts.push(deliveryContextPrompt(opts.config, opts.hermesHome, opts.homeDisplay))
+  if (opts.background) parts.push(BACKGROUND_TURN_PROMPT)
   return parts.filter(Boolean).join('\n\n')
 }

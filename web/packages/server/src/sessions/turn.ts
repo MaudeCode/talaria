@@ -30,7 +30,7 @@ import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './a
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
 import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, toolOutcome, withAttachmentObjects, withBodyExcerpts, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
-import { withBackgroundUpdates } from './background-updates.js'
+import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
@@ -38,6 +38,8 @@ import { str } from '../util.js'
 export const CHAT_LOCK_WAIT_SECONDS = 2
 const IMAGE_MODE_TIMEOUT_MS = 15_000
 const TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT = 80
+/** How long a user's message waits for a stopped background turn to unwind before its own turn is admitted. */
+const BACKGROUND_UNWIND_WAIT_MS = 30_000
 
 export interface TurnRunnerDeps {
   store: SessionStore
@@ -222,6 +224,8 @@ export class TurnRunner {
   /** TAL-364: a Stop's in-flight `chat.interrupt` reply (null when it failed), so a worker that settles first can use its checkpoint. */
   private readonly interrupts = new Map<string, Promise<{ pending_steer?: string | undefined; checkpoint?: Record<string, unknown>[] | undefined } | null>>()
   private readonly stopContexts = new Map<string, { previousContext: Message[]; historyLength: number; prompt: string | Record<string, unknown>[]; msgText: string; checkpointed: boolean }>()
+  /** Each turn's worker, so a stopped background turn can be awaited before the user's turn takes the session. */
+  private readonly workers = new Map<string, Promise<void>>()
 
   constructor(readonly deps: TurnRunnerDeps) {}
 
@@ -246,7 +250,8 @@ export class TurnRunner {
     const streamId = randomUUID().replace(/-/g, '')
     const wasHiddenEmpty = !s.messages.length && !s.context_messages.length && !s.pending_user_message
     const attachments = opts.attachments ?? []
-    const source = str(s.source_tag).toLowerCase() === 'fork' ? 'fork' : (opts.source ?? 'webui')
+    // A background wakeup stays one in a forked session too (TAL-460).
+    const source = opts.source !== 'process_wakeup' && str(s.source_tag).toLowerCase() === 'fork' ? 'fork' : (opts.source ?? 'webui')
     s.workspace = opts.workspace
     s.model = opts.model
     s.model_provider = opts.modelProvider
@@ -268,10 +273,11 @@ export class TurnRunner {
     try { this.deps.workspaces.setLastWorkspace(opts.workspace, s.profile) } catch { /* best effort */ }
     const channel = this.registry.create(streamId, s.session_id)
     if (opts.goalRelated) this.registry.goalRelated.add(streamId)
-    this.registry.registerActiveRun({ stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral) })
-    void this.run(s.session_id, streamId, channel, opts).catch((error: unknown) => {
+    this.registry.registerActiveRun({ stream_id: streamId, session_id: s.session_id, started_at: this.deps.now(), phase: 'starting', workspace: opts.workspace, model: opts.model, provider: opts.modelProvider, ephemeral: Boolean(opts.ephemeral), origin: turnOrigin(source) })
+    const worker = this.run(s.session_id, streamId, channel, opts).catch((error: unknown) => {
       this.deps.log(`[webui] ERROR turn ${streamId} crashed\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
-    })
+    }).finally(() => { this.workers.delete(streamId) })
+    this.workers.set(streamId, worker)
     const response: StartTurnResponse = { stream_id: streamId, session_id: s.session_id, pending_started_at: s.pending_started_at, turn_id: streamId, title: s.title }
     if (opts.normalizedModel && opts.model) response.effective_model = opts.model
     if (opts.modelProvider) response.effective_model_provider = opts.modelProvider
@@ -357,6 +363,9 @@ export class TurnRunner {
     const toolStartedAt = new WeakMap<Record<string, unknown>, number>()
     let tokenSent = false
     let firstTokenAt: number | null = null
+    // TAL-460: a background turn's text is held back while it could still be a silence marker, so one never flashes by.
+    const holdSilence = turnOrigin(opts.source) === 'background'
+    let heldText = ''
     const titles = new ReasoningTitleTracker()
     let capturedTerminalError: string | null = null
     const controller = new AbortController()
@@ -386,7 +395,7 @@ export class TurnRunner {
       const frozenWorkspace = str(s.created_workspace) || str(s.workspace)
       const turnContext = {
         system_message: workspaceSystemMessage(frozenWorkspace),
-        ephemeral_system_prompt: webuiEphemeralSystemPrompt({ config: cfg, personality: str(s.personality) || null, sessionId, profile: s.profile ?? null, workspace: frozenWorkspace, hermesHome: deps.profileHome(s.profile), homeDisplay: deps.homeDisplay?.() ?? '~/.hermes' }),
+        ephemeral_system_prompt: webuiEphemeralSystemPrompt({ config: cfg, personality: str(s.personality) || null, sessionId, profile: s.profile ?? null, workspace: frozenWorkspace, hermesHome: deps.profileHome(s.profile), homeDisplay: deps.homeDisplay?.() ?? '~/.hermes', background: turnOrigin(opts.source) === 'background' }),
         max_iterations: processWakeupMaxIterations(maxIterationsFromConfig(cfg), opts.source ?? 'webui', deps.env ?? {}),
         max_tokens: maxTokensFromConfig(cfg),
         reasoning_config: reasoningConfigFromConfig(cfg, opts.modelProvider ?? s.model_provider ?? null),
@@ -411,7 +420,9 @@ export class TurnRunner {
               const stable = titles.stableSnapshot(reasoningText.join(''))
               if (stable !== null) put('reasoning', { text: '', titles: stable })
               partialText.push(str(data.text))
-              put('token', { text: str(data.text) })
+              if (holdSilence && mayBecomeSilentReply(partialText.join(''))) { heldText += str(data.text); return }
+              put('token', { text: heldText + str(data.text) })
+              heldText = ''
               return
             }
             case 'reasoning': {
@@ -857,6 +868,10 @@ export class TurnRunner {
       this.deps.store.sessions.delete(current.session_id)
       return true
     }
+    // TAL-460: a background turn stops quietly: its prompt and model context are kept, but no partial and no Stop row,
+    // and its first settlement is final.
+    const quiet = this.registry.activeRuns.get(streamId)?.origin === 'background'
+    if (quiet && current.active_stream_id === null) return true
     const stop = this.stopContexts.get(streamId)
     const canonical = stop !== undefined && checkpoint !== null && checkpointTurnStart(checkpoint, stop.msgText, stop.historyLength) !== null
     const settle = (): Message[] | null => {
@@ -884,8 +899,10 @@ export class TurnRunner {
     current.pending_attachments = []
     current.pending_started_at = null
     current.pending_user_source = null
-    this.appendPartialSnapshot(current, streamId)
-    current.messages.push({ role: 'assistant', content: '', _error: true, _terminal_state: 'cancelled', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
+    if (!quiet) {
+      this.appendPartialSnapshot(current, streamId)
+      current.messages.push({ role: 'assistant', content: '', _error: true, _terminal_state: 'cancelled', timestamp: Math.trunc(this.deps.now()), _turn_id: streamId })
+    }
     this.persistConsumedSteers(current, streamId, startedAt, this.deps.now())
     try { this.deps.store.save(current) } catch { return false }
     this.deps.pending.clearApprovals(current.session_id)
@@ -1071,6 +1088,20 @@ export class TurnRunner {
       this.registry.liveIds.delete(streamId)
     }
     this.abortControllers.get(streamId)?.abort()
+    return true
+  }
+
+  /**
+   * TAL-460: a user's message never joins a background turn. That turn stops quietly (`finalizeCancelled`) and its worker
+   * unwinds before the user's turn is admitted, so two Agent runs never share the session. True when one was stopped.
+   */
+  async yieldBackgroundTurn(sessionId: string): Promise<boolean> {
+    const streamId = this.registry.activeRunStreamForSession(sessionId)
+    if (!streamId || this.registry.activeRuns.get(streamId)?.origin !== 'background') return false
+    await this.cancel(streamId)
+    let timer: NodeJS.Timeout | undefined
+    await Promise.race([this.workers.get(streamId), new Promise((resolve) => { timer = setTimeout(resolve, BACKGROUND_UNWIND_WAIT_MS) })])
+    clearTimeout(timer)
     return true
   }
 

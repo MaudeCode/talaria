@@ -208,10 +208,13 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
 
   it('a finished delegation batch is a delegation update', async () => {
     const sid = await newSid()
-    await s.deps.completions.processOne({ process_id: 'deleg_ok', delegation_id: 'deleg_ok', type: 'async_delegation', origin_ui_session_id: sid, consumed: false, results: [{ status: 'completed' }, { status: 'success' }] })
+    await s.deps.completions.processOne({ process_id: 'deleg_ok', delegation_id: 'deleg_ok', type: 'async_delegation', origin_ui_session_id: sid, consumed: false, goals: ['Audit the PVCs', 'Check\nbackups'], results: [{ status: 'completed' }, { status: 'success' }] })
     const row = await wakeupRow(sid)
     expect(row, 'the wakeup row settled into the transcript').toBeDefined()
-    expect(row?._background_update).toEqual({ kind: 'delegation', attention: false, count: 1, summary: 'ASYNC DELEGATION BATCH COMPLETE — deleg_ok' })
+    // TAL-460: one completion line per finished agent, from the structured event.
+    expect(row?._background_update).toEqual({ kind: 'delegation', attention: false, count: 1, summary: 'ASYNC DELEGATION BATCH COMPLETE — deleg_ok', lines: [
+      { kind: 'agent', status: 'completed', label: 'Audit the PVCs' }, { kind: 'agent', status: 'completed', label: 'Check' },
+    ] })
   })
 
   it('a failed process completion is a process update that needs attention', async () => {
@@ -219,17 +222,76 @@ describe('background wakeups carry their update metadata (TAL-371)', () => {
     await s.deps.completions.processOne({ process_id: 'proc_fail', session_id: 'proc_fail', type: 'completion', command: 'make test', exit_code: 2, output: '1 failed', origin_ui_session_id: sid, consumed: false })
     const row = await wakeupRow(sid)
     expect(row, 'the wakeup row settled into the transcript').toBeDefined()
-    expect(row?._background_update).toEqual({ kind: 'process', attention: true, count: 1, summary: 'IMPORTANT: Background process proc_fail completed (exit_code=2).' })
+    expect(row?._background_update).toEqual({ kind: 'process', attention: true, count: 1, summary: 'IMPORTANT: Background process proc_fail completed (exit_code=2).', lines: [{ kind: 'command', status: 'failed', label: 'make test', exit_code: 2 }] })
   })
 
   it('a batch delivered after a turn is one mixed update', async () => {
     const sid = await newSid()
-    s.deps.completions.recordDeferred(sid, 'deleg_mix', '[ASYNC DELEGATION BATCH COMPLETE — deleg_mix]\nresults', { process_id: 'deleg_mix', delegation_id: 'deleg_mix', type: 'async_delegation', results: [{ status: 'failed' }] })
-    s.deps.completions.recordDeferred(sid, 'proc_mix', '[IMPORTANT: Background process proc_mix completed (exit_code=0).\nCommand: ls]', { process_id: 'proc_mix', type: 'completion', exit_code: 0 })
+    s.deps.completions.recordDeferred(sid, 'deleg_mix', '[ASYNC DELEGATION BATCH COMPLETE — deleg_mix]\nresults', { process_id: 'deleg_mix', delegation_id: 'deleg_mix', type: 'async_delegation', goal: 'Scan the logs', results: [{ status: 'failed' }] })
+    s.deps.completions.recordDeferred(sid, 'proc_mix', '[IMPORTANT: Background process proc_mix completed (exit_code=0).\nCommand: ls]', { process_id: 'proc_mix', type: 'completion', command: 'ls', exit_code: 0 })
     await s.deps.completions.drainDeferred(sid)
     const row = await wakeupRow(sid)
     expect(row, 'the wakeup row settled into the transcript').toBeDefined()
-    expect(row?._background_update).toEqual({ kind: 'mixed', attention: true, count: 2, summary: 'ASYNC DELEGATION BATCH COMPLETE — deleg_mix' })
+    expect(row?._background_update).toEqual({ kind: 'mixed', attention: true, count: 2, summary: 'ASYNC DELEGATION BATCH COMPLETE — deleg_mix', lines: [
+      { kind: 'agent', status: 'failed', label: 'Scan the logs' }, { kind: 'command', status: 'completed', label: 'ls', exit_code: 0 },
+    ] })
+  })
+
+  const settled = async (sid: string): Promise<Json[]> => {
+    await wakeupRow(sid)
+    return ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+  }
+
+  it('marks the reply to a background update, and a silence marker as a silent reply (TAL-460)', async () => {
+    const replies = ['The backup finished; nothing to do.', '[SILENT]', ' no reply. ']
+    for (const reply of replies) {
+      const sid = await newSid()
+      sidecar.respond('chat.start', (params) => ({ ...completed(reply), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: reply }] }))
+      await s.deps.completions.processOne({ process_id: `proc_${String(replies.indexOf(reply))}`, session_id: 'p', type: 'completion', command: 'backup', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
+      const answer = (await settled(sid)).findLast((m) => m.role === 'assistant')
+      expect(answer?._background_reply, reply).toBe(true)
+      if (reply === replies[0]) expect(answer, reply).not.toHaveProperty('_background_silent')
+      else expect(answer?._background_silent, reply).toBe(true)
+    }
+  })
+
+  it('never silences or marks a reply the user asked for', async () => {
+    const sid = await newSid()
+    sidecar.respond('chat.start', (params) => ({ ...completed('NO_REPLY'), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'NO_REPLY' }] }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'say NO_REPLY' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1`))).session as Json).messages as Json[]
+    const answer = messages.findLast((m) => m.role === 'assistant')
+    expect(answer?.content).toBe('NO_REPLY')
+    expect(answer).not.toHaveProperty('_background_reply')
+    expect(answer).not.toHaveProperty('_background_silent')
+  })
+
+  it('tells only background turns how to stay silent, and never streams a silence marker', async () => {
+    const prompts: Record<string, string> = {}
+    const streamed = async (sid: string, start: () => Promise<string>, chunks: string[]): Promise<string> => {
+      sidecar.respond('chat.start', (params, emit) => {
+        prompts[sid] = str(params.ephemeral_system_prompt)
+        for (const text of chunks) emit({ event: 'token', data: { text } })
+        return { ...completed(chunks.join('')), messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: chunks.join('') }] }
+      })
+      const streamId = await start()
+      const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'stream_end')
+      return frames.filter((f) => f.event === 'token').map((f) => str((f.data as Json).text)).join('')
+    }
+    const background = (sid: string, id: string) => async (): Promise<string> => {
+      await s.deps.completions.processOne({ process_id: id, session_id: id, type: 'completion', command: 'sync', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
+      for (let i = 0; i < 60 && !s.deps.sessionStore.get(sid).active_stream_id; i += 1) await new Promise((r) => setTimeout(r, 20))
+      return str(s.deps.sessionStore.get(sid).active_stream_id)
+    }
+    const silentSid = await newSid()
+    expect(await streamed(silentSid, background(silentSid, 'proc_silent'), [' [SIL', 'ENT', ']'])).toBe('')
+    expect(prompts[silentSid]).toContain('This turn was started by a background result, not by the user. If it needs nothing from the user, reply exactly [SILENT]. Otherwise tell the user what matters.')
+    const spokenSid = await newSid()
+    expect(await streamed(spokenSid, background(spokenSid, 'proc_spoken'), ['[SIL', 'ENT] is not all: ', 'the sync failed'])).toBe('[SILENT] is not all: the sync failed')
+    const userSid = await newSid()
+    expect(await streamed(userSid, async () => str((await json(await post(s, '/api/chat/start', { session_id: userSid, message: 'hi' }))).stream_id), ['[SIL', 'ENT]'])).toBe('[SILENT]')
+    expect(prompts[userSid]).not.toContain('started by a background result')
   })
 })
 

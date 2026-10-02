@@ -103,60 +103,64 @@ function modelState(ctx: RequestContext, s: Session, body: Record<string, unknow
   return [model, provider, model !== requestedModel]
 }
 
+/** `chat.start`; a `chat.steer` sent while a background turn runs starts the user's turn through it too (TAL-460). */
+async function startChat(ctx: RequestContext, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  requireField(body, 'session_id')
+  if (str(body.message).trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
+  if (body.regenerate === true) throw new HttpError(409, 'Regeneration is not supported by this backend.', { code: 'unsupported_regeneration_backend' })
+  const sid = str(body.session_id)
+  // Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before any
+  // session state is materialised, claimed, or mutated.
+  const sidecarNow = ctx.deps.sidecar()
+  if (sidecarNow) {
+    try {
+      await sidecarNow.call('runtime.ensure_current', {})
+    } catch (error) {
+      if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') {
+        throw new HttpError(409, error.message, { type: 'agent_runtime_stale', retryable: true, restart_scheduled: false, ...(error.data.agent_update_state !== undefined ? { agent_update_state: error.data.agent_update_state } : {}) })
+      }
+    }
+  }
+  let s: Session
+  try {
+    s = ctx.deps.sessionStore.get(sid)
+  } catch {
+    // Python `_claim_or_synthesize_cli_session` on the POST path: a claimable foreign (CLI/TUI/Desktop) session is
+    // materialised as a WebUI sidecar before its first turn; an owned foreign store answers 403, nothing → 404.
+    const synth = ctx.deps.sessions.claimOrSynthesizeCliSession(sid)
+    if (!synth.session) throw new HttpError(404, 'Session not found')
+    if (synth.reason === 'not_claimable') throw new HttpError(403, 'session is read-only in its foreign store; cannot be claimed writeable in WebUI')
+    ctx.deps.sessionStore.save(synth.session)
+    s = ctx.deps.sessionStore.get(sid)
+  }
+  // Python `_get_or_materialize_session` raised PermissionError for both: a read-only import and a delegated
+  // subagent child (by sidecar tag or state.db row), which chat start answered with the same 403.
+  if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly || ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
+  const requestedProfile = str(body.profile).trim()
+  if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
+  visibleOrRetag(ctx, s, requestedProfile)
+  const msg = str(body.message).trim()
+  if (!msg) throw new HttpError(400, 'message is required')
+  // TAL-460: the user's message never joins a background turn; that turn stops quietly and this one takes its place.
+  if (await ctx.deps.turns.yieldBackgroundTurn(sid)) s = ctx.deps.sessionStore.get(sid)
+  const attachments = normalizeChatAttachments(body.attachments).slice(0, 20)
+  // Python `compression_recovery_payload_for_session` + `is_generic_continuation_intent`.
+  const recovery = s.compression_recovery
+  const recoveryLive = recovery.terminal_state === 'compression_exhausted' && str(recovery.recommended_action || s.recommended_recovery_action) === 'start_focused_continuation'
+  if (recoveryLive && !attachments.length && isGenericContinuationIntent(msg)) {
+    throw new HttpError(409, 'This session exhausted context compression. Start a focused continuation, then describe the next narrow task.', { type: 'compression_recovery_required', compression_recovery: s.compression_recovery, session_id: s.session_id })
+  }
+  const workspace = resolveWorkspace(ctx, s, body.workspace)
+  const [model, provider, normalized] = modelState(ctx, s, body)
+  if (body.moa_config) throw new HttpError(503, 'MoA overrides need the Agent command registry (checkpoint 7).')
+  const response = ctx.deps.turns.start(s, { msg, attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui' })
+  if (response._status !== undefined && response._status >= 400) throw new HttpError(response._status, response.error ?? 'chat start failed', response.active_stream_id ? { active_stream_id: response.active_stream_id } : {})
+  return startPayload(response)
+}
+
 export const chatRouter = os.router({
   chat: {
-    start: os.chat.start.handler(({ input, context: { ctx } }) => run(async () => {
-      const body = input as Record<string, unknown>
-      requireField(body, 'session_id')
-      if (str(body.message).trim() === '[SILENT]') return { status: 'suppressed', reason: 'silent_control_message' }
-      if (body.regenerate === true) throw new HttpError(409, 'Regeneration is not supported by this backend.', { code: 'unsupported_regeneration_backend' })
-      const sid = str(body.session_id)
-      // Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before any
-      // session state is materialised, claimed, or mutated.
-      const sidecarNow = ctx.deps.sidecar()
-      if (sidecarNow) {
-        try {
-          await sidecarNow.call('runtime.ensure_current', {})
-        } catch (error) {
-          if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') {
-            throw new HttpError(409, error.message, { type: 'agent_runtime_stale', retryable: true, restart_scheduled: false, ...(error.data.agent_update_state !== undefined ? { agent_update_state: error.data.agent_update_state } : {}) })
-          }
-        }
-      }
-      let s: Session
-      try {
-        s = ctx.deps.sessionStore.get(sid)
-      } catch {
-        // Python `_claim_or_synthesize_cli_session` on the POST path: a claimable foreign (CLI/TUI/Desktop) session is
-        // materialised as a WebUI sidecar before its first turn; an owned foreign store answers 403, nothing → 404.
-        const synth = ctx.deps.sessions.claimOrSynthesizeCliSession(sid)
-        if (!synth.session) throw new HttpError(404, 'Session not found')
-        if (synth.reason === 'not_claimable') throw new HttpError(403, 'session is read-only in its foreign store; cannot be claimed writeable in WebUI')
-        ctx.deps.sessionStore.save(synth.session)
-        s = ctx.deps.sessionStore.get(sid)
-      }
-      // Python `_get_or_materialize_session` raised PermissionError for both: a read-only import and a delegated
-      // subagent child (by sidecar tag or state.db row), which chat start answered with the same 403.
-      if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly || ctx.deps.sessions.isSubagentViewOnly(sid)) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
-      const requestedProfile = str(body.profile).trim()
-      if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
-      visibleOrRetag(ctx, s, requestedProfile)
-      const msg = str(body.message).trim()
-      if (!msg) throw new HttpError(400, 'message is required')
-      const attachments = normalizeChatAttachments(body.attachments).slice(0, 20)
-      // Python `compression_recovery_payload_for_session` + `is_generic_continuation_intent`.
-      const recovery = s.compression_recovery
-      const recoveryLive = recovery.terminal_state === 'compression_exhausted' && str(recovery.recommended_action || s.recommended_recovery_action) === 'start_focused_continuation'
-      if (recoveryLive && !attachments.length && isGenericContinuationIntent(msg)) {
-        throw new HttpError(409, 'This session exhausted context compression. Start a focused continuation, then describe the next narrow task.', { type: 'compression_recovery_required', compression_recovery: s.compression_recovery, session_id: s.session_id })
-      }
-      const workspace = resolveWorkspace(ctx, s, body.workspace)
-      const [model, provider, normalized] = modelState(ctx, s, body)
-      if (body.moa_config) throw new HttpError(503, 'MoA overrides need the Agent command registry (checkpoint 7).')
-      const response = ctx.deps.turns.start(s, { msg, attachments, workspace, model, modelProvider: provider, normalizedModel: normalized, source: 'webui' })
-      if (response._status !== undefined && response._status >= 400) throw new HttpError(response._status, response.error ?? 'chat start failed', response.active_stream_id ? { active_stream_id: response.active_stream_id } : {})
-      return startPayload(response)
-    })),
+    start: os.chat.start.handler(({ input, context: { ctx } }) => run(() => startChat(ctx, input as Record<string, unknown>))),
     steer: os.chat.steer.handler(({ input, context: { ctx } }) => run(async () => {
       const sid = str(input.session_id).trim()
       const text = str(input.text).trim()
@@ -167,6 +171,11 @@ export const chatRouter = os.router({
       if (steerId && !STEER_ID_RE.test(steerId)) throw new HttpError(400, 'steer_id must be 1-128 URL-safe characters')
       if (!steerId) steerId = `steer-${randomUUID()}`
       if (!ctx.deps.sessions.sessionIdVisible(sid)) throw new HttpError(404, 'Session not found')
+      const active = ctx.deps.registry.activeRunStreamForSession(sid)
+      if (active && ctx.deps.registry.activeRuns.get(active)?.origin === 'background') {
+        const started = await startChat(ctx, { session_id: sid, message: text })
+        return { accepted: true, fallback: null, stream_id: started.stream_id ? str(started.stream_id) : null, steer_id: steerId, started_turn: started }
+      }
       return ctx.deps.turns.steer(sid, text, display, steerId) as Promise<{ accepted: boolean; fallback: string | null; stream_id: string | null; steer_id?: string }>
     })),
     cancel: os.chat.cancel.handler(({ input, context: { ctx } }) => run(async () => {

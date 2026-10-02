@@ -3,6 +3,7 @@
  * `ACTIVE_RUNS`, `STREAM_SESSION_OWNERS`) and the per-session channel used by
  * `/api/session/stream` (`api/background_process.py::SessionChannel`).
  */
+import type { TurnOrigin } from './background-updates.js'
 
 /** A live frame; `redacted` records whether a tool frame was redacted when produced, so delivery can apply the current policy. */
 export type StreamItem = [event: string, data: unknown, eventId: string | null, redacted?: boolean | undefined]
@@ -97,6 +98,8 @@ export interface ActiveRun {
   model: string | null
   provider: string | null
   ephemeral: boolean
+  /** TAL-460: `background` for a wakeup turn, which a user's message replaces instead of joining. */
+  origin?: TurnOrigin
   cancelled_at?: number
 }
 

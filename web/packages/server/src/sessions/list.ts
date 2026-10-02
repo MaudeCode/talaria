@@ -451,6 +451,8 @@ export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: Rea
   const streamId = str(r.active_stream_id)
   r.is_streaming = Boolean(streamId && activeStreamIds.has(streamId))
   if (!r.is_streaming) r.active_stream_id = null
+  // TAL-460: who started the running turn; a `background` one gives way to the user's next message.
+  if ('active_turn_origin' in r && !r.is_streaming) r.active_turn_origin = null
   const subagent = isSubagentRow(r)
   if (subagent) { r.read_only = true; r.is_cli_session = false } else r.read_only = Boolean(r.read_only)
   // The branch gate (`SessionService.branch`): never a subagent child, and a read-only source only when it is a cron run.
