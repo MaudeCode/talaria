@@ -1915,9 +1915,11 @@
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
 	"system_apply_agent_update": "Aktualizovat Agent",
-	"background_update_delegation": "Dávka delegací dokončena",
-	"background_update_process": "Aktualizace procesu na pozadí",
-	"background_update_mixed": "Aktualizace na pozadí ({count})",
-	"background_update_other": "Aktualizace na pozadí",
-	"background_update_attention": "Vyžaduje pozornost"
+	"background_line_agent_completed": "Agent „{goal}“ dokončen",
+	"background_line_agent_failed": "Agent „{goal}“ selhal",
+	"background_line_command_finished": "Příkaz na pozadí {command} skončil",
+	"background_line_command_failed": "Příkaz na pozadí {command} selhal",
+	"background_line_command_failed_exit": "Příkaz na pozadí {command} selhal (kód {code})",
+	"background_update_details": "Zobrazit celý výsledek na pozadí",
+	"live_background": "Zpracovává výsledky na pozadí"
 }

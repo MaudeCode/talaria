@@ -2971,7 +2971,8 @@
                                   "kind",
                                   "attention",
                                   "count",
-                                  "summary"
+                                  "summary",
+                                  "lines"
                                 ]
                               },
                               "_background_reply": {
@@ -4552,7 +4553,8 @@
                                   "kind",
                                   "attention",
                                   "count",
-                                  "summary"
+                                  "summary",
+                                  "lines"
                                 ]
                               },
                               "_background_reply": {
@@ -5879,7 +5881,8 @@
                                   "kind",
                                   "attention",
                                   "count",
-                                  "summary"
+                                  "summary",
+                                  "lines"
                                 ]
                               },
                               "_background_reply": {
@@ -8083,7 +8086,8 @@
                                   "kind",
                                   "attention",
                                   "count",
-                                  "summary"
+                                  "summary",
+                                  "lines"
                                 ]
                               },
                               "_background_reply": {
@@ -10194,7 +10198,8 @@
                                   "kind",
                                   "attention",
                                   "count",
-                                  "summary"
+                                  "summary",
+                                  "lines"
                                 ]
                               },
                               "_background_reply": {
@@ -19364,7 +19369,8 @@
                                   "kind",
                                   "attention",
                                   "count",
-                                  "summary"
+                                  "summary",
+                                  "lines"
                                 ]
                               },
                               "_background_reply": {
@@ -20774,7 +20780,8 @@
                                       "kind",
                                       "attention",
                                       "count",
-                                      "summary"
+                                      "summary",
+                                      "lines"
                                     ]
                                   },
                                   "_background_reply": {

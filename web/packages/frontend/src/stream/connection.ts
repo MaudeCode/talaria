@@ -8,7 +8,7 @@ import * as api from '../api/endpoints'
 import { openChatStream, SSE_CLOSED, type SseHandle } from '../api/sse'
 import { keys } from '../api/queryKeys'
 import type { ChatEvent } from '../contracts/sse'
-import type { ChatStartRequest, Session } from '../contracts'
+import type { ChatStartRequest, ChatStartResponse, Session } from '../contracts'
 import { RELAY_CLOSE_EVENTS } from '../contracts/sse'
 import { dispatch, getStreamState } from './store'
 import { isTerminal } from './reducer'
@@ -189,12 +189,17 @@ export interface StartTurnInput { sessionId: string; message: string; request: O
 /** Send a turn: POST /api/chat/start, adopt the server turn identity, open the stream. */
 export async function startTurn(input: StartTurnInput) {
   const res = await api.startChat({ session_id: input.sessionId, message: input.message, ...input.request })
-  // A silent control message is admitted without a turn (`status: suppressed`).
-  if (!res.stream_id) { invalidateSession(input.sessionId); return res }
-  dispatch({ type: 'start', sessionId: input.sessionId, streamId: res.stream_id, turnId: res.turn_id ?? null, userMessageId: res.user_message_id === undefined || res.user_message_id === null ? null : String(res.user_message_id), userText: input.message, now: Date.now() })
-  open(input.sessionId, res.stream_id, null)
-  invalidateSession(input.sessionId)
+  adoptTurn(input.sessionId, input.message, res)
   return res
+}
+
+/** Follow a turn the server admitted for this message: from `chat.start`, or a steer it started as a turn (TAL-460). */
+export function adoptTurn(sessionId: string, message: string, res: ChatStartResponse): void {
+  // A silent control message is admitted without a turn (`status: suppressed`).
+  if (!res.stream_id) { invalidateSession(sessionId); return }
+  dispatch({ type: 'start', sessionId, streamId: res.stream_id, turnId: res.turn_id ?? null, userMessageId: res.user_message_id === undefined || res.user_message_id === null ? null : String(res.user_message_id), userText: message, now: Date.now() })
+  open(sessionId, res.stream_id, null)
+  invalidateSession(sessionId)
 }
 
 /** Re-attach to a run the server reports as active (hard refresh, tab restore, sidebar switch). */

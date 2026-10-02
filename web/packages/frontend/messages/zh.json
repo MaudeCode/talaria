@@ -1759,9 +1759,11 @@
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
 	"system_apply_agent_update": "更新 Agent",
-	"background_update_delegation": "委托批次已完成",
-	"background_update_process": "后台进程更新",
-	"background_update_mixed": "后台更新（{count}）",
-	"background_update_other": "后台更新",
-	"background_update_attention": "需要关注"
+	"background_line_agent_completed": "代理“{goal}”已完成",
+	"background_line_agent_failed": "代理“{goal}”失败",
+	"background_line_command_finished": "后台命令 {command} 已结束",
+	"background_line_command_failed": "后台命令 {command} 失败",
+	"background_line_command_failed_exit": "后台命令 {command} 失败（退出码 {code}）",
+	"background_update_details": "显示完整的后台结果",
+	"live_background": "正在处理后台结果"
 }

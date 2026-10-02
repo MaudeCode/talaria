@@ -1813,9 +1813,11 @@
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
 	"system_apply_agent_update": "更新 Agent",
-	"background_update_delegation": "委派批次已完成",
-	"background_update_process": "背景處理程序更新",
-	"background_update_mixed": "背景更新（{count}）",
-	"background_update_other": "背景更新",
-	"background_update_attention": "需要注意"
+	"background_line_agent_completed": "代理「{goal}」已完成",
+	"background_line_agent_failed": "代理「{goal}」失敗",
+	"background_line_command_finished": "背景命令 {command} 已結束",
+	"background_line_command_failed": "背景命令 {command} 失敗",
+	"background_line_command_failed_exit": "背景命令 {command} 失敗（結束碼 {code}）",
+	"background_update_details": "顯示完整的背景結果",
+	"live_background": "正在處理背景結果"
 }

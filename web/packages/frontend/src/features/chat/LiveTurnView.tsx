@@ -37,11 +37,12 @@ export function LiveTurnView({ turn, name, mode, userVisible }: { turn: LiveTurn
 }
 
 /** The live turn's status, docked as a centered pill above the composer so it never takes transcript space. */
-export function LiveStatusPill({ turn }: { turn: LiveTurn }) {
+/** `background`: the server says a background result started this turn (`active_turn_origin`, TAL-460). */
+export function LiveStatusPill({ turn, background = false }: { turn: LiveTurn; background?: boolean }) {
   return (
     <div className="live-run-status flex items-center gap-2 text-muted" role="status" aria-live="polite">
       <LaurelSpinner />
-      <span className="live-run-label">{turn.status === 'reconnecting' ? m.live_reconnecting() : m.live_streaming()}</span>
+      <span className="live-run-label">{turn.status === 'reconnecting' ? m.live_reconnecting() : background ? m.live_background() : m.live_streaming()}</span>
       {turn.tps != null && <span className="font-mono text-[11px] tabular-nums opacity-75" title="Tokens per second">{turn.tps.toFixed(1)} tok/s</span>}
     </div>
   )

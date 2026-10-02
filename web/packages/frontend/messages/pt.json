@@ -1689,9 +1689,11 @@
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
 	"system_apply_agent_update": "Atualizar Agent",
-	"background_update_delegation": "Lote de delegações concluído",
-	"background_update_process": "Atualização de processo em segundo plano",
-	"background_update_mixed": "Atualizações em segundo plano ({count})",
-	"background_update_other": "Atualização em segundo plano",
-	"background_update_attention": "Requer atenção"
+	"background_line_agent_completed": "Agente “{goal}” concluído",
+	"background_line_agent_failed": "Agente “{goal}” falhou",
+	"background_line_command_finished": "Comando em segundo plano {command} terminou",
+	"background_line_command_failed": "Comando em segundo plano {command} falhou",
+	"background_line_command_failed_exit": "Comando em segundo plano {command} falhou (saída {code})",
+	"background_update_details": "Mostrar o resultado completo em segundo plano",
+	"live_background": "Processando resultados em segundo plano"
 }

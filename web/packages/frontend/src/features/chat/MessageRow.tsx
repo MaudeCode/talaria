@@ -1,7 +1,7 @@
 import { memo } from 'react'
-import { AlertTriangle, ArrowUp, Copy, GitBranch, Pencil, RotateCcw, Volume2 } from 'lucide-react'
+import { AlertTriangle, ArrowUp, CheckCircle2, Copy, GitBranch, Info, Pencil, RotateCcw, Volume2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
-import type { Message } from '../../contracts'
+import type { BackgroundLine, Message } from '../../contracts'
 import { Markdown } from './render/Markdown'
 import { messageText } from './render/text'
 import type { ActivityMode } from './blocks/Worklog'
@@ -59,33 +59,52 @@ export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown
   )
 })
 
+/** A localized line with `label` set in its own element (`code` for a command), wherever the wording puts it. */
+function LineText({ text, label, code }: { text: (label: string) => string; label: string; code?: boolean }) {
+  const [before = '', after = ''] = text('\u0000').split('\u0000')
+  return <>{before}{code ? <code className="font-mono text-[12px]">{label}</code> : <span className="text-text">{label}</span>}{after}</>
+}
+
+function BackgroundLineRow({ line }: { line: BackgroundLine }) {
+  const failed = line.status === 'failed'
+  const Icon = failed ? AlertTriangle : line.status === 'notice' ? Info : CheckCircle2
+  const exit = line.exit_code === null || line.exit_code === undefined ? null : String(line.exit_code)
+  const text = line.kind === 'agent'
+    ? <LineText label={line.label} text={(goal) => (failed ? m.background_line_agent_failed({ goal }) : m.background_line_agent_completed({ goal }))} />
+    : line.kind === 'command'
+    ? <LineText code label={line.label} text={(command) => (failed && exit !== null ? m.background_line_command_failed_exit({ command, code: exit }) : failed ? m.background_line_command_failed({ command }) : m.background_line_command_finished({ command }))} />
+    : <span className="text-text">{line.label}</span>
+  return (
+    <li className="flex items-start gap-2">
+      <Icon size={14} aria-hidden="true" className={cn('mt-0.5 shrink-0', failed ? 'text-warning' : 'text-muted')} />
+      <span className="min-w-0 break-words">{text}</span>
+    </li>
+  )
+}
+
 /**
- * TAL-371: an automatic background wakeup the server marked `_background_update`. It sits in its chronological place as a
- * quiet disclosure, never as the user's own bubble: a localized label, a warning that stays visible while collapsed, the
- * server's one-line summary, and the full notification (copyable) when expanded.
+ * TAL-460: an automatic background wakeup the server marked `_background_update`, in its chronological place as one quiet
+ * line per finished item, never as the user's own bubble. The Agent's reply follows as an ordinary assistant message;
+ * the full notification (copyable) opens from the lines.
  */
 export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { row: VisibleMessage }) {
   const update = row.message._background_update
   if (!update) return null
   const text = messageText(row.message.content)
-  const label = update.kind === 'delegation' ? m.background_update_delegation()
-    : update.kind === 'process' ? m.background_update_process()
-    : update.kind === 'mixed' ? m.background_update_mixed({ count: String(update.count) })
-    : m.background_update_other()
   return (
     <div className="msg-row" data-role="background" data-msg-idx={row.index} data-message-key={row.key}>
-      <details className="background-update rounded-md border border-border bg-surface px-3 py-2 text-[13px]">
-        <summary className="cursor-pointer text-muted">
-          <span className="font-medium text-text">{label}</span>
-          {update.attention && <span className="ml-2 inline-flex items-center gap-1 text-warning"><AlertTriangle size={12} aria-hidden="true" />{m.background_update_attention()}</span>}
-          {update.summary && <span className="mt-0.5 block truncate">{update.summary}</span>}
+      <details className="background-update text-[13px] text-muted">
+        <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden" aria-label={m.background_update_details()}>
+          <ul className="flex flex-col gap-1">{update.lines.map((line, i) => <BackgroundLineRow key={i} line={line} />)}</ul>
         </summary>
-        <CollapsedBody excerpt={row.message._display_truncated ? row.message._display_excerpt : undefined}>
-          {(excerpt) => <div className="msg-body mt-2 whitespace-pre-wrap">{excerpt ?? text}</div>}
-        </CollapsedBody>
-        <div className="msg-foot">
-          {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
-          <IconButton label={m.copy()} className="h-6 w-6" onClick={() => { void navigator.clipboard.writeText(text).then(() => showToast(m.copied())) }}><Copy size={12} aria-hidden="true" /></IconButton>
+        <div className="mt-2 rounded-md border border-border bg-surface px-3 py-2">
+          <CollapsedBody excerpt={row.message._display_truncated ? row.message._display_excerpt : undefined}>
+            {(excerpt) => <div className="msg-body whitespace-pre-wrap">{excerpt ?? text}</div>}
+          </CollapsedBody>
+          <div className="msg-foot">
+            {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
+            <IconButton label={m.copy()} className="h-6 w-6" onClick={() => { void navigator.clipboard.writeText(text).then(() => showToast(m.copied())) }}><Copy size={12} aria-hidden="true" /></IconButton>
+          </div>
         </div>
       </details>
     </div>

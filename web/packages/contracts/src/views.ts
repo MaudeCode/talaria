@@ -117,7 +117,7 @@ export const MessageSchema = z.looseObject({
      * `kind` and `status`: an agent by its goal (`completed` / `failed`), a command (`finished` / `failed` with
      * `exit_code`), or `label` as written for any other notice. `content` stays available in full on expansion.
      */
-    lines: z.array(BackgroundLineSchema).optional(),
+    lines: z.array(BackgroundLineSchema),
   }).optional(),
   /** TAL-460: part of the Agent's reply to the background update just before it in the same turn. */
   _background_reply: z.boolean().optional(),

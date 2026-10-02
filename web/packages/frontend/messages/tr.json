@@ -1880,9 +1880,11 @@
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
 	"system_apply_agent_update": "Agent güncelle",
-	"background_update_delegation": "Yetki devri grubu tamamlandı",
-	"background_update_process": "Arka plan işlemi güncellemesi",
-	"background_update_mixed": "Arka plan güncellemeleri ({count})",
-	"background_update_other": "Arka plan güncellemesi",
-	"background_update_attention": "İlgi gerektiriyor"
+	"background_line_agent_completed": "Ajan “{goal}” tamamlandı",
+	"background_line_agent_failed": "Ajan “{goal}” başarısız oldu",
+	"background_line_command_finished": "Arka plan komutu {command} bitti",
+	"background_line_command_failed": "Arka plan komutu {command} başarısız oldu",
+	"background_line_command_failed_exit": "Arka plan komutu {command} başarısız oldu (çıkış {code})",
+	"background_update_details": "Arka plan sonucunun tamamını göster",
+	"live_background": "Arka plan sonuçları işleniyor"
 }

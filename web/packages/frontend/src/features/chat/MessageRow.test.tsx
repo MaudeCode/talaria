@@ -7,6 +7,8 @@ import { resolve } from 'node:path'
 import type { Message } from '../../contracts'
 import { groupAssistantTurns } from './turnActivity'
 import { projectMessages } from './useTranscript'
+import { LiveStatusPill } from './LiveTurnView'
+import type { LiveTurn } from '../../stream/reducer'
 
 afterEach(cleanup)
 
@@ -57,37 +59,50 @@ describe('server-collapsed bodies (TAL-456)', () => {
   })
 })
 
-describe('background updates (TAL-371)', () => {
+describe('background updates (TAL-460)', () => {
   const fixture = (): Message[] => (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { background_update_session: { messages: Message[] } }).background_update_session.messages
 
-  it('shows a wakeup as a collapsed update with its warning, and the full notification when expanded', () => {
+  it('shows a wakeup as one completion line per result, and the full notification when expanded', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     const message = fixture().find((m) => m.message_id === 'wakeup-mixed-user')!
     const view = render(<BackgroundUpdateRow row={{ index: 2, key: 'w', message }} />)
     const disclosure = view.container.querySelector('details')!
     expect(disclosure.open).toBe(false)
-    const summary = disclosure.querySelector('summary')!
-    expect(summary).toHaveTextContent('Background updates (2)')
-    expect(summary).toHaveTextContent('Needs attention')
-    expect(summary).toHaveTextContent('ASYNC DELEGATION BATCH COMPLETE — deleg_contract')
-    fireEvent.click(summary)
+    const lines = [...disclosure.querySelectorAll('summary li')].map((li) => li.textContent)
+    expect(lines).toEqual(['Agent “Audit the PVC backups” completed', 'Background command make test failed (exit 1)'])
+    expect(disclosure.querySelector('summary code')?.textContent).toBe('make test')
+    fireEvent.click(disclosure.querySelector('summary')!)
     expect(disclosure.open).toBe(true)
     expect(disclosure.querySelector('.msg-body')?.textContent).toBe(message.content)
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
     expect(writeText).toHaveBeenCalledWith(message.content)
   })
 
-  it('renders the transcript\'s wakeups as updates and a typed marker as the user\'s own message', () => {
+  it('puts each reply under its lines, shows nothing of a silent reply, and leaves a user turn as written', () => {
     const messages = fixture()
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
     const view = render(<Transcript rows={projectMessages(messages)} live={null} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
-    const role = (key: string) => view.container.querySelector(`[data-message-key="${key}"]`)?.getAttribute('data-role')
-    const keyOf = (id: string) => projectMessages(messages).find((r) => r.message.message_id === id)!.key
-    expect(role(keyOf('typed-marker-user'))).toBe('user')
-    expect(role(keyOf('wakeup-mixed-user'))).toBe('background')
-    expect(role(keyOf('wakeup-legacy-user'))).toBe('background')
-    expect(view.container.querySelectorAll('details.background-update')).toHaveLength(2)
-    expect(view.container.querySelector(`[data-message-key="${keyOf('wakeup-legacy-user')}"] summary`)).toHaveTextContent('Background update')
+    const order = [...view.container.querySelectorAll('[data-message-key]')].map((el) => `${el.getAttribute('data-role') ?? ''}:${el.getAttribute('data-message-key') ?? ''}`)
+    const key = (id: string) => String(messages.findIndex((m) => m.message_id === id))
+    const keyOf = (id: string) => projectMessages(messages).find((r) => r.message.message_id === id)?.key ?? key(id)
+    expect(order).toEqual([
+      `user:${keyOf('typed-marker-user')}`, `assistant:${keyOf('typed-marker-reply')}`,
+      `background:${keyOf('wakeup-mixed-user')}`, `assistant:${keyOf('wakeup-mixed-reply')}`,
+      `background:${keyOf('wakeup-legacy-user')}`, `assistant:${keyOf('wakeup-legacy-reply')}`,
+      `background:${keyOf('wakeup-silent-user')}`,
+      `user:${keyOf('user-no-reply')}`, `assistant:${keyOf('user-no-reply-answer')}`,
+    ])
+    expect(view.container.querySelector(`[data-message-key="${keyOf('wakeup-silent-user')}"] summary`)).toHaveTextContent('Background command ./backup.sh finished')
+    expect(view.container.textContent).not.toContain('[SILENT]')
+    expect(view.container.querySelector(`[data-message-key="${keyOf('user-no-reply-answer')}"]`)).toHaveTextContent('NO_REPLY')
+  })
+
+  it('says the run is working on background results only while the server says a background result started it', () => {
+    const turn = { status: 'streaming', tps: null } as unknown as LiveTurn
+    const { rerender } = render(<LiveStatusPill turn={turn} background />)
+    expect(screen.getByRole('status')).toHaveTextContent('Working on background results')
+    rerender(<LiveStatusPill turn={turn} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Responding…')
   })
 })
