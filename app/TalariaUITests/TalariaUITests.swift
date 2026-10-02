@@ -514,7 +514,7 @@ final class SettingsStructureUITests: SettingsUITestCase {
             .matching(NSPredicate(format: "label BEGINSWITH %@", "Dictation Provider"))
             .firstMatch
         XCTAssertTrue(dictationPicker.staticTexts["Server first"].exists)
-        let dictationFrame = dictationPicker.frame
+        let dictationFrame = dictationPicker.settledFrame
         tapCenter(of: dictationPicker)
         let onDeviceFirst = app.buttons["On-device first"]
         XCTAssertTrue(onDeviceFirst.awaitExistence(timeout: Self.navigationTimeout))

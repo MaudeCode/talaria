@@ -30,11 +30,11 @@ struct SettingsPickerRow<SelectionValue: Hashable, Options: View>: View {
                 // otherwise the value moves under the title instead of either wrapping. Sizing for
                 // the widest value keeps the layout fixed when the selection changes.
                 ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 0) {
                         label
                             .fixedSize()
 
-                        Spacer(minLength: 0)
+                        Spacer(minLength: 12)
 
                         ZStack(alignment: .trailing) {
                             widestValue
