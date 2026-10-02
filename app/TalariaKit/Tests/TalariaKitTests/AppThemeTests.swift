@@ -276,7 +276,7 @@ final class ResponseCompletionNotificationServiceTests: XCTestCase {
     func testRequestCarriesOnlySessionIDPayload() {
         XCTAssertEqual(
             ResponseCompletionNotificationRequest(sessionID: "session-abc").userInfo,
-            ["session_id": "session-abc"]
+            ["sessionId": "session-abc"]
         )
         XCTAssertEqual(ResponseCompletionNotificationRequest(sessionID: "").userInfo, [:])
         XCTAssertEqual(ResponseCompletionNotificationRequest(sessionID: nil).userInfo, [:])

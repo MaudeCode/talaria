@@ -34,7 +34,7 @@ public struct ResponseCompletionNotificationRequest: Equatable {
 
     var userInfo: [String: String] {
         guard let sessionID, !sessionID.isEmpty else { return [:] }
-        return ["session_id": sessionID]
+        return ["sessionId": sessionID]
     }
 }
 
