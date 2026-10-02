@@ -367,6 +367,7 @@ private extension ChatMessage {
             toolCalls: toolCalls,
             contentParts: contentParts,
             reasoning: cachedMessage.reasoning,
+            reasoningTitles: cachedMessage.reasoningTitlesData.flatMap { try? JSONDecoder().decode([String].self, from: $0) },
             activityScene: activityScene,
             attachments: attachments,
             turnDuration: cachedMessage.turnDuration,

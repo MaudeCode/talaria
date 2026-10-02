@@ -68,7 +68,7 @@ function LineText({ text, label, code }: { text: (label: string) => string; labe
   return (
     <span className="flex min-w-0 whitespace-pre">
       {before && <span className="shrink-0">{before}</span>}
-      {code ? <code className="min-w-0 truncate font-mono text-[12px] leading-[inherit]">{label}</code> : <span className="min-w-0 truncate text-text">{label}</span>}
+      {code ? <code className="min-w-0 truncate font-mono text-[12px] leading-[inherit]" title={label}>{label}</code> : <span className="min-w-0 truncate text-text" title={label}>{label}</span>}
       {after && <span className="shrink-0">{after}</span>}
     </span>
   )

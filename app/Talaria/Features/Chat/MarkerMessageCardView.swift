@@ -161,7 +161,7 @@ struct BackgroundUpdateLinesView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(update.lines.map(BackgroundLineRow.text(for:)).joined(separator: ", "))
+            .accessibilityLabel(update.lines.map { BackgroundLineRow.text(for: $0) }.joined(separator: ", "))
             .accessibilityHint(isExpanded ? String(localized: "Double tap to collapse details.") : String(localized: "Double tap to expand details."))
             .accessibilityIdentifier("background-update-lines")
 
@@ -227,9 +227,8 @@ private struct BackgroundLineRow: View {
             Text(verbatim: line.label).truncationMode(.tail)
         } else {
             // The localized wording around the label, split at a placeholder so only the label truncates.
-            let parts = Self.text(for: BackgroundLine(kind: line.kind, status: line.status, label: "\u{0}", exitCode: line.exitCode))
-                .components(separatedBy: "\u{0}")
-            HStack(spacing: 0) {
+            let parts = Self.text(for: line, label: "\u{0}").components(separatedBy: "\u{0}")
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text(verbatim: parts.first ?? "").fixedSize()
                 Text(verbatim: line.label)
                     .font(line.kind == .command ? AppFont.mono(style: .footnote) : AppFont.footnote())
@@ -240,20 +239,22 @@ private struct BackgroundLineRow: View {
         }
     }
 
-    static func text(for line: BackgroundLine) -> String {
+    /// The localized line, with `label` (the line's own by default) where the wording puts the goal or command.
+    static func text(for line: BackgroundLine, label: String? = nil) -> String {
+        let label = label ?? line.label
         switch (line.kind, line.status, line.exitCode) {
         case (.agent, .failed, _):
-            return String(localized: "Agent “\(line.label)” failed")
+            return String(localized: "Agent “\(label)” failed")
         case (.agent, _, _):
-            return String(localized: "Agent “\(line.label)” completed")
+            return String(localized: "Agent “\(label)” completed")
         case (.command, .failed, let code?):
-            return String(localized: "Background command \(line.label) failed (exit \(code))")
+            return String(localized: "Background command \(label) failed (exit \(code))")
         case (.command, .failed, nil):
-            return String(localized: "Background command \(line.label) failed")
+            return String(localized: "Background command \(label) failed")
         case (.command, _, _):
-            return String(localized: "Background command \(line.label) finished")
+            return String(localized: "Background command \(label) finished")
         case (.other, _, _):
-            return line.label
+            return label
         }
     }
 }
