@@ -145,6 +145,29 @@ final class SessionListBottomBarUITests: ChatUITestCase {
         XCTAssertTrue(app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 15))
         XCTAssertNotNil(waitForComposer(timeout: 15), "New Chat did not open the composer")
     }
+
+    func testOpeningAndClosingSearchKeepsTheListInPlace() throws {
+        guard #available(iOS 26.0, *) else {
+            throw XCTSkip("Search minimizes into the bottom bar from iOS 26")
+        }
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "The Search row is the compact-width layout")
+        launchFixture()
+        let row = fixtureSessionButton
+        XCTAssertTrue(row.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        let search = try XCTUnwrap(waitForSessionSearchControl(timeout: 15), "Missing the session search control")
+        let resting = row.settledFrame
+
+        search.tap()
+        XCTAssertTrue(sessionSearchField.awaitExistence(timeout: 5))
+        XCTAssertEqual(row.settledFrame.minY, resting.minY, accuracy: 1, "Opening search moved the list")
+        XCTAssertTrue(app.staticTexts["Sessions"].exists, "Opening an empty search removed the Sessions header")
+
+        let closeSearch = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "close")).firstMatch
+        XCTAssertTrue(closeSearch.awaitExistence(timeout: 3))
+        closeSearch.tap()
+        XCTAssertTrue(sessionSearchField.awaitNonExistence(timeout: 5))
+        XCTAssertEqual(row.settledFrame.minY, resting.minY, accuracy: 1, "Closing search moved the list")
+    }
 }
 
 /// TAL-437: a relaunch shows the chats the app saw last time before `/api/sessions` answers.
