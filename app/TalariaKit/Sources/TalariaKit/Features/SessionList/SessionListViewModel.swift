@@ -227,6 +227,7 @@ public final class SessionListViewModel {
             .filter(\.shouldAppearInSessionList),
            !cachedSessions.isEmpty {
             sessions = cachedSessions
+            isShowingCachedPaint = true
         }
         if projects.isEmpty, let cachedProjects = responseCache?.entry(ResponseCache.Kind.projects).load(ProjectsResponse.self) {
             projects = cachedProjects.projects ?? []
@@ -235,6 +236,11 @@ public final class SessionListViewModel {
             applyActiveProfile(cachedProfiles)
         }
     }
+
+    /// Whether the rows are the cached paint, not yet replaced by a server answer. A failed load
+    /// that is not a connectivity failure clears them, as the chat reverts its own cached paint, so
+    /// saved rows never pass for live ones without the offline banner.
+    private var isShowingCachedPaint = false
 
     /// Runs already prefetched, as `session|stream`, so each run costs one request at most.
     private var prefetchedRuns: Set<String> = []
@@ -326,6 +332,7 @@ public final class SessionListViewModel {
                 claimCountAtStart: claimCountAtStart
             )
             isViewingCachedData = false
+            isShowingCachedPaint = false
 
             if let modelContext {
                 do {
@@ -345,6 +352,10 @@ public final class SessionListViewModel {
 
             lastError = error
             sessionLoadError = error
+            if isShowingCachedPaint {
+                isShowingCachedPaint = false
+                sessions = []
+            }
             if CacheFallbackPolicy.shouldUseCache(for: error), let modelContext {
                 do {
                     let cachedSessions = try CacheStore.cachedSessions(serverURL: server, in: modelContext)

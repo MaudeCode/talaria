@@ -38,6 +38,25 @@ extension SessionListMutationTests {
         XCTAssertFalse(viewModel.isViewingCachedData)
     }
 
+    func testAServerErrorAfterTheCachedPaintShowsTheErrorInsteadOfStaleRows() async throws {
+        let context = try makeContext()
+        try CacheStore.cacheSessions(
+            [SessionSummary(sessionId: "cached-1", title: "Cached chat", archived: false)],
+            serverURL: try XCTUnwrap(URL(string: "https://example.test")),
+            in: context
+        )
+        let viewModel = try makeViewModel { request in
+            apiTestJSONResponse(#"{"error": "Server error"}"#, statusCode: 500, for: request)
+        }
+        viewModel.paintCachedStateIfEmpty(modelContext: context)
+
+        await viewModel.load(modelContext: context)
+
+        XCTAssertEqual(viewModel.sessions, [], "Without a connectivity failure the saved rows would pass for live ones")
+        XCTAssertNotNil(viewModel.sessionLoadError)
+        XCTAssertFalse(viewModel.isViewingCachedData)
+    }
+
     func testRelaunchShowsTheLastProjectsAndActiveProfileBeforeTheyLoad() async throws {
         let server = try XCTUnwrap(URL(string: "https://example.test"))
         let cache = makeResponseCache(server: server)
