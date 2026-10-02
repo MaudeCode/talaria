@@ -17,7 +17,7 @@ import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
-import { mergeSessionMessagesAppendOnly, pendingUserRow, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
+import { attachmentObjects, mergeSessionMessagesAppendOnly, pendingUserRow, withAttachmentObjects, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
@@ -310,7 +310,7 @@ export class SessionService {
     if (pending) transcript = withPendingUserTurn(transcript, pending)
     if (journaled)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids, tool outcomes and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages ? hydrateAnchorActivityScenes(withToolCallOutcomes(withTurnIds(transcript), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null }) : []
+    const all: unknown[] = loadMessages ? hydrateAnchorActivityScenes(withToolCallOutcomes(withTurnIds(withAttachmentObjects(transcript)), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null }) : []
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null
@@ -345,7 +345,7 @@ export class SessionService {
       message_count: mergedCount,
       tool_calls: toolCalls,
       pending_user_message: s.pending_user_message,
-      pending_attachments: loadMessages ? s.pending_attachments : [],
+      pending_attachments: loadMessages ? attachmentObjects(s.pending_attachments) : [],
       pending_started_at: s.pending_started_at,
       pending_user_source: s.pending_user_source,
       context_length: Number(s.context_length ?? 0) || this.deps.contextLengthFor(s.model, s.model_provider) || 0,

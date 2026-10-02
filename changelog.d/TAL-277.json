@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Older chats with attachments open again instead of failing to load.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}
