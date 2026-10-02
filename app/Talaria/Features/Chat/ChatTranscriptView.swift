@@ -34,7 +34,6 @@ struct ChatTranscriptView: View {
     let hidesRunStatusAccessibility: Bool
     let showsThinkingAndToolCards: Bool
     let showsAssistantTypingIndicator: Bool
-    let showsScrollToBottomButton: Bool
     let shouldFollowLatestMessage: Bool
     /// True while a disclosure toggle animates; suspends the bottom size-change
     /// anchor and follow-driven scrolls so the tapped row stays stationary.
@@ -48,7 +47,9 @@ struct ChatTranscriptView: View {
     let transcriptMessageSpacing: CGFloat
     let transcriptBlockSpacing: CGFloat
     let transcriptBottomInsetHeight: CGFloat
-    let scrollToBottomButtonBottomPadding: CGFloat
+    /// Bumped by the scroll-to-latest chip above the composer.
+    let scrollToBottomRequest: Int
+    let assistantName: String
     let localAttachmentPreviews: [String: [String: Data]]
     let listeningMessageID: String?
     let isViewingCachedData: Bool
@@ -100,7 +101,7 @@ struct ChatTranscriptView: View {
                 .overlay(alignment: .bottomLeading) {
                     // A cold open has nothing to paint yet; the check still says the run state is unconfirmed.
                     if showsRunStateCheck {
-                        StatusChip(ChatActiveRunStatusPresentation(kind: .checking))
+                        StatusChip(ChatActiveRunStatusPresentation(kind: .checking), agentName: assistantName)
                             .padding()
                             .padding(.bottom, transcriptBottomInsetHeight)
                     }
@@ -176,18 +177,7 @@ struct ChatTranscriptView: View {
                             onDismissKeyboard()
                         }
                     )
-
-                    if showsScrollToBottomButton {
-                        ChatScrollToBottomButton(
-                            bottomPadding: scrollToBottomButtonBottomPadding,
-                            onTap: {
-                                releasingHold { onScrollToBottom(proxy) }
-                            }
-                        )
-                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-                    }
                 }
-                .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsScrollToBottomButton)
                 .background(Color(.systemBackground))
                 .onChange(of: messages.count) {
                     guard isFollowingLatestContent else { return }
@@ -197,6 +187,9 @@ struct ChatTranscriptView: View {
                     } else {
                         releasingHold { onScrollToLatestContent(proxy, true) }
                     }
+                }
+                .onChange(of: scrollToBottomRequest) {
+                    releasingHold { onScrollToBottom(proxy) }
                 }
                 .onChange(of: streamingScrollTrigger) {
                     if isFollowingLatestContent {
@@ -436,13 +429,13 @@ struct ChatTranscriptView: View {
             }
 
             if let recovery = ChatActiveRunStatusPresentation(recoveryState: activeStreamRecoveryState) {
-                StatusChip(recovery)
+                StatusChip(recovery, agentName: assistantName)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityHidden(hidesRunStatusAccessibility)
                     .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
             }
         } else if showsRunStateCheck {
-            StatusChip(ChatActiveRunStatusPresentation(kind: .checking))
+            StatusChip(ChatActiveRunStatusPresentation(kind: .checking), agentName: assistantName)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
         }

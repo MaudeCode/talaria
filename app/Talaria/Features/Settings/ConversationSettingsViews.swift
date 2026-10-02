@@ -16,6 +16,8 @@ struct ChatsSettingsView: View {
     @AppStorage(ChatTranscriptDisplaySettings.wrapsCodeBlockLinesKey) private var wrapsCodeBlockLines = false
     @AppStorage(ChatTranscriptDisplaySettings.rtlChatLayoutEnabledKey)
     private var rtlChatLayoutEnabled = ChatTranscriptDisplaySettings.rtlChatLayoutDefaultEnabled
+    @AppStorage(ChatScrollToBottomButtonSide.storageKey)
+    private var scrollToBottomButtonSideRawValue = ChatScrollToBottomButtonSide.right.rawValue
     @AppStorage(StreamedTextAnimationSettings.isEnabledKey) private var isStreamedTextAnimationEnabled = true
     @AppStorage(SectionVisibilitySettings.chatFilesKey) private var showsChatFilesButton = true
     @AppStorage(SectionVisibilitySettings.chatGitKey) private var showsChatGitControls = true
@@ -170,6 +172,20 @@ struct ChatsSettingsView: View {
                 )
 
                 SettingsFootnote(String(localized: "Wraps long lines in code blocks to fit the screen instead of scrolling sideways. You can also tap the wrap button in any code block."))
+
+                SettingsDivider()
+
+                SettingsPickerRow(
+                    title: String(localized: "Scroll Button Side"),
+                    systemImage: "arrow.down.circle",
+                    selection: $scrollToBottomButtonSideRawValue
+                ) {
+                    ForEach(ChatScrollToBottomButtonSide.allCases) { side in
+                        Text(side.title).tag(side.rawValue)
+                    }
+                }
+
+                SettingsFootnote(String(localized: "Places the jump-to-latest button beside the status chip while you read older messages."))
 
                 SettingsDivider()
 

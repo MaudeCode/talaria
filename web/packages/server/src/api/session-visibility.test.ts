@@ -56,6 +56,28 @@ describe('request-profile session visibility', () => {
     expect(await mismatch.json()).toMatchObject({ code: 'session_profile_mismatch', profile: 'default' })
   })
 
+  it('assistant_name names the agent: the bot_name setting for the root profile, a named profile its own name', async () => {
+    const detailName = async (id: Identity, sessionId: string): Promise<unknown> => ((await (await s.get(`/api/session?session_id=${sessionId}`, { headers: id.headers })).json()) as { session: { assistant_name?: string } }).session.assistant_name
+    const bootName = async (id: Identity): Promise<string> => BootstrapSchema.parse(await (await s.get('/api/bootstrap', { headers: id.headers })).json()).assistant_name
+    const workCreated = await post(s, work, '/api/session/new', { profile: 'work' })
+    const workSid = ((await workCreated.json()) as { session: { session_id: string } }).session.session_id
+    expect(await detailName(root, sid)).toBe('Hermes')
+    expect(await bootName(root)).toBe('Hermes')
+    expect(await detailName(work, workSid)).toBe('Work')
+    expect(await bootName(work)).toBe('Work')
+    await s.deps.settings.save({ bot_name: 'Maude' })
+    expect(await detailName(root, sid)).toBe('Maude')
+    expect(await bootName(root)).toBe('Maude')
+    expect(await detailName(work, workSid)).toBe('Work')
+    // A mutation reply carries it too, so a client that caches the reply keeps the name.
+    const renamed = (await (await post(s, work, '/api/session/rename', { session_id: workSid, title: 'named' })).json()) as { session: { assistant_name?: string } }
+    expect(renamed.session.assistant_name).toBe('Work')
+    await s.deps.settings.save({ bot_name: '' })
+    expect(await detailName(root, sid)).toBe('Hermes')
+    expect(await bootName(root)).toBe('Hermes')
+    await s.deps.settings.save({ bot_name: 'Hermes' })
+  })
+
   it('a body session_id outside the request profile answers 404 on every contract route', async () => {
     for (const [path, body] of [
       ['/api/session/rename', { session_id: sid, title: 'x' }],

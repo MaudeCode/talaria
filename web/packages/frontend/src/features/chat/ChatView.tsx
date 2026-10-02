@@ -199,7 +199,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   }, [sessionId, navigate, qc])
 
   const mode = (settings.data?.chat_activity_display_mode as ActivityMode | undefined) ?? 'compact_worklog'
-  const assistantName = bootstrap.profile && !bootstrap.profile.is_default ? bootstrap.profile.name.charAt(0).toUpperCase() + bootstrap.profile.name.slice(1) : bootstrap.bot_name
+  const assistantName = session?.assistant_name ?? bootstrap.assistant_name
   // Until the transcript arrives the header shows the title the sidebar already has for this session.
   const listedTitle = sessionId ? qc.getQueryData<SessionsList>(keys.sessions.list({}))?.sessions.find((r) => r.session_id === sessionId)?.title : undefined
   const title = session?.title ?? listedTitle ?? ''

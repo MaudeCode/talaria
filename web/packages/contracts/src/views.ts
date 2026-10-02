@@ -135,6 +135,8 @@ export const SessionSchema = z.looseObject({
    * `messages` are the whole persisted transcript and a client attaches live without replay.
    */
   transcript_seq: z.object({ stream_id: z.string(), seq: z.number().int().nonnegative() }).nullable().optional(),
+  /** The agent's display name: a named profile's own name, else the `bot_name` setting (TAL-458). */
+  assistant_name: z.string().optional(),
 })
 export type Session = z.infer<typeof SessionSchema>
 export const SessionEnvelopeSchema = z.looseObject({ session: SessionSchema })

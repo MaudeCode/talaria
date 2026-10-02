@@ -793,6 +793,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     let relationshipType: String?
     public let readOnly: Bool?
     public let canBranch: Bool?
+    /// The agent's display name (TAL-458); nil from a server that predates it.
+    public let assistantName: String?
     public let messages: [ChatMessage]?
     public let toolCalls: [PersistedToolCall]?
     public let messagesTruncated: Bool?
@@ -840,6 +842,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case relationshipType
         case readOnly
         case canBranch
+        case assistantName
         case messages
         case toolCalls
         case messagesTruncated
@@ -893,6 +896,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         relationshipType = container.decodeLossyStringIfPresent(forKey: .relationshipType)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)
         canBranch = container.decodeLossyBoolIfPresent(forKey: .canBranch)
+        assistantName = container.decodeLossyStringIfPresent(forKey: .assistantName)
         messages = Self.decodeMessagesTolerantly(from: container)
         toolCalls = Self.decodeToolCallsTolerantly(from: container)
         messagesTruncated = container.decodeLossyBoolIfPresent(forKey: .underscoredMessagesTruncated)

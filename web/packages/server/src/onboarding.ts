@@ -10,7 +10,7 @@ import { dict, isDict, modelSection } from './config/agent-config.js'
 import { loadEnvFile, writeEnvFile } from './providers/env-file.js'
 import { PROVIDER_CATEGORIES, PROVIDER_DISPLAY, SUPPORTED_PROVIDER_SETUPS, UNSUPPORTED_PROVIDER_NOTE } from './providers/tables.js'
 import type { ModelsCatalog } from './providers/catalog.js'
-import type { SettingsStore } from './settings.js'
+import { displayBotName, type SettingsStore } from './settings.js'
 import { str } from './util.js'
 
 export class OnboardingError extends Error {
@@ -190,7 +190,7 @@ export class Onboarding {
     try { models = await this.deps.models(home) } catch { models = { active_provider: null, default_model: '', groups: [], aliases: {}, configured_model_badges: {} } }
     return {
       completed: Boolean(settings.onboarding_completed) || this.skipRequested() || configAutoCompleted,
-      settings: { default_model: str(settings.default_model) || this.deps.defaultModel(), default_workspace: str(settings.default_workspace) || this.deps.defaultWorkspace(), password_enabled: await this.deps.isAuthEnabled(), bot_name: str(settings.bot_name) || 'Hermes' },
+      settings: { default_model: str(settings.default_model) || this.deps.defaultModel(), default_workspace: str(settings.default_workspace) || this.deps.defaultWorkspace(), password_enabled: await this.deps.isAuthEnabled(), bot_name: displayBotName(settings.bot_name) },
       system: { hermes_found: agent.found, imports_ok: agent.importsOk, missing_modules: agent.missing, import_errors: agent.errors, config_path: configPath, config_exists: configExists, ...runtime },
       setup: this.setupCatalog(cfg, home),
       workspaces: this.deps.workspaces(),

@@ -260,7 +260,6 @@
 		C107N0000000000000000019 /* ChatTranscriptMessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */; };
 		C1TAL49B0000000000000002 /* ChatMessageLinkRegions.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1TAL49B0000000000000001 /* ChatMessageLinkRegions.swift */; };
 		C1TAL49C0000000000000002 /* ChatMessageMenuInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1TAL49C0000000000000001 /* ChatMessageMenuInteraction.swift */; };
-		C107N0000000000000000020 /* ChatScrollToBottomButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000120 /* ChatScrollToBottomButton.swift */; };
 		C107N0000000000000000021 /* LoadOlderMessagesButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000121 /* LoadOlderMessagesButton.swift */; };
 		C107N0000000000000000022 /* SelectableTextPresentationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000122 /* SelectableTextPresentationView.swift */; };
 		C107N0000000000000000023 /* SelectableTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107N0000000000000000123 /* SelectableTextView.swift */; };
@@ -683,7 +682,6 @@
 		C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptMessageRow.swift; sourceTree = "<group>"; };
 		C1TAL49B0000000000000001 /* ChatMessageLinkRegions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageLinkRegions.swift; sourceTree = "<group>"; };
 		C1TAL49C0000000000000001 /* ChatMessageMenuInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageMenuInteraction.swift; sourceTree = "<group>"; };
-		C107N0000000000000000120 /* ChatScrollToBottomButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollToBottomButton.swift; sourceTree = "<group>"; };
 		C107N0000000000000000121 /* LoadOlderMessagesButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadOlderMessagesButton.swift; sourceTree = "<group>"; };
 		C107N0000000000000000122 /* SelectableTextPresentationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableTextPresentationView.swift; sourceTree = "<group>"; };
 		C107N0000000000000000123 /* SelectableTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableTextView.swift; sourceTree = "<group>"; };
@@ -1120,7 +1118,6 @@
 				C107N0000000000000000119 /* ChatTranscriptMessageRow.swift */,
 				C1TAL49B0000000000000001 /* ChatMessageLinkRegions.swift */,
 				C1TAL49C0000000000000001 /* ChatMessageMenuInteraction.swift */,
-				C107N0000000000000000120 /* ChatScrollToBottomButton.swift */,
 				C107N0000000000000000121 /* LoadOlderMessagesButton.swift */,
 				C107N0000000000000000122 /* SelectableTextPresentationView.swift */,
 				C107N0000000000000000123 /* SelectableTextView.swift */,
@@ -1807,7 +1804,6 @@
 				C107N0000000000000000019 /* ChatTranscriptMessageRow.swift in Sources */,
 				C1TAL49B0000000000000002 /* ChatMessageLinkRegions.swift in Sources */,
 				C1TAL49C0000000000000002 /* ChatMessageMenuInteraction.swift in Sources */,
-				C107N0000000000000000020 /* ChatScrollToBottomButton.swift in Sources */,
 				C107N0000000000000000021 /* LoadOlderMessagesButton.swift in Sources */,
 				C107N0000000000000000022 /* SelectableTextPresentationView.swift in Sources */,
 				C107N0000000000000000023 /* SelectableTextView.swift in Sources */,

@@ -175,6 +175,7 @@ public final class ChatViewModel {
     private func applyReadOnlyState(from session: SessionDetail?) {
         if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
         if let canBranch = session?.canBranch { self.canBranch = canBranch }
+        if let assistantName = session?.assistantName { self.assistantName = assistantName }
     }
     private func clearCompressionAnchorMetadata() {
         compressionAnchorMetadata = nil
@@ -286,6 +287,9 @@ public final class ChatViewModel {
     /// The server's branch gate (TAL-312), seeded and refreshed like `isSessionReadOnly`;
     /// an older server that omits it allowed branching.
     public private(set) var canBranch: Bool
+    /// The server's `assistant_name` (TAL-458), refreshed like `canBranch`; an older server that
+    /// omits it gets the stock agent name.
+    public private(set) var assistantName = "Hermes"
     private let server: URL
     /// The server's `ServerCacheGeneration` when this chat opened; the chat writes its cache only
     /// while it is unchanged.

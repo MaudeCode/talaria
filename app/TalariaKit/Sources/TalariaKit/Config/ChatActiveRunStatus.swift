@@ -8,12 +8,12 @@ public enum ChatActiveRunStatusKind: Equatable {
     case stopping
     case syncing
 
-    var label: String {
+    func label(agentName: String) -> String {
         switch self {
         case .starting:
             return String(localized: "Starting response")
         case .active:
-            return String(localized: "Hermes is working")
+            return String(localized: "\(agentName) is working")
         case .checking:
             return String(localized: "Checking stream")
         case .reconnecting:
@@ -25,18 +25,18 @@ public enum ChatActiveRunStatusKind: Equatable {
         }
     }
 
-    var accessibilityLabel: String {
+    func accessibilityLabel(agentName: String) -> String {
         switch self {
         case .starting:
-            return String(localized: "Hermes is starting a response")
+            return String(localized: "\(agentName) is starting a response")
         case .active:
-            return String(localized: "Hermes is working on the response")
+            return String(localized: "\(agentName) is working on the response")
         case .checking:
-            return String(localized: "Hermes is checking the response stream")
+            return String(localized: "\(agentName) is checking the response stream")
         case .reconnecting:
-            return String(localized: "Hermes is reconnecting the response stream")
+            return String(localized: "\(agentName) is reconnecting the response stream")
         case .stopping:
-            return String(localized: "Hermes is stopping the response")
+            return String(localized: "\(agentName) is stopping the response")
         case .syncing:
             return String(localized: "Syncing messages with the server")
         }
@@ -62,12 +62,13 @@ public struct ChatActiveRunStatusPresentation: Equatable {
         }
     }
 
-    public var label: String {
-        kind.label
+    /// `agentName` is the session's `assistant_name` from the server.
+    public func label(agentName: String) -> String {
+        kind.label(agentName: agentName)
     }
 
-    public var accessibilityLabel: String {
-        kind.accessibilityLabel
+    public func accessibilityLabel(agentName: String) -> String {
+        kind.accessibilityLabel(agentName: agentName)
     }
 
     /// Whether this is the "Syncing messages" pill (TAL-436).

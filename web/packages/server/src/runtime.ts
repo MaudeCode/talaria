@@ -21,7 +21,7 @@ import { checkoutRevision, detectWebuiVersion, loadReleaseInfo } from './release
 import { ghcrExperimental, githubJson, normalizeChannel, purgePycache, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
 import { UpdateNotificationStore } from './tools/update-notifications.js'
 import { RESTART_EXIT_CODE } from './cli/supervise.js'
-import { pyBool, SettingsStore } from './settings.js'
+import { displayBotName, pyBool, SettingsStore } from './settings.js'
 import { AssetCache, SpaShell } from './spa.js'
 import { StartupGate } from './startup.js'
 import { SessionStore } from './sessions/store.js'
@@ -141,6 +141,11 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     const a = active ?? 'default'
     return r === a || (isRootProfile(r) && isRootProfile(a))
   }
+  // The agent's name on every client: a named profile's own name, else the root profile's `bot_name` setting.
+  const assistantName = (profile: string | null): string => {
+    if (profile && !isRootProfile(profile)) return profile.charAt(0).toUpperCase() + profile.slice(1)
+    try { return displayBotName(settings.load().bot_name) } catch { return displayBotName(null) }
+  }
   // Python `_resolve_profile_home_for_name`: root aliases and invalid names clamp to the base home.
   // Isolated mode never resolves outside the pinned home, whatever name is asked for (Python `_resolve_profile_home_for_name`).
   const profileHome = (name: string): string => (isolatedProfile === null && name && !isRootProfile(name) && PROFILE_RE.test(name) ? join(baseHome, 'profiles', name) : isolatedProfile === null ? baseHome : config.hermesHome)
@@ -241,6 +246,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     activeProfile,
     isolatedProfileMode,
     profilesMatch,
+    assistantName,
     redactEnabled: () => { try { return settings.load().api_redact_enabled !== false } catch { return true } },
     pinnedSessionsLimit: () => { const v = settings.load().pinned_sessions_limit; return typeof v === 'number' && v >= 1 ? v : 3 },
     // Chat runtime (checkpoint 6) replaces these with live stream and cron state.
@@ -471,6 +477,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     activeProfile,
     requestScope,
     isRootProfile,
+    assistantName,
     onboardingCompleted: () => truthy(env.HERMES_WEBUI_SKIP_ONBOARDING) || Boolean(settings.load().onboarding_completed),
     health: () => ({ sessions: store.sessions.size, activeStreams: activeStreamIds.size, activeRuns: registry.activeRuns.size, runs: [...registry.activeRuns.values()].map((r) => ({ phase: r.phase, started_at: r.started_at })), lastRunFinishedAt: registry.lastRunFinishedAt }),
     sessions,

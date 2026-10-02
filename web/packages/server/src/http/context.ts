@@ -81,6 +81,8 @@ export interface AppDeps {
   /** Binds `activeProfile()` to the request context for the whole handler (cookie, bound session, and later retags). */
   requestScope: AsyncLocalStorage<{ requestProfile: string | null }>
   isRootProfile: (name: string) => boolean
+  /** The agent's display name for a profile (`assistant_name`). */
+  assistantName: (profile: string | null) => string
   onboardingCompleted: () => boolean
   /** Counts for `/health`: sessions and live runs (checkpoints 5/6). */
   health: () => { sessions: number; activeStreams: number; activeRuns: number; runs: Record<string, unknown>[]; lastRunFinishedAt: number | null }

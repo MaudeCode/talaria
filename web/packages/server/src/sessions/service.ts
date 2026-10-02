@@ -45,6 +45,8 @@ export interface SessionServiceDeps {
   activeProfile: () => string
   isolatedProfileMode: () => boolean
   profilesMatch: (a: string | null | undefined, b: string | null | undefined) => boolean
+  /** The agent's display name for a session's profile (`assistant_name`). */
+  assistantName: (profile: string | null) => string
   redactEnabled: () => boolean
   pinnedSessionsLimit: () => number
   runtime: RuntimeOverlay & {
@@ -271,7 +273,12 @@ export class SessionService {
 
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
   wireRow(s: Session): Record<string, unknown> {
-    return withSessionWireFlags({ ...s.compact(), read_only: this.isReadOnly(s) }, this.deps.runtime.activeStreamIds)
+    return withSessionWireFlags({ ...s.compact(), read_only: this.isReadOnly(s), assistant_name: this.assistantName(s) }, this.deps.runtime.activeStreamIds)
+  }
+
+  /** The agent's display name for a session's profile (`assistant_name`). */
+  assistantName(s: Session): string {
+    return this.deps.assistantName(s.profile)
   }
 
   /** Python `public_session_projection(s.__dict__)`: every persisted field, redacted (session export). */
@@ -365,6 +372,7 @@ export class SessionService {
     const revisionAfter = this.loadRevision(s)
     raw._load_revision = revisionBefore !== null && revisionBefore === revisionAfter ? hashRevision(revisionBefore) : `unstable-${randomUUID().replace(/-/g, '')}`
     raw.read_only = this.isReadOnly(s)
+    raw.assistant_name = this.assistantName(s)
     withSessionWireFlags(raw, activeStreamIds)
     return redactSessionData(raw, this.deps.redactEnabled())
   }
@@ -418,6 +426,7 @@ export class SessionService {
       pinned: synth.pinned, archived: synth.archived, project_id: synth.project_id ?? null, profile: synth.profile,
       is_cli_session: synth.is_cli_session, source_tag: synth.source_tag, raw_source: synth.raw_source, session_source: synth.session_source,
       source_label: synth.source_label, read_only: synth.read_only, can_duplicate: false, messages: msgs, tool_calls: [], transcript_seq: null,
+      assistant_name: this.assistantName(synth),
     }
     attachTodoState(sess, msgs)
     const merged = withSessionWireFlags(meta ? mergeCliSidebarMetadata(sess, meta) : sess, this.deps.runtime.activeStreamIds)

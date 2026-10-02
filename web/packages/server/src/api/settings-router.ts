@@ -18,7 +18,7 @@ import { OnboardingError } from '../onboarding.js'
 import { writeEnvFile } from '../providers/env-file.js'
 import { displayName, providerEnvVar } from '../providers/catalog.js'
 import { OAUTH_PROVIDERS } from '../providers/tables.js'
-import { SETTINGS_SPEECH_KEYS, pyBool } from '../settings.js'
+import { displayBotName, SETTINGS_SPEECH_KEYS, pyBool } from '../settings.js'
 import { str } from '../util.js'
 
 const os = implement(settingsContract).$context<ApiContext>().use(requestSessionIdGuard)
@@ -118,7 +118,7 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   const auth = deps.auth
   const body: Dict = { ...input }
   if (['auto_apply_updates', 'update_channel', 'agent_update_channel', 'check_for_updates'].some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage updates')
-  if ('bot_name' in body) body.bot_name = str(body.bot_name).trim() || 'Hermes'
+  if ('bot_name' in body) body.bot_name = displayBotName(body.bot_name)
   const authEnabledBefore = await auth.isAuthEnabled()
   const passwordAuthBefore = authEnabledBefore && (await auth.getPasswordHash()) !== null
   const cookie = ctx.authCookie()

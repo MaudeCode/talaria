@@ -383,3 +383,19 @@ private final class SpyResponseCompletionNotificationScheduler: ResponseCompleti
         scheduledRequests.append(request)
     }
 }
+
+final class ChatScrollToBottomButtonSideTests: XCTestCase {
+    func testStoredValueDefaultsToRight() {
+        XCTAssertEqual(ChatScrollToBottomButtonSide.storedValue("left"), .left)
+        XCTAssertEqual(ChatScrollToBottomButtonSide.storedValue("right"), .right)
+        XCTAssertEqual(ChatScrollToBottomButtonSide.storedValue(""), .right)
+        XCTAssertEqual(ChatScrollToBottomButtonSide.storedValue("center"), .right)
+    }
+
+    func testSideStaysPhysicalUnderRightToLeftChatLayout() {
+        XCTAssertFalse(ChatScrollToBottomButtonSide.right.leads(in: .leftToRight))
+        XCTAssertTrue(ChatScrollToBottomButtonSide.left.leads(in: .leftToRight))
+        XCTAssertTrue(ChatScrollToBottomButtonSide.right.leads(in: .rightToLeft))
+        XCTAssertFalse(ChatScrollToBottomButtonSide.left.leads(in: .rightToLeft))
+    }
+}
