@@ -722,6 +722,11 @@ public final class KanbanFeatureState {
     }
 
     public func refresh() async {
+        // A cached board still needs the full live load to restore actions and live updates.
+        guard !isShowingCachedBoard else {
+            await load()
+            return
+        }
         let previousRefreshFailed = refreshFailed
         refreshFailed = false
         let boardCollectionSucceeded = await reconcileBoardCollection()
@@ -775,6 +780,10 @@ public final class KanbanFeatureState {
         resetLiveUpdates(clearCursor: true)
         selectedBoardSlug = slug
         defaults.set(slug, forKey: browsedBoardKey)
+        if isShowingCachedBoard {
+            await load()
+            return
+        }
         boardSelectionNotice = nil
         snapshot = nil
         stats = nil

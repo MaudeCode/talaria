@@ -59,4 +59,52 @@ extension KanbanFeatureStateTests {
         XCTAssertEqual(state.snapshot, KanbanFixtures.snapshot)
         XCTAssertTrue(state.canUseServerAuthoritativeActions)
     }
+
+    func testRetryAfterAFailedLoadRestoresActionsOnTheLiveBoard() async {
+        let client = ReconnectingKanbanClient()
+        let state = KanbanFeatureState(
+            server: URL(string: "https://example.test")!,
+            defaults: defaults,
+            client: client,
+            responseCache: makeSeededCache()
+        )
+        await state.load()
+        XCTAssertTrue(state.isShowingCachedBoard)
+
+        await client.reconnect()
+        await state.retry()
+
+        XCTAssertFalse(state.isShowingCachedBoard)
+        XCTAssertEqual(state.snapshot, KanbanFixtures.snapshot)
+        XCTAssertTrue(state.canUseServerAuthoritativeActions, "The live board restores actions")
+    }
+}
+
+/// Offline until `reconnect()`, then answers like `KanbanClientStub`.
+private actor ReconnectingKanbanClient: KanbanDataClient {
+    private var isConnected = false
+
+    func reconnect() { isConnected = true }
+
+    private func requireConnection() throws {
+        guard isConnected else { throw URLError(.notConnectedToInternet) }
+    }
+
+    func kanbanConfiguration() throws -> KanbanConfiguration {
+        try requireConnection()
+        return KanbanFixtures.configuration
+    }
+
+    func kanbanBoards() throws -> KanbanBoardsResponse {
+        try requireConnection()
+        return KanbanFixtures.boards
+    }
+
+    func kanbanBoard(_ request: KanbanBoardRequest) throws -> KanbanBoardSnapshot {
+        try requireConnection()
+        return KanbanFixtures.snapshot
+    }
+
+    func kanbanStats(board: String) -> KanbanStats { KanbanFixtures.stats }
+    func kanbanAssignees(board: String) -> KanbanAssigneeHistory { KanbanFixtures.history }
 }
