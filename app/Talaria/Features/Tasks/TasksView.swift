@@ -172,18 +172,20 @@ private struct CronCompletionRowView: View {
                 Text(completion.displayName)
                     .font(.headline)
                     .lineLimit(2)
-                Text(completion.completedAt?.formatted ?? String(localized: "Not available"))
+                Text(completion.completedAt?.formatted(date: .abbreviated, time: .shortened) ?? String(localized: "Not available"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
             Spacer(minLength: 8)
 
-            // Upstream shows every non-error status as a plain completion.
-            if completion.status == "error" {
-                StatusBadge(text: String(localized: "Failed"), color: .red)
-            } else {
+            switch completion.outcome {
+            case .succeeded:
                 StatusBadge(text: String(localized: "Completed"), color: .green)
+            case .failed:
+                StatusBadge(text: String(localized: "Failed"), color: .red)
+            case .unknown:
+                StatusBadge(text: String(localized: "Unknown"), color: .secondary)
             }
         }
         .padding(.vertical, 4)

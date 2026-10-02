@@ -387,15 +387,17 @@ final class APIClientCronEndpointTests: APIClientTestCase {
                   "job_id": "job123",
                   "name": "Digest",
                   "status": "success",
+                  "outcome": "succeeded",
                   "completed_at": 1777892400.5,
                   "toast_notifications": true,
                   "session_id": "sess-1",
-                  "message_count": "4"
+                  "message_count": 4
                 },
-                {"job_id": "", "name": "Legacy", "status": "error", "completed_at": "garbage", "session_id": ""},
+                {"job_id": "job456", "name": null, "status": "error", "outcome": "failed", "completed_at": 1777892300},
+                {"job_id": "job789", "outcome": "a-new-outcome", "completed_at": "1777892200"},
+                {"job_id": "", "name": "Legacy", "outcome": "failed", "completed_at": 1},
                 "not-a-completion",
-                {},
-                {"job_id": "", "name": "", "unexpected": true}
+                {}
               ],
               "since": 0
             }
@@ -405,13 +407,11 @@ final class APIClientCronEndpointTests: APIClientTestCase {
         let response = try await client.cronRecentCompletions()
         let completions = try XCTUnwrap(response.completions)
 
-        XCTAssertEqual(completions.count, 2, "Rows that identify no job must be skipped.")
-        XCTAssertEqual(completions[0].jobId, "job123")
-        XCTAssertEqual(completions[0].status, "success")
-        XCTAssertEqual(completions[0].completedAt?.date.timeIntervalSince1970, 1777892400.5)
-        XCTAssertNil(completions[1].jobId, "A blank job ID must not match anything.")
-        XCTAssertNil(completions[1].completedAt)
-        XCTAssertEqual(completions[1].displayName, "Legacy")
+        XCTAssertEqual(completions.map(\.jobId), ["job123", "job456", "job789"], "Rows without a job ID must be skipped.")
+        XCTAssertEqual(completions.map(\.outcome), [.succeeded, .failed, .unknown])
+        XCTAssertEqual(completions[0].completedAt?.timeIntervalSince1970, 1777892400.5)
+        XCTAssertEqual(completions[1].displayName, "Untitled Task")
+        XCTAssertNil(completions[2].completedAt, "The app must not parse string timestamps.")
     }
 
     func testCronHistoryBuildsExpectedQueryAndSkipsMalformedRows() async throws {

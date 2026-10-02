@@ -401,16 +401,14 @@ final class CronManagementViewModelTests: APIClientTestCase {
     }
 
     @MainActor
-    func testTasksViewModelLoadSortsCompletionsAndResolvesNavigation() async throws {
+    func testTasksViewModelKeepsServerOrderAndNavigatesByJobIDOnly() async throws {
         let client = makeClient { request in
             switch request.url?.path {
             case "/api/crons":
                 return apiTestJSONResponse("""
                 {"jobs": [
                   {"id": "job-a", "name": "Digest"},
-                  {"id": "job-b", "name": "Renamed"},
-                  {"id": "job-c", "name": "Twin"},
-                  {"id": "job-d", "name": "Twin"}
+                  {"id": "job-b", "name": "Renamed"}
                 ]}
                 """, for: request)
             case "/api/crons/status":
@@ -419,15 +417,13 @@ final class CronManagementViewModelTests: APIClientTestCase {
                 return apiTestJSONResponse(#"{"platforms": []}"#, for: request)
             case "/api/crons/recent":
                 XCTAssertEqual(request.httpMethod, "GET")
-                // Server order is job order, not completion order.
+                XCTAssertNil(request.url?.query, "The app sends no since filter.")
+                // Deliberately not newest first: the app must keep the server's order.
                 return apiTestJSONResponse("""
                 {"completions": [
-                  {"job_id": "job-a", "name": "Digest", "status": "success", "completed_at": 1700000100},
-                  {"job_id": "job-old", "name": "Renamed", "status": "error", "completed_at": "1700000300"},
-                  {"job_id": "job-x", "name": "Twin", "status": "success", "completed_at": 1700000200},
-                  {"job_id": "job-gone", "name": "Deleted", "status": "success", "completed_at": 1700000400},
-                  {"job_id": "job-nodate", "name": "No date", "status": "success"},
-                  "not-a-completion"
+                  {"job_id": "job-a", "name": "Digest", "outcome": "succeeded", "completed_at": 1700000100},
+                  {"job_id": "job-old", "name": "Renamed", "outcome": "failed", "completed_at": 1700000300},
+                  {"job_id": "job-gone", "name": "Deleted", "outcome": "unknown", "completed_at": 1700000400}
                 ], "since": 0}
                 """, for: request)
             default:
@@ -440,19 +436,13 @@ final class CronManagementViewModelTests: APIClientTestCase {
         await viewModel.load()
         await viewModel.loadRecentCompletions()
 
-        XCTAssertEqual(
-            viewModel.recentCompletions.map(\.jobId),
-            ["job-gone", "job-old", "job-x", "job-a", "job-nodate"],
-            "Completions must be newest first with undated rows last."
+        XCTAssertEqual(viewModel.recentCompletions.map(\.jobId), ["job-a", "job-old", "job-gone"])
+        XCTAssertEqual(viewModel.job(for: viewModel.recentCompletions[0])?.jobId, "job-a")
+        XCTAssertNil(
+            viewModel.job(for: viewModel.recentCompletions[1]),
+            "A job ID missing from the list must not fall back to a job with the same name."
         )
-        let byJobID = try XCTUnwrap(viewModel.recentCompletions.first { $0.jobId == "job-a" })
-        XCTAssertEqual(viewModel.job(for: byJobID)?.jobId, "job-a")
-        let byUniqueName = try XCTUnwrap(viewModel.recentCompletions.first { $0.jobId == "job-old" })
-        XCTAssertEqual(viewModel.job(for: byUniqueName)?.jobId, "job-b", "A stale ID must fall back to a uniquely named job.")
-        let ambiguousName = try XCTUnwrap(viewModel.recentCompletions.first { $0.jobId == "job-x" })
-        XCTAssertNil(viewModel.job(for: ambiguousName), "Duplicate names must not pick a job.")
-        let missingJob = try XCTUnwrap(viewModel.recentCompletions.first { $0.jobId == "job-gone" })
-        XCTAssertNil(viewModel.job(for: missingJob))
+        XCTAssertNil(viewModel.job(for: viewModel.recentCompletions[2]))
     }
 
     @MainActor
@@ -475,7 +465,7 @@ final class CronManagementViewModelTests: APIClientTestCase {
                     return apiTestJSONResponse(#"{"completions": []}"#, for: request)
                 case 3:
                     return apiTestJSONResponse(
-                        #"{"completions": [{"job_id": "job123", "name": "Digest", "status": "success", "completed_at": 1700000000}]}"#,
+                        #"{"completions": [{"job_id": "job123", "name": "Digest", "outcome": "succeeded", "completed_at": 1700000000}]}"#,
                         for: request
                     )
                 default:

@@ -368,7 +368,7 @@ public struct CronRunDetailResponse: Decodable, Equatable {
 }
 
 /// `GET /api/crons/recent`: one row per job that has ever completed, carrying
-/// only that job's latest run. Not a run archive; `cronHistory` is.
+/// only that job's latest run, newest first. Not a run archive; `cronHistory` is.
 public struct CronRecentCompletionsResponse: Decodable, Equatable {
     public let completions: [CronRecentCompletion]?
 
@@ -395,35 +395,42 @@ public struct CronRecentCompletionsResponse: Decodable, Equatable {
     }
 }
 
+/// The server orders the feed and owns `outcome`; the app renders both as sent.
 public struct CronRecentCompletion: Decodable, Equatable, Identifiable {
-    private let fallbackIdentity = DecodedIdentityToken()
-    public var id: String { jobId ?? fallbackIdentity.value }
+    public enum Outcome: String, Decodable {
+        case succeeded
+        case failed
+        case unknown
+    }
 
-    public let jobId: String?
+    public var id: String { jobId }
+
+    public let jobId: String
     public let name: String?
-    public let status: String?
-    public let completedAt: CronDateValue?
+    public let outcome: Outcome
+    /// Unix seconds; the server normalizes every completion time to a number.
+    public let completedAt: Date?
 
     public enum CodingKeys: String, CodingKey {
         case jobId
         case name
-        case status
+        case outcome
         case completedAt
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let rawJobID = container.decodeLossyStringIfPresent(forKey: .jobId)
-        jobId = rawJobID?.isEmpty == false ? rawJobID : nil
-        name = container.decodeLossyStringIfPresent(forKey: .name)
-        status = container.decodeLossyStringIfPresent(forKey: .status)
-        completedAt = try? container.decodeIfPresent(CronDateValue.self, forKey: .completedAt)
-        // A row that identifies no job is noise, not a completion.
-        guard jobId != nil || name?.isEmpty == false else {
+        // A row without a job id cannot be identified or opened.
+        guard let jobId = container.decodeLossyStringIfPresent(forKey: .jobId), !jobId.isEmpty else {
             throw DecodingError.dataCorruptedError(
                 forKey: .jobId, in: container, debugDescription: "Completion names no job"
             )
         }
+        self.jobId = jobId
+        name = container.decodeLossyStringIfPresent(forKey: .name)
+        outcome = (try? container.decodeIfPresent(Outcome.self, forKey: .outcome)) ?? .unknown
+        completedAt = (try? container.decodeIfPresent(Double.self, forKey: .completedAt))
+            .map { Date(timeIntervalSince1970: $0) }
     }
 
     public var displayName: String {

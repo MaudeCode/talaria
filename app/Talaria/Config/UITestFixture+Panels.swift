@@ -188,7 +188,7 @@ extension UITestFixtureURLProtocol {
 
     private static let cronRecentCompletions = """
     {"completions":[
-      {"job_id":"ui-fixture-cron-sweep","name":"Fixture Weekly Sweep","status":"error","completed_at":1999990000,"toast_notifications":false}
+      {"job_id":"ui-fixture-cron-sweep","name":"Fixture Weekly Sweep","status":"error","outcome":"failed","completed_at":1999990000,"toast_notifications":false,"session_id":""}
     ],"since":0}
     """
 

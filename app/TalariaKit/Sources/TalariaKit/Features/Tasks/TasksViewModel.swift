@@ -14,7 +14,7 @@ public final class TasksViewModel {
     /// Server-provided deliver targets; `nil` while unknown or when the
     /// endpoint is unavailable (the editor then falls back to free text).
     public private(set) var deliveryOptions: [CronDeliveryOption]?
-    /// Each job's latest completion, newest first. The view loads it beside
+    /// Each job's latest completion in server order. The view loads it beside
     /// `load()` so an older server or a feed failure never blocks jobs, and a
     /// failed reload keeps the last good feed.
     public private(set) var recentCompletions: [CronRecentCompletion] = []
@@ -63,33 +63,19 @@ public final class TasksViewModel {
     }
 
     /// A reload fences every in-flight feed request so a slow earlier response
-    /// cannot overwrite a newer one.
+    /// cannot overwrite a newer one. Rows keep the server's order.
     public func loadRecentCompletions() async {
         recentCompletionsGeneration += 1
         let generation = recentCompletionsGeneration
         guard let response = try? await client.cronRecentCompletions(),
               generation == recentCompletionsGeneration else { return }
-        recentCompletions = (response.completions ?? []).sorted { left, right in
-            switch (left.completedAt?.date, right.completedAt?.date) {
-            case let (leftDate?, rightDate?):
-                return leftDate > rightDate
-            case (.some, nil):
-                return true
-            default:
-                return false
-            }
-        }
+        recentCompletions = response.completions ?? []
     }
 
-    /// The job a completion row opens: its ID first, then its name when
-    /// exactly one job carries it. `nil` leaves the row without navigation.
+    /// The job a completion row opens, by job ID only. `nil` leaves the row
+    /// without navigation.
     public func job(for completion: CronRecentCompletion) -> CronJob? {
-        if let jobID = completion.jobId, let job = jobs.first(where: { $0.jobId == jobID }) {
-            return job
-        }
-        guard let name = completion.name, !name.isEmpty else { return nil }
-        let byName = jobs.filter { $0.name == name }
-        return byName.count == 1 ? byName.first : nil
+        jobs.first { $0.jobId == completion.jobId }
     }
 
     public func runningElapsed(for job: CronJob) -> Double? {
