@@ -440,9 +440,11 @@ public final class ChatViewModel {
         self.pendingActionCoordinator.delegate = self
         self.attachmentCoordinator.delegate = self
         if let responseCache {
+            let initialProfileName = selectedProfileName
             applyComposerConfigurationState(
                 ChatComposerConfigLoader.cachedState(from: composerConfigurationState, cache: responseCache)
             )
+            isProfileSelectionFromCache = selectedProfileName != initialProfileName
         }
     }
 
@@ -630,8 +632,12 @@ public final class ChatViewModel {
         }
     }
 
+    /// A profile name seeded from the last response (TAL-437) only shows; requests wait for the
+    /// live load or the user's pick, since another device may have switched profiles since.
+    private var isProfileSelectionFromCache = false
+
     private var requestProfileName: String? {
-        Self.nonEmpty(selectedProfileName) ?? Self.nonEmpty(currentProfile)
+        (isProfileSelectionFromCache ? nil : Self.nonEmpty(selectedProfileName)) ?? Self.nonEmpty(currentProfile)
     }
 
     private var requestModelProvider: String? {
@@ -672,6 +678,9 @@ public final class ChatViewModel {
             }
 
             applyComposerConfigurationState(result.state)
+            if result.configurationError == nil {
+                isProfileSelectionFromCache = false
+            }
 
             if let error = result.configurationError {
                 lastError = error
@@ -976,7 +985,7 @@ public final class ChatViewModel {
             return nil
         }
 
-        if !startNewSession, isSelectedProfile(profile) {
+        if !startNewSession, !isProfileSelectionFromCache, isSelectedProfile(profile) {
             return nil
         }
 
@@ -990,6 +999,7 @@ public final class ChatViewModel {
             profileOptions = response.profiles ?? profileOptions
             selectedProfileName = response.active ?? profileName
             currentProfile = selectedProfileName
+            isProfileSelectionFromCache = false
 
             if let defaultWorkspace = response.defaultWorkspace, !defaultWorkspace.isEmpty {
                 currentWorkspace = defaultWorkspace

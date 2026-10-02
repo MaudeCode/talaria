@@ -48,4 +48,33 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(nextChat.workspaceRoots.compactMap(\.name), ["Repo"])
         XCTAssertEqual(nextChat.agentCommands.compactMap(\.name), ["compress"])
     }
+
+    func testASendBeforeTheLiveLoadNeverTargetsTheCachedProfile() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let cache = ResponseCache(server: try XCTUnwrap(URL(string: "https://example.test")), root: root)
+        // Another device may have switched away from "work" since this was saved.
+        cache.entry(ResponseCache.Kind.profiles).save(Data(#"{"active": "work", "profiles": [{"name": "work"}]}"#.utf8))
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(
+            streamClient: streamClient,
+            sessionSummary: makeSession(profile: nil),
+            responseCache: cache
+        ) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                let body = try XCTUnwrap(apiTestJSONBody(from: request))
+                XCTAssertNil(body["profile"], "Only a live or user-picked profile is sent")
+                return apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-1"}"#, for: request)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+        XCTAssertEqual(viewModel.selectedProfileName, "work", "The cached profile still shows")
+
+        let didStart = await viewModel.sendMessage("Hello")
+
+        XCTAssertTrue(didStart)
+    }
 }
