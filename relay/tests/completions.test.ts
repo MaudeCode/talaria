@@ -274,5 +274,14 @@ it("acknowledges a session's completions when its signed publisher reports it vi
     expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
     expect(await (await viewed(now + 120_000, "viewed-3")).json()).toEqual({ status: "accepted", acknowledged: 1 });
     expect(await sessions()).toEqual(["other-session:failed"]);
+
+    // `through` and `updatedAt` share the publisher's clock, so a publisher running ahead of the relay still clears its view.
+    const ahead = Date.now() + 5_000;
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", keyId: "key",
+      nonce: "skewed", nonceExpiresAt: Date.now() + 60_000, receivedAt: Date.now(), snapshotId: "skewed",
+      states: [{ sessionId: "skewed-session", streamId: "run-skewed", eventId: "skewed", revision: 99, title: "Skewed", phase: "completed", updatedAt: ahead, deepLink: "/sessions/skewed-session" }],
+    });
+    expect(await (await viewed(ahead + 1, "skewed-view", { sessionId: "skewed-session" })).json()).toEqual({ status: "accepted", acknowledged: 1 });
   } finally { vi.useRealTimers(); }
 });

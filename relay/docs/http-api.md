@@ -204,7 +204,7 @@ A publisher reports that a session was viewed in its own client with the signed
 `PUT /v1/publishers/{publisherId}/profiles/{profileId}/sessions/{sessionId}/viewed`
 and body `{ "through": 1787845600000 }` (Unix milliseconds). The relay acknowledges
 every pending completion of that profile's grants for the session whose `updatedAt`
-is at or before `through`, clamped to relay time, and returns
+is at or before `through` (both on the publisher's clock), and returns
 `{status:"accepted",acknowledged:N}`. Running work and later runs are untouched.
 A replayed nonce returns 409 and changes nothing.
 

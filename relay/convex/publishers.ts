@@ -358,15 +358,14 @@ export const acknowledgeViewedSession = internalMutation({
     const authorization = await authorizePublisherMutation(ctx, args);
     if (authorization === null) return { status: "unauthorized" as const, acknowledged: 0 };
     if (authorization === "replay") return { status: "replay" as const, acknowledged: 0 };
-    // A viewer can only have seen outcomes the relay already held.
-    const through = Math.min(args.through, args.receivedAt);
+    // `through` and each row's `updatedAt` share the publisher's clock, so relay time never bounds them.
     let acknowledged = 0;
     for (const grant of await grantsForProfile(ctx, args.publisherOwnerUserId, args.publisherId, args.profileId)) {
       // ponytail: one session holds far fewer than 500 pending runs; page here if that changes.
       const viewed = (await ctx.db.query("completions")
         .withIndex("by_grant_id_and_session_id_and_acknowledged", (query) =>
           query.eq("grantId", grant._id).eq("row.sessionId", args.sessionId).eq("acknowledged", false))
-        .take(500)).filter((completion) => completion.row.updatedAt <= through);
+        .take(500)).filter((completion) => completion.row.updatedAt <= args.through);
       for (const completion of viewed) await ctx.db.patch(completion._id, { acknowledged: true });
       if (viewed.length > 0) await ctx.scheduler.runAfter(0, internal.delivery.recompute, { userId: grant.userId });
       acknowledged += viewed.length;
