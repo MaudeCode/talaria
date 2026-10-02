@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { ChatStartRequestSchema, ChatStartResponseSchema, StreamStatusSchema, CancelResponseSchema, SteerResponseSchema, ApprovalPendingEnvelopeSchema, ApprovalRespondResponseSchema, ClarifyPendingEnvelopeSchema, ClarifyRespondResponseSchema, ClarifyAnswersSchema, GoalResponseSchema, BackgroundStatusSchema } from '../views.js'
+import { ChatStartRequestSchema, ChatStartResponseSchema, StreamStatusSchema, CancelResponseSchema, SteerResponseSchema, SteerWithdrawRequestSchema, SteerWithdrawResponseSchema, SteerSendNowRequestSchema, SteerSendNowResponseSchema, ApprovalPendingEnvelopeSchema, ApprovalRespondResponseSchema, ClarifyPendingEnvelopeSchema, ClarifyRespondResponseSchema, ClarifyAnswersSchema, GoalResponseSchema, BackgroundStatusSchema } from '../views.js'
 
 /** Agent turns, approvals, clarify prompts, goals, background tasks, and side questions. */
 
@@ -15,6 +15,8 @@ export const chatContract = {
   chat: {
     start: oc.route({ method: 'POST', path: '/api/chat/start', tags, summary: 'Admit one agent turn and return the stream id for `/api/chat/stream`.' }).input(ChatStartRequestSchema).output(ChatStartResponseSchema),
     steer: oc.route({ method: 'POST', path: '/api/chat/steer', tags }).input(z.object({ session_id: z.string().optional(), text: z.string().optional(), display_text: z.string().optional(), steer_id: z.string().optional() }).catchall(Json)).output(SteerResponseSchema),
+    steerWithdraw: oc.route({ method: 'POST', path: '/api/chat/steer/withdraw', tags, summary: 'Take a pending steer back (Edit, Cancel) before the Agent takes it.' }).input(SteerWithdrawRequestSchema).output(SteerWithdrawResponseSchema),
+    steerSendNow: oc.route({ method: 'POST', path: '/api/chat/steer/send-now', tags, summary: 'Deliver a pending steer now instead of after the running tools.' }).input(SteerSendNowRequestSchema).output(SteerSendNowResponseSchema),
     cancel: oc.route({ method: 'GET', path: '/api/chat/cancel', tags }).input(z.object({ stream_id: z.string().optional() })).output(CancelResponseSchema),
     streamStatus: oc.route({ method: 'GET', path: '/api/chat/stream/status', tags }).input(z.object({ stream_id: z.string().optional() })).output(StreamStatusSchema),
   },

@@ -257,13 +257,86 @@ def _clarify_timeout(params: dict) -> int:
         return 3600
 
 
+def _steer_slot_lock(agent):
+    """The Agent's own pending-steer lock (a plain ``Lock``), so a slot read or rewrite is atomic against its drains."""
+    lock = agent.__dict__.get("_pending_steer_lock") if hasattr(agent, "__dict__") else None
+    return contextlib.nullcontext() if lock is None else lock
+
+
+def _steer_slot(agent) -> str:
+    """The Agent's not-yet-applied steer text; call under ``_steer_slot_lock``."""
+    return str(getattr(agent, "_pending_steer", "") or "")
+
+
 def _agent_pending_steer_text(agent) -> str:
     """Predecessor ``_agent_pending_steer_text``: the Agent's not-yet-applied steer text."""
-    lock = agent.__dict__.get("_pending_steer_lock") if hasattr(agent, "__dict__") else None
-    if lock is None:
-        return str(getattr(agent, "_pending_steer", "") or "")
-    with lock:
-        return str(agent.__dict__.get("_pending_steer") or "")
+    with _steer_slot_lock(agent):
+        return _steer_slot(agent)
+
+
+def _slot_without(slot: str, pending: list[str], index: int) -> str | None:
+    """``slot`` without the steer ``pending[index]`` while the Agent still holds it, else None (it already took it).
+
+    The Agent keeps every not-yet-applied steer in one newline-joined slot, so the slot is the tail of ``pending``
+    (the server's steers, oldest first), possibly behind text another surface queued: the server's
+    ``pendingSteerSuffixStart`` rule. The longest tail that still holds the steer wins."""
+    for start in range(index + 1):
+        tail = "\n".join(pending[start:])
+        if slot == tail or slot.endswith("\n" + tail):
+            head = slot[: len(slot) - len(tail)].rstrip("\n")
+            return "\n".join(part for part in [head, *pending[start:index], *pending[index + 1:]] if part)
+    return None
+
+
+def withdraw_steer(agent, pending: list[str], index: int) -> bool:
+    """TAL-424: take a not-yet-applied steer back out of the Agent's slot, keeping the others in order. False when the
+    Agent already took it; the slot is then left as it was, so no text is ever lost."""
+    with _steer_slot_lock(agent):
+        rest = _slot_without(_steer_slot(agent), pending, index)
+        if rest is None:
+            return False
+        agent._pending_steer = rest or None
+        return True
+
+
+def steer_now(agent, pending: list[str], index: int) -> dict:
+    """TAL-424: deliver a pending steer now with the Agent's ``redirect``. During a model request that request restarts
+    with it (``delivery: redirect``); during tools it goes back on the slot and the tools yield (``delivery: steer``).
+    With no live request the steer stays pending: back in its place, or last when the slot changed meanwhile."""
+    text = pending[index]
+    with _steer_slot_lock(agent):
+        before = _steer_slot(agent)
+        rest = _slot_without(before, pending, index)
+        if rest is None:
+            return {"redirected": False, "withdrawn": False}
+        agent._pending_steer = rest or None
+    redirect = getattr(agent, "redirect", None)
+    try:
+        redirected = bool(redirect(text)) if callable(redirect) else False
+    except Exception as exc:  # noqa: BLE001
+        log.debug("redirect failed: %s", exc)
+        redirected = False
+    if not redirected:
+        with _steer_slot_lock(agent):
+            if _steer_slot(agent) == rest:
+                agent._pending_steer = before or None
+                return {"redirected": False, "withdrawn": True, "requeued": "kept"}
+        agent.steer(text)
+        return {"redirected": False, "withdrawn": True, "requeued": "last"}
+    with _steer_slot_lock(agent):
+        slot = _steer_slot(agent)
+    delivery = "steer" if slot == text or slot.endswith("\n" + text) else "redirect"
+    return {"redirected": True, "withdrawn": True, "delivery": delivery}
+
+
+def _steer_queue_params(params: dict) -> tuple[list[str], int]:
+    pending = params.get("pending")
+    index = params.get("index")
+    if not isinstance(pending, list) or not all(isinstance(t, str) and t.strip() for t in pending):
+        raise InvalidParams("pending must be a list of steer texts")
+    if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(pending):
+        raise InvalidParams("index must point into pending")
+    return [t.strip() for t in pending], index
 
 
 def _cancel_checkpoint(run: _Run) -> list | None:
@@ -786,7 +859,24 @@ def register(registry) -> None:
         except Exception as exc:  # noqa: BLE001
             log.debug("steer failed: %s", exc)
             return {"accepted": False, "fallback": "steer_error"}
-        return {"accepted": accepted, "fallback": None if accepted else "not_running"}
+        # `can_redirect`: whether this Agent can deliver a pending steer now (TAL-424 "Send now").
+        return {"accepted": accepted, "fallback": None if accepted else "not_running", "can_redirect": callable(getattr(run.agent, "redirect", None))}
+
+    @registry.method("chat.steer_withdraw", requires_agent=False)
+    def steer_withdraw_(ctx: CallContext, params: dict) -> dict:
+        pending, index = _steer_queue_params(params)
+        run = _run_for(params)
+        if run is None or run.agent is None:
+            return {"withdrawn": False}
+        return {"withdrawn": withdraw_steer(run.agent, pending, index)}
+
+    @registry.method("chat.steer_now", requires_agent=False)
+    def steer_now_(ctx: CallContext, params: dict) -> dict:
+        pending, index = _steer_queue_params(params)
+        run = _run_for(params)
+        if run is None or run.agent is None:
+            return {"redirected": False, "withdrawn": False}
+        return steer_now(run.agent, pending, index)
 
     @registry.method("chat.evict_agent", requires_agent=False)
     def evict_(ctx: CallContext, params: dict) -> dict:

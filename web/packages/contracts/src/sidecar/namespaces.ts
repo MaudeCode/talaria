@@ -251,7 +251,22 @@ export const CHAT_METHODS = {
     /** `checkpoint`: the Agent's canonical transcript for the stopped turn, captured before the interrupt (absent until it has one). */
     result: z.object({ ok: z.boolean(), reason: z.string().optional(), pending_steer: z.string().optional(), checkpoint: z.array(Loose).optional() }),
   },
-  'chat.steer': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), text: z.string().min(1) }), result: z.object({ accepted: z.boolean(), fallback: z.string().nullable().optional() }) },
+  /** `can_redirect`: the Agent can deliver a pending steer now (TAL-424 Send now). */
+  'chat.steer': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), text: z.string().min(1) }), result: z.object({ accepted: z.boolean(), fallback: z.string().nullable().optional(), can_redirect: z.boolean().optional() }) },
+  /**
+   * TAL-424: take `pending[index]` back out of the Agent's pending steer slot (Edit, Cancel). `pending` is the server's
+   * not-yet-consumed steer texts, oldest first. `withdrawn: false` when the Agent already took it; the slot is untouched.
+   */
+  'chat.steer_withdraw': { params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), pending: z.array(z.string().min(1)).min(1), index: z.number().int().nonnegative() }), result: z.object({ withdrawn: z.boolean() }) },
+  /**
+   * TAL-424: deliver `pending[index]` now with the Agent's `redirect`: `delivery: redirect` restarts the model request with
+   * it, `delivery: steer` puts it last on the slot while tools yield. Not redirected: it stays pending, `requeued` in its
+   * place (`kept`) or last (`last`); `withdrawn: false` when the Agent already took it.
+   */
+  'chat.steer_now': {
+    params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), pending: z.array(z.string().min(1)).min(1), index: z.number().int().nonnegative() }),
+    result: z.object({ redirected: z.boolean(), withdrawn: z.boolean(), delivery: z.enum(['redirect', 'steer']).optional(), requeued: z.enum(['kept', 'last']).optional() }),
+  },
   'chat.evict_agent': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ evicted: z.boolean() }) },
   'chat.commit_memory': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ committed: z.boolean() }) },
   'approval.respond': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), choice: z.enum(['once', 'session', 'always', 'deny']), request_id: z.string().nullable().optional() }), result: z.object({ ok: z.boolean(), resolved: z.number().int(), choice: z.string() }) },

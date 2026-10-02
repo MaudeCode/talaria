@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ClarifyStepSchema, ToolDisplayFields, TurnTerminalStateSchema } from './views.js'
+import { ClarifyStepSchema, PendingSteerSchema, SteerWithdrawnSchema, ToolDisplayFields, TurnTerminalStateSchema } from './views.js'
 
 /**
  * Wire events of `GET /api/chat/stream` and the per-session relay
@@ -34,7 +34,7 @@ const Loose = z.looseObject({})
 export const CHAT_EVENT_NAMES = [
   'token', 'reasoning', 'tool', 'tool_complete', 'interim_assistant', 'approval', 'clarify', 'compressing', 'compressed',
   'title', 'title_status', 'warning', 'apperror', 'cancel', 'error', 'done', 'stream_end', 'metering', 'context_status',
-  'goal', 'goal_continue', 'pending_steer_leftover', 'steer_consumed', 'state_saved', 'todo_state', 'bg_task_complete',
+  'goal', 'goal_continue', 'pending_steer_leftover', 'steer_consumed', 'steer_pending', 'steer_withdrawn', 'state_saved', 'todo_state', 'bg_task_complete',
   'server_turn_started', 'hello', 'initial', 'events', 'gateway_status', 'sessions_changed',
 ] as const
 export type ChatEventName = (typeof CHAT_EVENT_NAMES)[number]
@@ -63,6 +63,9 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('goal_continue'), data: Goal }),
   z.object({ event: z.literal('pending_steer_leftover'), data: Steer }),
   z.object({ event: z.literal('steer_consumed'), data: Steer }),
+  /** TAL-424: a pending steer was added or changed state; every client shows it until `steer_consumed` or `steer_withdrawn`. */
+  z.object({ event: z.literal('steer_pending'), data: PendingSteerSchema }),
+  z.object({ event: z.literal('steer_withdrawn'), data: SteerWithdrawnSchema }),
   z.object({ event: z.literal('state_saved'), data: StateSaved }),
   z.object({ event: z.literal('todo_state'), data: TodoState }),
   z.object({ event: z.literal('bg_task_complete'), data: BgTask }),
