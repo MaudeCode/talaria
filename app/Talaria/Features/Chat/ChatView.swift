@@ -52,6 +52,7 @@ struct ChatView: View {
     @State private var completionAcknowledgementGeneration = 0
     @State private var viewedCompletionsThrough: Date?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -137,7 +138,8 @@ struct ChatView: View {
     @State private var gitToastState = GitActionToastState()
     @State private var gitAlert: GitChatAlert?
     @State private var composerHeight: CGFloat = 52
-    @State private var runStatusChipSize: CGSize = .zero
+    /// Bumped by the scroll-to-latest chip; the transcript scrolls on each change.
+    @State private var scrollToBottomRequest = 0
     @State private var clarificationPanelHeight: CGFloat = 320
     @State private var composerAvailableHeight: CGFloat = 0
     @State private var composerIsFocused = false
@@ -992,22 +994,27 @@ struct ChatView: View {
     private var composerAccessoryStack: some View {
         if composerAccessoryVisibleItemCount > 0 {
             VStack(spacing: composerAccessoryVerticalSpacing) {
+                // With no run status to sit beside, the scroll chip tops the stack on its own.
+                if showsScrollToBottomButton, activeRunStatusPresentation == nil {
+                    scrollToBottomChip
+                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
+                }
+
                 // A floating status (the syncing pill) tops the stack, so nothing above it moves
                 // when it comes and goes.
                 if let activeRunStatusPresentation, !activeRunStatusPresentation.reservesTranscriptSpace {
-                    StatusChip(activeRunStatusPresentation, agentName: viewModel.assistantName)
-                        .onGeometryChange(for: CGSize.self) { $0.size } action: { runStatusChipSize = $0 }
+                    runStatusRow(activeRunStatusPresentation)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
                 if !viewModel.pinnedLocalNotices.isEmpty {
                     PinnedLocalNoticeStack(notices: viewModel.pinnedLocalNotices)
+                        .allowsHitTesting(false)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
                 if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
-                    StatusChip(activeRunStatusPresentation, agentName: viewModel.assistantName)
-                        .onGeometryChange(for: CGSize.self) { $0.size } action: { runStatusChipSize = $0 }
+                    runStatusRow(activeRunStatusPresentation)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
@@ -1017,17 +1024,47 @@ struct ChatView: View {
                         icon: .symbol("bolt.slash.fill"),
                         emphasis: .warning
                     )
+                        .allowsHitTesting(false)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
             }
             .padding(.horizontal)
             .padding(.bottom, composerHeight + 8)
-            .allowsHitTesting(false)
             .zIndex(8)
+            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsScrollToBottomButton)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: composerAccessoryVisibleItemCount)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: activeRunStatusPresentation)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedLocalNotices)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsApprovalBypassStatus)
+        }
+    }
+
+    /// The run status chip, joined by the scroll chip on the chosen side while it shows. A
+    /// hidden twin on the far side keeps the status chip centred.
+    private func runStatusRow(_ presentation: ChatActiveRunStatusPresentation) -> some View {
+        let scrollChipLeads = ChatScrollToBottomButtonSide
+            .storedValue(scrollToBottomButtonSideRawValue)
+            .alignment(in: layoutDirection) == .leading
+        return HStack(spacing: composerAccessoryVerticalSpacing) {
+            if showsScrollToBottomButton {
+                scrollToBottomChip.opacity(scrollChipLeads ? 1 : 0).disabled(!scrollChipLeads)
+                    .accessibilityHidden(!scrollChipLeads)
+            }
+            StatusChip(presentation, agentName: viewModel.assistantName)
+                .allowsHitTesting(false)
+            if showsScrollToBottomButton {
+                scrollToBottomChip.opacity(scrollChipLeads ? 0 : 1).disabled(scrollChipLeads)
+                    .accessibilityHidden(scrollChipLeads)
+            }
+        }
+    }
+
+    private var scrollToBottomChip: some View {
+        StatusChipButton(
+            systemImage: "arrow.down",
+            accessibilityLabel: String(localized: "Scroll to latest message")
+        ) {
+            scrollToBottomRequest += 1
         }
     }
 
@@ -1068,7 +1105,6 @@ struct ChatView: View {
             hidesRunStatusAccessibility: activeRunStatusPresentation.map { !$0.isSyncing } ?? false,
             showsThinkingAndToolCards: showsThinkingAndToolCards,
             showsAssistantTypingIndicator: showsAssistantTypingIndicator,
-            showsScrollToBottomButton: showsScrollToBottomButton,
             shouldFollowLatestMessage: shouldFollowLatestMessage,
             isDisclosureSettling: isDisclosureSettling,
             latestTranscriptMessageRole: latestTranscriptMessageRole,
@@ -1080,11 +1116,7 @@ struct ChatView: View {
             transcriptMessageSpacing: transcriptMessageSpacing,
             transcriptBlockSpacing: transcriptBlockSpacing,
             transcriptBottomInsetHeight: transcriptBottomInsetHeight,
-            scrollToBottomButtonBottomPadding: scrollToBottomButtonBottomPadding,
-            scrollToBottomButtonAlignment: ChatScrollToBottomButtonSide
-                .storedValue(scrollToBottomButtonSideRawValue)
-                .alignment(in: chatLayoutDirection),
-            runStatusChipSlot: runStatusChipSlot,
+            scrollToBottomRequest: scrollToBottomRequest,
             assistantName: viewModel.assistantName,
             localAttachmentPreviews: viewModel.localAttachmentPreviews,
             listeningMessageID: viewModel.listeningMessageID,
@@ -1248,29 +1280,7 @@ struct ChatView: View {
     }
 
     private var transcriptBottomInsetHeight: CGFloat {
-        return max(96, composerHeight + 44 + composerAccessorySpacerHeight(includesFloatingStatus: false))
-    }
-
-    private var scrollToBottomButtonBottomPadding: CGFloat {
-        return composerHeight + 12 + composerAccessorySpacerHeight(includesFloatingStatus: true)
-    }
-
-    /// The run status chip's width and row, for the scroll-to-latest button to sit beside it.
-    private var runStatusChipSlot: ChatRunStatusChipSlot? {
-        guard let activeRunStatusPresentation, runStatusChipSize.width > 0 else { return nil }
-        // The syncing pill tops the stack, so the pinned notices sit below it too.
-        var heightBelowStatus: CGFloat = 0
-        if !activeRunStatusPresentation.reservesTranscriptSpace, !viewModel.pinnedLocalNotices.isEmpty {
-            heightBelowStatus += pinnedNoticeSpacerHeight + composerAccessoryVerticalSpacing
-        }
-        if showsApprovalBypassStatus {
-            heightBelowStatus += approvalBypassStatusSpacerHeight + composerAccessoryVerticalSpacing
-        }
-        return ChatRunStatusChipSlot(
-            width: runStatusChipSize.width,
-            buttonBottomPadding: composerHeight + 8 + heightBelowStatus
-                + (runStatusChipSize.height - ChatScrollToBottomButton.diameter) / 2
-        )
+        return max(96, composerHeight + 44 + composerAccessorySpacerHeight())
     }
 
     private var isComposerBusyOrUnavailable: Bool {
@@ -1345,14 +1355,13 @@ struct ChatView: View {
         viewModel.isSessionApprovalBypassEnabled && viewModel.approvalPrompt == nil
     }
 
-    /// Height of the chips stacked above the composer. The transcript leaves out a floating
-    /// status (the syncing pill) so it never shifts the chat; overlays stacked above the chips
-    /// include it.
-    private func composerAccessorySpacerHeight(includesFloatingStatus: Bool) -> CGFloat {
+    /// Height of the chips stacked above the composer that the transcript makes room for. It
+    /// leaves out a floating status (the syncing pill) and the lone scroll chip so they never
+    /// shift the chat.
+    private func composerAccessorySpacerHeight() -> CGFloat {
         var height = pinnedNoticeSpacerHeight
         var itemCount = viewModel.pinnedLocalNotices.isEmpty ? 0 : 1
-        if let activeRunStatusPresentation,
-           includesFloatingStatus || activeRunStatusPresentation.reservesTranscriptSpace {
+        if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
             height += activeRunStatusSpacerHeight
             itemCount += 1
         }
@@ -1372,7 +1381,7 @@ struct ChatView: View {
         if !viewModel.pinnedLocalNotices.isEmpty {
             count += 1
         }
-        if activeRunStatusPresentation != nil {
+        if activeRunStatusPresentation != nil || showsScrollToBottomButton {
             count += 1
         }
         if showsApprovalBypassStatus {

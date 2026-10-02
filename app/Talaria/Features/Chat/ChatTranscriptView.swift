@@ -34,7 +34,6 @@ struct ChatTranscriptView: View {
     let hidesRunStatusAccessibility: Bool
     let showsThinkingAndToolCards: Bool
     let showsAssistantTypingIndicator: Bool
-    let showsScrollToBottomButton: Bool
     let shouldFollowLatestMessage: Bool
     /// True while a disclosure toggle animates; suspends the bottom size-change
     /// anchor and follow-driven scrolls so the tapped row stays stationary.
@@ -48,10 +47,8 @@ struct ChatTranscriptView: View {
     let transcriptMessageSpacing: CGFloat
     let transcriptBlockSpacing: CGFloat
     let transcriptBottomInsetHeight: CGFloat
-    let scrollToBottomButtonBottomPadding: CGFloat
-    let scrollToBottomButtonAlignment: HorizontalAlignment
-    /// Non-nil while the run status chip shows; the scroll button then sits beside it.
-    let runStatusChipSlot: ChatRunStatusChipSlot?
+    /// Bumped by the scroll-to-latest chip above the composer.
+    let scrollToBottomRequest: Int
     let assistantName: String
     let localAttachmentPreviews: [String: [String: Data]]
     let listeningMessageID: String?
@@ -180,14 +177,7 @@ struct ChatTranscriptView: View {
                             onDismissKeyboard()
                         }
                     )
-
-                    if showsScrollToBottomButton {
-                        scrollToBottomButton(proxy: proxy, viewportWidth: viewportWidth)
-                            .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
-                    }
                 }
-                .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsScrollToBottomButton)
-                .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: runStatusChipSlot)
                 .background(Color(.systemBackground))
                 .onChange(of: messages.count) {
                     guard isFollowingLatestContent else { return }
@@ -197,6 +187,9 @@ struct ChatTranscriptView: View {
                     } else {
                         releasingHold { onScrollToLatestContent(proxy, true) }
                     }
+                }
+                .onChange(of: scrollToBottomRequest) {
+                    releasingHold { onScrollToBottom(proxy) }
                 }
                 .onChange(of: streamingScrollTrigger) {
                     if isFollowingLatestContent {
@@ -224,29 +217,6 @@ struct ChatTranscriptView: View {
                         releasingHold { onScrollToBottom(proxy) }
                     }
                 }
-            }
-        }
-    }
-
-    /// Centred above the composer stack; beside the run status chip while one shows and the pair
-    /// fits. An empty slot the button's size on the chip's far side keeps the chip centred.
-    @ViewBuilder
-    private func scrollToBottomButton(proxy: ScrollViewProxy, viewportWidth: CGFloat) -> some View {
-        let gap: CGFloat = 8
-        let slotWidth = ChatScrollToBottomButton.diameter + gap
-        if let slot = runStatusChipSlot, slot.width + 2 * slotWidth + 32 <= viewportWidth {
-            let button = ChatScrollToBottomButton(bottomPadding: slot.buttonBottomPadding) {
-                releasingHold { onScrollToBottom(proxy) }
-            }
-            let balance = Color.clear.frame(width: ChatScrollToBottomButton.diameter, height: 0)
-            HStack(alignment: .bottom, spacing: gap) {
-                if scrollToBottomButtonAlignment == .leading { button } else { balance }
-                Color.clear.frame(width: slot.width, height: 0)
-                if scrollToBottomButtonAlignment == .leading { balance } else { button }
-            }
-        } else {
-            ChatScrollToBottomButton(bottomPadding: scrollToBottomButtonBottomPadding) {
-                releasingHold { onScrollToBottom(proxy) }
             }
         }
     }

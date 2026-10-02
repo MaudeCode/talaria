@@ -41,9 +41,7 @@ struct StatusChip: View {
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                 .minimumScaleFactor(0.88)
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 7)
-        .accessorySurface(fallbackMaterial: .regularMaterial, cornerRadius: 16)
+        .statusChipChrome()
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel ?? label)
@@ -68,5 +66,39 @@ struct StatusChip: View {
 
     private var textStyle: AnyShapeStyle {
         emphasis == .standard ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary)
+    }
+}
+
+/// A tappable chip in the status chip's look, for an action that sits in a row of status chips.
+struct StatusChipButton: View {
+    let systemImage: String
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            // Set as text so the symbol takes the caption's line height and the chip matches a
+            // status chip's height.
+            Text(Image(systemName: systemImage))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .statusChipChrome()
+                .chatMinimumHitTarget(in: RoundedRectangle(cornerRadius: StatusChip.cornerRadius, style: .continuous))
+        }
+        .buttonStyle(.chatTactile(.icon))
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+extension StatusChip {
+    static let cornerRadius: CGFloat = 16
+}
+
+extension View {
+    /// The status chip's padding and surface, shared by every chip so a row of them matches.
+    func statusChipChrome() -> some View {
+        padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .accessorySurface(fallbackMaterial: .regularMaterial, cornerRadius: StatusChip.cornerRadius)
     }
 }
