@@ -1195,7 +1195,9 @@ struct SessionListView: View {
         guard !Task.isCancelled else { return }
         await viewModel.loadActiveProfile()
         guard !Task.isCancelled else { return }
-        await viewModel.prefetchRunningTranscripts(modelContext: modelContext)
+        // Not awaited: restore and pull-to-refresh must not wait on transcripts. The view model
+        // claims each run before its request, so overlapping refreshes never fetch one twice.
+        Task { await viewModel.prefetchRunningTranscripts(modelContext: modelContext) }
     }
 
     private var sceneActions: TalariaSceneActions {
