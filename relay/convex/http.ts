@@ -515,6 +515,19 @@ http.route({
       return json(status, result);
     }
 
+    if (parts.length === 8 && parts[5] === "sessions" && parts[7] === "viewed") {
+      const through = numberField(body, "through");
+      if (!parts[6] || through === null || !Number.isSafeInteger(through)) return json(400, { error: "invalid_viewed" });
+      const result = await ctx.runMutation(internal.publishers.acknowledgeViewedSession, {
+        publisherId,
+        profileId,
+        ...auth,
+        sessionId: parts[6],
+        through,
+      });
+      return json(result.status === "accepted" ? 200 : 409, result);
+    }
+
     if (parts.length === 6 && parts[5] === "snapshot") {
       const snapshotId = stringField(body, "snapshotId", 191);
       const rawStates = body.states;

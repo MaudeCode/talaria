@@ -187,6 +187,7 @@ export default defineSchema({
     row: aggregateRowValidator,
   })
     .index("by_grant_id_and_run_key", ["grantId", "runKey"])
+    .index("by_grant_id_and_session_id_and_acknowledged", ["grantId", "row.sessionId", "acknowledged"])
     .index("by_user_id_and_acknowledged", ["userId", "acknowledged"]),
 
   liveActivities: defineTable({

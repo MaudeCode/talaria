@@ -200,6 +200,14 @@ work, later runs or another user's/profile's results. Retries are idempotent.
 Acknowledgement tombstones prevent later terminal snapshots from reviving a result.
 Revoked/expired devices, excluded publishers and obsolete profile grants are denied.
 
+A publisher reports that a session was viewed in its own client with the signed
+`PUT /v1/publishers/{publisherId}/profiles/{profileId}/sessions/{sessionId}/viewed`
+and body `{ "through": 1787845600000 }` (Unix milliseconds). The relay acknowledges
+every pending completion of that profile's grants for the session whose `updatedAt`
+is at or before `through` (both on the publisher's clock), and returns
+`{status:"accepted",acknowledged:N}`. Running work and later runs are untouched.
+A replayed nonce returns 409 and changes nothing.
+
 A completion uses the publisher's stream ID as its durable run identity. Legacy
 streamless publishers are grouped by the observed session lifecycle; publishers
 should provide a stable stream ID to distinguish runs after session-state expiry.

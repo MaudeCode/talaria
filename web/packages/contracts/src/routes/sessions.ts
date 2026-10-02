@@ -82,5 +82,8 @@ export const sessionsContract = {
     presence: oc.route({ method: 'POST', path: '/api/talaria/presence', tags: ['talaria'], summary: 'Renew or revoke one browser tab\'s activity lease; a fresh lease mutes relay alerts for the profile.' })
       .input(z.object({ tab_id: z.string(), active: z.boolean(), seq: z.number().int() }))
       .output(z.object({ ok: z.literal(true), lease_seconds: z.number().int() })),
+    viewed: oc.route({ method: 'POST', path: '/api/talaria/viewed', tags: ['talaria'], summary: 'Report a session as viewed through now so the relay clears its finished runs from Live Activities; a no-op without a relay.' })
+      .input(z.object({ session_id: z.string() }))
+      .output(z.object({ ok: z.literal(true) })),
   },
 }

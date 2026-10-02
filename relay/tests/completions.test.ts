@@ -4,7 +4,8 @@ import { expect, it, vi } from "vitest";
 import { internal } from "../convex/_generated/api";
 import schema from "../convex/schema";
 import { defaultNotificationPreferences } from "../convex/lib/model";
-import { sha256 } from "../convex/lib/crypto";
+import { webcrypto } from "node:crypto";
+import { bytesToBase64Url, sha256 } from "../convex/lib/crypto";
 
 const modules = import.meta.glob("../convex/**/*.ts");
 
@@ -22,12 +23,12 @@ async function fixture() {
     await ctx.db.insert("liveActivities", { userId: "user", deviceId: "device", activityId: "activity", mode: "all_running", attributesType: "TalariaAggregateActivityAttributes", schemaVersion: 1, activityPushToken: "synthetic", createdAt: now, updatedAt: now });
   });
   let revision = 0;
-  const publish = async (phase: "running" | "completed" | "failed", streamId = "run-1") => {
+  const publish = async (phase: "running" | "completed" | "failed", streamId = "run-1", sessionId = "session") => {
     revision++;
     await backend.mutation(internal.publishers.acceptSnapshot, {
       publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", keyId: "key",
       nonce: `nonce-${revision}`, nonceExpiresAt: Date.now() + 60_000, receivedAt: Date.now(), snapshotId: `snapshot-${revision}`,
-      states: [{ sessionId: "session", streamId, eventId: `event-${revision}`, revision, title: "Synthetic task", phase, updatedAt: Date.now(), deepLink: "/sessions/session" }],
+      states: [{ sessionId, streamId, eventId: `event-${revision}`, revision, title: "Synthetic task", phase, updatedAt: Date.now(), deepLink: `/sessions/${sessionId}` }],
     });
   };
   const list = () => backend.query(internal.completions.list, { userId: "user", deviceId: "device", paginationOpts: { numItems: 100, cursor: null } });
@@ -207,4 +208,80 @@ it("refreshes corrected terminal outcomes without losing acknowledgement", async
   const retained = await backend.run((ctx) => ctx.db.get(first.id));
   expect(retained?.row.phase).toBe("failed");
   expect(retained?.acknowledged).toBe(true);
+});
+
+
+it("acknowledges a session's completions when its signed publisher reports it viewed", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(1_800_000_000_000));
+  try {
+    const { backend, publish, list, now } = await fixture();
+    const keys = await webcrypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]) as CryptoKeyPair;
+    const publicKey = bytesToBase64Url(new Uint8Array(await webcrypto.subtle.exportKey("raw", keys.publicKey)));
+    await backend.run(async (ctx) => {
+      const key = await ctx.db.query("publisherKeys").first();
+      await ctx.db.patch(key!._id, { publicKey });
+    });
+    const viewed = async (through: number, nonce: string, { sessionId = "session", profileId = "profile", signed = true } = {}) => {
+      const path = `/v1/publishers/${encodeURIComponent("https://hermes.example")}/profiles/${profileId}/sessions/${sessionId}/viewed`;
+      const body = JSON.stringify({ through });
+      const timestamp = String(Math.floor(Date.now() / 1_000));
+      const message = ["PUT", path, timestamp, nonce, await sha256(body)].join("\n");
+      const signature = bytesToBase64Url(new Uint8Array(await webcrypto.subtle.sign("Ed25519", keys.privateKey, new TextEncoder().encode(message))));
+      const headers = { "content-type": "application/json", "x-talaria-key-id": "key", "x-talaria-timestamp": timestamp,
+        "x-talaria-nonce": nonce, ...(signed ? { "x-talaria-signature": signature } : {}) };
+      return await backend.fetch(path, { method: "PUT", headers, body });
+    };
+    const sessions = async () => (await list())!.completions.map((c) => `${c.row.sessionId}:${c.row.phase}`).sort();
+
+    await publish("completed", "run-1", "session");
+    await publish("failed", "run-other", "other-session");
+    vi.setSystemTime(new Date(now + 60_000));
+    await publish("running", "run-2", "session");
+    expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
+
+    expect((await viewed(now, "unsigned", { signed: false })).status).toBe(401);
+    const otherProfile = await viewed(now, "other-profile", { profileId: "another-profile" });
+    expect(await otherProfile.json()).toEqual({ status: "accepted", acknowledged: 0 });
+    expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
+
+    const response = await viewed(now + 10 ** 9, "viewed-1");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "accepted", acknowledged: 1 });
+    expect(await sessions()).toEqual(["other-session:failed"]);
+    const scheduled = await backend.run((ctx) => ctx.db.system.query("_scheduled_functions").collect());
+    expect(scheduled.filter((job) => job.name.includes("recompute") && job.args[0]?.userId === "user").length).toBeGreaterThan(0);
+    const running = await backend.query(internal.publishers.listCurrentStates, { userId: "user", now: Date.now() });
+    expect(running.some((state) => state.sessionId === "session" && state.phase === "running")).toBe(true);
+
+    // A run finishing after the viewed instant stays until the next view; a replayed nonce changes nothing.
+    vi.setSystemTime(new Date(now + 120_000));
+    await publish("completed", "run-2", "session");
+    expect((await viewed(now + 60_000, "viewed-2")).status).toBe(200);
+    expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
+    expect((await viewed(now + 120_000, "viewed-2")).status).toBe(409);
+    expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
+
+    await backend.run(async (ctx) => {
+      const publisher = await ctx.db.query("publishers").first();
+      await ctx.db.patch(publisher!._id, { enabled: false });
+    });
+    expect((await viewed(now + 120_000, "disabled")).status).toBe(401);
+    await backend.run(async (ctx) => {
+      const publisher = await ctx.db.query("publishers").first();
+      await ctx.db.patch(publisher!._id, { enabled: true });
+    });
+    expect(await sessions()).toEqual(["other-session:failed", "session:completed"]);
+    expect(await (await viewed(now + 120_000, "viewed-3")).json()).toEqual({ status: "accepted", acknowledged: 1 });
+    expect(await sessions()).toEqual(["other-session:failed"]);
+
+    // `through` and `updatedAt` share the publisher's clock, so a publisher running ahead of the relay still clears its view.
+    const ahead = Date.now() + 5_000;
+    await backend.mutation(internal.publishers.acceptSnapshot, {
+      publisherOwnerUserId: "owner", publisherId: "https://hermes.example", profileId: "profile", keyId: "key",
+      nonce: "skewed", nonceExpiresAt: Date.now() + 60_000, receivedAt: Date.now(), snapshotId: "skewed",
+      states: [{ sessionId: "skewed-session", streamId: "run-skewed", eventId: "skewed", revision: 99, title: "Skewed", phase: "completed", updatedAt: ahead, deepLink: "/sessions/skewed-session" }],
+    });
+    expect(await (await viewed(ahead + 1, "skewed-view", { sessionId: "skewed-session" })).json()).toEqual({ status: "accepted", acknowledged: 1 });
+  } finally { vi.useRealTimers(); }
 });

@@ -1,7 +1,7 @@
 import { createHash, createPublicKey, verify as cryptoVerify } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { loadRelayConfig, PRESENCE_LEASE_SECONDS, PresenceLeases, profileIdentity, RelayPairingError, RelayPublisher, validatedOrigin, type RelayConfig } from './relay.js'
 
@@ -11,12 +11,13 @@ const post = (s: TestServer, path: string, body: unknown): Promise<Response> => 
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 
 interface Captured { method: string; url: string; body: Json; headers: Record<string, string> }
-interface FakeRelay { calls: Captured[]; snapshotStatus: number; failOnly: string | null; snapshots: () => Captured[]; publicKey: Buffer | null; fetch: typeof fetch }
+interface FakeRelay { calls: Captured[]; snapshotStatus: number; viewedStatus: number; failOnly: string | null; snapshots: () => Captured[]; views: () => Captured[]; publicKey: Buffer | null; fetch: typeof fetch }
 
 function fakeRelay(): FakeRelay {
   const relay: FakeRelay = {
-    calls: [], snapshotStatus: 200, failOnly: null, publicKey: null,
-    snapshots: () => relay.calls.filter((c) => c.method === 'PUT'),
+    calls: [], snapshotStatus: 200, viewedStatus: 200, failOnly: null, publicKey: null,
+    snapshots: () => relay.calls.filter((c) => c.method === 'PUT' && c.url.endsWith('/snapshot')),
+    views: () => relay.calls.filter((c) => c.method === 'PUT' && c.url.endsWith('/viewed')),
     fetch: (input, init) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       const headers = Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>).map(([k, v]) => [k.toLowerCase(), v]))
@@ -28,6 +29,7 @@ function fakeRelay(): FakeRelay {
         return Promise.resolve(Response.json({ protocolVersion: 2, keyId: 'key-1', publisherId: body.publisherId, profileId: body.profileId, profileIdPreserved: false }))
       }
       if (url.endsWith('/v1/pairings/profile/redeem')) return Promise.resolve(Response.json({ protocolVersion: 2, publisherId: body.publisherId, profileId: body.profileId }))
+      if (call.method === 'PUT' && url.endsWith('/viewed')) return Promise.resolve(new Response(relay.viewedStatus === 200 ? '{}' : 'nope', { status: relay.viewedStatus }))
       if (call.method === 'PUT') {
         const status = relay.failOnly && !url.includes(relay.failOnly) ? 200 : relay.snapshotStatus
         return Promise.resolve(new Response(status === 200 ? '{}' : 'nope', { status }))
@@ -126,6 +128,29 @@ describe('Talaria relay pairing and publishing', () => {
     s.deps.registry.activeRuns.delete('stream-h')
   })
 
+  it('acknowledges a viewed session on the relay after the snapshot carrying its terminal state', async () => {
+    const sid = String(((await json(await post(s, '/api/session/new', { title: 'Viewed run' }))).session as Json).session_id)
+    const profileId = loadRelayConfig(s.state)!.profiles.default!.profile_id
+    s.deps.registry.activeRuns.set('stream-v', { stream_id: 'stream-v', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
+    s.deps.relay.noteTerminal('stream-v', 'completed')
+    s.deps.registry.activeRuns.delete('stream-v')
+    const before = relay.calls.length
+    const res = await post(s, '/api/talaria/viewed', { session_id: sid })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ ok: true })
+    await vi.waitFor(() => { expect(relay.views().some((c) => c.url.includes(sid))).toBe(true) })
+    const calls = relay.calls.slice(before)
+    const viewedIndex = calls.findIndex((c) => c.url.endsWith(`/sessions/${sid}/viewed`))
+    const snapshot = calls.slice(0, viewedIndex).reverse().find((c) => c.url.endsWith('/snapshot'))!
+    const terminal = (snapshot.body.states as Json[]).find((state) => state.sessionId === sid)!
+    expect(terminal.phase).toBe('completed')
+    const viewed = calls[viewedIndex]!
+    verifySigned(relay, viewed, `/v1/publishers/${encodeURIComponent('https://pub.example')}/profiles/${profileId}/sessions/${sid}/viewed`)
+    expect(Object.keys(viewed.body)).toEqual(['through'])
+    expect(Number(viewed.body.through)).toBeGreaterThanOrEqual(Number(terminal.updatedAt))
+    expect((await post(s, '/api/talaria/viewed', { session_id: 'missing_session_0001' })).status).toBe(404)
+  })
+
   it('validates presence payloads and ignores stale sequence numbers', async () => {
     expect((await post(s, '/api/talaria/presence', { tab_id: 'short', active: true, seq: 1 })).status).toBe(400)
     expect((await post(s, '/api/talaria/presence', { tab_id: 'tab_00000002', active: 'yes', seq: 1 })).status).toBe(400)
@@ -185,6 +210,49 @@ describe('relay publisher failure handling', () => {
       relay.snapshotStatus = 503
       await expect(publisher.publishSnapshot(true)).rejects.toThrow('HTTP 503')
       await expect(publisher.publishSnapshot()).rejects.toThrow('HTTP 503')
+    } finally {
+      s.deps.relay.stop()
+      await s.close()
+    }
+  })
+
+  it('stamps a terminal row with the moment its turn ended, not the snapshot build time', async () => {
+    const s = await bootTestServer()
+    const relay = fakeRelay()
+    s.deps.fetch = relay.fetch
+    try {
+      await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
+      let clock = 1_800_000_000
+      const publisher = new RelayPublisher(loadRelayConfig(s.state)!, { registry: s.deps.registry, pending: s.deps.pending, store: s.deps.sessionStore, presence: s.deps.relay.presence, profileHome: s.deps.profileHome, profilesMatch: s.deps.profilesMatch, fetch: () => s.deps.fetch, now: () => clock, log: (l) => s.logs.push(l) })
+      const sid = String(((await json(await post(s, '/api/session/new', { title: 'Ended run' }))).session as Json).session_id)
+      s.deps.registry.activeRuns.set('stream-t', { stream_id: 'stream-t', session_id: sid, started_at: 1, phase: 'running', workspace: s.state, model: null, provider: null, ephemeral: false })
+      publisher.noteTerminal('stream-t', 'completed')
+      s.deps.registry.activeRuns.delete('stream-t')
+      clock += 5
+      await publisher.publishSnapshot()
+      expect((relay.snapshots().at(-1)!.body.states as Json[])[0]).toMatchObject({ sessionId: sid, phase: 'completed', updatedAt: 1_800_000_000_000 })
+    } finally {
+      s.deps.relay.stop()
+      await s.close()
+    }
+  })
+
+  it('treats viewed as a no-op without a relay and logs an old relay once', async () => {
+    const s = await bootTestServer()
+    const relay = fakeRelay()
+    s.deps.fetch = relay.fetch
+    try {
+      const sid = String(((await json(await post(s, '/api/session/new', { title: 'Unpaired' }))).session as Json).session_id)
+      expect(await json(await post(s, '/api/talaria/viewed', { session_id: sid }))).toEqual({ ok: true })
+      expect(relay.calls).toHaveLength(0)
+      await s.deps.relay.pair({ relay_url: RELAY, publisher_id: 'https://pub.example', publisher_invitation: 'x' }, 'default', true)
+      relay.viewedStatus = 404
+      for (let i = 0; i < 2; i++) {
+        expect(await json(await post(s, '/api/talaria/viewed', { session_id: sid }))).toEqual({ ok: true })
+        await vi.waitFor(() => { expect(relay.views()).toHaveLength(i + 1) })
+      }
+      await vi.waitFor(() => { expect(s.logs.filter((l) => l.includes('does not support viewed acknowledgements'))).toHaveLength(1) })
+      expect(s.deps.relay.current()).not.toBeNull()
     } finally {
       s.deps.relay.stop()
       await s.close()

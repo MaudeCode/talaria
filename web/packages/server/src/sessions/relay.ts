@@ -175,6 +175,8 @@ export class RelayPublisher {
   private lastRevision = 0
   private terminal = new Map<string, ActiveRun & { relay_phase: string; terminal_at: number }>()
   private readonly disabledProfiles = new Set<string>()
+  private readonly views = new Map<string, { profile: string | null; through: number }>()
+  private viewedUnsupportedLogged = false
   private alertEligibilitySupported = true
   private stopped = false
   private loop: Promise<void> | null = null
@@ -189,9 +191,10 @@ export class RelayPublisher {
     try { this.lastRevision = Number.parseInt(readFileSync(this.revisionPath, 'utf8'), 10) || 0 } catch { this.lastRevision = 0 }
   }
 
-  /** Carry unpublished terminal state and the revision floor from the publisher being replaced. */
+  /** Carry unpublished terminal state, queued views, and the revision floor from the publisher being replaced. */
   inherit(previous: RelayPublisher): void {
     for (const [sid, run] of previous.terminal) this.terminal.set(sid, run)
+    for (const [sid, view] of previous.views) this.views.set(sid, view)
     this.lastRevision = Math.max(this.lastRevision, previous.lastRevision)
   }
 
@@ -220,6 +223,33 @@ export class RelayPublisher {
     this.changed()
   }
 
+  /** Queue a viewed acknowledgement; the loop sends it after the snapshot carrying the session's terminal state. */
+  markViewed(sid: string): void {
+    const session = this.deps.store.get(sid, { metadataOnly: true })
+    this.views.set(sid, { profile: session.profile, through: Math.floor(this.deps.now() * 1000) })
+    this.changed()
+  }
+
+  /** Send the views queued before the snapshot just published, so the relay already holds every outcome they saw. */
+  private async flushViews(ready: Map<string, { profile: string | null; through: number }>): Promise<void> {
+    for (const [sid, view] of ready) {
+      for (const [profile, cfg] of Object.entries(this.config.profiles)) {
+        if (!this.deps.profilesMatch(view.profile, profile) || !this.publishes(profile, cfg)) continue
+        const path = `/v1/publishers/${encodeURIComponent(this.config.publisher_id)}/profiles/${encodeURIComponent(cfg.profile_id)}/sessions/${encodeURIComponent(sid)}/viewed`
+        try {
+          await this.put(path, JSON.stringify({ through: view.through }))
+        } catch (error) {
+          if (!(error instanceof RelayHttpError) || error.retryable) throw error
+          if (error.status === 404 && !this.viewedUnsupportedLogged) {
+            this.viewedUnsupportedLogged = true
+            this.deps.log('[relay] Talaria relay does not support viewed acknowledgements (HTTP 404); Live Activities clear only from the app')
+          } else if (error.status !== 404) this.deps.log(`[relay] Talaria relay rejected a viewed acknowledgement (HTTP ${String(error.status)})`)
+        }
+      }
+      if (this.views.get(sid) === view) this.views.delete(sid)
+    }
+  }
+
   private nextRevision(): number {
     this.lastRevision = Math.max(this.lastRevision + 1, Math.floor(this.deps.now() * 1000))
     return this.lastRevision
@@ -239,7 +269,9 @@ export class RelayPublisher {
       if (this.stopped) return
       this.dirty = false
       try {
+        const ready = new Map(this.views)
         await this.publishSnapshot(true)
+        await this.flushViews(ready)
         if (this.failures) this.deps.log('[relay] Talaria relay snapshot recovered')
         this.failures = 0
       } catch (error) {
@@ -260,7 +292,7 @@ export class RelayPublisher {
   buildStates(profile: string): RelayState[] {
     const cutoff = this.deps.now() - TERMINAL_RETENTION_S
     for (const [sid, run] of this.terminal) if (run.terminal_at < cutoff) this.terminal.delete(sid)
-    const bySession = new Map<string, ActiveRun & { relay_phase?: string }>()
+    const bySession = new Map<string, ActiveRun & { relay_phase?: string; terminal_at?: number }>()
     for (const run of this.deps.registry.activeRuns.values()) {
       if ((run as { health_only?: boolean }).health_only) continue
       const sid = run.session_id.trim()
@@ -280,7 +312,9 @@ export class RelayPublisher {
       if (!['completed', 'failed', 'cancelled'].includes(phase) && this.deps.pending.approvalPending(sid).pending) phase = 'waiting_for_approval'
       if (phase === 'running' && this.deps.pending.clarifyPending(sid).pending) phase = 'waiting_for_input'
       if (phase === 'running' && run.phase.endsWith('starting')) phase = 'starting'
-      const state: RelayState = { sessionId: sid, streamId: run.stream_id || null, eventId: `snapshot:${String(revision)}:${sid}`, revision, title: (session.title || 'Untitled').slice(0, 120), phase, updatedAt: Math.floor(this.deps.now() * 1000), deepLink: `/sessions/${encodeURIComponent(sid)}` }
+      // A finished run keeps the instant it ended, so a viewer who saw that turn covers it whenever the snapshot is built.
+      const updatedAt = Math.floor((run.terminal_at ?? this.deps.now()) * 1000)
+      const state: RelayState = { sessionId: sid, streamId: run.stream_id || null, eventId: `snapshot:${String(revision)}:${sid}`, revision, title: (session.title || 'Untitled').slice(0, 120), phase, updatedAt, deepLink: `/sessions/${encodeURIComponent(sid)}` }
       if (!alertEligible) state.alertEligible = false
       states.push(state)
     }
@@ -291,10 +325,7 @@ export class RelayPublisher {
   async publishSnapshot(isolatePermanent = false): Promise<void> {
     let retryable: RelayHttpError | null = null
     for (const [profile, cfg] of Object.entries(this.config.profiles)) {
-      if (cfg.identity) {
-        try { if (profileIdentity(this.deps.profileHome(profile)) !== cfg.identity) continue } catch { continue }
-      }
-      if (this.disabledProfiles.has(cfg.profile_id)) continue
+      if (!this.publishes(profile, cfg)) continue
       try {
         await this.publishProfileSnapshot(profile, cfg.profile_id)
       } catch (error) {
@@ -305,6 +336,13 @@ export class RelayPublisher {
       }
     }
     if (retryable) throw retryable
+  }
+
+  private publishes(profile: string, cfg: RelayProfile): boolean {
+    if (cfg.identity) {
+      try { if (profileIdentity(this.deps.profileHome(profile)) !== cfg.identity) return false } catch { return false }
+    }
+    return !this.disabledProfiles.has(cfg.profile_id)
   }
 
   /** Validation publish for one newly enrolled profile (Python `publish_profile`). */
@@ -334,7 +372,10 @@ export class RelayPublisher {
 
   private async putSnapshot(profileId: string, states: RelayState[]): Promise<void> {
     const body = JSON.stringify({ snapshotId: `webui:${randomUUID().replace(/-/g, '')}`, states })
-    const path = `/v1/publishers/${encodeURIComponent(this.config.publisher_id)}/profiles/${encodeURIComponent(profileId)}/snapshot`
+    await this.put(`/v1/publishers/${encodeURIComponent(this.config.publisher_id)}/profiles/${encodeURIComponent(profileId)}/snapshot`, body)
+  }
+
+  private async put(path: string, body: string): Promise<void> {
     let res: Response
     try {
       res = await this.deps.fetch()(this.config.url + path, { method: 'PUT', body, headers: signedHeaders(this.key, this.config.key_id, 'PUT', path, body, this.deps.now), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
@@ -402,6 +443,11 @@ export class RelayService {
     this.publisher = candidate
     this.candidate = null
     if (previous) { candidate.inherit(previous); previous.stop() }
+  }
+
+  /** A viewed session clears its finished runs on the relay; without a publisher there is nothing to clear. */
+  markViewed(sid: string): void {
+    (this.publisher ?? this.candidate)?.markViewed(sid)
   }
 
   /** Terminal turn events reach the relay even mid-swap (Python `note_talaria_terminal`). */
