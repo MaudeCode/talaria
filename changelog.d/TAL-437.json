@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Opening the app shows your chats, projects and profile from last time at once, then updates them from the server.",
+      "highlight": true
+    },
+    {
+      "category": "Changed",
+      "summary": "Chats reopen on their last transcript, including a reply that was still being written, and chats running on another device open without waiting.",
+      "highlight": false
+    },
+    {
+      "category": "Changed",
+      "summary": "The message composer, Tasks, Skills, Memory and Kanban show their last content right away while they refresh; editing waits for the server's copy.",
+      "highlight": false
+    }
+  ]
+}

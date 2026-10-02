@@ -5,6 +5,10 @@ extension APIClient {
         try await send(endpoint: .workspaces, method: "GET")
     }
 
+    public func workspaces(caching cache: ResponseCache.Entry?) async throws -> WorkspacesResponse {
+        try await send(endpoint: .workspaces, caching: cache)
+    }
+
     public func workspaceSuggestions(prefix: String) async throws -> WorkspaceSuggestionsResponse {
         try await send(endpoint: .workspaceSuggestions(prefix: prefix), method: "GET")
     }

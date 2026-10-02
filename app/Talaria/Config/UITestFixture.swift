@@ -33,6 +33,40 @@ struct UITestFixtureEnvironment {
     /// scheduled run would: the fixture chat gains a reply and Tasks gains a job, so UI tests can
     /// see open screens catch up on return (TAL-434, TAL-435).
     nonisolated static let changeWhileBackgroundedArgument = "--ui-test-change-while-backgrounded"
+    /// Keeps the offline cache and cached responses across relaunches (TAL-437); without it each
+    /// fixture launch starts with empty caches. The reset argument empties them first.
+    nonisolated static let persistentCacheArgument = "--ui-test-persistent-cache"
+    nonisolated static let resetPersistentCacheArgument = "--ui-test-reset-persistent-cache"
+    /// Holds every `/api/sessions` read until the test releases it, so a relaunch shows what it
+    /// painted from cache (TAL-437).
+    nonisolated static let holdSessionListArgument = "--ui-test-hold-session-list"
+
+    private nonisolated static var keepsCachesAcrossLaunches: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains(persistentCacheArgument) && !arguments.contains(resetPersistentCacheArgument)
+    }
+
+    /// The fixture's response-cache directory, emptied once per launch unless a journey keeps it.
+    nonisolated static let responseCacheRoot: URL? = {
+        guard ProcessInfo.processInfo.arguments.contains(launchArgument) else { return nil }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ui-test-response-cache", isDirectory: true)
+        if !keepsCachesAcrossLaunches { try? FileManager.default.removeItem(at: root) }
+        return root
+    }()
+
+    /// A disk store for the offline cache when a journey keeps caches across relaunches;
+    /// nil keeps the fixture's in-memory store.
+    nonisolated static let persistentCacheStoreURL: URL? = {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains(persistentCacheArgument) else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ui-test-cache.store")
+        if arguments.contains(resetPersistentCacheArgument) {
+            for suffix in ["", "-shm", "-wal"] {
+                try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix))
+            }
+        }
+        return url
+    }()
     nonisolated static var isDense: Bool {
         ProcessInfo.processInfo.arguments.contains(denseArgument)
     }
@@ -377,7 +411,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
 
-        if Self.holdsPanelLoad(for: url) || Self.holdsWorkspaceRead(for: url) || Self.holdsTranscriptReload(for: url) {
+        let holdsSessionList = url.path == "/api/sessions"
+            && ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.holdSessionListArgument)
+        if Self.holdsPanelLoad(for: url) || Self.holdsWorkspaceRead(for: url) || Self.holdsTranscriptReload(for: url)
+            || holdsSessionList {
             UITestFixtureHold.shared.hold { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.sendResponse(for: url)

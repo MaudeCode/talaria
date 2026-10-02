@@ -105,7 +105,7 @@ struct SessionListView: View {
         _pendingQuotaSourceID = pendingQuotaSourceID
         _opensProviderQuotaWidgetSettings = opensProviderQuotaWidgetSettings
         _requestedNewChat = requestedNewChat
-        _viewModel = State(initialValue: SessionListViewModel(server: server))
+        _viewModel = State(initialValue: SessionListViewModel(server: server, responseCache: .app(server: server)))
         _quotaViewModel = State(initialValue: ProvidersViewModel(server: server))
         _updateNotificationViewModel = State(initialValue: UpdateNotificationCenterViewModel(server: server))
         #if DEBUG
@@ -326,6 +326,9 @@ struct SessionListView: View {
                 )
             }
             .onAppear {
+                // TAL-437: the last-known chats, projects and profile show at once; the initial
+                // load then replaces them.
+                viewModel.paintCachedStateIfEmpty(modelContext: modelContext)
                 openPendingSharedImportIfNeeded()
                 openPendingQuotaSourceIfNeeded()
                 openProviderQuotaWidgetSettingsIfNeeded()
@@ -1191,6 +1194,10 @@ struct SessionListView: View {
         await loadSessions()
         guard !Task.isCancelled else { return }
         await viewModel.loadActiveProfile()
+        guard !Task.isCancelled else { return }
+        // Not awaited: restore and pull-to-refresh must not wait on transcripts. The view model
+        // claims each run before its request, so overlapping refreshes never fetch one twice.
+        Task { await viewModel.prefetchRunningTranscripts(modelContext: modelContext) }
     }
 
     private var sceneActions: TalariaSceneActions {

@@ -196,7 +196,8 @@ struct ChatView: View {
             showsLiveActivityResponseExcerpts: UserDefaults.standard.bool(
                 forKey: AgentRunLiveActivityPrivacy.showsResponseExcerptsKey
             ),
-            draftAttachmentStore: resolvedDraftAttachmentStore
+            draftAttachmentStore: resolvedDraftAttachmentStore,
+            responseCache: .app(server: server)
         ))
         _gitAvailabilityViewModel = State(initialValue: GitWorkspaceAvailabilityViewModel(
             session: session,
@@ -546,10 +547,12 @@ struct ChatView: View {
                 activeStreamStatusRefreshTask?.cancel()
                 activeStreamStatusRefreshTask = nil
                 viewModel.stopListening()
+                viewModel.persistTranscript(modelContext: modelContext)
                 viewModel.suspendStreamForNavigation()
                 viewModel.cleanupPollingTasks()
             }
             .onAppear {
+                viewModel.showCachedComposerChoices()
                 Task {
                     await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
 
@@ -987,12 +990,19 @@ struct ChatView: View {
     private var composerAccessoryStack: some View {
         if composerAccessoryVisibleItemCount > 0 {
             VStack(spacing: composerAccessoryVerticalSpacing) {
+                // A floating status (the syncing pill) tops the stack, so nothing above it moves
+                // when it comes and goes.
+                if let activeRunStatusPresentation, !activeRunStatusPresentation.reservesTranscriptSpace {
+                    StatusChip(activeRunStatusPresentation)
+                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
+                }
+
                 if !viewModel.pinnedLocalNotices.isEmpty {
                     PinnedLocalNoticeStack(notices: viewModel.pinnedLocalNotices)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
-                if let activeRunStatusPresentation {
+                if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
                     StatusChip(activeRunStatusPresentation)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
@@ -1229,11 +1239,11 @@ struct ChatView: View {
     }
 
     private var transcriptBottomInsetHeight: CGFloat {
-        return max(96, composerHeight + 44 + composerAccessorySpacerHeight)
+        return max(96, composerHeight + 44 + composerAccessorySpacerHeight(includesFloatingStatus: false))
     }
 
     private var scrollToBottomButtonBottomPadding: CGFloat {
-        return composerHeight + 12 + composerAccessorySpacerHeight
+        return composerHeight + 12 + composerAccessorySpacerHeight(includesFloatingStatus: true)
     }
 
     private var isComposerBusyOrUnavailable: Bool {
@@ -1308,18 +1318,24 @@ struct ChatView: View {
         viewModel.isSessionApprovalBypassEnabled && viewModel.approvalPrompt == nil
     }
 
-    private var composerAccessorySpacerHeight: CGFloat {
+    /// Height of the chips stacked above the composer. The transcript leaves out a floating
+    /// status (the syncing pill) so it never shifts the chat; overlays stacked above the chips
+    /// include it.
+    private func composerAccessorySpacerHeight(includesFloatingStatus: Bool) -> CGFloat {
         var height = pinnedNoticeSpacerHeight
-        if activeRunStatusPresentation != nil {
+        var itemCount = viewModel.pinnedLocalNotices.isEmpty ? 0 : 1
+        if let activeRunStatusPresentation,
+           includesFloatingStatus || activeRunStatusPresentation.reservesTranscriptSpace {
             height += activeRunStatusSpacerHeight
+            itemCount += 1
         }
         if showsApprovalBypassStatus {
             height += approvalBypassStatusSpacerHeight
+            itemCount += 1
         }
 
-        let visibleItemCount = composerAccessoryVisibleItemCount
-        if visibleItemCount > 1 {
-            height += CGFloat(visibleItemCount - 1) * composerAccessoryVerticalSpacing
+        if itemCount > 1 {
+            height += CGFloat(itemCount - 1) * composerAccessoryVerticalSpacing
         }
         return height
     }
@@ -2278,6 +2294,7 @@ struct ChatView: View {
 
         switch phase {
         case .background:
+            viewModel.persistTranscript(modelContext: modelContext)
             if viewModel.activeStreamID != nil {
                 beginResponseCompletionBackgroundTask()
             }

@@ -134,14 +134,23 @@ struct TalariaApp: App {
         // fatal there too. The offline cache is device-local: the CloudKit
         // entitlement (TAL-91 configuration sync) must not turn on SwiftData's
         // automatic mirroring, which also rejects the cache's unique keys.
+        var cacheConfiguration = ModelConfiguration(isStoredInMemoryOnly: usesUITestFixture, cloudKitDatabase: .none)
+        #if DEBUG
+        if usesUITestFixture, let storeURL = UITestFixtureEnvironment.persistentCacheStoreURL {
+            cacheConfiguration = ModelConfiguration(url: storeURL, cloudKitDatabase: .none)
+        }
+        #endif
         let cacheContainer = try! ModelContainer(
             for: CachedSession.self, CachedMessage.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: usesUITestFixture, cloudKitDatabase: .none)
+            configurations: cacheConfiguration
         )
         self.cacheContainer = cacheContainer
         let liveAuthManager = {
             AuthManager(
-                resetServerScopedState: AuthManager.serverScopedStateReset(cacheContainer: cacheContainer)
+                resetServerScopedState: AuthManager.serverScopedStateReset(
+                    cacheContainer: cacheContainer,
+                    responseCacheRoot: ResponseCache.appRoot
+                )
             )
         }
         #if DEBUG
@@ -334,3 +343,20 @@ private struct ProviderQuotaWidgetDebugFixtureView: View {
     }
 }
 #endif
+
+extension ResponseCache {
+    /// The app's response cache for `server` (TAL-437). UI-test fixture launches use a scratch
+    /// directory, so no journey sees another's cached responses.
+    static func app(server: URL) -> ResponseCache {
+        ResponseCache(server: server, root: appRoot)
+    }
+
+    /// nil selects the Caches directory; the sign-out reset clears the same root.
+    static var appRoot: URL? {
+        #if DEBUG
+        UITestFixtureEnvironment.responseCacheRoot
+        #else
+        nil
+        #endif
+    }
+}

@@ -74,6 +74,12 @@ public struct ChatActiveRunStatusPresentation: Equatable {
     public var isSyncing: Bool {
         kind == .syncing
     }
+
+    /// Whether the transcript makes room for this chip. The syncing pill floats over the
+    /// transcript bottom, so it never shifts the chat as it comes and goes.
+    public var reservesTranscriptSpace: Bool {
+        !isSyncing
+    }
 }
 
 public enum ChatActiveRunStatusPolicy {

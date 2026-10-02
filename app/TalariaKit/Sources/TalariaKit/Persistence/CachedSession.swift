@@ -42,6 +42,9 @@ public final class CachedSession {
     var readOnly: Bool?
     // Retired with the `is_read_only` spelling (TAL-312); kept so the unversioned cache store opens without a migration.
     var isReadOnly: Bool?
+    /// The row's place in the server's latest list, so a cached paint keeps the server's order
+    /// (TAL-437). Optional so the unversioned store opens without a migration.
+    var listPosition: Int?
     var cachedAt: Date
     var expiresAt: Date
 

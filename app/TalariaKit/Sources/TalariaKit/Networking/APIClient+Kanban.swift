@@ -23,9 +23,25 @@ public protocol KanbanDataClient: Sendable {
     func unblockKanbanCard(_ request: KanbanCardActionRequest) async throws -> KanbanCardMutationEnvelope
     func addKanbanDependency(_ request: KanbanDependencyMutationRequest) async throws -> KanbanDependencyMutationEnvelope
     func removeKanbanDependency(_ request: KanbanDependencyMutationRequest) async throws -> KanbanDependencyMutationEnvelope
+    /// The cold-load reads, also saving the response so the next visit shows it first (TAL-437).
+    func kanbanConfiguration(caching cache: ResponseCache.Entry?) async throws -> KanbanConfiguration
+    func kanbanBoards(caching cache: ResponseCache.Entry?) async throws -> KanbanBoardsResponse
+    func kanbanBoard(_ request: KanbanBoardRequest, caching cache: ResponseCache.Entry?) async throws -> KanbanBoardSnapshot
 }
 
 extension KanbanDataClient {
+    public func kanbanConfiguration(caching cache: ResponseCache.Entry?) async throws -> KanbanConfiguration {
+        try await kanbanConfiguration()
+    }
+
+    public func kanbanBoards(caching cache: ResponseCache.Entry?) async throws -> KanbanBoardsResponse {
+        try await kanbanBoards()
+    }
+
+    public func kanbanBoard(_ request: KanbanBoardRequest, caching cache: ResponseCache.Entry?) async throws -> KanbanBoardSnapshot {
+        try await kanbanBoard(request)
+    }
+
     func createKanbanBoard(_ request: KanbanCreateBoardRequest) async throws -> KanbanBoardMutationEnvelope {
         throw KanbanUnsupportedClientMethod.createBoard
     }
@@ -117,6 +133,18 @@ extension APIClient: KanbanDataClient {
 
     public func kanbanBoards() async throws -> KanbanBoardsResponse {
         try await kanbanJSON(endpoint: .kanbanBoards)
+    }
+
+    public func kanbanConfiguration(caching cache: ResponseCache.Entry?) async throws -> KanbanConfiguration {
+        try await kanbanJSON(endpoint: .kanbanConfig, method: "GET", caching: cache)
+    }
+
+    public func kanbanBoards(caching cache: ResponseCache.Entry?) async throws -> KanbanBoardsResponse {
+        try await kanbanJSON(endpoint: .kanbanBoards, method: "GET", caching: cache)
+    }
+
+    public func kanbanBoard(_ request: KanbanBoardRequest, caching cache: ResponseCache.Entry?) async throws -> KanbanBoardSnapshot {
+        try await kanbanJSON(endpoint: .kanbanBoard(request), method: "GET", caching: cache)
     }
 
     public func createKanbanBoard(_ request: KanbanCreateBoardRequest) async throws -> KanbanBoardMutationEnvelope {
@@ -269,7 +297,8 @@ extension APIClient: KanbanDataClient {
 
     private func kanbanJSON<Response: Decodable>(
         endpoint: Endpoint,
-        method: String
+        method: String,
+        caching cache: ResponseCache.Entry? = nil
     ) async throws -> Response {
         let (data, response) = try await sendDataReturningResponse(
             endpoint: endpoint,
@@ -280,7 +309,9 @@ extension APIClient: KanbanDataClient {
         guard contentType.hasPrefix("application/json") else {
             throw KanbanResponseError.nonJSONContentType
         }
-        return try decode(Response.self, from: data)
+        let decoded = try decode(Response.self, from: data)
+        cache?.save(data)
+        return decoded
     }
 
     private func kanbanJSON<Response: Decodable, Body: Encodable>(

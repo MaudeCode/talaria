@@ -56,6 +56,27 @@ final class ChatNavigationUITests: ChatUITestCase {
     }
 }
 
+/// TAL-437: a relaunch shows the chats the app saw last time before `/api/sessions` answers.
+final class ColdLaunchCacheUITests: ChatUITestCase {
+    func testRelaunchShowsTheLastChatsBeforeTheServerAnswers() throws {
+        launchFixture(additionalArguments: ["--ui-test-persistent-cache", "--ui-test-reset-persistent-cache"])
+        XCTAssertTrue(fixtureSessionButton.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        app.terminate()
+
+        launchFixture(additionalArguments: ["--ui-test-persistent-cache", "--ui-test-hold-session-list"])
+
+        XCTAssertTrue(
+            fixtureSessionButton.awaitExistence(timeout: 15),
+            "The relaunch did not show the last chats before /api/sessions answered"
+        )
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Cached chats on relaunch"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        XCTAssertTrue(releaseHeldLoads { fixtureSessionButton.exists })
+    }
+}
+
 /// Reopening a chat paints its cached transcript at once and shows "Syncing messages" above
 /// the composer until the server answers (TAL-436).
 final class ChatSyncStatusUITests: ChatUITestCase {

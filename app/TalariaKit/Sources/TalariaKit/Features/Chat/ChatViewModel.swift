@@ -6,7 +6,7 @@ import SwiftData
 @MainActor
 @Observable
 public final class ChatViewModel {
-    private static let messagePageLimit = 50
+    static let messagePageLimit = 50
 
     private struct SessionLoadWaiter {
         let requestGeneration: Int
@@ -287,6 +287,9 @@ public final class ChatViewModel {
     /// an older server that omits it allowed branching.
     public private(set) var canBranch: Bool
     private let server: URL
+    /// The server's `ServerCacheGeneration` when this chat opened; the chat writes its cache only
+    /// while it is unchanged.
+    private let cacheGeneration: Int
     public let client: APIClient
     private let streamCoordinator: ChatStreamCoordinator
     private let pendingActionCoordinator: ChatPendingActionCoordinator
@@ -364,6 +367,8 @@ public final class ChatViewModel {
     private var needsComposerConfigurationReload = false
     private var pendingExplicitModelPick = false
     public private(set) var composerConfigurationInteractionGeneration = 0
+    /// Last composer catalogs per server, so a chat's choices show before they load (TAL-437).
+    private let responseCache: ResponseCache?
 
     public init(
         session: SessionSummary,
@@ -384,8 +389,10 @@ public final class ChatViewModel {
         listenRemoteControlCenter: (any ListenRemoteControlControlling)? = nil,
         serverTTSAudioPlayerFactory: (@MainActor (Data) throws -> any ListenAudioPlaying)? = nil,
         draftAttachmentStore: any ChatDraftAttachmentStoring = ChatDraftAttachmentStore.shared,
-        userDefaults: UserDefaults = .standard
+        userDefaults: UserDefaults = .standard,
+        responseCache: ResponseCache? = nil
     ) {
+        self.responseCache = responseCache
         sessionID = session.sessionId
         currentWorkspace = session.workspace
         currentModel = session.model
@@ -397,6 +404,7 @@ public final class ChatViewModel {
         selectedRowIsStreaming = session.isStreaming
         selectedRowActiveStreamID = Self.nonEmpty(session.activeStreamId)
         self.server = server
+        cacheGeneration = ServerCacheGeneration.current(for: server)
         let resolvedClient = client ?? APIClient(baseURL: server)
         let resolvedStreamClient = streamClient ?? SSEClient()
         let resolvedLiveActivityManager = liveActivityManager ?? PlatformHooks.liveActivityManager()
@@ -435,6 +443,21 @@ public final class ChatViewModel {
         self.streamCoordinator.attach(delegate: self)
         self.pendingActionCoordinator.delegate = self
         self.attachmentCoordinator.delegate = self
+    }
+
+    /// Fills the composer's empty catalogs from the last responses (TAL-437). Called when the chat
+    /// appears rather than in `init`, because SwiftUI builds a view model on every `ChatView` init
+    /// and this reads files. Runs once; the live load replaces what it shows.
+    public func showCachedComposerChoices() {
+        guard let responseCache, !didShowCachedComposerChoices else { return }
+        didShowCachedComposerChoices = true
+        let initialProfileName = selectedProfileName
+        applyComposerConfigurationState(
+            ChatComposerConfigLoader.cachedState(from: composerConfigurationState, cache: responseCache)
+        )
+        if selectedProfileName != initialProfileName {
+            isProfileSelectionFromCache = true
+        }
     }
 
     deinit {
@@ -621,8 +644,13 @@ public final class ChatViewModel {
         }
     }
 
+    /// A profile name seeded from the last response (TAL-437) only shows; requests wait for the
+    /// live load or the user's pick, since another device may have switched profiles since.
+    private var isProfileSelectionFromCache = false
+    private var didShowCachedComposerChoices = false
+
     private var requestProfileName: String? {
-        Self.nonEmpty(selectedProfileName) ?? Self.nonEmpty(currentProfile)
+        (isProfileSelectionFromCache ? nil : Self.nonEmpty(selectedProfileName)) ?? Self.nonEmpty(currentProfile)
     }
 
     private var requestModelProvider: String? {
@@ -654,7 +682,7 @@ public final class ChatViewModel {
             needsComposerConfigurationReload = false
 
             let initialState = composerConfigurationState
-            let result = await ChatComposerConfigLoader(client: client)
+            let result = await ChatComposerConfigLoader(client: client, cache: responseCache)
                 .loadConfiguration(from: initialState)
 
             guard composerConfigurationState == initialState else {
@@ -663,6 +691,9 @@ public final class ChatViewModel {
             }
 
             applyComposerConfigurationState(result.state)
+            if result.configurationError == nil {
+                isProfileSelectionFromCache = false
+            }
 
             if let error = result.configurationError {
                 lastError = error
@@ -967,7 +998,7 @@ public final class ChatViewModel {
             return nil
         }
 
-        if !startNewSession, isSelectedProfile(profile) {
+        if !startNewSession, !isProfileSelectionFromCache, isSelectedProfile(profile) {
             return nil
         }
 
@@ -981,6 +1012,7 @@ public final class ChatViewModel {
             profileOptions = response.profiles ?? profileOptions
             selectedProfileName = response.active ?? profileName
             currentProfile = selectedProfileName
+            isProfileSelectionFromCache = false
 
             if let defaultWorkspace = response.defaultWorkspace, !defaultWorkspace.isEmpty {
                 currentWorkspace = defaultWorkspace
@@ -1348,7 +1380,7 @@ public final class ChatViewModel {
             )
             if let modelContext {
                 do {
-                    try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+                    try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
                 } catch {
                     cacheErrorMessage = error.localizedDescription
                 }
@@ -1611,7 +1643,7 @@ public final class ChatViewModel {
 
             if let modelContext {
                 do {
-                    try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+                    try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
                 } catch {
                     cacheErrorMessage = error.localizedDescription
                 }
@@ -2683,10 +2715,31 @@ public final class ChatViewModel {
         guard let modelContext else { return }
 
         do {
-            try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+            try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
         } catch {
             cacheErrorMessage = error.localizedDescription
         }
+    }
+
+    /// Whether no server-scoped reset ran since this chat opened (`ServerCacheGeneration`).
+    private var ownsCurrentCache: Bool {
+        ServerCacheGeneration.current(for: server) == cacheGeneration
+    }
+
+    private func cacheMessagesIfCurrent(_ messages: [ChatMessage], sessionID: String, in modelContext: ModelContext) throws {
+        guard ownsCurrentCache else { return }
+        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+    }
+
+    /// Saves the transcript as it stands, a partial answer included, when the chat leaves the
+    /// screen or the app goes to the background (TAL-437), so reopening it or relaunching the app
+    /// paints it at once while the server load and replay catch up.
+    public func persistTranscript(modelContext: ModelContext) {
+        // An empty or offline transcript has nothing newer than the cache, and writing an empty
+        // one would delete the saved rows.
+        guard let sessionID, !messages.isEmpty, !isViewingCachedData else { return }
+        flushPendingStreamingContent()
+        cacheCurrentMessages(sessionID: sessionID, modelContext: modelContext)
     }
 
     public func cacheCompletedResponse(modelContext: ModelContext) {
@@ -3849,7 +3902,7 @@ public final class ChatViewModel {
             }
 
             let forkedSession = SessionSummary(from: forkedSessionDetail)
-            if let modelContext {
+            if let modelContext, ownsCurrentCache {
                 do {
                     try CacheStore.cacheSession(forkedSession, serverURL: server, in: modelContext)
                 } catch {
@@ -3924,7 +3977,7 @@ public final class ChatViewModel {
 
                 if let modelContext {
                     do {
-                        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+                        try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
                     } catch {
                         cacheErrorMessage = error.localizedDescription
                     }
@@ -4035,7 +4088,7 @@ public final class ChatViewModel {
 
                 if let modelContext {
                     do {
-                        try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+                        try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
                     } catch {
                         cacheErrorMessage = error.localizedDescription
                     }

@@ -5,6 +5,10 @@ extension APIClient {
         try await send(endpoint: .projects, method: "GET")
     }
 
+    public func projects(caching cache: ResponseCache.Entry?) async throws -> ProjectsResponse {
+        try await send(endpoint: .projects, caching: cache)
+    }
+
     public func createProject(name: String, color: String?) async throws -> ProjectMutationResponse {
         try await send(
             endpoint: .createProject,

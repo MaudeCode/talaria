@@ -102,9 +102,7 @@ public actor APIClient {
         if publicMediaSession == nil { ownedSessions.append(resolvedPublicMediaSession) }
         self.ownedSessions = ownedSessions
 
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        self.decoder = decoder
+        self.decoder = Self.responseDecoder()
 
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
@@ -235,6 +233,25 @@ public actor APIClient {
         let encodedBody = try body.map { try encoder.encode($0) }
         let data = try await sendData(endpoint: endpoint, method: method, encodedBody: encodedBody, timeout: timeout)
         return try decode(Response.self, from: data)
+    }
+
+    /// The decoder for every server response, live or cached (`ResponseCache`).
+    static func responseDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return decoder
+    }
+
+    /// A GET whose raw response also lands in `cache`, so the next launch can show it first
+    /// (TAL-437). Only a response that decoded is kept.
+    func send<Response: Decodable>(
+        endpoint: Endpoint,
+        caching cache: ResponseCache.Entry?
+    ) async throws -> Response {
+        let data = try await sendData(endpoint: endpoint, method: "GET", encodedBody: nil)
+        let response = try decode(Response.self, from: data)
+        cache?.save(data)
+        return response
     }
 
     func decode<Response: Decodable>(_ type: Response.Type, from data: Data) throws -> Response {

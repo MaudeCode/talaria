@@ -23,10 +23,20 @@ public final class MemoryViewModel {
     public private(set) var actionErrorMessage: String?
     public private(set) var lastError: Error?
 
-    private let client: APIClient
+    /// True while the screen shows the last saved memory rather than the server's (TAL-437).
+    /// Saves carry no version check, so editing waits for the live content.
+    public private(set) var isShowingCachedContent = false
 
-    public init(server: URL, client: APIClient? = nil) {
+    private let client: APIClient
+    private let responseCache: ResponseCache?
+
+    public init(server: URL, client: APIClient? = nil, responseCache: ResponseCache? = nil) {
         self.client = client ?? APIClient(baseURL: server)
+        self.responseCache = responseCache
+        if let cached = responseCache?.entry(ResponseCache.Kind.memory).load(MemoryResponse.self) {
+            apply(cached)
+            isShowingCachedContent = true
+        }
     }
 
     public func load() async {
@@ -36,8 +46,9 @@ public final class MemoryViewModel {
         defer { isLoading = false }
 
         do {
-            let response = try await client.memory()
+            let response = try await client.memory(caching: responseCache?.entry(ResponseCache.Kind.memory))
             apply(response)
+            isShowingCachedContent = false
         } catch {
             lastError = error
             errorMessage = error.localizedDescription

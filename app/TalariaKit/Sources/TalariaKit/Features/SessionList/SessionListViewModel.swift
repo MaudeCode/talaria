@@ -109,9 +109,13 @@ public final class SessionListViewModel {
     private let client: APIClient
     private let sessionMutator: SessionMutator
     private let server: URL
+    private let cacheGeneration: Int
+    private let responseCache: ResponseCache?
 
-    public init(server: URL, client: APIClient? = nil) {
+    public init(server: URL, client: APIClient? = nil, responseCache: ResponseCache? = nil) {
         self.server = server
+        cacheGeneration = ServerCacheGeneration.current(for: server)
+        self.responseCache = responseCache
         let resolvedClient = client ?? APIClient(baseURL: server)
         self.client = resolvedClient
         self.sessionMutator = SessionMutator(client: resolvedClient)
@@ -214,6 +218,70 @@ public final class SessionListViewModel {
         )
     }
 
+    /// Shows the last rows, projects and active profile this device saw on the first frame of a
+    /// cold launch (TAL-437), so the list never starts empty; the next loads replace each with the
+    /// server's. This is the expected-success window, so it stays out of offline mode.
+    public func paintCachedStateIfEmpty(modelContext: ModelContext) {
+        if sessions.isEmpty,
+           let cachedSessions = try? CacheStore.cachedSessions(serverURL: server, in: modelContext)
+            .filter(\.shouldAppearInSessionList),
+           !cachedSessions.isEmpty {
+            sessions = cachedSessions
+            isShowingCachedPaint = true
+        }
+        if projects.isEmpty, let cachedProjects = responseCache?.entry(ResponseCache.Kind.projects).load(ProjectsResponse.self) {
+            projects = cachedProjects.projects ?? []
+        }
+        if activeProfileName == nil, let cachedProfiles = responseCache?.entry(ResponseCache.Kind.profiles).load(ProfilesResponse.self) {
+            applyActiveProfile(cachedProfiles)
+        }
+    }
+
+    /// Whether the rows are the cached paint, not yet replaced by a server answer. A failed load
+    /// that is not a connectivity failure clears them, as the chat reverts its own cached paint, so
+    /// saved rows never pass for live ones without the offline banner.
+    private var isShowingCachedPaint = false
+
+    /// Runs already prefetched, as `session|stream`, so each run costs one request at most.
+    private var prefetchedRuns: Set<String> = []
+
+    /// Warms the transcript cache for running chats this device has never opened (TAL-437), one
+    /// bounded page each, so opening a run started elsewhere paints at once.
+    public func prefetchRunningTranscripts(modelContext: ModelContext) async {
+        for session in sessions where session.isStreaming == true {
+            guard let sessionID = Self.nonEmpty(session.sessionId) else { continue }
+            let runKey = "\(sessionID)|\(session.activeStreamId ?? "")"
+            guard !prefetchedRuns.contains(runKey) else { continue }
+            prefetchedRuns.insert(runKey)
+            // A chat opened here already has its own cache, which the chat keeps current. Checked
+            // again after the request, in case the chat saved a newer transcript meanwhile.
+            guard !hasCachedTranscript(sessionID, in: modelContext),
+                  let messages = try? await client.session(
+                    id: sessionID,
+                    messageLimit: ChatViewModel.messagePageLimit,
+                    expandRenderable: true
+                  ).session?.messages,
+                  !messages.isEmpty,
+                  !hasCachedTranscript(sessionID, in: modelContext)
+            else { continue }
+            try? writeCacheIfCurrent {
+                try CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+            }
+        }
+    }
+
+    /// Runs `write` only if no server-scoped reset ran since this list was created
+    /// (`ServerCacheGeneration`), so a list still open on a previous identity cannot cache its rows.
+    private func writeCacheIfCurrent(_ write: () throws -> Void) rethrows {
+        guard ServerCacheGeneration.current(for: server) == cacheGeneration else { return }
+        try write()
+    }
+
+    private func hasCachedTranscript(_ sessionID: String, in modelContext: ModelContext) -> Bool {
+        let cached = try? CacheStore.cachedMessages(serverURL: server, sessionID: sessionID, in: modelContext, limit: 1)
+        return !(cached?.isEmpty ?? true)
+    }
+
     @discardableResult
     public func load(
         modelContext: ModelContext? = nil,
@@ -264,13 +332,14 @@ public final class SessionListViewModel {
                 claimCountAtStart: claimCountAtStart
             )
             isViewingCachedData = false
+            isShowingCachedPaint = false
 
             if let modelContext {
                 do {
                     // The applied rows, not the raw response: a stale list must not
                     // put pre-import metadata back into the cache the offline
                     // fallback reads.
-                    try CacheStore.cacheSessions(sessions, serverURL: server, in: modelContext)
+                    try writeCacheIfCurrent { try CacheStore.cacheSessions(sessions, serverURL: server, in: modelContext) }
                 } catch {
                     cacheErrorMessage = error.localizedDescription
                 }
@@ -283,6 +352,10 @@ public final class SessionListViewModel {
 
             lastError = error
             sessionLoadError = error
+            if isShowingCachedPaint {
+                isShowingCachedPaint = false
+                sessions = []
+            }
             if CacheFallbackPolicy.shouldUseCache(for: error), let modelContext {
                 do {
                     let cachedSessions = try CacheStore.cachedSessions(serverURL: server, in: modelContext)
@@ -327,7 +400,7 @@ public final class SessionListViewModel {
 
         let generation = activeProfileGeneration
         do {
-            let response = try await client.profiles()
+            let response = try await client.profiles(caching: responseCache?.entry(ResponseCache.Kind.profiles))
             // A switch the user made while this request was in flight is newer
             // than the profile it reports, so reapplying it would show the wrong
             // active profile and rebuild profile-dependent views for it.
@@ -529,7 +602,7 @@ public final class SessionListViewModel {
 
             if let modelContext, session.shouldAppearInSessionList {
                 do {
-                    try CacheStore.cacheSession(session, serverURL: server, in: modelContext)
+                    try writeCacheIfCurrent { try CacheStore.cacheSession(session, serverURL: server, in: modelContext) }
                 } catch {
                     cacheErrorMessage = error.localizedDescription
                 }
@@ -622,7 +695,7 @@ public final class SessionListViewModel {
 
         guard let modelContext, session.shouldAppearInSessionList else { return }
         do {
-            try CacheStore.cacheSession(session, serverURL: server, in: modelContext)
+            try writeCacheIfCurrent { try CacheStore.cacheSession(session, serverURL: server, in: modelContext) }
         } catch {
             cacheErrorMessage = error.localizedDescription
         }
@@ -807,7 +880,7 @@ public final class SessionListViewModel {
 
                 if let modelContext {
                     do {
-                        try CacheStore.cacheSessions(sessions, serverURL: server, in: modelContext)
+                        try writeCacheIfCurrent { try CacheStore.cacheSessions(sessions, serverURL: server, in: modelContext) }
                     } catch {
                         cacheErrorMessage = error.localizedDescription
                     }
@@ -893,7 +966,7 @@ public final class SessionListViewModel {
         projectsGeneration += 1
         let generation = projectsGeneration
         do {
-            let response = try await client.projects()
+            let response = try await client.projects(caching: responseCache?.entry(ResponseCache.Kind.projects))
             // A project the user created, renamed or deleted while this request
             // was in flight is newer than the snapshot it returns, so adopting
             // it would make that mutation disappear until the next refresh.
@@ -1144,7 +1217,7 @@ public final class SessionListViewModel {
 
                 if let modelContext {
                     do {
-                        try CacheStore.cacheSession(newSession, serverURL: server, in: modelContext)
+                        try writeCacheIfCurrent { try CacheStore.cacheSession(newSession, serverURL: server, in: modelContext) }
                     } catch {
                         cacheErrorMessage = error.localizedDescription
                     }
