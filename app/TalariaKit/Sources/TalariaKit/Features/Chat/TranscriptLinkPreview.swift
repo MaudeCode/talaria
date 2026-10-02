@@ -220,7 +220,9 @@ enum TranscriptLinkPreviewExtractor {
 
 public enum TranscriptLinkPreviewEligibility {
     public static func previewURL(for message: ChatMessage, isStreaming: Bool) -> URL? {
+        // A body the server collapsed (TAL-456) gets no preview: one fetch per long row is what exhausted memory.
         guard !isStreaming,
+              message.displayExcerpt == nil,
               message.role == "user" || message.role == "assistant",
               let content = message.content
         else {

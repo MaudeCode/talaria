@@ -21,6 +21,33 @@ class ChatUITestCase: TalariaUITestCase {
     }
 }
 
+/// A transcript of very long bodies opens collapsed to the server's excerpts, each expands and
+/// collapses in place, and the composer stays usable (TAL-456).
+final class LongBodyTranscriptUITests: ChatUITestCase {
+    func testLongBodiesOpenCollapsedAndExpandInPlace() throws {
+        launchFixture(additionalArguments: ["--ui-test-long-bodies"])
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        tapFixtureSession(session)
+        XCTAssertNotNil(waitForComposer(timeout: 30), "The long-body session never opened")
+
+        XCTAssertTrue(app.buttons["Show more"].firstMatch.awaitExistence(timeout: 15), "A long body did not open collapsed")
+        // The transcript opens at its end, so the newest toggle is the one on screen.
+        let showMore = try XCTUnwrap(app.buttons.matching(identifier: "Show more").allElementsBoundByIndex.last)
+        showMore.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let showLess = app.buttons["Show less"].firstMatch
+        XCTAssertTrue(showLess.awaitExistence(timeout: 10), "The collapsed body did not expand")
+        // The toggle follows the whole body now, so bring it on screen before tapping it.
+        let window = app.windows.firstMatch.frame
+        for _ in 0..<40 where !window.contains(CGPoint(x: showLess.frame.midX, y: showLess.frame.midY)) {
+            if showLess.frame.midY > window.maxY { app.swipeUp() } else { app.swipeDown() }
+        }
+        showLess.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(showLess.awaitNonExistence(timeout: 10), "The expanded body did not collapse again")
+        XCTAssertNotNil(waitForComposer(timeout: 5))
+    }
+}
+
 /// Opening a chat from the list, then what the opened chat offers: its idle composer, which
 /// expands for typing, and long-press isolation between a message's links and its own actions
 /// (TAL-49).

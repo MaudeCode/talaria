@@ -549,6 +549,47 @@ export function withAttachmentObjects<T>(messages: T[]): T[] {
   return messages.map((m) => (isDict(m) && Array.isArray(m.attachments) && m.attachments.some((a) => typeof a === 'string') ? { ...m, attachments: attachmentObjects(m.attachments) } : m))
 }
 
+/** TAL-456: a settled user or assistant body longer than this ships a collapsed excerpt for clients to render. */
+export const BODY_EXCERPT_LIMIT = 3000
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+/** The first `BODY_EXCERPT_LIMIT` characters, never splitting a grapheme, cut back to a line break (else a space) in the second half. */
+function bodyExcerpt(text: string): string {
+  let end = 0
+  for (const { segment } of graphemes.segment(text.slice(0, BODY_EXCERPT_LIMIT + 16))) {
+    if (end + segment.length > BODY_EXCERPT_LIMIT) break
+    end += segment.length
+  }
+  const head = text.slice(0, end)
+  const floor = BODY_EXCERPT_LIMIT / 2
+  const lineBreak = head.lastIndexOf('\n')
+  const space = head.lastIndexOf(' ')
+  const cut = lineBreak >= floor ? lineBreak : space >= floor ? space : end
+  return head.slice(0, cut).trimEnd()
+}
+
+/**
+ * TAL-456: stamps `_display_excerpt` and `_display_truncated` on settled user and assistant rows whose text is longer than
+ * `BODY_EXCERPT_LIMIT`, and `final_answer_excerpt` on a settled scene whose final answer is, so clients render a bounded
+ * excerpt instead of laying out the whole body. Full text stays for copy and edit; the running turn's rows are left alone.
+ * Runs after scene hydration. Returns copies; stored rows are untouched.
+ */
+export function withBodyExcerpts<T>(messages: T[], activeTurnId: string | null): T[] {
+  return messages.map((m) => {
+    if (!isDict(m) || (m.role !== 'user' && m.role !== 'assistant')) return m
+    if (activeTurnId && m._turn_id === activeTurnId) return m
+    let out: Record<string, unknown> = m
+    const text = messageText(m.content)
+    if (text.length > BODY_EXCERPT_LIMIT) out = { ...out, _display_excerpt: bodyExcerpt(text), _display_truncated: true }
+    const scene = m._anchor_activity_scene
+    if (isDict(scene) && typeof scene.final_answer === 'string' && scene.final_answer.length > BODY_EXCERPT_LIMIT) {
+      out = { ...out, _anchor_activity_scene: { ...scene, final_answer_excerpt: bodyExcerpt(scene.final_answer) } }
+    }
+    return out as T
+  })
+}
+
 /** The running turn's prompt as eager save checkpoints it (Python `_checkpoint_user_message_for_eager_session_save`). */
 export function pendingUserRow(msg: string, attachments: unknown[], startedAt: number | null, source: string, turnId: string): Message {
   const user: Message = { role: 'user', content: msg, _turn_id: turnId }

@@ -156,7 +156,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                 activityMessage(
                     text: turn.finalAnswer,
                     includesAttachments: true,
-                    includesTurnMetrics: true
+                    includesTurnMetrics: true,
+                    displayExcerpt: finalAnswerExcerpt(for: turn)
                 ),
                 isStreaming: false
             )
@@ -208,7 +209,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                 activityMessage(
                     text: turn.finalAnswer,
                     includesAttachments: true,
-                    includesTurnMetrics: true
+                    includesTurnMetrics: true,
+                    displayExcerpt: finalAnswerExcerpt(for: turn)
                 ),
                 isStreaming: false
             )
@@ -510,10 +512,17 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         }
     }
 
+    /// The server's collapsed excerpt (TAL-456) when this turn shows the scene's own final answer.
+    private func finalAnswerExcerpt(for turn: CompletedAssistantTurn) -> String? {
+        guard let scene = transcriptMessage.message.activityScene, scene.finalAnswer == turn.finalAnswer else { return nil }
+        return scene.finalAnswerExcerpt
+    }
+
     private func activityMessage(
         text: String,
         includesAttachments: Bool,
-        includesTurnMetrics: Bool
+        includesTurnMetrics: Bool,
+        displayExcerpt: String? = nil
     ) -> ChatMessage {
         let message = transcriptMessage.message
         return ChatMessage(
@@ -528,7 +537,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             turnDuration: includesTurnMetrics ? message.turnDuration : nil,
             turnTps: includesTurnMetrics ? message.turnTps : nil,
             turnId: message.turnId,
-            steer: message.steer
+            steer: message.steer,
+            displayExcerpt: displayExcerpt
         )
     }
 }

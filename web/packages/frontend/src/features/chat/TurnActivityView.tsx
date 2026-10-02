@@ -12,6 +12,7 @@ import { DisclosureTurnContext, terminalOutcomeLabel, Worklog, type ActivityMode
 import { useLocale } from '../../i18n/useLocale'
 import type { ActivityItem, TurnActivity } from './turnActivity'
 import { prefersReducedMotion } from '../../lib/motion'
+import { CollapsedBody } from './CollapsedBody'
 
 // The live turn's last rendered height, so the settled row that replaces it can fold from that height.
 let lastLiveTurn: { key: string; height: number } | null = null
@@ -144,7 +145,7 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
       {mode === 'hide_all_activity' && items.filter((item) => item.kind === 'steering').map((item) => render(item, false))}
       {!running && <SettleSpacer turnKey={activity.key} />}
       {outcome && <div role="status" className="text-muted">{outcome}</div>}
-      {finalAnswer.trim() && <div className="msg-body" data-final-answer="1"><Markdown text={finalAnswer} /></div>}
+      {finalAnswer.trim() && <CollapsedBody excerpt={activity.finalAnswerExcerpt}>{(excerpt) => <div className="msg-body" data-final-answer="1"><Markdown text={excerpt ?? finalAnswer} /></div>}</CollapsedBody>}
     </DisclosureTurnContext>
   )
 }

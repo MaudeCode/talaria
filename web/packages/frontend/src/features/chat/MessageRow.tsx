@@ -7,6 +7,7 @@ import { messageText } from './render/text'
 import type { ActivityMode } from './blocks/Worklog'
 import { persistedActivity } from './turnActivity'
 import { TurnActivityView } from './TurnActivityView'
+import { CollapsedBody } from './CollapsedBody'
 import type { VisibleMessage } from './useTranscript'
 import { IconButton } from '../../ui/Button'
 import { showToast } from '../toast/toast'
@@ -45,7 +46,9 @@ export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown
   return (
     <div className="msg-row" data-role="user" data-msg-idx={row.index} data-message-key={row.key}>
       <AttachmentList message={row.message} sessionId={sessionId} />
-      <div className="msg-body">{renderMarkdown ? <Markdown text={text} /> : <div className="whitespace-pre-wrap">{text}</div>}</div>
+      <CollapsedBody excerpt={row.message._display_truncated ? row.message._display_excerpt : undefined}>
+        {(excerpt) => <div className="msg-body">{renderMarkdown ? <Markdown text={excerpt ?? text} /> : <div className="whitespace-pre-wrap">{excerpt ?? text}</div>}</div>}
+      </CollapsedBody>
       <div className="msg-foot">
         {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
         <IconButton label={m.copy()} className="h-6 w-6" onClick={() => { void navigator.clipboard.writeText(text).then(() => showToast(m.copied())) }}><Copy size={12} aria-hidden="true" /></IconButton>

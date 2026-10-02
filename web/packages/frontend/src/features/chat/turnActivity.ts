@@ -16,6 +16,8 @@ export interface TurnActivity {
   key: string
   items: ActivityItem[]
   finalAnswer: string
+  /** The server's collapsed excerpt of a long final answer (TAL-456); `finalAnswer` stays whole for copy and speech. */
+  finalAnswerExcerpt?: string
   status: string
   /** Server-decided initial state of the turn's "Worked" disclosure. */
   expandedByDefault?: boolean
@@ -92,7 +94,7 @@ export function persistedActivity(row: VisibleMessage): TurnActivity {
     return { key, items: [], finalAnswer: parts.map((part) => messageText(part.message.content)).filter((part) => part.trim()).join('\n\n'), status: 'completed' }
   }
   return {
-    key, items: sceneItems(scene.activity_rows), finalAnswer: text(scene.final_answer), status: text(scene.terminal_state) || 'completed', expandedByDefault: scene.expanded_by_default === true,
+    key, items: sceneItems(scene.activity_rows), finalAnswer: text(scene.final_answer), ...(text(scene.final_answer_excerpt) ? { finalAnswerExcerpt: text(scene.final_answer_excerpt) } : {}), status: text(scene.terminal_state) || 'completed', expandedByDefault: scene.expanded_by_default === true,
     sceneRows: scene.activity_rows,
     ...(typeof scene.activity_rows_offset === 'number' && scene.activity_rows_offset > 0 ? { history: { ref: text(scene.activity_scene_ref), index: row.index, before: scene.activity_rows_offset } } : {}),
   }

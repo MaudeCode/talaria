@@ -38,6 +38,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
     public let turnId: String?
     /// A consumed steer the server persisted in its turn: shown inside the turn's scene, never as its own row.
     public let steer: [String: JSONValue]?
+    /// The server's collapsed excerpt of a body too long to lay out whole (TAL-456); `content` stays whole for actions.
+    public let displayExcerpt: String?
 
     public init(
         role: String?,
@@ -56,7 +58,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         turnDuration: Double? = nil,
         turnTps: Double? = nil,
         turnId: String? = nil,
-        steer: [String: JSONValue]? = nil
+        steer: [String: JSONValue]? = nil,
+        displayExcerpt: String? = nil
     ) {
         self.role = role
         self.content = content
@@ -75,6 +78,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         self.turnTps = turnTps
         self.turnId = turnId
         self.steer = steer
+        self.displayExcerpt = displayExcerpt
     }
 
     enum CodingKeys: String, CodingKey {
@@ -96,6 +100,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         case turnId = "_turnId"
         case steer = "_steer"
         case underscoredTimestamp = "_ts"
+        case displayTruncated = "_displayTruncated"
+        case displayExcerpt = "_displayExcerpt"
     }
 
     public init(from decoder: Decoder) throws {
@@ -123,6 +129,9 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         turnTps = container.decodeLossyDoubleIfPresent(forKey: .turnTps)
         turnId = container.decodeLossyStringIfPresent(forKey: .turnId)
         steer = try? container.decodeIfPresent([String: JSONValue].self, forKey: .steer)
+        displayExcerpt = (try? container.decodeIfPresent(Bool.self, forKey: .displayTruncated)) == true
+            ? container.decodeLossyStringIfPresent(forKey: .displayExcerpt)
+            : nil
     }
 
     private static func attachments(
@@ -291,6 +300,8 @@ extension ChatMessage {
 public struct AssistantActivityScene: Codable, Equatable {
     public let version: String?
     public let finalAnswer: String?
+    /// The server's collapsed excerpt of a final answer too long to lay out whole (TAL-456).
+    public let finalAnswerExcerpt: String?
     public let activityRows: [AssistantActivitySceneRow]?
     let turnDuration: Double?
     /// Server-decided initial state of the turn's "Worked" disclosure.
@@ -311,6 +322,7 @@ public struct AssistantActivityScene: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case version
         case finalAnswer
+        case finalAnswerExcerpt
         case activityRows
         case turnDuration
         case expandedByDefault
@@ -326,6 +338,7 @@ public struct AssistantActivityScene: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         version = container.decodeLossyStringIfPresent(forKey: .version)
         finalAnswer = container.decodeLossyStringIfPresent(forKey: .finalAnswer)
+        finalAnswerExcerpt = container.decodeLossyStringIfPresent(forKey: .finalAnswerExcerpt)
         turnDuration = container.decodeLossyDoubleIfPresent(forKey: .turnDuration)
         expandedByDefault = (try? container.decodeIfPresent(Bool.self, forKey: .expandedByDefault)) ?? false
         terminalState = container.decodeLossyStringIfPresent(forKey: .terminalState)

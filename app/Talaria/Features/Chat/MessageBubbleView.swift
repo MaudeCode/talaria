@@ -9,6 +9,8 @@ struct MessageBubbleView: View {
     @AppStorage(ChatTranscriptDisplaySettings.hidesAttachmentPathsKey) private var hidesAttachmentPaths = true
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
     @AppStorage(ChatTranscriptDisplaySettings.showsResponseSpeedKey) private var showsResponseSpeed = false
+    /// Device-local disclosure for a body the server collapsed (TAL-456).
+    @State private var isExpanded = false
 
     let message: ChatMessage
     let loadAttachmentImage: ((String) async -> Data?)?
@@ -78,6 +80,7 @@ struct MessageBubbleView: View {
                         if hasVisibleUserBubbleText {
                             userBubble
                         }
+                        collapseToggle
                         linkPreview
                     }
                 }
@@ -141,6 +144,7 @@ struct MessageBubbleView: View {
                 MarkdownRenderer(content: messageText, isStreaming: isStreaming)
             }
 
+            collapseToggle
             linkPreview
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -426,6 +430,9 @@ struct MessageBubbleView: View {
     }
 
     private var messageText: String {
+        if let excerpt = collapsedExcerpt {
+            return excerpt
+        }
         guard let content = message.content, !content.isEmpty else {
             return " "
         }
@@ -433,11 +440,29 @@ struct MessageBubbleView: View {
         return content
     }
 
+    /// The server's excerpt while this settled row is collapsed; `nil` shows the whole body.
+    private var collapsedExcerpt: String? {
+        guard !isStreaming, !isExpanded else { return nil }
+        return message.displayExcerpt
+    }
+
+    @ViewBuilder
+    private var collapseToggle: some View {
+        if message.displayExcerpt != nil, !isStreaming {
+            Button(isExpanded ? String(localized: "Show less") : String(localized: "Show more")) {
+                isExpanded.toggle()
+            }
+            .font(AppFont.body())
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("message-collapse-toggle")
+        }
+    }
+
     /// The user bubble's text, with the appended attachment-path marker stripped
     /// when the user has opted to hide it. Display-only: `message.content` and the
     /// sent payload are untouched.
     private var userBubbleText: String {
-        let content = message.content ?? ""
+        let content = collapsedExcerpt ?? message.content ?? ""
         guard hidesAttachmentPaths else { return content }
         return MessageAttachment.contentWithoutAttachmentReferences(
             in: content,

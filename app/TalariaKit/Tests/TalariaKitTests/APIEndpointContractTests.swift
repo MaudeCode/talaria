@@ -430,6 +430,37 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(journaled.messages?.last?.role, "user")
     }
 
+    func testSharedWebSessionCollapsesOnlyItsLongBodies() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-456 has no such example.
+        guard let example = object["long_body_session"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(withJSONObject: example["messages"] ?? []))
+        XCTAssertEqual(messages.map { $0.displayExcerpt != nil }, [true, true, false, false])
+        for message in messages {
+            if let excerpt = message.displayExcerpt {
+                XCTAssertLessThan(excerpt.count, message.content?.count ?? 0)
+                XCTAssertTrue(message.content?.hasPrefix(excerpt) == true)
+            }
+        }
+        let reply = try XCTUnwrap(messages.first { $0.messageId == "long-body-reply" })
+        XCTAssertEqual(reply.activityScene?.finalAnswerExcerpt, reply.displayExcerpt)
+        XCTAssertNil(messages.first { $0.messageId == "short-body-reply" }?.activityScene?.finalAnswerExcerpt)
+    }
+
+    func testOnlyAServerCollapsedExcerptIsKeptAndALongBodyGetsNoLinkPreview() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        func message(_ json: String) throws -> ChatMessage { try decoder.decode(ChatMessage.self, from: Data(json.utf8)) }
+        let collapsed = try message(#"{"role":"user","content":"See https://example.test/page and more","_display_truncated":true,"_display_excerpt":"See"}"#)
+        let unflagged = try message(#"{"role":"user","content":"See https://example.test/page","_display_excerpt":"See"}"#)
+        XCTAssertEqual(collapsed.displayExcerpt, "See")
+        XCTAssertNil(unflagged.displayExcerpt)
+        XCTAssertNil(TranscriptLinkPreviewEligibility.previewURL(for: collapsed, isStreaming: false))
+        XCTAssertEqual(TranscriptLinkPreviewEligibility.previewURL(for: unflagged, isStreaming: false)?.absoluteString, "https://example.test/page")
+    }
+
     func testSharedWebSessionResolvesEveryToolCallOutcome() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-313 has no such example.

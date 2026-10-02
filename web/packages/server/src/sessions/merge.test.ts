@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractToolCallsFromMessages, toolOutcome, withToolCallOutcomes } from './merge.js'
+import { BODY_EXCERPT_LIMIT, extractToolCallsFromMessages, toolOutcome, withBodyExcerpts, withToolCallOutcomes } from './merge.js'
 
 describe('toolOutcome (TAL-313)', () => {
   it('fails a result that reports an error, a non-zero exit code, or success false, in any persisted shape', () => {
@@ -54,5 +54,54 @@ describe('withToolCallOutcomes (TAL-313)', () => {
     const messages = [call('call_1'), { role: 'tool', tool_call_id: 'call_1', content: 'a' }, call('call_1'), { role: 'tool', tool_call_id: 'call_1', content: 'b' }]
     const settled = extractToolCallsFromMessages(messages, [{ name: 'terminal', tid: 'call_1', duration: 1 }, { name: 'terminal', tid: 'call_1', duration: 2 }])
     expect(settled.map((c) => [c.assistant_msg_idx, c.duration])).toEqual([[0, 1], [2, 2]])
+  })
+})
+
+describe('withBodyExcerpts (TAL-456)', () => {
+  const excerptOf = (content: unknown, role = 'user'): Record<string, unknown> => withBodyExcerpts([{ role, content }], null)[0] as Record<string, unknown>
+
+  it('leaves a body at the limit alone and collapses one character more', () => {
+    expect(BODY_EXCERPT_LIMIT).toBe(3000)
+    expect(excerptOf('a'.repeat(3000))).not.toHaveProperty('_display_truncated')
+    expect(excerptOf('a'.repeat(3000))).not.toHaveProperty('_display_excerpt')
+    const over = excerptOf('a'.repeat(3001))
+    expect(over._display_truncated).toBe(true)
+    expect(over._display_excerpt).toBe('a'.repeat(3000))
+    expect(over.content).toBe('a'.repeat(3001))
+  })
+
+  it('cuts at the last line break, else the last space, in the second half of the limit', () => {
+    expect(excerptOf(`${'x'.repeat(2000)}\n${'y'.repeat(800)} ${'z'.repeat(800)}`)._display_excerpt).toBe('x'.repeat(2000))
+    expect(excerptOf(`${'x'.repeat(2500)} ${'y'.repeat(800)}`)._display_excerpt).toBe('x'.repeat(2500))
+    // A break that early would leave a stub, so the cut falls on the limit instead.
+    expect(excerptOf(`${'x'.repeat(10)}\n${'y'.repeat(5000)}`)._display_excerpt).toBe(`${'x'.repeat(10)}\n${'y'.repeat(2989)}`)
+  })
+
+  it('never splits a grapheme cluster at the limit', () => {
+    const family = '👨‍👩‍👧'
+    const excerpt = String(excerptOf(`${'a'.repeat(2998)}${family}${'b'.repeat(100)}`)._display_excerpt)
+    expect(excerpt).toBe('a'.repeat(2998))
+  })
+
+  it('reads text parts, covers assistant rows, and skips other roles', () => {
+    expect(excerptOf([{ type: 'text', text: 'p'.repeat(3500) }], 'assistant')._display_excerpt).toBe('p'.repeat(3000))
+    expect(excerptOf('t'.repeat(5000), 'tool')).not.toHaveProperty('_display_truncated')
+  })
+
+  it('stamps a long scene final answer and leaves a short one alone', () => {
+    const scene = (final: string) => ({ version: 'activity_scene_v1', activity_rows: [], final_answer: final })
+    const [long, short] = withBodyExcerpts([{ role: 'assistant', content: 'x', _anchor_activity_scene: scene('f'.repeat(3200)) }, { role: 'assistant', content: 'y', _anchor_activity_scene: scene('ok') }], null) as unknown as Record<string, Record<string, unknown>>[]
+    expect(long?._anchor_activity_scene?.final_answer_excerpt).toBe('f'.repeat(3000))
+    expect(long?._anchor_activity_scene?.final_answer).toBe('f'.repeat(3200))
+    expect(long).not.toHaveProperty('_display_truncated')
+    expect(short?._anchor_activity_scene).not.toHaveProperty('final_answer_excerpt')
+  })
+
+  it('leaves the running turn alone and returns copies', () => {
+    const rows = [{ role: 'user', content: 'u'.repeat(4000), _turn_id: 'run' }, { role: 'assistant', content: 'a'.repeat(4000), _turn_id: 'done' }]
+    const out = withBodyExcerpts(rows, 'run') as Record<string, unknown>[]
+    expect(out[0]).toBe(rows[0])
+    expect(out[1]?._display_truncated).toBe(true)
+    expect(rows[1]).not.toHaveProperty('_display_truncated')
   })
 })
