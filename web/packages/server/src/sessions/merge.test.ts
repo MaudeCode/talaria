@@ -90,7 +90,7 @@ describe('withBodyExcerpts (TAL-456)', () => {
 
   it('stamps a long scene final answer and leaves a short one alone', () => {
     const scene = (final: string) => ({ version: 'activity_scene_v1', activity_rows: [], final_answer: final })
-    const [long, short] = withBodyExcerpts([{ role: 'assistant', content: 'x', _anchor_activity_scene: scene('f'.repeat(3200)) }, { role: 'assistant', content: 'y', _anchor_activity_scene: scene('ok') }], null) as Record<string, Record<string, unknown>>[]
+    const [long, short] = withBodyExcerpts([{ role: 'assistant', content: 'x', _anchor_activity_scene: scene('f'.repeat(3200)) }, { role: 'assistant', content: 'y', _anchor_activity_scene: scene('ok') }], null) as unknown as Record<string, Record<string, unknown>>[]
     expect(long?._anchor_activity_scene?.final_answer_excerpt).toBe('f'.repeat(3000))
     expect(long?._anchor_activity_scene?.final_answer).toBe('f'.repeat(3200))
     expect(long).not.toHaveProperty('_display_truncated')
