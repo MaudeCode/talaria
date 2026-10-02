@@ -37,6 +37,8 @@ public final class CachedSession {
     var rawSource: String?
     var sessionSource: String?
     var sourceLabel: String?
+    /// `SessionSourceKind` raw value (TAL-310). Optional so the unversioned store opens without a migration.
+    var sourceKind: String?
     var parentSessionId: String?
     var relationshipType: String?
     var readOnly: Bool?
@@ -89,6 +91,7 @@ public final class CachedSession {
         rawSource = session.rawSource
         sessionSource = session.sessionSource
         sourceLabel = session.sourceLabel
+        sourceKind = session.sourceKind?.rawValue
         parentSessionId = session.parentSessionId
         relationshipType = session.relationshipType
         readOnly = session.readOnly

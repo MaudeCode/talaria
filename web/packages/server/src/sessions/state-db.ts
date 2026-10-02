@@ -8,10 +8,10 @@
 import { existsSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { str } from '../util.js'
+import { MESSAGING_SOURCES } from './source-kind.js'
 
 export type Dict = Record<string, unknown>
 
-export const MESSAGING_SOURCES = new Set(['discord', 'email', 'wecom', 'wecom_callback', 'slack', 'telegram', 'weixin', 'matrix', 'signal'])
 export const CLI_MIN_UNTITLED_USER_MESSAGE_COUNT = 2
 const STATE_DB_BUSY_TIMEOUT_MS = 500
 

@@ -62,7 +62,8 @@ final class SessionListMutationTests: XCTestCase {
         let messagingSession = SessionSummary(
             sessionId: "telegram",
             rawSource: "telegram",
-            sessionSource: "messaging"
+            sessionSource: "messaging",
+            sourceKind: .messaging
         )
 
         XCTAssertFalse(SessionRowActionPolicy.canDuplicate(cliSession))
@@ -71,7 +72,8 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertTrue(SessionRowActionPolicy.canDuplicate(SessionSummary(
             sessionId: "webui-override",
             isCliSession: true,
-            sessionSource: "webui"
+            sessionSource: "webui",
+            sourceKind: .webui
         )))
         let duplicatedCLI = await viewModel.duplicate(cliSession)
         let duplicatedMessaging = await viewModel.duplicate(messagingSession)
@@ -116,27 +118,40 @@ final class SessionListMutationTests: XCTestCase {
         )
     }
 
-    func testExternalSourceClassificationPrefersExplicitWebUISource() {
-        XCTAssertTrue(SessionSummary(sessionId: "cli", isCliSession: true).isExternalSourceSession)
-        // Upstream stamps `is_cli_session` onto every TUI/ACP row; the raw marker
-        // alone is not what `_isExternalSession` keys off.
-        XCTAssertTrue(
-            SessionSummary(sessionId: "tui", isCliSession: true, sourceTag: "  TUI  ", rawSource: "tui")
-                .isExternalSourceSession
-        )
+    func testExternalSourceClassificationFollowsTheServerKind() {
+        XCTAssertTrue(SessionSummary(sessionId: "cli", isCliSession: true, sourceKind: .cli).isExternalSourceSession)
+        XCTAssertTrue(SessionSummary(sessionId: "claude", isCliSession: true, sourceKind: .claudeCode).isExternalSourceSession)
+        // A raw marker the server did not classify is not external.
         XCTAssertFalse(SessionSummary(sessionId: "tui-marker-only", rawSource: "tui").isExternalSourceSession)
-        XCTAssertTrue(
-            SessionSummary(sessionId: "discord", rawSource: "discord", sessionSource: "messaging")
-                .isExternalSourceSession
-        )
-        XCTAssertTrue(SessionSummary(sessionId: "wecom", rawSource: "wecom_callback").isExternalSourceSession)
-
-        // An explicit WebUI source wins over a stale is_cli_session flag.
+        XCTAssertFalse(SessionSummary(sessionId: "signal-marker-only", rawSource: "signal").isExternalSourceSession)
+        // A WebUI-born session never is, whatever a stale is_cli_session says.
         XCTAssertFalse(
-            SessionSummary(sessionId: "webui", isCliSession: true, sessionSource: "webui")
+            SessionSummary(sessionId: "webui", isCliSession: true, sessionSource: "webui", sourceKind: .webui)
                 .isExternalSourceSession
         )
         XCTAssertFalse(SessionSummary(sessionId: "plain").isExternalSourceSession)
+    }
+
+    /// Signal and WhatsApp chats used to open without an import because the app's own
+    /// messaging list missed them (TAL-310). Every platform the server files as messaging imports.
+    @MainActor
+    func testOpeningEveryServerMessagingPlatformImportsFirst() async throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        for platform in ["signal", "whatsapp", "weixin", "wecom_callback"] {
+            var requestedPaths: [String] = []
+            let viewModel = try makeViewModel { request in
+                requestedPaths.append(request.url?.path ?? "nil")
+                return apiTestJSONResponse(#"{"session": {"session_id": "chat-\#(platform)", "title": "Chat", "source_kind": "messaging"}, "imported": true}"#, for: request)
+            }
+            let row = try decoder.decode(SessionSummary.self, from: Data("""
+            {"session_id": "chat-\(platform)", "raw_source": "\(platform)", "is_cli_session": false, "source_kind": "messaging", "is_messaging_session": true}
+            """.utf8))
+
+            XCTAssertTrue(row.isMessagingSession, platform)
+            _ = await viewModel.sessionToOpen(for: row)
+            XCTAssertEqual(requestedPaths, ["/api/session/import_cli"], platform)
+        }
     }
 
     @MainActor
@@ -191,13 +206,14 @@ final class SessionListMutationTests: XCTestCase {
                 "session_id": "telegram-1",
                 "session_source": "messaging",
                 "raw_source": "telegram",
+                "source_kind": "messaging",
                 "read_only": true
               },
               "imported": false
             }
             """, for: request)
         }
-        let row = SessionSummary(sessionId: "telegram-1", rawSource: "telegram", sessionSource: "messaging")
+        let row = SessionSummary(sessionId: "telegram-1", rawSource: "telegram", sessionSource: "messaging", sourceKind: .messaging)
 
         let resolved = await viewModel.sessionToOpen(for: row)
         let opened = try XCTUnwrap(resolved)
@@ -233,7 +249,7 @@ final class SessionListMutationTests: XCTestCase {
             switch request.url?.path {
             case "/api/sessions":
                 return apiTestJSONResponse("""
-                {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "archived": false}]}
+                {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "archived": false, "source_kind": "cli"}]}
                 """, for: request)
             default:
                 return apiTestJSONResponse("""
@@ -298,7 +314,7 @@ final class SessionListMutationTests: XCTestCase {
         let firstLoad = Task { await viewModel.load() }
         await fulfillment(of: [firstListArrived], timeout: 5)
         requests.request(at: 0).complete(withJSON: #"""
-        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "user_message_count": 1, "archived": false}]}
+        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "user_message_count": 1, "archived": false, "source_kind": "cli"}]}
         """#)
         _ = await firstLoad.value
 
@@ -310,7 +326,7 @@ final class SessionListMutationTests: XCTestCase {
         let secondLoad = Task { await viewModel.load() }
         await fulfillment(of: [secondListArrived], timeout: 5)
         requests.request(at: 2).complete(withJSON: #"""
-        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "user_message_count": 9, "archived": false}]}
+        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "user_message_count": 9, "archived": false, "source_kind": "cli"}]}
         """#)
         _ = await secondLoad.value
 
@@ -358,7 +374,7 @@ final class SessionListMutationTests: XCTestCase {
         let context = try makeContext()
 
         let writableRow = #"""
-        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": false, "archived": false}]}
+        {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": false, "archived": false, "source_kind": "cli"}]}
         """#
         let firstLoad = Task { await viewModel.load(modelContext: context) }
         await fulfillment(of: [firstListArrived], timeout: 5)
@@ -376,7 +392,7 @@ final class SessionListMutationTests: XCTestCase {
         let staleLoad = Task { await viewModel.load(modelContext: context) }
         await fulfillment(of: [staleListArrived], timeout: 5)
         requests.request(at: 1).complete(withJSON: #"""
-        {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": true}, "imported": false}
+        {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": true, "source_kind": "cli"}, "imported": false}
         """#)
         let openedResult = await open.value
         let opened = try XCTUnwrap(openedResult)
@@ -429,7 +445,7 @@ final class SessionListMutationTests: XCTestCase {
             XCTFail("WebUI sessions must open without an import request.")
             throw URLError(.badURL)
         }
-        let row = SessionSummary(sessionId: "webui-1", isCliSession: true, sessionSource: "webui")
+        let row = SessionSummary(sessionId: "webui-1", isCliSession: true, sessionSource: "webui", sourceKind: .webui)
 
         let opened = await viewModel.sessionToOpen(for: row)
         XCTAssertEqual(opened?.sessionId, "webui-1")
@@ -466,11 +482,11 @@ final class SessionListMutationTests: XCTestCase {
             requestedPaths.append(path)
             if path == "/api/sessions" {
                 return apiTestJSONResponse("""
-                {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": true}]}
+                {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": true, "source_kind": "cli"}]}
                 """, for: request)
             }
             return apiTestJSONResponse("""
-            {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": false}, "imported": true}
+            {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": false, "source_kind": "cli"}, "imported": true}
             """, for: request)
         }
         var state = SessionNavigationState(lastSelectedSessionID: "cli-1")
@@ -495,7 +511,7 @@ final class SessionListMutationTests: XCTestCase {
                 throw URLError(.badURL)
             }
             return apiTestJSONResponse("""
-            {"sessions": [{"session_id": "webui-1", "title": "WebUI", "is_cli_session": true, "session_source": "webui"}]}
+            {"sessions": [{"session_id": "webui-1", "title": "WebUI", "is_cli_session": true, "session_source": "webui", "source_kind": "webui"}]}
             """, for: request)
         }
         var state = SessionNavigationState(lastSelectedSessionID: "webui-1")
@@ -514,7 +530,7 @@ final class SessionListMutationTests: XCTestCase {
         let viewModel = try makeViewModel { request in
             if request.url?.path == "/api/sessions" {
                 return apiTestJSONResponse("""
-                {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true}]}
+                {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "source_kind": "cli"}]}
                 """, for: request)
             }
             return apiTestJSONResponse(#"{"error": "Session not found in CLI store"}"#, statusCode: 404, for: request)

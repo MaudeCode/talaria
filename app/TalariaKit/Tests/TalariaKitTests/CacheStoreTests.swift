@@ -73,6 +73,7 @@ final class CacheStoreTests: XCTestCase {
               "raw_source": "subagent",
               "session_source": "other",
               "source_label": "Subagent",
+              "source_kind": "subagent",
               "parent_session_id": "parent-1",
               "relationship_type": "child_session",
               "read_only": true,
@@ -116,6 +117,7 @@ final class CacheStoreTests: XCTestCase {
               "session_source": "messaging",
               "raw_source": "telegram",
               "source_label": "Telegram",
+              "source_kind": "messaging",
               "read_only": "true",
               "archived": false
             },
@@ -124,6 +126,7 @@ final class CacheStoreTests: XCTestCase {
               "title": "Browser chat",
               "is_cli_session": true,
               "session_source": "webui",
+              "source_kind": "webui",
               "archived": false
             }
           ]
@@ -161,6 +164,7 @@ final class CacheStoreTests: XCTestCase {
               "title": "Imported transcript",
               "source_tag": "claude_code",
               "raw_source": "claude_code",
+              "source_kind": "claude_code",
               "is_cli_session": true,
               "read_only": true,
               "archived": false
@@ -169,6 +173,7 @@ final class CacheStoreTests: XCTestCase {
               "session_id": "ordinary-cli",
               "title": "Terminal chat",
               "source_tag": "cli",
+              "source_kind": "cli",
               "is_cli_session": true,
               "archived": false
             }

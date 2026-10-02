@@ -358,6 +358,7 @@ extension SessionListMutationTests {
                     projectId: "project-1",
                     profile: "work",
                     sourceTag: "subagent",
+                    sourceKind: .subagent,
                     readOnly: true
                 )
             ],
@@ -423,7 +424,7 @@ extension SessionListMutationTests {
                 }
             )
             let webhookRow = query["show_webhook_sessions"] == "1"
-                ? #",{"session_id":"webhook-1","title":"Webhook","source_tag":"webhook"}"#
+                ? #",{"session_id":"webhook-1","title":"Webhook","source_tag":"webhook","source_kind":"webhook"}"#
                 : ""
             return apiTestJSONResponse(
                 #"{"sessions":[{"session_id":"ordinary","title":"Ordinary"}\#(webhookRow)]}"#,

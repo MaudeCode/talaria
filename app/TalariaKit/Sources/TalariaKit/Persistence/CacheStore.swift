@@ -321,6 +321,7 @@ private extension SessionSummary {
         rawSource = cachedSession.rawSource
         sessionSource = cachedSession.sessionSource
         sourceLabel = cachedSession.sourceLabel
+        sourceKind = SessionSourceKind(serverValue: cachedSession.sourceKind)
         parentSessionId = cachedSession.parentSessionId
         relationshipType = cachedSession.relationshipType
         readOnly = cachedSession.readOnly

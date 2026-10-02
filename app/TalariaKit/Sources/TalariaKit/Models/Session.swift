@@ -253,6 +253,18 @@ struct SessionStatusResponse: Decodable, Equatable {
     }
 }
 
+/// The server's classification of where a session came from (`source_kind`, TAL-310).
+/// An older server omits it, so the row has no kind and reads as an ordinary session;
+/// a kind this build does not know decodes as `.other`.
+public enum SessionSourceKind: String, Sendable, Hashable {
+    case webui, cli, messaging, cron, webhook, subagent, claudeCode = "claude_code", kanban, api, other
+
+    init?(serverValue: String?) {
+        guard let serverValue else { return nil }
+        self = SessionSourceKind(rawValue: serverValue) ?? .other
+    }
+}
+
 public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     public var id: String {
         if let sessionId, !sessionId.isEmpty {
@@ -291,6 +303,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     let rawSource: String?
     let sessionSource: String?
     public let sourceLabel: String?
+    public let sourceKind: SessionSourceKind?
     let parentSessionId: String?
     let relationshipType: String?
     let readOnly: Bool?
@@ -333,6 +346,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         rawSource: String? = nil,
         sessionSource: String? = nil,
         sourceLabel: String? = nil,
+        sourceKind: SessionSourceKind? = nil,
         parentSessionId: String? = nil,
         relationshipType: String? = nil,
         readOnly: Bool? = nil,
@@ -370,6 +384,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         self.rawSource = rawSource
         self.sessionSource = sessionSource
         self.sourceLabel = sourceLabel
+        self.sourceKind = sourceKind
         self.parentSessionId = parentSessionId
         self.relationshipType = relationshipType
         self.readOnly = readOnly
@@ -388,7 +403,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         case inputTokens, outputTokens, estimatedCost
         case activeStreamId, isStreaming, isCliSession
         case userMessageCount, hasPendingUserMessage, pendingStartedAt, worktreePath
-        case sourceTag, rawSource, sessionSource, sourceLabel
+        case sourceTag, rawSource, sessionSource, sourceLabel, sourceKind
         case parentSessionId, relationshipType, readOnly, canBranch, canPin, canArchive, canDuplicate, matchType, matchPreview
     }
 
@@ -431,6 +446,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         rawSource = container.decodeLossyStringIfPresent(forKey: .rawSource)
         sessionSource = container.decodeLossyStringIfPresent(forKey: .sessionSource)
         sourceLabel = container.decodeLossyStringIfPresent(forKey: .sourceLabel)
+        sourceKind = SessionSourceKind(serverValue: container.decodeLossyStringIfPresent(forKey: .sourceKind))
         parentSessionId = container.decodeLossyStringIfPresent(forKey: .parentSessionId)
         relationshipType = container.decodeLossyStringIfPresent(forKey: .relationshipType)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)
@@ -497,6 +513,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         rawSource = detail.rawSource
         sessionSource = detail.sessionSource
         sourceLabel = detail.sourceLabel
+        sourceKind = detail.sourceKind
         parentSessionId = detail.parentSessionId
         relationshipType = detail.relationshipType
         readOnly = detail.readOnly
@@ -539,6 +556,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
             rawSource: rawSource,
             sessionSource: sessionSource,
             sourceLabel: sourceLabel,
+            sourceKind: sourceKind,
             parentSessionId: parentSessionId,
             relationshipType: relationshipType,
             readOnly: readOnly,
@@ -553,58 +571,21 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
 }
 
 extension SessionSummary {
-    /// Delegated children are identified only by an explicit source marker.
-    /// Parent linkage is shared by ordinary forks and compression continuations,
-    /// so it must never classify a row as a subagent on its own.
-    var isDelegatedSubagentSession: Bool {
-        [sourceTag, rawSource, sessionSource, sourceLabel]
-            .compactMap(Self.normalizedSourceMarker)
-            .contains("subagent")
-    }
+    /// Classified by the server (`source_kind`, TAL-310); the app never reads source markers.
+    var isDelegatedSubagentSession: Bool { sourceKind == .subagent }
 
-    /// Claude Code imports are classified only by explicit upstream source
-    /// metadata. Titles, models, and read-only/CLI flags are intentionally not
-    /// descriptive enough to identify this source.
-    var isClaudeCodeSession: Bool {
-        [sourceTag, rawSource]
-            .compactMap(Self.normalizedSourceMarker)
-            .contains("claude_code")
-    }
+    var isClaudeCodeSession: Bool { sourceKind == .claudeCode }
 
-    /// Messaging-channel rows (Discord, Telegram, WeChat, …). Mirrors upstream
-    /// `_isMessagingSession` in `static/sessions.js`: the normalized
-    /// `session_source`, else the first present raw source marker.
-    var isMessagingSession: Bool {
-        if Self.normalizedSourceMarker(sessionSource) == "messaging" { return true }
-
-        guard let raw = [rawSource, sourceTag].compactMap(Self.normalizedSourceMarker).first else {
-            return false
-        }
-        return Self.messagingRawSources.contains(raw)
-    }
+    /// A gateway chat (Telegram, Signal, WhatsApp, …).
+    var isMessagingSession: Bool { sourceKind == .messaging }
 
     /// True when the row came from outside the WebUI — a CLI/TUI bridge or a
     /// messaging channel — so the server must import or refresh it through
-    /// `POST /api/session/import_cli` before the app can continue it.
-    ///
-    /// Mirrors upstream `_isExternalSession`: an explicit `webui` source marker
-    /// wins over a stale `is_cli_session` flag.
+    /// `POST /api/session/import_cli` before the app can continue it. A WebUI-born
+    /// session never is, whatever a stale `is_cli_session` says.
     public var isExternalSourceSession: Bool {
-        guard !isWebUISourceSession else { return false }
-        return isCliSession == true || isMessagingSession
+        sourceKind != .webui && (isCliSession == true || isMessagingSession)
     }
-
-    /// Upstream `_isWebUiSourceSession`: the first present source marker, in
-    /// `session_source` → `raw_source` → `source_tag` order, is `webui`.
-    private var isWebUISourceSession: Bool {
-        [sessionSource, rawSource, sourceTag]
-            .compactMap(Self.normalizedSourceMarker)
-            .first == "webui"
-    }
-
-    private static let messagingRawSources: Set<String> = [
-        "weixin", "telegram", "discord", "slack", "email", "wecom", "wecom_callback", "matrix"
-    ]
 
     /// Overlays this server-authoritative row onto the list row it was opened
     /// from: every field the authoritative payload omits keeps the list value, so
@@ -640,6 +621,7 @@ extension SessionSummary {
             rawSource: rawSource ?? row.rawSource,
             sessionSource: sessionSource ?? row.sessionSource,
             sourceLabel: sourceLabel ?? row.sourceLabel,
+            sourceKind: sourceKind ?? row.sourceKind,
             parentSessionId: parentSessionId ?? row.parentSessionId,
             relationshipType: relationshipType ?? row.relationshipType,
             readOnly: readOnly ?? row.readOnly,
@@ -676,32 +658,9 @@ extension SessionSummary {
         return (messageCount ?? 0) == 0 && (userMessageCount ?? 0) == 0
     }
 
-    /// True when this row originates from a scheduled cron job.
-    ///
-    /// Mirrors hermes-webui's `is_cron_session` (`api/models.py`): a `cron`
-    /// source marker (`session_source` / `source_tag` / `source_label`) or a
-    /// `cron_`-prefixed session id. Tolerant — a row with no cron markers is
-    /// treated as a normal session, so unknown/missing fields never hide it.
-    public var isCronSession: Bool {
-        if let sessionId = sessionId?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased(),
-            sessionId.hasPrefix("cron_") {
-            return true
-        }
+    public var isCronSession: Bool { sourceKind == .cron }
 
-        return [sessionSource, sourceTag, rawSource, sourceLabel]
-            .compactMap(Self.normalizedSourceMarker)
-            .contains("cron")
-    }
-
-    /// Webhook sessions require an explicit source marker. Unlike cron rows,
-    /// upstream does not define a session-id prefix fallback for this source.
-    public var isWebhookSession: Bool {
-        [sessionSource, sourceTag, rawSource, sourceLabel]
-            .compactMap(Self.normalizedSourceMarker)
-            .contains("webhook")
-    }
+    public var isWebhookSession: Bool { sourceKind == .webhook }
 
     private var hasPlaceholderTitle: Bool {
         guard let normalizedTitle = Self.nonEmpty(title)?.lowercased() else { return true }
@@ -726,10 +685,6 @@ extension SessionSummary {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private static func normalizedSourceMarker(_ value: String?) -> String? {
-        nonEmpty(value)?.lowercased()
     }
 }
 
@@ -768,9 +723,7 @@ public struct AutomatedSessionVisibility: Equatable {
 
     /// Whether `session` should remain visible under these toggles.
     ///
-    /// `isCliSession` is server-computed (`is_cli_session_row`, re-stamped onto
-    /// every row by `_normalize_sidebar_source_flags` in `api/routes.py`); cron
-    /// detection is client-side (`SessionSummary.isCronSession`).
+    /// Every kind is the server's (`source_kind` and `is_cli_session`, TAL-310).
     public func shows(_ session: SessionSummary) -> Bool {
         if session.isWebhookSession, !showsWebhook { return false }
         if session.isDelegatedSubagentSession, !showsSubagents { return false }
@@ -824,6 +777,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     let rawSource: String?
     let sessionSource: String?
     let sourceLabel: String?
+    let sourceKind: SessionSourceKind?
     let parentSessionId: String?
     let relationshipType: String?
     public let readOnly: Bool?
@@ -874,6 +828,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case rawSource
         case sessionSource
         case sourceLabel
+        case sourceKind
         case parentSessionId
         case relationshipType
         case readOnly
@@ -929,6 +884,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         rawSource = container.decodeLossyStringIfPresent(forKey: .rawSource)
         sessionSource = container.decodeLossyStringIfPresent(forKey: .sessionSource)
         sourceLabel = container.decodeLossyStringIfPresent(forKey: .sourceLabel)
+        sourceKind = SessionSourceKind(serverValue: container.decodeLossyStringIfPresent(forKey: .sourceKind))
         parentSessionId = container.decodeLossyStringIfPresent(forKey: .parentSessionId)
         relationshipType = container.decodeLossyStringIfPresent(forKey: .relationshipType)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)

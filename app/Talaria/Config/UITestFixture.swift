@@ -688,11 +688,13 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         for index in 1...6 {
             var row = session(id: "cron_fixture_\(index)", title: "Scheduled Fixture \(index)")
             row["source_tag"] = "cron"
+            row["source_kind"] = "cron"
             sessions.append(row)
         }
         for index in 1...2 {
             var row = session(id: "ui-fixture-webhook-\(index)", title: "Webhook Fixture \(index)")
             row["source_tag"] = "webhook"
+            row["source_kind"] = "webhook"
             sessions.append(row)
         }
         return json([

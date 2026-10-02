@@ -11,7 +11,8 @@ import { redactText } from '../redact.js'
 import { Session, stripSidebarHeavyMetadata } from './session.js'
 import type { SessionStore } from './store.js'
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, MESSAGING_SOURCES as STATE_DB_MESSAGING_SOURCES, normalizeAgentSessionSource } from './state-db.js'
+import { isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, normalizeAgentSessionSource } from './state-db.js'
+import { MESSAGING_SOURCES, sourceKind } from './source-kind.js'
 
 export type Row = Record<string, unknown>
 const num = (v: unknown): number => { const n = Number(v ?? 0); return Number.isFinite(n) && n > 0 ? n : 0 }
@@ -28,8 +29,6 @@ export function sidebarMessageCount(row: Row): number {
   return 0
 }
 
-const MESSAGING_SOURCES = new Set(['telegram', 'discord', 'slack', 'whatsapp', 'signal', 'matrix', 'sms', 'email', 'imessage', 'messaging', 'twilio', 'line', 'mattermost', 'teams', 'webex', 'irc'])
-
 function sourceOf(row: Row): string {
   return str(row.source_tag || row.source || row.raw_source || row.session_source)
 }
@@ -42,20 +41,6 @@ export function hideFromDefaultSidebar(row: Row, opts: { showCron?: boolean; sho
   if (!opts.showKanban && source === 'kanban') return true
   if (row.pre_compression_snapshot) return !row._show_pre_compression_snapshot
   return false
-}
-
-function sourceMarkers(row: Row): string[] {
-  return [row.session_source, row.source_tag, row.raw_source, row.source_label].map((v) => str(v).trim().toLowerCase()).filter(Boolean)
-}
-
-/** A row the sidebar files under "Scheduled sessions" (TAL-482); webhook rows are excluded by the caller. */
-export function isScheduledSessionRow(row: Row): boolean {
-  return str(row.session_id).trim().toLowerCase().startsWith('cron_') || sourceMarkers(row).includes('cron')
-}
-
-/** A row the sidebar files under "Webhook sessions" (TAL-482). */
-export function isWebhookSessionRow(row: Row): boolean {
-  return sourceMarkers(row).includes('webhook')
 }
 
 export function isIntentionallyBackground(row: Row): boolean {
@@ -328,9 +313,8 @@ export function isCliSessionRow(row: Row): boolean {
   const sourceLabel = lower(row.source_label)
   const all = new Set([source, sourceTag, rawSource, sourceName, sourceLabel])
   if (all.has('webui')) return false
-  const nonCli = new Set([...MESSAGING_SOURCES, 'cron', 'webhook', 'kanban', 'tool', 'api', 'api_server', 'subagent'])
+  const nonCli = new Set([...MESSAGING_SOURCES, 'messaging', 'cron', 'webhook', 'kanban', 'tool', 'api', 'api_server', 'subagent'])
   for (const v of all) if (v && nonCli.has(v)) return false
-  if (source === 'messaging') return false
   if (source === 'cli') return true
   if (source === 'external_agent' || source === 'external-agent') return true
   const interactive = new Set(['acp', 'cli', 'tui'])
@@ -338,10 +322,13 @@ export function isCliSessionRow(row: Row): boolean {
 }
 
 function isCliSessionForSettings(row: Row): boolean {
+  // TAL-310: never count or filter as CLI a row the wire files under another kind.
+  const kind = sourceKind(row)
+  if (kind !== 'cli' && kind !== 'claude_code') return false
   if (isCliSessionRow(row)) return true
   if (!row.is_cli_session) return false
   const source = str(row.source).trim().toLowerCase()
-  if (MESSAGING_SOURCES.has(source)) return false
+  if (MESSAGING_SOURCES.has(source) || source === 'messaging') return false
   const title = str(row.title).trim().toLowerCase()
   return ['', 'untitled', 'cli', 'cli session'].includes(title) || (title.endsWith(' session') && (!source || source === 'cli'))
 }
@@ -406,7 +393,7 @@ export function loadGatewaySessionIdentityMap(path: string): Map<string, Gateway
   return new Map(map)
 }
 
-const isKnownMessagingSource = (raw: string): boolean => STATE_DB_MESSAGING_SOURCES.has(raw.trim().toLowerCase())
+const isKnownMessagingSource = (raw: string): boolean => MESSAGING_SOURCES.has(raw.trim().toLowerCase())
 
 function sessionMessagingRawSource(row: Row): string {
   const raw = first(row.raw_source, row.source_tag, row.source, row.platform) || first(row.source_label) || 'messaging'
@@ -469,7 +456,12 @@ export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: Rea
   if (!r.is_streaming) r.active_stream_id = null
   // TAL-460: who started the running turn; a `background` one gives way to the user's next message.
   if ('active_turn_origin' in r && !r.is_streaming) r.active_turn_origin = null
-  const subagent = isSubagentRow(r)
+  // TAL-310: the source family clients file the row under; `is_cli_session` is derived from it.
+  const kind = sourceKind(r)
+  r.source_kind = kind
+  r.is_messaging_session = kind === 'messaging'
+  r.is_cli_session = kind === 'cli' || kind === 'claude_code'
+  const subagent = kind === 'subagent' || isSubagentRow(r)
   if (subagent) { r.read_only = true; r.is_cli_session = false } else r.read_only = Boolean(r.read_only)
   // The branch gate (`SessionService.branch`): never a subagent child, and a read-only source only when it is a cron run.
   r.can_branch = !subagent && (!r.read_only || str(r.source_tag || r.raw_source).trim().toLowerCase() === 'cron')
@@ -712,9 +704,9 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
     archived_cli_count: archivedCliCount,
     webui_session_count: webuiSessionCount,
     cli_session_count: cliSessionCount,
-    scheduled_session_count: visibleFiltered.filter((r) => isScheduledSessionRow(r) && !isWebhookSessionRow(r)).length,
+    scheduled_session_count: visibleFiltered.filter((r) => sourceKind(r) === 'cron').length,
     scheduled_sessions_truncated: params.showCronSessions && truncated.has('cron'),
-    webhook_session_count: visibleFiltered.filter(isWebhookSessionRow).length,
+    webhook_session_count: visibleFiltered.filter((r) => sourceKind(r) === 'webhook').length,
     webhook_sessions_truncated: params.showWebhookSessions && truncated.has('webhook'),
     include_archived: params.includeArchived,
     archived_limit: params.archivedLimit,
