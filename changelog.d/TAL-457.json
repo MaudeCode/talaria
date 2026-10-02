@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "While you read older messages during a response, the jump-to-latest button now sits beside the status chip instead of above it.",
+      "highlight": false
+    },
+    {
+      "category": "Added",
+      "summary": "Choose whether the jump-to-latest button sits on the right or left in Settings > Chats.",
+      "highlight": false
+    }
+  ]
+}

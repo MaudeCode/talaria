@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ChatScrollToBottomButton: View {
+    static let diameter: CGFloat = 32
+
     @Environment(\.colorScheme) private var colorScheme
 
     let bottomPadding: CGFloat
@@ -10,7 +12,7 @@ struct ChatScrollToBottomButton: View {
         Button(action: onTap) {
             Image(systemName: "arrow.down")
                 .font(.system(size: 13, weight: .semibold))
-                .frame(width: 32, height: 32)
+                .frame(width: Self.diameter, height: Self.diameter)
                 .foregroundStyle(.primary)
                 .adaptiveGlass(
                     .regular,

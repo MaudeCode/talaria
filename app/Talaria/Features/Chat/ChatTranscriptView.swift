@@ -49,6 +49,7 @@ struct ChatTranscriptView: View {
     let transcriptBlockSpacing: CGFloat
     let transcriptBottomInsetHeight: CGFloat
     let scrollToBottomButtonBottomPadding: CGFloat
+    let scrollToBottomButtonAlignment: HorizontalAlignment
     let localAttachmentPreviews: [String: [String: Data]]
     let listeningMessageID: String?
     let isViewingCachedData: Bool
@@ -184,6 +185,8 @@ struct ChatTranscriptView: View {
                                 releasingHold { onScrollToBottom(proxy) }
                             }
                         )
+                        .padding(.horizontal)
+                        .frame(maxWidth: .infinity, alignment: Alignment(horizontal: scrollToBottomButtonAlignment, vertical: .bottom))
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                     }
                 }

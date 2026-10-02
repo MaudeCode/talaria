@@ -61,6 +61,7 @@ struct ChatView: View {
     @AppStorage(AgentRunLiveActivityPrivacy.showsResponseExcerptsKey) private var showsLiveActivityResponseExcerpts = false
     @AppStorage(ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey) private var showsThinkingAndToolCards = true
     @AppStorage(ChatTranscriptDisplaySettings.rtlChatLayoutEnabledKey) private var rtlChatLayoutEnabled = ChatTranscriptDisplaySettings.rtlChatLayoutDefaultEnabled
+    @AppStorage(ChatScrollToBottomButtonSide.storageKey) private var scrollToBottomButtonSideRawValue = ChatScrollToBottomButtonSide.right.rawValue
     @AppStorage(SectionVisibilitySettings.chatFilesKey) private var showsFilesButton = true
     @AppStorage(SectionVisibilitySettings.chatGitKey) private var showsGitControls = true
     @AppStorage(ComposerVisibilitySettings.workspaceKey) private var showsWorkspaceControl = true
@@ -1077,6 +1078,9 @@ struct ChatView: View {
             transcriptBlockSpacing: transcriptBlockSpacing,
             transcriptBottomInsetHeight: transcriptBottomInsetHeight,
             scrollToBottomButtonBottomPadding: scrollToBottomButtonBottomPadding,
+            scrollToBottomButtonAlignment: ChatScrollToBottomButtonSide
+                .storedValue(scrollToBottomButtonSideRawValue)
+                .alignment(in: chatLayoutDirection),
             localAttachmentPreviews: viewModel.localAttachmentPreviews,
             listeningMessageID: viewModel.listeningMessageID,
             isViewingCachedData: viewModel.isViewingCachedData,
@@ -1242,8 +1246,22 @@ struct ChatView: View {
         return max(96, composerHeight + 44 + composerAccessorySpacerHeight(includesFloatingStatus: false))
     }
 
+    /// Sets the scroll-to-latest button on the run status chip's row, beside the chip. With no
+    /// run status it clears the whole accessory stack.
     private var scrollToBottomButtonBottomPadding: CGFloat {
-        return composerHeight + 12 + composerAccessorySpacerHeight(includesFloatingStatus: true)
+        guard let activeRunStatusPresentation else {
+            return composerHeight + 12 + composerAccessorySpacerHeight(includesFloatingStatus: true)
+        }
+        // The syncing pill tops the stack, so the pinned notices sit below it too.
+        var heightBelowStatus: CGFloat = 0
+        if !activeRunStatusPresentation.reservesTranscriptSpace, !viewModel.pinnedLocalNotices.isEmpty {
+            heightBelowStatus += pinnedNoticeSpacerHeight + composerAccessoryVerticalSpacing
+        }
+        if showsApprovalBypassStatus {
+            heightBelowStatus += approvalBypassStatusSpacerHeight + composerAccessoryVerticalSpacing
+        }
+        return composerHeight + 8 + heightBelowStatus
+            + (activeRunStatusSpacerHeight - ChatScrollToBottomButton.diameter) / 2
     }
 
     private var isComposerBusyOrUnavailable: Bool {

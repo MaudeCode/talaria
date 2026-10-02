@@ -45,6 +45,35 @@ public enum FilePreviewDisplaySettings {
     public static let wrapsLinesKey = "filePreview.wrapsLines"
 }
 
+/// Which screen edge the chat's scroll-to-latest button sits on, beside the run status chip.
+/// Physical sides: the RTL chat layout does not mirror them.
+public enum ChatScrollToBottomButtonSide: String, CaseIterable, Identifiable {
+    case right
+    case left
+
+    public static let storageKey = "chatTranscript.scrollToBottomButtonSide"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .right:
+            String(localized: "Right")
+        case .left:
+            String(localized: "Left")
+        }
+    }
+
+    public static func storedValue(_ rawValue: String) -> ChatScrollToBottomButtonSide {
+        ChatScrollToBottomButtonSide(rawValue: rawValue) ?? .right
+    }
+
+    /// The alignment that puts the button on this side in a view laid out in `layoutDirection`.
+    public func alignment(in layoutDirection: LayoutDirection) -> HorizontalAlignment {
+        (self == .right) == (layoutDirection == .leftToRight) ? .trailing : .leading
+    }
+}
+
 public enum ChatTranscriptDisplaySettings {
     public static let showsThinkingAndToolCardsKey = "chatTranscript.showsThinkingAndToolCards"
     public static let thinkingCardsStartExpandedKey = "chatTranscript.thinkingCardsStartExpanded"
