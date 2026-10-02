@@ -226,12 +226,13 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
             ))
             .firstMatch
         XCTAssertTrue(disabledSkill.awaitExistence(timeout: 10), "The disabled fixture skill is missing")
-        app.coordinate(withNormalizedOffset: CGVector(
-            dx: disabledSkill.frame.midX / app.frame.width,
-            dy: disabledSkill.frame.midY / app.frame.height
-        )).press(forDuration: 1.2)
-        let enable = app.buttons["Enable"].firstMatch
-        XCTAssertTrue(enable.awaitExistence(timeout: 5), "The skill row offered no enable action")
+        // The switch that turns a disabled skill back on stays interactive. Its full strength
+        // is pinned by the `skill-row-disabled` visual references, which XCUI cannot see.
+        // List rows report `isHittable == false` to XCUI even when visible (see `tapCenter`),
+        // so the tap flipping fixture state below is what proves the switch takes a touch.
+        let enable = disabledSkill.switches["Enable"].firstMatch
+        XCTAssertTrue(enable.awaitExistence(timeout: 5), "The disabled skill row offered no Enable switch")
+        XCTAssertTrue(enable.isEnabled, "The disabled skill's Enable switch is not interactive")
         tapCenter(of: enable)
         XCTAssertTrue(
             disabledSkill.awaitNonExistence(timeout: 15),
@@ -250,6 +251,16 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         XCTAssertFalse(
             disabledSkill.exists,
             "Enabling a skill did not survive a reload from the server"
+        )
+
+        // The row's context menu is the other toggle path.
+        longPress(at: settledCenter(of: element(labelContaining: "fixture-archivist")))
+        let disable = app.buttons["Disable"].firstMatch
+        XCTAssertTrue(disable.awaitExistence(timeout: 5), "The skill row offered no Disable action")
+        tapCenter(of: disable)
+        XCTAssertTrue(
+            disabledSkill.awaitExistence(timeout: 15),
+            "Disabling a skill from its context menu did not restore its Disabled badge"
         )
 
         tapCenter(of: skill)

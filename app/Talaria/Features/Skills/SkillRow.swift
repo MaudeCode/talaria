@@ -43,6 +43,9 @@ struct SkillRow: View {
                     }
                 }
             }
+            // Only the text dims: the switch stays at full strength so it reads as the
+            // control that turns a disabled skill back on.
+            .opacity(skill.disabled == true ? 0.55 : 1)
 
             Spacer(minLength: 8)
 

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A disabled skill's Enable switch in Skills now shows at full strength; only the skill's name, description, and tags are dimmed.",
+      "highlight": false,
+      "components": [
+        "app"
+      ]
+    }
+  ]
+}

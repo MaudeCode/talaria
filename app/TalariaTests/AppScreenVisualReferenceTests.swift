@@ -131,6 +131,37 @@ final class AppScreenVisualReferenceTests: XCTestCase {
         )
     }
 
+    /// A disabled skill dims its text but keeps the switch that turns it back on at full
+    /// strength (TAL-467). `ImageRenderer` draws the switch as its UIKit placeholder, whose
+    /// colour still shows whether the switch's slot was dimmed.
+    func testDisabledSkillRowReferences() throws {
+        let skill = SkillSummary(
+            name: "fixture-archivist",
+            category: "Fixture",
+            description: "Archives deterministic fixture output.",
+            path: nil,
+            disabled: true,
+            tags: ["fixture"]
+        )
+
+        for scheme in [ColorScheme.light, .dark] {
+            try VisualReference.assertMatchesReference(
+                SkillCategorySection(
+                    category: "Fixture",
+                    skills: [skill],
+                    server: URL(string: "https://talaria.invalid")!,
+                    togglingSkillNames: [],
+                    onToggleSkill: { _, _ in },
+                    onAPIError: { _ in }
+                )
+                .padding(.horizontal, 16),
+                named: "skill-row-disabled-\(name(for: scheme))",
+                size: CGSize(width: 390, height: 130),
+                colorScheme: scheme
+            )
+        }
+    }
+
     // MARK: - Fixtures
 
     private static let fixtureID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!

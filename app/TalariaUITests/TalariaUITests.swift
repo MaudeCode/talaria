@@ -1748,7 +1748,9 @@ fileprivate extension ChatUITestCase {
     func countElements(containing text: String) -> Int {
         app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", text)).count
     }
+}
 
+extension TalariaUITestCase {
     /// Waits until the element stops moving, so a press lands where it was measured.
     func settledFrame(of element: XCUIElement) -> CGRect {
         awaitStable(timeout: 6, interval: 0.3) { element.frame } ?? element.frame
@@ -1759,15 +1761,13 @@ fileprivate extension ChatUITestCase {
         return CGPoint(x: frame.midX, y: frame.midY)
     }
 
-    /// Presses by coordinate: transcript text reports itself as not hittable.
+    /// Presses by coordinate: transcript text and list rows report themselves as not hittable.
     func longPress(at point: CGPoint) {
         app.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: point.x, dy: point.y))
             .press(forDuration: 1.2)
     }
-}
 
-extension TalariaUITestCase {
     func openSidebarDestination(_ destination: String) {
         let sidebar = app.descendants(matching: .any)["app-sidebar"]
         // A tap while the screen behind is still settling (a menu closing, a rotation) can be
