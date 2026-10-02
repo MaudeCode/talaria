@@ -106,7 +106,14 @@ export const sessionsRouter = os.router({
   session: {
     // No visibility guard here: `detail()` answers 409 `session_profile_mismatch` so the frontend can switch to the owning profile.
     get: os.session.get.handler(({ input, context: { ctx } }) => run(() => {
-      return { session: ctx.deps.sessions.detail(input.session_id, input) as { session_id: string; title: string } }
+      try {
+        return { session: ctx.deps.sessions.detail(input.session_id, input) as { session_id: string; title: string } }
+      } catch (error) {
+        // Runs left on the relay by a deletion that predates `clearRelayCompletions` clear when the id is next requested.
+        const sid = input.session_id.trim()
+        if (error instanceof HttpFailure && error.status === 404 && ctx.deps.sessionStore.wasDeleted(sid)) ctx.deps.relay.clearDeleted(sid, ctx.deps.activeProfile())
+        throw error
+      }
     })),
     status: os.session.status.handler(({ input, context: { ctx } }) => run(() => {
       if (!input.session_id) throw new HttpError(400, 'Missing session_id')

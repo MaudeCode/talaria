@@ -222,6 +222,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const profileOps = new Map<string, number>()
   const sessions = new SessionService({
     journal,
+    clearRelayCompletions: (sid, profile) => { relay.clearDeleted(sid, profile) },
     store,
     cliSessions: (profile, o) => cliSessions.read(profile, o),
     profileHome,

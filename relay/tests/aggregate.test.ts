@@ -53,6 +53,16 @@ describe("makeAggregate", () => {
     ]);
   });
 
+  it("puts the newest outcome first within a phase, whatever its session id", () => {
+    // The widget opens `rows[0]` from the compact and minimal presentations.
+    const older = state("aaa-older", "completed", now - 6 * 24 * 60 * 60_000);
+    const newer = state("zzz-newer", "completed", now - 60_000);
+
+    const aggregate = makeAggregate([older, newer], now, true);
+
+    expect(aggregate?.rows.map((row) => row.sessionId)).toEqual(["zzz-newer", "aaa-older"]);
+  });
+
   it("keeps terminal context only while nonterminal work remains", () => {
     const expired = { ...state("expired", "running"), expiresAt: now - 1 };
     const terminal = state("done", "completed");

@@ -224,9 +224,8 @@ export class RelayPublisher {
   }
 
   /** Queue a viewed acknowledgement; the loop sends it after the snapshot carrying the session's terminal state. */
-  markViewed(sid: string): void {
-    const session = this.deps.store.get(sid, { metadataOnly: true })
-    this.views.set(sid, { profile: session.profile, through: Math.floor(this.deps.now() * 1000) })
+  markViewed(sid: string, profile: string | null): void {
+    this.views.set(sid, { profile, through: Math.floor(this.deps.now() * 1000) })
     this.changed()
   }
 
@@ -402,6 +401,7 @@ export class RelayService {
   private candidate: RelayPublisher | null = null
   private unsubscribe: (() => void) | null = null
   private pairing: Promise<unknown> = Promise.resolve()
+  private readonly clearedDeleted = new Set<string>()
 
   constructor(private readonly deps: RelayServiceDeps) { this.presence = deps.presence }
 
@@ -447,7 +447,20 @@ export class RelayService {
 
   /** A viewed session clears its finished runs on the relay; without a publisher there is nothing to clear. */
   markViewed(sid: string): void {
-    (this.publisher ?? this.candidate)?.markViewed(sid)
+    const publisher = this.publisher ?? this.candidate
+    publisher?.markViewed(sid, this.deps.store.get(sid, { metadataOnly: true }).profile)
+  }
+
+  /**
+   * A deleted session can never be viewed, so its finished runs are cleared once, under the profile it had (the
+   * store no longer knows it). Later lookups of the same id do not resend.
+   */
+  clearDeleted(sid: string, profile: string | null): void {
+    const publisher = this.publisher ?? this.candidate
+    if (!publisher || this.clearedDeleted.has(sid)) return
+    // ponytail: grows by one id per deleted session per process; reset on restart is fine because the relay ack is idempotent.
+    this.clearedDeleted.add(sid)
+    publisher.markViewed(sid, profile)
   }
 
   /** Terminal turn events reach the relay even mid-swap (Python `note_talaria_terminal`). */

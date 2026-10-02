@@ -86,6 +86,9 @@ export function makeAggregate(
     .sort(
       (left, right) =>
         phasePriority(left.phase) - phasePriority(right.phase) ||
+        // A finished run keeps the instant it ended, so the newest outcome leads; running rows heartbeat their
+        // timestamps and keep the stable id order.
+        (isTerminalPhase(left.phase) && isTerminalPhase(right.phase) ? right.updatedAt - left.updatedAt : 0) ||
         `${left.publisherId}\u0000${left.sessionId}\u0000${left.streamId ?? ""}`.localeCompare(
           `${right.publisherId}\u0000${right.sessionId}\u0000${right.streamId ?? ""}`,
         ),
