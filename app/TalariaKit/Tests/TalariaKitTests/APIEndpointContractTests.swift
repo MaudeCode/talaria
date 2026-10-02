@@ -248,6 +248,7 @@ final class ContractReadinessTests: APIClientTestCase {
                 endpoint: .cronDeliveryOptions,
                 path: "/api/crons/delivery-options"
             ),
+            .init(name: "cron recent", endpoint: .cronRecent, path: "/api/crons/recent"),
             .init(name: "memory", endpoint: .memory, path: "/api/memory"),
             .init(name: "memory write", endpoint: .memoryWrite, path: "/api/memory/write"),
             .init(name: "skills", endpoint: .skills, path: "/api/skills"),

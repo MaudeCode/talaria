@@ -123,6 +123,8 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         XCTAssertTrue(job.awaitExistence(timeout: 10), "Tasks did not render the fixture jobs")
         XCTAssertTrue(element(labelContaining: "Fixture Weekly Sweep").exists)
         XCTAssertTrue(element(labelContaining: "Running now").exists)
+        XCTAssertTrue(element(labelContaining: "Recent Completions").exists, "Tasks did not render the completion feed")
+        XCTAssertTrue(element(labelContaining: "Failed").exists, "The fixture completion did not show its status")
 
         tapCenter(of: job)
         let detail = app.navigationBars["Fixture Nightly Digest"]

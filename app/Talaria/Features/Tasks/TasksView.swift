@@ -80,7 +80,7 @@ struct TasksView: View {
                     Task { await loadTasks() }
                 }
             }
-        } else if viewModel.jobs.isEmpty {
+        } else if viewModel.jobs.isEmpty, viewModel.recentCompletions.isEmpty {
             ContentUnavailableView {
                 Label("No Tasks", systemImage: "calendar.badge.clock")
             } description: {
@@ -97,18 +97,32 @@ struct TasksView: View {
                     }
                 }
 
+                if !viewModel.recentCompletions.isEmpty {
+                    // One row per job (its latest run), not a run archive.
+                    Section("Recent Completions") {
+                        ForEach(viewModel.recentCompletions) { completion in
+                            if let job = viewModel.job(for: completion) {
+                                NavigationLink {
+                                    detail(for: job)
+                                } label: {
+                                    CronCompletionRowView(completion: completion)
+                                }
+                            } else {
+                                CronCompletionRowView(completion: completion)
+                            }
+                        }
+                    }
+                }
+
                 Section("Scheduled Jobs") {
+                    if viewModel.jobs.isEmpty {
+                        // Stale completions can outlive their jobs; keep the feed visible.
+                        Text("No scheduled jobs.")
+                            .foregroundStyle(.secondary)
+                    }
                     ForEach(viewModel.jobs) { job in
                         NavigationLink {
-                            TaskDetailView(
-                                job: job,
-                                runningElapsed: viewModel.runningElapsed(for: job),
-                                server: server,
-                                onAPIError: onAPIError,
-                                onMutation: { mutation in
-                                    viewModel.apply(mutation)
-                                }
-                            )
+                            detail(for: job)
                         } label: {
                             CronJobRowView(
                                 job: job,
@@ -124,11 +138,55 @@ struct TasksView: View {
         }
     }
 
+    private func detail(for job: CronJob) -> some View {
+        TaskDetailView(
+            job: job,
+            runningElapsed: viewModel.runningElapsed(for: job),
+            server: server,
+            onAPIError: onAPIError,
+            onMutation: { mutation in
+                viewModel.apply(mutation)
+            }
+        )
+    }
+
+    /// The feed runs beside the job list as a child of the view's own task,
+    /// so leaving Tasks cancels it and jobs never wait on it.
     private func loadTasks() async {
+        async let feed: Void = viewModel.loadRecentCompletions()
         await viewModel.load()
 
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }
+        await feed
+    }
+}
+
+private struct CronCompletionRowView: View {
+    let completion: CronRecentCompletion
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(completion.displayName)
+                    .font(.headline)
+                    .lineLimit(2)
+                Text(completion.completedAt?.formatted ?? String(localized: "Not available"))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 8)
+
+            // Upstream shows every non-error status as a plain completion.
+            if completion.status == "error" {
+                StatusBadge(text: String(localized: "Failed"), color: .red)
+            } else {
+                StatusBadge(text: String(localized: "Completed"), color: .green)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 }

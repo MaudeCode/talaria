@@ -116,6 +116,7 @@ public enum Endpoint {
     case cronOutput(jobID: String, limit: Int?)
     case cronHistory(jobID: String, offset: Int, limit: Int)
     case cronRunDetail(jobID: String, filename: String)
+    case cronRecent
     case cronDeliveryOptions
     case kanbanConfig
     case kanbanBoards
@@ -367,6 +368,8 @@ public enum Endpoint {
         case .cronRunDetail:
             // Same path as the POST `cronRun` action; only the GET method reads a run.
             return "/api/crons/run"
+        case .cronRecent:
+            return "/api/crons/recent"
         case .cronDeliveryOptions:
             return "/api/crons/delivery-options"
         case .kanbanConfig:

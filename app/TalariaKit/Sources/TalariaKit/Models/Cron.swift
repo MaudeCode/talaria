@@ -367,6 +367,73 @@ public struct CronRunDetailResponse: Decodable, Equatable {
     }
 }
 
+/// `GET /api/crons/recent`: one row per job that has ever completed, carrying
+/// only that job's latest run. Not a run archive; `cronHistory` is.
+public struct CronRecentCompletionsResponse: Decodable, Equatable {
+    public let completions: [CronRecentCompletion]?
+
+    public enum CodingKeys: String, CodingKey {
+        case completions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Skip malformed rows instead of dropping the whole feed.
+        guard var rows = try? container.nestedUnkeyedContainer(forKey: .completions) else {
+            completions = nil
+            return
+        }
+        var decoded: [CronRecentCompletion] = []
+        while !rows.isAtEnd {
+            if let row = try? rows.decode(CronRecentCompletion.self) {
+                decoded.append(row)
+            } else if (try? rows.decode(JSONValue.self)) == nil {
+                break
+            }
+        }
+        completions = decoded
+    }
+}
+
+public struct CronRecentCompletion: Decodable, Equatable, Identifiable {
+    private let fallbackIdentity = DecodedIdentityToken()
+    public var id: String { jobId ?? fallbackIdentity.value }
+
+    public let jobId: String?
+    public let name: String?
+    public let status: String?
+    public let completedAt: CronDateValue?
+
+    public enum CodingKeys: String, CodingKey {
+        case jobId
+        case name
+        case status
+        case completedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let rawJobID = container.decodeLossyStringIfPresent(forKey: .jobId)
+        jobId = rawJobID?.isEmpty == false ? rawJobID : nil
+        name = container.decodeLossyStringIfPresent(forKey: .name)
+        status = container.decodeLossyStringIfPresent(forKey: .status)
+        completedAt = try? container.decodeIfPresent(CronDateValue.self, forKey: .completedAt)
+        // A row that identifies no job is noise, not a completion.
+        guard jobId != nil || name?.isEmpty == false else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .jobId, in: container, debugDescription: "Completion names no job"
+            )
+        }
+    }
+
+    public var displayName: String {
+        if let name, !name.isEmpty {
+            return name
+        }
+        return String(localized: "Untitled Task")
+    }
+}
+
 public struct CronDeliveryOptionsResponse: Decodable, Equatable {
     public let platforms: [CronDeliveryOption]?
 

@@ -374,6 +374,46 @@ final class APIClientCronEndpointTests: APIClientTestCase {
         XCTAssertTrue(expectedRequests.isEmpty)
     }
 
+    func testCronRecentCompletionsDecodesTolerantly() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/crons/recent")
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertNil(request.httpBody)
+
+            return apiTestJSONResponse("""
+            {
+              "completions": [
+                {
+                  "job_id": "job123",
+                  "name": "Digest",
+                  "status": "success",
+                  "completed_at": 1777892400.5,
+                  "toast_notifications": true,
+                  "session_id": "sess-1",
+                  "message_count": "4"
+                },
+                {"job_id": "", "name": "Legacy", "status": "error", "completed_at": "garbage", "session_id": ""},
+                "not-a-completion",
+                {},
+                {"job_id": "", "name": "", "unexpected": true}
+              ],
+              "since": 0
+            }
+            """, for: request)
+        }
+
+        let response = try await client.cronRecentCompletions()
+        let completions = try XCTUnwrap(response.completions)
+
+        XCTAssertEqual(completions.count, 2, "Rows that identify no job must be skipped.")
+        XCTAssertEqual(completions[0].jobId, "job123")
+        XCTAssertEqual(completions[0].status, "success")
+        XCTAssertEqual(completions[0].completedAt?.date.timeIntervalSince1970, 1777892400.5)
+        XCTAssertNil(completions[1].jobId, "A blank job ID must not match anything.")
+        XCTAssertNil(completions[1].completedAt)
+        XCTAssertEqual(completions[1].displayName, "Legacy")
+    }
+
     func testCronHistoryBuildsExpectedQueryAndSkipsMalformedRows() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/crons/history")
