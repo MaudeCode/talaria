@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Opening a finished chat in the web app now clears it from your iPhone Live Activity, the same as opening it in the iPhone app.",
+      "highlight": false,
+      "components": ["web", "relay"]
+    }
+  ]
+}

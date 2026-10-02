@@ -338,6 +338,10 @@ export const sessionsRouter = os.router({
       const bound = str(session?.bound_profile).trim() || null
       return relayCall(() => Promise.resolve(ctx.deps.relay.presence.update(input, ctx.deps.isRootProfile(bound ?? ctx.deps.activeProfile()) ? 'default' : (bound ?? ctx.deps.activeProfile()))))
     }),
+    viewed: os.talaria.viewed.handler(({ input, context: { ctx } }) => run(() => {
+      ctx.deps.relay.markViewed(input.session_id.trim())
+      return { ok: true as const }
+    })),
   },
   share: {
     create: os.share.create.handler(({ input, context: { ctx } }) => run(() => {

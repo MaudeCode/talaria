@@ -62,6 +62,7 @@ export const fetchSession = (id: SessionId, params: SessionGetParams = {}) =>
 export const fetchAnchorScene = (session_id: string, message_ref: string, message_index: number, before: number, signal: AbortSignal) => orpc().session.anchorSceneGet({ session_id, message_ref, message_index: String(message_index), before: String(before), limit: '80' }, { signal: AbortSignal.any([signal, timeout(30_000)]) })
 export const fetchSessionStatus = (id: SessionId) => orpc().session.status({ session_id: id })
 export const fetchSessionUsage = (id: SessionId) => orpc().session.usage({ session_id: id })
+export const markSessionViewed = (session_id: SessionId) => orpc().talaria.viewed({ session_id })
 export const newSession = (body: z.infer<typeof SessionNewRequestSchema>) => orpc().session.new(body)
 export const renameSession = (session_id: SessionId, title: string) => orpc().session.rename({ session_id, title })
 export const deleteSession = (session_id: SessionId) => orpc().session.delete({ session_id })

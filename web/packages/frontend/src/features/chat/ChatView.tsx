@@ -21,6 +21,7 @@ import { Composer, type QueuedTurn } from '../composer/Composer'
 import { ApprovalCard } from './ApprovalCard'
 import { ClarifyCard } from './ClarifyCard'
 import { useClarify } from './useClarify'
+import { useMarkViewed } from './useMarkViewed'
 import { TerminalPanel } from '../terminal/TerminalPanel'
 import { WorkspacePanel } from '../workspace/WorkspacePanel'
 import { workspaceLabel } from '../workspaces/label'
@@ -41,6 +42,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const settings = useSettingsQuery()
   const { query, session, rows, base, live, truncated, loadOlder, loadingOlder, refresh } = useTranscript(sessionId)
   const clarify = useClarify(sessionId, live)
+  useMarkViewed(sessionId, query.isFetchedAfterMount || (query.isSuccess && !query.isStale), live && isTerminal(live.status) ? live.streamId : null)
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [workspaceOpen, setWorkspaceOpen] = useState(() => readPersisted('hermes-webui-workspace-panel') === 'open')
   const [queued, setQueued] = useState<QueuedTurn[]>([])

@@ -13218,6 +13218,53 @@
         }
       }
     },
+    "/api/talaria/viewed": {
+      "post": {
+        "operationId": "talaria.viewed",
+        "summary": "Report a session as viewed through now so the relay clears its finished runs from Live Activities; a no-op without a relay.",
+        "tags": [
+          "talaria"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workspaces": {
       "get": {
         "operationId": "workspaces.list",
