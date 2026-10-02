@@ -77,10 +77,7 @@ struct ChatComposerConfigLoader {
            let profiles = cache.entry(ResponseCache.Kind.profiles).load(ProfilesResponse.self) {
             state.profileOptions = profiles.profiles ?? []
             state.isSingleProfileMode = profiles.singleProfileMode ?? false
-            state.selectedProfileName = nonEmpty(state.selectedProfileName)
-                ?? nonEmpty(state.currentProfile)
-                ?? nonEmpty(profiles.active)
-                ?? profiles.effectiveDefaultProfileName
+            state.selectedProfileName = selectedProfileName(currentProfile: state.currentProfile, profiles: profiles)
         }
         if state.modelCatalogGroups.isEmpty,
            let models = cache.entry(ResponseCache.Kind.models).load(ModelsResponse.self) {
@@ -98,6 +95,10 @@ struct ChatComposerConfigLoader {
         return state
     }
 
+    private static func selectedProfileName(currentProfile: String?, profiles: ProfilesResponse) -> String? {
+        nonEmpty(currentProfile) ?? nonEmpty(profiles.active) ?? profiles.effectiveDefaultProfileName
+    }
+
     func loadConfiguration(from initialState: ChatComposerConfigState) async -> ChatComposerConfigLoadResult {
         var state = initialState
         var configurationError: Error?
@@ -106,9 +107,10 @@ struct ChatComposerConfigLoader {
             let profilesResponse = try await client.profiles(caching: cache?.entry(ResponseCache.Kind.profiles))
             state.profileOptions = profilesResponse.profiles ?? []
             state.isSingleProfileMode = profilesResponse.singleProfileMode ?? false
-            state.selectedProfileName = Self.nonEmpty(state.currentProfile)
-                ?? Self.nonEmpty(profilesResponse.active)
-                ?? profilesResponse.effectiveDefaultProfileName
+            state.selectedProfileName = Self.selectedProfileName(
+                currentProfile: state.currentProfile,
+                profiles: profilesResponse
+            )
 
             if let sessionProfile = Self.nonEmpty(state.currentProfile),
                Self.nonEmpty(profilesResponse.active) != sessionProfile {
