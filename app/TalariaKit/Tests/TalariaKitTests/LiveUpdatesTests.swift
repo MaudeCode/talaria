@@ -86,10 +86,10 @@ final class SessionEventsMonitorTests: XCTestCase {
 
     func testReconnectsWithBackoffAndResyncsOnlyAfterAReconnect() async {
         let client = ScriptedSessionEventClient(attempts: [
-            [.frame(.opened), .frame(.changed(.changed(reason: "turn_started", sessionID: "chat-1"))), .fail],
+            [.frame(.opened), .frame(.keepalive), .frame(.changed(.changed(reason: "turn_started", sessionID: "chat-1"))), .fail],
             [.fail],
             [.fail],
-            [.frame(.opened), .fail]
+            [.frame(.opened), .frame(.keepalive), .fail]
         ])
         var changes: [SessionsChange] = []
         var delays: [Duration] = []
@@ -105,8 +105,29 @@ final class SessionEventsMonitorTests: XCTestCase {
         )
 
         XCTAssertEqual(changes, [.changed(reason: "turn_started", sessionID: "chat-1"), .resync])
-        XCTAssertEqual(delays, [.seconds(1), .seconds(2), .seconds(4), .seconds(1)], "A connection that opened resets the backoff")
+        XCTAssertEqual(delays, [.seconds(1), .seconds(2), .seconds(4), .seconds(1)], "A live connection resets the backoff")
         XCTAssertEqual(client.startedURLs, Array(repeating: url, count: 4))
+    }
+
+    // A stream that opens and closes without delivering anything (a misrouted proxy, a non-SSE
+    // reply) is not a healthy connection: it must back off and never make every screen resync.
+    func testAConnectionThatDeliversNothingBacksOffWithoutResyncing() async {
+        let client = ScriptedSessionEventClient(attempts: Array(repeating: [.frame(.opened), .fail], count: 5))
+        var changes: [SessionsChange] = []
+        var delays: [Duration] = []
+
+        await SessionEventsMonitor.run(
+            url: url,
+            client: client,
+            onChange: { changes.append($0) },
+            sleep: { delay in
+                delays.append(delay)
+                if delays.count == 5 { throw CancellationError() }
+            }
+        )
+
+        XCTAssertEqual(changes, [], "Nothing was delivered, so no screen should reload")
+        XCTAssertEqual(delays, [.seconds(1), .seconds(2), .seconds(4), .seconds(30), .seconds(30)])
     }
 
     func testRepeatedFailuresSettleOnTheSteadyRetryDelay() async {

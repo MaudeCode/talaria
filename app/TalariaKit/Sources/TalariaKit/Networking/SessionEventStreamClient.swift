@@ -2,8 +2,11 @@ import Foundation
 import LDSwiftEventSource
 
 public enum SessionEventFrame: Equatable, Sendable {
-    /// The stream connected. `/api/sessions/events` sends no opening frame, only keepalives.
+    /// The HTTP response arrived. Opening alone does not prove a working stream: a proxy or a
+    /// non-SSE reply opens and closes at once.
     case opened
+    /// The server's keepalive comment, sent every 5 s; it proves the stream is live.
+    case keepalive
     case changed(SessionsChange)
     case ignored
 }
@@ -20,6 +23,13 @@ enum SessionEventFrameDecoder {
     private struct Payload: Decodable {
         let reason: String?
         let session_id: String?
+    }
+}
+
+extension SessionEventFrame {
+    var isChange: Bool {
+        if case .changed = self { return true }
+        return false
     }
 }
 
@@ -99,7 +109,9 @@ public final class SessionEventStreamClient: SessionEventStreaming {
             Task { @MainActor in onFailure() }
         }
 
-        func onComment(comment: String) {}
+        func onComment(comment: String) {
+            Task { @MainActor in onFrame(.keepalive) }
+        }
 
         func onMessage(eventType: String, messageEvent: MessageEvent) {
             let frame = SessionEventFrameDecoder.decode(eventType: eventType, data: messageEvent.data)
@@ -114,9 +126,11 @@ public final class SessionEventStreamClient: SessionEventStreaming {
 }
 
 /// Keeps the app's session-change subscription open while the scene is active (TAL-434): run it in
-/// a `.task` keyed on scene activity, and cancelling the task closes the stream. A dropped stream
-/// reconnects after 1, 2 and 4 s, then every 30 s, and each reconnect asks every screen to resync
-/// because events may have been missed meanwhile.
+/// a `.task` keyed on scene activity, and cancelling the task closes the stream. A connection
+/// counts as live once it delivers a keepalive or an event. A dropped stream reconnects after 1, 2
+/// and 4 s, then every 30 s; only a live connection resets that backoff, and only a live
+/// connection that follows an earlier live one asks every screen to resync, because events may
+/// have been missed in between.
 public enum SessionEventsMonitor {
     static let retryDelays: [Duration] = [.seconds(1), .seconds(2), .seconds(4)]
     static let steadyRetryDelay = Duration.seconds(30)
@@ -138,17 +152,17 @@ public enum SessionEventsMonitor {
                 onFrame: { continuation.yield($0) },
                 onFailure: { continuation.yield(nil) }
             )
+            var isLive = false
             for await frame in frames {
                 guard let frame else { break }
-                switch frame {
-                case .opened:
+                if !isLive, frame == .keepalive || frame.isChange {
+                    isLive = true
                     failures = 0
                     if hasConnected { onChange(.resync) }
                     hasConnected = true
-                case .changed(let change):
+                }
+                if case .changed(let change) = frame {
                     onChange(change)
-                case .ignored:
-                    break
                 }
             }
             continuation.finish()
