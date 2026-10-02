@@ -35,7 +35,6 @@ struct SkillCategorySection: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .opacity(skill.disabled == true ? 0.55 : 1)
                     .contextMenu {
                         if canToggle(skill) {
                             let isDisabled = skill.disabled == true
