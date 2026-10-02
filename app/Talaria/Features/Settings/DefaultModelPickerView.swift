@@ -39,7 +39,7 @@ struct DefaultModelPickerView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    SettingsPickerCard(title: String(localized: "Custom")) {
+                    SettingsCard(title: String(localized: "Custom")) {
                         TextField("Custom model ID", text: $customModel)
                             .font(.subheadline)
                             .autocorrectionDisabled()
@@ -65,6 +65,7 @@ struct DefaultModelPickerView: View {
                 }
                 .padding()
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Default Model")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -87,7 +88,7 @@ struct DefaultModelPickerView: View {
     @ViewBuilder
     private var modelListContent: some View {
         if isLoading && groups.isEmpty {
-            SettingsPickerCard(title: String(localized: "Models")) {
+            SettingsCard(title: String(localized: "Models")) {
                 HStack(spacing: 8) {
                     ProgressView()
                     Text("Loading models...")
@@ -97,7 +98,7 @@ struct DefaultModelPickerView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if let errorMessage, groups.isEmpty {
-            SettingsPickerCard(title: String(localized: "Models")) {
+            SettingsCard(title: String(localized: "Models")) {
                 Label("Could Not Load Models", systemImage: "exclamationmark.triangle")
                     .font(.subheadline.weight(.semibold))
 
@@ -106,7 +107,7 @@ struct DefaultModelPickerView: View {
                     .foregroundStyle(.secondary)
             }
         } else if filteredGroups.isEmpty {
-            SettingsPickerCard(title: String(localized: "Models")) {
+            SettingsCard(title: String(localized: "Models")) {
                 Label("No Matching Models", systemImage: "magnifyingglass")
                     .font(.subheadline.weight(.semibold))
 
@@ -116,7 +117,7 @@ struct DefaultModelPickerView: View {
             }
         } else {
             ForEach(filteredGroups) { group in
-                SettingsPickerCard(title: group.name) {
+                SettingsCard(title: group.name) {
                     VStack(spacing: 0) {
                         ForEach(Array(group.models.enumerated()), id: \.element.id) { index, model in
                             modelRow(model)

@@ -497,6 +497,31 @@ final class SettingsStructureUITests: SettingsUITestCase {
             }
             XCTAssertTrue(setting.exists, "Missing composer setting: \(label)")
         }
+        // TAL-468: at the default text size the menu value never wraps onto a second line.
+        let sendWhileRespondingValue = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Send While Responding"))
+            .staticTexts["Steer active response"]
+        let oneLineLabel = app.switches["Workspace"].staticTexts["Workspace"].firstMatch
+        XCTAssertTrue(sendWhileRespondingValue.exists)
+        XCTAssertTrue(oneLineLabel.exists)
+        XCTAssertLessThan(
+            sendWhileRespondingValue.frame.height,
+            oneLineLabel.frame.height * 1.5,
+            "Send While Responding's value wrapped onto a second line"
+        )
+        // Choosing a longer value keeps the row's layout instead of moving the value under its title.
+        let dictationPicker = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Dictation Provider"))
+            .firstMatch
+        XCTAssertTrue(dictationPicker.staticTexts["Server first"].exists)
+        let dictationFrame = dictationPicker.settledFrame
+        tapCenter(of: dictationPicker)
+        let onDeviceFirst = app.buttons["On-device first"]
+        XCTAssertTrue(onDeviceFirst.awaitExistence(timeout: Self.navigationTimeout))
+        onDeviceFirst.tap()
+        XCTAssertTrue(dictationPicker.staticTexts["On-device first"].awaitExistence(timeout: Self.navigationTimeout))
+        let changedFrame = dictationPicker.settledFrame
+        XCTAssertEqual(changedFrame.minY, dictationFrame.minY, accuracy: 1, "Dictation Provider changed layout with its value")
 
         app.navigationBars["Chats"].buttons["Settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: Self.navigationTimeout))

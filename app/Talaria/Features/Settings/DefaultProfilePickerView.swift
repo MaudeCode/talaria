@@ -53,6 +53,7 @@ struct DefaultProfilePickerView: View {
                 }
                 .padding()
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Default Profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -102,7 +103,7 @@ struct DefaultProfilePickerView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(Color.accentColor)
-        .background(Color(.tertiarySystemFill).opacity(0.5), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .settingsGroupedCell()
         .disabled(isLoading)
         .accessibilityHint("Opens the new profile form.")
     }
@@ -110,7 +111,7 @@ struct DefaultProfilePickerView: View {
     @ViewBuilder
     private var profileListContent: some View {
         if isLoading && profiles.isEmpty {
-            SettingsPickerCard(title: String(localized: "Profiles")) {
+            SettingsCard(title: String(localized: "Profiles")) {
                 HStack(spacing: 8) {
                     ProgressView()
                     Text("Loading profiles...")
@@ -120,7 +121,7 @@ struct DefaultProfilePickerView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if let errorMessage, profiles.isEmpty {
-            SettingsPickerCard(title: String(localized: "Profiles")) {
+            SettingsCard(title: String(localized: "Profiles")) {
                 Label("Could Not Load Profiles", systemImage: "exclamationmark.triangle")
                     .font(.subheadline.weight(.semibold))
 
@@ -129,7 +130,7 @@ struct DefaultProfilePickerView: View {
                     .foregroundStyle(.secondary)
             }
         } else if filteredProfiles.isEmpty {
-            SettingsPickerCard(title: String(localized: "Profiles")) {
+            SettingsCard(title: String(localized: "Profiles")) {
                 Label("No Matching Profiles", systemImage: "magnifyingglass")
                     .font(.subheadline.weight(.semibold))
 
@@ -138,7 +139,7 @@ struct DefaultProfilePickerView: View {
                     .foregroundStyle(.secondary)
             }
         } else {
-            SettingsPickerCard(title: String(localized: "Profiles")) {
+            SettingsCard(title: String(localized: "Profiles")) {
                 VStack(spacing: 0) {
                     ForEach(Array(filteredProfiles.enumerated()), id: \.element) { index, profile in
                         profileRow(profile)

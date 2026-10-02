@@ -88,7 +88,7 @@ struct AddServerView: View {
                 .padding(.top, 18)
                 .padding(.bottom, 36)
             }
-            .background(Color(.systemBackground))
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Add Server")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
