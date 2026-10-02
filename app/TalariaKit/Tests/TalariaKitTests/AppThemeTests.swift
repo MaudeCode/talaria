@@ -393,9 +393,9 @@ final class ChatScrollToBottomButtonSideTests: XCTestCase {
     }
 
     func testSideStaysPhysicalUnderRightToLeftChatLayout() {
-        XCTAssertEqual(ChatScrollToBottomButtonSide.right.alignment(in: .leftToRight), .trailing)
-        XCTAssertEqual(ChatScrollToBottomButtonSide.left.alignment(in: .leftToRight), .leading)
-        XCTAssertEqual(ChatScrollToBottomButtonSide.right.alignment(in: .rightToLeft), .leading)
-        XCTAssertEqual(ChatScrollToBottomButtonSide.left.alignment(in: .rightToLeft), .trailing)
+        XCTAssertFalse(ChatScrollToBottomButtonSide.right.leads(in: .leftToRight))
+        XCTAssertTrue(ChatScrollToBottomButtonSide.left.leads(in: .leftToRight))
+        XCTAssertTrue(ChatScrollToBottomButtonSide.right.leads(in: .rightToLeft))
+        XCTAssertFalse(ChatScrollToBottomButtonSide.left.leads(in: .rightToLeft))
     }
 }

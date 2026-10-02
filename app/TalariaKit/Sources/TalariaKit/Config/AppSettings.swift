@@ -68,9 +68,9 @@ public enum ChatScrollToBottomButtonSide: String, CaseIterable, Identifiable {
         ChatScrollToBottomButtonSide(rawValue: rawValue) ?? .right
     }
 
-    /// The alignment that puts the button on this side in a view laid out in `layoutDirection`.
-    public func alignment(in layoutDirection: LayoutDirection) -> HorizontalAlignment {
-        (self == .right) == (layoutDirection == .leftToRight) ? .trailing : .leading
+    /// Whether the button comes first in a row laid out in `layoutDirection`.
+    public func leads(in layoutDirection: LayoutDirection) -> Bool {
+        (self == .left) == (layoutDirection == .leftToRight)
     }
 }
 

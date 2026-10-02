@@ -21,6 +21,8 @@ struct StatusChip: View {
         case warning
     }
 
+    static let cornerRadius: CGFloat = 16
+
     let label: String
     var accessibilityLabel: String?
     let icon: Icon
@@ -82,16 +84,14 @@ struct StatusChipButton: View {
             Text(Image(systemName: systemImage))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.primary)
+                // Stretches to a taller neighbour in a fixed-height row, e.g. a two-line status chip.
+                .frame(maxHeight: .infinity)
                 .statusChipChrome()
                 .chatMinimumHitTarget(in: RoundedRectangle(cornerRadius: StatusChip.cornerRadius, style: .continuous))
         }
         .buttonStyle(.chatTactile(.icon))
         .accessibilityLabel(accessibilityLabel)
     }
-}
-
-extension StatusChip {
-    static let cornerRadius: CGFloat = 16
 }
 
 extension View {

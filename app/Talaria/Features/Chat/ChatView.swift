@@ -996,7 +996,8 @@ struct ChatView: View {
             VStack(spacing: composerAccessoryVerticalSpacing) {
                 // With no run status to sit beside, the scroll chip tops the stack on its own.
                 if showsScrollToBottomButton, activeRunStatusPresentation == nil {
-                    scrollToBottomChip
+                    scrollToBottomChip(isVisible: true)
+                        .fixedSize(horizontal: false, vertical: true)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
@@ -1044,28 +1045,32 @@ struct ChatView: View {
     private func runStatusRow(_ presentation: ChatActiveRunStatusPresentation) -> some View {
         let scrollChipLeads = ChatScrollToBottomButtonSide
             .storedValue(scrollToBottomButtonSideRawValue)
-            .alignment(in: layoutDirection) == .leading
+            .leads(in: layoutDirection)
         return HStack(spacing: composerAccessoryVerticalSpacing) {
             if showsScrollToBottomButton {
-                scrollToBottomChip.opacity(scrollChipLeads ? 1 : 0).disabled(!scrollChipLeads)
-                    .accessibilityHidden(!scrollChipLeads)
+                scrollToBottomChip(isVisible: scrollChipLeads)
             }
             StatusChip(presentation, agentName: viewModel.assistantName)
                 .allowsHitTesting(false)
             if showsScrollToBottomButton {
-                scrollToBottomChip.opacity(scrollChipLeads ? 0 : 1).disabled(scrollChipLeads)
-                    .accessibilityHidden(scrollChipLeads)
+                scrollToBottomChip(isVisible: !scrollChipLeads)
             }
         }
+        // Every chip in the row takes the tallest one's height.
+        .fixedSize(horizontal: false, vertical: true)
     }
 
-    private var scrollToBottomChip: some View {
+    /// The scroll-to-latest chip; an invisible one only holds its place.
+    private func scrollToBottomChip(isVisible: Bool) -> some View {
         StatusChipButton(
             systemImage: "arrow.down",
             accessibilityLabel: String(localized: "Scroll to latest message")
         ) {
             scrollToBottomRequest += 1
         }
+        .opacity(isVisible ? 1 : 0)
+        .disabled(!isVisible)
+        .accessibilityHidden(!isVisible)
     }
 
     @ViewBuilder
