@@ -381,6 +381,19 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it('ships an earlier bare-filename attachment as a filename-only object on the done frame (TAL-277)', async () => {
+    const sid = await newSession(s)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'user', content: 'look', timestamp: 1000, attachments: ['example.png'] }, { role: 'assistant', content: 'seen', timestamp: 1001 }]
+    s.deps.sessionStore.save(session)
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Again' }]))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Legacy"', usage: null }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'again' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const messages = (((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[])
+    expect(messages.find((m) => m.content === 'look')?.attachments).toEqual([{ name: 'example.png', filename: 'example.png' }])
+  })
+
   it('stamps one terminal_state on every terminal frame and the persisted turn, and keeps the journal vocabulary', async () => {
     const cases: [string, (params: Json, emit: (frame: { event: string; data: Json }) => void) => ChatResult, string, string, string, string][] = [
       ['completed', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Answer' }]), 'done', 'completed', 'completed', 'completed'],

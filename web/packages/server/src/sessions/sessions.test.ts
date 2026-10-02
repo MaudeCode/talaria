@@ -562,6 +562,46 @@ describe('projects, workspaces, and files over HTTP', () => {
   })
 })
 
+describe('session detail with legacy string attachments (TAL-277)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  /** A session file as the Python server wrote it: attachments as bare filenames, read back from disk. */
+  async function legacySession(attachments: unknown[], pending: unknown[] = []): Promise<{ sid: string; path: string }> {
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [
+      { role: 'user', content: 'look at this', timestamp: 1000, attachments },
+      { role: 'assistant', content: 'seen', timestamp: 1001 },
+    ]
+    session.pending_attachments = pending
+    s.deps.sessionStore.save(session)
+    s.deps.sessionStore.sessions.delete(sid)
+    return { sid, path: join(s.state, 'sessions', `${sid}.json`) }
+  }
+
+  it('ships bare-filename attachments as filename-only objects in every window without rewriting the file', async () => {
+    const upload = { name: 'upload.png', path: '/uploads/upload.png', mime: 'image/png', is_image: true }
+    const { sid, path } = await legacySession(['example.png', upload], ['draft.txt'])
+    const before = readFileSync(path)
+    for (const query of ['', '&msg_limit=120', '&msg_limit=1&msg_before=1']) {
+      const res = await s.get(`/api/session?session_id=${sid}&messages=1${query}`)
+      expect(res.status).toBe(200)
+      const session = (await json(res)).session as Json
+      const user = (session.messages as Json[]).find((m) => m.role === 'user')
+      expect(user?.attachments).toEqual([{ name: 'example.png', filename: 'example.png' }, upload])
+      expect(session.pending_attachments).toEqual([{ name: 'draft.txt', filename: 'draft.txt' }])
+    }
+    expect(readFileSync(path).equals(before)).toBe(true)
+  })
+
+  it('still refuses an attachment that is neither a filename nor an object', async () => {
+    const { sid } = await legacySession([42])
+    expect((await s.get(`/api/session?session_id=${sid}&messages=1`)).status).toBe(500)
+  })
+})
+
 describe('session detail transcript cursor (TAL-316)', () => {
   let s: TestServer
   let sidecar: FakeSidecar

@@ -536,6 +536,19 @@ export function withoutRunningTurnOutput(rows: Message[], turn: { localCount: nu
   })
 }
 
+/**
+ * TAL-277: the Python server stored attachments as bare filenames. Ship each as a filename-only object; it gets no `path`,
+ * so clients never build a file URL from an untrusted name. Anything else passes through for output validation to judge.
+ */
+export function attachmentObjects(items: unknown[]): unknown[] {
+  return items.map((a) => (typeof a === 'string' ? { name: a, filename: a } : a))
+}
+
+/** `attachmentObjects` over every message's attachments. Returns copies; stored rows are untouched. */
+export function withAttachmentObjects<T>(messages: T[]): T[] {
+  return messages.map((m) => (isDict(m) && Array.isArray(m.attachments) && m.attachments.some((a) => typeof a === 'string') ? { ...m, attachments: attachmentObjects(m.attachments) } : m))
+}
+
 /** The running turn's prompt as eager save checkpoints it (Python `_checkpoint_user_message_for_eager_session_save`). */
 export function pendingUserRow(msg: string, attachments: unknown[], startedAt: number | null, source: string, turnId: string): Message {
   const user: Message = { role: 'user', content: msg, _turn_id: turnId }
