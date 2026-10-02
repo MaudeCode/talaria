@@ -275,6 +275,9 @@
                     "bot_name": {
                       "type": "string"
                     },
+                    "assistant_name": {
+                      "type": "string"
+                    },
                     "auth": {
                       "type": "object",
                       "properties": {
@@ -424,6 +427,7 @@
                     "csrf_token",
                     "language",
                     "bot_name",
+                    "assistant_name",
                     "auth",
                     "profile",
                     "onboarding",
@@ -3452,6 +3456,9 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "assistant_name": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -4918,6 +4925,9 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "assistant_name": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -6145,6 +6155,9 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "assistant_name": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -8249,6 +8262,9 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "assistant_name": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -10260,6 +10276,9 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "assistant_name": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -19330,6 +19349,9 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "assistant_name": {
+                          "type": "string"
                         }
                       },
                       "required": [

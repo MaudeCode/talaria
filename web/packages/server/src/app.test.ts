@@ -92,7 +92,7 @@ describe('open server (no auth)', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
     const body = BootstrapSchema.parse(await res.json())
-    expect(Object.keys(body).sort()).toEqual(['auth', 'bot_name', 'csrf_token', 'features', 'language', 'max_upload_bytes', 'onboarding', 'profile', 'webui_version'].sort())
+    expect(Object.keys(body).sort()).toEqual(['assistant_name', 'auth', 'bot_name', 'csrf_token', 'features', 'language', 'max_upload_bytes', 'onboarding', 'profile', 'webui_version'].sort())
     expect(body.csrf_token).toBe('')
     expect(body.auth.auth_enabled).toBe(false)
     expect(body.profile).toEqual({ name: 'default', is_default: true })

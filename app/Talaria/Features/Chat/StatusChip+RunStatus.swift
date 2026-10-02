@@ -2,7 +2,11 @@ import TalariaKit
 
 extension StatusChip {
     /// A chat run status: the pill above the composer and the chips at the transcript tail.
-    init(_ presentation: ChatActiveRunStatusPresentation) {
-        self.init(label: presentation.label, accessibilityLabel: presentation.accessibilityLabel, icon: .activity)
+    init(_ presentation: ChatActiveRunStatusPresentation, agentName: String) {
+        self.init(
+            label: presentation.label(agentName: agentName),
+            accessibilityLabel: presentation.accessibilityLabel(agentName: agentName),
+            icon: .activity
+        )
     }
 }

@@ -45,6 +45,8 @@ export interface SessionServiceDeps {
   activeProfile: () => string
   isolatedProfileMode: () => boolean
   profilesMatch: (a: string | null | undefined, b: string | null | undefined) => boolean
+  /** The agent's display name for a session's profile (`assistant_name`). */
+  assistantName: (profile: string | null) => string
   redactEnabled: () => boolean
   pinnedSessionsLimit: () => number
   runtime: RuntimeOverlay & {
@@ -365,6 +367,7 @@ export class SessionService {
     const revisionAfter = this.loadRevision(s)
     raw._load_revision = revisionBefore !== null && revisionBefore === revisionAfter ? hashRevision(revisionBefore) : `unstable-${randomUUID().replace(/-/g, '')}`
     raw.read_only = this.isReadOnly(s)
+    raw.assistant_name = this.deps.assistantName(s.profile)
     withSessionWireFlags(raw, activeStreamIds)
     return redactSessionData(raw, this.deps.redactEnabled())
   }
@@ -418,6 +421,7 @@ export class SessionService {
       pinned: synth.pinned, archived: synth.archived, project_id: synth.project_id ?? null, profile: synth.profile,
       is_cli_session: synth.is_cli_session, source_tag: synth.source_tag, raw_source: synth.raw_source, session_source: synth.session_source,
       source_label: synth.source_label, read_only: synth.read_only, can_duplicate: false, messages: msgs, tool_calls: [], transcript_seq: null,
+      assistant_name: this.deps.assistantName(synth.profile),
     }
     attachTodoState(sess, msgs)
     const merged = withSessionWireFlags(meta ? mergeCliSidebarMetadata(sess, meta) : sess, this.deps.runtime.activeStreamIds)

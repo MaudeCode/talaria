@@ -648,7 +648,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(presentation?.kind, .active)
-        XCTAssertEqual(presentation?.label, "Hermes is working")
+        XCTAssertEqual(presentation?.label(agentName: "Maude"), "Maude is working")
     }
 
     func testStatusShowsStartingBeforeStreamIDExists() {
@@ -673,7 +673,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(presentation?.kind, .reconnecting)
-        XCTAssertEqual(presentation?.accessibilityLabel, "Hermes is reconnecting the response stream")
+        XCTAssertEqual(presentation?.accessibilityLabel(agentName: "Hermes"), "Hermes is reconnecting the response stream")
     }
 
     func testStatusPrioritizesCancellationOverOtherStates() {
@@ -710,8 +710,8 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(presentation?.kind, .syncing)
-        XCTAssertEqual(presentation?.label, "Syncing messages")
-        XCTAssertEqual(presentation?.accessibilityLabel, "Syncing messages with the server")
+        XCTAssertEqual(presentation?.label(agentName: "Hermes"), "Syncing messages")
+        XCTAssertEqual(presentation?.accessibilityLabel(agentName: "Hermes"), "Syncing messages with the server")
         XCTAssertEqual(presentation?.isSyncing, true)
     }
 
@@ -731,7 +731,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
     func testRecoveryStatesMapToTheirChipsAndAHealthyStreamToNone() {
         XCTAssertNil(ChatActiveRunStatusPresentation(recoveryState: .idle))
         XCTAssertEqual(ChatActiveRunStatusPresentation(recoveryState: .checking)?.kind, .checking)
-        XCTAssertEqual(ChatActiveRunStatusPresentation(recoveryState: .reconnecting)?.label, "Reconnecting stream")
+        XCTAssertEqual(ChatActiveRunStatusPresentation(recoveryState: .reconnecting)?.label(agentName: "Hermes"), "Reconnecting stream")
     }
 
     func testSyncingPillHidesTheTranscriptRecoveryChip() {

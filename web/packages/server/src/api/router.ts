@@ -95,6 +95,7 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
     csrf_token: csrfToken,
     language: authenticated ? shellLanguage(ctx) : '',
     bot_name: authenticated ? (typeof settings.bot_name === 'string' && settings.bot_name ? settings.bot_name : 'Hermes') : 'Hermes',
+    assistant_name: authenticated ? deps.assistantName(ctx.requestProfile ?? deps.activeProfile()) : 'Hermes',
     auth,
     profile,
     onboarding,

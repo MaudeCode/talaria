@@ -46,6 +46,8 @@ export const BootstrapSchema = z.object({
   csrf_token: z.string(),
   language: z.string(),
   bot_name: z.string(),
+  /** The active profile's agent name, as `assistant_name` on a session. */
+  assistant_name: z.string(),
   auth: AuthStatusSchema,
   profile: z.object({ name: z.string(), is_default: z.boolean() }).nullable(),
   onboarding: z.object({ completed: z.boolean() }).nullable(),

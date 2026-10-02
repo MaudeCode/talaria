@@ -994,7 +994,7 @@ struct ChatView: View {
                 // A floating status (the syncing pill) tops the stack, so nothing above it moves
                 // when it comes and goes.
                 if let activeRunStatusPresentation, !activeRunStatusPresentation.reservesTranscriptSpace {
-                    StatusChip(activeRunStatusPresentation)
+                    StatusChip(activeRunStatusPresentation, agentName: viewModel.assistantName)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
@@ -1004,7 +1004,7 @@ struct ChatView: View {
                 }
 
                 if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
-                    StatusChip(activeRunStatusPresentation)
+                    StatusChip(activeRunStatusPresentation, agentName: viewModel.assistantName)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
@@ -1081,6 +1081,7 @@ struct ChatView: View {
             scrollToBottomButtonAlignment: ChatScrollToBottomButtonSide
                 .storedValue(scrollToBottomButtonSideRawValue)
                 .alignment(in: chatLayoutDirection),
+            assistantName: viewModel.assistantName,
             localAttachmentPreviews: viewModel.localAttachmentPreviews,
             listeningMessageID: viewModel.listeningMessageID,
             isViewingCachedData: viewModel.isViewingCachedData,

@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "The chat status chip names your agent, such as \"Maude is working\", instead of always saying Hermes.",
+      "highlight": false
+    }
+  ]
+}

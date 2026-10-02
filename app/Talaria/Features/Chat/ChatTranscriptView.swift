@@ -50,6 +50,7 @@ struct ChatTranscriptView: View {
     let transcriptBottomInsetHeight: CGFloat
     let scrollToBottomButtonBottomPadding: CGFloat
     let scrollToBottomButtonAlignment: HorizontalAlignment
+    let assistantName: String
     let localAttachmentPreviews: [String: [String: Data]]
     let listeningMessageID: String?
     let isViewingCachedData: Bool
@@ -101,7 +102,7 @@ struct ChatTranscriptView: View {
                 .overlay(alignment: .bottomLeading) {
                     // A cold open has nothing to paint yet; the check still says the run state is unconfirmed.
                     if showsRunStateCheck {
-                        StatusChip(ChatActiveRunStatusPresentation(kind: .checking))
+                        StatusChip(ChatActiveRunStatusPresentation(kind: .checking), agentName: assistantName)
                             .padding()
                             .padding(.bottom, transcriptBottomInsetHeight)
                     }
@@ -439,13 +440,13 @@ struct ChatTranscriptView: View {
             }
 
             if let recovery = ChatActiveRunStatusPresentation(recoveryState: activeStreamRecoveryState) {
-                StatusChip(recovery)
+                StatusChip(recovery, agentName: assistantName)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityHidden(hidesRunStatusAccessibility)
                     .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
             }
         } else if showsRunStateCheck {
-            StatusChip(ChatActiveRunStatusPresentation(kind: .checking))
+            StatusChip(ChatActiveRunStatusPresentation(kind: .checking), agentName: assistantName)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
         }

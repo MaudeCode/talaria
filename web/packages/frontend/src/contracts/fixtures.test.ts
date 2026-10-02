@@ -87,7 +87,7 @@ describe('live fixtures parse with their contract schemas', () => {
 describe('bootstrap schema', () => {
   it('accepts an unauthenticated payload and rejects a malformed one', () => {
     const ok = C.BootstrapSchema.safeParse({
-      webui_version: 'x', max_upload_bytes: 1, csrf_token: '', language: '', bot_name: 'Hermes',
+      webui_version: 'x', max_upload_bytes: 1, csrf_token: '', language: '', bot_name: 'Hermes', assistant_name: 'Hermes',
       auth: { auth_enabled: true, logged_in: false, oidc_enabled: false, oidc_native_handoff_enabled: false, password_auth_enabled: true, passwordless_enabled: false, passkeys_enabled: false, passkeys_count: 0, passkey_feature_flag: false, auth_disabled_acknowledged: false, can_manage_server: false }, profile: null, onboarding: null,
       features: { dashboard: false, terminal_remote_backend: false, extensions: false, single_profile_mode: false },
     })

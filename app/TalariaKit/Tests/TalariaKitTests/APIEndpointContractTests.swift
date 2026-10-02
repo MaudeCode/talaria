@@ -461,6 +461,24 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(TranscriptLinkPreviewEligibility.previewURL(for: unflagged, isStreaming: false)?.absoluteString, "https://example.test/page")
     }
 
+    func testSharedWebSessionNamesItsAgent() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        var session = try XCTUnwrap(object["session"] as? [String: Any])
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        func decoded() throws -> SessionDetail {
+            try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: session))
+        }
+        // A release checks this App against every retained Web; one from before TAL-458 names no agent.
+        if session["assistant_name"] != nil {
+            XCTAssertEqual(try decoded().assistantName, "Hermes")
+        }
+        session["assistant_name"] = "Maude"
+        XCTAssertEqual(try decoded().assistantName, "Maude")
+        session.removeValue(forKey: "assistant_name")
+        XCTAssertNil(try decoded().assistantName)
+    }
+
     func testSharedWebSessionResolvesEveryToolCallOutcome() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-313 has no such example.
