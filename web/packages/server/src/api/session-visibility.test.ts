@@ -69,6 +69,12 @@ describe('request-profile session visibility', () => {
     expect(await detailName(root, sid)).toBe('Maude')
     expect(await bootName(root)).toBe('Maude')
     expect(await detailName(work, workSid)).toBe('Work')
+    // A mutation reply carries it too, so a client that caches the reply keeps the name.
+    const renamed = (await (await post(s, work, '/api/session/rename', { session_id: workSid, title: 'named' })).json()) as { session: { assistant_name?: string } }
+    expect(renamed.session.assistant_name).toBe('Work')
+    await s.deps.settings.save({ bot_name: '' })
+    expect(await detailName(root, sid)).toBe('Hermes')
+    expect(await bootName(root)).toBe('Hermes')
     await s.deps.settings.save({ bot_name: 'Hermes' })
   })
 

@@ -14,6 +14,7 @@ import { onboardingGateAllows } from './settings-router.js'
 import { forwardedClientIp, rawPeerIsTrustedProxy } from '../http/origin.js'
 import { truthy } from '../config.js'
 import { STARTUP_RECOVERY_CONDITION } from '../startup.js'
+import { displayBotName } from '../settings.js'
 
 export interface ApiContext { ctx: RequestContext }
 
@@ -94,7 +95,7 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
     max_upload_bytes: deps.config.maxUploadBytes,
     csrf_token: csrfToken,
     language: authenticated ? shellLanguage(ctx) : '',
-    bot_name: authenticated ? (typeof settings.bot_name === 'string' && settings.bot_name ? settings.bot_name : 'Hermes') : 'Hermes',
+    bot_name: displayBotName(authenticated ? settings.bot_name : null),
     assistant_name: authenticated ? deps.assistantName(ctx.requestProfile ?? deps.activeProfile()) : 'Hermes',
     auth,
     profile,

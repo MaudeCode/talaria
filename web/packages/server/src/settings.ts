@@ -30,6 +30,11 @@ const LEGACY_THEME_MAP: Record<string, [string, string]> = {
   slate: ['dark', 'slate'], solarized: ['dark', 'poseidon'], monokai: ['dark', 'sisyphus'], nord: ['dark', 'slate'], oled: ['dark', 'default'],
 }
 
+/** The `bot_name` setting as clients show it: trimmed, "Hermes" when unset or blank. */
+export function displayBotName(value: unknown): string {
+  return (typeof value === 'string' ? value.trim() : '') || 'Hermes'
+}
+
 export function settingsDefaults(opts: { defaultWorkspace: string; botName: string }): Settings {
   return {
     default_workspace: opts.defaultWorkspace,

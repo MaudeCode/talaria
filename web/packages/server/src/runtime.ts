@@ -21,7 +21,7 @@ import { checkoutRevision, detectWebuiVersion, loadReleaseInfo } from './release
 import { ghcrExperimental, githubJson, normalizeChannel, purgePycache, UpdateService, waitUntilRestartSafe, type RestartBlockers } from './tools/updates.js'
 import { UpdateNotificationStore } from './tools/update-notifications.js'
 import { RESTART_EXIT_CODE } from './cli/supervise.js'
-import { pyBool, SettingsStore } from './settings.js'
+import { displayBotName, pyBool, SettingsStore } from './settings.js'
 import { AssetCache, SpaShell } from './spa.js'
 import { StartupGate } from './startup.js'
 import { SessionStore } from './sessions/store.js'
@@ -144,9 +144,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   // The agent's name on every client: a named profile's own name, else the root profile's `bot_name` setting.
   const assistantName = (profile: string | null): string => {
     if (profile && !isRootProfile(profile)) return profile.charAt(0).toUpperCase() + profile.slice(1)
-    let name: unknown = null
-    try { name = settings.load().bot_name } catch { name = null }
-    return typeof name === 'string' && name ? name : 'Hermes'
+    try { return displayBotName(settings.load().bot_name) } catch { return displayBotName(null) }
   }
   // Python `_resolve_profile_home_for_name`: root aliases and invalid names clamp to the base home.
   // Isolated mode never resolves outside the pinned home, whatever name is asked for (Python `_resolve_profile_home_for_name`).
