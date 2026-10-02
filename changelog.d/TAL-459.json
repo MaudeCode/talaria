@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Restarting the server no longer repeats finished background delegation results in chats that already received them.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

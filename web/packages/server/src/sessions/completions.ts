@@ -34,7 +34,10 @@ export interface CompletionDrainDeps {
   pollMs?: number
 }
 
-interface Deferred { process_id: string; wakeup_prompt: string }
+/** `event` is the raw async-delegation event, kept so delivery can claim and acknowledge it in the Agent's ledger (TAL-459). */
+interface Deferred { process_id: string; wakeup_prompt: string; event?: Dict }
+interface HeldClaim { event: Dict; claim_id: string }
+const DELIVERY_CONSUMER = 'webui'
 
 /** Python `format_wakeup_prompt` for plain completion events; async delegations use the sidecar formatter. */
 export function formatWakeupPrompt(evt: Dict): string | null {
@@ -145,8 +148,9 @@ export class CompletionDrain {
     const prompt = await this.wakeupPrompt(evt)
     this.emitCoalesced(sid, this.buildPayload(evt, sid, prompt))
     if (!prompt) return true
-    if (this.hasActiveTurn(sid)) this.recordDeferred(sid, processId, prompt)
-    else await this.startWakeup(sid, [{ process_id: processId, wakeup_prompt: prompt }])
+    const event = evt.type === 'async_delegation' ? evt : undefined
+    if (this.hasActiveTurn(sid)) this.recordDeferred(sid, processId, prompt, event)
+    else await this.startWakeup(sid, [{ process_id: processId, wakeup_prompt: prompt, ...(event ? { event } : {}) }])
     return true
   }
 
@@ -193,11 +197,11 @@ export class CompletionDrain {
     this.pendingEmit.set(sid, { payload, timer })
   }
 
-  recordDeferred(sid: string, processId: string, prompt: string): void {
+  recordDeferred(sid: string, processId: string, prompt: string, event?: Dict): void {
     if (!sid || !prompt) return
     const entries = this.deferred.get(sid) ?? []
     if (processId && entries.some((e) => e.process_id === processId)) return
-    entries.push({ process_id: processId, wakeup_prompt: prompt })
+    entries.push({ process_id: processId, wakeup_prompt: prompt, ...(event ? { event } : {}) })
     this.deferred.set(sid, entries)
     this.pendingSessions.add(sid)
   }
@@ -209,6 +213,48 @@ export class CompletionDrain {
     if (!sidecar) return
     for (const pid of processIds.filter(Boolean)) { try { await sidecar.call('process.mark_consumed', { process_id: pid }) } catch { /* best effort */ } }
   }
+
+  /**
+   * TAL-459: claim each async delegation in the Agent's durable ledger right before delivering it. A refused claim means
+   * another consumer delivered (or holds) it, so it leaves the batch; a sidecar failure returns null so the caller keeps
+   * every entry pending. Claims are taken at delivery, never while deferred, so a long turn cannot outlive the lease.
+   */
+  private async claimBatch(batched: Deferred[]): Promise<{ deliver: Deferred[]; held: HeldClaim[] } | null> {
+    const deliver: Deferred[] = []
+    const held: HeldClaim[] = []
+    for (const entry of batched) {
+      if (!entry.event) { deliver.push(entry); continue }
+      const sidecar = this.deps.sidecar()
+      let claimId: string | null
+      try {
+        if (!sidecar) throw new Error('sidecar unavailable')
+        claimId = (await sidecar.call('process.claim_delivery', { profile_home: this.profileHome(), event: entry.event, consumer: DELIVERY_CONSUMER })).claim_id
+      } catch (error) {
+        await this.settleClaims('process.release_delivery', held)
+        this.deps.log(`[webui] WARNING: async delegation delivery claim failed for ${entry.process_id}: ${(error as Error).message}; kept pending`)
+        return null
+      }
+      if (claimId === null) continue
+      deliver.push(entry)
+      if (claimId) held.push({ event: entry.event, claim_id: claimId })
+    }
+    return { deliver, held }
+  }
+
+  /**
+   * Acknowledge (`complete`) or hand back held claims: `defer` when the busy session never admitted the wakeup (no delivery
+   * attempt spent), `release` when it failed (spends one; the Agent drops a row past its budget). Best effort: the Agent's
+   * lease bounds a lost hand-back.
+   */
+  private async settleClaims(method: 'process.complete_delivery' | 'process.release_delivery' | 'process.defer_delivery', held: HeldClaim[]): Promise<void> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) return
+    for (const claim of held) {
+      try { await sidecar.call(method, { profile_home: this.profileHome(), event: claim.event, claim_id: claim.claim_id }) } catch (error) { this.deps.log(`[webui] WARNING: ${method} failed for ${str(claim.event.delegation_id)}: ${(error as Error).message}`) }
+    }
+  }
+
+  private profileHome(): string { return this.deps.profileHome(this.deps.activeProfile()) }
 
   private scheduleRetry(sid: string): void {
     const attempts = (this.retryAttempts.get(sid) ?? 0) + 1
@@ -223,17 +269,25 @@ export class CompletionDrain {
 
   /** Python `_start_server_side_wakeup_turn`: one batched turn; 409 re-defers, other failures re-defer with a timed retry. */
   private async startWakeup(sid: string, batched: Deferred[]): Promise<boolean> {
-    const prompt = batched.length === 1 ? batched[0]!.wakeup_prompt : batched.map((e) => e.wakeup_prompt).join('\n\n')
-    const redefer = (): void => { for (const e of batched) this.recordDeferred(sid, e.process_id, e.wakeup_prompt) }
+    const redefer = (entries: Deferred[]): void => { for (const e of entries) this.recordDeferred(sid, e.process_id, e.wakeup_prompt, e.event) }
     let session: Session
-    try { session = this.deps.store.get(sid) } catch { redefer(); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: session unavailable`); return false }
-    if (session.pre_compression_snapshot) { redefer(); this.deps.log(`[webui] WARNING: automatic wakeup retained: sealed snapshot ${sid} cannot own a turn`); return false }
+    try { session = this.deps.store.get(sid) } catch { redefer(batched); this.deps.log(`[webui] WARNING: server-side wakeup retained for session ${sid}: session unavailable`); return false }
+    if (session.pre_compression_snapshot) { redefer(batched); this.deps.log(`[webui] WARNING: automatic wakeup retained: sealed snapshot ${sid} cannot own a turn`); return false }
+    const claimed = await this.claimBatch(batched)
+    if (!claimed) { redefer(batched); this.scheduleRetry(sid); return false }
+    const { deliver, held } = claimed
+    // Entries another consumer already delivered are done here too.
+    if (!deliver.length) { await this.markConsumed(batched.map((e) => e.process_id)); return true }
+    // A wakeup that does not start hands its claims back, so those rows stay pending for the retry or the next restart.
+    const giveBack = async (method: 'process.release_delivery' | 'process.defer_delivery' = 'process.release_delivery'): Promise<void> => { await this.settleClaims(method, held); redefer(deliver) }
+    const prompt = deliver.length === 1 ? deliver[0]!.wakeup_prompt : deliver.map((e) => e.wakeup_prompt).join('\n\n')
     let resp: { _status?: number; error?: string; stream_id?: string }
-    try { resp = this.deps.startTurn(session, prompt) } catch (error) { redefer(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup turn raised for session ${sid}: ${(error as Error).message}`); return false }
+    try { resp = this.deps.startTurn(session, prompt) } catch (error) { await giveBack(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup turn raised for session ${sid}: ${(error as Error).message}`); return false }
     const status = resp._status ?? (resp.stream_id ? 200 : 500)
-    if (status === 409) { redefer(); return false }
-    if (status >= 400) { redefer(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup failed for session ${sid}: status=${String(status)} err=${str(resp.error)}; re-deferred for redelivery`); return false }
+    if (status === 409) { await giveBack('process.defer_delivery'); return false }
+    if (status >= 400) { await giveBack(); this.scheduleRetry(sid); this.deps.log(`[webui] WARNING: server-side wakeup failed for session ${sid}: status=${String(status)} err=${str(resp.error)}; re-deferred for redelivery`); return false }
     this.retryAttempts.delete(sid)
+    await this.settleClaims('process.complete_delivery', held)
     await this.markConsumed(batched.map((e) => e.process_id))
     this.deps.log(`[webui] server-side wakeup turn started for session ${sid} (stream_id=${str(resp.stream_id)})`)
     return true

@@ -54,5 +54,66 @@
         "ok": true
       }
     }
+  ],
+  "process.claim_delivery": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "event": {
+          "type": "async_delegation",
+          "delegation_id": "deleg_fixture",
+          "task_failure_notice": true
+        },
+        "consumer": "webui"
+      },
+      "result": {
+        "claim_id": ""
+      }
+    }
+  ],
+  "process.complete_delivery": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "event": {
+          "type": "async_delegation",
+          "delegation_id": "deleg_fixture"
+        },
+        "claim_id": ""
+      },
+      "result": {
+        "ok": false
+      }
+    }
+  ],
+  "process.release_delivery": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "event": {
+          "type": "async_delegation",
+          "delegation_id": "deleg_fixture"
+        },
+        "claim_id": ""
+      },
+      "result": {
+        "ok": false
+      }
+    }
+  ],
+  "process.defer_delivery": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "event": {
+          "type": "async_delegation",
+          "delegation_id": "deleg_fixture"
+        },
+        "claim_id": ""
+      },
+      "result": {
+        "ok": false
+      }
+    }
   ]
 }
