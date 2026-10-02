@@ -142,6 +142,27 @@ final class TranscriptPerformanceUITests: PerformanceUITestCase {
         }
     }
 
+    /// Open a transcript of 20-100K-character bodies in the server's collapsed shape (TAL-456):
+    /// memory here is what ran the App out of its per-process limit before excerpts.
+    func testLongBodyTranscriptOpens() {
+        launchFixture(additionalArguments: ["--ui-test-long-bodies"])
+
+        measure(
+            metrics: [XCTClockMetric(), XCTMemoryMetric(application: app)],
+            options: measureOptions(manualWindow: true)
+        ) {
+            waitForSessionList()
+
+            startMeasuring()
+            tapCentre(of: denseSessionRow)
+            XCTAssertTrue(waitForComposer(), "The long-body fixture session never opened")
+            stopMeasuring()
+
+            app.navigationBars.buttons["BackButton"].firstMatch.tap()
+            XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: 15))
+        }
+    }
+
     /// Scroll: a fixed sweep back through the transcript. Hitches are the signal
     /// here — a dropped frame during scrolling is what a user actually sees, and
     /// `XCTHitchMetric` needs iOS 26 the same way `SidebarPerformanceUITests` does.

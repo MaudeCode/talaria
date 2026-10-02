@@ -25,6 +25,9 @@ struct UITestFixtureEnvironment {
     /// budgets (TAL-75). The functional fixtures keep the small counts so their
     /// scrolling and layout assertions stay fast.
     nonisolated static let denseArgument = "--ui-test-dense"
+    /// Serves a transcript of very long bodies in the server's collapsed shape (TAL-456), the
+    /// shape that ran the App out of memory before it rendered excerpts.
+    nonisolated static let longBodiesArgument = "--ui-test-long-bodies"
     nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
     /// Answers the chat's first transcript load, so the cache exists, then holds every reopen
     /// until the test releases it, so "Syncing messages" stays over the cached rows (TAL-436).
@@ -69,6 +72,9 @@ struct UITestFixtureEnvironment {
     }()
     nonisolated static var isDense: Bool {
         ProcessInfo.processInfo.arguments.contains(denseArgument)
+    }
+    nonisolated static var hasLongBodies: Bool {
+        ProcessInfo.processInfo.arguments.contains(longBodiesArgument)
     }
     nonisolated static let serverURL = UITestFixtureLaunch.serverURL
     nonisolated static var relayCredentials: TalariaRelayCredentials { UITestFixtureLaunch.relayCredentials }
@@ -662,6 +668,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func sessionResponse() -> Data {
+        if UITestFixtureEnvironment.hasLongBodies {
+            var detail = session(id: sessionID, title: sessionTitle)
+            detail["messages"] = longBodyMessages
+            return json(["session": detail])
+        }
         let messageCount = UITestFixtureEnvironment.isDense ? 600 : 48
         var messages: [[String: Any]] = (0..<messageCount).map { index in
             [
@@ -681,6 +692,21 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         var detail = session(id: sessionID, title: sessionTitle)
         detail["messages"] = messages
         return json(["session": detail])
+    }
+
+    /// 25 user bodies of 20-100K characters, each with a link, between short replies, collapsed
+    /// the way the server ships them (TAL-456): the excerpt is a prefix and `content` stays whole.
+    private static let longBodyMessages: [[String: Any]] = (0..<50).map { index in
+        guard index.isMultiple(of: 2) else {
+            return ["role": "assistant", "content": "Short reply \(index / 2 + 1).", "message_id": "long-body-reply-\(index)", "_ts": 2_000_000_000 + index]
+        }
+        let line = "Delegated result line with details at https://example.test/long/\(index).\n"
+        let length = index == 48 ? 100_000 : 20_000 + index * 600
+        let content = "Long fixture body \(index / 2 + 1)\n" + String(repeating: line, count: length / line.count)
+        return [
+            "role": "user", "content": content, "message_id": "long-body-user-\(index)", "_ts": 2_000_000_000 + index,
+            "_display_truncated": true, "_display_excerpt": String(content.prefix(2_900))
+        ]
     }
 
     /// A link to a workspace file with a line target, which the chat opens in
