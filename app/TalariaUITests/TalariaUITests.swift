@@ -646,16 +646,22 @@ final class HeaderTextSizeUITests: WorkspaceUITestCase {
     static let memoryTitles = ["My Notes", "User Profile", "Agent Soul"]
 
     func testMemoryAndFilesHeadersKeepWholeWordsAtAccessibilityTextSize() throws {
-        let defaultHeights = launchAndMeasureMemoryTitles(textSize: "UICTContentSizeCategoryL", captionBelow: false)
+        let defaultHeaders = launchAndMeasureMemoryHeaders(textSize: "UICTContentSizeCategoryL")
         app.terminate()
-        let accessibilityHeights = launchAndMeasureMemoryTitles(
-            textSize: "UICTContentSizeCategoryAccessibilityXL", captionBelow: true
-        )
+        let accessibilityHeaders = launchAndMeasureMemoryHeaders(textSize: "UICTContentSizeCategoryAccessibilityXL")
         // AX3 scales one header line about 2.4× (20 → 48 pt), so a second line lands past 4×.
-        for title in Self.memoryTitles {
-            let defaultHeight = try XCTUnwrap(defaultHeights[title])
-            let accessibilityHeight = try XCTUnwrap(accessibilityHeights[title])
-            XCTAssertLessThan(accessibilityHeight, defaultHeight * 3, "\(title) wrapped at AX3")
+        for name in Self.memoryTitles {
+            let defaultHeader = try XCTUnwrap(defaultHeaders[name])
+            let accessibilityHeader = try XCTUnwrap(accessibilityHeaders[name])
+            XCTAssertTrue(
+                defaultHeader.title.minY..<defaultHeader.title.maxY ~= defaultHeader.caption.midY,
+                "\(name)'s caption left its title row at the default size"
+            )
+            XCTAssertGreaterThanOrEqual(
+                accessibilityHeader.caption.minY, accessibilityHeader.title.maxY - 1,
+                "\(name)'s caption must sit below its title at AX3"
+            )
+            XCTAssertLessThan(accessibilityHeader.title.height, defaultHeader.title.height * 3, "\(name) wrapped at AX3")
         }
 
         openSidebarDestination("Chats")
@@ -671,32 +677,35 @@ final class HeaderTextSizeUITests: WorkspaceUITestCase {
         XCTAssertLessThan(root.frame.height, up.frame.height * 1.5, "Root wrapped at AX3")
     }
 
-    /// Opens Memory at `textSize` and returns each section title's height, checking whether the
-    /// first section's modified caption sits beside or below its title.
-    private func launchAndMeasureMemoryTitles(textSize: String, captionBelow: Bool) -> [String: CGFloat] {
+    /// Opens Memory at `textSize` and returns each section title's frame with its modified
+    /// caption's: the first caption that ends below the title's top, beside it or under it.
+    private func launchAndMeasureMemoryHeaders(textSize: String) -> [String: (title: CGRect, caption: CGRect)] {
         launchFixture(additionalArguments: ["--ui-test-panels", "-UIPreferredContentSizeCategoryName", textSize])
         XCTAssertTrue(app.buttons["Open navigation"].awaitExistence(timeout: 15), "Missing deterministic app fixture")
         openSidebarDestination("Memory")
         let firstTitle = element(label: Self.memoryTitles[0])
         XCTAssertTrue(releaseHeldLoads { firstTitle.exists }, "Memory did not render its sections [\(textSize)]")
+        _ = firstTitle.settledFrame
 
-        let title = firstTitle.settledFrame
-        let caption = element(labelBeginningWith: "Modified").settledFrame
-        if captionBelow {
-            XCTAssertGreaterThanOrEqual(caption.minY, title.maxY - 1, "The caption must sit below the title [\(textSize)]")
-        } else {
-            XCTAssertEqual(caption.midY, title.midY, accuracy: title.height / 2, "The caption left the title row [\(textSize)]")
+        let captions = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Modified"))
+        func caption(of title: CGRect) -> CGRect? {
+            captions.allElementsBoundByIndex.map(\.frame)
+                .filter { $0.maxY > title.minY }
+                .min { $0.minY < $1.minY }
         }
-
-        var heights: [String: CGFloat] = [:]
+        var headers: [String: (title: CGRect, caption: CGRect)] = [:]
         for name in Self.memoryTitles {
             let header = element(label: name)
-            repeatStep(6, until: { header.exists && header.frame.maxY < app.frame.maxY }) {
+            // The list builds rows near the viewport, so scroll until the caption under the title exists too.
+            repeatStep(6, until: { header.exists && header.frame.maxY < app.frame.maxY && caption(of: header.frame) != nil }) {
                 app.swipeUp()
             }
-            heights[name] = header.frame.height
+            let title = header.settledFrame
+            let captionFrame = caption(of: title)
+            XCTAssertNotNil(captionFrame, "\(name) showed no modified caption [\(textSize)]")
+            headers[name] = (title, captionFrame ?? .null)
         }
-        return heights
+        return headers
     }
 }
 
