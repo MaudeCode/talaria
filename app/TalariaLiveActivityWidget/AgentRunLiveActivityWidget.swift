@@ -29,9 +29,7 @@ struct TalariaAggregateLiveActivityWidget: Widget {
             .padding(14)
             .activityBackgroundTint(AgentRunLiveActivityTheme.background)
             .activitySystemActionForegroundColor(AgentRunLiveActivityTheme.primaryText)
-            .widgetURL(context.state.rows.first.flatMap {
-                TalariaDeepLink.sessionURL(sessionID: $0.sessionId, publisherID: $0.publisherId)
-            })
+            .widgetURL(context.state.rows.first?.sessionURL)
         } dynamicIsland: { context in
             let isStale = TalariaAggregateLiveActivityPresentation.isEffectivelyStale(
                 state: context.state,
@@ -73,15 +71,19 @@ struct TalariaAggregateLiveActivityWidget: Widget {
             } minimal: {
                 SandalMark(height: 13)
             }
-            .widgetURL(context.state.rows.first.flatMap {
-                TalariaDeepLink.sessionURL(sessionID: $0.sessionId, publisherID: $0.publisherId)
-            })
+            .widgetURL(context.state.rows.first?.sessionURL)
         }
     }
 }
 
 
 
+
+private extension TalariaAggregateActivityAttributes.ContentState.Row {
+    var sessionURL: URL? {
+        TalariaDeepLink.sessionURL(sessionID: sessionId, publisherID: publisherId)
+    }
+}
 
 /// One aggregate row that opens its own session. The card's `widgetURL` only covers taps
 /// outside a row and the compact and minimal presentations, which show no rows.
@@ -102,7 +104,7 @@ private struct AggregateRowLink: View {
             )
                 .layoutPriority(1)
         }
-        if let url = TalariaDeepLink.sessionURL(sessionID: row.sessionId, publisherID: row.publisherId) {
+        if let url = row.sessionURL {
             Link(destination: url) { content }
         } else {
             content

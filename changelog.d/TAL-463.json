@@ -8,7 +8,7 @@
     },
     {
       "category": "Fixed",
-      "summary": "Tapping a chat on the Live Activity opens that chat, and the newest finished chat is listed first.",
+      "summary": "Tapping a chat on the Live Activity opens that chat, and newer results are listed before older ones with the same outcome.",
       "highlight": false,
       "components": ["app", "relay"]
     }
