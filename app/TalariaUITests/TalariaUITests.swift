@@ -665,6 +665,75 @@ final class WorkspaceLoadingUITests: WorkspaceUITestCase {
     }
 }
 
+/// Memory and Files headers keep whole words at accessibility text sizes (TAL-466): each Memory
+/// title stays on one line with its modified caption below it, and Root and Up keep their names.
+final class HeaderTextSizeUITests: WorkspaceUITestCase {
+    static let memoryTitles = ["My Notes", "User Profile", "Agent Soul"]
+
+    func testMemoryAndFilesHeadersKeepWholeWordsAtAccessibilityTextSize() throws {
+        let defaultHeaders = launchAndMeasureMemoryHeaders(textSize: "UICTContentSizeCategoryL")
+        app.terminate()
+        let accessibilityHeaders = launchAndMeasureMemoryHeaders(textSize: "UICTContentSizeCategoryAccessibilityXL")
+        // AX3 scales one header line about 2.4× (20 → 48 pt), so a second line lands past 4×.
+        for name in Self.memoryTitles {
+            let defaultHeader = try XCTUnwrap(defaultHeaders[name])
+            let accessibilityHeader = try XCTUnwrap(accessibilityHeaders[name])
+            XCTAssertTrue(
+                defaultHeader.title.minY..<defaultHeader.title.maxY ~= defaultHeader.caption.midY,
+                "\(name)'s caption left its title row at the default size"
+            )
+            XCTAssertGreaterThanOrEqual(
+                accessibilityHeader.caption.minY, accessibilityHeader.title.maxY - 1,
+                "\(name)'s caption must sit below its title at AX3"
+            )
+            XCTAssertLessThan(accessibilityHeader.title.height, defaultHeader.title.height * 3, "\(name) wrapped at AX3")
+        }
+
+        openSidebarDestination("Chats")
+        XCTAssertTrue(app.navigationBars["Chats"].awaitExistence(timeout: Self.navigationTimeout))
+        openFixtureSessionChat()
+        openFiles()
+        let root = app.buttons["Root"]
+        let up = app.buttons["Up"]
+        XCTAssertTrue(root.awaitExistence(timeout: 10), "Missing the Root control at AX3")
+        XCTAssertEqual(root.label, "Root")
+        XCTAssertEqual(up.label, "Up")
+        // Icon-only glyphs differ by a few points; a wrapped title was 2.6× Up's height.
+        XCTAssertLessThan(root.frame.height, up.frame.height * 1.5, "Root wrapped at AX3")
+    }
+
+    /// Opens Memory at `textSize` and returns each section title's frame with its modified
+    /// caption's: the first caption that ends below the title's top, beside it or under it.
+    private func launchAndMeasureMemoryHeaders(textSize: String) -> [String: (title: CGRect, caption: CGRect)] {
+        launchFixture(additionalArguments: ["--ui-test-panels", "-UIPreferredContentSizeCategoryName", textSize])
+        XCTAssertTrue(app.buttons["Open navigation"].awaitExistence(timeout: 15), "Missing deterministic app fixture")
+        openSidebarDestination("Memory")
+        let firstTitle = element(label: Self.memoryTitles[0])
+        XCTAssertTrue(releaseHeldLoads { firstTitle.exists }, "Memory did not render its sections [\(textSize)]")
+        _ = firstTitle.settledFrame
+
+        let captions = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Modified"))
+        func caption(of title: CGRect) -> CGRect? {
+            captions.allElementsBoundByIndex.map(\.frame)
+                .filter { $0.maxY > title.minY }
+                .min { $0.minY < $1.minY }
+        }
+        var headers: [String: (title: CGRect, caption: CGRect)] = [:]
+        for name in Self.memoryTitles {
+            let header = element(label: name)
+            // The list builds rows near the viewport, so scroll until the caption under the title exists too.
+            repeatStep(6, until: { header.exists && header.frame.maxY < app.frame.maxY && caption(of: header.frame) != nil }) {
+                app.swipeUp()
+            }
+            let title = header.settledFrame
+            let captionFrame = caption(of: title)
+            XCTAssertNotNil(captionFrame, "\(name) showed no modified caption [\(textSize)]")
+            headers[name] = (title, captionFrame ?? .null)
+        }
+        return headers
+    }
+}
+
 /// Previews, a chat file link, a file that fails to read and the push guard share one workspace
 /// launch; the fixture grants its Git write capability partway through (TAL-402).
 final class WorkspaceFilePreviewUITests: WorkspaceUITestCase {

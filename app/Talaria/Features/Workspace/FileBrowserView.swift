@@ -138,20 +138,12 @@ struct FileBrowserView: View {
             }
 
             HStack(spacing: 8) {
-                Button {
-                    Task { await loadRoot() }
-                } label: {
-                    Label("Root", systemImage: "house")
+                // Icons alone when the titles cannot fit whole in their share of the row, as at
+                // accessibility text sizes; the labels still name them for VoiceOver (TAL-466).
+                ViewThatFits(in: .horizontal) {
+                    rootAndUpButtons
+                    rootAndUpButtons.labelStyle(.iconOnly)
                 }
-                .disabled(viewModel.isAtRoot)
-
-                Button {
-                    guard let parentPath = viewModel.parentPath else { return }
-                    Task { await load(path: parentPath) }
-                } label: {
-                    Label("Up", systemImage: "arrow.up")
-                }
-                .disabled(viewModel.parentPath == nil)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
@@ -185,6 +177,25 @@ struct FileBrowserView: View {
         .padding(.horizontal)
         .padding(.vertical, 10)
         .background(Color(.systemBackground))
+    }
+
+    private var rootAndUpButtons: some View {
+        HStack(spacing: 8) {
+            Button {
+                Task { await loadRoot() }
+            } label: {
+                Label("Root", systemImage: "house")
+            }
+            .disabled(viewModel.isAtRoot)
+
+            Button {
+                guard let parentPath = viewModel.parentPath else { return }
+                Task { await load(path: parentPath) }
+            } label: {
+                Label("Up", systemImage: "arrow.up")
+            }
+            .disabled(viewModel.parentPath == nil)
+        }
     }
 
     private var searchBar: some View {
