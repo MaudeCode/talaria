@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "On iPhone, a reply that just finished keeps how the server shows it, so a quiet background reply stays hidden and a long answer stays collapsed.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
