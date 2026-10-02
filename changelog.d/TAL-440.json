@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Tapping a response-complete notification now opens the chat it is about.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
