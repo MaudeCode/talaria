@@ -237,6 +237,31 @@ public final class SessionListViewModel {
     static let projectsCacheKind = "projects"
     static let profilesCacheKind = "profiles"
 
+    /// Runs already prefetched, as `session|stream`, so each run costs one request at most.
+    private var prefetchedRuns: Set<String> = []
+
+    /// Warms the transcript cache for running chats this device has never opened (TAL-437), one
+    /// bounded page each, so opening a run started elsewhere paints at once.
+    public func prefetchRunningTranscripts(modelContext: ModelContext) async {
+        for session in sessions where session.isStreaming == true {
+            guard let sessionID = Self.nonEmpty(session.sessionId) else { continue }
+            let runKey = "\(sessionID)|\(session.activeStreamId ?? "")"
+            guard !prefetchedRuns.contains(runKey) else { continue }
+            prefetchedRuns.insert(runKey)
+            // A chat opened here already has its own cache, which the chat keeps current.
+            let cached = try? CacheStore.cachedMessages(serverURL: server, sessionID: sessionID, in: modelContext, limit: 1)
+            guard cached?.isEmpty ?? true,
+                  let messages = try? await client.session(
+                    id: sessionID,
+                    messageLimit: ChatViewModel.messagePageLimit,
+                    expandRenderable: true
+                  ).session?.messages,
+                  !messages.isEmpty
+            else { continue }
+            try? CacheStore.cacheMessages(messages, serverURL: server, sessionID: sessionID, in: modelContext)
+        }
+    }
+
     @discardableResult
     public func load(
         modelContext: ModelContext? = nil,

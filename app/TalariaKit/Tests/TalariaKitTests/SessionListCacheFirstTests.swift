@@ -73,6 +73,52 @@ extension SessionListMutationTests {
         XCTAssertFalse(relaunch.isViewingCachedData)
     }
 
+    func testRunningChatsNeverOpenedHereArePrefetchedOncePerRun() async throws {
+        let context = try makeContext()
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        try CacheStore.cacheMessages(
+            [ChatMessage(role: "user", content: "Already here", timestamp: 1, messageId: "m1")],
+            serverURL: server,
+            sessionID: "running-cached",
+            in: context
+        )
+        let sessionReads = RecordedSessionIDs()
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/sessions":
+                return apiTestJSONResponse("""
+                {"sessions": [
+                  {"session_id": "running-elsewhere", "title": "Started on the web", "is_streaming": true, "active_stream_id": "stream-1"},
+                  {"session_id": "running-cached", "title": "Opened here", "is_streaming": true, "active_stream_id": "stream-2"},
+                  {"session_id": "idle", "title": "Idle", "is_streaming": false}
+                ]}
+                """, for: request)
+            case "/api/session":
+                let id = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?
+                    .queryItems?.first { $0.name == "session_id" }?.value ?? ""
+                sessionReads.append(id)
+                return apiTestJSONResponse("""
+                {"session": {"session_id": "\(id)", "messages": [
+                  {"role": "user", "content": "Asked on the web", "timestamp": 1770000100, "message_id": "u1"}
+                ]}}
+                """, for: request)
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                throw URLError(.badURL)
+            }
+        }
+        await viewModel.load(modelContext: context)
+
+        await viewModel.prefetchRunningTranscripts(modelContext: context)
+        await viewModel.prefetchRunningTranscripts(modelContext: context)
+
+        XCTAssertEqual(sessionReads.values, ["running-elsewhere"], "Only the running chat with no saved transcript, once")
+        XCTAssertEqual(
+            try CacheStore.cachedMessages(serverURL: server, sessionID: "running-elsewhere", in: context).compactMap(\.content),
+            ["Asked on the web"]
+        )
+    }
+
     func testCachedPaintNeverReplacesRowsAlreadyLoaded() async throws {
         let context = try makeContext()
         let viewModel = try makeViewModel { request in
@@ -88,5 +134,18 @@ extension SessionListMutationTests {
         viewModel.paintCachedStateIfEmpty(modelContext: context)
 
         XCTAssertEqual(viewModel.sessions.compactMap(\.sessionId), ["server-1"])
+    }
+}
+
+private final class RecordedSessionIDs: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [String] = []
+
+    func append(_ id: String) {
+        lock.withLock { recorded.append(id) }
+    }
+
+    var values: [String] {
+        lock.withLock { recorded }
     }
 }

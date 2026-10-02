@@ -1194,6 +1194,8 @@ struct SessionListView: View {
         await loadSessions()
         guard !Task.isCancelled else { return }
         await viewModel.loadActiveProfile()
+        guard !Task.isCancelled else { return }
+        await viewModel.prefetchRunningTranscripts(modelContext: modelContext)
     }
 
     private var sceneActions: TalariaSceneActions {

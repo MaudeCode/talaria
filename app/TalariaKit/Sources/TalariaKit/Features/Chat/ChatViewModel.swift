@@ -6,7 +6,7 @@ import SwiftData
 @MainActor
 @Observable
 public final class ChatViewModel {
-    private static let messagePageLimit = 50
+    static let messagePageLimit = 50
 
     private struct SessionLoadWaiter {
         let requestGeneration: Int
