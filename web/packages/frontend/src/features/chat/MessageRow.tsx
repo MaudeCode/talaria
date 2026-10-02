@@ -59,10 +59,19 @@ export const UserMessageRow = memo(function UserMessageRow({ row, renderMarkdown
   )
 })
 
-/** A localized line with `label` set in its own element (`code` for a command), wherever the wording puts it. */
+/**
+ * A localized line with `label` set in its own element (`code` for a command), wherever the wording puts it. Only the
+ * label truncates, so the verb stays readable on one line.
+ */
 function LineText({ text, label, code }: { text: (label: string) => string; label: string; code?: boolean }) {
   const [before = '', after = ''] = text('\u0000').split('\u0000')
-  return <>{before}{code ? <code className="font-mono text-[12px]">{label}</code> : <span className="text-text">{label}</span>}{after}</>
+  return (
+    <span className="flex min-w-0 whitespace-pre">
+      {before && <span className="shrink-0">{before}</span>}
+      {code ? <code className="min-w-0 truncate font-mono text-[12px] leading-[inherit]">{label}</code> : <span className="min-w-0 truncate text-text">{label}</span>}
+      {after && <span className="shrink-0">{after}</span>}
+    </span>
+  )
 }
 
 function BackgroundLineRow({ line }: { line: BackgroundLine }) {
@@ -75,9 +84,9 @@ function BackgroundLineRow({ line }: { line: BackgroundLine }) {
     ? <LineText code label={line.label} text={(command) => (failed && exit !== null ? m.background_line_command_failed_exit({ command, code: exit }) : failed ? m.background_line_command_failed({ command }) : m.background_line_command_finished({ command }))} />
     : line.label
   return (
-    <li className="flex items-start gap-2">
-      <Icon size={14} aria-hidden="true" className={cn('mt-0.5 shrink-0', failed ? 'text-warning' : 'text-muted')} />
-      <span className="min-w-0 break-words">{text}</span>
+    <li className="flex items-center gap-2">
+      <Icon size={14} aria-hidden="true" className={cn('shrink-0', failed ? 'text-warning' : 'text-muted')} />
+      <span className="min-w-0 truncate">{text}</span>
     </li>
   )
 }
