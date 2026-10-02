@@ -28,6 +28,7 @@ const completed = (messages: Json[], extra: Partial<ChatResult> = {}): ChatResul
 })
 
 const eventNames = (frames: SseFrame[]): string[] => frames.map((f) => f.event)
+const messageKind = (m: Json): string => (m._background_update ? 'background' : str(m.content))
 
 describe('chat turns through the sidecar', () => {
   let s: TestServer
@@ -683,6 +684,75 @@ describe('chat turns through the sidecar', () => {
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
     expect((frames.find((f) => f.event === 'pending_steer_leftover')?.data as Json)).toMatchObject({ steer_id: 'steer-2', text: 'second' })
     expect(frames.filter((f) => f.event === 'steer_consumed')).toHaveLength(1)
+  })
+
+  it('a message sent during a background turn starts its own turn; the background turn stops without a trace (TAL-460)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('process.mark_consumed', () => ({ ok: true }))
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    let steered = false
+    sidecar.respond('chat.steer', () => { steered = true; return { accepted: true, fallback: null } })
+    const histories: Json[][] = []
+    sidecar.respond('chat.start', (params, emit, opts) => {
+      histories.push(params.conversation_history)
+      if (!str(params.user_message).includes('Background process')) return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Here is your answer.' }])
+      return new Promise((resolve) => {
+        emit({ event: 'token', data: { text: 'Looking at the backup' } })
+        opts.signal?.addEventListener('abort', () => { resolve({ ...completed([{ role: 'user', content: str(params.user_message) }]), status: 'cancelled' }) })
+      })
+    })
+    await s.deps.completions.processOne({ process_id: 'proc_bg', session_id: 'proc_bg', type: 'completion', command: 'backup', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
+    const background = str(s.deps.sessionStore.get(sid).active_stream_id)
+    expect(background).not.toBe('')
+    await s.sse(`/api/chat/stream?stream_id=${background}`, (f) => f.event === 'token')
+    const res = await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'what about my question?', steer_id: 'steer-bg' }))
+    expect(steered, 'the message never joins the background turn').toBe(false)
+    expect(res).toMatchObject({ accepted: true, fallback: null, steer_id: 'steer-bg' })
+    const turn = res.started_turn as Json
+    expect(turn.stream_id).toBe(res.stream_id)
+    expect(res.stream_id).not.toBe(background)
+    await s.sse(`/api/chat/stream?stream_id=${String(res.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(messages.map((m) => [m.role, messageKind(m)])).toEqual([['user', 'background'], ['user', 'what about my question?'], ['assistant', 'Here is your answer.']])
+    expect(messages.some((m) => m._error || m._partial), 'no cancelled or partial artifact').toBe(false)
+    // The Agent answers the user with the background result in context.
+    expect(JSON.stringify(histories.at(-1))).toContain('Background process')
+    expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).active_turn_origin).toBeNull()
+  })
+
+  it('a message sent to a user turn still steers it, and starting during a background turn starts at once (TAL-460)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('process.mark_consumed', () => ({ ok: true }))
+    sidecar.respond('chat.interrupt', () => ({ ok: true }))
+    sidecar.respond('chat.steer', () => ({ accepted: true, fallback: null }))
+    let release: () => void = () => undefined
+    sidecar.respond('chat.start', (params, emit, opts) => new Promise((resolve) => {
+      emit({ event: 'token', data: { text: 'working' } })
+      const done = () => { resolve(completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }])) }
+      if (str(params.user_message).includes('Background process')) opts.signal?.addEventListener('abort', () => { resolve({ ...completed([{ role: 'user', content: str(params.user_message) }]), status: 'cancelled' }) })
+      else release = done
+    }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'task' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'token')
+    expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).active_turn_origin).toBe('user')
+    expect(await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'prefer tests', steer_id: 'steer-u' }))).toEqual({ accepted: true, fallback: null, stream_id: start.stream_id, steer_id: 'steer-u' })
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+    await s.deps.completions.processOne({ process_id: 'proc_bg2', session_id: 'proc_bg2', type: 'completion', command: 'backup', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })
+    for (let i = 0; i < 60 && !s.deps.sessionStore.get(sid).active_stream_id; i += 1) await new Promise((r) => setTimeout(r, 20))
+    const background = str(s.deps.sessionStore.get(sid).active_stream_id)
+    await s.sse(`/api/chat/stream?stream_id=${background}`, (f) => f.event === 'token')
+    expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).active_turn_origin).toBe('background')
+    expect(await json(await s.get(`/api/session/status?session_id=${sid}`))).toMatchObject({ active_turn_origin: 'background' })
+    const res = await post(s, '/api/chat/start', { session_id: sid, message: 'new question' })
+    expect(res.status).toBe(200)
+    const next = await json(res)
+    expect(next.stream_id).not.toBe(background)
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${String(next.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(messages.some((m) => m._error || m._partial)).toBe(false)
+    expect(messages.at(-2)).toMatchObject({ role: 'user', content: 'new question' })
   })
 
   it('persists consumed steers at their causal place, in the settled scene, and out of model history (TAL-300)', async () => {

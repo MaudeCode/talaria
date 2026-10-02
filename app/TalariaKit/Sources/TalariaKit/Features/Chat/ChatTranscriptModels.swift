@@ -908,6 +908,8 @@ extension ChatViewModel {
             guard !TranscriptTurnClassifier.isToolResultOnlyMessage(message) else { continue }
             // Persisted steers render inside their turn's scene, not as rows of their own.
             guard message.steer == nil else { continue }
+            // A background reply that is only a silence marker shows nothing; its completion lines stay (TAL-460).
+            guard !message.backgroundSilent else { continue }
             if let streamingAssistantID, message.messageId == streamingAssistantID {
                 continue
             }

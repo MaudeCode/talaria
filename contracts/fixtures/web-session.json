@@ -1309,7 +1309,34 @@
         "kind": "mixed",
         "attention": true,
         "count": 2,
-        "summary": "ASYNC DELEGATION BATCH COMPLETE — deleg_contract"
+        "summary": "ASYNC DELEGATION BATCH COMPLETE — deleg_contract",
+        "lines": [
+          {
+            "kind": "agent",
+            "status": "completed",
+            "label": "Audit the PVC backups"
+          },
+          {
+            "kind": "command",
+            "status": "failed",
+            "label": "make test",
+            "exit_code": 1
+          }
+        ]
+      },
+      "wake-silent": {
+        "kind": "process",
+        "attention": false,
+        "count": 1,
+        "summary": "IMPORTANT: Background process proc_backup completed (exit_code=0).",
+        "lines": [
+          {
+            "kind": "command",
+            "status": "completed",
+            "label": "./backup.sh",
+            "exit_code": 0
+          }
+        ]
       }
     },
     "messages": [
@@ -1352,19 +1379,32 @@
           "kind": "mixed",
           "attention": true,
           "count": 2,
-          "summary": "ASYNC DELEGATION BATCH COMPLETE — deleg_contract"
+          "summary": "ASYNC DELEGATION BATCH COMPLETE — deleg_contract",
+          "lines": [
+            {
+              "kind": "agent",
+              "status": "completed",
+              "label": "Audit the PVC backups"
+            },
+            {
+              "kind": "command",
+              "status": "failed",
+              "label": "make test",
+              "exit_code": 1
+            }
+          ]
         },
         "_source": "process_wakeup"
       },
       {
         "role": "assistant",
-        "content": "One delegation finished and the test run failed.",
+        "content": "The audit finished, but the test run failed: 1 test is red.",
         "message_id": "wakeup-mixed-reply",
         "timestamp": 1770000203,
         "_anchor_activity_scene": {
           "version": "activity_scene_v1",
           "activity_rows": [],
-          "final_answer": "One delegation finished and the test run failed.",
+          "final_answer": "The audit finished, but the test run failed: 1 test is red.",
           "turn_duration": null,
           "terminal_state": "completed",
           "expanded_by_default": false,
@@ -1374,9 +1414,10 @@
           "activity_rows_offset": 0,
           "activity_rows_complete": true,
           "activity_rows_omitted": 0,
-          "activity_scene_ref": "b6d39b931f042595e2cd2b45f7cc8f6f8520a343258292c8a80f55005df2289f"
+          "activity_scene_ref": "b3db2f3cb57acae4a6faf19f0dde1c7b5f6cbd665f3b31efba522388961c41f9"
         },
-        "_turn_id": "wake-contract"
+        "_turn_id": "wake-contract",
+        "_background_reply": true
       },
       {
         "role": "user",
@@ -1388,7 +1429,14 @@
           "kind": "other",
           "attention": false,
           "count": 1,
-          "summary": "IMPORTANT: Background process proc_old completed (exit_code=0)."
+          "summary": "IMPORTANT: Background process proc_old completed (exit_code=0).",
+          "lines": [
+            {
+              "kind": "other",
+              "status": "completed",
+              "label": "IMPORTANT: Background process proc_old completed (exit_code=0)."
+            }
+          ]
         },
         "_source": "process_wakeup"
       },
@@ -1412,7 +1460,83 @@
           "activity_rows_omitted": 0,
           "activity_scene_ref": "204102a5062ace423c9cf6ce25c757318f56e00b76181cb4e69baef967868857"
         },
-        "_turn_id": "wake-legacy"
+        "_turn_id": "wake-legacy",
+        "_background_reply": true
+      },
+      {
+        "role": "user",
+        "content": "[IMPORTANT: Background process proc_backup completed (exit_code=0).\nCommand: ./backup.sh]",
+        "message_id": "wakeup-silent-user",
+        "timestamp": 1770000206,
+        "_turn_id": "wake-silent",
+        "_background_update": {
+          "kind": "process",
+          "attention": false,
+          "count": 1,
+          "summary": "IMPORTANT: Background process proc_backup completed (exit_code=0).",
+          "lines": [
+            {
+              "kind": "command",
+              "status": "completed",
+              "label": "./backup.sh",
+              "exit_code": 0
+            }
+          ]
+        },
+        "_source": "process_wakeup"
+      },
+      {
+        "role": "assistant",
+        "content": "[SILENT]",
+        "message_id": "wakeup-silent-reply",
+        "timestamp": 1770000207,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "[SILENT]",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "5da3a61e1cdfe54f9ae068de5d09c0490c389d4bdc85bebca8f5d8bcf02cab14"
+        },
+        "_turn_id": "wake-silent",
+        "_background_reply": true,
+        "_background_silent": true
+      },
+      {
+        "role": "user",
+        "content": "Reply with exactly NO_REPLY",
+        "message_id": "user-no-reply",
+        "timestamp": 1770000208,
+        "_turn_id": "user-no-reply"
+      },
+      {
+        "role": "assistant",
+        "content": "NO_REPLY",
+        "message_id": "user-no-reply-answer",
+        "timestamp": 1770000209,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "NO_REPLY",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "b3438d7ef679e5d59aa403c94d03d28e170727e32d4b9206bc57c7257370120c"
+        },
+        "_turn_id": "user-no-reply"
       }
     ]
   }

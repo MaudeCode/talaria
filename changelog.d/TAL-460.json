@@ -1,0 +1,22 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "A finished background agent or command now shows as a short line, such as Agent \"…\" completed, with the agent's reply directly under it.",
+      "highlight": true,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "A message you send while the agent works on a background result now gets its own reply instead of joining that work.",
+      "highlight": true,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "When a background result needs nothing from you, the agent stays quiet and only the completion line shows.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

@@ -2921,14 +2921,65 @@
                                   },
                                   "summary": {
                                     "type": "string"
+                                  },
+                                  "lines": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "agent",
+                                            "command",
+                                            "other"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "status": {
+                                          "enum": [
+                                            "completed",
+                                            "failed",
+                                            "notice"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "exit_code": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "status",
+                                        "label"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "kind",
                                   "attention",
                                   "count",
-                                  "summary"
+                                  "summary",
+                                  "lines"
                                 ]
+                              },
+                              "_background_reply": {
+                                "type": "boolean"
+                              },
+                              "_background_silent": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -3142,6 +3193,21 @@
                         "is_streaming": {
                           "type": "boolean",
                           "description": "True only while the session's run is a live stream on this server."
+                        },
+                        "active_turn_origin": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "user",
+                                "background"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Who started the running turn; null while idle."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -3560,6 +3626,21 @@
                         }
                       ],
                       "description": "The live stream id; non-null only while `is_streaming` is true."
+                    },
+                    "active_turn_origin": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "user",
+                            "background"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Who started the running turn; null while idle."
                     },
                     "agent_running": {
                       "type": "boolean",
@@ -4422,14 +4503,65 @@
                                   },
                                   "summary": {
                                     "type": "string"
+                                  },
+                                  "lines": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "agent",
+                                            "command",
+                                            "other"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "status": {
+                                          "enum": [
+                                            "completed",
+                                            "failed",
+                                            "notice"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "exit_code": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "status",
+                                        "label"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "kind",
                                   "attention",
                                   "count",
-                                  "summary"
+                                  "summary",
+                                  "lines"
                                 ]
+                              },
+                              "_background_reply": {
+                                "type": "boolean"
+                              },
+                              "_background_silent": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -4643,6 +4775,21 @@
                         "is_streaming": {
                           "type": "boolean",
                           "description": "True only while the session's run is a live stream on this server."
+                        },
+                        "active_turn_origin": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "user",
+                                "background"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Who started the running turn; null while idle."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -5684,14 +5831,65 @@
                                   },
                                   "summary": {
                                     "type": "string"
+                                  },
+                                  "lines": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "agent",
+                                            "command",
+                                            "other"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "status": {
+                                          "enum": [
+                                            "completed",
+                                            "failed",
+                                            "notice"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "exit_code": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "status",
+                                        "label"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "kind",
                                   "attention",
                                   "count",
-                                  "summary"
+                                  "summary",
+                                  "lines"
                                 ]
+                              },
+                              "_background_reply": {
+                                "type": "boolean"
+                              },
+                              "_background_silent": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -5905,6 +6103,21 @@
                         "is_streaming": {
                           "type": "boolean",
                           "description": "True only while the session's run is a live stream on this server."
+                        },
+                        "active_turn_origin": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "user",
+                                "background"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Who started the running turn; null while idle."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -7823,14 +8036,65 @@
                                   },
                                   "summary": {
                                     "type": "string"
+                                  },
+                                  "lines": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "agent",
+                                            "command",
+                                            "other"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "status": {
+                                          "enum": [
+                                            "completed",
+                                            "failed",
+                                            "notice"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "exit_code": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "status",
+                                        "label"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "kind",
                                   "attention",
                                   "count",
-                                  "summary"
+                                  "summary",
+                                  "lines"
                                 ]
+                              },
+                              "_background_reply": {
+                                "type": "boolean"
+                              },
+                              "_background_silent": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -8044,6 +8308,21 @@
                         "is_streaming": {
                           "type": "boolean",
                           "description": "True only while the session's run is a live stream on this server."
+                        },
+                        "active_turn_origin": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "user",
+                                "background"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Who started the running turn; null while idle."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -9869,14 +10148,65 @@
                                   },
                                   "summary": {
                                     "type": "string"
+                                  },
+                                  "lines": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "agent",
+                                            "command",
+                                            "other"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "status": {
+                                          "enum": [
+                                            "completed",
+                                            "failed",
+                                            "notice"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "exit_code": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "status",
+                                        "label"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "kind",
                                   "attention",
                                   "count",
-                                  "summary"
+                                  "summary",
+                                  "lines"
                                 ]
+                              },
+                              "_background_reply": {
+                                "type": "boolean"
+                              },
+                              "_background_silent": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -10090,6 +10420,21 @@
                         "is_streaming": {
                           "type": "boolean",
                           "description": "True only while the session's run is a live stream on this server."
+                        },
+                        "active_turn_origin": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "user",
+                                "background"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Who started the running turn; null while idle."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -18974,14 +19319,65 @@
                                   },
                                   "summary": {
                                     "type": "string"
+                                  },
+                                  "lines": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "agent",
+                                            "command",
+                                            "other"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "status": {
+                                          "enum": [
+                                            "completed",
+                                            "failed",
+                                            "notice"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "exit_code": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "status",
+                                        "label"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "kind",
                                   "attention",
                                   "count",
-                                  "summary"
+                                  "summary",
+                                  "lines"
                                 ]
+                              },
+                              "_background_reply": {
+                                "type": "boolean"
+                              },
+                              "_background_silent": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -19195,6 +19591,21 @@
                         "is_streaming": {
                           "type": "boolean",
                           "description": "True only while the session's run is a live stream on this server."
+                        },
+                        "active_turn_origin": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "user",
+                                "background"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Who started the running turn; null while idle."
                         },
                         "has_pending_user_message": {
                           "type": "boolean"
@@ -19631,6 +20042,1346 @@
                     },
                     "steer_id": {
                       "type": "string"
+                    },
+                    "started_turn": {
+                      "type": "object",
+                      "properties": {
+                        "stream_id": {
+                          "type": "string"
+                        },
+                        "session_id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                        },
+                        "turn_id": {
+                          "type": "string"
+                        },
+                        "user_message_id": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "pending_started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "effective_model": {
+                          "type": "string"
+                        },
+                        "effective_model_provider": {
+                          "type": "string"
+                        },
+                        "queued": {
+                          "type": "boolean"
+                        },
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "session": {
+                          "type": "object",
+                          "properties": {
+                            "session_id": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "workspace": {
+                              "type": "string"
+                            },
+                            "created_workspace": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "model": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "model_provider": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "messages": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "role": {
+                                    "type": "string"
+                                  },
+                                  "content": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "type": {
+                                              "type": "string"
+                                            },
+                                            "text": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "type"
+                                          ],
+                                          "additionalProperties": {}
+                                        }
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "message_id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "timestamp": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "attachments": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "filename": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "path": {
+                                          "type": "string"
+                                        },
+                                        "size": {
+                                          "type": "number"
+                                        },
+                                        "mime": {
+                                          "type": "string"
+                                        },
+                                        "is_image": {
+                                          "type": "boolean"
+                                        },
+                                        "rollback_token": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "additionalProperties": {}
+                                    }
+                                  },
+                                  "tool_calls": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "enum": [
+                                            "shell",
+                                            "read",
+                                            "list",
+                                            "search",
+                                            "web",
+                                            "write",
+                                            "skill",
+                                            "memory",
+                                            "delegate",
+                                            "unknown"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "target": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "args": {},
+                                        "function": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "arguments": {}
+                                          },
+                                          "additionalProperties": {}
+                                        },
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "call_id": {
+                                          "type": "string"
+                                        },
+                                        "tool_call_id": {
+                                          "type": "string"
+                                        },
+                                        "done": {
+                                          "type": "boolean"
+                                        },
+                                        "is_error": {
+                                          "type": "boolean"
+                                        },
+                                        "preview": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "result": {},
+                                        "output": {},
+                                        "duration": {
+                                          "anyOf": [
+                                            {
+                                              "type": "number"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "cost_usd": {
+                                          "anyOf": [
+                                            {
+                                              "type": "number"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "timestamp": {
+                                          "anyOf": [
+                                            {
+                                              "type": "number"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "event_type": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "additionalProperties": {}
+                                    }
+                                  },
+                                  "reasoning": {
+                                    "anyOf": [
+                                      {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "array",
+                                            "items": {
+                                              "anyOf": [
+                                                {},
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "reasoning_content": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "thinking": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "tool_call_id": {
+                                    "type": "string"
+                                  },
+                                  "tool_use_id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "badge": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "provider_details": {},
+                                  "provider_details_label": {
+                                    "type": "string"
+                                  },
+                                  "recovery_control": {},
+                                  "_anchor_activity_scene": {
+                                    "type": "object",
+                                    "properties": {
+                                      "version": {
+                                        "const": "activity_scene_v1"
+                                      },
+                                      "activity_rows": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "row_id": {
+                                              "type": "string"
+                                            },
+                                            "order_index": {
+                                              "type": "integer",
+                                              "minimum": -9007199254740991,
+                                              "maximum": 9007199254740991
+                                            },
+                                            "role": {
+                                              "enum": [
+                                                "prose",
+                                                "reasoning",
+                                                "tool",
+                                                "steering"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "created_at": {
+                                              "type": "number"
+                                            },
+                                            "text": {
+                                              "type": "string"
+                                            },
+                                            "titles": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "tool": {
+                                              "type": "object",
+                                              "properties": {
+                                                "id": {
+                                                  "type": "string"
+                                                },
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "kind": {
+                                                  "enum": [
+                                                    "shell",
+                                                    "read",
+                                                    "list",
+                                                    "search",
+                                                    "web",
+                                                    "write",
+                                                    "skill",
+                                                    "memory",
+                                                    "delegate",
+                                                    "unknown"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "target": {
+                                                  "type": "string"
+                                                },
+                                                "args": {},
+                                                "preview": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "result": {},
+                                                "done": {
+                                                  "type": "boolean"
+                                                },
+                                                "is_error": {
+                                                  "type": "boolean"
+                                                },
+                                                "duration": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "number"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "cost_usd": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "number"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "id",
+                                                "name",
+                                                "preview",
+                                                "done",
+                                                "is_error",
+                                                "duration",
+                                                "cost_usd"
+                                              ],
+                                              "additionalProperties": {}
+                                            },
+                                            "steering": {
+                                              "type": "object",
+                                              "properties": {
+                                                "steer_id": {
+                                                  "type": "string"
+                                                },
+                                                "consumed": {
+                                                  "type": "boolean"
+                                                },
+                                                "submitted_at": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "number"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "consumed_at": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "number"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                },
+                                                "phase_duration": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "number"
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "steer_id",
+                                                "consumed",
+                                                "submitted_at",
+                                                "consumed_at"
+                                              ],
+                                              "additionalProperties": {}
+                                            }
+                                          },
+                                          "required": [
+                                            "row_id",
+                                            "order_index",
+                                            "role"
+                                          ],
+                                          "additionalProperties": {}
+                                        }
+                                      },
+                                      "final_answer": {
+                                        "type": "string"
+                                      },
+                                      "final_answer_excerpt": {
+                                        "type": "string"
+                                      },
+                                      "turn_duration": {
+                                        "anyOf": [
+                                          {
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "terminal_state": {
+                                        "type": "string"
+                                      },
+                                      "expanded_by_default": {
+                                        "type": "boolean"
+                                      },
+                                      "final_phase_duration": {
+                                        "type": "number"
+                                      },
+                                      "has_consumed_steering": {
+                                        "type": "boolean"
+                                      },
+                                      "file_changes": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "path": {
+                                              "type": "string"
+                                            },
+                                            "action": {
+                                              "enum": [
+                                                "added",
+                                                "edited",
+                                                "deleted",
+                                                "renamed"
+                                              ],
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "path",
+                                            "action"
+                                          ],
+                                          "additionalProperties": {}
+                                        }
+                                      },
+                                      "activity_rows_total": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "activity_rows_offset": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "activity_rows_complete": {
+                                        "type": "boolean"
+                                      },
+                                      "activity_rows_omitted": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "activity_scene_ref": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "version",
+                                      "activity_rows"
+                                    ],
+                                    "additionalProperties": {}
+                                  },
+                                  "_turn_id": {
+                                    "type": "string"
+                                  },
+                                  "_active_turn_user": {
+                                    "type": "boolean"
+                                  },
+                                  "_steer": {
+                                    "type": "object",
+                                    "properties": {
+                                      "steer_id": {
+                                        "type": "string"
+                                      },
+                                      "submitted_at": {
+                                        "anyOf": [
+                                          {
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "consumed_at": {
+                                        "type": "number"
+                                      },
+                                      "phase_duration": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "required": [
+                                      "steer_id"
+                                    ],
+                                    "additionalProperties": {}
+                                  },
+                                  "_final_phase_duration": {
+                                    "type": "number"
+                                  },
+                                  "_display_truncated": {
+                                    "type": "boolean"
+                                  },
+                                  "_display_excerpt": {
+                                    "type": "string"
+                                  },
+                                  "_background_update": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "enum": [
+                                          "delegation",
+                                          "process",
+                                          "mixed",
+                                          "other"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "attention": {
+                                        "type": "boolean"
+                                      },
+                                      "count": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991,
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "summary": {
+                                        "type": "string"
+                                      },
+                                      "lines": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "enum": [
+                                                "agent",
+                                                "command",
+                                                "other"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "status": {
+                                              "enum": [
+                                                "completed",
+                                                "failed",
+                                                "notice"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "label": {
+                                              "type": "string"
+                                            },
+                                            "exit_code": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "status",
+                                            "label"
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "attention",
+                                      "count",
+                                      "summary",
+                                      "lines"
+                                    ]
+                                  },
+                                  "_background_reply": {
+                                    "type": "boolean"
+                                  },
+                                  "_background_silent": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "role"
+                                ],
+                                "additionalProperties": {}
+                              }
+                            },
+                            "tool_calls": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "enum": [
+                                      "shell",
+                                      "read",
+                                      "list",
+                                      "search",
+                                      "web",
+                                      "write",
+                                      "skill",
+                                      "memory",
+                                      "delegate",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "target": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "args": {},
+                                  "function": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "arguments": {}
+                                    },
+                                    "additionalProperties": {}
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "call_id": {
+                                    "type": "string"
+                                  },
+                                  "tool_call_id": {
+                                    "type": "string"
+                                  },
+                                  "done": {
+                                    "type": "boolean"
+                                  },
+                                  "is_error": {
+                                    "type": "boolean"
+                                  },
+                                  "preview": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "result": {},
+                                  "output": {},
+                                  "duration": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cost_usd": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "timestamp": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "event_type": {
+                                    "type": "string"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "created_at": {
+                              "type": "number"
+                            },
+                            "updated_at": {
+                              "type": "number"
+                            },
+                            "last_message_at": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "message_count": {
+                              "type": "number"
+                            },
+                            "user_message_count": {
+                              "type": "number"
+                            },
+                            "pinned": {
+                              "type": "boolean"
+                            },
+                            "archived": {
+                              "type": "boolean"
+                            },
+                            "project_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "profile": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "personality": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "input_tokens": {
+                              "type": "number"
+                            },
+                            "output_tokens": {
+                              "type": "number"
+                            },
+                            "cache_read_tokens": {
+                              "type": "number"
+                            },
+                            "cache_write_tokens": {
+                              "type": "number"
+                            },
+                            "cache_hit_percent": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "estimated_cost": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "active_stream_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The live stream id; non-null only while `is_streaming` is true."
+                            },
+                            "is_streaming": {
+                              "type": "boolean",
+                              "description": "True only while the session's run is a live stream on this server."
+                            },
+                            "active_turn_origin": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "user",
+                                    "background"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "Who started the running turn; null while idle."
+                            },
+                            "has_pending_user_message": {
+                              "type": "boolean"
+                            },
+                            "pending_user_message": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "pending_attachments": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "filename": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "path": {
+                                    "type": "string"
+                                  },
+                                  "size": {
+                                    "type": "number"
+                                  },
+                                  "mime": {
+                                    "type": "string"
+                                  },
+                                  "is_image": {
+                                    "type": "boolean"
+                                  },
+                                  "rollback_token": {
+                                    "type": "string"
+                                  }
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "pending_started_at": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "pending_user_source": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "context_length": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "threshold_tokens": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "last_prompt_tokens": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "post_compression_context_tokens_estimate": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "enabled_toolsets": {
+                              "anyOf": [
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "composer_draft": {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "files": {
+                                  "type": "array",
+                                  "items": {
+                                    "anyOf": [
+                                      {},
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                }
+                              },
+                              "additionalProperties": {}
+                            },
+                            "is_cli_session": {
+                              "type": "boolean"
+                            },
+                            "read_only": {
+                              "type": "boolean",
+                              "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
+                            },
+                            "can_branch": {
+                              "type": "boolean",
+                              "description": "Web may branch this session: never a subagent child, and a read-only session only when it is a cron run."
+                            },
+                            "can_pin": {
+                              "type": "boolean",
+                              "description": "Web may pin or unpin this session: never a subagent child."
+                            },
+                            "can_archive": {
+                              "type": "boolean",
+                              "description": "Web may archive or unarchive this session: never a subagent child."
+                            },
+                            "can_duplicate": {
+                              "type": "boolean",
+                              "description": "Web may duplicate this session: it has a WebUI copy and is not a subagent child."
+                            },
+                            "source_tag": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "source_label": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "session_source": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "raw_source": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "parent_session_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "worktree_path": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "worktree_branch": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "worktree_repo_root": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "share_token": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "share_created_at": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "manual_title": {
+                              "type": "boolean"
+                            },
+                            "compression_anchor_summary": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "compression_recovery": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            "recommended_recovery_action": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "compression_recovery_action": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "compression_recovery_source_session_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "gateway_routing": {},
+                            "_messages_offset": {
+                              "type": "number"
+                            },
+                            "_messages_truncated": {
+                              "type": "boolean"
+                            },
+                            "_msg_limit_max": {
+                              "type": "number"
+                            },
+                            "_load_revision": {
+                              "type": "string"
+                            },
+                            "transcript_seq": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "stream_id": {
+                                      "type": "string"
+                                    },
+                                    "seq": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    }
+                                  },
+                                  "required": [
+                                    "stream_id",
+                                    "seq"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "assistant_name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "session_id",
+                            "title",
+                            "is_streaming",
+                            "read_only",
+                            "can_branch",
+                            "can_pin",
+                            "can_archive",
+                            "can_duplicate"
+                          ],
+                          "additionalProperties": {}
+                        }
+                      },
+                      "additionalProperties": {}
                     }
                   },
                   "required": [

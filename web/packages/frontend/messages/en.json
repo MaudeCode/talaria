@@ -2230,9 +2230,11 @@
 	"field_help_about": "About {label}",
 	"system_check_web": "Check Web now",
 	"system_checking_named": "Checking {name} for updates…",
-	"background_update_delegation": "Delegation batch complete",
-	"background_update_process": "Background process update",
-	"background_update_mixed": "Background updates ({count})",
-	"background_update_other": "Background update",
-	"background_update_attention": "Needs attention"
+	"background_line_agent_completed": "Agent “{goal}” completed",
+	"background_line_agent_failed": "Agent “{goal}” failed",
+	"background_line_command_finished": "Background command {command} finished",
+	"background_line_command_failed": "Background command {command} failed",
+	"background_line_command_failed_exit": "Background command {command} failed (exit {code})",
+	"background_update_details": "Show the full background result",
+	"live_background": "Working on background results"
 }

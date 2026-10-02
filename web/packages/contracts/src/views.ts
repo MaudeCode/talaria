@@ -85,6 +85,10 @@ export const ActivitySceneSchema = z.looseObject({
 })
 export type ActivityScene = z.infer<typeof ActivitySceneSchema>
 
+/** TAL-460: one finished background item (see `_background_update.lines`). */
+export const BackgroundLineSchema = z.object({ kind: z.enum(['agent', 'command', 'other']), status: z.enum(['completed', 'failed', 'notice']), label: z.string(), exit_code: z.number().int().nullable().optional() })
+export type BackgroundLine = z.infer<typeof BackgroundLineSchema>
+
 export const MessageSchema = z.looseObject({
   role: z.string(), content: MessageContentSchema.optional(), id: MessageIdSchema.optional(), message_id: MessageIdSchema.optional(), timestamp: z.number().nullable().optional(),
   attachments: z.array(AttachmentSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(), reasoning: z.union([z.string(), z.array(Json)]).nullable().optional(), reasoning_content: z.string().nullable().optional(),
@@ -106,13 +110,27 @@ export const MessageSchema = z.looseObject({
    * user sent. Clients render it as a "Background update" disclosure: a localized label per `kind` (with `count`), a
    * warning when `attention`, the server's one-line `summary`, and `content` in full on expansion.
    */
-  _background_update: z.object({ kind: z.enum(['delegation', 'process', 'mixed', 'other']), attention: z.boolean(), count: z.number().int().positive(), summary: z.string() }).optional(),
+  _background_update: z.object({
+    kind: z.enum(['delegation', 'process', 'mixed', 'other']), attention: z.boolean(), count: z.number().int().positive(), summary: z.string(),
+    /**
+     * TAL-460: one completion line per finished item, shown in place of the row. Clients localize the wording per
+     * `kind` and `status`: an agent by its goal (`completed` / `failed`), a command (`finished` / `failed` with
+     * `exit_code`), or `label` as written for any other notice. `content` stays available in full on expansion.
+     */
+    lines: z.array(BackgroundLineSchema),
+  }).optional(),
+  /** TAL-460: part of the Agent's reply to the background update just before it in the same turn. */
+  _background_reply: z.boolean().optional(),
+  /** TAL-460: that reply is only a silence marker; clients show the update's lines and nothing of this turn's reply. */
+  _background_silent: z.boolean().optional(),
 })
 export type Message = z.infer<typeof MessageSchema>
 
 export const ComposerDraftSchema = z.looseObject({ text: z.string().optional(), files: z.array(Json).optional() })
 
 // TAL-312: the server validates both flags on every session payload; clients render them and never re-derive them.
+/** TAL-460: who started the running turn; `background` means a background result did, and the user's next message replaces it. */
+const ActiveTurnOriginSchema = z.enum(['user', 'background']).nullable().optional().describe('Who started the running turn; null while idle.')
 const IsStreamingSchema = z.boolean().describe('True only while the session\'s run is a live stream on this server.')
 const ActiveStreamIdSchema = NullableString.optional().describe('The live stream id; non-null only while `is_streaming` is true.')
 const ReadOnlySchema = z.boolean().describe('The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming.')
@@ -127,7 +145,7 @@ export const SessionSchema = z.looseObject({
   messages: z.array(MessageSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(), created_at: UnixSeconds.optional(), updated_at: UnixSeconds.optional(), last_message_at: NullableNumber.optional(),
   message_count: z.number().optional(), user_message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(),
   personality: NullableString.optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), cache_read_tokens: z.number().optional(), cache_write_tokens: z.number().optional(),
-  cache_hit_percent: NullableNumber.optional(), estimated_cost: NullableNumber.optional(), active_stream_id: ActiveStreamIdSchema, is_streaming: IsStreamingSchema, has_pending_user_message: z.boolean().optional(),
+  cache_hit_percent: NullableNumber.optional(), estimated_cost: NullableNumber.optional(), active_stream_id: ActiveStreamIdSchema, is_streaming: IsStreamingSchema, active_turn_origin: ActiveTurnOriginSchema, has_pending_user_message: z.boolean().optional(),
   pending_user_message: NullableString.optional(), pending_attachments: z.array(AttachmentSchema).optional(), pending_started_at: NullableNumber.optional(), pending_user_source: NullableString.optional(),
   context_length: NullableNumber.optional(), threshold_tokens: NullableNumber.optional(), last_prompt_tokens: NullableNumber.optional(), post_compression_context_tokens_estimate: NullableNumber.optional(),
   enabled_toolsets: z.array(z.string()).nullable().optional(), composer_draft: ComposerDraftSchema.optional(), is_cli_session: z.boolean().optional(), read_only: ReadOnlySchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_duplicate: CanDuplicateSchema, source_tag: NullableString.optional(),
@@ -165,7 +183,7 @@ export const SessionsListSchema = z.looseObject({
 export type SessionsList = z.infer<typeof SessionsListSchema>
 
 export const SessionStatusSchema = z.looseObject({
-  session_id: SessionIdSchema, title: z.string().optional(), active_stream_id: ActiveStreamIdSchema, agent_running: IsStreamingSchema, is_streaming: IsStreamingSchema, read_only: ReadOnlySchema, message_count: z.number().optional(), model: NullableString.optional(),
+  session_id: SessionIdSchema, title: z.string().optional(), active_stream_id: ActiveStreamIdSchema, active_turn_origin: ActiveTurnOriginSchema, agent_running: IsStreamingSchema, is_streaming: IsStreamingSchema, read_only: ReadOnlySchema, message_count: z.number().optional(), model: NullableString.optional(),
   profile: NullableString.optional(), workspace: z.string().optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), total_tokens: z.number().optional(), estimated_cost: NullableNumber.optional(), updated_at: UnixSeconds.optional(),
 })
 export type SessionStatus = z.infer<typeof SessionStatusSchema>
@@ -194,7 +212,8 @@ export const CancelResponseSchema = z.looseObject({ ok: z.boolean(), cancelled: 
 /** `text` is delivered to the running agent; `display_text` is what the transcript shows. */
 export const SteerRequestSchema = z.looseObject({ session_id: SessionIdSchema, text: z.string().min(1), display_text: z.string().optional(), steer_id: z.string().optional() })
 /** `accepted: false` with a `fallback` reason means the message was not delivered; the caller keeps the draft. */
-export const SteerResponseSchema = z.looseObject({ accepted: z.boolean(), fallback: NullableString.optional(), stream_id: NullableString.optional(), steer_id: z.string().optional() })
+/** TAL-460: a steer sent while a background turn runs starts the user's own turn instead; `started_turn` is its start response. */
+export const SteerResponseSchema = z.looseObject({ accepted: z.boolean(), fallback: NullableString.optional(), stream_id: NullableString.optional(), steer_id: z.string().optional(), started_turn: ChatStartResponseSchema.optional() })
 
 export const ApprovalPendingSchema = z.looseObject({
   approval_id: z.string().optional(), session_id: z.string().optional(), command: z.string().optional(), description: z.string().optional(), title: z.string().optional(), name: z.string().optional(), kind: z.string().optional(),

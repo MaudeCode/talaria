@@ -12,6 +12,8 @@ import type { QueuedTurn } from './Composer'
 import { endFirstSend, getFirstSend } from '../chat/firstSend'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn() }))
+// jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
+vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
 import { Composer } from './Composer'
 
 const noop = (): void => undefined
@@ -70,6 +72,15 @@ describe('Composer', () => {
     await waitFor(() => expect(api.steerChat).toHaveBeenCalled())
     await waitFor(() => expect(getStreamState().turns.s1!.pendingSteers).toEqual([]))
     expect(screen.getByRole('textbox')).toHaveValue('Check b too')
+  })
+
+  it('follows the turn the server started when a message lands during a background turn (TAL-460)', async () => {
+    vi.mocked(api.steerChat).mockResolvedValue({ accepted: true, fallback: null, stream_id: 'mine', steer_id: 'ignored', started_turn: { stream_id: 'mine', session_id: 's1', turn_id: 'mine' } })
+    renderComposer({ ...writable, active_stream_id: 'run', active_turn_origin: 'background' }, running())
+    expect(screen.getByRole('status')).toHaveTextContent('Working on background results')
+    await userEvent.type(screen.getByRole('textbox'), 'What about my question?{Enter}')
+    await waitFor(() => expect(getStreamState().turns.s1).toMatchObject({ streamId: 'mine', turnId: 'mine', userText: 'What about my question?', pendingSteers: [] }))
+    expect(screen.getByRole('textbox')).toHaveValue('')
   })
 
   it('keeps only Stop while a turn runs and the draft is empty', () => {

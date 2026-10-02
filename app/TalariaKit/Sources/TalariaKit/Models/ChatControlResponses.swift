@@ -66,6 +66,8 @@ public struct ChatSteerResponse: Decodable, Equatable {
     let streamId: String?
     let steerId: String?
     let error: String?
+    /// TAL-460: sent during a background turn, the message started the user's own turn instead; follow it like a send.
+    let startedTurn: ChatStartResponse?
 }
 
 public struct BtwStartResponse: Decodable, Equatable {

@@ -489,16 +489,35 @@ final class SharedContractTests: XCTestCase {
         let byID = Dictionary(uniqueKeysWithValues: messages.compactMap { m in m.messageId.map { ($0, m) } })
         // A person typing the marker text stays an ordinary user message.
         XCTAssertNil(byID["typed-marker-user"]?.backgroundUpdate)
-        XCTAssertEqual(byID["wakeup-mixed-user"]?.backgroundUpdate, BackgroundUpdate(kind: .mixed, attention: true, count: 2, summary: "ASYNC DELEGATION BATCH COMPLETE — deleg_contract"))
-        XCTAssertEqual(byID["wakeup-legacy-user"]?.backgroundUpdate?.kind, .other)
+        XCTAssertNotNil(byID["wakeup-legacy-user"]?.backgroundUpdate)
         XCTAssertNil(byID["wakeup-mixed-reply"]?.backgroundUpdate)
+        // A Web from before TAL-460 sends no lines; its summary is the one line.
+        guard (example["background_updates"] as? [String: Any])?["wake-silent"] != nil else { return }
+        XCTAssertEqual(byID["wakeup-mixed-user"]?.backgroundUpdate?.lines, [
+            BackgroundLine(kind: .agent, status: .completed, label: "Audit the PVC backups"),
+            BackgroundLine(kind: .command, status: .failed, label: "make test", exitCode: 1),
+        ])
+        // Only the background turn's silence marker is silent; the same words the user asked for are shown.
+        XCTAssertEqual(messages.filter(\.backgroundSilent).map(\.messageId), ["wakeup-silent-reply"])
+        XCTAssertFalse(try XCTUnwrap(byID["user-no-reply-answer"]).backgroundSilent)
+        let shown = ChatViewModel.transcriptMessages(from: messages).map(\.message.messageId)
+        XCTAssertFalse(shown.contains("wakeup-silent-reply"))
+        XCTAssertTrue(shown.contains("wakeup-silent-user"))
+        XCTAssertTrue(shown.contains("user-no-reply-answer"))
     }
 
-    func testAnUnknownBackgroundUpdateKindFallsBackToTheGenericUpdate() throws {
+    func testAnOlderBackgroundUpdateBecomesOneLineFromItsSummary() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let message = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"user","content":"x","_background_update":{"kind":"future_kind","attention":"yes","count":0,"summary":"s"}}"#.utf8))
-        XCTAssertEqual(message.backgroundUpdate, BackgroundUpdate(kind: .other, attention: false, count: 1, summary: "s"))
+        let message = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"user","content":"x","_background_update":{"kind":"future_kind","attention":true,"count":0,"summary":"s"}}"#.utf8))
+        XCTAssertEqual(message.backgroundUpdate?.lines, [BackgroundLine(kind: .other, status: .failed, label: "s")])
+    }
+
+    func testSessionDetailDecodesWhoStartedTheRunningTurn() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let detail = try decoder.decode(SessionDetail.self, from: Data(#"{"session_id":"s","active_stream_id":"run","active_turn_origin":"background"}"#.utf8))
+        XCTAssertEqual(detail.activeTurnOrigin, "background")
     }
 
     func testSharedWebSessionResolvesEveryToolCallOutcome() throws {

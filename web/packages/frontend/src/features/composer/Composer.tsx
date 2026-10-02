@@ -7,7 +7,7 @@ import { keys } from '../../api/queryKeys'
 import type { UploadResponse, Session, Settings } from '../../contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
-import { cancelTurn, startTurn } from '../../stream/connection'
+import { adoptTurn, cancelTurn, startTurn } from '../../stream/connection'
 import { dispatch } from '../../stream/store'
 import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
@@ -267,6 +267,8 @@ export function Composer(props: ComposerProps) {
     dispatch({ type: 'steer', sessionId, steerId, text, status: 'sending' })
     try {
       const r = await api.steerChat({ session_id: sessionId, text, steer_id: steerId })
+      // TAL-460: sent during a background turn, the message became the user's own turn; follow it like a send.
+      if (r.started_turn) { adoptTurn(sessionId, text, r.started_turn); return true }
       if (r.accepted) { dispatch({ type: 'steer', sessionId, steerId, text, status: 'waiting' }); return true }
       dispatch({ type: 'steer', sessionId, steerId, text, status: 'failed' })
       showToast(r.fallback === 'gateway_steer_queued' ? m.steer_leftover_queued() : m.busy_steer_fallback(), 2500)
@@ -454,7 +456,7 @@ export function Composer(props: ComposerProps) {
   const showYolo = yolo && !hide('hide_composer_yolo')
   // The top tab (T3 Code's attached banner): the running turn first, then runtime notices and this message's state.
   const tabNotices: ComposerNotice[] = [
-    ...(busy && live ? [{ id: 'live', content: <LiveStatusPill turn={live} /> }] : []),
+    ...(busy && live ? [{ id: 'live', content: <LiveStatusPill turn={live} background={session?.active_turn_origin === 'background' && session.active_stream_id === live.streamId} /> }] : []),
     ...notices,
     ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),

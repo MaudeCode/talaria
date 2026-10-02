@@ -833,6 +833,48 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testSteerDuringBackgroundTurnFollowsTheUsersOwnTurn() async throws {
+        let streamClient = SpySSEStreamingClient()
+        var sessionReads = 0
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-bg"}"#, for: request)
+            case "/api/chat/steer":
+                return apiTestJSONResponse(
+                    #"{"accepted":true,"stream_id":"stream-user","started_turn":{"stream_id":"stream-user","session_id":"session-abc","turn_id":"stream-user"}}"#,
+                    for: request
+                )
+            case "/api/session":
+                sessionReads += 1
+                return apiTestJSONResponse(
+                    #"{"session":{"session_id":"session-abc","active_stream_id":"stream-user","is_streaming":true,"active_turn_origin":"user","pending_started_at":5,"messages":[{"role":"user","content":"[IMPORTANT: Background process proc_1 completed (exit_code=0).]","message_id":"wake","_turn_id":"stream-bg","_background_update":{"kind":"process","attention":false,"count":1,"summary":"s","lines":[{"kind":"command","status":"completed","label":"make","exit_code":0}]}},{"role":"user","content":"What about my question?","message_id":"mine","_turn_id":"stream-user"}]}}"#,
+                    for: request
+                )
+            default:
+                return apiTestJSONResponse(#"{}"#, for: request)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStart)
+        let result = await viewModel.executeSlashCommand(
+            try XCTUnwrap(SlashCommandCatalog.command(named: "steer")),
+            args: "What about my question?"
+        )
+
+        // TAL-460: the server started the user's own turn; the view model follows it instead of waiting on a steer.
+        XCTAssertEqual(result, .executed(message: nil))
+        XCTAssertEqual(viewModel.activeStreamID, "stream-user")
+        XCTAssertGreaterThan(sessionReads, 0)
+        XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
+        XCTAssertEqual(viewModel.messages.last?.content, "What about my question?")
+        XCTAssertEqual(viewModel.messages.first?.backgroundUpdate?.lines, [BackgroundLine(kind: .command, status: .completed, label: "make", exitCode: 0)])
+        XCTAssertFalse(viewModel.isBackgroundTurnActive)
+        XCTAssertEqual(streamClient.startedURLs.last?.query?.contains("stream-user"), true)
+    }
+
+    @MainActor
     func testCompletedSteeringHintSurvivesAuthoritativeActivitySceneReload() async throws {
         let streamClient = SpySSEStreamingClient()
         let modelContext = try makeContext()

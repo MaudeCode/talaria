@@ -1813,9 +1813,11 @@
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
 	"system_apply_agent_update": "Cập nhật Agent",
-	"background_update_delegation": "Đã hoàn tất lô ủy quyền",
-	"background_update_process": "Cập nhật tiến trình nền",
-	"background_update_mixed": "Cập nhật nền ({count})",
-	"background_update_other": "Cập nhật nền",
-	"background_update_attention": "Cần chú ý"
+	"background_line_agent_completed": "Tác tử “{goal}” đã hoàn tất",
+	"background_line_agent_failed": "Tác tử “{goal}” thất bại",
+	"background_line_command_finished": "Lệnh nền {command} đã xong",
+	"background_line_command_failed": "Lệnh nền {command} thất bại",
+	"background_line_command_failed_exit": "Lệnh nền {command} thất bại (mã thoát {code})",
+	"background_update_details": "Hiện toàn bộ kết quả nền",
+	"live_background": "Đang xử lý kết quả nền"
 }

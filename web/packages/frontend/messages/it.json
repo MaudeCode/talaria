@@ -1888,9 +1888,11 @@
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
 	"system_apply_agent_update": "Aggiorna Agent",
-	"background_update_delegation": "Lotto di deleghe completato",
-	"background_update_process": "Aggiornamento del processo in background",
-	"background_update_mixed": "Aggiornamenti in background ({count})",
-	"background_update_other": "Aggiornamento in background",
-	"background_update_attention": "Richiede attenzione"
+	"background_line_agent_completed": "Agente «{goal}» completato",
+	"background_line_agent_failed": "Agente «{goal}» non riuscito",
+	"background_line_command_finished": "Comando in background {command} terminato",
+	"background_line_command_failed": "Comando in background {command} non riuscito",
+	"background_line_command_failed_exit": "Comando in background {command} non riuscito (uscita {code})",
+	"background_update_details": "Mostra il risultato completo in background",
+	"live_background": "Elaborazione dei risultati in background"
 }

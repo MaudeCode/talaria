@@ -704,16 +704,28 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         return json(["session": detail])
     }
 
-    /// A typed marker the user sent, then a failing mixed wakeup as the server marks it (TAL-371).
+    /// A typed marker the user sent, a batched wakeup with its reply, and a wakeup whose reply was a silence marker, as
+    /// the server marks them (TAL-371, TAL-460).
     private static let backgroundUpdateMessages: [[String: Any]] = [
         ["role": "user", "content": "[ASYNC DELEGATION BATCH COMPLETE — typed] I typed this", "message_id": "typed-marker-user", "_ts": 2_000_000_000],
         ["role": "assistant", "content": "Noted.", "message_id": "typed-marker-reply", "_ts": 2_000_000_001],
         [
             "role": "user", "content": "[ASYNC DELEGATION BATCH COMPLETE — deleg_ui]\nDelegated result body.\n\n[IMPORTANT: Background process proc_ui completed (exit_code=1).]",
-            "message_id": "wakeup-user", "_ts": 2_000_000_002,
-            "_background_update": ["kind": "mixed", "attention": true, "count": 2, "summary": "ASYNC DELEGATION BATCH COMPLETE — deleg_ui"]
+            "message_id": "wakeup-user", "_ts": 2_000_000_002, "_turn_id": "wake-ui",
+            "_background_update": ["kind": "mixed", "attention": true, "count": 2, "summary": "ASYNC DELEGATION BATCH COMPLETE — deleg_ui", "lines": [
+                ["kind": "agent", "status": "completed", "label": "Audit the fixture"],
+                ["kind": "command", "status": "failed", "label": "make test", "exit_code": 1]
+            ]]
         ],
-        ["role": "assistant", "content": "One delegation finished and a test run failed.", "message_id": "wakeup-reply", "_ts": 2_000_000_003]
+        ["role": "assistant", "content": "The audit finished and the test run failed.", "message_id": "wakeup-reply", "_ts": 2_000_000_003, "_turn_id": "wake-ui", "_background_reply": true],
+        [
+            "role": "user", "content": "[IMPORTANT: Background process proc_quiet completed (exit_code=0).]",
+            "message_id": "wakeup-quiet-user", "_ts": 2_000_000_004, "_turn_id": "wake-quiet",
+            "_background_update": ["kind": "process", "attention": false, "count": 1, "summary": "IMPORTANT: Background process proc_quiet completed (exit_code=0).", "lines": [
+                ["kind": "command", "status": "completed", "label": "./backup.sh", "exit_code": 0]
+            ]]
+        ],
+        ["role": "assistant", "content": "[SILENT]", "message_id": "wakeup-quiet-reply", "_ts": 2_000_000_005, "_turn_id": "wake-quiet", "_background_reply": true, "_background_silent": true]
     ]
 
     /// 25 user bodies of 20-100K characters, each with a link, between short replies, collapsed

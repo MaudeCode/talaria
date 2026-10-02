@@ -1906,9 +1906,11 @@
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
 	"system_apply_agent_update": "Mettre à jour Agent",
-	"background_update_delegation": "Lot de délégations terminé",
-	"background_update_process": "Mise à jour d’un processus en arrière-plan",
-	"background_update_mixed": "Mises à jour en arrière-plan ({count})",
-	"background_update_other": "Mise à jour en arrière-plan",
-	"background_update_attention": "Nécessite votre attention"
+	"background_line_agent_completed": "Agent « {goal} » terminé",
+	"background_line_agent_failed": "Agent « {goal} » en échec",
+	"background_line_command_finished": "Commande en arrière-plan {command} terminée",
+	"background_line_command_failed": "Commande en arrière-plan {command} en échec",
+	"background_line_command_failed_exit": "Commande en arrière-plan {command} en échec (code {code})",
+	"background_update_details": "Afficher le résultat complet en arrière-plan",
+	"live_background": "Traitement des résultats en arrière-plan"
 }

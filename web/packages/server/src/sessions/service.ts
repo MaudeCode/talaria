@@ -268,7 +268,7 @@ export class SessionService {
   publicSession(s: Session, withMessages = true): Record<string, unknown> {
     const payload = this.wireRow(s)
     // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
-    if (withMessages) payload.messages = hydrateAnchorActivityScenes(withToolCallOutcomes(withTurnIds(s.messages), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id })
+    if (withMessages) payload.messages = hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withTurnIds(s.messages), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id })
     return redactSessionData(payload, this.deps.redactEnabled())
   }
 
@@ -541,10 +541,10 @@ export class SessionService {
     const profile = full.profile || 'default'
     let hermesHome = ''
     try { hermesHome = this.deps.workspaces.deps.profileHome(profile) } catch { hermesHome = '' }
-    const { is_streaming: streaming, active_stream_id: live, read_only: readOnly } = this.wireRow(full)
+    const { is_streaming: streaming, active_stream_id: live, read_only: readOnly, active_turn_origin: origin } = this.wireRow(full)
     return {
       session_id: full.session_id, title: full.title, model: full.model, profile, hermes_home: hermesHome, workspace: full.workspace, personality: full.personality,
-      message_count: full.messages.length, created_at: full.created_at, updated_at: full.updated_at, agent_running: streaming, is_streaming: streaming, active_stream_id: live, read_only: readOnly,
+      message_count: full.messages.length, created_at: full.created_at, updated_at: full.updated_at, agent_running: streaming, is_streaming: streaming, active_stream_id: live, active_turn_origin: origin, read_only: readOnly,
       input_tokens: inp, output_tokens: out, total_tokens: inp + out, estimated_cost: full.estimated_cost,
     }
   }

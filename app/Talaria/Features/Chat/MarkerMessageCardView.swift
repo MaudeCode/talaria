@@ -133,33 +133,37 @@ struct MarkerMessageCardView: View {
     }
 }
 
-/// An automatic background wakeup the server marked (TAL-371): a collapsible card in its chronological place instead of
-/// the user's bubble. The label follows the server's `kind`, a warning stays visible while collapsed, and the full
-/// notification (with the server's long-body excerpt) is selectable when expanded.
-struct BackgroundUpdateCardView: View {
+/// An automatic background wakeup (TAL-460): one quiet line per finished item, never the user's bubble. The Agent's
+/// reply follows as an ordinary message; tapping the lines shows the full notification.
+struct BackgroundUpdateLinesView: View {
     let update: BackgroundUpdate
     let message: ChatMessage
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @State private var isExpanded = false
     @State private var showsFullBody = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: isExpanded ? 8 : 0) {
+        VStack(alignment: .leading, spacing: 6) {
             Button {
                 chatDisclosureToggled()
                 withAnimation(ChatMotion.disclosure(reduceMotion: reduceMotion)) {
                     isExpanded.toggle()
                 }
             } label: {
-                header
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(update.lines.enumerated()), id: \.offset) { _, line in
+                        BackgroundLineRow(line: line)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(accessibilityLabel)
+            .accessibilityLabel(update.lines.map(BackgroundLineRow.text(for:)).joined(separator: ", "))
             .accessibilityHint(isExpanded ? String(localized: "Double tap to collapse details.") : String(localized: "Double tap to expand details."))
-            .accessibilityIdentifier("background-update-card")
+            .accessibilityIdentifier("background-update-lines")
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: 6) {
@@ -176,74 +180,72 @@ struct BackgroundUpdateCardView: View {
                         .buttonStyle(.borderless)
                     }
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .accessorySurface(fallbackMaterial: .thinMaterial, cornerRadius: 10)
                 .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .accessorySurface(fallbackMaterial: .thinMaterial, cornerRadius: 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var title: String {
-        switch update.kind {
-        case .delegation:
-            return String(localized: "Delegation batch complete")
-        case .process:
-            return String(localized: "Background process update")
-        case .mixed:
-            return String(localized: "Background updates (\(update.count))")
-        case .other:
-            return String(localized: "Background update")
-        }
     }
 
     private var bodyText: String {
         if !showsFullBody, let excerpt = message.displayExcerpt { return excerpt }
         return message.content ?? ""
     }
+}
 
-    private var accessibilityLabel: String {
-        var parts = [title]
-        if update.attention { parts.append(String(localized: "Needs attention")) }
-        if !update.summary.isEmpty { parts.append(update.summary) }
-        return parts.joined(separator: ", ")
+private struct BackgroundLineRow: View {
+    let line: BackgroundLine
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(line.status == .failed ? Color.orange : Color.secondary)
+            styledText
+                .font(AppFont.footnote())
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "tray.and.arrow.down")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 18, height: 18)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(title)
-                        .font(AppFont.caption(weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    if update.attention {
-                        Label(String(localized: "Needs attention"), systemImage: "exclamationmark.triangle.fill")
-                            .font(AppFont.caption(weight: .semibold))
-                            .foregroundStyle(.orange)
-                            .lineLimit(1)
-                    }
-                }
-                if !update.summary.isEmpty {
-                    Text(verbatim: update.summary)
-                        .font(AppFont.caption())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
-                }
-            }
-
-            Spacer(minLength: 6)
-
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+    private var icon: String {
+        switch line.status {
+        case .completed: "checkmark.circle"
+        case .failed: "exclamationmark.triangle.fill"
+        case .notice: "info.circle"
         }
-        .contentShape(Rectangle())
+    }
+
+    /// The command is set in code type; every other line is its plain wording.
+    private var styledText: Text {
+        guard line.kind == .command else { return Text(verbatim: Self.text(for: line)) }
+        let command = Text(verbatim: line.label).font(AppFont.mono(style: .footnote))
+        switch (line.status, line.exitCode) {
+        case (.failed, let code?):
+            return Text("Background command \(command) failed (exit \(code))")
+        case (.failed, nil):
+            return Text("Background command \(command) failed")
+        default:
+            return Text("Background command \(command) finished")
+        }
+    }
+
+    static func text(for line: BackgroundLine) -> String {
+        switch (line.kind, line.status, line.exitCode) {
+        case (.agent, .failed, _):
+            return String(localized: "Agent “\(line.label)” failed")
+        case (.agent, _, _):
+            return String(localized: "Agent “\(line.label)” completed")
+        case (.command, .failed, let code?):
+            return String(localized: "Background command \(line.label) failed (exit \(code))")
+        case (.command, .failed, nil):
+            return String(localized: "Background command \(line.label) failed")
+        case (.command, _, _):
+            return String(localized: "Background command \(line.label) finished")
+        case (.other, _, _):
+            return line.label
+        }
     }
 }

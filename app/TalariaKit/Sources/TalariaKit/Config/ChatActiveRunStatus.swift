@@ -3,6 +3,8 @@ public import Foundation
 public enum ChatActiveRunStatusKind: Equatable {
     case starting
     case active
+    /// A background result started the running turn (TAL-460).
+    case background
     case checking
     case reconnecting
     case stopping
@@ -14,6 +16,8 @@ public enum ChatActiveRunStatusKind: Equatable {
             return String(localized: "Starting response")
         case .active:
             return String(localized: "\(agentName) is working")
+        case .background:
+            return String(localized: "Working on background results")
         case .checking:
             return String(localized: "Checking stream")
         case .reconnecting:
@@ -31,6 +35,8 @@ public enum ChatActiveRunStatusKind: Equatable {
             return String(localized: "\(agentName) is starting a response")
         case .active:
             return String(localized: "\(agentName) is working on the response")
+        case .background:
+            return String(localized: "\(agentName) is working on background results")
         case .checking:
             return String(localized: "\(agentName) is checking the response stream")
         case .reconnecting:
@@ -99,6 +105,7 @@ public enum ChatActiveRunStatusPolicy {
         activeStreamRecoveryState: ActiveStreamRecoveryState,
         isCancellingStream: Bool,
         isSyncingTranscript: Bool = false,
+        isBackgroundTurn: Bool = false,
         isScrolledNearBottom: Bool
     ) -> ChatActiveRunStatusPresentation? {
         if !isScrolledNearBottom {
@@ -123,6 +130,6 @@ public enum ChatActiveRunStatusPolicy {
         }
 
         guard hasActiveStream else { return nil }
-        return ChatActiveRunStatusPresentation(kind: .active)
+        return ChatActiveRunStatusPresentation(kind: isBackgroundTurn ? .background : .active)
     }
 }

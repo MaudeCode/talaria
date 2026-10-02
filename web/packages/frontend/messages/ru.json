@@ -1975,9 +1975,11 @@
 	"project_filter_label": "Project filter",
 	"composer_config_title": "Composer settings",
 	"system_apply_agent_update": "Обновить Agent",
-	"background_update_delegation": "Пакет делегирований завершён",
-	"background_update_process": "Обновление фонового процесса",
-	"background_update_mixed": "Фоновые обновления ({count})",
-	"background_update_other": "Фоновое обновление",
-	"background_update_attention": "Требует внимания"
+	"background_line_agent_completed": "Агент «{goal}» завершён",
+	"background_line_agent_failed": "Агент «{goal}» завершился с ошибкой",
+	"background_line_command_finished": "Фоновая команда {command} завершена",
+	"background_line_command_failed": "Фоновая команда {command} завершилась с ошибкой",
+	"background_line_command_failed_exit": "Фоновая команда {command} завершилась с ошибкой (код {code})",
+	"background_update_details": "Показать полный фоновый результат",
+	"live_background": "Обрабатывает фоновые результаты"
 }

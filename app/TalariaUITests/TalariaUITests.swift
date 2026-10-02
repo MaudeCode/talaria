@@ -21,22 +21,27 @@ class ChatUITestCase: TalariaUITestCase {
     }
 }
 
-/// Automatic background wakeups render as collapsible update cards, never as the user's own bubble, while a typed
-/// marker stays a user message (TAL-371).
+/// Automatic background wakeups render as one completion line per result with the reply under them, a silent reply
+/// shows nothing, and a typed marker stays a user message (TAL-371, TAL-460).
 final class BackgroundUpdateTranscriptUITests: ChatUITestCase {
-    func testWakeupsRenderAsUpdateCardsAndExpand() throws {
+    func testWakeupsRenderAsCompletionLinesWithTheirReplies() throws {
         launchFixture(additionalArguments: ["--ui-test-background-updates"])
         let session = fixtureSessionButton
         XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
         tapFixtureSession(session)
         XCTAssertNotNil(waitForComposer(timeout: 30), "The background-update session never opened")
 
-        let card = app.buttons["background-update-card"].firstMatch
-        XCTAssertTrue(card.awaitExistence(timeout: 15), "The wakeup did not render as a background update")
-        XCTAssertTrue(card.label.contains("Background updates (2)"), card.label)
-        XCTAssertTrue(card.label.contains("Needs attention"), card.label)
+        let updates = app.buttons.matching(identifier: "background-update-lines")
+        XCTAssertTrue(updates.firstMatch.awaitExistence(timeout: 15), "The wakeup did not render as completion lines")
+        let batch = updates.element(boundBy: 0)
+        XCTAssertEqual(batch.label, "Agent “Audit the fixture” completed, Background command make test failed (exit 1)")
+        let reply = app.staticTexts["The audit finished and the test run failed."]
+        XCTAssertTrue(reply.awaitExistence(timeout: 10), "The reply to the background update is missing")
+        XCTAssertLessThan(batch.frame.maxY, reply.frame.minY, "The reply is not under its completion lines")
+        XCTAssertEqual(updates.element(boundBy: 1).label, "Background command ./backup.sh finished")
+        XCTAssertFalse(app.staticTexts["[SILENT]"].exists, "A silent background reply is shown")
         XCTAssertTrue(app.staticTexts["[ASYNC DELEGATION BATCH COMPLETE — typed] I typed this"].exists, "The typed marker is no longer the user's message")
-        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        batch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Delegated result body.")).firstMatch.awaitExistence(timeout: 10), "The expanded update does not show the full notification")
     }
 }
