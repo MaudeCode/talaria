@@ -28,6 +28,8 @@ struct UITestFixtureEnvironment {
     /// Serves a transcript of very long bodies in the server's collapsed shape (TAL-456), the
     /// shape that ran the App out of memory before it rendered excerpts.
     nonisolated static let longBodiesArgument = "--ui-test-long-bodies"
+    /// Serves a transcript with automatic background wakeups in the server's `_background_update` shape (TAL-371).
+    nonisolated static let backgroundUpdatesArgument = "--ui-test-background-updates"
     nonisolated static let updateNotificationsArgument = "--ui-test-update-notifications"
     /// Answers the chat's first transcript load, so the cache exists, then holds every reopen
     /// until the test releases it, so "Syncing messages" stays over the cached rows (TAL-436).
@@ -75,6 +77,9 @@ struct UITestFixtureEnvironment {
     }
     nonisolated static var hasLongBodies: Bool {
         ProcessInfo.processInfo.arguments.contains(longBodiesArgument)
+    }
+    nonisolated static var hasBackgroundUpdates: Bool {
+        ProcessInfo.processInfo.arguments.contains(backgroundUpdatesArgument)
     }
     nonisolated static let serverURL = UITestFixtureLaunch.serverURL
     nonisolated static var relayCredentials: TalariaRelayCredentials { UITestFixtureLaunch.relayCredentials }
@@ -668,6 +673,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     private static func sessionResponse() -> Data {
+        if UITestFixtureEnvironment.hasBackgroundUpdates {
+            var detail = session(id: sessionID, title: sessionTitle)
+            detail["messages"] = backgroundUpdateMessages
+            return json(["session": detail])
+        }
         if UITestFixtureEnvironment.hasLongBodies {
             var detail = session(id: sessionID, title: sessionTitle)
             detail["messages"] = longBodyMessages
@@ -693,6 +703,18 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         detail["messages"] = messages
         return json(["session": detail])
     }
+
+    /// A typed marker the user sent, then a failing mixed wakeup as the server marks it (TAL-371).
+    private static let backgroundUpdateMessages: [[String: Any]] = [
+        ["role": "user", "content": "[ASYNC DELEGATION BATCH COMPLETE — typed] I typed this", "message_id": "typed-marker-user", "_ts": 2_000_000_000],
+        ["role": "assistant", "content": "Noted.", "message_id": "typed-marker-reply", "_ts": 2_000_000_001],
+        [
+            "role": "user", "content": "[ASYNC DELEGATION BATCH COMPLETE — deleg_ui]\nDelegated result body.\n\n[IMPORTANT: Background process proc_ui completed (exit_code=1).]",
+            "message_id": "wakeup-user", "_ts": 2_000_000_002,
+            "_background_update": ["kind": "mixed", "attention": true, "count": 2, "summary": "ASYNC DELEGATION BATCH COMPLETE — deleg_ui"]
+        ],
+        ["role": "assistant", "content": "One delegation finished and a test run failed.", "message_id": "wakeup-reply", "_ts": 2_000_000_003]
+    ]
 
     /// 25 user bodies of 20-100K characters, each with a link, between short replies, collapsed
     /// the way the server ships them (TAL-456): the excerpt is a prefix and `content` stays whole.

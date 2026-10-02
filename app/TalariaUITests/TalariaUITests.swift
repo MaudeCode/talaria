@@ -21,6 +21,26 @@ class ChatUITestCase: TalariaUITestCase {
     }
 }
 
+/// Automatic background wakeups render as collapsible update cards, never as the user's own bubble, while a typed
+/// marker stays a user message (TAL-371).
+final class BackgroundUpdateTranscriptUITests: ChatUITestCase {
+    func testWakeupsRenderAsUpdateCardsAndExpand() throws {
+        launchFixture(additionalArguments: ["--ui-test-background-updates"])
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        tapFixtureSession(session)
+        XCTAssertNotNil(waitForComposer(timeout: 30), "The background-update session never opened")
+
+        let card = app.buttons["background-update-card"].firstMatch
+        XCTAssertTrue(card.awaitExistence(timeout: 15), "The wakeup did not render as a background update")
+        XCTAssertTrue(card.label.contains("Background updates (2)"), card.label)
+        XCTAssertTrue(card.label.contains("Needs attention"), card.label)
+        XCTAssertTrue(app.staticTexts["[ASYNC DELEGATION BATCH COMPLETE — typed] I typed this"].exists, "The typed marker is no longer the user's message")
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Delegated result body.")).firstMatch.awaitExistence(timeout: 10), "The expanded update does not show the full notification")
+    }
+}
+
 /// A transcript of very long bodies opens collapsed to the server's excerpts, each expands and
 /// collapses in place, and the composer stays usable (TAL-456).
 final class LongBodyTranscriptUITests: ChatUITestCase {
