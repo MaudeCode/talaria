@@ -183,6 +183,10 @@ export const PROCESS_METHODS = {
   'process.drain': { params: ProfileHomeParams.extend({ max_events: z.number().int().positive().optional() }), result: z.object({ events: z.array(ProcessEventSchema) }) },
   'process.requeue': { params: z.object({ events: z.array(Loose) }), result: z.object({ requeued: z.number().int() }) },
   'process.mark_consumed': { params: z.object({ process_id: z.string().min(1) }), result: Ok },
+  /** TAL-459: the Agent's durable delivery ledger. A null claim means another consumer delivered (or holds) it; "" means nothing durable to acknowledge. */
+  'process.claim_delivery': { params: ProfileHomeParams.extend({ event: Loose, consumer: z.string().min(1) }), result: z.object({ claim_id: z.string().nullable() }) },
+  'process.complete_delivery': { params: ProfileHomeParams.extend({ event: Loose, claim_id: z.string() }), result: Ok },
+  'process.release_delivery': { params: ProfileHomeParams.extend({ event: Loose, claim_id: z.string() }), result: Ok },
   'process.format_notification': { params: z.object({ event: Loose }), result: z.object({ text: z.string() }) },
   'process.list': { params: ProfileHomeParams, result: z.object({ sessions: z.array(Loose) }) },
 } as const
