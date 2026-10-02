@@ -1010,6 +1010,111 @@ final class SidebarPerformanceUITests: SidebarUITestCase {
 
 }
 
+/// One owner per leading-edge swipe: a screen that can go back goes back, and only a stack
+/// root opens the sidebar (TAL-462).
+final class SidebarGestureUITests: SidebarUITestCase {
+    func testEdgeSwipeGoesBackInPushedScreensAndOpensSidebarAtRoots() throws {
+        launchFixture()
+        try assertEdgeSwipeOwnership(isRightToLeft: false)
+    }
+
+    func testEdgeSwipeOwnershipMirrorsInDarkRTL() throws {
+        launchFixture(additionalArguments: [
+            "-appTheme", "dark",
+            "-AppleTextDirection", "YES",
+            "-NSForceRightToLeftWritingDirection", "YES",
+        ])
+        try assertEdgeSwipeOwnership(isRightToLeft: true)
+    }
+
+    private var sidebar: XCUIElement { app.descendants(matching: .any)["app-sidebar"] }
+
+    private func assertEdgeSwipeOwnership(isRightToLeft rtl: Bool) throws {
+        let chats = app.navigationBars["Chats"]
+        XCTAssertTrue(app.buttons["Open navigation"].awaitExistence(timeout: 15), "Missing deterministic app fixture")
+        XCTAssertTrue(fixtureSessionButton.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+
+        // A stack root opens the sidebar; a drag toward the leading edge or a tap on the dimmed
+        // surface closes it.
+        swipe(rtl: rtl, from: 0.005, to: 0.75)
+        assertSidebarOpens("at the Chats list")
+        swipe(rtl: rtl, from: 0.9, to: 0.1)
+        assertSidebarCloses("after a closing drag")
+        swipe(rtl: rtl, from: 0.005, to: 0.75)
+        assertSidebarOpens("at the Chats list again")
+        tap(at: CGPoint(x: rtl ? app.frame.width * 0.05 : app.frame.width * 0.95, y: app.frame.height * 0.5))
+        assertSidebarCloses("after a tap on the dimmed surface")
+
+        // A pushed chat goes back on every edge swipe and never opens the sidebar.
+        for attempt in 1...10 {
+            tapFixtureSession(fixtureSessionButton)
+            XCTAssertNotNil(waitForComposer(timeout: 15), "The chat did not open (attempt \(attempt))")
+            if attempt == 1 {
+                // A back swipe released early leaves the chat in place.
+                swipe(rtl: rtl, from: 0.005, to: 0.2, velocity: 60, hold: 0.3)
+                XCTAssertNotNil(waitForComposer(timeout: 5), "A cancelled back swipe left the chat")
+                XCTAssertFalse(chats.exists, "A cancelled back swipe left the chat")
+                assertSidebarStaysClosed("A cancelled back swipe opened the sidebar")
+            }
+            swipe(rtl: rtl, from: 0.005, to: 0.75)
+            XCTAssertTrue(chats.awaitExistence(timeout: 5), "The edge swipe did not go back (attempt \(attempt))")
+            assertSidebarStaysClosed("The edge swipe opened the sidebar over a chat (attempt \(attempt))")
+            _ = fixtureSessionButton.settledFrame
+        }
+
+        if #available(iOS 26.0, *) {
+            tapFixtureSession(fixtureSessionButton)
+            XCTAssertNotNil(waitForComposer(timeout: 15), "The chat did not open")
+            swipe(rtl: rtl, from: 0.35, to: 0.95)
+            XCTAssertTrue(chats.awaitExistence(timeout: 5), "A mid-screen swipe did not go back")
+            assertSidebarStaysClosed("A mid-screen swipe opened the sidebar")
+            _ = fixtureSessionButton.settledFrame
+        }
+
+        // A utility root opens the sidebar; its pushed screen goes back instead.
+        openSettings()
+        swipe(rtl: rtl, from: 0.005, to: 0.75)
+        assertSidebarOpens("at the Settings root")
+        swipe(rtl: rtl, from: 0.9, to: 0.1)
+        assertSidebarCloses("over the Settings root")
+        tapCenter(of: app.buttons["settings-user-profile"])
+        XCTAssertTrue(app.navigationBars["User Profile"].awaitExistence(timeout: Self.navigationTimeout))
+        swipe(rtl: rtl, from: 0.005, to: 0.75)
+        XCTAssertTrue(app.navigationBars["Settings"].awaitExistence(timeout: 5), "The edge swipe did not return to Settings")
+        XCTAssertFalse(app.navigationBars["User Profile"].exists, "The edge swipe did not return to Settings")
+        assertSidebarStaysClosed("The edge swipe opened the sidebar over a Settings page")
+    }
+
+    /// A horizontal drag between leading-relative offsets (0 is the leading edge), mirrored
+    /// under RTL.
+    private func swipe(rtl: Bool, from: CGFloat, to: CGFloat, velocity: CGFloat = 1_500, hold: TimeInterval = 0) {
+        func point(_ leading: CGFloat) -> XCUICoordinate {
+            app.coordinate(withNormalizedOffset: CGVector(dx: rtl ? 1 - leading : leading, dy: 0.5))
+        }
+        point(from).press(
+            forDuration: 0.05,
+            thenDragTo: point(to),
+            withVelocity: XCUIGestureVelocity(velocity),
+            thenHoldForDuration: hold
+        )
+    }
+
+    private func assertSidebarOpens(_ context: String) {
+        XCTAssertTrue(poll(timeout: 3) { sidebar.isHittable }, "The edge swipe did not open the sidebar \(context)")
+        _ = app.buttons["Close navigation"].settledFrame
+    }
+
+    /// Watches past the opening animation, so a sidebar that started to open is caught.
+    private func assertSidebarStaysClosed(_ message: String) {
+        XCTAssertFalse(poll(timeout: 1) { sidebar.isHittable }, message)
+    }
+
+    private func assertSidebarCloses(_ context: String) {
+        XCTAssertTrue(poll(timeout: 3) { !sidebar.isHittable }, "The sidebar stayed open \(context)")
+        _ = app.descendants(matching: .any)["app-main-surface"].settledFrame
+    }
+}
+
 class AdaptiveLayoutUITestCase: TalariaUITestCase {
     struct Variant {
         var name: String

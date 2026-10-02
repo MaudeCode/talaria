@@ -69,28 +69,32 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
                         radius: 24 * progress,
                         x: -8 * horizontalDirection * progress
                     )
+                    // Unlike the shadow, SwiftUI mirrors the offset under RTL, which slides the
+                    // surface toward the trailing edge there too.
                     .offset(
-                        x: revealWidth * progress * horizontalDirection
-                            - proxy.safeAreaInsets.leading,
+                        x: revealWidth * progress - proxy.safeAreaInsets.leading,
                         y: -proxy.safeAreaInsets.top
                     )
                     .accessibilityHidden(isPresented)
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("app-main-surface")
-
-                if !isPresented {
-                    Color.clear
-                        .frame(width: AppSidebarGesturePolicy.edgeActivationWidth)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            dragGesture(
-                                containerWidth: proxy.size.width,
-                                revealWidth: revealWidth
-                            )
-                        )
-                        .accessibilityHidden(true)
-                }
             }
+            .gesture(
+                SidebarEdgePanGesture(
+                    isSidebarPresented: isPresented,
+                    isRightToLeft: layoutDirection == .rightToLeft,
+                    onChanged: { dragTranslation = $0 },
+                    onEnded: { projectedTranslation in
+                        dragTranslation = 0
+                        isPresented = AppSidebarGesturePolicy.progress(
+                            isPresented: false,
+                            translationWidth: projectedTranslation,
+                            revealWidth: revealWidth,
+                            isRightToLeft: layoutDirection == .rightToLeft
+                        ) >= 0.5
+                    }
+                )
+            )
         }
         .animation(
             reduceMotion ? .easeOut(duration: 0.12) : .snappy(duration: 0.28),
@@ -127,6 +131,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
             .onChanged { value in
                 guard AppSidebarGesturePolicy.accepts(
                     isPresented: isPresented,
+                    canPopVisibleStack: false,
                     startX: value.startLocation.x,
                     containerWidth: containerWidth,
                     translation: value.translation,
@@ -140,6 +145,7 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
 
                 guard AppSidebarGesturePolicy.accepts(
                     isPresented: isPresented,
+                    canPopVisibleStack: false,
                     startX: value.startLocation.x,
                     containerWidth: containerWidth,
                     translation: value.translation,
@@ -153,5 +159,101 @@ struct AppSidebarContainer<Sidebar: View, Content: View>: View {
                     isRightToLeft: layoutDirection == .rightToLeft
                 ) >= 0.5
             }
+    }
+}
+
+/// The closed sidebar's leading-edge pan, replacing a SwiftUI edge strip that raced the
+/// navigation stacks' back gestures. UIKit arbitrates it: it never begins over a sheet or while
+/// the visible stack can pop or is mid-transition, and the system pop gestures win any race
+/// (TAL-462).
+struct SidebarEdgePanGesture: UIGestureRecognizerRepresentable {
+    let isSidebarPresented: Bool
+    let isRightToLeft: Bool
+    let onChanged: (CGFloat) -> Void
+    /// The projected end translation; zero when the pan is cancelled.
+    let onEnded: (CGFloat) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UIScreenEdgePanGestureRecognizer {
+        let recognizer = UIScreenEdgePanGestureRecognizer()
+        recognizer.delegate = context.coordinator
+        return recognizer
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UIScreenEdgePanGestureRecognizer, context: Context) {
+        recognizer.edges = isRightToLeft ? .right : .left
+        context.coordinator.isSidebarPresented = isSidebarPresented
+        context.coordinator.isRightToLeft = isRightToLeft
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIScreenEdgePanGestureRecognizer, context: Context) {
+        let translation = recognizer.translation(in: nil).x
+        switch recognizer.state {
+        case .changed:
+            onChanged(translation)
+        case .ended:
+            // UIScrollView's normal deceleration, so a flick carries the drawer the rest of the way.
+            let rate = UIScrollView.DecelerationRate.normal.rawValue
+            onEnded(translation + recognizer.velocity(in: nil).x / 1_000 * rate / (1 - rate))
+        case .cancelled, .failed:
+            onEnded(0)
+        default:
+            break
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var isSidebarPresented = false
+        var isRightToLeft = false
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            // The open sidebar's own drag closes it.
+            guard !isSidebarPresented,
+                  let pan = gestureRecognizer as? UIPanGestureRecognizer,
+                  let window = pan.view?.window
+            else { return false }
+            let translation = pan.translation(in: nil)
+            return AppSidebarGesturePolicy.accepts(
+                isPresented: false,
+                canPopVisibleStack: SidebarEdgePanGesture.visibleStackOwnsEdgeSwipe(in: window),
+                startX: pan.location(in: nil).x - translation.x,
+                containerWidth: window.bounds.width,
+                translation: CGSize(width: translation.x, height: translation.y),
+                isRightToLeft: isRightToLeft
+            )
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            guard let view = otherGestureRecognizer.view else { return false }
+            return sequence(first: view as UIResponder, next: \.next).contains { responder in
+                guard let navigation = responder as? UINavigationController else { return false }
+                if #available(iOS 26.0, *), otherGestureRecognizer === navigation.interactiveContentPopGestureRecognizer {
+                    return true
+                }
+                return otherGestureRecognizer === navigation.interactivePopGestureRecognizer
+            }
+        }
+    }
+
+    /// Whether a sheet covers the app, or an on-screen navigation stack (the chat list's, a
+    /// utility's or a split view's detail) shows a pushed screen or is moving between screens.
+    static func visibleStackOwnsEdgeSwipe(in window: UIWindow) -> Bool {
+        guard let root = window.rootViewController else { return false }
+        return root.presentedViewController != nil || canPop(root)
+    }
+
+    private static func canPop(_ controller: UIViewController) -> Bool {
+        if let navigation = controller as? UINavigationController,
+           navigation.viewIfLoaded?.window != nil,
+           navigation.viewControllers.count > 1 || navigation.transitionCoordinator != nil {
+            return true
+        }
+        return controller.children.contains { canPop($0) }
     }
 }
