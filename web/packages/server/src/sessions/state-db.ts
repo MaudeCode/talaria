@@ -401,7 +401,7 @@ export function latestCronSessionInfo(dbPath: string, jobIds: Iterable<string>, 
       const sid = typeof row.id === 'string' ? row.id : ''
       const owner = ids.filter((id) => sid.startsWith(`cron_${id}_`)).reduce<string | null>((best, id) => (best === null || id.length > best.length ? id : best), null)
       if (owner === null || !wanted.has(owner) || found.has(owner)) continue
-      found.set(owner, { session_id: sid, message_count: row.message_count === null || row.message_count === undefined ? null : Number(row.message_count) })
+      found.set(owner, { session_id: sid, message_count: Number.isFinite(Number(row.message_count)) && row.message_count !== null ? Math.trunc(Number(row.message_count)) : null })
       if (found.size === wanted.size) break
     }
     return found

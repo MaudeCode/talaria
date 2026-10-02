@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type SseFrame, type TestServer } from '../test/harness.js'
-import { jobForApi, jobFieldUpdates } from '../tools/crons.js'
+import { completedAtSeconds, jobForApi, jobFieldUpdates } from '../tools/crons.js'
 import { readZip } from '../workspace/unzip.js'
 import { ExtensionService, normalizeLoopbackOrigin, normalizeProxyPath, isSafeRelativePath } from '../tools/extensions.js'
 import type { PtyModuleLike, PtyProcessLike } from '../tools/terminal.js'
@@ -224,6 +224,44 @@ describe('crons, kanban, extensions, terminal', () => {
       expect(await json(await s.get('/api/crons/recent?since=5'))).toEqual({ completions: [], since: 5 })
     } finally {
       rmSync(join(home, 'state.db'), { force: true })
+    }
+  })
+
+  it('crons/recent reads only ISO or numeric completion times, server-local when no offset is given', () => {
+    expect(completedAtSeconds('2026-01-02T00:00:00Z')).toBe(1767312000)
+    expect(completedAtSeconds('2026-01-02T01:30:00+01:30')).toBe(1767312000)
+    expect(completedAtSeconds('2026-01-02T01:30:00.250+0130')).toBe(1767312000.25)
+    expect(completedAtSeconds('2026-01-02 00:00:00')).toBe(new Date(2026, 0, 2).getTime() / 1000)
+    expect(completedAtSeconds('2026-01-02')).toBe(new Date(2026, 0, 2).getTime() / 1000)
+    expect(completedAtSeconds(1767312000.5)).toBe(1767312000.5)
+    for (const bad of ['Jan 2 2026', '2026', '2026-02-30', '2026-13-01', '2026-01-02T24:00', 'garbage', '', 0, null, true]) expect(completedAtSeconds(bad), String(bad)).toBeNull()
+  })
+
+  it('crons/recent reads the request profile\'s cron store and state.db', async () => {
+    const defaultHome = s.deps.profileHome('default')
+    const workHome = join(defaultHome, 'profiles', 'work')
+    const profile = (name: string, path: string, isDefault: boolean): Json => ({ name, path, is_default: isDefault, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 })
+    sidecar.respond('profiles.list', () => ({ profiles: [profile('default', defaultHome, true), profile('work', workHome, false)] as never[] }))
+    s.deps.profiles.invalidate()
+    expect(s.deps.profileHome('work')).toBe(workHome)
+    mkdirSync(workHome, { recursive: true })
+    const db = new DatabaseSync(join(workHome, 'state.db'))
+    db.exec("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, message_count REAL); INSERT INTO sessions VALUES ('cron_w_1', 'cron', 1, 3.7)")
+    db.close()
+    sidecar.respond('cron.list', (params) => ({ jobs: (params.profile_home === workHome ? [{ id: 'w', name: 'Work', last_status: 'ok', last_run_at: 10 }] : [{ id: 'd', name: 'Default', last_status: 'ok', last_run_at: 10 }]).map((job) => ({ profile: null, toast_notifications: true, monitor: '', continuity: false, ...job })) }))
+    try {
+      const switched = await post(s, '/api/profile/switch', { name: 'work' })
+      expect(switched.status).toBe(200)
+      const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+      const calls = sidecar.calls.length
+      const body = await json(await s.get('/api/crons/recent', { headers: { cookie } }))
+      expect(sidecar.calls.slice(calls).filter((c) => c.method === 'cron.list').map((c) => c.params)).toEqual([{ profile_home: workHome }])
+      expect(body.completions).toEqual([{ job_id: 'w', name: 'Work', status: 'ok', outcome: 'succeeded', completed_at: 10, toast_notifications: true, session_id: 'cron_w_1', message_count: 3 }])
+      expect(((await json(await s.get('/api/crons/recent'))).completions as Json[]).map((c) => c.job_id)).toEqual(['d'])
+    } finally {
+      rmSync(workHome, { recursive: true, force: true })
+      sidecar.respond('profiles.list', () => ({ profiles: [profile('default', defaultHome, true)] as never[] }))
+      s.deps.profiles.invalidate()
     }
   })
 

@@ -75,11 +75,29 @@ export function parseSince(raw: string | undefined): number {
   return Number.isFinite(n) ? n : 0
 }
 
-/** Python `_handle_cron_recent`'s `last_run_at` read: ISO (`Z` or offset) or numeric seconds; anything else is skipped. */
+const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2})(?::(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?)?)?(Z|[+-]\d{2}(?::?\d{2})?)?$/
+
+/**
+ * Python `_handle_cron_recent`'s `last_run_at` read (`datetime.fromisoformat` after `Z` → `+00:00`, or a number).
+ * Only ISO-shaped strings count, so `Date.parse` leniency ("Jan 2 2026") never invents a completion; a time without
+ * an offset is server-local, as in Python. Anything else is skipped.
+ */
 export function completedAtSeconds(value: unknown): number | null {
-  if (!value) return null
-  const seconds = typeof value === 'string' ? Date.parse(value) / 1000 : Number(value)
-  return Number.isFinite(seconds) ? seconds : null
+  if (typeof value === 'number') return value && Number.isFinite(value) ? value : null
+  if (typeof value !== 'string') return null
+  const m = ISO_RE.exec(value)
+  if (!m) return null
+  const [y, mo, d, h, mi, sec] = [1, 2, 3, 4, 5, 6].map((i) => Number(m[i] ?? 0)) as [number, number, number, number, number, number]
+  const ms = Number((m[7] ?? '').padEnd(3, '0').slice(0, 3))
+  if (mo < 1 || mo > 12 || d < 1 || new Date(Date.UTC(y, mo - 1, d)).getUTCDate() !== d || h > 23 || mi > 59 || sec > 59) return null
+  const offset = m[8]
+  if (offset === undefined) return new Date(y, mo - 1, d, h, mi, sec, ms).getTime() / 1000
+  let offsetMinutes = 0
+  if (offset !== 'Z') {
+    const digits = offset.slice(1).replace(':', '')
+    offsetMinutes = (offset.startsWith('-') ? -1 : 1) * (Number(digits.slice(0, 2)) * 60 + Number(digits.slice(2) || 0))
+  }
+  return (Date.UTC(y, mo - 1, d, h, mi, sec, ms) - offsetMinutes * 60_000) / 1000
 }
 
 /** The one place a job's `last_status` becomes the success/failure the clients render. */
