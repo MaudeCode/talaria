@@ -62,6 +62,8 @@
         "_turn_id": "legacy:start"
       }
     ],
-    "title": "Restored activity"
+    "title": "Restored activity",
+    "source_kind": "webui",
+    "is_messaging_session": false
   }
 }

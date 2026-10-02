@@ -331,3 +331,58 @@ describe('sidebar automated-session counts (TAL-482)', () => {
     expect(body).toMatchObject({ webhook_session_count: 2, webhook_sessions_truncated: false })
   })
 })
+
+describe('server-classified session sources (TAL-310)', () => {
+  let s: TestServer
+  const platforms = ['signal', 'whatsapp', 'weixin', 'wecom_callback']
+  const rowsOf = async (path: string): Promise<Json[]> => (await json(await s.get(path))).sessions as Json[]
+  const sidecar = async (title: string, fields: Json): Promise<string> => {
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const stored = s.deps.sessionStore.get(sid)
+    stored.title = title
+    stored.messages = [{ role: 'user', content: 'kindprobe', timestamp: 3000 }, { role: 'assistant', content: 'ok', timestamp: 3001 }]
+    Object.assign(stored, fields)
+    s.deps.sessionStore.save(stored)
+    return sid
+  }
+  beforeAll(async () => {
+    s = await bootTestServer()
+    const db = createStateDb(join(s.state, 'state.db'))
+    platforms.forEach((source, i) => { insertSession(db, { id: `chat-${source}`, source, started_at: 1_000 + i, messages: [['user', 1_000 + i], ['assistant', 1_001 + i]] }) })
+    db.close()
+    await s.deps.settings.save({ show_cli_sessions: true })
+    s.deps.cliSessions.invalidate()
+  })
+  afterAll(() => s.close())
+
+  it('files every messaging platform from the state.db scan as messaging, with its detail', async () => {
+    const rows = await rowsOf('/api/sessions')
+    for (const source of platforms) {
+      const row = rows.find((r) => r.session_id === `chat-${source}`)
+      expect(row, `${source} in ${JSON.stringify(rows.map((r) => r.session_id))}`).toMatchObject({ source_kind: 'messaging', is_messaging_session: true, session_source: 'messaging' })
+      const detail = (await json(await s.get(`/api/session?session_id=chat-${source}`))).session as Json
+      expect(detail, source).toMatchObject({ source_kind: 'messaging', is_messaging_session: true })
+    }
+  })
+
+  it('files a messaging sidecar from the session index as messaging in the list, detail and search', async () => {
+    const sid = await sidecar('Kindprobe signal', { raw_source: 'signal' })
+    const hit = (await rowsOf('/api/sessions/search?q=kindprobe')).find((r) => r.session_id === sid)
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    const row = (await rowsOf('/api/sessions')).find((r) => r.session_id === sid)
+    for (const payload of [hit, detail, row]) expect(payload).toMatchObject({ source_kind: 'messaging', is_messaging_session: true })
+  })
+
+  it('keeps a WebUI-marked session with a stale is_cli_session out of CLI', async () => {
+    const sid = await sidecar('Kindprobe stale', { session_source: 'webui', is_cli_session: true })
+    const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+    const row = (await rowsOf('/api/sessions')).find((r) => r.session_id === sid)
+    for (const payload of [detail, row]) expect(payload).toMatchObject({ source_kind: 'webui', is_messaging_session: false, is_cli_session: false })
+  })
+
+  it('ships is_messaging_session on every list row', async () => {
+    const rows = await rowsOf('/api/sessions')
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) expect(typeof row.is_messaging_session, String(row.session_id)).toBe('boolean')
+  })
+})

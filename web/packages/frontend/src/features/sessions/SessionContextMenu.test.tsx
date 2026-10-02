@@ -7,7 +7,7 @@ import type { SessionRow } from '../../contracts'
 vi.mock(import('@tanstack/react-router'), async (importOriginal) => ({ ...(await importOriginal()), useNavigate: () => vi.fn() }))
 import { SessionContextMenu } from './SessionContextMenu'
 
-const writable: SessionRow = { session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true }
+const writable: SessionRow = { session_id: 'mine', title: 'Mine', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false }
 
 async function menuItems(row: SessionRow): Promise<string[]> {
   render(<QueryClientProvider client={new QueryClient()}><SessionContextMenu row={row} active={false} /></QueryClientProvider>)

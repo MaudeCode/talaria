@@ -50,6 +50,8 @@ export function makeSession(over: Partial<Session> = {}): Session {
     can_pin: true,
     can_archive: true,
     can_duplicate: true,
+    source_kind: 'webui',
+    is_messaging_session: false,
     ...over,
   })
 }

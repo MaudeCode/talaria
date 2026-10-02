@@ -759,7 +759,9 @@
     "can_archive": true,
     "can_duplicate": true,
     "assistant_name": "Hermes",
-    "transcript_seq": null
+    "transcript_seq": null,
+    "source_kind": "webui",
+    "is_messaging_session": false
   },
   "stale_stream_session": {
     "session_id": "contract-stale",
@@ -772,7 +774,9 @@
     "can_archive": true,
     "can_duplicate": true,
     "messages": [],
-    "transcript_seq": null
+    "transcript_seq": null,
+    "source_kind": "webui",
+    "is_messaging_session": false
   },
   "subagent_session": {
     "session_id": "contract-subagent",
@@ -787,7 +791,9 @@
     "can_archive": false,
     "can_duplicate": false,
     "messages": [],
-    "transcript_seq": null
+    "transcript_seq": null,
+    "source_kind": "subagent",
+    "is_messaging_session": false
   },
   "journaled_session": {
     "session_id": "contract-running",
@@ -822,7 +828,9 @@
         "message_id": "contract-user-h",
         "_turn_id": "contract-run-h"
       }
-    ]
+    ],
+    "source_kind": "webui",
+    "is_messaging_session": false
   },
   "tool_outcomes_session": {
     "session_id": "contract-tool-outcomes",
@@ -1232,7 +1240,9 @@
         "tid": "call-date",
         "assistant_msg_idx": 10
       }
-    ]
+    ],
+    "source_kind": "webui",
+    "is_messaging_session": false
   },
   "long_body_session": {
     "session_id": "contract-long-body",
@@ -1300,7 +1310,9 @@
         },
         "_turn_id": "legacy:2"
       }
-    ]
+    ],
+    "source_kind": "webui",
+    "is_messaging_session": false
   },
   "background_update_session": {
     "session_id": "contract-background-update",
@@ -1538,7 +1550,9 @@
         },
         "_turn_id": "user-no-reply"
       }
-    ]
+    ],
+    "source_kind": "webui",
+    "is_messaging_session": false
   },
   "pending_steers_session": {
     "session_id": "contract-pending-steers",
@@ -1605,6 +1619,26 @@
           "text": "Text another surface queued"
         }
       }
-    ]
+    ],
+    "source_kind": "webui",
+    "is_messaging_session": false
+  },
+  "messaging_session": {
+    "session_id": "contract-messaging",
+    "title": "Telegram chat",
+    "raw_source": "telegram",
+    "session_source": "messaging",
+    "source_label": "Telegram",
+    "is_cli_session": false,
+    "source_kind": "messaging",
+    "is_messaging_session": true,
+    "active_stream_id": null,
+    "is_streaming": false,
+    "read_only": true,
+    "can_branch": false,
+    "can_pin": true,
+    "can_archive": true,
+    "can_duplicate": false,
+    "transcript_seq": null
   }
 }

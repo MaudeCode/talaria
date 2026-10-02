@@ -1397,6 +1397,26 @@
                           "is_cli_session": {
                             "type": "boolean"
                           },
+                          "source_kind": {
+                            "enum": [
+                              "webui",
+                              "cli",
+                              "messaging",
+                              "cron",
+                              "webhook",
+                              "subagent",
+                              "claude_code",
+                              "kanban",
+                              "api",
+                              "other"
+                            ],
+                            "type": "string",
+                            "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                          },
+                          "is_messaging_session": {
+                            "type": "boolean",
+                            "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                          },
                           "cron_running": {
                             "type": "boolean"
                           },
@@ -1538,6 +1558,8 @@
                           "session_id",
                           "title",
                           "is_streaming",
+                          "source_kind",
+                          "is_messaging_session",
                           "read_only",
                           "can_branch",
                           "can_pin",
@@ -1624,6 +1646,26 @@
                           "is_cli_session": {
                             "type": "boolean"
                           },
+                          "source_kind": {
+                            "enum": [
+                              "webui",
+                              "cli",
+                              "messaging",
+                              "cron",
+                              "webhook",
+                              "subagent",
+                              "claude_code",
+                              "kanban",
+                              "api",
+                              "other"
+                            ],
+                            "type": "string",
+                            "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                          },
+                          "is_messaging_session": {
+                            "type": "boolean",
+                            "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                          },
                           "cron_running": {
                             "type": "boolean"
                           },
@@ -1765,6 +1807,8 @@
                           "session_id",
                           "title",
                           "is_streaming",
+                          "source_kind",
+                          "is_messaging_session",
                           "read_only",
                           "can_branch",
                           "can_pin",
@@ -2015,6 +2059,26 @@
                           "is_cli_session": {
                             "type": "boolean"
                           },
+                          "source_kind": {
+                            "enum": [
+                              "webui",
+                              "cli",
+                              "messaging",
+                              "cron",
+                              "webhook",
+                              "subagent",
+                              "claude_code",
+                              "kanban",
+                              "api",
+                              "other"
+                            ],
+                            "type": "string",
+                            "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                          },
+                          "is_messaging_session": {
+                            "type": "boolean",
+                            "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                          },
                           "cron_running": {
                             "type": "boolean"
                           },
@@ -2156,6 +2220,8 @@
                           "session_id",
                           "title",
                           "is_streaming",
+                          "source_kind",
+                          "is_messaging_session",
                           "read_only",
                           "can_branch",
                           "can_pin",
@@ -3419,6 +3485,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -3634,6 +3720,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -5052,6 +5140,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -5267,6 +5375,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -6431,6 +6541,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -6646,6 +6776,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -6830,6 +6962,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -6971,6 +7123,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -7106,6 +7260,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -7247,6 +7421,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -7389,6 +7565,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -7530,6 +7726,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -8687,6 +8885,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -8902,6 +9120,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -9111,6 +9331,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -9252,6 +9492,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -9384,6 +9626,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -9525,6 +9787,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -10850,6 +11114,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -11065,6 +11349,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -11370,6 +11656,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -11511,6 +11817,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -11644,6 +11952,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -11785,6 +12113,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -11951,6 +12281,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -12092,6 +12442,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -12241,6 +12593,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -12382,6 +12754,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -13394,6 +13768,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -13535,6 +13929,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -13667,6 +14063,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -13808,6 +14224,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -20072,6 +20490,26 @@
                         "is_cli_session": {
                           "type": "boolean"
                         },
+                        "source_kind": {
+                          "enum": [
+                            "webui",
+                            "cli",
+                            "messaging",
+                            "cron",
+                            "webhook",
+                            "subagent",
+                            "claude_code",
+                            "kanban",
+                            "api",
+                            "other"
+                          ],
+                          "type": "string",
+                          "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                        },
+                        "is_messaging_session": {
+                          "type": "boolean",
+                          "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -20287,6 +20725,8 @@
                         "session_id",
                         "title",
                         "is_streaming",
+                        "source_kind",
+                        "is_messaging_session",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -21534,6 +21974,26 @@
                             "is_cli_session": {
                               "type": "boolean"
                             },
+                            "source_kind": {
+                              "enum": [
+                                "webui",
+                                "cli",
+                                "messaging",
+                                "cron",
+                                "webhook",
+                                "subagent",
+                                "claude_code",
+                                "kanban",
+                                "api",
+                                "other"
+                              ],
+                              "type": "string",
+                              "description": "The session's source family. `is_cli_session` is true only for `cli` and `claude_code`."
+                            },
+                            "is_messaging_session": {
+                              "type": "boolean",
+                              "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
+                            },
                             "read_only": {
                               "type": "boolean",
                               "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -21749,6 +22209,8 @@
                             "session_id",
                             "title",
                             "is_streaming",
+                            "source_kind",
+                            "is_messaging_session",
                             "read_only",
                             "can_branch",
                             "can_pin",
