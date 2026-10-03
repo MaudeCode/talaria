@@ -119,19 +119,6 @@ extension APIClient {
         )
     }
 
-    /// Imports or refreshes an external (CLI or messaging) session so the server
-    /// owns an authoritative, continuable copy before the app opens it. The
-    /// response carries the session the server will serve from now on: a
-    /// read-only source answers with a view-only payload instead of a writable
-    /// import.
-    public func importExternalSession(id: String) async throws -> SessionImportResponse {
-        try await send(
-            endpoint: .importSession,
-            method: "POST",
-            body: SessionIDRequest(sessionId: id)
-        )
-    }
-
     /// Copies a session. Answers with the whole duplicated session, so no
     /// follow-up fetch is needed. Rejects subagent sessions with a 400 — they
     /// are view-only upstream.

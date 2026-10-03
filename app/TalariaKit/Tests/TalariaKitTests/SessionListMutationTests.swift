@@ -132,17 +132,44 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertFalse(SessionSummary(sessionId: "plain").isExternalSourceSession)
     }
 
-    /// Signal and WhatsApp chats used to open without an import because the app's own
-    /// messaging list missed them (TAL-310). Every platform the server files as messaging imports.
+    /// The server has no `import_cli` route; it decides writability in `GET /api/session` and
+    /// claims a CLI session on its first send (TAL-256). The app opens external chats through
+    /// that detail and keeps its `read_only` and capability flags.
     @MainActor
-    func testOpeningEveryServerMessagingPlatformImportsFirst() async throws {
+    func testOpeningExternalSessionUsesTheDetailRouteAndItsWritability() async throws {
+        var requestedPaths: [String] = []
+        let viewModel = try makeViewModel { request in
+            requestedPaths.append(request.url?.path ?? "nil")
+            if request.url?.path == "/api/session/import_cli" {
+                return apiTestJSONResponse(#"{"error": "not found"}"#, statusCode: 404, for: request)
+            }
+            return apiTestJSONResponse("""
+            {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "source_kind": "cli",
+              "read_only": false, "can_pin": true, "can_archive": true, "can_duplicate": true}}
+            """, for: request)
+        }
+        let row = SessionSummary(sessionId: "cli-1", isCliSession: true, sourceKind: .cli, canDuplicate: false)
+
+        let resolved = await viewModel.sessionToOpen(for: row)
+        let opened = try XCTUnwrap(resolved)
+
+        XCTAssertEqual(requestedPaths, ["/api/session"])
+        XCTAssertFalse(opened.isSessionReadOnly)
+        XCTAssertEqual(opened.canDuplicate, true)
+        XCTAssertNil(viewModel.actionErrorMessage)
+    }
+
+    /// Signal and WhatsApp chats used to open without a detail load because the app's own
+    /// messaging list missed them (TAL-310). Every platform the server files as messaging loads it.
+    @MainActor
+    func testOpeningEveryServerMessagingPlatformLoadsItsDetailFirst() async throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         for platform in ["signal", "whatsapp", "weixin", "wecom_callback"] {
             var requestedPaths: [String] = []
             let viewModel = try makeViewModel { request in
                 requestedPaths.append(request.url?.path ?? "nil")
-                return apiTestJSONResponse(#"{"session": {"session_id": "chat-\#(platform)", "title": "Chat", "source_kind": "messaging"}, "imported": true}"#, for: request)
+                return apiTestJSONResponse(#"{"session": {"session_id": "chat-\#(platform)", "title": "Chat", "source_kind": "messaging"}}"#, for: request)
             }
             let row = try decoder.decode(SessionSummary.self, from: Data("""
             {"session_id": "chat-\(platform)", "raw_source": "\(platform)", "is_cli_session": false, "source_kind": "messaging", "is_messaging_session": true}
@@ -150,12 +177,12 @@ final class SessionListMutationTests: XCTestCase {
 
             XCTAssertTrue(row.isMessagingSession, platform)
             _ = await viewModel.sessionToOpen(for: row)
-            XCTAssertEqual(requestedPaths, ["/api/session/import_cli"], platform)
+            XCTAssertEqual(requestedPaths, ["/api/session"], platform)
         }
     }
 
     @MainActor
-    func testOpeningExternalRowImportsOnceAndUsesAuthoritativeMetadata() async throws {
+    func testOpeningExternalRowLoadsDetailOnceAndUsesAuthoritativeMetadata() async throws {
         var requestedPaths: [String] = []
         let viewModel = try makeViewModel { request in
             requestedPaths.append(request.url?.path ?? "nil")
@@ -163,12 +190,11 @@ final class SessionListMutationTests: XCTestCase {
             {
               "session": {
                 "session_id": "cli-1",
-                "title": "Imported title",
+                "title": "Detail title",
                 "is_cli_session": true,
                 "source_tag": "cli",
                 "read_only": false
-              },
-              "imported": true
+              }
             }
             """, for: request)
         }
@@ -186,10 +212,10 @@ final class SessionListMutationTests: XCTestCase {
         let resolved = await viewModel.sessionToOpen(for: row)
         let opened = try XCTUnwrap(resolved)
 
-        XCTAssertEqual(requestedPaths, ["/api/session/import_cli"])
-        XCTAssertEqual(opened.title, "Imported title")
+        XCTAssertEqual(requestedPaths, ["/api/session"])
+        XCTAssertEqual(opened.title, "Detail title")
         XCTAssertFalse(opened.isSessionReadOnly)
-        // List-only metadata the detail payload cannot carry survives the import.
+        // List-only metadata the detail payload cannot carry survives the load.
         XCTAssertEqual(opened.isStreaming, true)
         XCTAssertEqual(opened.userMessageCount, 7)
         XCTAssertEqual(opened.matchType, "content")
@@ -198,7 +224,7 @@ final class SessionListMutationTests: XCTestCase {
     }
 
     @MainActor
-    func testOpeningReadOnlyImportKeepsSessionViewOnly() async throws {
+    func testOpeningReadOnlyDetailKeepsSessionViewOnly() async throws {
         let viewModel = try makeViewModel { request in
             apiTestJSONResponse("""
             {
@@ -208,8 +234,7 @@ final class SessionListMutationTests: XCTestCase {
                 "raw_source": "telegram",
                 "source_kind": "messaging",
                 "read_only": true
-              },
-              "imported": false
+              }
             }
             """, for: request)
         }
@@ -223,12 +248,11 @@ final class SessionListMutationTests: XCTestCase {
 
     /// An authoritative writable answer replaces a stale read-only flag on the row.
     @MainActor
-    func testWritableImportClearsStaleReadOnlyFromTheRow() async throws {
+    func testWritableDetailClearsStaleReadOnlyFromTheRow() async throws {
         let viewModel = try makeViewModel { request in
             apiTestJSONResponse("""
             {
-              "session": {"session_id": "cli-1", "title": "Writable now", "read_only": false},
-              "imported": false
+              "session": {"session_id": "cli-1", "title": "Writable now", "read_only": false}
             }
             """, for: request)
         }
@@ -242,9 +266,9 @@ final class SessionListMutationTests: XCTestCase {
     }
 
     /// `SessionRowActionPolicy` reads the row, not the opened destination, so a
-    /// regular-width sidebar would keep the pre-import actions without this.
+    /// regular-width sidebar would keep the stale actions without this.
     @MainActor
-    func testImportRefreshesTheListRowSoItsActionsMatch() async throws {
+    func testDetailRefreshesTheListRowSoItsActionsMatch() async throws {
         let viewModel = try makeViewModel { request in
             switch request.url?.path {
             case "/api/sessions":
@@ -259,8 +283,7 @@ final class SessionListMutationTests: XCTestCase {
                     "title": "CLI",
                     "is_cli_session": true,
                     "read_only": true
-                  },
-                  "imported": false
+                  }
                 }
                 """, for: request)
             }
@@ -280,13 +303,13 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertFalse(SessionRowActionPolicy.offersMutationActions(for: refreshedRow))
     }
 
-    /// A `/api/sessions` refresh can land while the import is in flight. The
-    /// import's own fields still win, but list-only metadata must come from the
-    /// row as it stands when the import returns, not the tapped snapshot.
+    /// A `/api/sessions` refresh can land while the detail load is in flight. The
+    /// detail's own fields still win, but list-only metadata must come from the
+    /// row as it stands when the detail returns, not the tapped snapshot.
     @MainActor
-    func testImportMergesOntoTheCurrentRowNotThePreAwaitSnapshot() async throws {
+    func testDetailMergesOntoTheCurrentRowNotThePreAwaitSnapshot() async throws {
         let firstListArrived = expectation(description: "first sessions load arrived")
-        let importArrived = expectation(description: "import arrived")
+        let detailArrived = expectation(description: "detail arrived")
         let secondListArrived = expectation(description: "second sessions load arrived")
         let requests = DeferredRequests()
 
@@ -295,8 +318,8 @@ final class SessionListMutationTests: XCTestCase {
             let path: String = pending.request.url?.path ?? ""
             if path == "/api/sessions", index == 1 {
                 firstListArrived.fulfill()
-            } else if path == "/api/session/import_cli", index == 2 {
-                importArrived.fulfill()
+            } else if path == "/api/session", index == 2 {
+                detailArrived.fulfill()
             } else if path == "/api/sessions", index == 3 {
                 secondListArrived.fulfill()
             } else {
@@ -320,9 +343,9 @@ final class SessionListMutationTests: XCTestCase {
 
         let row = try XCTUnwrap(viewModel.sessions.first)
         let open = Task { await viewModel.sessionToOpen(for: row) }
-        await fulfillment(of: [importArrived], timeout: 5)
+        await fulfillment(of: [detailArrived], timeout: 5)
 
-        // The list refreshes with newer list-only metadata while the import is still out.
+        // The list refreshes with newer list-only metadata while the detail is still out.
         let secondLoad = Task { await viewModel.load() }
         await fulfillment(of: [secondListArrived], timeout: 5)
         requests.request(at: 2).complete(withJSON: #"""
@@ -331,7 +354,7 @@ final class SessionListMutationTests: XCTestCase {
         _ = await secondLoad.value
 
         requests.request(at: 1).complete(withJSON: #"""
-        {"session": {"session_id": "cli-1", "title": "Imported", "read_only": false}, "imported": true}
+        {"session": {"session_id": "cli-1", "title": "Imported", "read_only": false}}
         """#)
         let openedResult = await open.value
         let opened = try XCTUnwrap(openedResult)
@@ -341,13 +364,13 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertEqual(viewModel.sessions.first?.userMessageCount, 9)
     }
 
-    /// A `/api/sessions` response already in flight when the import lands must not
-    /// reinstate the pre-import row it captured.
+    /// A `/api/sessions` response already in flight when the detail lands must not
+    /// reinstate the stale row it captured.
     @MainActor
-    func testInFlightListLoadDoesNotOverwriteImportedRow() async throws {
+    func testInFlightListLoadDoesNotOverwriteTheLoadedRow() async throws {
         let firstListArrived = expectation(description: "first sessions load arrived")
         let staleListArrived = expectation(description: "stale sessions load arrived")
-        let importArrived = expectation(description: "import arrived")
+        let detailArrived = expectation(description: "detail arrived")
         let requests = DeferredRequests()
 
         DeferredMockURLProtocol.onRequest = { pending in
@@ -355,8 +378,8 @@ final class SessionListMutationTests: XCTestCase {
             let path: String = pending.request.url?.path ?? ""
             if path == "/api/sessions", index == 1 {
                 firstListArrived.fulfill()
-            } else if path == "/api/session/import_cli", index == 2 {
-                importArrived.fulfill()
+            } else if path == "/api/session", index == 2 {
+                detailArrived.fulfill()
             } else if path == "/api/sessions", index == 3 {
                 staleListArrived.fulfill()
             } else {
@@ -381,18 +404,18 @@ final class SessionListMutationTests: XCTestCase {
         requests.request(at: 0).complete(withJSON: writableRow)
         _ = await firstLoad.value
 
-        // The open starts first, then a refresh captures the pre-import row while
-        // the import is still pending, and the import claims it read-only before
+        // The open starts first, then a refresh captures the stale row while
+        // the detail is still pending, and the detail reports it read-only before
         // that refresh is delivered. The record must outlive a load that began
         // before the claim completed, not merely before the open started.
         let row = try XCTUnwrap(viewModel.sessions.first)
         let open = Task { await viewModel.sessionToOpen(for: row, modelContext: context) }
-        await fulfillment(of: [importArrived], timeout: 5)
+        await fulfillment(of: [detailArrived], timeout: 5)
 
         let staleLoad = Task { await viewModel.load(modelContext: context) }
         await fulfillment(of: [staleListArrived], timeout: 5)
         requests.request(at: 1).complete(withJSON: #"""
-        {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": true, "source_kind": "cli"}, "imported": false}
+        {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": true, "source_kind": "cli"}}
         """#)
         let openedResult = await open.value
         let opened = try XCTUnwrap(openedResult)
@@ -402,37 +425,30 @@ final class SessionListMutationTests: XCTestCase {
         _ = await staleLoad.value
 
         let refreshedRow = try XCTUnwrap(viewModel.sessions.first)
-        XCTAssertTrue(refreshedRow.isSessionReadOnly, "A stale list load must not reinstate pre-import metadata.")
+        XCTAssertTrue(refreshedRow.isSessionReadOnly, "A stale list load must not reinstate the stale row's metadata.")
         XCTAssertFalse(SessionRowActionPolicy.offersMutationActions(for: refreshedRow))
 
         // The offline cache has to hold the applied row too, or the next cached
-        // browse restores the pre-import writability.
+        // browse restores the stale writability.
         let cachedRow = try XCTUnwrap(
             CacheStore.cachedSessions(serverURL: server, in: context).first
         )
         XCTAssertTrue(cachedRow.isSessionReadOnly)
     }
 
-    /// An expired login on the fallback must reach the auth manager even when the
-    /// import failed first for an unrelated reason.
+    /// An expired login on the detail load reaches the auth manager.
     @MainActor
-    func testFallbackAuthenticationFailureIsSurfacedOverTheImportError() async throws {
+    func testExpiredLoginOnTheDetailLoadIsSurfaced() async throws {
         var requestedPaths: [String] = []
         let viewModel = try makeViewModel { request in
-            let path = request.url?.path ?? "nil"
-            requestedPaths.append(path)
-
-            if path == "/api/session/import_cli" {
-                return apiTestJSONResponse(#"{"error": "no such route"}"#, statusCode: 404, for: request)
-            }
-
+            requestedPaths.append(request.url?.path ?? "nil")
             return apiTestJSONResponse(#"{"error": "unauthorized"}"#, statusCode: 401, for: request)
         }
 
         let opened = await viewModel.sessionToOpen(for: SessionSummary(sessionId: "cli-1", isCliSession: true))
 
         XCTAssertNil(opened)
-        XCTAssertEqual(requestedPaths, ["/api/session/import_cli", "/api/session"])
+        XCTAssertEqual(requestedPaths, ["/api/session"])
         let lastError = try XCTUnwrap(viewModel.lastError)
         guard case APIError.unauthorized = lastError else {
             return XCTFail("expected unauthorized, got \(lastError)")
@@ -440,9 +456,9 @@ final class SessionListMutationTests: XCTestCase {
     }
 
     @MainActor
-    func testOpeningWebUIRowSkipsImport() async throws {
+    func testOpeningWebUIRowSkipsTheDetailLoad() async throws {
         let viewModel = try makeViewModel { _ in
-            XCTFail("WebUI sessions must open without an import request.")
+            XCTFail("WebUI sessions must open without a detail request.")
             throw URLError(.badURL)
         }
         let row = SessionSummary(sessionId: "webui-1", isCliSession: true, sessionSource: "webui", sourceKind: .webui)
@@ -452,18 +468,18 @@ final class SessionListMutationTests: XCTestCase {
     }
 
     @MainActor
-    func testFailedImportStaysOnTheListWithActionableCopy() async throws {
+    func testFailedDetailLoadStaysOnTheListWithActionableCopy() async throws {
         var requestedPaths: [String] = []
         let viewModel = try makeViewModel { request in
             requestedPaths.append(request.url?.path ?? "nil")
-            return apiTestJSONResponse(#"{"error": "Session not found in CLI store"}"#, statusCode: 404, for: request)
+            return apiTestJSONResponse(#"{"error": "Session not found"}"#, statusCode: 404, for: request)
         }
         let row = SessionSummary(sessionId: "cli-1", isCliSession: true)
 
         let opened = await viewModel.sessionToOpen(for: row)
 
         XCTAssertNil(opened)
-        XCTAssertEqual(requestedPaths, ["/api/session/import_cli", "/api/session"])
+        XCTAssertEqual(requestedPaths, ["/api/session"])
         XCTAssertEqual(
             viewModel.actionErrorMessage,
             "That session no longer exists on the server. Reopen another session or create a new one."
@@ -472,10 +488,10 @@ final class SessionListMutationTests: XCTestCase {
 
     // MARK: Launch restore
 
-    /// A restored external session takes the same import path as a tapped row, so
+    /// A restored external session takes the same detail load as a tapped row, so
     /// the destination carries the server's writability rather than the list's.
     @MainActor
-    func testRestoredExternalSessionImportsOnceBeforeOpening() async throws {
+    func testRestoredExternalSessionLoadsDetailOnceBeforeOpening() async throws {
         var requestedPaths: [String] = []
         let viewModel = try makeViewModel { request in
             let path = request.url?.path ?? "nil"
@@ -486,7 +502,7 @@ final class SessionListMutationTests: XCTestCase {
                 """, for: request)
             }
             return apiTestJSONResponse("""
-            {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": false, "source_kind": "cli"}, "imported": true}
+            {"session": {"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "read_only": false, "source_kind": "cli"}}
             """, for: request)
         }
         var state = SessionNavigationState(lastSelectedSessionID: "cli-1")
@@ -498,13 +514,13 @@ final class SessionListMutationTests: XCTestCase {
         let opened = try XCTUnwrap(resolved)
         state.select(opened)
 
-        XCTAssertEqual(requestedPaths, ["/api/sessions", "/api/session/import_cli"])
+        XCTAssertEqual(requestedPaths, ["/api/sessions", "/api/session"])
         XCTAssertEqual(state.destination, .session(opened))
         XCTAssertFalse(opened.isSessionReadOnly)
     }
 
     @MainActor
-    func testRestoredWebUISessionOpensWithoutImport() async throws {
+    func testRestoredWebUISessionOpensWithoutADetailLoad() async throws {
         let viewModel = try makeViewModel { request in
             guard request.url?.path == "/api/sessions" else {
                 XCTFail("A restored WebUI session must not issue \(request.url?.path ?? "nil").")
@@ -523,17 +539,17 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertEqual(opened, candidate)
     }
 
-    /// A failed restore import leaves the list showing with the stored selection
-    /// intact, like a failed tap, instead of a destination the import rejected.
+    /// A failed restore load leaves the list showing with the stored selection
+    /// intact, like a failed tap, instead of a destination the server rejected.
     @MainActor
-    func testFailedRestoreImportLeavesTheListShowing() async throws {
+    func testFailedRestoreLoadLeavesTheListShowing() async throws {
         let viewModel = try makeViewModel { request in
             if request.url?.path == "/api/sessions" {
                 return apiTestJSONResponse("""
                 {"sessions": [{"session_id": "cli-1", "title": "CLI", "is_cli_session": true, "source_kind": "cli"}]}
                 """, for: request)
             }
-            return apiTestJSONResponse(#"{"error": "Session not found in CLI store"}"#, statusCode: 404, for: request)
+            return apiTestJSONResponse(#"{"error": "Session not found"}"#, statusCode: 404, for: request)
         }
         var state = SessionNavigationState(lastSelectedSessionID: "cli-1")
         _ = await viewModel.load()
@@ -548,9 +564,9 @@ final class SessionListMutationTests: XCTestCase {
     }
 
     /// Offline cached browsing restores the cached row as-is: there is no server to
-    /// import from, and the cached list is what the user is browsing.
+    /// load from, and the cached list is what the user is browsing.
     @MainActor
-    func testRestoredSessionOpensFromCacheWithoutImport() async throws {
+    func testRestoredSessionOpensFromCacheWithoutADetailLoad() async throws {
         let context = try makeContext()
         let server = try XCTUnwrap(URL(string: "https://example.test"))
         try CacheStore.cacheSessions(
@@ -574,51 +590,17 @@ final class SessionListMutationTests: XCTestCase {
         XCTAssertEqual(requestedPaths, ["/api/sessions"])
     }
 
-    /// A session the server already owns can still be opened through the canonical
-    /// detail route when the import call itself fails.
-    @MainActor
-    func testAlreadyImportedSessionFallsBackToDetailRoute() async throws {
-        var requestedPaths: [String] = []
-        let viewModel = try makeViewModel { request in
-            let path = request.url?.path ?? "nil"
-            requestedPaths.append(path)
-
-            if path == "/api/session/import_cli" {
-                return apiTestJSONResponse(#"{"error": "import unavailable"}"#, statusCode: 500, for: request)
-            }
-
-            return apiTestJSONResponse("""
-            {"session": {"session_id": "cli-1", "title": "Already imported", "read_only": false}}
-            """, for: request)
-        }
-        let row = SessionSummary(sessionId: "cli-1", isCliSession: true, readOnly: true)
-
-        let resolved = await viewModel.sessionToOpen(for: row)
-        let opened = try XCTUnwrap(resolved)
-
-        XCTAssertEqual(requestedPaths, ["/api/session/import_cli", "/api/session"])
-        XCTAssertEqual(opened.title, "Already imported")
-        // The detail route answers for a foreign session the server has not
-        // claimed too, so a fallback open is view-only: only the import proves the
-        // server owns a continuable copy.
-        XCTAssertTrue(opened.isSessionReadOnly)
-        XCTAssertNil(viewModel.actionErrorMessage)
-        // That decision belongs to this navigation, so it is not written back to
-        // the list, which keeps reporting what the server reports.
-        XCTAssertTrue(viewModel.sessions.isEmpty)
-    }
-
     @MainActor
     func testSlowerEarlierTapCannotReplaceALaterSelection() async throws {
-        let firstRequestArrived = expectation(description: "first import arrived")
-        let secondRequestArrived = expectation(description: "second import arrived")
+        let firstRequestArrived = expectation(description: "first load arrived")
+        let secondRequestArrived = expectation(description: "second load arrived")
         let requests = DeferredRequests()
 
         DeferredMockURLProtocol.onRequest = { request in
             switch requests.append(request) {
             case 1: firstRequestArrived.fulfill()
             case 2: secondRequestArrived.fulfill()
-            default: XCTFail("unexpected extra import request")
+            default: XCTFail("unexpected extra detail request")
             }
         }
         defer { DeferredMockURLProtocol.onRequest = nil }
@@ -634,9 +616,9 @@ final class SessionListMutationTests: XCTestCase {
         let secondTap = Task { await viewModel.sessionToOpen(for: SessionSummary(sessionId: "newer", isCliSession: true)) }
         await fulfillment(of: [secondRequestArrived], timeout: 5)
 
-        requests.request(at: 1).complete(withJSON: #"{"session": {"session_id": "newer"}, "imported": true}"#)
+        requests.request(at: 1).complete(withJSON: #"{"session": {"session_id": "newer"}}"#)
         let newer = await secondTap.value
-        requests.request(at: 0).complete(withJSON: #"{"session": {"session_id": "older"}, "imported": true}"#)
+        requests.request(at: 0).complete(withJSON: #"{"session": {"session_id": "older"}}"#)
         let older = await firstTap.value
 
         XCTAssertEqual(newer?.sessionId, "newer")

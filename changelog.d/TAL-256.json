@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats started in the terminal open ready to continue on iPhone again, instead of view-only.",
+      "highlight": false,
+      "components": ["app"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Continuing a terminal chat keeps its link to earlier sessions and gets a real title instead of \"Cli Session\".",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -632,14 +632,13 @@ public final class SessionListViewModel {
 
     /// Resolves the session a tapped row should actually open.
     ///
-    /// External rows (CLI/TUI bridges and messaging channels) must pass through
-    /// `POST /api/session/import_cli` first: upstream only owns a continuable copy
-    /// of them once imported, and the import response is the authority on whether
-    /// the session is writable. WebUI rows and cached (offline) browsing skip the
-    /// request and open directly.
+    /// External rows (CLI/TUI bridges and messaging channels) reload their detail
+    /// first: `GET /api/session` is the server's authority on whether the session is
+    /// writable, and the server claims a CLI session on its first send. WebUI rows and
+    /// cached (offline) browsing skip the request and open directly.
     ///
-    /// Returns nil when the import failed — the caller stays on the list and the
-    /// row is left in place — or when a later tap superseded this one.
+    /// Returns nil when the load failed — the caller stays on the list and the row is
+    /// left in place — or when a later tap superseded this one.
     public func sessionToOpen(
         for session: SessionSummary,
         modelContext: ModelContext? = nil
@@ -656,34 +655,23 @@ public final class SessionListViewModel {
         lastError = nil
 
         do {
-            let imported = try await importedSessionDetail(id: sessionId)
+            guard let detail = try await client.session(
+                id: sessionId,
+                includeMessages: false,
+                messageLimit: nil
+            ).session else {
+                throw APIError.http(statusCode: -1, body: nil)
+            }
             guard generation == openGeneration else { return nil }
-            let detail = imported.detail
 
-            // A list refresh can land while the import is in flight, so the merge
-            // base is the current row rather than the pre-await snapshot — otherwise
+            // A list refresh can land while the load is in flight, so the merge base is
+            // the current row rather than the pre-await snapshot — otherwise
             // `refreshRow` would roll the freshly loaded row back to stale list-only
             // metadata.
             let currentRow = sessions.first(where: { $0.sessionId == sessionId }) ?? session
-            let importedSession = SessionSummary(from: detail).merging(onto: currentRow)
-
-            guard imported.isAuthoritative else {
-                // Only the import establishes that the server owns a continuable
-                // copy. The detail route also answers for a foreign session it has
-                // not claimed, and that stub is indistinguishable from a persisted
-                // one on the wire, so a fallback opens view-only rather than with a
-                // composer that assumes a write will be accepted.
-                //
-                // That view-only decision belongs to this navigation, not to the
-                // server's own view of the session, so it is deliberately not
-                // written back to the row or the cache — the list keeps reporting
-                // what the server reports, and the next open re-resolves it.
-                return SessionSummary(sessionId: sessionId, readOnly: true)
-                    .merging(onto: importedSession)
-            }
-
-            refreshRow(with: importedSession, modelContext: modelContext)
-            return importedSession
+            let loadedSession = SessionSummary(from: detail).merging(onto: currentRow)
+            refreshRow(with: loadedSession, modelContext: modelContext)
+            return loadedSession
         } catch {
             guard !APIError.isCancellation(error), generation == openGeneration else { return nil }
 
@@ -693,7 +681,7 @@ public final class SessionListViewModel {
         }
     }
 
-    /// Keeps the list row in step with what the import authoritatively reported.
+    /// Keeps the list row in step with what the detail authoritatively reported.
     /// `SessionRowActionPolicy` reads the row's own read-only state, so on a
     /// regular-width layout the still-visible sidebar would otherwise keep offering
     /// the pre-import actions until the next load. Only an existing row is
@@ -712,48 +700,6 @@ public final class SessionListViewModel {
             try writeCacheIfCurrent { try CacheStore.cacheSession(session, serverURL: server, in: modelContext) }
         } catch {
             cacheErrorMessage = error.localizedDescription
-        }
-    }
-
-    /// A resolved session and whether the import itself produced it. A fallback
-    /// answer opens, but does not prove the server owns a continuable copy.
-    private struct ImportedSessionDetail {
-        let detail: SessionDetail
-        let isAuthoritative: Bool
-    }
-
-    /// Imports the session, falling back to the canonical detail route when the
-    /// import itself fails: a session the server already owns can still be opened
-    /// that way. The import error is what surfaces when the fallback fails too.
-    private func importedSessionDetail(id sessionId: String) async throws -> ImportedSessionDetail {
-        do {
-            guard let detail = try await client.importExternalSession(id: sessionId).session else {
-                // A 200 without a session is an unreadable answer, not a decided
-                // one, so it takes the same fallback as an outright failure.
-                throw APIError.http(statusCode: -1, body: nil)
-            }
-            return ImportedSessionDetail(detail: detail, isAuthoritative: true)
-        } catch {
-            guard !APIError.isCancellation(error) else { throw error }
-
-            do {
-                guard let detail = try await client.session(
-                    id: sessionId,
-                    includeMessages: false,
-                    messageLimit: nil
-                ).session
-                else { throw error }
-
-                return ImportedSessionDetail(detail: detail, isAuthoritative: false)
-            } catch let fallbackError {
-                // A cancelled fallback is a torn-down navigation, not a failure to
-                // report, and an expired login has to reach the auth manager even
-                // when the import failed for an unrelated reason first. Every other
-                // fallback failure keeps the import's own error.
-                if APIError.isCancellation(fallbackError) { throw fallbackError }
-                guard case APIError.unauthorized = fallbackError else { throw error }
-                throw fallbackError
-            }
         }
     }
 

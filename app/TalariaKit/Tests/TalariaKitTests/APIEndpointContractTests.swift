@@ -54,7 +54,6 @@ final class ContractReadinessTests: APIClientTestCase {
             .init(name: "pin session", endpoint: .pinSession, path: "/api/session/pin"),
             .init(name: "archive session", endpoint: .archiveSession, path: "/api/session/archive"),
             .init(name: "branch session", endpoint: .branchSession, path: "/api/session/branch"),
-            .init(name: "import session", endpoint: .importSession, path: "/api/session/import_cli"),
             .init(name: "compress session", endpoint: .compressSession, path: "/api/session/compress"),
             .init(name: "undo session", endpoint: .undoSession, path: "/api/session/undo"),
             .init(name: "retry session", endpoint: .retrySession, path: "/api/session/retry"),

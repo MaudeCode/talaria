@@ -98,27 +98,6 @@ public struct SessionMutationResponse: Decodable {
     public let error: String?
 }
 
-/// `POST /api/session/import_cli`. `imported` is false when the session was
-/// already present and was only refreshed, and when the server answers a
-/// read-only source with a view-only payload instead of materializing a
-/// writable session.
-public struct SessionImportResponse: Decodable, Equatable {
-    public let session: SessionDetail?
-    let imported: Bool?
-    let error: String?
-
-    enum CodingKeys: String, CodingKey {
-        case session, imported, error
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        session = try? container.decodeIfPresent(SessionDetail.self, forKey: .session)
-        imported = container.decodeLossyBoolIfPresent(forKey: .imported)
-        error = container.decodeLossyStringIfPresent(forKey: .error)
-    }
-}
-
 public struct ProjectsResponse: Decodable, Equatable {
     public let projects: [ProjectSummary]?
 
@@ -518,9 +497,9 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         relationshipType = detail.relationshipType
         readOnly = detail.readOnly
         canBranch = detail.canBranch
-        canPin = nil
-        canArchive = nil
-        canDuplicate = nil
+        canPin = detail.canPin
+        canArchive = detail.canArchive
+        canDuplicate = detail.canDuplicate
         matchType = nil
         matchPreview = nil
     }
@@ -580,9 +559,9 @@ extension SessionSummary {
     var isMessagingSession: Bool { sourceKind == .messaging }
 
     /// True when the row came from outside the WebUI — a CLI/TUI bridge or a
-    /// messaging channel — so the server must import or refresh it through
-    /// `POST /api/session/import_cli` before the app can continue it. A WebUI-born
-    /// session never is, whatever a stale `is_cli_session` says.
+    /// messaging channel — so the app reloads its detail before opening it, for the
+    /// server's current writability. A WebUI-born session never is, whatever a stale
+    /// `is_cli_session` says.
     public var isExternalSourceSession: Bool {
         sourceKind != .webui && (isCliSession == true || isMessagingSession)
     }
@@ -782,6 +761,9 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     let relationshipType: String?
     public let readOnly: Bool?
     public let canBranch: Bool?
+    public let canPin: Bool?
+    public let canArchive: Bool?
+    public let canDuplicate: Bool?
     /// The agent's display name (TAL-458); nil from a server that predates it.
     public let assistantName: String?
     public let messages: [ChatMessage]?
@@ -833,6 +815,9 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case relationshipType
         case readOnly
         case canBranch
+        case canPin
+        case canArchive
+        case canDuplicate
         case assistantName
         case messages
         case toolCalls
@@ -889,6 +874,9 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         relationshipType = container.decodeLossyStringIfPresent(forKey: .relationshipType)
         readOnly = container.decodeLossyBoolIfPresent(forKey: .readOnly)
         canBranch = container.decodeLossyBoolIfPresent(forKey: .canBranch)
+        canPin = container.decodeLossyBoolIfPresent(forKey: .canPin)
+        canArchive = container.decodeLossyBoolIfPresent(forKey: .canArchive)
+        canDuplicate = container.decodeLossyBoolIfPresent(forKey: .canDuplicate)
         assistantName = container.decodeLossyStringIfPresent(forKey: .assistantName)
         messages = Self.decodeMessagesTolerantly(from: container)
         toolCalls = Self.decodeToolCallsTolerantly(from: container)
