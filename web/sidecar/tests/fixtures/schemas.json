@@ -3958,6 +3958,84 @@
     ],
     "additionalProperties": false
   },
+  "chat.compress": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "compressed",
+          "lock_skipped",
+          "nothing_to_do"
+        ]
+      },
+      "messages": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "before_tokens": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      },
+      "after_tokens": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      },
+      "summary": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "headline": {
+                "type": "string"
+              },
+              "token_line": {
+                "type": "string"
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": {}
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "message": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "agent_session_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "messages",
+      "before_tokens",
+      "after_tokens",
+      "summary",
+      "message",
+      "agent_session_id"
+    ],
+    "additionalProperties": false
+  },
   "chat.evict_agent": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

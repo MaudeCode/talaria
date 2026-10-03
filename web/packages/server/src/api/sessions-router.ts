@@ -12,7 +12,8 @@ import { ifNoneMatchMatches, type RequestContext } from '../http/context.js'
 import { SidecarError } from '../sidecar/client.js'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
-import { HttpFailure } from '../sessions/service.js'
+import { HttpFailure, sanitizePaths } from '../sessions/service.js'
+import { compressionStatusPayload } from '../sessions/compress.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { isSafeSessionId, type Session } from '../sessions/session.js'
 import { isBlockedSystemPath, REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE, stripSurroundingQuotes } from '../workspace/workspaces.js'
@@ -55,9 +56,7 @@ function queryPositiveInt(value: string | undefined, fallback: number | null, ma
   return maximum !== undefined ? Math.min(n, maximum) : n
 }
 
-function sanitizeError(e: unknown): string {
-  return str((e as Error).message ?? e).replace(/(?:(?:\/[a-zA-Z0-9_.-]+)+|(?:[A-Z]:\\[^\s]+))/g, '<path>')
-}
+const sanitizeError = sanitizePaths
 
 /** Python `_guard_request_session_visibility` for a body/query session id. */
 function guardVisibility(ctx: RequestContext, sid: unknown): void {
@@ -236,16 +235,28 @@ export const sessionsRouter = os.router({
       const current = await ctx.deps.sessions.persistGeneratedTitle(sid, generated.title, 'session_title_regenerate')
       return { session: ctx.deps.sessions.wireRow(current), title: current.title, status: generated.status, raw_preview: generated.rawPreview.slice(0, 240) }
     })),
-    // Manual compression runs the Agent's context compressor in-process in Python; the sidecar has no such method yet.
-    compressStart: os.session.compressStart.handler(({ input, context: { ctx } }) => run(() => {
-      let session: Session
-      try { session = ctx.deps.sessionStore.get(input.session_id, { metadataOnly: true }) } catch { throw new HttpError(404, 'Session not found') }
-      if (session.active_stream_id) throw new HttpError(409, 'Session is still streaming; wait for the current turn to finish.')
-      throw new HttpError(501, 'Manual compression is not available in this release', { code: 'manual_compression_unavailable' })
+    // TAL-255: the iOS `/compress` route joins or starts the session's compression job and answers with its result.
+    compress: os.session.compress.handler(({ input, context: { ctx } }) => run(async () => {
+      requireFields(input, 'session_id')
+      const sid = str(input.session_id).trim()
+      guardVisibility(ctx, sid)
+      const job = await ctx.deps.sessions.startCompression(sid, input.focus_topic || input.topic)
+      await job.done
+      if (job.status === 'error') throw new HttpError(job.error_status ?? 400, job.error ?? 'Compression failed', job.error_extra)
+      return job.result as { ok: true; session: { session_id: string; title: string }; summary: Record<string, unknown>; focus_topic: string | null }
+    })),
+    compressStart: os.session.compressStart.handler(({ input, context: { ctx } }) => run(async () => {
+      requireFields(input, 'session_id')
+      const sid = str(input.session_id).trim()
+      guardVisibility(ctx, sid)
+      return compressionStatusPayload(await ctx.deps.sessions.startCompression(sid, input.focus_topic || input.topic)) as { status: 'running' }
     })),
     compressStatus: os.session.compressStatus.handler(({ input, context: { ctx } }) => run(() => {
-      try { ctx.deps.sessionStore.get(input.session_id, { metadataOnly: true }) } catch { throw new HttpError(404, 'Session not found') }
-      return { status: 'idle' as const, session_id: input.session_id }
+      const sid = input.session_id.trim()
+      if (!sid) throw new HttpError(400, 'session_id is required')
+      guardVisibility(ctx, sid)
+      const job = ctx.deps.sessions.compressionJob(sid)
+      return (job ? compressionStatusPayload(job) : { ok: true, status: 'idle', session_id: sid }) as { status: 'idle' }
     })),
     draftGet: os.session.draftGet.handler(({ input, context: { ctx } }) => run(() => {
       guardVisibility(ctx, input.session_id)

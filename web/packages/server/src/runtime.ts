@@ -222,6 +222,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   /** Detached sidecar work per profile (memory commits) that deletion has to wait out like a live run. */
   const profileOps = new Map<string, number>()
   const sessions = new SessionService({
+    sidecar: () => sidecar,
     backgroundReceipts: (sid) => background.receipts(sid),
     journal,
     clearRelayCompletions: (sid, profile) => { relay.clearDeleted(sid, profile) },

@@ -18,7 +18,9 @@ import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
-import { attachmentObjects, mergeSessionMessagesAppendOnly, pendingUserRow, withAttachmentObjects, withBodyExcerpts, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
+import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
+import { SidecarError, type SidecarLike } from '../sidecar/client.js'
+import { attachmentObjects, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, withAttachmentObjects, withBodyExcerpts, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -36,7 +38,26 @@ export class HttpFailure extends Error {
   }
 }
 
+/**
+ * Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before the caller
+ * mutates anything. Any other failure of the check is not a verdict and lets the caller proceed.
+ */
+export async function ensureAgentRuntimeCurrent(sidecar: SidecarLike | null): Promise<void> {
+  if (!sidecar) return
+  try {
+    await sidecar.call('runtime.ensure_current', {})
+  } catch (error) {
+    if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') throw staleRuntimeFailure(error)
+  }
+}
+
+function staleRuntimeFailure(error: SidecarError): HttpFailure {
+  return new HttpFailure(409, error.message, { type: 'agent_runtime_stale', retryable: true, restart_scheduled: false, ...(error.data.agent_update_state !== undefined ? { agent_update_state: error.data.agent_update_state } : {}) })
+}
+
 export interface SessionServiceDeps {
+  /** TAL-255: the Agent sidecar for manual compression (`chat.compress`); null while it is down. */
+  sidecar?: () => SidecarLike | null
   /** TAL-372: the session's background work receipts, for the delegation rows that started them. */
   backgroundReceipts?: (sid: string) => Receipt[]
   store: SessionStore
@@ -93,7 +114,12 @@ export interface SessionServiceDeps {
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
 export class SessionService {
-  constructor(readonly deps: SessionServiceDeps) {}
+  /** TAL-255: one manual compression worker per session, shared by every compress route. */
+  private readonly compressionJobs: CompressionJobs
+
+  constructor(readonly deps: SessionServiceDeps) {
+    this.compressionJobs = new CompressionJobs(deps.now)
+  }
 
   private get store(): SessionStore { return this.deps.store }
 
@@ -785,6 +811,112 @@ export class SessionService {
     return { ok: true, session: this.publicSession(s) }
   }
 
+  // ── manual compression (TAL-255) ────────────────────────────────────────
+
+  /**
+   * Python `_handle_session_compress_start`: validate, then join the session's running job or start a fresh one (a
+   * finished job is replaced). The stale-runtime refusal comes before a job exists; a running job is joined without it.
+   */
+  async startCompression(sid: string, focusRaw: unknown): Promise<CompressionJob> {
+    this.compressionTarget(sid)
+    const focusTopic = str(focusRaw).trim().slice(0, 500) || null
+    const running = (): CompressionJob | undefined => { const job = this.compressionJobs.get(sid); return job?.status === 'running' ? job : undefined }
+    const existing = running()
+    if (existing) return existing
+    await ensureAgentRuntimeCurrent(this.deps.sidecar?.() ?? null)
+    // Another start may have admitted a job while the runtime check awaited.
+    const admitted = running()
+    if (admitted) return admitted
+    const now = this.deps.now()
+    const job: CompressionJob = { session_id: sid, focus_topic: focusTopic, status: 'running', started_at: now, updated_at: now, done: Promise.resolve() }
+    job.done = this.compressSession(sid, focusTopic).then(
+      (result) => { Object.assign(job, { status: 'done', result, updated_at: this.deps.now() }) },
+      (error: unknown) => {
+        const known = error instanceof HttpFailure
+        if (!known) this.deps.log(`[webui] Manual compression worker failed for session ${sid}: ${(error as Error).message}`)
+        Object.assign(job, { status: 'error', error: known ? error.message : `Compression failed: ${sanitizePaths(error)}`, error_status: known ? error.status : 500, error_extra: known ? error.extra : {}, updated_at: this.deps.now() })
+      },
+    )
+    this.compressionJobs.set(job)
+    return job
+  }
+
+  /** The session a compression may run on now, and the model history it compresses. */
+  private compressionTarget(sid: string): { s: Session; history: Message[] } {
+    this.rejectSubagent(sid, 'compressed')
+    const s = this.mutationTarget(sid, 'compressed')
+    if (s.active_stream_id) throw new HttpFailure(409, 'Session is still streaming; wait for the current turn to finish.')
+    const history = sanitizeMessagesForApi(s.messages)
+    if (history.length < 4) throw new HttpFailure(400, 'Not enough conversation to compress (need at least 4 messages).')
+    return { s, history }
+  }
+
+  compressionJob(sid: string): CompressionJob | undefined {
+    return this.compressionJobs.get(sid)
+  }
+
+  /**
+   * Python `_handle_session_compress`: compress the sanitized transcript in the sidecar outside the lock, then under the
+   * session lock refuse a result the session moved past (stream state or transcript changed) and install it as the
+   * model context with the manual anchor and the #4836 boundary that keeps state.db from replaying compressed rows.
+   * The guards run again first: a stream may have started while the caller awaited the runtime check.
+   */
+  private async compressSession(sid: string, focusTopic: string | null): Promise<Record<string, unknown>> {
+    const { s, history } = this.compressionTarget(sid)
+    const historyKey = JSON.stringify(history)
+    const streamState = (x: Session): string => JSON.stringify([x.active_stream_id ?? null, x.pending_user_message ?? null, x.pending_attachments ?? null, x.pending_started_at ?? null])
+    const streamBefore = streamState(s)
+    const sidecar = this.deps.sidecar?.()
+    if (!sidecar) throw new HttpFailure(400, 'Compression failed: the Agent sidecar is not running')
+    const [model, provider] = this.deps.modelStateFromRequest(s.model, s.model_provider, s.model_provider)
+    let result
+    try {
+      result = await sidecar.call('chat.compress', {
+        profile_home: this.deps.profileHome(s.profile ?? this.deps.activeProfile()), session_id: sid, model: model ?? '', model_provider: provider,
+        conversation_history: history, focus_topic: focusTopic, enabled_toolsets: s.enabled_toolsets,
+      }, { timeoutMs: 0 })
+    } catch (error) {
+      if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') throw staleRuntimeFailure(error)
+      if (error instanceof SidecarError && error.condition === 'credential_missing') throw new HttpFailure(400, 'No provider configured -- cannot compress.')
+      throw new HttpFailure(400, `Compression failed: ${sanitizePaths(error)}`)
+    }
+    // A held compression lock is a conflict to retry; `nothing_to_do` is the Agent's verdict on this transcript.
+    if (result.status !== 'compressed') throw new HttpFailure(result.status === 'lock_skipped' ? 409 : 400, result.message ?? 'Nothing to compress yet.')
+    const summary = result.summary ?? {}
+    const current = await this.store.withLock(sid, () => {
+      let live: Session
+      try { live = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
+      if (streamState(live) !== streamBefore) throw new HttpFailure(409, 'Session stream state changed during compression; please retry.')
+      if (JSON.stringify(sanitizeMessagesForApi(live.messages)) !== historyKey) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
+      const now = this.deps.now()
+      const compressed = copyJson(result.messages) as Message[]
+      for (const m of compressed) m.timestamp ??= now
+      live.context_messages = compressed
+      live.active_stream_id = null
+      live.pending_user_message = null
+      live.pending_attachments = []
+      live.pending_started_at = null
+      live.pending_user_source = null
+      const visible = visibleMessagesForAnchor(live.messages)
+      live.compression_anchor_visible_idx = visible.length ? visible.length - 1 : null
+      live.compression_anchor_message_key = anchorMessageKey(visible.at(-1))
+      live.compression_anchor_summary = anchorSummary(summary, compressed)
+      live.compression_anchor_mode = 'manual'
+      // #4836: an intentional-shrink boundary, so append-only state.db reconciliation does not replay compressed rows.
+      live.truncation_watermark = truncationWatermarkFor(compressed)
+      live.truncation_boundary = live.truncation_watermark
+      live.last_prompt_tokens = result.after_tokens
+      live.post_compression_context_tokens_estimate = result.after_tokens
+      this.store.save(live)
+      // A backup from before the compression would restore the uncompressed context.
+      try { rmSync(`${this.store.pathFor(sid)}.bak`, { force: true }) } catch { /* ignore */ }
+      return live
+    })
+    // The cached turn agent still carries the uncompressed state; the next turn builds a fresh one (gateway parity).
+    this.deps.runtime.evictAgent(sid)
+    return { ok: true, session: this.publicSession(current), summary, focus_topic: focusTopic }
+  }
+
   async clear(sid: string): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     const s = this.mutationTarget(sid, 'modified')
@@ -1238,6 +1370,11 @@ export function markSessionTitleGenerated(session: Session): void {
 function findLastUserIndex(history: unknown[]): number | null {
   for (let i = history.length - 1; i >= 0; i -= 1) if (isDict(history[i]) && (history[i] as Message).role === 'user') return i
   return null
+}
+
+/** Python `_sanitize_error`: absolute paths in an error message never reach the client. */
+export function sanitizePaths(error: unknown): string {
+  return str((error as Error)?.message ?? error).replace(/(?:(?:\/[a-zA-Z0-9_.-]+)+|(?:[A-Z]:\\[^\s]+))/g, '<path>')
 }
 
 function truncationWatermarkFor(messages: unknown[]): number {

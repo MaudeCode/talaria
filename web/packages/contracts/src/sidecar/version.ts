@@ -3,4 +3,4 @@
  * stream frames bumps this number; the sidecar refuses to start on a mismatch
  * (docs/architecture/sidecar-rpc.md).
  */
-export const SIDECAR_RPC_VERSION = 2
+export const SIDECAR_RPC_VERSION = 3

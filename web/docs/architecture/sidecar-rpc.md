@@ -157,6 +157,13 @@ approvals and clarify prompts raised by tools block inside the sidecar until
 the server answers with `approval.respond` / `clarify.respond`, and the
 per-session agent cache lives in the sidecar.
 
+Manual `/compress` is `chat.compress`: a throwaway `AIAgent` runs the Agent's
+shared `compress_now` core over the history the server sends and returns the
+compressed messages and summary without persisting anything. The server
+re-checks the session under its lock (a stream that started or a transcript
+that changed during the call is a 409) before it installs the result as the
+model context, so the browser job and the iOS route share one worker.
+
 ## Versioning
 
 `rpc_version` is an integer in the contracts package
