@@ -7,6 +7,35 @@ import XCTest
 /// live in `LiveActivityTests`; nothing here asserts on anything but pixels.
 @MainActor
 final class LiveActivityVisualReferenceTests: XCTestCase {
+    func testInputWaitLiveActivityScreenshots() throws {
+        let initial = AgentRunActivityStateReducer.initialState(
+            sessionID: "input-visual-test", sessionTitle: "Input needed",
+            startedAt: AgentRunScenario.startedAt
+        )
+        let state = AgentRunActivityStateReducer.waitingForClarification(
+            state: initial, now: AgentRunScenario.frozenClock
+        )
+        let renderer = ImageRenderer(content:
+            VStack(spacing: 16) {
+                AgentRunLockScreenView(state: state)
+                    .frame(width: 360, height: 140)
+                expandedIsland(state)
+                    .frame(width: 360, height: 108)
+                compactIsland(state)
+                    .frame(width: 132, height: 32)
+            }
+            .environment(\.agentRunFrozenClock, AgentRunScenario.frozenClock)
+            .environment(\.colorScheme, .dark)
+            .padding(16)
+            .background(Color.black)
+        )
+        renderer.scale = 3
+        let screenshot = XCTAttachment(image: try XCTUnwrap(renderer.uiImage))
+        screenshot.name = "Input in per-session Live Activity"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testLockScreenReferences() throws {
         for scenario in AgentRunScenario.allCases {
             try VisualReference.assertMatchesReference(

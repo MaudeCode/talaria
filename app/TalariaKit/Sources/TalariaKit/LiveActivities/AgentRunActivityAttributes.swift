@@ -268,7 +268,7 @@ public enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable {
         case .waitingForApproval:
             String(localized: "Waiting for approval")
         case .waitingForClarification:
-            String(localized: "Needs clarification")
+            String(localized: "Input")
         case .complete:
             String(localized: "Complete")
         case .failed:
@@ -297,7 +297,7 @@ public enum AgentRunActivityStatus: String, Codable, Hashable, CaseIterable {
         case .waitingForApproval:
             String(localized: "Approve")
         case .waitingForClarification:
-            String(localized: "Clarify")
+            String(localized: "Input")
         case .complete:
             String(localized: "Done")
         case .failed:
@@ -576,7 +576,7 @@ public enum AgentRunActivityStateReducer {
         state: AgentRunActivityAttributes.ContentState,
         now: Date = Date()
     ) -> AgentRunActivityAttributes.ContentState {
-        statusState(.waitingForClarification, activity: String(localized: "Needs clarification"), state: state, now: now)
+        statusState(.waitingForClarification, activity: String(localized: "Input"), state: state, now: now)
     }
 
     public static func stale(

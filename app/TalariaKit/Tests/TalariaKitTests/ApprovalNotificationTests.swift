@@ -109,6 +109,45 @@ final class ApprovalNotificationTests: XCTestCase {
         XCTAssertEqual(scheduler.requests.count, 1, "Never derive an alert identity from command text.")
     }
 
+
+    @MainActor
+    func testRetainedPushTokenDoesNotSuppressLocalApprovalWhenRelayApprovalPreferenceIsOff() async throws {
+        let suite = "approval-relay-preference-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let keychain = InMemoryKeychainStore()
+        try TalariaRelayConfigurationStore.save(TalariaRelayCredentials(
+            baseURL: URL(string: "https://relay-alert.test")!, deviceID: "test-device",
+            userID: "test-user", appleUserID: "test-apple-user", sessionToken: "synthetic-token",
+            expiresAt: .distantFuture
+        ), keychain: keychain)
+        try TalariaRelayConfigurationStore.recordPairedPublisher(server, keychain: keychain)
+        defaults.set("synthetic-push-token", forKey: TalariaRelayNotifications.pushTokenKey)
+        defaults.set(false, forKey: TalariaRelayNotifications.isEnabledKey)
+        let scheduler = ApprovalNotificationSpy(status: .authorized)
+        let service = ApprovalNotificationService(scheduler: scheduler, preferenceEnabled: { true },
+            sceneIsActive: { false }, relayOwnsAlerts: {
+                TalariaRelayConfigurationStore.ownsApprovalAlerts(for: $0, keychain: keychain, defaults: defaults)
+            })
+        await service.observe(prompt("relay-alerts-off"), server: server)?.value
+        XCTAssertEqual(scheduler.requests.count, 1, "A retained token must not suppress a local alert when relay approval alerts are disabled.")
+        defaults.set(true, forKey: TalariaRelayNotifications.isEnabledKey)
+        await service.observe(prompt("relay-alerts-on"), server: server)?.value
+        XCTAssertEqual(scheduler.requests.count, 1, "Enabled, operational relay approval alerts own delivery.")
+        defaults.removeObject(forKey: TalariaRelayNotifications.pushTokenKey)
+        await service.observe(prompt("no-push-token"), server: server)?.value
+        XCTAssertEqual(scheduler.requests.count, 2)
+    }
+
+    func testClarificationWaitUsesInputInEveryLocalLiveActivityLabel() {
+        let initial = AgentRunActivityStateReducer.initialState(sessionID: "input-session", sessionTitle: "Synthetic input", startedAt: Date())
+        let waiting = AgentRunActivityStateReducer.waitingForClarification(state: initial)
+        XCTAssertEqual(waiting.status, .waitingForClarification)
+        XCTAssertEqual(waiting.status.title, "Input")
+        XCTAssertEqual(waiting.status.compactTitle, "Input")
+        XCTAssertEqual(waiting.currentActivity, "Input")
+    }
+
     private var server: URL { URL(string: "https://approval-alert.test/private/path")! }
     private func prompt(_ id: String?, sessionID: String = "session-abc") -> ApprovalPromptState {
         ApprovalPromptState(sessionID: sessionID,

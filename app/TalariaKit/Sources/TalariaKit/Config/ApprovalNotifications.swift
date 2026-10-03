@@ -63,7 +63,7 @@ final class ApprovalNotificationService {
         scheduler: any ApprovalNotificationScheduling = UserNotificationResponseCompletionScheduler(),
         preferenceEnabled: @escaping @MainActor () -> Bool = { UserDefaults.standard.bool(forKey: ApprovalNotifications.isEnabledKey) },
         sceneIsActive: @escaping @MainActor () -> Bool = { PlatformHooks.isApplicationActive() },
-        relayOwnsAlerts: @escaping @MainActor (URL) -> Bool = { TalariaRelayConfigurationStore.ownsCompletionAlerts(for: $0) }
+        relayOwnsAlerts: @escaping @MainActor (URL) -> Bool = { TalariaRelayConfigurationStore.ownsApprovalAlerts(for: $0) }
     ) {
         self.scheduler = scheduler
         self.preferenceEnabled = preferenceEnabled

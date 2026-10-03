@@ -113,6 +113,15 @@ public enum TalariaRelayConfigurationStore {
         return credentials
     }
 
+    public static func ownsApprovalAlerts(
+        for server: URL,
+        keychain: any KeychainStoring = KeychainStore(),
+        defaults: UserDefaults = .standard
+    ) -> Bool {
+        defaults.bool(forKey: TalariaRelayNotifications.isEnabledKey)
+            && ownsCompletionAlerts(for: server, keychain: keychain, defaults: defaults)
+    }
+
     public static func ownsCompletionAlerts(
         for server: URL,
         keychain: any KeychainStoring = KeychainStore(),
