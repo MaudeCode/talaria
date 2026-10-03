@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Choose the model for session titles, vision, compression, and other side tasks from Settings, with search and an Auto option that uses your main model.",
+      "highlight": true,
+      "components": ["app", "web"]
+    }
+  ]
+}
