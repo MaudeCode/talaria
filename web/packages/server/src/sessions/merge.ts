@@ -130,7 +130,8 @@ export function findCurrentUserTurn(messages: unknown[], msgText: string): numbe
   return null
 }
 
-export interface MergeOptions { source?: string; activeTurnToken?: string | null; now?: number; turnId?: string }
+/** `attachments`: the turn's files, which let an attachment-only prompt (no text to match) open its own user row (TAL-276). */
+export interface MergeOptions { source?: string; activeTurnToken?: string | null; now?: number; turnId?: string; attachments?: unknown[] }
 
 /** Python `_merge_display_messages_after_agent_result` (append-only display merge). */
 /** Python `_assistant_message_has_final_visible_text`: a non-error assistant row carrying visible answer text. */
@@ -215,8 +216,10 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
   const currentUserKey = messageIdentity({ role: 'user', content: msgText })
   const currentUserIn = candidates.some((m) => (currentUserKey !== null && messageIdentity(m) === currentUserKey) || looksLikeCurrentUserTurn(m, msgText))
   const alreadyCheckpointed = Boolean(opts.activeTurnToken) && merged.some((m) => isDict(m) && m.role === 'user' && m._active_turn_token === opts.activeTurnToken)
-  if (currentUserKey !== null && !currentUserIn && !alreadyCheckpointed && candidates.some((m) => isDict(m) && (m.role === 'assistant' || m.role === 'tool'))) {
+  const promptless = currentUserKey === null && Boolean(opts.attachments?.length)
+  if ((currentUserKey !== null || promptless) && !currentUserIn && !alreadyCheckpointed && candidates.some((m) => isDict(m) && (m.role === 'assistant' || m.role === 'tool'))) {
     const user: Message = { role: 'user', content: msgText, timestamp: opts.now ?? Date.now() / 1000 }
+    if (promptless) user.attachments = [...opts.attachments!]
     if (opts.activeTurnToken) user._active_turn_token = opts.activeTurnToken
     if (opts.turnId) user._turn_id = opts.turnId
     if (opts.source && opts.source !== 'webui') user._source = opts.source

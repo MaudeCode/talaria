@@ -314,6 +314,19 @@ describe('image attachments in user messages (review round 14)', () => {
     expect(messages.filter((m) => m.role === 'user').map((m) => (m.attachments as Json[]).map((a) => a.name))).toEqual([['a.pdf'], ['b.pdf']])
   })
 
+  it('keeps each attachment-only prompt when the Agent returns only its answer (TAL-276)', async () => {
+    mode = 'native'
+    sidecar.respond('chat.start', (params) => ({ status: 'completed' as const, messages: [...(params.conversation_history as Json[]), { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, result_status: 'completed', tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    for (const name of ['c.pdf', 'd.pdf']) {
+      const res = await post(s, '/api/chat/start', { session_id: sid, message: '', attachments: [{ path: join(ws(), name), mime: 'application/pdf', name }] })
+      await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+    }
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(messages.filter((m) => m.role === 'user').map((m) => (m.attachments as Json[]).map((a) => a.name))).toEqual([['c.pdf'], ['d.pdf']])
+  })
+
   it('keeps an attachment-only prompt when its turn fails or its stream goes stale (TAL-276)', async () => {
     mode = 'native'
     const doc = { path: join(ws(), 'kept.pdf'), mime: 'application/pdf', name: 'kept.pdf' }

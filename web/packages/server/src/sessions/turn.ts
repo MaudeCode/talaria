@@ -542,7 +542,7 @@ export class TurnRunner {
       // sidecar reports `completed` whenever a failed run still carries messages).
       // Python's second chance: a turn that emitted no new row still counts when the merged transcript it produced
       // ends on a final answer (the current user row or trailing tool activity makes it "lacking").
-      const mergedForCheck = (): Message[] => mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId })
+      const mergedForCheck = (): Message[] => mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] })
       const assistantAdded = assistantReplyAddedAfterCurrentTurn(resultMessages, previousContext, msgText) || !sessionLacksFinalAssistantAnswer(mergedForCheck())
       const lastErr = result.error ?? capturedTerminalError ?? ''
       // Python `_turn_transcript_lacks_final_assistant_answer`: a partial result with no final answer is a silent failure even if tokens streamed.
@@ -569,7 +569,7 @@ export class TurnRunner {
       // The Agent's last pending-steer text settles the remaining steers before the turn is written back.
       await this.steerRewrites.get(streamId)
       const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, result.pending_steer, 'followup')
-      s.messages = mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId })
+      s.messages = mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] })
       s.context_messages = dedupeContext(resultMessages)
       for (const m of s.messages) {
         if (m.role !== 'assistant') continue
@@ -606,7 +606,8 @@ export class TurnRunner {
           if (m.role === 'user') {
             const content = messageText(m.content)
             const base = msgText.includes('\n\n[Attached files:') ? (msgText.split('\n\n[Attached files:')[0] ?? '').trim() : msgText
-            if (content.includes(base.slice(0, 60)) || msgText.includes(content.slice(0, 60))) m.attachments = [...attachments]
+            // An attachment-only prompt has no text to match: only this turn's own row takes its files.
+            if (msgText ? content.includes(base.slice(0, 60)) || msgText.includes(content.slice(0, 60)) : m._turn_id === streamId) m.attachments = [...attachments]
             break
           }
         }

@@ -40,7 +40,8 @@ export interface ComposerProps {
   pendingChoices?: { model?: string; workspace?: string; enabled_toolsets?: string[] | null } | undefined
   live: LiveTurn | null
   settings: Settings | undefined
-  onEnsureSession: () => Promise<Session>
+  /** Creates the unsaved chat's session; `onCreated` hears its id before the route changes to it. */
+  onEnsureSession: (onCreated?: (sessionId: string) => void) => Promise<Session>
   onLocalCommand: (name: string, args: string) => Promise<boolean>
   terminalOpen: boolean
   onToggleTerminal: () => void
@@ -106,10 +107,11 @@ function fileKey(f: File): string {
  * and the model, reasoning, toolsets, workspace and profile chips.
  */
 /**
- * Draft and files handed from the empty chat's composer to the one mounted for the session it just created. The draft
- * is read at adoption, so text typed or pasted while the session is created comes along too.
+ * Draft and files handed from the empty chat's composer to the one mounted for the session it just created, and only
+ * that one: `sessionId` is set once the session exists. The draft is read at adoption, so text typed or pasted while
+ * the session is created comes along too.
  */
-let handoff: { draft: { readonly current: string }; files: File[] } | null = null
+let handoff: { draft: { readonly current: string }; files: File[]; sessionId: string | null } | null = null
 
 export function Composer(props: ComposerProps) {
   const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onToolsetsChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, clarify, notices = [] } = props
@@ -252,10 +254,11 @@ export function Composer(props: ComposerProps) {
       add(pending)
       // One session per hand-off: files attached while it is created join it.
       if (handoff) { const h = handoff; h.files.push(...list.filter((file) => !h.files.some((f) => fileKey(f) === fileKey(file)))); return }
-      handoff = { draft, files: list }
-      void onEnsureSession().catch((e: unknown) => {
+      const h = { draft, files: list, sessionId: null as string | null }
+      handoff = h
+      void onEnsureSession((id) => { h.sessionId = id }).catch((e: unknown) => {
         const error = e instanceof Error ? e.message : String(e)
-        handoff = null
+        if (handoff === h) handoff = null
         setFiles((prev) => prev.map((p) => (p.status === 'uploading' ? { ...p, status: 'error', error } : p)))
         showToast(error, 4000, 'error')
       })
@@ -273,7 +276,7 @@ export function Composer(props: ComposerProps) {
 
   // Adopt a hand-off from the empty chat's composer (see addFiles). Runs after the session-change reset above.
   useEffect(() => {
-    if (!sessionId || !handoff) return
+    if (!sessionId || handoff?.sessionId !== sessionId) return
     const h = handoff; handoff = null
     adopted.current = sessionId
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time adoption of module state left by the composer that unmounted

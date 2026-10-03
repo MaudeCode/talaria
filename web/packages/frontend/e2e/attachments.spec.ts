@@ -160,6 +160,37 @@ test('the same file pasted twice while the new chat is created attaches once', a
   expect(uploads).toEqual(['twice-new'])
 })
 
+test('opening another chat while a new chat is created leaves the hand-off to the new chat', async ({ page }) => {
+  const uploads: string[] = []
+  await page.route('**/api/session?**', (route) => {
+    const sid = new URL(route.request().url()).searchParams.get('session_id') ?? ''
+    return route.fulfill({ json: { session: { session_id: sid, title: sid, messages: [] } } })
+  })
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.route('**/api/upload**', async (route) => {
+    uploads.push(new URL(route.request().url()).searchParams.get('session_id') ?? '')
+    await route.fulfill({ json: { filename: 'h.png', path: '/tmp/h.png', size: PNG.length, mime: 'image/png', is_image: true } })
+  })
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
+  await page.route('**/api/session/new', async (route) => { await held; await route.fulfill({ json: { session: { session_id: 'bound-new', title: '', messages: [] } } }) })
+  await page.goto('/')
+  await page.locator('#msg').fill('For the new chat')
+  await page.locator('#fileInput').setInputFiles([image('bound.png')])
+  // Another chat opens in the same tab before the new one exists.
+  await page.evaluate(() => { history.pushState({}, '', '/session/other-chat'); dispatchEvent(new PopStateEvent('popstate')) })
+  await expect(page).toHaveURL(/\/session\/other-chat$/)
+  await expect(page.locator('#msg')).toBeVisible()
+  await page.waitForTimeout(300)
+  await expect(chips(page)).toHaveCount(0)
+  await expect(page.locator('#msg')).not.toHaveValue('For the new chat')
+  release()
+  await expect(page).toHaveURL(/\/session\/bound-new$/)
+  await expect(page.locator('#msg')).toHaveValue('For the new chat')
+  await expect(chips(page).and(page.locator('[data-status="done"]'))).toHaveCount(1)
+  expect(uploads).toEqual(['bound-new'])
+})
+
 test('a failed upload stays as an error chip that can be retried or removed', async ({ page, errors }) => {
   await mockSession(page, 'retry')
   let fail = true
