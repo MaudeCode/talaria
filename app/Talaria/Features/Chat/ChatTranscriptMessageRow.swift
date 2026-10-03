@@ -95,7 +95,8 @@ struct ChatTranscriptMessageRow: View {
         ChatMessageMenuContent(
             messageID: context.messageID,
             actions: actions(for: context),
-            linkRegions: linkRegions.regions()
+            linkRegions: linkRegions.regions(),
+            controlRegions: linkRegions.controlRegions()
         )
     }
 

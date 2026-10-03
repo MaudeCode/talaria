@@ -59,7 +59,9 @@ final class LongBodyTranscriptUITests: ChatUITestCase {
         XCTAssertTrue(app.buttons["Show more"].firstMatch.awaitExistence(timeout: 15), "A long body did not open collapsed")
         // The transcript opens at its end, so the newest toggle is the one on screen.
         let showMore = try XCTUnwrap(app.buttons.matching(identifier: "Show more").allElementsBoundByIndex.last)
-        showMore.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // Held past the transcript's 0.4 s long press, as a tap on a loaded simulator can be:
+        // the toggle still toggles instead of opening the message menu (TAL-485).
+        showMore.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 1)
         let showLess = app.buttons["Show less"].firstMatch
         XCTAssertTrue(showLess.awaitExistence(timeout: 10), "The collapsed body did not expand")
         // The toggle follows the whole body now, so bring it on screen before tapping it.

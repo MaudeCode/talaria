@@ -49,6 +49,23 @@ extension EnvironmentValues {
     }
 }
 
+/// Records a control's frame while a message row is listening, so a long press
+/// that starts on it leaves the control its own tap (TAL-485).
+struct ChatMessageControlRegion: ViewModifier {
+    @Environment(\.chatMessageLinkRegionStore) private var store
+    @State private var controlID = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .named(ChatMessageInteraction.rowCoordinateSpace))
+            } action: { frame in
+                store?.setControlFrame(frame, forControl: controlID)
+            }
+            .onDisappear { store?.setControlFrame(nil, forControl: controlID) }
+    }
+}
+
 /// Markdown inline text that reports where its links landed while a message row
 /// is listening. Without a store — every other `Markdown` in the app — it
 /// renders exactly as before, with no renderer attached.

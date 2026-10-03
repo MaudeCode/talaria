@@ -455,6 +455,7 @@ struct MessageBubbleView: View {
             .font(AppFont.body())
             .buttonStyle(.borderless)
             .accessibilityIdentifier("message-collapse-toggle")
+            .modifier(ChatMessageControlRegion())
         }
     }
 

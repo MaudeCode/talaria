@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Holding Show more or Show less on a long message now toggles it instead of opening the message menu.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
