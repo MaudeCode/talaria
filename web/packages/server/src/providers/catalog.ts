@@ -62,15 +62,21 @@ export function stampAuxiliarySelections(aux: { tasks: Dict[]; main: Dict }, cat
     const parsed = parseProviderQualifiedModel(m.id)
     return { id: m.id, label: m.label, group: g.provider, provider: canonicaliseProviderId(parsed?.[1] ?? g.provider_id), bare: parsed?.[0] ?? m.id }
   }))
-  const tasks = aux.tasks.map((t) => {
-    const provider = str(t.provider).trim() || 'auto'
-    const model = str(t.model).trim()
-    if (provider === 'auto' && !model) return { ...t, is_auto: true, value_label: null, provider_label: null, selected_option_id: null, in_catalog: false }
+  const describe = (providerRaw: unknown, modelRaw: unknown): { value_label: string | null; provider_label: string | null; option_id: string | null } => {
+    const provider = str(providerRaw).trim() || 'auto'
+    const model = str(modelRaw).trim()
     const key = canonicaliseProviderId(provider)
     const match = provider === 'auto' ? undefined : options.find((o) => o.provider === key && o.bare === model)
-    if (match) return { ...t, is_auto: false, value_label: match.label || match.bare, provider_label: match.group, selected_option_id: match.id, in_catalog: true }
+    if (match) return { value_label: match.label || match.bare, provider_label: match.group, option_id: match.id }
     const group = catalog.groups.find((g) => canonicaliseProviderId(g.provider_id) === key)
-    return { ...t, is_auto: false, value_label: model || null, provider_label: provider === 'auto' ? null : group?.provider ?? displayName(provider), selected_option_id: null, in_catalog: false }
+    return { value_label: model || null, provider_label: provider === 'auto' ? null : group?.provider ?? displayName(provider), option_id: null }
+  }
+  // Auto falls back to the main chat model; its display names that model.
+  const main = describe(aux.main.provider, aux.main.model)
+  const tasks = aux.tasks.map((t) => {
+    if ((str(t.provider).trim() || 'auto') === 'auto' && !str(t.model).trim()) return { ...t, is_auto: true, value_label: main.value_label, provider_label: main.provider_label, selected_option_id: null, in_catalog: true }
+    const pinned = describe(t.provider, t.model)
+    return { ...t, is_auto: false, value_label: pinned.value_label, provider_label: pinned.provider_label, selected_option_id: pinned.option_id, in_catalog: pinned.option_id !== null }
   })
   return { ...aux, tasks }
 }

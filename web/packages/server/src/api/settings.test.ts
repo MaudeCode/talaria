@@ -448,7 +448,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       // Read: server order, Auto, and a saved model the catalog no longer lists stay explicit.
       let tasks = await read()
       expect(tasks.map((t) => t.task)).toEqual(['vision', 'web_extract', 'compression', 'approval', 'mcp', 'title_generation', 'skills_hub', 'curator', 'kanban_decomposer', 'profile_describer', 'triage_specifier'])
-      expect(tasks.find((t) => t.task === 'title_generation')).toMatchObject({ label: 'Title generation', provider: 'auto', model: '', is_auto: true, value_label: null, provider_label: null, selected_option_id: null, in_catalog: false })
+      expect(tasks.find((t) => t.task === 'title_generation')).toMatchObject({ label: 'Title generation', provider: 'auto', model: '', is_auto: true, value_label: 'Claude Sonnet 4.6', provider_label: 'Anthropic', selected_option_id: null, in_catalog: true })
       expect(tasks.find((t) => t.task === 'vision')).toMatchObject({ is_auto: false, value_label: 'legacy/gone-model', provider_label: 'OpenRouter', selected_option_id: null, in_catalog: false })
 
       // Write one task with the picked catalog id: it answers the refreshed state and ticks exactly the beta entry.

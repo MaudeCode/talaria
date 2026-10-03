@@ -341,13 +341,13 @@ export const AuxiliaryTaskSchema = z.looseObject({
   /** Saved provider (`auto` when unset) and bare model id. */
   provider: z.string(), model: z.string(),
   base_url: z.string().optional(), api_key_set: z.boolean().optional(),
-  /** No override is saved: the Agent chooses the model when the task runs. */
+  /** No override is saved: the task falls back to the main chat model. */
   is_auto: z.boolean(),
-  /** Pinned selection display: the catalog label (else the saved model id) and its provider name. Null when `is_auto`. */
+  /** Display of the model the task uses (the main chat model when `is_auto`): catalog label, else the saved model id, and its provider name. */
   value_label: z.string().nullable(), provider_label: z.string().nullable(),
   /** The `/api/models` entry id matching the saved provider/model pair; null for Auto or a model absent from the catalog. */
   selected_option_id: z.string().nullable(),
-  /** False for a pinned model the current catalog does not list; it stays visible and editable. */
+  /** False only for a pinned model the current catalog does not list; it stays visible and editable. */
   in_catalog: z.boolean(),
 })
 export const AuxiliaryModelsSchema = z.looseObject({ main: z.looseObject({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional() }), tasks: z.array(AuxiliaryTaskSchema) })
