@@ -451,6 +451,16 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
       expect(tasks.map((t) => t.task)).toEqual(['vision', 'web_extract', 'compression', 'approval', 'mcp', 'title_generation', 'skills_hub', 'curator', 'kanban_decomposer', 'profile_describer', 'triage_specifier'])
       expect(tasks.find((t) => t.task === 'title_generation')).toMatchObject({ label: 'Title generation', provider: 'auto', model: '', is_auto: true, value_label: mainOption.label, provider_label: 'Anthropic', selected_option_id: null, in_catalog: true })
       expect(tasks.find((t) => t.task === 'vision')).toMatchObject({ is_auto: false, value_label: 'legacy/gone-model', provider_label: 'OpenRouter', selected_option_id: null, in_catalog: false })
+      // Auto names the effective main model, including an environment override the config section does not hold.
+      const otherOption = groups.find((g) => g.provider_id === 'anthropic')!.models.find((m) => !m.id.startsWith('@') && m.id !== 'claude-sonnet-4-6')!
+      s.deps.config.env.HERMES_MODEL = otherOption.id
+      s.deps.catalog.invalidate()
+      try {
+        expect((await read()).find((t) => t.task === 'title_generation')).toMatchObject({ is_auto: true, value_label: otherOption.label, provider_label: 'Anthropic' })
+      } finally {
+        Reflect.deleteProperty(s.deps.config.env, 'HERMES_MODEL')
+        s.deps.catalog.invalidate()
+      }
 
       // Write one task with the picked catalog id: it answers the refreshed state and ticks exactly the beta entry.
       let res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'title_generation', provider: beta.provider_id, model: betaOption.id })

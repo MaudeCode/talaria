@@ -71,8 +71,10 @@ export function stampAuxiliarySelections(aux: { tasks: Dict[]; main: Dict }, cat
     const group = catalog.groups.find((g) => canonicaliseProviderId(g.provider_id) === key)
     return { value_label: model || null, provider_label: provider === 'auto' ? null : group?.provider ?? displayName(provider), option_id: null }
   }
-  // Auto falls back to the main chat model; its display names that model.
-  const main = describe(aux.main.provider, aux.main.model)
+  // Auto falls back to the main chat model; name the effective one the catalog resolved (a legacy string `model` or a
+  // `HERMES_MODEL`-style override never reaches `aux.main`).
+  const mainParsed = parseProviderQualifiedModel(catalog.default_model)
+  const main = describe(mainParsed?.[1] ?? catalog.active_provider ?? aux.main.provider, mainParsed?.[0] ?? (catalog.default_model || aux.main.model))
   const tasks = aux.tasks.map((t) => {
     if ((str(t.provider).trim() || 'auto') === 'auto' && !str(t.model).trim()) return { ...t, is_auto: true, value_label: main.value_label, provider_label: main.provider_label, selected_option_id: null, in_catalog: true }
     const pinned = describe(t.provider, t.model)
