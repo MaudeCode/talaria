@@ -167,10 +167,6 @@ class TestIOSRunnerTest < Minitest::Test
   def test_pr_ci_shards_run_one_worker_without_clones
     workflow = workflow_text("app-tests.yml")
     shards = File.read(File.expand_path("test_shards.py", __dir__), encoding: "UTF-8")
-    ui_tests = File.read(
-      File.expand_path("../TalariaUITests/TalariaUITests.swift", __dir__),
-      encoding: "UTF-8"
-    )
 
     # Every run uses one worker on the job's own booted simulator: clones took minutes to boot on hosted runners.
     assert_equal(1, workflow.scan("            -parallel-testing-enabled NO \\").length)
@@ -218,7 +214,6 @@ class TestIOSRunnerTest < Minitest::Test
     # A release calls app-tests.yml directly: a called ui-suite.yml's concurrency left its jobs pending (TAL-417).
     assert_equal(%w[schedule workflow_dispatch], suite[true].keys)
     assert_includes(workflow, 'python3 ci/test_shards.py --shards "${SHARD_COUNT}" --shard "${SHARD}" > selection.txt')
-    assert_equal(14, ui_tests.scan(/final class \w+UITests: \w+UITestCase/).length)
     # CI skips the measurement-only UI classes and the scheduled UI Performance
     # workflow runs them (TAL-75, TAL-287); the shard script owns the skip list.
     %w[

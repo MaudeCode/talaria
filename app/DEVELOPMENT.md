@@ -100,8 +100,8 @@ Agent/MCP flow:
   when every device is unleased and shut down. See the
   [shared pool guide](docs/ios-simulator-pool.md) for cross-project adoption.
 - Use `scripts/test-ios [test-identifier ...]` for XCTest validation. It serializes
-  XCTest across Talaria worktrees and leases from the cross-project pool, which
-  erases each device on release. If the test host never connects ("The test
+  XCTest within one worktree; worktrees run concurrently, each on its own lease
+  from the cross-project pool, which erases each device on release. If the test host never connects ("The test
   runner hung before establishing connection") and no test case failed, the
   runner re-leases a device and retries exactly once; real failures never retry.
   XCUI launches a DEBUG-only local fixture under the isolated `.xctest` app and app-group identity,

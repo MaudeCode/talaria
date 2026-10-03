@@ -141,14 +141,14 @@ export TALARIA_DEVICE_FIXTURE="$state/pool-devices"
 export IOS_SIMULATOR_POOL_DIR="$state/pool"
 
 wait_until_active() {
-    local pid=$1
-    for _ in {1..200}; do
+    local pid=$1 target=${2:-1}
+    for _ in {1..300}; do
         read -r active < "$state/active"
-        (( active > 0 )) && return
+        (( active >= target )) && return
         kill -0 "$pid" 2>/dev/null || break
         sleep 0.01
     done
-    print -u2 "Timed out waiting for the first synthetic xcodebuild."
+    print -u2 "Timed out waiting for $target synthetic xcodebuild run(s)."
     return 1
 }
 
@@ -156,20 +156,38 @@ for round in {1..$rounds}; do
     "$repo/scripts/test-ios" "TalariaTests/Primary$round" > "$state/primary-$round.log" 2>&1 &
     primary_pid=$!
     wait_until_active "$primary_pid"
-    "$peer/scripts/test-ios" "TalariaTests/Peer$round" > "$state/peer-$round.log" 2>&1 &
-    peer_pid=$!
+    "$repo/scripts/test-ios" "TalariaTests/Second$round" > "$state/second-$round.log" 2>&1 &
+    second_pid=$!
     wait "$primary_pid"
-    wait "$peer_pid"
+    wait "$second_pid"
 done
 
 read -r maximum < "$state/maximum"
 [[ "$maximum" == 1 ]] || {
-    print -u2 "Expected one xcodebuild at a time, observed $maximum."
+    print -u2 "Expected one xcodebuild at a time within a worktree, observed $maximum."
     exit 1
 }
 [[ $(wc -l < "$state/runs" | tr -d ' ') == $(( rounds * 2 )) ]]
 [[ $(sed -n 's/^[^|]*|\([^|]*\)|.*$/\1/p' "$state/runs" | sort -u | wc -l | tr -d ' ') == $(( rounds * 2 )) ]]
-grep -Eq "Waiting for Talaria XCTest admission: owner PID [0-9]+, elapsed [0-9]+s" "$state"/peer-*.log
+grep -Eq "Waiting for this worktree's XCTest run: owner PID [0-9]+, elapsed [0-9]+s" "$state"/second-*.log
+
+# Different worktrees never wait on each other; each leases its own pool device.
+export TALARIA_FAKE_XCODEBUILD_SECONDS=3
+"$repo/scripts/test-ios" TalariaTests/ConcurrentPrimary > "$state/concurrent-primary.log" 2>&1 &
+primary_pid=$!
+wait_until_active "$primary_pid"
+"$peer/scripts/test-ios" TalariaTests/ConcurrentPeer > "$state/concurrent-peer.log" 2>&1 &
+peer_pid=$!
+wait_until_active "$peer_pid" 2
+wait "$primary_pid"
+wait "$peer_pid"
+unset TALARIA_FAKE_XCODEBUILD_SECONDS
+if grep -q "Waiting for" "$state/concurrent-peer.log"; then
+    print -u2 "A run in another worktree waited for admission."
+    exit 1
+fi
+[[ $(sed -n 's/^\([^|]*\)|.*Concurrent.*$/\1/p' "$state/runs" | sort -u | wc -l | tr -d ' ') == 2 ]]
+print 0 > "$state/maximum"
 
 print 'defaults:\n  simulatorName: "Missing simulator"' > "$repo/.xcodebuildmcp/config.yaml"
 export TALARIA_DEVICE_FIXTURE="$state/fallback-devices"
@@ -207,26 +225,26 @@ fi
 [[ $(runs_for TalariaTests/HangWithFailure) == 1 ]]
 ! grep -Eq "retrying once" "$state/hang-with-failure.log"
 
-common_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)
+lock_file="$repo/.codex-tmp/xctest/runner.lock"
 sleep 0.01 &
 dead_pid=$!
 wait "$dead_pid"
-print -r -- "$dead_pid" > "$common_dir/talaria-xctest-runner.lock"
-"$peer/scripts/test-ios" TalariaTests/StaleLock > "$state/stale.log" 2>&1
+print -r -- "$dead_pid" > "$lock_file"
+"$repo/scripts/test-ios" TalariaTests/StaleLock > "$state/stale.log" 2>&1
 
 export TALARIA_DEVICE_FIXTURE="$state/pool-devices"
 export TALARIA_FAKE_XCODEBUILD_SECONDS=0.4
 "$repo/scripts/test-ios" TalariaTests/Owner > "$state/owner.log" 2>&1 &
 owner=$!
 wait_until_active "$owner"
-"$peer/scripts/test-ios" TalariaTests/CancelledWaiter > "$state/cancelled-waiter.log" 2>&1 &
+"$repo/scripts/test-ios" TalariaTests/CancelledWaiter > "$state/cancelled-waiter.log" 2>&1 &
 waiter=$!
 for _ in {1..200}; do
-    grep -Eq "Waiting for Talaria XCTest admission: owner PID [0-9]+, elapsed [0-9]+s" "$state/cancelled-waiter.log" && break
+    grep -Eq "Waiting for this worktree's XCTest run: owner PID [0-9]+, elapsed [0-9]+s" "$state/cancelled-waiter.log" && break
     kill -0 "$waiter" 2>/dev/null || break
     sleep 0.01
 done
-grep -Eq "Waiting for Talaria XCTest admission: owner PID [0-9]+, elapsed [0-9]+s" "$state/cancelled-waiter.log"
+grep -Eq "Waiting for this worktree's XCTest run: owner PID [0-9]+, elapsed [0-9]+s" "$state/cancelled-waiter.log"
 kill -TERM "$waiter"
 if wait "$waiter"; then
     print -u2 "Expected the waiting runner to exit after cancellation."
@@ -234,7 +252,7 @@ if wait "$waiter"; then
 else
     [[ $? == 130 ]]
 fi
-[[ -e "$common_dir/talaria-xctest-runner.lock" ]]
+[[ -e "$lock_file" ]]
 wait "$owner"
 
 "$repo/scripts/test-ios" TalariaTests/KilledOwner > "$state/killed-owner.log" 2>&1 &
@@ -242,17 +260,17 @@ killed_owner=$!
 wait_until_active "$killed_owner"
 kill -KILL "$killed_owner"
 wait "$killed_owner" 2>/dev/null || true
-"$peer/scripts/test-ios" TalariaTests/AfterKilledOwner > "$state/after-kill.log" 2>&1
+"$repo/scripts/test-ios" TalariaTests/AfterKilledOwner > "$state/after-kill.log" 2>&1
 unset TALARIA_FAKE_XCODEBUILD_SECONDS
 
 read -r maximum < "$state/maximum"
 read -r active < "$state/active"
 [[ "$maximum" == 1 && "$active" == 0 ]]
-[[ ! -e "$common_dir/talaria-xctest-runner.lock.owner" ]]
+[[ ! -e "$lock_file.owner" ]]
 
 "$repo/scripts/test-ios" TalariaUITests > "$state/whole-target.log" 2>&1
 grep -Fqx -- '-skip-testing:TalariaUITests/SidebarPerformanceUITests' "$state/last-args"
 "$repo/scripts/test-ios" TalariaUITests/SidebarPerformanceUITests > "$state/explicit-performance.log" 2>&1
 ! grep -Fqx -- '-skip-testing:TalariaUITests/SidebarPerformanceUITests' "$state/last-args"
 
-print "test-ios admission, selection and runner-hang retry checks passed ($rounds concurrent rounds)."
+print "test-ios worktree admission, selection and runner-hang retry checks passed ($rounds concurrent rounds)."

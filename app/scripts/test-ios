@@ -5,8 +5,9 @@ set -euo pipefail
 repo_root=${0:A:h:h}
 [[ "${_TALARIA_ENV_LOADED:-}" == 1 ]] || exec "$repo_root/scripts/load-env" "$repo_root/scripts/test-ios" "$@"
 runtime_dir="$repo_root/.codex-tmp/xctest"
-git_common_dir=$(git -C "$repo_root" rev-parse --path-format=absolute --git-common-dir)
-lock_file="$git_common_dir/talaria-xctest-runner.lock"
+# Per worktree: runs here share derived data. Worktrees run concurrently, each on
+# its own pool lease.
+lock_file="$runtime_dir/runner.lock"
 owner_file="$lock_file.owner"
 source "$repo_root/scripts/ios-simulator-pool"
 IOS_SIMULATOR_ID=${IOS_SIMULATOR_ID:-${TALARIA_SIMULATOR_ID:-}}
@@ -46,7 +47,7 @@ while true; do
     now=$SECONDS
     owner_pid=$(sed -n '1p' "$owner_file" 2>/dev/null || true)
     [[ -n "$owner_pid" ]] || owner_pid=unknown
-    print -u2 "Waiting for Talaria XCTest admission: owner PID $owner_pid, elapsed $(( now - wait_started ))s."
+    print -u2 "Waiting for this worktree's XCTest run: owner PID $owner_pid, elapsed $(( now - wait_started ))s."
     lock_timeout=5
 done
 print -r -- $$ > "$owner_file"
