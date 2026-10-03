@@ -295,7 +295,8 @@ extension ChatViewModelSendTests {
     /// so it queues, and the drain replays it with the synthesized message.
     func testTextlessSendDuringRunQueuesAndDrainsWithAttachment() async throws {
         let streamClient = SpySSEStreamingClient()
-        var startedMessages: [String] = []
+        // The mock answers on URLSession's loading thread while the wait polls on the main actor.
+        let startedMessages = LockedValue<[String]>([])
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
             switch request.url?.path {
             case "/api/upload":
@@ -310,7 +311,8 @@ extension ChatViewModelSendTests {
                 """, for: request)
             case "/api/chat/start":
                 let body = try apiTestJSONBody(from: request)
-                startedMessages.append(try XCTUnwrap(body["message"] as? String))
+                let message = try XCTUnwrap(body["message"] as? String)
+                startedMessages.value.append(message)
                 return apiTestJSONResponse(
                     #"{"session_id":"session-abc","stream_id":"stream-123"}"#,
                     for: request
@@ -333,9 +335,9 @@ extension ChatViewModelSendTests {
 
         streamClient.emit(.streamEnd)
         // The drain appends its optimistic row before its start request goes out, so wait for the request itself.
-        try await waitUntil { startedMessages.count == 2 }
+        try await waitUntil { startedMessages.value.count == 2 }
 
-        XCTAssertEqual(startedMessages, ["Initial request", "I've uploaded 1 file(s): /tmp/workspace/notes.txt"])
+        XCTAssertEqual(startedMessages.value, ["Initial request", "I've uploaded 1 file(s): /tmp/workspace/notes.txt"])
         XCTAssertTrue(viewModel.messages.contains { $0.attachments?.isEmpty == false })
     }
 }
