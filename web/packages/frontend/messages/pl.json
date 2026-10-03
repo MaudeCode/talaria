@@ -1928,5 +1928,10 @@
 	"background_line_command_failed": "Polecenie w tle {command} nie powiodło się",
 	"background_line_command_failed_exit": "Polecenie w tle {command} nie powiodło się (kod {code})",
 	"background_update_details": "Pokaż pełny wynik w tle",
-	"live_background": "Przetwarza wyniki w tle"
+	"live_background": "Przetwarza wyniki w tle",
+	"steer_send_now": "Wyślij teraz",
+	"steer_edit": "Edytuj wskazówkę",
+	"steer_cancel": "Anuluj wskazówkę",
+	"steer_already_taken": "Agent już przyjął tę wskazówkę.",
+	"steer_stays_pending": "Nic teraz nie działa, by ją przyjąć; pozostaje oczekująca."
 }

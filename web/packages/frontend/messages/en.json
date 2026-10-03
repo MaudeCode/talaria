@@ -2236,5 +2236,10 @@
 	"background_line_command_failed": "Background command {command} failed",
 	"background_line_command_failed_exit": "Background command {command} failed (exit {code})",
 	"background_update_details": "Show the full background result",
-	"live_background": "Working on background results"
+	"live_background": "Working on background results",
+	"steer_send_now": "Send now",
+	"steer_edit": "Edit steering message",
+	"steer_cancel": "Cancel steering message",
+	"steer_already_taken": "The agent already took this steering message.",
+	"steer_stays_pending": "Nothing is running to take it now; it stays pending."
 }

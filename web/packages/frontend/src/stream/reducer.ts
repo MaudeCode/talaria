@@ -15,7 +15,7 @@
  */
 import type { ChatEvent } from '../contracts/sse'
 import type { ApprovalPending, ClarifyPending, Session } from '../contracts'
-import type { ToolKind } from '@maudecode/talaria-web-contracts'
+import type { PendingSteer, ToolKind } from '@maudecode/talaria-web-contracts'
 
 export type TurnStatus = 'starting' | 'connecting' | 'streaming' | 'reconnecting' | 'done' | 'error' | 'cancelled'
 
@@ -42,8 +42,12 @@ export type Segment =
   /** A consumed steer, at the place the server will persist it: after the tool that had completed. */
   | { kind: 'steering'; steerId: string; text: string }
 
-/** A steer this tab sent that the Agent has not taken yet: shown until `steer_consumed` places it in the turn. */
-export interface PendingSteer { steerId: string; text: string; state: 'sending' | 'waiting' }
+/**
+ * TAL-425: a steer the Agent has not taken yet, as the server reports it (`steer_pending`, session `pending_steers`),
+ * with the actions it allows. `sending`: this tab's steer before its POST returns, the only client-side state.
+ */
+export interface PendingSteerRow { steerId: string; text: string; state: 'sending' | PendingSteer['state']; actions: PendingSteer['actions'] }
+const NO_STEER_ACTIONS: PendingSteer['actions'] = { edit: false, cancel: false, send_now: false }
 
 export interface LiveTurn {
   sessionId: string
@@ -68,9 +72,9 @@ export interface LiveTurn {
   cancelledMessage: string | null
   approval: ApprovalPending | null
   clarify: ClarifyPending | null
-  pendingSteers: PendingSteer[]
-  /** This tab's steers the turn ended without taking; they wait to be queued as the next turn. */
-  steerLeftovers: { steerId: string; text: string }[]
+  pendingSteers: PendingSteerRow[]
+  /** Steers already taken or withdrawn: a replayed frame or a stale session never brings one back. */
+  closedSteerIds: string[]
   compression: { state: 'compressing' | 'compressed'; newSessionId: string | null } | null
   title: string | null
   doneSession: Session | null
@@ -92,8 +96,11 @@ export type StreamAction =
   | { type: 'teardown'; sessionId: string }
   | { type: 'clear_approval'; sessionId: string }
   | { type: 'clear_clarify'; sessionId: string }
-  /** A steer this tab sent: `sending` shows it, `waiting` marks it accepted, `failed` drops it, `queued` releases its leftover. */
-  | { type: 'steer'; sessionId: string; steerId: string; text: string; status: 'sending' | 'waiting' | 'failed' | 'queued' }
+  /** A steer this tab is sending: shown until the server reports it (or it is taken), dropped when refused. */
+  | { type: 'steer_sending'; sessionId: string; steerId: string; text: string }
+  | { type: 'steer_refused'; sessionId: string; steerId: string }
+  /** The session's pending steers when this view attached; events keep them current from then on. */
+  | { type: 'pending_steers'; sessionId: string; streamId: string; steers: PendingSteer[] }
 
 export interface StreamState {
   turns: Record<string, LiveTurn>
@@ -118,7 +125,7 @@ function newTurn(sessionId: string, streamId: string, now: number): LiveTurn {
     sessionId, streamId, turnId: null, userMessageId: null, userText: '', startedAt: now, status: 'starting',
     segments: [], tools: {}, toolOrder: [], reasoningText: '', reasoningTitles: [], lastEventId: '', lastSeq: 0,
     usage: null, tps: null, contextStatus: null, warning: null, error: null, cancelledMessage: null, approval: null, clarify: null,
-    pendingSteers: [], steerLeftovers: [], compression: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
+    pendingSteers: [], closedSteerIds: [], compression: null, title: null, doneSession: null, doneAt: null, streamEnded: false, goal: null, replayed: false, claimsPersistedRows: true,
   }
 }
 
@@ -219,14 +226,15 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       // Steers the Agent took at the same point keep the server's consumption order.
       while (stamped.segments[at]?.kind === 'steering') at += 1
       const segment: Segment = { kind: 'steering', steerId: id, text: event.data.text ?? '' }
-      return { ...stamped, segments: [...stamped.segments.slice(0, at), segment, ...stamped.segments.slice(at)], pendingSteers: stamped.pendingSteers.filter((p) => p.steerId !== id) }
+      return closeSteer({ ...stamped, segments: [...stamped.segments.slice(0, at), segment, ...stamped.segments.slice(at)] }, id)
     }
-    case 'pending_steer_leftover': {
-      // Only the tab that sent a steer queues its leftover, so other viewers of the stream never send it twice.
-      const pending = stamped.pendingSteers.find((p) => p.steerId === event.data.steer_id)
-      if (!pending) return stamped
-      return { ...stamped, pendingSteers: stamped.pendingSteers.filter((p) => p !== pending), steerLeftovers: [...stamped.steerLeftovers, { steerId: pending.steerId, text: pending.text }] }
-    }
+    case 'steer_pending':
+      return upsertSteer(stamped, { steerId: event.data.steer_id, text: event.data.text, state: event.data.state, actions: event.data.actions })
+    case 'steer_withdrawn':
+      return event.data.steer_id ? closeSteer(stamped, event.data.steer_id) : stamped
+    // TAL-424: the server sends a leftover as the next turn itself; no client queues it.
+    case 'pending_steer_leftover':
+      return stamped
     case 'compressing':
       return { ...stamped, compression: { state: 'compressing', newSessionId: event.data.new_session_id ?? event.data.continuation_session_id ?? null } }
     case 'compressed':
@@ -284,9 +292,6 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
     case 'events':
     case 'gateway_status':
     case 'sessions_changed':
-    // Server-owned pending steers (TAL-424); this view renders them in TAL-425.
-    case 'steer_pending':
-    case 'steer_withdrawn':
       return stamped
   }
 }
@@ -339,21 +344,34 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
       if (!turn?.clarify) return state
       return { turns: { ...state.turns, [action.sessionId]: { ...turn, clarify: null } } }
     }
-    case 'steer': {
+    case 'steer_sending': {
+      const turn = state.turns[action.sessionId]
+      if (!turn || turn.closedSteerIds.includes(action.steerId) || turn.pendingSteers.some((p) => p.steerId === action.steerId)) return state
+      return { turns: { ...state.turns, [action.sessionId]: { ...turn, pendingSteers: [...turn.pendingSteers, { steerId: action.steerId, text: action.text, state: 'sending', actions: NO_STEER_ACTIONS }] } } }
+    }
+    case 'steer_refused': {
       const turn = state.turns[action.sessionId]
       if (!turn) return state
-      const { steerId, text, status } = action
-      const others = turn.pendingSteers.filter((p) => p.steerId !== steerId)
-      let next: LiveTurn
-      if (status === 'queued') next = { ...turn, steerLeftovers: turn.steerLeftovers.filter((l) => l.steerId !== steerId) }
-      // A refused steer stays in the composer, so it is never also queued as a leftover.
-      else if (status === 'failed') next = { ...turn, pendingSteers: others, steerLeftovers: turn.steerLeftovers.filter((l) => l.steerId !== steerId) }
-      else if (status === 'sending') next = { ...turn, pendingSteers: [...others, { steerId, text, state: 'sending' }] }
-      // The Agent may take the steer before its POST returns; acceptance never brings back a row already settled.
-      else next = { ...turn, pendingSteers: turn.pendingSteers.map((p) => (p.steerId === steerId ? { ...p, state: 'waiting' } : p)) }
-      return { turns: { ...state.turns, [action.sessionId]: next } }
+      return { turns: { ...state.turns, [action.sessionId]: { ...turn, pendingSteers: turn.pendingSteers.filter((p) => p.steerId !== action.steerId) } } }
+    }
+    case 'pending_steers': {
+      const turn = state.turns[action.sessionId]
+      if (turn?.streamId !== action.streamId) return state
+      const known = new Set([...turn.closedSteerIds, ...turn.pendingSteers.map((p) => p.steerId)])
+      const added = action.steers.filter((p) => !known.has(p.steer_id)).map((p): PendingSteerRow => ({ steerId: p.steer_id, text: p.text, state: p.state, actions: p.actions }))
+      return added.length ? { turns: { ...state.turns, [action.sessionId]: { ...turn, pendingSteers: [...turn.pendingSteers, ...added] } } } : state
     }
   }
+}
+
+/** A server report of a pending steer: it goes last (the server's order), unless it was already taken or withdrawn. */
+function upsertSteer(turn: LiveTurn, row: PendingSteerRow): LiveTurn {
+  if (turn.closedSteerIds.includes(row.steerId)) return turn
+  return { ...turn, pendingSteers: [...turn.pendingSteers.filter((p) => p.steerId !== row.steerId), row] }
+}
+
+function closeSteer(turn: LiveTurn, steerId: string): LiveTurn {
+  return { ...turn, pendingSteers: turn.pendingSteers.filter((p) => p.steerId !== steerId), closedSteerIds: [...turn.closedSteerIds, steerId] }
 }
 
 /** Visible assistant prose for the live turn: text segments with tool-call XML removed. */

@@ -1819,5 +1819,10 @@
 	"background_line_command_failed": "背景命令 {command} 失敗",
 	"background_line_command_failed_exit": "背景命令 {command} 失敗（結束碼 {code}）",
 	"background_update_details": "顯示完整的背景結果",
-	"live_background": "正在處理背景結果"
+	"live_background": "正在處理背景結果",
+	"steer_send_now": "立即傳送",
+	"steer_edit": "編輯引導訊息",
+	"steer_cancel": "取消引導訊息",
+	"steer_already_taken": "代理已收到這則引導訊息。",
+	"steer_stays_pending": "目前沒有可接收它的執行，它將保持待處理。"
 }

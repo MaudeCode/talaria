@@ -9,6 +9,7 @@ import { postForm } from './client'
 import { loadedBuild, tabId } from '../app/tabBuild'
 import { UploadResponseSchema, type ChatStartRequest, type SessionId, type SessionNewRequestSchema, type SteerRequestSchema, type ApprovalRespondRequestSchema, type ClarifyRespondRequestSchema, type DraftRequestSchema } from '../contracts'
 import type { z } from 'zod'
+import type { SteerSendNowRequestSchema, SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 
 const qs = (params: Record<string, string | number | boolean | undefined | null>) => {
   const p = new URLSearchParams()
@@ -93,6 +94,8 @@ export const createProject = (name: string, color?: string) => orpc().projects.c
 export const startChat = (body: ChatStartRequest) => orpc().chat.start(body, { signal: timeout(60_000) })
 export const cancelChat = (stream_id: string) => orpc().chat.cancel({ stream_id })
 export const steerChat = (body: z.infer<typeof SteerRequestSchema>) => orpc().chat.steer(body)
+export const withdrawSteer = (body: SteerWithdrawRequest) => orpc().chat.steerWithdraw(body)
+export const sendSteerNow = (body: z.infer<typeof SteerSendNowRequestSchema>) => orpc().chat.steerSendNow(body)
 export const fetchStreamStatus = (stream_id: string) => orpc().chat.streamStatus({ stream_id })
 export const respondApproval = (body: z.infer<typeof ApprovalRespondRequestSchema>) => orpc().approval.respond(body)
 export const fetchClarifyPending = (session_id: string) => orpc().clarify.pending({ session_id })

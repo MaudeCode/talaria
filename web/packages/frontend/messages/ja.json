@@ -1821,5 +1821,10 @@
 	"background_line_command_failed": "バックグラウンドコマンド {command} が失敗しました",
 	"background_line_command_failed_exit": "バックグラウンドコマンド {command} が失敗しました（終了コード {code}）",
 	"background_update_details": "バックグラウンドの結果をすべて表示",
-	"live_background": "バックグラウンドの結果を処理中"
+	"live_background": "バックグラウンドの結果を処理中",
+	"steer_send_now": "今すぐ送信",
+	"steer_edit": "ステアリングメッセージを編集",
+	"steer_cancel": "ステアリングメッセージを取り消す",
+	"steer_already_taken": "エージェントはこのステアリングメッセージをすでに受け取りました。",
+	"steer_stays_pending": "今受け取れる処理が動いていないため、保留のままです。"
 }

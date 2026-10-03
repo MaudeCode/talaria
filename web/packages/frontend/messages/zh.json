@@ -1765,5 +1765,10 @@
 	"background_line_command_failed": "后台命令 {command} 失败",
 	"background_line_command_failed_exit": "后台命令 {command} 失败（退出码 {code}）",
 	"background_update_details": "显示完整的后台结果",
-	"live_background": "正在处理后台结果"
+	"live_background": "正在处理后台结果",
+	"steer_send_now": "立即发送",
+	"steer_edit": "编辑引导消息",
+	"steer_cancel": "取消引导消息",
+	"steer_already_taken": "代理已收到这条引导消息。",
+	"steer_stays_pending": "当前没有可接收它的运行，它将保持待处理。"
 }

@@ -1830,5 +1830,10 @@
 	"background_line_command_failed": "Hintergrundbefehl {command} fehlgeschlagen",
 	"background_line_command_failed_exit": "Hintergrundbefehl {command} fehlgeschlagen (Exit {code})",
 	"background_update_details": "Vollständiges Hintergrundergebnis anzeigen",
-	"live_background": "Bearbeitet Hintergrundergebnisse"
+	"live_background": "Bearbeitet Hintergrundergebnisse",
+	"steer_send_now": "Jetzt senden",
+	"steer_edit": "Steuerhinweis bearbeiten",
+	"steer_cancel": "Steuerhinweis abbrechen",
+	"steer_already_taken": "Der Agent hat diesen Steuerhinweis bereits übernommen.",
+	"steer_stays_pending": "Gerade läuft nichts, das ihn übernehmen kann; er bleibt ausstehend."
 }

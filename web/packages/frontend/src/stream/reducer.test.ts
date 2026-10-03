@@ -109,44 +109,55 @@ describe('stream reducer: consumed steering', () => {
   })
 })
 
-describe('stream reducer: pending steers', () => {
-  const steer = (s: StreamState, steerId: string, status: 'sending' | 'waiting' | 'failed' | 'queued', text = steerId) => streamReducer(s, { type: 'steer', sessionId: SID, steerId, text, status })
+describe('stream reducer: server pending steers (TAL-425)', () => {
+  const open = { edit: true, cancel: true, send_now: true }
+  const pending = (steer_id: string, extra: Record<string, unknown> = {}) => ({ steer_id, text: steer_id.toUpperCase(), submitted_at: 1, state: 'pending', actions: open, ...extra })
+  const rows = (s: StreamState) => s.turns[SID]!.pendingSteers.map((p) => [p.steerId, p.state])
 
-  it('shows a sent steer until the Agent takes it, then only at its causal place', () => {
-    let s = steer(started(), 's1', 'sending', 'check b too')
-    expect(s.turns[SID]!.pendingSteers).toEqual([{ steerId: 's1', text: 'check b too', state: 'sending' }])
-    s = steer(s, 's1', 'waiting', 'check b too')
-    expect(s.turns[SID]!.pendingSteers[0]!.state).toBe('waiting')
-    s = ev(s, 'steer_consumed', { steer_id: 's1', text: 'check b too', after_tool_call_id: null })
-    expect(s.turns[SID]!.pendingSteers).toEqual([])
-    expect(s.turns[SID]!.segments).toEqual([{ kind: 'steering', steerId: 's1', text: 'check b too' }])
+  it('shows the server\'s pending steers in its order until each is taken or withdrawn, and never brings one back', () => {
+    let s = ev(started(), 'steer_pending', pending('s1'))
+    s = ev(s, 'steer_pending', pending('s2'))
+    expect(s.turns[SID]!.pendingSteers[0]).toEqual({ steerId: 's1', text: 'S1', state: 'pending', actions: open })
+    s = ev(s, 'steer_pending', pending('s1', { state: 'sending_now', actions: { edit: false, cancel: false, send_now: false } }))
+    expect(rows(s)).toEqual([['s2', 'pending'], ['s1', 'sending_now']])
+    s = ev(s, 'steer_withdrawn', { steer_id: 's2', reason: 'cancel', text: 'S2' })
+    s = ev(s, 'steer_consumed', { steer_id: 's1', text: 'S1', after_tool_call_id: null })
+    expect(rows(s)).toEqual([])
+    // A replayed frame for a steer already closed does not resurrect it.
+    s = ev(s, 'steer_pending', pending('s2'))
+    expect(rows(s)).toEqual([])
   })
 
-  it('does not bring back a steer the Agent took before its POST returned', () => {
-    let s = steer(started(), 's1', 'sending')
-    s = ev(s, 'steer_consumed', { steer_id: 's1', text: 's1' })
-    s = steer(s, 's1', 'waiting')
-    expect(s.turns[SID]!.pendingSteers).toEqual([])
+  it('shows this tab\'s steer as sending only until the server has it, and drops a refused one', () => {
+    let s = streamReducer(started(), { type: 'steer_sending', sessionId: SID, steerId: 's1', text: 'Check b' })
+    s = streamReducer(s, { type: 'steer_sending', sessionId: SID, steerId: 's2', text: 'Check c' })
+    expect(s.turns[SID]!.pendingSteers[0]).toEqual({ steerId: 's1', text: 'Check b', state: 'sending', actions: { edit: false, cancel: false, send_now: false } })
+    s = ev(s, 'steer_pending', pending('s1'))
+    s = streamReducer(s, { type: 'steer_refused', sessionId: SID, steerId: 's2' })
+    expect(rows(s)).toEqual([['s1', 'pending']])
+    // The Agent took it before the POST returned: nothing is left to show.
+    s = streamReducer(s, { type: 'steer_sending', sessionId: SID, steerId: 's3', text: 'x' })
+    s = ev(s, 'steer_consumed', { steer_id: 's3', text: 'x' })
+    expect(rows(s)).toEqual([['s1', 'pending']])
   })
 
-  it('drops a refused steer, even one the turn already reported as a leftover', () => {
-    let s = steer(steer(started(), 's1', 'sending'), 's2', 'sending')
-    s = steer(s, 's1', 'failed')
-    expect(s.turns[SID]!.pendingSteers.map((p) => p.steerId)).toEqual(['s2'])
-    s = ev(s, 'pending_steer_leftover', { steer_id: 's2', text: 's2' })
-    s = steer(s, 's2', 'failed')
-    expect(s.turns[SID]!.steerLeftovers).toEqual([])
+  it('seeds from the session on attach without bringing back one this view already saw closed', () => {
+    let s = ev(started(), 'steer_withdrawn', { steer_id: 's1', reason: 'edit', text: 'S1' })
+    s = streamReducer(s, { type: 'pending_steers', sessionId: SID, streamId: STREAM, steers: [pending('s1'), pending('s2')] as never })
+    expect(rows(s)).toEqual([['s2', 'pending']])
+    // Seeding again keeps what events already said.
+    s = ev(s, 'steer_pending', pending('s2', { state: 'sending_now' }))
+    s = streamReducer(s, { type: 'pending_steers', sessionId: SID, streamId: STREAM, steers: [pending('s2')] as never })
+    expect(rows(s)).toEqual([['s2', 'sending_now']])
+    // A seed for another stream is not this turn's.
+    s = streamReducer(s, { type: 'pending_steers', sessionId: SID, streamId: 'other', steers: [pending('s9')] as never })
+    expect(rows(s)).toEqual([['s2', 'sending_now']])
   })
 
-  it('hands this tab\'s leftover to the queue once and ignores leftovers it did not send', () => {
-    let s = steer(started(), 's1', 'sending', 'also do y')
-    s = ev(s, 'pending_steer_leftover', { steer_id: 'other-tab', text: 'not mine' })
-    s = ev(s, 'pending_steer_leftover', { steer_id: 's1', text: 'also do y' })
-    s = ev(s, 'pending_steer_leftover', { steer_id: 's1', text: 'also do y' })
-    expect(s.turns[SID]!.pendingSteers).toEqual([])
-    expect(s.turns[SID]!.steerLeftovers).toEqual([{ steerId: 's1', text: 'also do y' }])
-    s = steer(s, 's1', 'queued', 'also do y')
-    expect(s.turns[SID]!.steerLeftovers).toEqual([])
+  it('leaves a leftover to the server: it sends the follow-up turn itself (TAL-424)', () => {
+    const s = ev(started(), 'steer_pending', pending('s1'))
+    const after = ev(s, 'pending_steer_leftover', { steer_id: 's1', text: 'S1' })
+    expect(after.turns[SID]).toEqual({ ...s.turns[SID], lastEventId: after.turns[SID]!.lastEventId })
   })
 })
 

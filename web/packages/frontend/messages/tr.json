@@ -1886,5 +1886,10 @@
 	"background_line_command_failed": "Arka plan komutu {command} başarısız oldu",
 	"background_line_command_failed_exit": "Arka plan komutu {command} başarısız oldu (çıkış {code})",
 	"background_update_details": "Arka plan sonucunun tamamını göster",
-	"live_background": "Arka plan sonuçları işleniyor"
+	"live_background": "Arka plan sonuçları işleniyor",
+	"steer_send_now": "Şimdi gönder",
+	"steer_edit": "Yönlendirmeyi düzenle",
+	"steer_cancel": "Yönlendirmeyi iptal et",
+	"steer_already_taken": "Ajan bu yönlendirmeyi zaten aldı.",
+	"steer_stays_pending": "Şu anda bunu alacak çalışan bir şey yok; beklemede kalıyor."
 }
