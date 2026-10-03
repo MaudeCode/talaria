@@ -18,10 +18,22 @@ a job created here is editable from any of them.
 | **Schedule** | A preset (hourly/daily/weekdays/weekly/monthly) or a raw cron expression. Duration forms like `30m` run **once** and then delete the job; use `every 30m` for a recurring one. Times are server time. |
 | **Prompt** | What the agent runs. It must be self-contained — a job runs in a fresh session with no chat history. |
 | **Deliver output to** | Where the output is posted. `Local` saves it without delivering. |
-| **Profile** | Which agent profile the job runs under. |
+| **Profile** | Which agent profile stores and runs the new job. To change it later, duplicate the task in the new profile and delete the old task. |
 | **Model** | Pin a provider/model, or leave on Default to follow the profile at run time. |
 | **Completion toasts** | Whether finishing this job raises a toast in the WebUI. |
 | **Skills** | Skills loaded before the prompt. Fixed at creation. |
+
+Choosing another profile stores the job there so scheduled and manual runs use
+that profile's credentials, configuration, skills and terminal policy. The
+profile that created the job can still see and manage it. If no model/provider
+pair is supplied for an explicitly selected profile, the empty fields are pinned
+to that profile's main model at creation. A profile with no main model refuses
+agent-job creation; script-only jobs do not need a model.
+
+Jobs created before this behavior are not moved automatically. If a legacy job's
+selected profile differs from its store, recreate it in the intended execution
+profile. Web refuses manual run and resume for that mismatch; pause and delete
+remain available. Existing Agent schedules are unchanged until recreated.
 
 ## Advanced
 
@@ -84,9 +96,10 @@ incremental digests, where repeating yesterday's findings is the failure mode.
 Injects the most recent output of the selected jobs as context on every run.
 This chains jobs: job A collects, job B processes what A found.
 
-Only jobs in the active profile can be chained. Jobs shown from other profiles
-(with **Show all profiles** on) are not offered here, because their IDs do not
-resolve in the profile the job will run under.
+Context jobs must belong to the execution profile's store. The server refuses
+references to another store, including when jobs managed by the same creating
+profile run under different execution profiles. Jobs shown read-only with
+**Show all profiles** are not offered in the editor.
 
 For a job's *own* previous output, use **Continuity** rather than selecting
 itself.

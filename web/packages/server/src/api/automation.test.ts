@@ -255,7 +255,7 @@ describe('crons, kanban, extensions, terminal', () => {
       const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
       const calls = sidecar.calls.length
       const body = await json(await s.get('/api/crons/recent', { headers: { cookie } }))
-      expect(sidecar.calls.slice(calls).filter((c) => c.method === 'cron.list').map((c) => c.params)).toEqual([{ profile_home: workHome }])
+      expect(sidecar.calls.slice(calls).filter((c) => c.method === 'cron.list').map((c) => c.params)).toEqual([{ profile_home: workHome }, { profile_home: defaultHome }])
       expect(body.completions).toEqual([{ job_id: 'w', name: 'Work', status: 'ok', outcome: 'succeeded', completed_at: 10, toast_notifications: true, session_id: 'cron_w_1', message_count: 3 }])
       expect(((await json(await s.get('/api/crons/recent'))).completions as Json[]).map((c) => c.job_id)).toEqual(['d'])
     } finally {

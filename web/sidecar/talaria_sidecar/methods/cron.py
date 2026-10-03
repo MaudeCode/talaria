@@ -379,10 +379,17 @@ def register(registry) -> None:
             post["profile"] = str(body["profile"]).strip()
         if body.get("toast_notifications") is False:
             post["toast_notifications"] = False
+        if body.get("owner_profile"):
+            post["owner_profile"] = str(body["owner_profile"]).strip()
         execution_home = params.get("execution_home")
-        model, provider = body.get("model") or None, body.get("provider") or None
+        if post.get("profile"):
+            if not execution_home:
+                raise InvalidParams("execution_home is required for a profile job")
+            home = Path(execution_home)
+        model, provider = (value.strip() or None if isinstance(value, str) else None for value in (body.get("model"), body.get("provider")))
         # The scheduler ignores Talaria's profile field. Pin the execution profile's main model
-        # before creating the job so resolution failures leave no orphan and cannot use the store's model.
+        # before creating it in that profile's own store. Scheduled workers bind credentials/config
+        # to the store home; owner_profile only preserves management from the creating Web profile.
         if post.get("profile") and execution_home and not (model and provider) and not body.get("no_agent"):
             try:
                 from cron.jobs import _main_model_pin
