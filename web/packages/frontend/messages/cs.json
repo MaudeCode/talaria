@@ -1921,5 +1921,10 @@
 	"background_line_command_failed": "Příkaz na pozadí {command} selhal",
 	"background_line_command_failed_exit": "Příkaz na pozadí {command} selhal (kód {code})",
 	"background_update_details": "Zobrazit celý výsledek na pozadí",
-	"live_background": "Zpracovává výsledky na pozadí"
+	"live_background": "Zpracovává výsledky na pozadí",
+	"steer_send_now": "Odeslat hned",
+	"steer_edit": "Upravit pokyn",
+	"steer_cancel": "Zrušit pokyn",
+	"steer_already_taken": "Agent už tento pokyn převzal.",
+	"steer_stays_pending": "Teď neběží nic, co by ho převzalo; zůstává čekající."
 }

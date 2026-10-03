@@ -60,10 +60,11 @@ function SettleSpacer({ turnKey }: { turnKey: string }) {
 }
 
 /** A steer as the user's message, as the app shows it: labelled, with its delivery state until the Agent takes it. */
-export function SteerMessage({ text, state }: { text: string; state?: 'sending' | 'waiting' | undefined }) {
+/** A steer the user sent mid-turn: consumed (no `state`), or still pending with the actions the server allows. */
+export function SteerMessage({ text, state, actions }: { text: string; state?: 'sending' | 'pending' | 'sending_now' | undefined; actions?: ReactNode }) {
   return (
     <div className="msg-row steer-message" data-role="user" data-activity-steering="1" data-steer-state={state ?? 'consumed'}>
-      <div className="steer-message-label"><CornerUpRight size={12} aria-hidden="true" />{m.steer_hint_label()}{state && <> · {state === 'sending' ? m.steer_sending() : m.steer_waiting()}</>}</div>
+      <div className="steer-message-label"><CornerUpRight size={12} aria-hidden="true" />{m.steer_hint_label()}{state && <> · {state === 'pending' ? m.steer_waiting() : m.steer_sending()}</>}{actions}</div>
       <div className="msg-body whitespace-pre-wrap">{text}</div>
     </div>
   )

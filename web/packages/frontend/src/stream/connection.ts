@@ -9,6 +9,8 @@ import { openChatStream, SSE_CLOSED, type SseHandle } from '../api/sse'
 import { keys } from '../api/queryKeys'
 import type { ChatEvent } from '../contracts/sse'
 import type { ChatStartRequest, ChatStartResponse, Session } from '../contracts'
+import type { PendingSteer } from '@maudecode/talaria-web-contracts'
+import { returnStoppedSteer } from '../features/composer/composerReturn'
 import { RELAY_CLOSE_EVENTS } from '../contracts/sse'
 import { dispatch, getStreamState } from './store'
 import { isTerminal } from './reducer'
@@ -48,6 +50,10 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
   switch (event.event) {
     case 'todo_state':
       setTodoState(sessionId, event.data)
+      break
+    // TAL-425: a Stop gives a pending steer's text back to the tab that sent it.
+    case 'steer_withdrawn':
+      if (event.data.reason === 'stopped') returnStoppedSteer(sessionId, event.data.steer_id, event.data.text)
       break
     case 'done':
     case 'apperror':
@@ -203,7 +209,7 @@ export function adoptTurn(sessionId: string, message: string, res: ChatStartResp
 }
 
 /** Re-attach to a run the server reports as active (hard refresh, tab restore, sidebar switch). */
-export async function attachToStream(sessionId: string, streamId: string, transcriptSeq: Session['transcript_seq'] = null): Promise<void> {
+export async function attachToStream(sessionId: string, streamId: string, transcriptSeq: Session['transcript_seq'] = null, pendingSteers: PendingSteer[] = []): Promise<void> {
   const existing = live.get(sessionId)
   if (existing?.streamId === streamId && existing.handle.readyState() !== SSE_CLOSED) return
   const st = await api.fetchStreamStatus(streamId)
@@ -213,6 +219,7 @@ export async function attachToStream(sessionId: string, streamId: string, transc
   }
   const replay = resumeFrom(sessionId, streamId, transcriptSeq)
   dispatch({ type: 'attach', sessionId, streamId, now: Date.now(), replay: replay !== null })
+  dispatch({ type: 'pending_steers', sessionId, streamId, steers: pendingSteers })
   open(sessionId, streamId, replay)
 }
 

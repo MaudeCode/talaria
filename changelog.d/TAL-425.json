@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "In Web, a steer the agent has not taken yet shows in every open tab, also after a reload, with Send now, Edit and Cancel.",
+      "highlight": true,
+      "components": ["web"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Stopping a reply in Web puts your pending steer back in the composer of the tab you sent it from instead of sending it next.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

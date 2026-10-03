@@ -1819,5 +1819,10 @@
 	"background_line_command_failed": "Lệnh nền {command} thất bại",
 	"background_line_command_failed_exit": "Lệnh nền {command} thất bại (mã thoát {code})",
 	"background_update_details": "Hiện toàn bộ kết quả nền",
-	"live_background": "Đang xử lý kết quả nền"
+	"live_background": "Đang xử lý kết quả nền",
+	"steer_send_now": "Gửi ngay",
+	"steer_edit": "Sửa gợi ý điều hướng",
+	"steer_cancel": "Hủy gợi ý điều hướng",
+	"steer_already_taken": "Tác tử đã nhận gợi ý này.",
+	"steer_stays_pending": "Hiện không có gì đang chạy để nhận; gợi ý vẫn chờ."
 }

@@ -1695,5 +1695,10 @@
 	"background_line_command_failed": "Comando em segundo plano {command} falhou",
 	"background_line_command_failed_exit": "Comando em segundo plano {command} falhou (saída {code})",
 	"background_update_details": "Mostrar o resultado completo em segundo plano",
-	"live_background": "Processando resultados em segundo plano"
+	"live_background": "Processando resultados em segundo plano",
+	"steer_send_now": "Enviar agora",
+	"steer_edit": "Editar orientação",
+	"steer_cancel": "Cancelar orientação",
+	"steer_already_taken": "O agente já recebeu esta orientação.",
+	"steer_stays_pending": "Nada está em execução para recebê-la agora; ela continua pendente."
 }

@@ -8,6 +8,7 @@ import type { UploadResponse, Session, Settings } from '../../contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import { adoptTurn, cancelTurn, startTurn } from '../../stream/connection'
+import { onReturnToComposer, rememberOwnSteer } from './composerReturn'
 import { dispatch } from '../../stream/store'
 import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
@@ -264,16 +265,18 @@ export function Composer(props: ComposerProps) {
     if (!sessionId) return false
     // getRandomValues, unlike randomUUID, also works on plain-HTTP LAN installs.
     const steerId = `steer-${Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')}`
-    dispatch({ type: 'steer', sessionId, steerId, text, status: 'sending' })
+    // TAL-425: shown as sending until the server reports it; a Stop that withdraws it gives the text back to this tab.
+    dispatch({ type: 'steer_sending', sessionId, steerId, text })
+    rememberOwnSteer(steerId)
     try {
       const r = await api.steerChat({ session_id: sessionId, text, steer_id: steerId })
       // TAL-460: sent during a background turn, the message became the user's own turn; follow it like a send.
       if (r.started_turn) { adoptTurn(sessionId, text, r.started_turn); return true }
-      if (r.accepted) { dispatch({ type: 'steer', sessionId, steerId, text, status: 'waiting' }); return true }
-      dispatch({ type: 'steer', sessionId, steerId, text, status: 'failed' })
+      if (r.accepted) return true
+      dispatch({ type: 'steer_refused', sessionId, steerId })
       showToast(r.fallback === 'gateway_steer_queued' ? m.steer_leftover_queued() : m.busy_steer_fallback(), 2500)
     } catch (e) {
-      dispatch({ type: 'steer', sessionId, steerId, text, status: 'failed' })
+      dispatch({ type: 'steer_refused', sessionId, steerId })
       showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
     }
     return false
@@ -282,19 +285,14 @@ export function Composer(props: ComposerProps) {
   // Snapshot of what a send would post right now, for the queue.
   const queueEntry = useCallback((text: string): QueuedTurn => ({ text, attachments: files.flatMap((f) => (f.status === 'done' && f.upload ? [f.upload] : [])), request: session ? turnRequest(session, bootstrap.profile?.name ?? 'default') : { profile: bootstrap.profile?.name ?? 'default' } }), [files, session, bootstrap.profile])
 
-  // A steer the turn ended without taking is queued as the next turn, once, as the app does.
-  const steerLeftovers = live?.steerLeftovers
-  const queuedSteers = useRef(new Set<string>())
+  // TAL-425: a steer taken back (Edit, or a Stop of this tab's steer) returns after the draft, with a blank line between.
   useEffect(() => {
-    const fresh = steerLeftovers?.filter((leftover) => !queuedSteers.current.has(leftover.steerId)) ?? []
-    if (!sessionId || !fresh.length) return
-    for (const leftover of fresh) {
-      queuedSteers.current.add(leftover.steerId)
-      onQueue({ ...queueEntry(leftover.text), attachments: [] })
-      dispatch({ type: 'steer', sessionId, steerId: leftover.steerId, text: leftover.text, status: 'queued' })
-    }
-    showToast(m.steer_leftover_queued(), 2500)
-  }, [steerLeftovers, sessionId, onQueue, queueEntry])
+    if (!sessionId) return
+    return onReturnToComposer(sessionId, (returned) => {
+      setText((prev) => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n\n${returned}` : returned))
+      textarea.current?.focus()
+    })
+  }, [sessionId])
 
   const send = useCallback(async () => {
     if (locked) { showToast(m.live_compressing(), 1500); return }

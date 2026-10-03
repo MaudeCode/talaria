@@ -1,7 +1,11 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useRef, type PointerEvent, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
-import type { LiveTurn } from '../../stream/reducer'
+import { ArrowUp, Pencil, X } from 'lucide-react'
+import type { LiveTurn, PendingSteerRow } from '../../stream/reducer'
+import { sendSteerNow, withdrawSteer } from '../../api/endpoints'
+import { showToast } from '../toast/toast'
+import { returnToComposer } from '../composer/composerReturn'
 import { rememberLiveTurnHeight, SteerMessage, TurnActivityView } from './TurnActivityView'
 import { liveActivity } from './turnActivity'
 import type { ActivityMode } from './blocks/Worklog'
@@ -19,7 +23,7 @@ export function LiveTurnView({ turn, name, mode, userVisible }: { turn: LiveTurn
       <div className="msg-role assistant"><span className="msg-role-name">{name}</span></div>
       <div className="assistant-turn-blocks">
         <TurnActivityView activity={activity} mode={mode} />
-        {turn.pendingSteers.map((steer) => <SteerMessage key={steer.steerId} text={steer.text} state={steer.state} />)}
+        {turn.pendingSteers.map((steer) => <PendingSteerMessage key={steer.steerId} sessionId={turn.sessionId} steer={steer} />)}
         {turn.warning && <div className="mt-1 text-[12px] text-warning" role="status">{turn.warning}</div>}
         {turn.compression && <div className="compression-card mt-2 rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-muted" role="status">{turn.compression.state === 'compressing' ? m.live_compressing() : m.live_compressed()}{turn.compression.newSessionId && turn.compression.state === 'compressed' && <> <Link to="/session/$sessionId" params={{ sessionId: turn.compression.newSessionId }} className="text-accent-text underline">{m.live_continuation()}</Link></>}</div>}
         {turn.status === 'cancelled' && turn.cancelledMessage && <div className="status-card mt-2 text-[13px] text-muted">{turn.cancelledMessage}</div>}
@@ -34,6 +38,35 @@ export function LiveTurnView({ turn, name, mode, userVisible }: { turn: LiveTurn
       </div>
     </div>
   )
+}
+
+/**
+ * TAL-425: a pending steer as the server reports it, with the actions it allows (T3 Code's queued-message row). Edit
+ * takes it back into the composer, Cancel drops it, Send now delivers it at once. The buttons keep the composer's focus.
+ */
+function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: PendingSteerRow }) {
+  const keepFocus = (e: PointerEvent) => { e.preventDefault() }
+  const withdraw = async (reason: 'edit' | 'cancel') => {
+    const r = await withdrawSteer({ session_id: sessionId, steer_id: steer.steerId, reason }).catch(() => ({ withdrawn: false, text: undefined }))
+    if (!r.withdrawn) { showToast(m.steer_already_taken(), 2500); return }
+    if (reason === 'edit' && r.text !== undefined) returnToComposer(sessionId, r.text)
+  }
+  const sendNow = async () => {
+    const r = await sendSteerNow({ session_id: sessionId, steer_id: steer.steerId }).catch(() => ({ redirected: false }))
+    if (!r.redirected) showToast(m.steer_stays_pending(), 2500)
+  }
+  const button = (label: string, icon: ReactNode, onClick: () => Promise<void>) => (
+    <button type="button" className="steer-action" aria-label={label} title={label} onPointerDown={keepFocus} onClick={() => { void onClick() }}>{icon}</button>
+  )
+  const { edit, cancel, send_now: sendNowAllowed } = steer.actions
+  const actions = edit || cancel || sendNowAllowed ? (
+    <span className="steer-actions">
+      {sendNowAllowed && button(m.steer_send_now(), <ArrowUp size={13} aria-hidden="true" />, sendNow)}
+      {edit && button(m.steer_edit(), <Pencil size={13} aria-hidden="true" />, () => withdraw('edit'))}
+      {cancel && button(m.steer_cancel(), <X size={13} aria-hidden="true" />, () => withdraw('cancel'))}
+    </span>
+  ) : null
+  return <SteerMessage text={steer.text} state={steer.state} actions={actions} />
 }
 
 /** The live turn's status, docked as a centered pill above the composer so it never takes transcript space. */

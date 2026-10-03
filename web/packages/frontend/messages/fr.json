@@ -1912,5 +1912,10 @@
 	"background_line_command_failed": "Commande en arrière-plan {command} en échec",
 	"background_line_command_failed_exit": "Commande en arrière-plan {command} en échec (code {code})",
 	"background_update_details": "Afficher le résultat complet en arrière-plan",
-	"live_background": "Traitement des résultats en arrière-plan"
+	"live_background": "Traitement des résultats en arrière-plan",
+	"steer_send_now": "Envoyer maintenant",
+	"steer_edit": "Modifier l’indication",
+	"steer_cancel": "Annuler l’indication",
+	"steer_already_taken": "L’agent a déjà pris cette indication.",
+	"steer_stays_pending": "Rien ne tourne pour la prendre maintenant ; elle reste en attente."
 }

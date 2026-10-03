@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BootstrapContext } from '../../app/bootstrap'
@@ -10,6 +10,7 @@ import { dispatch, getStreamState, resetStreamStoreForTests } from '../../stream
 import type { LiveTurn } from '../../stream/reducer'
 import type { QueuedTurn } from './Composer'
 import { endFirstSend, getFirstSend } from '../chat/firstSend'
+import { returnToComposer } from './composerReturn'
 
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn() }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
@@ -55,11 +56,12 @@ describe('Composer', () => {
     return getStreamState().turns.s1!
   }
 
-  it('sends a steer with its id and keeps it in the turn as a pending message the server accepted', async () => {
+  it('sends a steer with its id and shows it as sending until the server has it (TAL-425)', async () => {
     vi.mocked(api.steerChat).mockResolvedValue({ accepted: true, steer_id: 'ignored' })
     renderComposer(writable, running())
     await userEvent.type(screen.getByRole('textbox'), 'Check b too{Enter}')
-    await waitFor(() => expect(getStreamState().turns.s1!.pendingSteers).toMatchObject([{ text: 'Check b too', state: 'waiting' }]))
+    await waitFor(() => expect(api.steerChat).toHaveBeenCalled())
+    expect(getStreamState().turns.s1!.pendingSteers).toMatchObject([{ text: 'Check b too', state: 'sending' }])
     const steerId = getStreamState().turns.s1!.pendingSteers[0]!.steerId
     expect(api.steerChat).toHaveBeenCalledWith({ session_id: 's1', text: 'Check b too', steer_id: steerId })
     expect(screen.getByRole('textbox')).toHaveValue('')
@@ -108,11 +110,22 @@ describe('Composer', () => {
     expect(screen.getByRole('textbox')).toHaveValue('')
   })
 
-  it('queues a steer the turn ended without taking as the next turn, once', () => {
+  it('never queues a leftover steer: the server sends it as the next turn (TAL-424, TAL-425)', () => {
     const onQueue = vi.fn()
-    renderComposer(writable, { ...running(), steerLeftovers: [{ steerId: 's1', text: 'Also do y' }] }, onQueue)
-    expect(onQueue).toHaveBeenCalledTimes(1)
-    expect(onQueue).toHaveBeenCalledWith(expect.objectContaining({ text: 'Also do y', attachments: [] }))
+    const run = running()
+    dispatch({ type: 'event', sessionId: 's1', streamId: 'run', event: { event: 'pending_steer_leftover', data: { steer_id: 's1', text: 'Also do y' } }, lastEventId: 'run:9', now: 9 })
+    renderComposer(writable, getStreamState().turns.s1 ?? run, onQueue)
+    expect(onQueue).not.toHaveBeenCalled()
+  })
+
+  it('takes back a steer\'s text after the draft, with a blank line between, and focuses the box', async () => {
+    renderComposer(writable, running())
+    await userEvent.type(screen.getByRole('textbox'), 'Draft so far')
+    act(() => { returnToComposer('s1', 'Check b too') })
+    expect(screen.getByRole('textbox')).toHaveValue('Draft so far\n\nCheck b too')
+    expect(screen.getByRole('textbox')).toHaveFocus()
+    act(() => { returnToComposer('other-session', 'not here') })
+    expect(screen.getByRole('textbox')).toHaveValue('Draft so far\n\nCheck b too')
   })
 
   it('keeps the composer for a writable session', () => {

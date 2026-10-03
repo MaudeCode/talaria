@@ -1854,5 +1854,10 @@
 	"background_line_command_failed": "Comando en segundo plano {command} falló",
 	"background_line_command_failed_exit": "Comando en segundo plano {command} falló (salida {code})",
 	"background_update_details": "Mostrar el resultado completo en segundo plano",
-	"live_background": "Procesando resultados en segundo plano"
+	"live_background": "Procesando resultados en segundo plano",
+	"steer_send_now": "Enviar ahora",
+	"steer_edit": "Editar indicación",
+	"steer_cancel": "Cancelar indicación",
+	"steer_already_taken": "El agente ya tomó esta indicación.",
+	"steer_stays_pending": "No hay nada en curso que pueda tomarla ahora; queda pendiente."
 }

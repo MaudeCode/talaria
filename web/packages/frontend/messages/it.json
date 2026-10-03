@@ -1894,5 +1894,10 @@
 	"background_line_command_failed": "Comando in background {command} non riuscito",
 	"background_line_command_failed_exit": "Comando in background {command} non riuscito (uscita {code})",
 	"background_update_details": "Mostra il risultato completo in background",
-	"live_background": "Elaborazione dei risultati in background"
+	"live_background": "Elaborazione dei risultati in background",
+	"steer_send_now": "Invia ora",
+	"steer_edit": "Modifica indicazione",
+	"steer_cancel": "Annulla indicazione",
+	"steer_already_taken": "L’agente ha già preso questa indicazione.",
+	"steer_stays_pending": "Non c’è nulla in esecuzione che possa prenderla ora; resta in attesa."
 }

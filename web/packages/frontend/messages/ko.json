@@ -1886,5 +1886,10 @@
 	"background_line_command_failed": "백그라운드 명령 {command} 실패",
 	"background_line_command_failed_exit": "백그라운드 명령 {command} 실패 (종료 코드 {code})",
 	"background_update_details": "백그라운드 결과 전체 보기",
-	"live_background": "백그라운드 결과 처리 중"
+	"live_background": "백그라운드 결과 처리 중",
+	"steer_send_now": "지금 보내기",
+	"steer_edit": "조정 메시지 편집",
+	"steer_cancel": "조정 메시지 취소",
+	"steer_already_taken": "에이전트가 이미 이 조정 메시지를 받았습니다.",
+	"steer_stays_pending": "지금 받을 실행이 없어 대기 상태로 남습니다."
 }

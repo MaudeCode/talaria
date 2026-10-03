@@ -1981,5 +1981,10 @@
 	"background_line_command_failed": "Фоновая команда {command} завершилась с ошибкой",
 	"background_line_command_failed_exit": "Фоновая команда {command} завершилась с ошибкой (код {code})",
 	"background_update_details": "Показать полный фоновый результат",
-	"live_background": "Обрабатывает фоновые результаты"
+	"live_background": "Обрабатывает фоновые результаты",
+	"steer_send_now": "Отправить сейчас",
+	"steer_edit": "Изменить подсказку",
+	"steer_cancel": "Отменить подсказку",
+	"steer_already_taken": "Агент уже принял эту подсказку.",
+	"steer_stays_pending": "Сейчас нечему её принять; она остаётся в ожидании."
 }
