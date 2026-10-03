@@ -99,12 +99,14 @@ struct TaskDetailView: View {
                     }
                     .disabled(isActionDisabled)
 
-                    Button {
-                        Task { await togglePauseResume() }
-                    } label: {
-                        Label(pauseResumeTitle, systemImage: pauseResumeSystemImage)
+                    if viewModel.job.resumable != nil {
+                        Button {
+                            Task { await togglePauseResume() }
+                        } label: {
+                            Label(pauseResumeTitle, systemImage: pauseResumeSystemImage)
+                        }
+                        .disabled(isActionDisabled)
                     }
-                    .disabled(isActionDisabled)
 
                     Button {
                         viewModel.clearActionError()
@@ -177,7 +179,7 @@ struct TaskDetailView: View {
                 Spacer(minLength: 8)
 
                 StatusBadge(
-                    text: viewModel.runningElapsed == nil ? viewModel.job.status.label : String(localized: "Running"),
+                    text: isRunning ? String(localized: "Running") : viewModel.job.status.label,
                     color: statusColor
                 )
             }
@@ -303,8 +305,13 @@ struct TaskDetailView: View {
         )
     }
 
+    /// The live-run overlay: the status poll or the server's manual-run flag.
+    private var isRunning: Bool {
+        viewModel.runningElapsed != nil || viewModel.job.running == true
+    }
+
     private var statusColor: Color {
-        if viewModel.runningElapsed != nil {
+        if isRunning {
             return .blue
         }
 
@@ -315,8 +322,10 @@ struct TaskDetailView: View {
             return .orange
         case .error:
             return .red
-        case .needsAttention:
+        case .needsAttention, .scheduleError:
             return .yellow
+        case .unknown:
+            return .gray
         }
     }
 
@@ -333,7 +342,7 @@ struct TaskDetailView: View {
     }
 
     private var shouldResume: Bool {
-        viewModel.job.status == .paused || viewModel.job.status == .off
+        viewModel.job.resumable == true
     }
 
     private func elapsedText(_ elapsed: Double) -> String {

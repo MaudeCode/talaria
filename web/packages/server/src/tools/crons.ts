@@ -1,6 +1,6 @@
 /** Cron jobs across profiles through the sidecar `cron.*` namespace (Python `api/routes.py` cron section). */
 import { join } from 'node:path'
-import type { CronRecentCompletion, CronContextSources } from '@maudecode/talaria-web-contracts'
+import type { CronRecentCompletion, CronContextSources, CronDerivedState } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -25,14 +25,44 @@ const JOB_ID_RE = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$/
 const PASSTHROUGH_FIELDS = ['script', 'no_agent', 'context_from', 'reasoning_effort']
 interface StoredJob { home: string; profile: string; job: Dict; managed: boolean }
 
-/** Python `_cron_job_for_api`. */
-export function jobForApi(job: Dict): Dict {
+/** Python `_cron_job_for_api`, plus the derived status every client renders (TAL-296). */
+export function jobForApi(job: Dict, running = false): Dict {
   const payload: Dict = { ...job }
   if (!('profile' in payload)) payload.profile = null
   payload.toast_notifications = payload.toast_notifications !== false
   payload.monitor = str(payload.monitor_url) || str(payload.monitor_script) || ''
   payload.continuity = (Array.isArray(payload.context_from) ? payload.context_from : []).some((r) => str(r).trim().toLowerCase() === 'self')
+  const state = cronDerivedState(job)
+  payload.derived_state = state
+  payload.needs_attention = state === 'needs_attention' || state === 'schedule_error'
+  payload.resumable = payload.needs_attention || state === 'paused' || state === 'off'
+  payload.running = running || job.running === true
   return payload
+}
+
+/** `repeat.times == null` means "forever" in the store; a missing record is not unlimited. */
+function hasUnlimitedRepeat(job: Dict): boolean {
+  return !!job.repeat && typeof job.repeat === 'object' && (job.repeat as Dict).times == null
+}
+
+function isRecurring(job: Dict): boolean {
+  const schedule = job.schedule
+  if (typeof schedule === 'object' && schedule) return (schedule as Dict).kind === 'cron' || (schedule as Dict).kind === 'interval'
+  // Legacy string schedules carry no kind; an unlimited repeat record marks the job recurring (a one-shot has times: 1).
+  return typeof schedule === 'string' && hasUnlimitedRepeat(job)
+}
+
+/** Older agents report `paused` / `status` / `next_run` instead of `state` / `last_status` / `next_run_at`; all stay supported. */
+function cronDerivedState(job: Dict): CronDerivedState {
+  const errored = job.state === 'error' || completionOutcome(job.last_status) === 'failed' || job.status === 'error'
+  const nextRun = job.next_run_at ?? (typeof job.next_run === 'number' || typeof job.next_run === 'string' ? job.next_run : null)
+  if (isRecurring(job) && hasUnlimitedRepeat(job) && job.enabled === false && job.state === 'completed' && !nextRun) return 'needs_attention'
+  // A paused job keeps the last run's error and has no next run; that is not a schedule failure.
+  if (job.state === 'paused' || job.paused) return 'paused'
+  if (isRecurring(job) && !nextRun && errored) return 'schedule_error'
+  if (job.enabled === false) return 'off'
+  if (errored) return 'error'
+  return 'active'
 }
 
 function monitorStorage(monitor: unknown): Dict {
@@ -170,7 +200,7 @@ export class CronService {
   }
 
   private view(row: StoredJob): Dict {
-    return { ...jobForApi(row.job), profile: str(row.job.profile).trim() || row.profile, owner_profile: row.profile, read_only: !row.managed }
+    return { ...jobForApi(row.job, this.deps.runningJobs?.has(str(row.job.id)) ?? false), profile: str(row.job.profile).trim() || row.profile, owner_profile: row.profile, read_only: !row.managed }
   }
 
   private requireExecutionStore(row: StoredJob): void {

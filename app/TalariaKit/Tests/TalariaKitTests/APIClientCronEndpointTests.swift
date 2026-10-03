@@ -22,6 +22,7 @@ final class APIClientCronEndpointTests: APIClientTestCase {
                   "next_run_at": "2026-05-05T11:00:00Z",
                   "last_run_at": 1777892400,
                   "last_status": "ok",
+                  "derived_state": "active",
                   "deliver": "local",
                   "skills": ["summarize", "notify"],
                   "ignored_new_field": {"nested": "value"}
@@ -33,7 +34,10 @@ final class APIClientCronEndpointTests: APIClientTestCase {
                   "enabled": false,
                   "state": "completed",
                   "next_run_at": null,
-                  "last_status": "ok"
+                  "last_status": "ok",
+                  "derived_state": "needs_attention",
+                  "needs_attention": true,
+                  "resumable": true
                 }
               ]
             }
@@ -56,6 +60,7 @@ final class APIClientCronEndpointTests: APIClientTestCase {
         XCTAssertEqual(first.status, .active)
 
         XCTAssertEqual(second.status, .needsAttention)
+        XCTAssertEqual(second.resumable, true)
         XCTAssertEqual(second.displayName, "0 8 * * *")
     }
 

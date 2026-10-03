@@ -46,20 +46,22 @@ public struct CronJob: Decodable, Equatable, Identifiable {
     public let prompt: String?
     let schedule: CronSchedule?
     let scheduleDisplay: String?
-    let enabled: Bool?
-    let state: String?
     public let nextRunAt: CronDateValue?
     public let lastRunAt: CronDateValue?
     let lastStatus: String?
     public let lastError: String?
     public let lastDeliveryError: String?
-    let repeatInfo: CronRepeat?
     public let deliver: String?
     public let skills: [String]?
     public let model: String?
     public let provider: String?
     public let profile: String?
     public let toastNotifications: Bool?
+    /// Server-derived (TAL-296): the status, attention flag, Resume/Pause choice, and manual-run flag.
+    let derivedState: String?
+    public let needsAttention: Bool?
+    public let resumable: Bool?
+    public let running: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -68,20 +70,21 @@ public struct CronJob: Decodable, Equatable, Identifiable {
         case prompt
         case schedule
         case scheduleDisplay
-        case enabled
-        case state
         case nextRunAt
         case lastRunAt
         case lastStatus
         case lastError
         case lastDeliveryError
-        case repeatInfo = "repeat"
         case deliver
         case skills
         case model
         case provider
         case profile
         case toastNotifications
+        case derivedState
+        case needsAttention
+        case resumable
+        case running
     }
 
     public init(from decoder: Decoder) throws {
@@ -92,20 +95,21 @@ public struct CronJob: Decodable, Equatable, Identifiable {
         prompt = container.decodeLossyStringIfPresent(forKey: .prompt)
         schedule = (try? container.decodeIfPresent(CronSchedule.self, forKey: .schedule)) ?? nil
         scheduleDisplay = container.decodeLossyStringIfPresent(forKey: .scheduleDisplay)
-        enabled = container.decodeLossyBoolIfPresent(forKey: .enabled)
-        state = container.decodeLossyStringIfPresent(forKey: .state)
         nextRunAt = (try? container.decodeIfPresent(CronDateValue.self, forKey: .nextRunAt)) ?? nil
         lastRunAt = (try? container.decodeIfPresent(CronDateValue.self, forKey: .lastRunAt)) ?? nil
         lastStatus = container.decodeLossyStringIfPresent(forKey: .lastStatus)
         lastError = container.decodeLossyStringIfPresent(forKey: .lastError)
         lastDeliveryError = container.decodeLossyStringIfPresent(forKey: .lastDeliveryError)
-        repeatInfo = (try? container.decodeIfPresent(CronRepeat.self, forKey: .repeatInfo)) ?? nil
         deliver = container.decodeLossyStringIfPresent(forKey: .deliver)
         skills = (try? container.decodeIfPresent([String].self, forKey: .skills)) ?? nil
         model = container.decodeLossyStringIfPresent(forKey: .model)
         provider = container.decodeLossyStringIfPresent(forKey: .provider)
         profile = container.decodeLossyStringIfPresent(forKey: .profile)
         toastNotifications = container.decodeLossyBoolIfPresent(forKey: .toastNotifications)
+        derivedState = container.decodeLossyStringIfPresent(forKey: .derivedState)
+        needsAttention = container.decodeLossyBoolIfPresent(forKey: .needsAttention)
+        resumable = container.decodeLossyBoolIfPresent(forKey: .resumable)
+        running = container.decodeLossyBoolIfPresent(forKey: .running)
     }
 
     public var displayName: String {
@@ -128,38 +132,17 @@ public struct CronJob: Decodable, Equatable, Identifiable {
         schedule?.expression ?? schedule?.expr ?? schedule?.runAt ?? schedule?.every ?? scheduleDisplay
     }
 
+    /// The server's `derived_state`; a server that omits it yields a neutral `.unknown`.
     public var status: CronJobStatus {
-        if isRecurring,
-           repeatInfo?.times == nil,
-           enabled == false,
-           state == "completed",
-           nextRunAt == nil {
-            return .needsAttention
+        switch derivedState {
+        case "needs_attention": return .needsAttention
+        case "schedule_error": return .scheduleError
+        case "paused": return .paused
+        case "off": return .off
+        case "error": return .error
+        case "active": return .active
+        default: return .unknown
         }
-
-        if isRecurring,
-           nextRunAt == nil,
-           state == "error" || lastStatus == "error" {
-            return .needsAttention
-        }
-
-        if state == "paused" {
-            return .paused
-        }
-
-        if enabled == false {
-            return .off
-        }
-
-        if lastStatus == "error" {
-            return .error
-        }
-
-        return .active
-    }
-
-    private var isRecurring: Bool {
-        schedule?.kind == "cron" || schedule?.kind == "interval"
     }
 }
 
@@ -200,11 +183,6 @@ struct CronSchedule: Decodable, Equatable {
     var displayText: String? {
         expression ?? expr ?? runAt ?? every ?? kind
     }
-}
-
-struct CronRepeat: Decodable, Equatable {
-    let times: Int?
-    let completed: Int?
 }
 
 public struct CronOutputResponse: Decodable, Equatable {
@@ -575,6 +553,8 @@ public enum CronJobStatus: Equatable {
     case off
     case error
     case needsAttention
+    case scheduleError
+    case unknown
 
     public var label: String {
         switch self {
@@ -588,6 +568,10 @@ public enum CronJobStatus: Equatable {
             return String(localized: "Error")
         case .needsAttention:
             return String(localized: "Needs Attention")
+        case .scheduleError:
+            return String(localized: "Schedule Error")
+        case .unknown:
+            return String(localized: "Unknown")
         }
     }
 }

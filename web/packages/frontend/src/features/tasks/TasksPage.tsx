@@ -21,7 +21,7 @@ import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
-import { contextFromList, cronDiagnostics, cronState, jobId, lastRunAt, needsAttention, nextRunAt, runResponse, runningIds, scheduleText, usageStrip, type CronState } from './cronJob'
+import { contextFromList, cronDiagnostics, cronState, jobId, lastRunAt, nextRunAt, runResponse, runningIds, scheduleText, usageStrip, type CronState } from './cronJob'
 import { Markdown } from '../chat/render/Markdown'
 import { JobForm, type EditorMode } from './JobForm'
 
@@ -35,7 +35,8 @@ export function statusLabel(state: CronState): { label: string; tone: string } {
     case 'paused': return { label: m.cron_status_paused(), tone: 'text-muted' }
     case 'off': return { label: m.cron_status_off(), tone: 'text-muted' }
     case 'error': return { label: m.cron_status_error(), tone: 'text-error' }
-    default: return { label: m.cron_status_active(), tone: 'text-success' }
+    case 'active': return { label: m.cron_status_active(), tone: 'text-success' }
+    default: return { label: '', tone: 'text-muted' }
   }
 }
 
@@ -251,8 +252,7 @@ function TaskDetail({ job, jobs, state, onAction, onEdit, onDuplicate, onDelete 
 }) {
   const id = jobId(job)
   const readOnly = !!job.read_only
-  const attention = needsAttention(state)
-  const resumable = attention || state === 'paused' || state === 'off'
+  const attention = job.needs_attention === true
   const isScript = !!job.no_agent
   const nextRun = nextRunAt(job)
   const lastRun = lastRunAt(job)
@@ -269,9 +269,8 @@ function TaskDetail({ job, jobs, state, onAction, onEdit, onDuplicate, onDelete 
     : (
       <div className="flex flex-wrap gap-2" role="group" aria-label={job.name ?? id}>
         <Button onClick={() => onAction('run')}><Play size={12} aria-hidden="true" /> {m.cron_run_now()}</Button>
-        {resumable
-          ? <Button onClick={() => onAction('resume')}><Play size={12} aria-hidden="true" /> {m.cron_resume()}</Button>
-          : <Button onClick={() => onAction('pause')}><Pause size={12} aria-hidden="true" /> {m.cron_pause()}</Button>}
+        {job.resumable === true && <Button onClick={() => onAction('resume')}><Play size={12} aria-hidden="true" /> {m.cron_resume()}</Button>}
+        {job.resumable === false && <Button onClick={() => onAction('pause')}><Pause size={12} aria-hidden="true" /> {m.cron_pause()}</Button>}
         <Button onClick={onEdit}>{m.edit()}</Button>
         <Button onClick={onDuplicate}><Copy size={12} aria-hidden="true" /> {m.cron_duplicate()}</Button>
         <Button variant="ghost" className="text-error" onClick={onDelete}><Trash2 size={12} aria-hidden="true" /> {m.delete()}</Button>

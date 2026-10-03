@@ -10,37 +10,12 @@ const recurring: CronJob = {
 }
 
 describe('cronState', () => {
-  it('flags a completed unlimited recurring job with no next run as needs attention', () => {
-    expect(cronState({ ...recurring, enabled: false, state: 'completed', next_run_at: null })).toBe('needs_attention')
-  })
-  it('flags a recurring job the scheduler could not compute as a schedule error', () => {
-    expect(cronState({ ...recurring, state: 'error', next_run_at: null, last_error: 'croniter missing' })).toBe('schedule_error')
-    expect(cronState({ ...recurring, last_status: 'error', next_run_at: null })).toBe('schedule_error')
-  })
-  it('does not misclassify paused, one-shot, or plain disabled jobs', () => {
-    expect(cronState({ ...recurring, enabled: false, state: 'paused', next_run_at: null })).toBe('paused')
-    expect(cronState({ ...recurring, enabled: false, state: 'paused', next_run_at: null, last_status: 'error', last_error: 'boom' })).toBe('paused')
-    expect(cronState({ ...recurring, schedule: { kind: 'once', run_at: '2026-09-01T00:00:00Z' }, repeat: { times: 1, completed: 1 }, enabled: false, state: 'completed', next_run_at: null })).toBe('off')
-    expect(cronState({ ...recurring, repeat: { times: 3, completed: 3 }, enabled: false, state: 'completed', next_run_at: null })).toBe('off')
-    expect(cronState({ ...recurring, enabled: false, state: 'scheduled', next_run_at: null })).toBe('off')
-  })
-  it('reports errors, running, and active', () => {
-    expect(cronState({ ...recurring, last_status: 'error', last_error: 'boom' })).toBe('error')
-  })
-  it('honours the legacy paused/status fields from older agents', () => {
-    const legacy = { ...recurring, state: undefined, last_status: undefined }
-    expect(cronState({ ...legacy, paused: true })).toBe('paused')
-    expect(cronState({ ...legacy, status: 'error' })).toBe('error')
-    expect(cronState({ ...legacy, status: 'error', next_run_at: null })).toBe('schedule_error')
-    expect(cronState({ ...legacy, running: true })).toBe('running')
-    // String schedule + unlimited repeat is recurring, so the stalled case still surfaces.
-    expect(cronState({ ...recurring, schedule: '0 9 * * *', enabled: false, state: 'completed', next_run_at: null })).toBe('needs_attention')
-    expect(cronState({ ...recurring, schedule: '2026-12-24T09:00:00', repeat: { times: 1, completed: 1 }, enabled: false, state: 'completed', next_run_at: null })).toBe('off')
+  it('renders the server state, overlaid by a live run, and stays neutral without it', () => {
+    expect(cronState({ ...recurring, derived_state: 'schedule_error' })).toBe('schedule_error')
+    expect(cronState({ ...recurring, derived_state: 'paused' }, true)).toBe('running')
+    expect(cronState({ ...recurring, derived_state: 'paused', running: true })).toBe('running')
+    expect(cronState(recurring)).toBe('unknown')
     expect(CronJobSchema.parse({ ...recurring, last_run_at: 1_789_600_000, next_run_at: 1_789_686_400 }).next_run_at).toBe(1_789_686_400)
-    // Legacy next_run keeps a recurring job out of the attention states.
-    expect(cronState({ ...legacy, status: 'error', next_run_at: null, next_run: 1_789_600_000 })).toBe('error')
-    expect(cronState(recurring, true)).toBe('running')
-    expect(cronState(recurring)).toBe('active')
   })
 })
 
