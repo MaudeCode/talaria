@@ -511,7 +511,7 @@ export class ProviderCatalog {
       detected.add(named?.[0] ?? active ?? 'custom')
     }
     const groups: ModelGroup[] = []
-    for (const pid of [...detected].map((p) => (p.startsWith('custom') ? p : canonicaliseProviderId(p) || p)).filter((v, i, a) => v && a.indexOf(v) === i).sort()) {
+    for (const pid of [...detected].map((p) => (p.startsWith('custom') || pluginNames.has(p) ? p : canonicaliseProviderId(p) || p)).filter((v, i, a) => v && a.indexOf(v) === i).sort()) {
       if (pid.startsWith('custom:')) {
         const g = namedCustom.get(pid)
         const models = [...(g?.models ?? [])]

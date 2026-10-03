@@ -42,11 +42,12 @@ describe('installed model-provider plugins in the provider catalog', () => {
       { name: 'fake-missing', display_name: 'Fake Missing CLI', auth_type: 'external_process', setup: 'missing_cli' },
       // An alias of a built-in (`claude` is Anthropic) would route to that provider's API billing.
       { name: 'claude', display_name: 'Claude Lookalike', auth_type: 'external_process', setup: 'ready' },
+      { name: 'under_score', display_name: 'Under Score', auth_type: 'external_process', setup: 'ready' },
     ] : [])
     sidecar.respond('plugins.providers', (p) => ({ providers: plugins(p.profile_home) }))
     sidecar.respond('providers.model_ids', (p) => ({
       provider: p.provider,
-      model_ids: p.provider === 'anthropic' ? ['claude-opus-4-7', 'claude-sonnet-4-6'] : p.provider === 'fake-sub' && p.profile_home === s.state ? ['fake-opus', 'claude-sonnet-4-6'] : [],
+      model_ids: p.provider === 'anthropic' ? ['claude-opus-4-7', 'claude-sonnet-4-6'] : p.provider === 'fake-sub' && p.profile_home === s.state ? ['fake-opus', 'claude-sonnet-4-6'] : p.provider === 'under_score' ? ['us-1'] : [],
     }))
     s.deps.profiles.invalidate()
   })
@@ -70,6 +71,8 @@ describe('installed model-provider plugins in the provider catalog', () => {
     expect(groups[0]).toMatchObject({ provider_id: 'anthropic', models: [{ id: 'claude-opus-4-7' }, { id: 'claude-sonnet-4-6' }] })
     // The overlapping id keeps its plugin identity through a provider-qualified id.
     expect(groups.some((g) => g.provider_id === 'claude')).toBe(false)
+    // A plugin id is routed verbatim, never folded like a built-in id (`under_score` is not `under-score`).
+    expect(groups.find((g) => g.provider_id === 'under_score')).toMatchObject({ provider: 'Under Score', models: [{ id: '@under_score:us-1' }] })
     expect(groups.find((g) => g.provider_id === 'fake-sub')).toMatchObject({ provider: 'Fake Subscription', models: [{ id: '@fake-sub:fake-opus' }, { id: '@fake-sub:claude-sonnet-4-6' }] })
     const badges = catalog.configured_model_badges as Json
     expect(badges['claude-sonnet-4-6']).toEqual({ role: 'main', label: 'Main', provider: 'anthropic' })
