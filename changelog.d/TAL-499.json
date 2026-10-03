@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web chats only offer the agent the tools you enabled for the profile with hermes tools, instead of every available tool.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

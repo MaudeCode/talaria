@@ -96,6 +96,7 @@ def agent_env(monkeypatch):
     monkeypatch.setattr(chat, "_PENDING_COMPRESSIONS", {})
     monkeypatch.setattr(chat, "_resolve_runtime", lambda provider, model: {"model": "m", "provider": provider or "p", "api_key": "k", "base_url": "https://example.invalid/v1", "api_mode": "chat_completions"})
     monkeypatch.setattr(chat, "_agent_class", lambda: ThrowawayAgent)
+    monkeypatch.setattr(chat, "_profile_toolsets", lambda: ["file", "web"])
     monkeypatch.setattr(chat, "_checkpoint_required", lambda: False)
     monkeypatch.setattr(chat, "scoped_home", lambda home: contextlib.nullcontext(home))
     return calls, outcome
@@ -153,6 +154,11 @@ def test_a_held_lock_is_reported_and_not_committed(agent_env) -> None:
     assert result["messages"] == HISTORY
     assert result["commit_token"] is None
     assert calls["finalize"] == [False] and ThrowawayAgent.instances[0].closed
+
+
+def test_compress_without_an_override_uses_the_profile_toolsets(agent_env) -> None:
+    chat.compress(Ctx(), _params())
+    assert ThrowawayAgent.instances[0].kwargs["enabled_toolsets"] == ["file", "web"]
 
 
 def test_no_api_key_is_refused_before_an_agent_exists(agent_env, monkeypatch) -> None:

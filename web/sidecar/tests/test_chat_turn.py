@@ -53,6 +53,7 @@ def _patch(monkeypatch):
     chat._AGENT_CACHE.clear()
     monkeypatch.setattr(chat, "_resolve_runtime", lambda provider, model: {"model": "m", "provider": "p"})
     monkeypatch.setattr(chat, "_agent_class", lambda: FakeAgent)
+    monkeypatch.setattr(chat, "_profile_toolsets", lambda: ["file", "web"])
     monkeypatch.setattr(chat, "scoped_home", lambda home: contextlib.nullcontext(home))
 
 
@@ -449,3 +450,13 @@ def test_tool_complete_ships_the_raw_result_and_no_error_decision(monkeypatch) -
     assert len(frames[4]["raw_result"]) == 65 and frames[4]["raw_result"]["exit_code"] == 7
     assert frames[2]["raw_result"] == ("plain " + "p" * 5000)[:4000]
     assert frames[3]["raw_result"] == ""
+
+
+def test_a_profile_toolset_change_builds_a_fresh_agent(monkeypatch) -> None:
+    _patch(monkeypatch)
+    chat.start(Ctx(), _params("st-1", "toolsets"))
+    assert FakeAgent.instances[0].kwargs["enabled_toolsets"] == ["file", "web"]
+    monkeypatch.setattr(chat, "_profile_toolsets", lambda: ["file"])
+    chat.start(Ctx(), _params("st-2", "toolsets"))
+    assert len(FakeAgent.instances) == 2 and FakeAgent.instances[1].kwargs["enabled_toolsets"] == ["file"]
+    chat._AGENT_CACHE.clear()
