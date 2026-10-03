@@ -320,7 +320,7 @@ describe('trusted-header auth', () => {
 })
 
 describe('trusted-header auth on an isolated profile instance', () => {
-  // `/api/bootstrap` is a public path; every gated route refuses the mismatched binding.
+  // Every gated route refuses the mismatched binding; the public bootstrap and auth status report it logged out.
   const ROUTES = ['/api/sessions', '/api/profiles', '/api/settings', '/api/crons', '/api/memory']
   let base = ''
   let home = ''
@@ -336,6 +336,12 @@ describe('trusted-header auth on an isolated profile instance', () => {
   it('refuses a session bound to another profile on every API route and admits the pinned profile', async () => {
     const s = await boot({ HERMES_WEBUI_GROUP_PROFILE_MAP: '{"alice-team":"alice","bob-team":"bob"}' })
     try {
+      for (const groups of ['bob-team', 'strangers']) {
+        const headers = { 'X-Remote-User': 'mallory', 'X-Remote-Groups': groups }
+        const boot = BootstrapSchema.parse(await (await s.get('/api/bootstrap', { headers })).json())
+        expect(boot, groups).toMatchObject({ csrf_token: '', profile: null, onboarding: null, auth: { logged_in: false } })
+        expect(AuthStatusSchema.parse(await (await s.get('/api/auth/status', { headers })).json()).logged_in, groups).toBe(false)
+      }
       for (const route of ROUTES) {
         for (const groups of ['bob-team', 'strangers']) {
           const res = await s.get(route, { headers: { 'X-Remote-User': 'mallory', 'X-Remote-Groups': groups } })
@@ -345,6 +351,9 @@ describe('trusted-header auth on an isolated profile instance', () => {
         const ok = await s.get(route, { headers: { 'X-Remote-User': 'alice', 'X-Remote-Groups': 'alice-team' } })
         expect([401, 403], route).not.toContain(ok.status)
       }
+      const boot = BootstrapSchema.parse(await (await s.get('/api/bootstrap', { headers: { 'X-Remote-User': 'alice', 'X-Remote-Groups': 'alice-team' } })).json())
+      expect(boot.auth.logged_in && boot.profile?.name).toBe('alice')
+      expect(boot.csrf_token).not.toBe('')
       expect(s.deps.requestScope.run({ requestProfile: 'bob' }, () => s.deps.activeProfile())).toBe('alice')
     } finally { await s.close() }
   })

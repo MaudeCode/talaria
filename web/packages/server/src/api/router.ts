@@ -75,7 +75,7 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
   const { deps } = ctx
   const auth = await authStatusPayload(ctx)
   let csrfToken = ''
-  if (await deps.auth.isAuthEnabled()) {
+  if (auth.auth_enabled && auth.logged_in) {
     const cookieVal = ctx.authCookie() ?? ctx.trusted.cookieValue ?? null
     if (cookieVal && deps.auth.verifySession(cookieVal)) csrfToken = deps.auth.csrfTokenForSession(cookieVal) ?? ''
   }

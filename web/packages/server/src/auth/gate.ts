@@ -367,6 +367,8 @@ export async function authStatusPayload(ctx: RequestContext): Promise<AuthStatus
   let loggedIn = false
   if (authEnabled) {
     sessionInfo = await ensureTrustedAuthSession(ctx)
+    // A binding the pinned profile refuses is no login here: the public bootstrap must not hand it the profile's payload.
+    if (!trustedSessionAllowsActiveProfile(ctx, sessionInfo)) sessionInfo = null
     loggedIn = Boolean(sessionInfo)
   }
   const passkeyFlag = auth.passkeyFeatureFlagEnabled()
