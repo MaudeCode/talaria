@@ -120,11 +120,14 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         openPanel("Insights")
         let error = element(labelContaining: "Could Not Load Analytics")
         let hasError = error.awaitExistence(timeout: 10)
+        XCTAssertTrue(hasError, "Insights must surface the server error instead of deriving session totals")
+        let sidebar = app.descendants(matching: .any)["app-sidebar"]
+        XCTAssertTrue(poll(timeout: Self.navigationTimeout) { !sidebar.isHittable })
+        _ = app.buttons["Try Again"].firstMatch.settledFrame
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Insights failed server request"
         attachment.lifetime = .keepAlways
         add(attachment)
-        XCTAssertTrue(hasError, "Insights must surface the server error instead of deriving session totals")
         XCTAssertFalse(element(labelContaining: "Source: local session metadata").exists)
         tapRetry(in: "Insights")
         assertLoadingResolves("Loading analytics…", panel: "Insights")
