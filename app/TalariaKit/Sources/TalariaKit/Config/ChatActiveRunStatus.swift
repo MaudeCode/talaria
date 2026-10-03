@@ -89,6 +89,11 @@ public struct ChatActiveRunStatusPresentation: Equatable {
         kind == .syncing
     }
 
+    /// Whether this is the "Waiting for network" status: a standing state, not work in progress (TAL-449).
+    public var isWaitingForNetwork: Bool {
+        kind == .waitingForNetwork
+    }
+
     /// Whether the transcript makes room for this chip. The syncing pill floats over the
     /// transcript bottom, so it never shifts the chat as it comes and goes.
     public var reservesTranscriptSpace: Bool {

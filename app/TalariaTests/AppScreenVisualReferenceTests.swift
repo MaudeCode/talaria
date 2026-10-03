@@ -80,7 +80,7 @@ final class AppScreenVisualReferenceTests: XCTestCase {
         }
     }
 
-    /// The offline run status stays on one line on a 390 pt phone (TAL-449).
+    /// The offline run status stays on one line on a 390 pt phone, with a still symbol (TAL-449).
     func testWaitingForNetworkRunStatusReference() throws {
         try VisualReference.assertMatchesReference(
             StatusChip(ChatActiveRunStatusPresentation(kind: .waitingForNetwork), agentName: "Hermes")
