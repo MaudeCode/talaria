@@ -93,7 +93,7 @@ export function clearAuthCookieHeader(ctx: RequestContext): string {
 // ── profiles ──────────────────────────────────────────────────────────────
 
 export function activeProfileName(ctx: RequestContext): string {
-  return ctx.requestProfile ?? ctx.deps.activeProfile()
+  return ctx.deps.isolatedProfileMode() ? ctx.deps.activeProfile() : ctx.requestProfile ?? ctx.deps.activeProfile()
 }
 
 export function profilesMatch(ctx: RequestContext, rowProfile: string | null | undefined, activeProfile: string | null | undefined): boolean {

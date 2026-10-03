@@ -133,7 +133,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const explicitBase = (env.HERMES_BASE_HOME ?? '').trim()
   const baseHome = isolatedProfile !== null ? config.hermesHome : explicitBase ? resolve(explicitBase.replace(/^~(?=$|\/)/, home)) : basename(dirname(config.hermesHome)) === 'profiles' ? dirname(dirname(config.hermesHome)) : config.hermesHome
   const processProfile = isolatedProfile ?? readActiveProfileFile(baseHome, PROFILE_RE)
-  const activeProfile = (): string => requestScope.getStore()?.requestProfile ?? processProfile
+  // Isolated mode ignores the request's cookie or bound profile (Python `get_active_profile_name`); the gate refuses a mismatched binding.
+  const activeProfile = (): string => isolatedProfile ?? requestScope.getStore()?.requestProfile ?? processProfile
   // Python `_is_root_profile`: `default` plus any renamed root alias the Agent reports; bound to the profile service below.
   let rootAlias: (name: string) => boolean = () => false
   const isRootProfile = (name: string): boolean => name === 'default' || rootAlias(name)

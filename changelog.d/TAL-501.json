@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "A single-profile server refuses signed-in users who are assigned to a different profile, instead of opening that server's profile to them.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
