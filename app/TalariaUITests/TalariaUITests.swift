@@ -470,6 +470,19 @@ class SettingsUITestCase: TalariaUITestCase {}
 /// Chats and Providers screens with the grouped controls around them, in one launch. Their failed
 /// loads run in `ReadFailureUITests`.
 final class SettingsStructureUITests: SettingsUITestCase {
+    func testApprovalAlertPreferenceSharesNotificationSettings() throws {
+        launchFixture()
+        openSettings()
+        tapSettingsCategory(id: "notificationsAndHaptics", title: "Notifications & Haptics")
+        XCTAssertTrue(app.switches["Response Complete Alerts"].exists)
+        XCTAssertTrue(app.switches["Approval Alerts"].exists)
+        XCTAssertTrue(app.switches["Quota Pace Alerts"].exists)
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Approval Alerts in notification settings"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testSettingsRootCategoriesRoutesAndServerContent() throws {
         launchFixture()
         openSettings()
