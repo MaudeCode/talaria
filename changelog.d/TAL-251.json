@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Sign in with SSO appears right after the server starts, even when password, passkey, or trusted-header sign-in is also turned on.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

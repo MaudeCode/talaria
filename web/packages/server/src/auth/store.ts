@@ -286,6 +286,11 @@ export class AuthStore {
   async isAuthEnabled(): Promise<boolean> {
     if (await this.isPasswordAuthEnabled()) return true
     if (this.passkeysAvailable() || this.isTrustedAuthEnabled()) return true
+    return this.isOidcEnabled()
+  }
+
+  /** OIDC enablement after resolving its config, so a cold cache does not hide SSO behind another auth method. */
+  async isOidcEnabled(): Promise<boolean> {
     try { await this.oidcProbe() } catch { /* last-known config stands */ }
     return this.oidcEnabled()
   }
