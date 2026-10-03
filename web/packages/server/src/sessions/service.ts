@@ -12,7 +12,7 @@ import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPu
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, buildSessionListPayload, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
@@ -27,9 +27,6 @@ import { buildShareSnapshot, type ShareStore } from './shares.js'
 import type { ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
 import { join } from 'node:path'
-
-/** Channel identity a state.db row carries that a claimed sidecar keeps (persisted through `Session.extra`). */
-const CLI_IDENTITY_FIELDS = ['user_id', 'chat_id', 'chat_type', 'thread_id', 'session_key', 'platform'] as const
 
 export class HttpFailure extends Error {
   constructor(readonly status: number, message: string, readonly extra: Record<string, unknown> = {}) {
@@ -246,6 +243,7 @@ export class SessionService {
       if (!meta.workspace && row.cwd) meta.workspace = row.cwd
       if (!meta.created_at && row.started_at) meta.created_at = row.started_at
       if (!meta.updated_at && (row.ended_at || row.started_at)) meta.updated_at = row.ended_at || row.started_at
+      if (!meta.parent_session_id && row.parent_session_id) meta.parent_session_id = row.parent_session_id
     }
     const claimable = isClaimableCliSource(meta, stateDbSource)
     const workspace = str(meta.workspace || meta.cwd).trim() || this.deps.workspaces.lastWorkspace(profile)
@@ -255,7 +253,8 @@ export class SessionService {
       messages: msgs, created_at: Number(meta.created_at) || 0, updated_at: Number(meta.updated_at) || 0, profile: str(meta.profile) || null,
       is_cli_session: claimable ? true : !subagentChild, source_tag: str(meta.source_tag) || null, raw_source: str(meta.raw_source) || null,
       session_source: str(meta.session_source) || null, source_label: str(meta.source_label) || null, read_only: !claimable,
-      // Python `import_cli_session`: the claimed sidecar keeps the row's lineage, background project and channel identity.
+      // Python `import_cli_session`: the claimed sidecar keeps the row's lineage, background project and channel identity
+      // (identity persists through `Session.extra`).
       parent_session_id: str(meta.parent_session_id) || null, project_id: str(meta.project_id) || null,
       ...Object.fromEntries(CLI_IDENTITY_FIELDS.filter((k) => meta[k] != null && meta[k] !== '').map((k) => [k, meta[k]])),
     }, defaults)

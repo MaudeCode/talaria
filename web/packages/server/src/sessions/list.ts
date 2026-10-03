@@ -473,10 +473,13 @@ export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: Rea
   return row
 }
 
+/** Channel identity a state.db row carries; sidebar rows overlay it and a claimed sidecar keeps it. */
+export const CLI_IDENTITY_FIELDS = ['user_id', 'chat_id', 'chat_type', 'thread_id', 'session_key', 'platform'] as const
+
 /** Python `_merge_cli_sidebar_metadata`: state.db truth for drifting metadata, UI-owned archived/pinned kept. */
 export function mergeCliSidebarMetadata(ui: Row, meta: Row): Row {
   const merged: Row = { ...ui, is_cli_session: isStateDbCliRow(meta) }
-  for (const key of ['source_tag', 'raw_source', 'session_source', 'source_label', 'user_id', 'chat_id', 'chat_type', 'thread_id', 'session_key', 'platform', 'parent_session_id', 'end_reason', 'actual_message_count', '_lineage_root_id', '_lineage_tip_id', '_compression_segment_count']) {
+  for (const key of ['source_tag', 'raw_source', 'session_source', 'source_label', ...CLI_IDENTITY_FIELDS, 'parent_session_id', 'end_reason', 'actual_message_count', '_lineage_root_id', '_lineage_tip_id', '_compression_segment_count']) {
     const value = first(meta[key])
     if (value) merged[key] = value
   }
