@@ -46,8 +46,10 @@ public struct BackgroundWorkTask: Decodable, Equatable, Identifiable {
     public let resultAvailable: Bool
     public let pinned: Bool
     public let dismissible: Bool
+    /// Not settled yet (running, attention or unknown): the App keeps refreshing while any record is active.
+    public let active: Bool
 
-    public init(taskId: String, kind: Kind, status: Status, title: String, agents: Agents? = nil, exitCode: Int? = nil, resultAvailable: Bool = false, pinned: Bool = false, dismissible: Bool = false) {
+    public init(taskId: String, kind: Kind, status: Status, title: String, agents: Agents? = nil, exitCode: Int? = nil, resultAvailable: Bool = false, pinned: Bool = false, dismissible: Bool = false, active: Bool = false) {
         self.taskId = taskId
         self.kind = kind
         self.status = status
@@ -57,10 +59,11 @@ public struct BackgroundWorkTask: Decodable, Equatable, Identifiable {
         self.resultAvailable = resultAvailable
         self.pinned = pinned
         self.dismissible = dismissible
+        self.active = active
     }
 
     enum CodingKeys: String, CodingKey {
-        case taskId, kind, status, title, agents, exitCode, resultAvailable, pinned, dismissible
+        case taskId, kind, status, title, agents, exitCode, resultAvailable, pinned, dismissible, active
     }
 
     public init(from decoder: Decoder) throws {
@@ -77,6 +80,7 @@ public struct BackgroundWorkTask: Decodable, Equatable, Identifiable {
         resultAvailable = container.decodeLossyBoolIfPresent(forKey: .resultAvailable) ?? false
         pinned = container.decodeLossyBoolIfPresent(forKey: .pinned) ?? false
         dismissible = container.decodeLossyBoolIfPresent(forKey: .dismissible) ?? false
+        active = container.decodeLossyBoolIfPresent(forKey: .active) ?? false
     }
 }
 

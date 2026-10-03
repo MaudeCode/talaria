@@ -23771,6 +23771,9 @@
                           },
                           "dismissible": {
                             "type": "boolean"
+                          },
+                          "active": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -23786,7 +23789,8 @@
                           "exit_code",
                           "agents",
                           "pinned",
-                          "dismissible"
+                          "dismissible",
+                          "active"
                         ]
                       }
                     },
@@ -24020,6 +24024,9 @@
                         },
                         "dismissible": {
                           "type": "boolean"
+                        },
+                        "active": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -24035,7 +24042,8 @@
                         "exit_code",
                         "agents",
                         "pinned",
-                        "dismissible"
+                        "dismissible",
+                        "active"
                       ]
                     }
                   },

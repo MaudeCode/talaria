@@ -19,8 +19,7 @@ export function useBackgroundTasks(sessionId: string | null | undefined) {
     queryKey: keys.background(sessionId ?? ''),
     queryFn: () => api.fetchBackgroundTasks(sessionId ?? ''),
     enabled: Boolean(sessionId),
-    // Pinned work that cannot be dismissed is still running.
-    refetchInterval: (query) => (query.state.data?.tasks.some((t) => t.pinned && !t.dismissible) ? LIVE_REFRESH_MS : false),
+    refetchInterval: (query) => (query.state.data?.tasks.some((t) => t.active) ? LIVE_REFRESH_MS : false),
   })
 }
 

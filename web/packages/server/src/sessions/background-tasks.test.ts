@@ -83,4 +83,3 @@ describe('background task records (TAL-372)', () => {
     expect(store.get('s', 'd1')?.status).toBe('running')
   })
 })
-

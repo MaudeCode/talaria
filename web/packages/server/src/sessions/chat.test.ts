@@ -1210,7 +1210,9 @@ describe('chat turns through the sidecar', () => {
     // The Agent's view: two concurrent delegations (one stalled), the two units of one split call, and a notified process.
     const unit = (id: string, goals: string[], extra: Json = {}): Json => ({ delegation_id: id, origin_ui_session_id: sid, state: 'running', dispatched_at: 10, completed_at: null, updated_at: 11, goals, child_statuses: [], has_result: false, live_status: 'running', ...extra })
     let agent: Json = {
-      delegations: [unit('d-a', ['Check logs']), unit('d-b', ['Fix CI'], { live_status: 'stalled' }), unit('call-1-1', ['Write docs']), unit('call-1-2', ['Write tests', 'Run tests'])],
+      delegations: [unit('d-a', ['Check logs']), unit('d-b', ['Fix CI'], { live_status: 'stalled' }), unit('call-1-1', ['Write docs']), unit('call-1-2', ['Write tests', 'Run tests']),
+        // Still `running` in the ledger, but gone from the live registry: lost in an Agent restart.
+        unit('d-lost', ['Lost one'], { live_status: null })],
       processes: [{ process_id: 'proc_1', session_key: sid, command: 'make test', started_at: 12, exited: false, exited_at: null, exit_code: null, completion_reason: '', watched: false }],
     }
     sidecar.respond('process.background_list', (params) => { expect(params.session_ids).toEqual([sid]); return agent as never })
@@ -1219,8 +1221,10 @@ describe('chat turns through the sidecar', () => {
     const first = await read()
     expect(first.agent_available).toBe(true)
     let byId = await tasks()
-    expect(Object.keys(byId).sort()).toEqual([String(bg.task_id), 'call-1-1', 'call-1-2', 'd-a', 'd-b', 'proc_1'].sort())
-    expect(byId[String(bg.task_id)]).toMatchObject({ kind: 'background_command', status: 'completed', title: 'summarize repo', result_available: true, pinned: true, dismissible: true })
+    expect(Object.keys(byId).sort()).toEqual([String(bg.task_id), 'call-1-1', 'call-1-2', 'd-a', 'd-b', 'd-lost', 'proc_1'].sort())
+    expect(byId['d-lost']).toMatchObject({ status: 'unknown', pinned: true, dismissible: true, active: true })
+    expect(byId['d-a']).toMatchObject({ status: 'running', active: true, dismissible: false })
+    expect(byId[String(bg.task_id)]).toMatchObject({ kind: 'background_command', status: 'completed', title: 'summarize repo', result_available: true, pinned: true, dismissible: true, active: false })
     expect(byId['d-b']).toMatchObject({ kind: 'delegation', status: 'attention', title: 'Fix CI', pinned: true })
     expect(byId['call-1-2']).toMatchObject({ title: '2 subagents: Write tests; Run tests', agents: { total: 2, completed: 0, failed: 0, running: 2 } })
     expect(byId.proc_1).toMatchObject({ kind: 'process', status: 'running', title: 'make test', pinned: true })
@@ -1239,7 +1243,7 @@ describe('chat turns through the sidecar', () => {
     byId = await tasks()
     expect(byId['d-a']).toMatchObject({ status: 'completed', result_available: true, pinned: false })
     expect(byId.proc_1).toMatchObject({ status: 'failed', exit_code: 2, result_available: true })
-    expect(Object.keys(byId)).toHaveLength(6)
+    expect(Object.keys(byId)).toHaveLength(7)
     expect(str((await json(await s.get(`/api/background/result?session_id=${sid}&task_id=d-a`))).text)).toContain('all fine')
 
     // Dismissing is read state: the finished `/background` task leaves the tray and stays in the history.
@@ -1251,6 +1255,8 @@ describe('chat turns through the sidecar', () => {
     const offline = await read()
     expect(offline.agent_available).toBe(false)
     expect(Object.fromEntries((offline.tasks as Json[]).map((t) => [str(t.task_id), t.status]))).toMatchObject({ 'd-a': 'completed', 'd-b': 'unknown', 'call-1-1': 'unknown', proc_1: 'failed', [String(bg.task_id)]: 'completed' })
+    // Unknown work stays active, so clients keep refreshing until the Agent answers again.
+    expect((offline.tasks as Json[]).find((t) => t.task_id === 'd-b')).toMatchObject({ active: true, dismissible: true })
     expect((await s.get('/api/background/tasks?session_id=nope')).status).toBe(404)
     // Deleting the session removes its background records with it.
     const records = join(s.deps.sessionStore.sessionDir, '_background', `${sid}.json`)

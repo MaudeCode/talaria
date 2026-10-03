@@ -307,6 +307,7 @@ export const BackgroundStatusSchema = z.looseObject({ results: z.array(Backgroun
  * - `result_available` means `GET /api/background/result` returns its full result.
  * - `pinned` puts it in the chat's background tray: running work, and a finished `/background` result until dismissed.
  * - `dismissible` offers Dismiss: a finished `/background` result, or work nobody can confirm (`unknown`).
+ * - `active`: not settled yet (running, attention or unknown); clients keep refreshing while any record is active.
  */
 export const BackgroundTaskSchema = z.object({
   task_id: z.string(),
@@ -322,6 +323,7 @@ export const BackgroundTaskSchema = z.object({
   agents: BackgroundLinkSchema.shape.agents.nullable(),
   pinned: z.boolean(),
   dismissible: z.boolean(),
+  active: z.boolean(),
 })
 export type BackgroundTask = z.infer<typeof BackgroundTaskSchema>
 /** `agent_available: false` when the Agent could not be asked: running work then shows `unknown`. Reading never consumes a result. */

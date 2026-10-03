@@ -63,7 +63,7 @@ describe('Composer', () => {
     await waitFor(() => expect(api.fetchBackgroundTasks).toHaveBeenCalled())
     expect(screen.queryByRole('region', { name: 'Background work' })).not.toBeInTheDocument()
     // The server records the task once it starts; the refresh after the start shows it.
-    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [{ task_id: 'bg1', kind: 'background_command', status: 'running', title: 'summarize repo', started_at: 1, updated_at: 1, completed_at: null, result_available: false, child_session_id: null, exit_code: null, agents: null, pinned: true, dismissible: false }] })
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [{ task_id: 'bg1', kind: 'background_command', status: 'running', title: 'summarize repo', started_at: 1, updated_at: 1, completed_at: null, result_available: false, child_session_id: null, exit_code: null, agents: null, pinned: true, dismissible: false, active: true }] })
     await userEvent.type(screen.getByRole('textbox'), '/background summarize repo{Enter}')
     await waitFor(() => expect(api.startBackground).toHaveBeenCalledWith('s1', 'summarize repo'))
     expect(api.startChat).not.toHaveBeenCalled()

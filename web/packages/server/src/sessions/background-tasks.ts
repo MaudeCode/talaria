@@ -51,6 +51,7 @@ const TITLE_LIMIT = 160
 const TERMINAL: ReadonlySet<Status> = new Set(['completed', 'failed', 'cancelled'])
 const LIVE: ReadonlySet<Status> = new Set(['running', 'attention', 'unknown'])
 const CHILD_DONE = new Set(['completed', 'success'])
+const RUNNING_STATES: ReadonlySet<string> = new Set(['running', 'stalling', 'finalizing'])
 const CHILD_CANCELLED = new Set(['interrupted', 'cancelled'])
 
 export function isTerminal(status: Status): boolean { return TERMINAL.has(status) }
@@ -80,7 +81,7 @@ function unitStatus(state: string, childStatuses: string[]): Status {
 
 /** The record a ledger row describes; a live `stalling`/`stalled` unit needs attention. */
 export function delegationReceipt(row: DelegationRow, now: number): Partial<Receipt> & Pick<Receipt, 'task_id' | 'kind'> {
-  const running = ['running', 'stalling', 'finalizing'].includes(row.state)
+  const running = RUNNING_STATES.has(row.state)
   const status: Status = running ? (row.live_status === 'stalling' || row.live_status === 'stalled' || row.state === 'stalling' ? 'attention' : 'running') : unitStatus(row.state, row.child_statuses)
   const goals = row.goals.filter(Boolean)
   return {
@@ -150,6 +151,7 @@ export function taskView(r: Receipt, opts: { unconfirmed?: boolean } = {}): Back
     child_session_id: r.child_session_id, exit_code: r.exit_code, agents: r.agents,
     // Work nobody can confirm (lost in an Agent or server restart) can be dismissed like a finished `/background` result.
     pinned: status === 'running' || status === 'attention' || (dismissible(r, status) && r.dismissed_at === null),
+    active: LIVE.has(status),
     dismissible: dismissible(r, status) && r.dismissed_at === null,
   }
 }
@@ -306,7 +308,9 @@ export class BackgroundActivity {
     }
     const now = this.deps.now()
     if (agent) this.deps.store.update(sid, [...agent.delegations.map((r) => delegationReceipt(r, now)), ...agent.processes.map(processReceipt)])
-    const liveDelegations = new Set((agent?.delegations ?? []).map((r) => r.delegation_id))
+    // A ledger row alone confirms only a settled unit: a running one must still be in the Agent's live registry, else it
+    // was lost in an Agent restart.
+    const liveDelegations = new Set((agent?.delegations ?? []).filter((r) => r.live_status !== null || !RUNNING_STATES.has(r.state)).map((r) => r.delegation_id))
     const liveProcesses = new Set((agent?.processes ?? []).filter((p) => !p.exited).map((p) => p.process_id))
     const confirmed = (r: Receipt): boolean => r.kind === 'background_command' ? Boolean(r.stream_id) && this.deps.liveStream(r.stream_id!)
       : r.kind === 'delegation' ? liveDelegations.has(r.task_id) : liveProcesses.has(r.task_id)
@@ -341,4 +345,3 @@ export class BackgroundActivity {
     return done.map((r) => ({ task_id: r.task_id, prompt: r.title, answer: r.result, completed_at: r.completed_at }))
   }
 }
-

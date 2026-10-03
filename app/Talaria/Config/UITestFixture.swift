@@ -784,9 +784,9 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         let dismissed = backgroundDismissed.withLock { $0 }
         return [
             ["task_id": "deleg-ui-1", "kind": "delegation", "status": "running", "title": "Fix CI", "started_at": 2_000_000_010, "updated_at": 2_000_000_011, "completed_at": NSNull(),
-             "result_available": false, "child_session_id": NSNull(), "exit_code": NSNull(), "agents": NSNull(), "pinned": true, "dismissible": false],
+             "result_available": false, "child_session_id": NSNull(), "exit_code": NSNull(), "agents": NSNull(), "pinned": true, "dismissible": false, "active": true],
             ["task_id": "bg-ui", "kind": "background_command", "status": "completed", "title": "Summarize the repo", "started_at": 2_000_000_012, "updated_at": 2_000_000_013, "completed_at": 2_000_000_013,
-             "result_available": true, "child_session_id": NSNull(), "exit_code": NSNull(), "agents": NSNull(), "pinned": !dismissed, "dismissible": !dismissed]
+             "result_available": true, "child_session_id": NSNull(), "exit_code": NSNull(), "agents": NSNull(), "pinned": !dismissed, "dismissible": !dismissed, "active": false]
         ]
     }
 

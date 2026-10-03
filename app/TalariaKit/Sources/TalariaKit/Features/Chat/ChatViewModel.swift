@@ -2970,8 +2970,7 @@ public final class ChatViewModel {
     private func statusMessageFromSlashCommand() -> String {
         let running = activeStreamID == nil ? String(localized: "No") : String(localized: "Yes")
         let queued = queuedSlashMessages.count
-        // Pinned work that cannot be dismissed is work that is still running.
-        let backgroundTasks = backgroundTasks.filter { $0.pinned && !$0.dismissible }.count
+        let backgroundTasks = backgroundTasks.filter(\.active).count
         let profile = selectedProfileName ?? currentProfile ?? "default"
         let workspace = currentWorkspace ?? String(localized: "Unknown")
         let model = currentModel ?? String(localized: "Unknown")
@@ -4650,7 +4649,7 @@ public final class ChatViewModel {
         } catch {
             return
         }
-        if backgroundTasks.contains(where: { $0.pinned && !$0.dismissible }) {
+        if backgroundTasks.contains(where: { $0.active }) {
             startBackgroundPollingIfNeeded()
         }
     }
@@ -4688,7 +4687,7 @@ public final class ChatViewModel {
                 else { continue }
                 guard !Task.isCancelled, self.sessionID == sessionID else { break pollingLoop }
                 self.backgroundTasks = response.tasks
-                guard self.backgroundTasks.contains(where: { $0.pinned && !$0.dismissible }) else { break pollingLoop }
+                guard self.backgroundTasks.contains(where: { $0.active }) else { break pollingLoop }
             }
 
             if !Task.isCancelled {

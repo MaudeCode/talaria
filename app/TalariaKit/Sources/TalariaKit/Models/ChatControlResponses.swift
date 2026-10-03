@@ -85,5 +85,3 @@ public struct BackgroundStartResponse: Decodable, Equatable {
     let sessionId: String?
     public let error: String?
 }
-
-

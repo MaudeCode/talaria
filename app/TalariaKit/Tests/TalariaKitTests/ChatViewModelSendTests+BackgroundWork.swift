@@ -68,12 +68,13 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.backgroundTasks.map(\.taskId), ["task-1"])
     }
 
-    func testRunningWorkRefreshesUntilItFinishes() async throws {
+    func testActiveWorkRefreshesUntilItSettlesEvenWhileItsStatusIsUnknown() async throws {
         let log = BackgroundLog()
-        log.tasks = #"{"session_id":"session-abc","agent_available":true,"tasks":[{"task_id":"d1","kind":"delegation","status":"running","title":"Fix CI","pinned":true,"dismissible":false}]}"#
+        // The Agent was briefly unreachable: the work shows unknown (and dismissible) but is still active.
+        log.tasks = #"{"session_id":"session-abc","agent_available":false,"tasks":[{"task_id":"d1","kind":"delegation","status":"unknown","title":"Fix CI","pinned":true,"dismissible":true,"active":true}]}"#
         let viewModel = try backgroundViewModel(log)
         await viewModel.refreshBackgroundTasks()
-        XCTAssertEqual(viewModel.pinnedBackgroundTasks.first?.status, .running)
+        XCTAssertEqual(viewModel.pinnedBackgroundTasks.first?.status, .unknown)
         log.tasks = #"{"session_id":"session-abc","agent_available":true,"tasks":[{"task_id":"d1","kind":"delegation","status":"completed","title":"Fix CI","pinned":false,"dismissible":false}]}"#
         try await waitUntil { viewModel.backgroundTasks.first?.status == .completed }
         let reads = log.taskReads
