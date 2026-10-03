@@ -201,7 +201,8 @@ extension ChatViewModelSendTests {
     func testAReloadWhileThisDevicesSteerIsSendingKeepsItsRow() async throws {
         let streamClient = SpySSEStreamingClient()
         let log = RequestLog()
-        let viewModel = try runningViewModel(log, streamClient: streamClient, protocolClasses: [HeldSteerURLProtocol.self, MockURLProtocol.self])
+        HeldURLProtocol.path = "/api/chat/steer"
+        let viewModel = try runningViewModel(log, streamClient: streamClient, protocolClasses: [HeldURLProtocol.self, MockURLProtocol.self])
         let started = await viewModel.sendMessage("Initial request")
         XCTAssertTrue(started)
 
@@ -211,10 +212,31 @@ extension ChatViewModelSendTests {
         // The server cannot list a steer whose POST has not reached it.
         await viewModel.loadMessages()
         XCTAssertTrue(viewModel.messages.contains { $0.messageId == mine })
-        try await waitUntil { HeldSteerURLProtocol.held != nil }
-        HeldSteerURLProtocol.release(#"{"accepted":true,"stream_id":"stream-123"}"#)
+        try await waitUntil { HeldURLProtocol.held != nil }
+        HeldURLProtocol.release(#"{"accepted":true,"stream_id":"stream-123"}"#)
         _ = await send.value
         XCTAssertEqual(viewModel.messages.first { $0.messageId == mine }?.steeringHintState, .waiting)
+    }
+
+    func testALoadFetchedBeforeASteerArrivesNeverRemovesIt() async throws {
+        let streamClient = SpySSEStreamingClient()
+        let log = RequestLog()
+        HeldURLProtocol.path = "/api/session"
+        let viewModel = try runningViewModel(log, streamClient: streamClient, protocolClasses: [HeldURLProtocol.self, MockURLProtocol.self])
+        let started = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(started)
+
+        // The load's answer predates both steers: this device's (POST answered) and one from Web.
+        let load = Task { await viewModel.loadMessages() }
+        try await waitUntil { HeldURLProtocol.held != nil }
+        _ = await viewModel.submitStreamingMessage("Mine", behavior: .steer)
+        let mine = try XCTUnwrap(viewModel.messages.last(where: \.isLocalSteeringHint)?.messageId)
+        streamClient.emit(.steerPending(steer("steer-web", "Theirs")))
+        HeldURLProtocol.release(#"{"session":{"session_id":"session-abc","active_stream_id":"stream-123","is_streaming":true,"messages":[{"role":"user","content":"Initial request","message_id":"user-1"}],"pending_steers":[]}}"#)
+        await load.value
+
+        XCTAssertEqual(viewModel.messages.filter(\.isLocalSteeringHint).compactMap(\.messageId), [mine, "steer-web"])
+        XCTAssertEqual(viewModel.pendingSteerActions["steer-web"]?.any, true)
     }
 
     func testARelaunchShowsEachPendingSteerOnceAndStillKnowsThisDevicesOwn() async throws {
@@ -257,11 +279,12 @@ extension ChatViewModelSendTests {
     }
 }
 
-/// Holds this test's `/api/chat/steer` open until released, while other requests answer.
-private final class HeldSteerURLProtocol: URLProtocol, @unchecked Sendable {
-    nonisolated(unsafe) static var held: HeldSteerURLProtocol?
+/// Holds one request to `path` open until released, while other requests answer.
+private final class HeldURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var path = ""
+    nonisolated(unsafe) static var held: HeldURLProtocol?
 
-    override class func canInit(with request: URLRequest) -> Bool { request.url?.path == "/api/chat/steer" }
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.path == path && held == nil }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() { Self.held = self }
     override func stopLoading() {}

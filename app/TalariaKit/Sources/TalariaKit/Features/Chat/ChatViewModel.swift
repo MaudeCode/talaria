@@ -56,6 +56,9 @@ public final class ChatViewModel {
     private var closedSteerIDs = Set<String>()
     /// This device's steers whose POST has not answered yet: the server cannot list them, so a reload keeps their rows.
     private var steerRequestsInFlight = Set<String>()
+    /// Counts each change to a pending row here; a session load fetched before a change never undoes it.
+    private var steerChangeCount = 0
+    private var steerChangedAt: [String: Int] = [:]
     /// The last session load listed `pending_steers`, so a snapshot merge adds no pending row of its own.
     private var serverListsPendingSteers = false
     private var ownSteers: OwnSteerStore { OwnSteerStore(defaults: userDefaults) }
@@ -1275,6 +1278,7 @@ public final class ChatViewModel {
             cacheFirstPlaceholder = []
         }
         let renderedCacheFirst = !cacheFirstPlaceholder.isEmpty
+        let steerChangesAtFetch = steerChangeCount
 
         do {
             let response = try await client.session(
@@ -1350,6 +1354,7 @@ public final class ChatViewModel {
                     Self.insertLocalOptimisticMessage(message, into: &mergedMessages)
                 }
                 applyReadOnlyState(from: session)
+                let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
                 applyReloadedMessages(
                     mergedMessages,
                     from: session,
@@ -1357,7 +1362,7 @@ public final class ChatViewModel {
                     previousMessagesOffset: currentMessagesOffset
                 )
                 restoreActiveStreamSnapshotIfAvailable(streamID: currentActiveStreamID)
-                applyServerPendingSteers(session?.pendingSteers)
+                applyServerPendingSteers(session?.pendingSteers, changedAfter: steerChangesAtFetch, newerRows: newerSteerRows)
                 isViewingCachedData = false
                 lastError = nil
                 errorMessage = nil
@@ -1374,6 +1379,7 @@ public final class ChatViewModel {
             // read-only flag behind once its transcript has been rejected.
             applyReadOnlyState(from: session)
             applyCompressionAnchorMetadata(from: session)
+            let newerSteerRows = pendingSteerRows(changedAfter: steerChangesAtFetch)
             applyReloadedMessages(
                 reloadedMessages,
                 from: session,
@@ -1430,7 +1436,7 @@ public final class ChatViewModel {
                 transcriptSeq: session?.transcriptSeq,
                 statesTranscriptSeq: session?.statesTranscriptSeq ?? true
             )
-            applyServerPendingSteers(session?.pendingSteers)
+            applyServerPendingSteers(session?.pendingSteers, changedAfter: steerChangesAtFetch, newerRows: newerSteerRows)
             latestAppliedSessionLoadRequestGeneration = loadRequestGeneration
             isConfirmingRunState = false
         } catch {
@@ -3725,6 +3731,7 @@ public final class ChatViewModel {
         reasoningAnchorMessageID = nil
 
         let messageID = "local-steer-\(UUID().uuidString)"
+        noteSteerChange(messageID)
         let timestamp = Date().timeIntervalSince1970
         messages.append(ChatMessage(
             role: "user",
@@ -3754,6 +3761,7 @@ public final class ChatViewModel {
               currentState != .consumed
         else { return }
 
+        noteSteerChange(id)
         messages[index] = Self.steeringHintMessage(messages[index], state: state)
     }
 
@@ -3800,6 +3808,7 @@ public final class ChatViewModel {
         let index = messages.firstIndex(where: { $0.messageId == steer.steerId })
         // Already taken here: no actions, and the row stays as the Agent saw it.
         if let index, messages[index].steeringHintState == .consumed { return }
+        noteSteerChange(steer.steerId)
         pendingSteerActions[steer.steerId] = steer.state == .pending ? steer.actions : PendingSteer.Actions.none
         if let index {
             messages[index] = Self.steeringHintMessage(messages[index], state: state)
@@ -3816,19 +3825,36 @@ public final class ChatViewModel {
     }
 
     /// TAL-426: after a load the server's `pending_steers` are the pending rows: one per steer, in its order, and none it
-    /// no longer holds. A Web older than TAL-424 lists none, so this device's own rows stay as they were.
-    private func applyServerPendingSteers(_ steers: [PendingSteer]?) {
+    /// no longer holds. A row this device sent or changed after the fetch (a steer POST, a `steer_pending` frame) is newer
+    /// than the list and stays as it is. A Web older than TAL-424 lists none, so this device's own rows stay as they were.
+    private func applyServerPendingSteers(_ steers: [PendingSteer]?, changedAfter fetch: Int, newerRows: [ChatMessage]) {
         serverListsPendingSteers = steers != nil
+        // The reload rebuilt the transcript from rows captured before the fetch; rows changed since come back as they were.
+        for row in newerRows where !messages.contains(where: { $0.messageId == row.messageId }) { messages.append(row) }
         // ponytail: old-server fallback; delete once every supported Web ships `pending_steers`.
         guard let steers else { return }
-        let listed = Set(steers.map(\.steerId)).union(steerRequestsInFlight)
+        let newer = Set(steerChangedAt.filter { $0.value > fetch }.keys).union(steerRequestsInFlight)
+        let kept = Set(steers.map(\.steerId)).union(newer)
         var seen = Set<String>()
         messages.removeAll { message in
             guard message.isLocalSteeringHint, message.steeringHintState != .consumed, let id = message.messageId else { return false }
-            return !listed.contains(id) || !seen.insert(id).inserted
+            return !kept.contains(id) || !seen.insert(id).inserted
         }
-        for id in pendingSteerActions.keys where !listed.contains(id) { pendingSteerActions.removeValue(forKey: id) }
-        for steer in steers { applyPendingSteer(steer) }
+        for id in pendingSteerActions.keys where !kept.contains(id) { pendingSteerActions.removeValue(forKey: id) }
+        for steer in steers where !newer.contains(steer.steerId) { applyPendingSteer(steer) }
+    }
+
+    /// The pending rows changed here after a load's fetch: newer than anything that load carries.
+    private func pendingSteerRows(changedAfter fetch: Int) -> [ChatMessage] {
+        messages.filter { message in
+            guard message.isLocalSteeringHint, message.steeringHintState != .consumed, let id = message.messageId else { return false }
+            return (steerChangedAt[id] ?? 0) > fetch
+        }
+    }
+
+    private func noteSteerChange(_ id: String) {
+        steerChangeCount += 1
+        steerChangedAt[id] = steerChangeCount
     }
 
     /// A snapshot merge never brings back a closed steer or shows one twice; once the server lists pending steers, the

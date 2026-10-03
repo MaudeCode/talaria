@@ -445,8 +445,7 @@ final class PendingSteerUITests: ChatUITestCase {
             try XCTUnwrap(waitForComposer(timeout: 5)).tap()
             XCTAssertTrue(input.awaitExistence(timeout: 5))
         }
-        // Let the keyboard land before typing, as `sendFixtureMessage` does.
-        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(app.keyboards.firstMatch.awaitExistence(timeout: 5), "The composer has no keyboard to type the draft")
         input.typeText("Draft")
         tapCenter(of: app.buttons.matching(identifier: "Edit steering message").firstMatch)
         XCTAssertTrue(app.staticTexts["Check the backup logs too"].awaitNonExistence(timeout: 10), "The edited steer is still pending")

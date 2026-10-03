@@ -41,7 +41,7 @@ extension ChatViewModelSendTests {
         listenRemoteControlCenter: (any ListenRemoteControlControlling)? = nil,
         serverTTSAudioPlayerFactory: (@MainActor (Data) throws -> any ListenAudioPlaying)? = nil,
         draftAttachmentStore: any ChatDraftAttachmentStoring = RecordingSendDraftAttachmentStore(),
-        userDefaults: UserDefaults = .standard,
+        userDefaults: UserDefaults? = nil,
         server: URL = URL(string: "https://example.test")!,
         protocolClasses: [AnyClass] = [MockURLProtocol.self],
         responseCache: ResponseCache? = nil,
@@ -80,7 +80,8 @@ extension ChatViewModelSendTests {
             listenRemoteControlCenter: listenRemoteControlCenter ?? SpyListenRemoteControlCenter(),
             serverTTSAudioPlayerFactory: serverTTSAudioPlayerFactory,
             draftAttachmentStore: draftAttachmentStore,
-            userDefaults: userDefaults,
+            // Test-owned state: a fresh suite unless the test passes its own.
+            userDefaults: try userDefaults ?? makeEphemeralUserDefaults(),
             responseCache: responseCache
         )
 
