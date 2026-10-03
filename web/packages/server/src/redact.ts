@@ -117,8 +117,9 @@ const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENT
  * text with a URL). `isEnvSecretAssignment` gates it.
  */
 // One attempt per identifier, which must hold a keyword: the scan stays linear on long runs (`PWPWPW…`).
-const ENV_SUFFIX_RE = /(?<![A-Z0-9_])(?=[A-Z0-9_]*(?:KEY|PASS|PW))([A-Z0-9_]+)\s*=\s*(['"]?)(\S+)\2/g
-const ENV_SUFFIX_LOWER_RE = /(?<![a-z0-9_])([a-z0-9_]+_(?:key|pass|pw)(?![a-z0-9_]))\s*=\s*(['"]?)(\S+)\2/gi
+// A quoted value runs to its closing quote, spaces included, or to the line end when unclosed.
+const ENV_SUFFIX_RE = /(?<![A-Z0-9_])(?=[A-Z0-9_]*(?:KEY|PASS|PW))([A-Z0-9_]+)\s*=\s*("[^"\n]*"?\S*|'[^'\n]*'?\S*|\S+)/g
+const ENV_SUFFIX_LOWER_RE = /(?<![a-z0-9_])([a-z0-9_]+_(?:key|pass|pw)(?![a-z0-9_]))\s*=\s*("[^"\n]*"?\S*|'[^'\n]*'?\S*|\S+)/gi
 /** A keyword at a word edge of an env name (`DB_PW`, `MYSQL_PASS`), never inside a word (`KEYBOARD`, `PASSAGE`). */
 const ENV_SUFFIX_WORD_RE = /(?:^|[^A-Za-z])(?:KEY|PASS|PW)S?(?![A-Za-z])/i
 /** Env names whose value is a credential whatever its shape; a bare `KEY` needs an opaque value (`SORT_KEY=name` stays). */
@@ -214,6 +215,7 @@ const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/]{8,
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff]/
 const CONTROL_CHARS_RE = new RegExp(CONTROL_CHAR_RE.source, 'g')
 const CRED_TEST_RE = new RegExp(CRED_RE.source)
+const CRED_WHOLE_RE = new RegExp(`^${CRED_RE.source}$`)
 const CONTROL_SPLIT_SPAN_RE = /^[A-Za-z0-9_.\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff-]*$/
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 /** A private key whose end marker is missing (a display cap cut it off): masked to the end of the text. */
@@ -224,7 +226,7 @@ const REDACTED_ENV_VALUE_RE = /(?:\*{3,}|[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,32}\.\.\
 
 /**
  * A prefixed credential whose body a control or zero-width character splits, matched on the text without those characters
- * and masked in place. A span may hold only token and control characters and never runs into a `KEY=`; a span crossing a
+ * and masked in place. A span may hold only token and control characters and stops before a `KEY=` it runs into; a span crossing a
  * line whose own piece already matches is left to the prefix pass, so a complete token never swallows the next line.
  */
 function maskControlSplitTokens(text: string): string {
@@ -236,12 +238,20 @@ function maskControlSplitTokens(text: string): string {
   let out = ''
   let last = 0
   for (const m of stripped.matchAll(CRED_RE)) {
-    const token = m[1]!
+    let token = m[1]!
     const start = kept[m.index]!
-    const end = kept[m.index + token.length - 1]! + 1
+    let end = kept[m.index + token.length - 1]! + 1
+    if (/^[ \t]*=/.test(text.slice(end, end + 64))) {
+      // The join ran into the next piece's `KEY=`: the credential is what precedes that piece, when it is whole.
+      let cut = end - 1
+      while (cut > start && !CONTROL_CHAR_RE.test(text[cut]!)) cut -= 1
+      token = text.slice(start, cut).replace(CONTROL_CHARS_RE, '')
+      if (cut <= start || !CRED_WHOLE_RE.test(token)) continue
+      end = cut
+    }
     const span = text.slice(start, end)
     if (/[\r\n]/.test(span) && CRED_TEST_RE.test(span)) continue
-    if (!CONTROL_SPLIT_SPAN_RE.test(span) || text[end] === '=') continue
+    if (!CONTROL_SPLIT_SPAN_RE.test(span)) continue
     out += text.slice(last, start) + mask(token)
     last = end
   }
@@ -1212,7 +1222,14 @@ function redactRules(text: string): string {
   for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = redactCredentialParams(out)
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
-  const maskEnvSuffix = (whole: string, key: string, quote: string, value: string): string => (isEnvSecretAssignment(key, value) ? `${key}=${quote}${mask(value)}${quote}` : whole)
+  const maskEnvSuffix = (whole: string, key: string, value: string): string => {
+    // A value quoted whole keeps its quotes; anything else (unclosed, or a quoted piece glued to more) is masked whole.
+    const quote = /^["']/.exec(value)?.[0] ?? ''
+    const closed = quote !== '' && value.length > 1 && value.endsWith(quote) && !value.slice(1, -1).includes(quote)
+    const inner = closed ? value.slice(1, -1) : quote ? value.slice(1) : value
+    if (!isEnvSecretAssignment(key, inner)) return whole
+    return closed ? `${key}=${quote}${mask(inner)}${quote}` : quote ? `${key}=${quote}***` : `${key}=${mask(inner)}`
+  }
   out = out.replace(ENV_SUFFIX_RE, maskEnvSuffix)
   out = out.replace(ENV_SUFFIX_LOWER_RE, maskEnvSuffix)
   out = out.replace(LISTED_FLAG_RE, (whole, q: string, dash: string, key: string, gap: string, vq: string | undefined, quotedValue: string | undefined, bare: string | undefined) => {
