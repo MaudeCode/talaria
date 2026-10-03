@@ -147,14 +147,22 @@ export function Composer(props: ComposerProps) {
     f.classList.toggle('cf-burger', next === 'burger')
     setStage(next)
   }, [])
-  useLayoutEffect(() => { fitFooter() })
-  useEffect(() => {
+  // Refit only when the footer's geometry or content changes (viewport, chips, buttons, labels). Typing and stream
+  // renders change neither, so they never force the measuring layout pass (TAL-278). Class changes are not observed:
+  // the fit pass sets them itself.
+  const readOnly = !!session?.read_only
+  useLayoutEffect(() => {
     const f = footer.current
-    if (!f) return
+    const left = f?.querySelector('.composer-left')
+    if (!f || !left) return
+    fitFooter()
     const ro = new ResizeObserver(() => fitFooter())
     ro.observe(f)
-    return () => ro.disconnect()
-  }, [fitFooter])
+    ro.observe(left)
+    const mo = new MutationObserver(() => fitFooter())
+    mo.observe(f, { childList: true, subtree: true, characterData: true })
+    return () => { ro.disconnect(); mo.disconnect() }
+  }, [fitFooter, readOnly])
   const phone = usePhone()
   const box = useRef<HTMLDivElement>(null)
   // The overflow panel closes on any pointer-down outside the composer box.
