@@ -130,7 +130,10 @@ public enum SSEEvent: Equatable {
     case approvalPending(ApprovalPendingResponse)
     case clarificationPending(ClarificationPendingResponse)
     case steerConsumed(SteeringStreamEvent)
-    case pendingSteerLeftover(SteeringStreamEvent)
+    /// TAL-426: a pending steer the server added or changed, from any device.
+    case steerPending(PendingSteer)
+    /// TAL-426: a pending steer taken back (Edit, Cancel, Stop) or sent on as the server's follow-up turn.
+    case steerWithdrawn(SteerWithdrawnEvent)
     case streamEnd
     /// The settled session an error or cancel frame carries, delivered just before that terminal event.
     case settledSession(SessionDetail)
@@ -369,6 +372,8 @@ struct SSEEventDecoder {
     static func decode(eventType: String, data: String) -> SSEEvent {
         let eventData = Data(data.utf8)
         let decoder = JSONDecoder()
+        let snakeCaseDecoder = JSONDecoder()
+        snakeCaseDecoder.keyDecodingStrategy = .convertFromSnakeCase
 
         switch eventType {
         case "token":
@@ -427,14 +432,20 @@ struct SSEEventDecoder {
                 decoder: decoder
             )
             return .steerConsumed(payload ?? SteeringStreamEvent(text: ""))
+        case "steer_pending":
+            guard let payload = decodePayload(PendingSteer.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
+            return .steerPending(payload)
+        case "steer_withdrawn":
+            guard let payload = decodePayload(SteerWithdrawnEvent.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
+            return .steerWithdrawn(payload)
+        // ponytail: old-server fallback; a Web older than TAL-424 sends no `steer_withdrawn`, so its leftover (at a Stop, and
+        // also at a normal turn end) reads as a stopped withdraw: this device's text returns to the composer instead of
+        // being queued. Delete once every supported Web ships `steer_withdrawn`.
         case "pending_steer_leftover":
-            let payload = decodePayload(
-                SteeringStreamEvent.self,
-                eventType: eventType,
-                from: eventData,
-                decoder: decoder
-            )
-            return .pendingSteerLeftover(payload ?? SteeringStreamEvent(text: ""))
+            guard let payload = decodePayload(SteeringStreamEvent.self, eventType: eventType, from: eventData, decoder: decoder),
+                  let steerID = payload.steerId
+            else { return .ignored }
+            return .steerWithdrawn(SteerWithdrawnEvent(steerId: steerID, reason: .stopped, text: payload.text))
         case "stream_end":
             return .streamEnd
         case "cancel":

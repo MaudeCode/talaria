@@ -417,6 +417,44 @@ final class ChatRecoveryUITests: ChatUITestCase {
     }
 }
 
+/// A steer sent from another device shows as a pending bubble with the server's actions; Send now says when it must
+/// wait, and Edit puts its text back in the composer (TAL-426).
+final class PendingSteerUITests: ChatUITestCase {
+    func testPendingSteerFromAnotherDeviceOffersSendNowEditAndCancel() throws {
+        launchChatFixture(argument: "--ui-test-chat-pending-steers", trace: "start -> token -> steer_pending -> withdraw -> steer_withdrawn")
+        try sendFixtureMessage("Back up the cluster")
+
+        XCTAssertTrue(app.staticTexts["Check the backup logs too"].awaitExistence(timeout: 10), "The pending steer from Web is missing")
+        XCTAssertTrue(app.staticTexts["Skip the cache"].awaitExistence(timeout: 5), "The second pending steer is missing")
+        XCTAssertTrue(element(labelContaining: "Waiting for agent").awaitExistence(timeout: 5))
+        let sendNow = app.buttons["Send now"]
+        XCTAssertTrue(sendNow.awaitExistence(timeout: 5))
+        // Only the actions the server allows: the second steer offers no Send now.
+        XCTAssertEqual(app.buttons.matching(identifier: "Send now").count, 1)
+        XCTAssertEqual(app.buttons.matching(identifier: "Edit steering message").count, 2)
+        XCTAssertEqual(app.buttons.matching(identifier: "Cancel steering message").count, 2)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "pending-steer"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        tapCenter(of: sendNow)
+        XCTAssertTrue(element(labelContaining: "it stays pending").awaitExistence(timeout: 5), "Send now gave no notice when nothing could take it")
+
+        // Edit appends the steer after the draft, a blank line between.
+        let input = app.textViews.firstMatch
+        if !input.awaitExistence(timeout: 2) {
+            try XCTUnwrap(waitForComposer(timeout: 5)).tap()
+            XCTAssertTrue(input.awaitExistence(timeout: 5))
+        }
+        XCTAssertTrue(app.keyboards.firstMatch.awaitExistence(timeout: 5), "The composer has no keyboard to type the draft")
+        input.typeText("Draft")
+        tapCenter(of: app.buttons.matching(identifier: "Edit steering message").firstMatch)
+        XCTAssertTrue(app.staticTexts["Check the backup logs too"].awaitNonExistence(timeout: 10), "The edited steer is still pending")
+        XCTAssertEqual(input.value as? String, "Draft\n\nCheck the backup logs too")
+    }
+}
+
 /// The composer collapses as the transcript scrolls and expands again, starting from a fresh,
 /// unfocused composer with no draft. Its first expansion runs in `ChatNavigationUITests`.
 final class ChatComposerUITests: ChatUITestCase {

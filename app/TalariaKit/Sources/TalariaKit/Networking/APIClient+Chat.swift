@@ -108,6 +108,16 @@ extension APIClient {
         )
     }
 
+    /// TAL-426: take a pending steer back (`edit`, `cancel`); `withdrawn: false` when the Agent already took it.
+    public func withdrawSteer(sessionID: String, steerID: String, reason: PendingSteerWithdrawReason) async throws -> SteerWithdrawResponse {
+        try await send(endpoint: .chatSteerWithdraw, method: "POST", body: SteerWithdrawRequest(sessionId: sessionID, steerId: steerID, reason: reason))
+    }
+
+    /// TAL-426: deliver a pending steer now; `redirected: false` when nothing is running to take it.
+    public func sendSteerNow(sessionID: String, steerID: String) async throws -> SteerSendNowResponse {
+        try await send(endpoint: .chatSteerSendNow, method: "POST", body: SteerSendNowRequest(sessionId: sessionID, steerId: steerID))
+    }
+
     public func submitGoal(
         sessionID: String,
         args: String,
@@ -160,6 +170,17 @@ private struct ChatStartRequest: Encodable {
     let profile: String?
     let explicitModelPick: Bool?
     let attachments: [JSONValue]?
+}
+
+private struct SteerWithdrawRequest: Encodable {
+    let sessionId: String
+    let steerId: String
+    let reason: PendingSteerWithdrawReason
+}
+
+private struct SteerSendNowRequest: Encodable {
+    let sessionId: String
+    let steerId: String
 }
 
 private struct ChatSteerRequest: Encodable {

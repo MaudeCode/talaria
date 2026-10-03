@@ -1203,6 +1203,27 @@ struct ChatView: View {
         )
         .environment(\.openURL, OpenURLAction(handler: handleTranscriptLink))
         .environment(\.transcriptMediaWorkspaceRoot, viewModel.selectedWorkspacePath)
+        .environment(\.pendingSteerControls, PendingSteerControls(
+            actions: viewModel.pendingSteerActions,
+            inFlight: viewModel.steerActionsInFlight,
+            perform: { id, action in
+                Task {
+                    switch action {
+                    case .sendNow: await viewModel.sendPendingSteerNow(id: id)
+                    case .edit: await viewModel.withdrawPendingSteer(id: id, reason: .edit)
+                    case .cancel: await viewModel.withdrawPendingSteer(id: id, reason: .cancel)
+                    }
+                }
+            }
+        ))
+        // TAL-426: a steer taken back (Edit, or a Stop of this device's steer) returns after the draft, blank line between.
+        .onChange(of: viewModel.returnedComposerTexts) { _, texts in
+            guard !texts.isEmpty else { return }
+            let returned = viewModel.takeReturnedComposerTexts().joined(separator: "\n\n")
+            let draft = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+            draftMessage = draft.isEmpty ? returned : "\(draftMessage.replacingOccurrences(of: #"\s+$"#, with: "", options: .regularExpression))\n\n\(returned)"
+            composerIsFocused = true
+        }
     }
 
     /// A link that names a workspace file opens the source viewer at its line;

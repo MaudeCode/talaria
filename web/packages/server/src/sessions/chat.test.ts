@@ -519,7 +519,7 @@ describe('chat turns through the sidecar', () => {
     expect(await json(res)).toEqual({ error: 'session already has an active stream', active_stream_id: streamId })
     expect(await json(await s.get(`/api/chat/stream/status?stream_id=${streamId}`))).toMatchObject({ active: true, replay_available: true })
     res = await s.get(`/api/chat/cancel?stream_id=${streamId}`)
-    expect(await json(res)).toEqual({ ok: true, cancelled: true, stream_id: streamId })
+    expect(await json(res)).toEqual({ ok: true, cancelled: true, stream_id: streamId, withdrawn_steers: [] })
     expect(interrupted).toBe(true)
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'cancel')
     expect(eventNames(frames)).toContain('cancel')
@@ -537,7 +537,7 @@ describe('chat turns through the sidecar', () => {
     expect(((frames.find((f) => f.event === 'cancel')?.data as Json).session as Json | undefined)?.messages).toSatisfy((rows: Json[] | undefined) => !rows || rows.every((m) => m._turn_id === streamId))
     expect(detail.active_stream_id).toBeNull()
     expect((await post(s, '/api/chat/start', { session_id: sid, message: 'after cancel' })).status).toBe(200)
-    expect(await json(await s.get('/api/chat/cancel?stream_id=nope'))).toEqual({ ok: true, cancelled: false, stream_id: 'nope' })
+    expect(await json(await s.get('/api/chat/cancel?stream_id=nope'))).toEqual({ ok: true, cancelled: false, stream_id: 'nope', withdrawn_steers: [] })
   })
 
   it('announces every started turn on the session-list stream so an open chat elsewhere can attach (TAL-434)', async () => {
@@ -972,13 +972,13 @@ describe('chat turns through the sidecar', () => {
     const streamId = String(start.stream_id)
     expect((await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'never applied', display_text: 'Never applied', steer_id: 'steer-x' }))).accepted).toBe(true)
     expect((await json(await post(s, '/api/chat/steer', { session_id: sid, text: 'also held', steer_id: 'steer-y' }))).accepted).toBe(true)
-    expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toMatchObject({ ok: true, cancelled: true })
+    const withdrawn = [{ steer_id: 'steer-x', reason: 'stopped', text: 'Never applied' }, { steer_id: 'steer-y', reason: 'stopped', text: 'also held' }]
+    // TAL-426: the Stop's answer carries them too, for a client that stops reading the stream once it answers.
+    expect(await json(await s.get(`/api/chat/cancel?stream_id=${streamId}`))).toEqual({ ok: true, cancelled: true, stream_id: streamId, withdrawn_steers: withdrawn })
     const frames = await s.sse(`/api/chat/stream?stream_id=${streamId}&replay=1`, (f) => f.event === 'cancel')
     const names = frames.map((f) => f.event)
     expect(names.lastIndexOf('steer_withdrawn')).toBeLessThan(names.indexOf('cancel'))
-    expect(frames.filter((f) => f.event === 'steer_withdrawn').map((f) => f.data)).toEqual([
-      { steer_id: 'steer-x', reason: 'stopped', text: 'Never applied' }, { steer_id: 'steer-y', reason: 'stopped', text: 'also held' },
-    ])
+    expect(frames.filter((f) => f.event === 'steer_withdrawn').map((f) => f.data)).toEqual(withdrawn)
     // Until TAL-425 / TAL-426 read `steer_withdrawn`, today's clients still get the leftovers they requeue.
     expect(frames.filter((f) => f.event === 'pending_steer_leftover').map((f) => (f.data as Json).steer_id)).toEqual(['steer-x', 'steer-y'])
     expect(names.lastIndexOf('pending_steer_leftover')).toBeLessThan(names.indexOf('cancel'))

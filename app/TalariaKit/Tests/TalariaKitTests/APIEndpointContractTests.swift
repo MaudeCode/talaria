@@ -90,6 +90,8 @@ final class ContractReadinessTests: APIClientTestCase {
                 query: ["stream_id": "stream-123"]
             ),
             .init(name: "chat steer", endpoint: .chatSteer, path: "/api/chat/steer"),
+            .init(name: "chat steer withdraw", endpoint: .chatSteerWithdraw, path: "/api/chat/steer/withdraw"),
+            .init(name: "chat steer send now", endpoint: .chatSteerSendNow, path: "/api/chat/steer/send-now"),
             .init(name: "goal", endpoint: .submitGoal, path: "/api/goal"),
             .init(
                 name: "approval pending",
@@ -512,6 +514,21 @@ final class SharedContractTests: XCTestCase {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let message = try decoder.decode(ChatMessage.self, from: Data(#"{"role":"user","content":"x","_background_update":{"kind":"future_kind","attention":true,"count":0,"summary":"s"}}"#.utf8))
         XCTAssertEqual(message.backgroundUpdate?.lines, [BackgroundLine(kind: .other, status: .failed, label: "s")])
+    }
+
+    func testSharedWebSessionDecodesTheServersPendingSteers() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-424 has no such example.
+        guard let example = object["pending_steers_session"] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let detail = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example))
+        XCTAssertEqual(detail.pendingSteers?.map(\.steerId), ["steer-contract-1", "steer-contract-2"])
+        XCTAssertEqual(detail.pendingSteers?.first?.actions, PendingSteer.Actions(edit: true, cancel: true, sendNow: true))
+        XCTAssertEqual(detail.pendingSteers?.last?.state, .sendingNow)
+        XCTAssertEqual(detail.pendingSteers?.last?.actions, PendingSteer.Actions.none)
+        // An older Web says nothing about pending steers, which is not the same as none.
+        XCTAssertNil(try decoder.decode(SessionDetail.self, from: Data(#"{"session_id":"s"}"#.utf8)).pendingSteers)
     }
 
     func testSessionDetailDecodesWhoStartedTheRunningTurn() throws {

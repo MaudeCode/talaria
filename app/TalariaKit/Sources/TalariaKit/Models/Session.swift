@@ -744,6 +744,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     let isStreaming: Bool?
     /// Who started the running turn (TAL-460): `background` when a background result did; nil while idle or on older servers.
     public let activeTurnOrigin: String?
+    /// The running turn's pending steers, oldest first (TAL-424); nil from a Web older than that.
+    public let pendingSteers: [PendingSteer]?
     let pendingUserMessage: String?
     let pendingAttachments: [JSONValue]?
     public let pendingStartedAt: Double?
@@ -798,6 +800,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case activeStreamId
         case isStreaming
         case activeTurnOrigin
+        case pendingSteers
         case pendingUserMessage
         case pendingAttachments
         case pendingStartedAt
@@ -857,6 +860,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         activeStreamId = container.decodeLossyStringIfPresent(forKey: .activeStreamId)
         isStreaming = container.decodeLossyBoolIfPresent(forKey: .isStreaming)
         activeTurnOrigin = container.decodeLossyStringIfPresent(forKey: .activeTurnOrigin)
+        // One malformed entry never hides the others.
+        pendingSteers = container.decodeLossyArrayIfPresent(PendingSteer.self, forKey: .pendingSteers)
         pendingUserMessage = container.decodeLossyStringIfPresent(forKey: .pendingUserMessage)
         pendingAttachments = try? container.decodeIfPresent([JSONValue].self, forKey: .pendingAttachments)
         pendingStartedAt = container.decodeLossyDoubleIfPresent(forKey: .pendingStartedAt)

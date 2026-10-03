@@ -16,7 +16,7 @@ import type { SessionService } from './service.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
-import type { ClarifyAnswers, PendingSteer, SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
+import type { ClarifyAnswers, PendingSteer, SteerWithdrawn, SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
 import { Session, titleFrom, type Message } from './session.js'
@@ -1066,14 +1066,17 @@ export class TurnRunner {
 
   // ── cancel / steer ───────────────────────────────────────────────────────
 
-  /** Python `cancel_stream`: persist the partial, mark cancelled, interrupt the Agent, release admission. */
-  async cancel(streamId: string): Promise<boolean> {
+  /**
+   * Python `cancel_stream`: persist the partial, mark cancelled, interrupt the Agent, release admission. `withdrawn` is the
+   * `steer_withdrawn` (stopped) this Stop emitted, for the cancel response (TAL-426).
+   */
+  async cancel(streamId: string): Promise<{ cancelled: boolean; withdrawn: SteerWithdrawn[] }> {
     const channel = this.registry.peek(streamId)
     const run = this.registry.activeRuns.get(streamId)
-    if (!channel && !run) return false
+    if (!channel && !run) return { cancelled: false, withdrawn: [] }
     // Python popped the run before its title work: a cancel that lands after `done` (while the title prompts still run)
     // is not a cancellation, so it neither journals a `cancel` frame nor marks the completed run interrupted.
-    if (!run && this.settledStreams.has(streamId)) return false
+    if (!run && this.settledStreams.has(streamId)) return { cancelled: false, withdrawn: [] }
     const sessionId = this.registry.ownerSessionId(streamId) ?? run?.session_id ?? null
     this.registry.cancelled.add(streamId)
     if (run) { run.phase = 'cancelling'; run.cancelled_at = this.deps.now() }
@@ -1116,7 +1119,8 @@ export class TurnRunner {
       this.registry.liveIds.delete(streamId)
     }
     this.abortControllers.get(streamId)?.abort()
-    return true
+    const withdrawn = steerEvents.filter(([event]) => event === 'steer_withdrawn').map(([, data]) => data as SteerWithdrawn)
+    return { cancelled: true, withdrawn }
   }
 
   /**

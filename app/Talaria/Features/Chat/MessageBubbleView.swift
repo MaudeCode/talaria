@@ -6,6 +6,7 @@ struct MessageBubbleView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.transcriptMediaWorkspaceRoot) private var transcriptMediaWorkspaceRoot
+    @Environment(\.pendingSteerControls) private var pendingSteerControls
     @AppStorage(ChatTranscriptDisplaySettings.hidesAttachmentPathsKey) private var hidesAttachmentPaths = true
     @AppStorage(ChatTranscriptDisplaySettings.showsAssistantTurnTimestampsKey) private var showsAssistantTurnTimestamps = false
     @AppStorage(ChatTranscriptDisplaySettings.showsResponseSpeedKey) private var showsResponseSpeed = false
@@ -94,29 +95,75 @@ struct MessageBubbleView: View {
     private var steeringHintHeader: some View {
         if let state = message.steeringHintState {
             HStack(spacing: 5) {
-                Image(systemName: "arrow.turn.up.right")
-                    .accessibilityHidden(true)
-
-                Text("Steering hint")
-
-                switch state {
-                case .sending:
-                    ProgressView()
-                        .controlSize(.mini)
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.turn.up.right")
                         .accessibilityHidden(true)
-                    Text("Sending")
-                case .waiting:
-                    Image(systemName: "clock")
-                        .accessibilityHidden(true)
-                    Text("Waiting for agent")
-                case .consumed:
-                    EmptyView()
+
+                    Text("Steering hint")
+
+                    switch state {
+                    case .sending:
+                        ProgressView()
+                            .controlSize(.mini)
+                            .accessibilityHidden(true)
+                        Text("Sending")
+                    case .waiting:
+                        Image(systemName: "clock")
+                            .accessibilityHidden(true)
+                        Text("Waiting for agent")
+                    case .consumed:
+                        EmptyView()
+                    }
                 }
+                .accessibilityElement(children: .combine)
+
+                pendingSteerButtons
             }
             .font(AppFont.footnote())
             .foregroundStyle(.secondary)
             .padding(.trailing, 4)
-            .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// TAL-426: the actions the server allows for this pending steer (none once the Agent took it).
+    private var pendingSteerActions: PendingSteer.Actions? {
+        guard let id = message.messageId, let actions = pendingSteerControls.actions[id], actions.any else { return nil }
+        return actions
+    }
+
+    @ViewBuilder
+    private var pendingSteerButtons: some View {
+        if let actions = pendingSteerActions, let id = message.messageId {
+            let busy = pendingSteerControls.inFlight.contains(id)
+            HStack(spacing: 0) {
+                if actions.sendNow { pendingSteerButton(String(localized: "Send now"), systemImage: "arrow.up", id: id, action: .sendNow) }
+                if actions.edit { pendingSteerButton(String(localized: "Edit steering message"), systemImage: "pencil", id: id, action: .edit) }
+                if actions.cancel { pendingSteerButton(String(localized: "Cancel steering message"), systemImage: "xmark", id: id, action: .cancel) }
+            }
+            .disabled(busy)
+        }
+    }
+
+    private func pendingSteerButton(_ label: String, systemImage: String, id: String, action: PendingSteerAction) -> some View {
+        Button {
+            pendingSteerControls.perform(id, action)
+        } label: {
+            Image(systemName: systemImage)
+                .font(.footnote.weight(.semibold))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    /// The same actions on a long press of the pending bubble, as the App's other user messages offer theirs.
+    @ViewBuilder
+    private var pendingSteerMenu: some View {
+        if let actions = pendingSteerActions, let id = message.messageId {
+            if actions.sendNow { Button(String(localized: "Send now"), systemImage: "arrow.up") { pendingSteerControls.perform(id, .sendNow) } }
+            if actions.edit { Button(String(localized: "Edit steering message"), systemImage: "pencil") { pendingSteerControls.perform(id, .edit) } }
+            if actions.cancel { Button(String(localized: "Cancel steering message"), systemImage: "xmark", role: .destructive) { pendingSteerControls.perform(id, .cancel) } }
         }
     }
 
@@ -272,8 +319,14 @@ struct MessageBubbleView: View {
             .foregroundStyle(userBubbleForeground)
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(userBubbleBorder, lineWidth: 0.5)
+                    .stroke(userBubbleBorder, style: isPendingSteer ? StrokeStyle(lineWidth: 1, dash: [4, 3]) : StrokeStyle(lineWidth: 0.5))
             )
+            .modifier(PendingSteerMenuModifier(isEnabled: pendingSteerActions != nil) { pendingSteerMenu })
+    }
+
+    /// A steer the Agent has not taken yet is drawn dashed (TAL-426), like Web's pending bubble.
+    private var isPendingSteer: Bool {
+        message.steeringHintState == .waiting || message.steeringHintState == .sending
     }
 
     @ViewBuilder
@@ -473,6 +526,38 @@ struct MessageBubbleView: View {
 
     private var hasVisibleUserBubbleText: Bool {
         !userBubbleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+/// Long-press actions only on a pending steer: every other user bubble keeps the transcript's own message menu.
+private struct PendingSteerMenuModifier<Menu: View>: ViewModifier {
+    let isEnabled: Bool
+    @ViewBuilder let menu: () -> Menu
+
+    func body(content: Content) -> some View {
+        if isEnabled { content.contextMenu { menu() } } else { content }
+    }
+}
+
+/// TAL-426: what a pending steer bubble may offer (from the server's actions) and how the chat performs it.
+enum PendingSteerAction {
+    case sendNow, edit, cancel
+}
+
+struct PendingSteerControls {
+    var actions: [String: PendingSteer.Actions] = [:]
+    var inFlight: Set<String> = []
+    var perform: (String, PendingSteerAction) -> Void = { _, _ in }
+}
+
+private struct PendingSteerControlsKey: EnvironmentKey {
+    static let defaultValue = PendingSteerControls()
+}
+
+extension EnvironmentValues {
+    var pendingSteerControls: PendingSteerControls {
+        get { self[PendingSteerControlsKey.self] }
+        set { self[PendingSteerControlsKey.self] = newValue }
     }
 }
 

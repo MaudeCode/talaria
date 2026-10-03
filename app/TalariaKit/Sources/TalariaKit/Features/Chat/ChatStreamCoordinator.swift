@@ -82,7 +82,8 @@ public protocol ChatStreamCoordinatorDelegate: AnyObject {
     @discardableResult
     func streamCoordinatorConsumeSteeringHint(_ event: SteeringStreamEvent) -> Bool
     @discardableResult
-    func streamCoordinatorEnqueuePendingSteerLeftover(_ event: SteeringStreamEvent) -> Bool
+    func streamCoordinatorApplyPendingSteer(_ steer: PendingSteer)
+    func streamCoordinatorWithdrawSteer(_ event: SteerWithdrawnEvent)
 }
 
 @MainActor
@@ -709,10 +710,12 @@ public final class ChatStreamCoordinator {
             if delegate?.streamCoordinatorConsumeSteeringHint(event) == true {
                 markProgress()
             }
-        case .pendingSteerLeftover(let event):
-            if delegate?.streamCoordinatorEnqueuePendingSteerLeftover(event) == true {
-                markProgress()
-            }
+        case .steerPending(let steer):
+            delegate?.streamCoordinatorApplyPendingSteer(steer)
+            markProgress()
+        case .steerWithdrawn(let event):
+            delegate?.streamCoordinatorWithdrawSteer(event)
+            markProgress()
         case .streamEnd:
             if !isCurrentRunTerminated {
                 liveActivityManager?.end(status: .complete, activity: String(localized: "Response complete"), errorSummary: nil)

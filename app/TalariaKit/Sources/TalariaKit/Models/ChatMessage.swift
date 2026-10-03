@@ -281,9 +281,9 @@ extension ChatMessage {
         name.flatMap(SteeringHintState.init(rawValue:))
     }
 
+    /// A steer row the App draws itself (its `_talaria_steer_*` state never comes from the server), whatever the id.
     public var isLocalSteeringHint: Bool {
-        guard steeringHintState != nil, let messageId else { return false }
-        return messageId.hasPrefix("local-steer-") || messageId.hasPrefix("steer-")
+        steeringHintState != nil && messageId != nil
     }
 
     public func applyingTurnMetrics(duration: Double? = nil, tokensPerSecond: Double? = nil) -> ChatMessage {
