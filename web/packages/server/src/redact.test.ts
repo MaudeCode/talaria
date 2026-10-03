@@ -633,4 +633,9 @@ describe('Agent redactor parity', () => {
       expect(sanitizeShareMessage({ role: 'assistant', content: input }, [], [], '/nonexistent-home')?.content).toBe(expected)
     })
   }
+  it('masks a lowercase env name beside a URL, and a prefix split by a control character, through the prefilter', () => {
+    expect(redactText('db_pass=hunter2\nsee https://example.com', true)).toBe('db_pass=***\nsee https://example.com')
+    expect(redactText(`x\u200bai-${'A'.repeat(40)}`, true)).toBe('xai-AA...AAAA')
+    expect(redactText(`gh\x1bp_${'B'.repeat(36)}`, true)).toBe('ghp_BB...BBBB')
+  })
 })

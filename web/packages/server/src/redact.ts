@@ -113,7 +113,8 @@ const EMBEDDED_AWS_RE = /(?:AKIA|ASIA)[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
 /**
  * The Agent's other env names: an all-caps one ending a word in `KEY`, `PASS` or `PW` (`OPENAI_KEY`, `DB_PW`, not
- * `KEYBOARD`), or a lowercase `name_key` / `name_pass` / `name_pw` outside URL text. `isEnvSecretAssignment` gates it.
+ * `KEYBOARD`), or a lowercase `name_key` / `name_pass` / `name_pw`, URL query parameters included (the Agent skips any
+ * text with a URL). `isEnvSecretAssignment` gates it.
  */
 // One attempt per identifier, which must hold a keyword: the scan stays linear on long runs (`PWPWPW…`).
 const ENV_SUFFIX_RE = /(?<![A-Z0-9_])(?=[A-Z0-9_]*(?:KEY|PASS|PW))([A-Z0-9_]+)\s*=\s*(['"]?)(\S+)\2/g
@@ -1213,7 +1214,7 @@ function redactRules(text: string): string {
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
   const maskEnvSuffix = (whole: string, key: string, quote: string, value: string): string => (isEnvSecretAssignment(key, value) ? `${key}=${quote}${mask(value)}${quote}` : whole)
   out = out.replace(ENV_SUFFIX_RE, maskEnvSuffix)
-  if (!out.includes('://')) out = out.replace(ENV_SUFFIX_LOWER_RE, maskEnvSuffix)
+  out = out.replace(ENV_SUFFIX_LOWER_RE, maskEnvSuffix)
   out = out.replace(LISTED_FLAG_RE, (whole, q: string, dash: string, key: string, gap: string, vq: string | undefined, quotedValue: string | undefined, bare: string | undefined) => {
     // An unquoted value (a number, `True`, a nested list) is masked whole.
     if (bare !== undefined) return bare !== '***' && (ARGV_USER_FLAG_RE.test(dash + key) || isCredentialKey(key)) ? `${q}${dash}${key}${q}${gap}***` : whole
@@ -1251,7 +1252,9 @@ const PHONE_TEST_RE = new RegExp(PHONE_RE.source)
 
 export function mightContainSensitiveText(text: string): boolean {
   if (!text) return false
-  if (CASE_MARKERS.some((m) => text.includes(m))) return true
+  // A control or zero-width character inside a prefix (`x\u200bai-…`) does not hide it: the redactor joins split tokens.
+  const joined = text.replace(CONTROL_CHARS_RE, '')
+  if (CASE_MARKERS.some((m) => joined.includes(m))) return true
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
   if (CRED_KEY_NAME_RE.test(text)) return true
