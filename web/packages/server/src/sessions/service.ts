@@ -20,6 +20,7 @@ import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { attachmentObjects, mergeSessionMessagesAppendOnly, pendingUserRow, withAttachmentObjects, withBodyExcerpts, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
+import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
@@ -36,6 +37,8 @@ export class HttpFailure extends Error {
 }
 
 export interface SessionServiceDeps {
+  /** TAL-372: the session's background work receipts, for the delegation rows that started them. */
+  backgroundReceipts?: (sid: string) => Receipt[]
   store: SessionStore
   drafts: DraftStore
   events: SessionEventBus
@@ -274,11 +277,16 @@ export class SessionService {
     if (this.isSubagentViewOnly(sid)) throw new HttpFailure(400, `Subagent sessions are view-only and cannot be ${verb} from WebUI`)
   }
 
+  /** TAL-372: each delegation row of a turn's scene carries the status of the work it started. */
+  backgroundLinked(s: Session, messages: unknown[]): unknown[] {
+    return withBackgroundLinks(messages, this.deps.backgroundReceipts?.(s.session_id) ?? [])
+  }
+
   /** `compact()` plus messages, redacted for the wire (Python `_public_session_projection`). */
   publicSession(s: Session, withMessages = true): Record<string, unknown> {
     const payload = this.wireRow(s)
     // Mutation replies replace a client's transcript, so they carry the same server-built scenes as the detail.
-    if (withMessages) payload.messages = hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withTurnIds(s.messages), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id })
+    if (withMessages) payload.messages = this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withTurnIds(s.messages), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id }))
     return redactSessionData(payload, this.deps.redactEnabled())
   }
 
@@ -328,7 +336,7 @@ export class SessionService {
     if (pending) transcript = withPendingUserTurn(transcript, pending)
     if (journaled)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids, tool outcomes and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages ? withBodyExcerpts(hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withTurnIds(withAttachmentObjects(transcript)), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null }), s.active_stream_id) : []
+    const all: unknown[] = loadMessages ? withBodyExcerpts(this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withTurnIds(withAttachmentObjects(transcript)), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null })), s.active_stream_id) : []
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null

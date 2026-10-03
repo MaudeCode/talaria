@@ -1917,5 +1917,21 @@
 	"steer_edit": "Modifier l’indication",
 	"steer_cancel": "Annuler l’indication",
 	"steer_already_taken": "L’agent a déjà pris cette indication.",
-	"steer_stays_pending": "Rien ne tourne pour la prendre maintenant ; elle reste en attente."
+	"steer_stays_pending": "Rien ne tourne pour la prendre maintenant ; elle reste en attente.",
+	"bg_card_title": "Travail en arrière-plan",
+	"bg_status_running": "En cours",
+	"bg_status_attention": "Requiert votre attention",
+	"bg_status_completed": "Terminé",
+	"bg_status_failed": "Échec",
+	"bg_status_cancelled": "Arrêté",
+	"bg_status_unknown": "Statut inconnu",
+	"bg_kind_delegation": "Agent",
+	"bg_kind_process": "Commande",
+	"bg_kind_background_command": "Tâche en arrière-plan",
+	"bg_agents_progress": "{done} sur {total} terminés",
+	"bg_agents_failed": "{n} en échec",
+	"bg_show_result": "Voir le résultat",
+	"bg_hide_result": "Masquer le résultat",
+	"bg_result_unavailable": "Le résultat n’est plus disponible.",
+	"bg_usage": "Utilisation : /background <message>"
 }

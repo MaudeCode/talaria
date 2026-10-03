@@ -1014,6 +1014,15 @@ struct ChatView: View {
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
 
+                if !viewModel.pinnedBackgroundTasks.isEmpty {
+                    BackgroundWorkCard(
+                        tasks: viewModel.pinnedBackgroundTasks,
+                        loadResult: { await viewModel.backgroundResult(taskID: $0) },
+                        dismiss: { await viewModel.dismissBackgroundTask(taskID: $0) }
+                    )
+                    .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
+                }
+
                 if let activeRunStatusPresentation, activeRunStatusPresentation.reservesTranscriptSpace {
                     runStatusRow(activeRunStatusPresentation)
                         .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
@@ -1037,6 +1046,7 @@ struct ChatView: View {
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: activeRunStatusPresentation)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedLocalNotices)
             .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: showsApprovalBypassStatus)
+            .animation(ChatMotion.quickState(reduceMotion: reduceMotion), value: viewModel.pinnedBackgroundTasks)
         }
     }
 
@@ -1408,6 +1418,9 @@ struct ChatView: View {
         if !viewModel.pinnedLocalNotices.isEmpty {
             count += 1
         }
+        if !viewModel.pinnedBackgroundTasks.isEmpty {
+            count += 1
+        }
         if activeRunStatusPresentation != nil || showsScrollToBottomButton {
             count += 1
         }
@@ -1537,6 +1550,7 @@ struct ChatView: View {
     private func loadMessages(appliesInitialFocus: Bool = true, isUserRefresh: Bool = false) async {
         await viewModel.loadMessages(modelContext: modelContext, isUserRefresh: isUserRefresh)
         await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
+        await viewModel.refreshBackgroundTasks()
         if appliesInitialFocus {
             applyInitialComposerFocusPolicyIfNeeded()
         }
@@ -2857,6 +2871,7 @@ private struct ChatLiveSync: ViewModifier {
                 Task {
                     await viewModel.syncWithServer(modelContext: modelContext)
                     reportLastError()
+                    await viewModel.refreshBackgroundTasks()
                     await viewModel.loadComposerConfiguration()
                 }
             }

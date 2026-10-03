@@ -191,6 +191,21 @@ export const PROCESS_METHODS = {
   'process.defer_delivery': { params: ProfileHomeParams.extend({ event: Loose, claim_id: z.string() }), result: Ok },
   'process.format_notification': { params: z.object({ event: Loose }), result: z.object({ text: z.string() }) },
   'process.list': { params: ProfileHomeParams, result: z.object({ sessions: z.array(Loose) }) },
+  /** TAL-372: the Agent's view of these WebUI sessions' background work: ledger delegations (with live status) and notified processes. */
+  'process.background_list': {
+    params: ProfileHomeParams.extend({ session_ids: z.array(z.string().min(1)) }),
+    result: z.object({
+      delegations: z.array(z.object({
+        delegation_id: z.string(), origin_ui_session_id: z.string(), state: z.string(), dispatched_at: z.number().nullable(), completed_at: z.number().nullable(),
+        updated_at: z.number().nullable(), goals: z.array(z.string()), child_statuses: z.array(z.string()), has_result: z.boolean(), live_status: z.string().nullable(),
+      })),
+      processes: z.array(z.object({
+        process_id: z.string(), session_key: z.string(), command: z.string(), started_at: z.number().nullable(), exited: z.boolean(), exited_at: z.number().nullable(),
+        exit_code: z.number().int().nullable(), completion_reason: z.string(), watched: z.boolean(),
+      })),
+    }),
+  },
+  'process.delegation_result': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), delegation_id: z.string().min(1) }), result: z.object({ text: z.string() }) },
 } as const
 export const AccountUsageSnapshotSchema = z.object({ provider: z.string().nullable(), available: z.boolean(), unavailable_reason: z.string().nullable().optional(), windows: z.array(Loose), details: z.array(Json) }).catchall(Json)
 export const USAGE_METHODS = {

@@ -1201,6 +1201,104 @@ describe('chat turns through the sidecar', () => {
     expect(await json(await post(s, '/api/bg-task-complete-ack', { session_id: sid, task_id: 't1' }))).toEqual({ ok: true, session_id: sid, task_id: 't1', noop: true })
   })
 
+  it('keeps every piece of background work as one durable record that every client reads (TAL-372)', async () => {
+    const sid = await newSession(s)
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'answer to it' }]))
+    const bg = await json(await post(s, '/api/background', { session_id: sid, prompt: 'summarize repo\nin detail' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(bg.stream_id)}&replay=1`, (f) => f.event === 'stream_end')
+    await new Promise((r) => setTimeout(r, 50))
+    // The Agent's view: two concurrent delegations (one stalled), the two units of one split call, and a notified process.
+    const unit = (id: string, goals: string[], extra: Json = {}): Json => ({ delegation_id: id, origin_ui_session_id: sid, state: 'running', dispatched_at: 10, completed_at: null, updated_at: 11, goals, child_statuses: [], has_result: false, live_status: 'running', ...extra })
+    let agent: Json = {
+      delegations: [unit('d-a', ['Check logs']), unit('d-b', ['Fix CI'], { live_status: 'stalled' }), unit('call-1-1', ['Write docs']), unit('call-1-2', ['Write tests', 'Run tests']),
+        // Still `running` in the ledger, but gone from the live registry: lost in an Agent restart.
+        unit('d-lost', ['Lost one'], { live_status: null })],
+      processes: [{ process_id: 'proc_1', session_key: sid, command: 'make test', started_at: 12, exited: false, exited_at: null, exit_code: null, completion_reason: '', watched: false }],
+    }
+    sidecar.respond('process.background_list', (params) => { expect(params.session_ids).toEqual([sid]); return agent as never })
+    const read = async (): Promise<Json> => json(await s.get(`/api/background/tasks?session_id=${sid}`))
+    const tasks = async (): Promise<Record<string, Json>> => Object.fromEntries(((await read()).tasks as Json[]).map((t) => [str(t.task_id), t]))
+    const first = await read()
+    expect(first.agent_available).toBe(true)
+    let byId = await tasks()
+    expect(Object.keys(byId).sort()).toEqual([String(bg.task_id), 'call-1-1', 'call-1-2', 'd-a', 'd-b', 'd-lost', 'proc_1'].sort())
+    expect(byId['d-lost']).toMatchObject({ status: 'unknown', pinned: true, dismissible: true, active: true })
+    expect(byId['d-a']).toMatchObject({ status: 'running', active: true, dismissible: false })
+    expect(byId[String(bg.task_id)]).toMatchObject({ kind: 'background_command', status: 'completed', title: 'summarize repo', result_available: true, pinned: true, dismissible: true, active: false })
+    expect(byId['d-b']).toMatchObject({ kind: 'delegation', status: 'attention', title: 'Fix CI', pinned: true })
+    expect(byId['call-1-2']).toMatchObject({ title: '2 subagents: Write tests; Run tests', agents: { total: 2, completed: 0, failed: 0, running: 2 } })
+    expect(byId.proc_1).toMatchObject({ kind: 'process', status: 'running', title: 'make test', pinned: true })
+
+    // Reading never consumes: an old client's status read, then another client, still see the result.
+    expect((await json(await s.get(`/api/background/status?session_id=${sid}`))).results).toEqual([expect.objectContaining({ task_id: bg.task_id, answer: 'answer to it' })])
+    expect((await tasks())[String(bg.task_id)]).toMatchObject({ status: 'completed', result_available: true })
+    expect(await json(await s.get(`/api/background/result?session_id=${sid}&task_id=${String(bg.task_id)}`))).toEqual({ task_id: bg.task_id, text: 'answer to it' })
+
+    // Completions settle each record once; a later report saying otherwise changes nothing.
+    sidecar.respond('process.format_notification', () => ({ text: '[IMPORTANT: delegation d-a finished]\nall fine' }))
+    sidecar.respond('process.claim_delivery', () => ({ claim_id: '' }))
+    await s.deps.completions.processOne({ process_id: 'd-a', delegation_id: 'd-a', type: 'async_delegation', origin_ui_session_id: sid, status: 'completed', goal: 'Check logs', consumed: false })
+    await s.deps.completions.processOne({ process_id: 'proc_1', session_id: 'proc_1', type: 'completion', command: 'make test', exit_code: 2, output: 'boom', origin_ui_session_id: sid, consumed: false })
+    agent = { ...agent, delegations: [unit('d-a', ['Check logs'], { state: 'error', child_statuses: ['error'], has_result: true }), ...(agent.delegations as Json[]).slice(1)], processes: [] }
+    byId = await tasks()
+    expect(byId['d-a']).toMatchObject({ status: 'completed', result_available: true, pinned: false })
+    expect(byId.proc_1).toMatchObject({ status: 'failed', exit_code: 2, result_available: true })
+    expect(Object.keys(byId)).toHaveLength(7)
+    expect(str((await json(await s.get(`/api/background/result?session_id=${sid}&task_id=d-a`))).text)).toContain('all fine')
+
+    // Dismissing is read state: the finished `/background` task leaves the tray and stays in the history.
+    expect((await json(await post(s, '/api/background/dismiss', { session_id: sid, task_id: bg.task_id }))).task).toMatchObject({ status: 'completed', pinned: false, dismissible: false })
+    expect((await tasks())[String(bg.task_id)]).toMatchObject({ status: 'completed', pinned: false })
+
+    // The Agent cannot be asked: its running work shows unknown, settled records stay as they are.
+    sidecar.respond('process.background_list', () => { throw new SidecarError('agent down', { condition: 'sidecar_error' }) })
+    const offline = await read()
+    expect(offline.agent_available).toBe(false)
+    expect(Object.fromEntries((offline.tasks as Json[]).map((t) => [str(t.task_id), t.status]))).toMatchObject({ 'd-a': 'completed', 'd-b': 'unknown', 'call-1-1': 'unknown', proc_1: 'failed', [String(bg.task_id)]: 'completed' })
+    // Unknown work stays active, so clients keep refreshing until the Agent answers again.
+    expect((offline.tasks as Json[]).find((t) => t.task_id === 'd-b')).toMatchObject({ active: true, dismissible: true })
+    expect((await s.get('/api/background/tasks?session_id=nope')).status).toBe(404)
+    // Deleting the session removes its background records with it.
+    const records = join(s.deps.sessionStore.sessionDir, '_background', `${sid}.json`)
+    expect(existsSync(records)).toBe(true)
+    expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
+    expect(existsSync(records)).toBe(false)
+    expect(s.deps.background.receipts(sid)).toEqual([])
+  })
+
+  it('shows the work a delegation row started on that row, updated in place (TAL-372)', async () => {
+    const sid = await newSession(s)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [
+      { role: 'user', content: 'split it up', timestamp: 100 },
+      { role: 'assistant', content: '', timestamp: 101, tool_calls: [{ id: 'call_x', type: 'function', function: { name: 'delegate_task', arguments: '{"tasks":[]}' } }] },
+      { role: 'tool', tool_call_id: 'call_x', timestamp: 102, content: JSON.stringify({ status: 'dispatched', mode: 'background', count: 3, delegation_id: 'call-1', goals: ['Write docs', 'Write tests', 'Run tests'] }) },
+      { role: 'assistant', content: 'Started three subagents.', timestamp: 103 },
+    ]
+    s.deps.sessionStore.save(session)
+    const unit = (id: string, goals: string[], extra: Json = {}): Json => ({ delegation_id: id, origin_ui_session_id: sid, state: 'running', dispatched_at: 101, completed_at: null, updated_at: 101, goals, child_statuses: [], has_result: false, live_status: 'running', ...extra })
+    let delegations = [unit('call-1-1', ['Write docs']), unit('call-1-2', ['Write tests', 'Run tests'])]
+    sidecar.respond('process.background_list', () => ({ delegations, processes: [] }) as never)
+    const link = async (): Promise<unknown> => {
+      await json(await s.get(`/api/background/tasks?session_id=${sid}`))
+      const detail = await json(await s.get(`/api/session?session_id=${sid}`))
+      const rows = ((detail.session as Json).messages as Json[]).flatMap((m) => ((m._anchor_activity_scene as Json | undefined)?.activity_rows as Json[] | undefined) ?? [])
+      return (rows.find((r) => (r.tool as Json | undefined)?.name === 'delegate_task')?.tool as Json | undefined)?.background
+    }
+    expect(await link()).toEqual({ task_ids: ['call-1-1', 'call-1-2'], status: 'running', agents: { total: 3, completed: 0, failed: 0, running: 3 } })
+    // The Agent cannot be asked: the running unit's row says unknown, like the card.
+    sidecar.respond('process.background_list', () => { throw new SidecarError('agent down', { condition: 'sidecar_error' }) })
+    expect(await link()).toMatchObject({ status: 'unknown' })
+    sidecar.respond('process.background_list', () => ({ delegations, processes: [] }) as never)
+    expect(await link()).toMatchObject({ status: 'running' })
+    // An Agent restart lost one unit: the row says what the card says.
+    delegations = [unit('call-1-1', ['Write docs'], { state: 'completed', child_statuses: ['completed'] }), unit('call-1-2', ['Write tests', 'Run tests'], { live_status: null })]
+    expect(await link()).toMatchObject({ status: 'unknown' })
+    expect(((await json(await s.get(`/api/background/tasks?session_id=${sid}`))).tasks as Json[]).find((t) => t.task_id === 'call-1-2')).toMatchObject({ status: 'unknown' })
+    delegations = [unit('call-1-1', ['Write docs'], { state: 'completed', child_statuses: ['completed'] }), unit('call-1-2', ['Write tests', 'Run tests'], { state: 'completed', child_statuses: ['completed', 'error'] })]
+    expect(await link()).toEqual({ task_ids: ['call-1-1', 'call-1-2'], status: 'completed', agents: { total: 3, completed: 2, failed: 1, running: 0 } })
+  })
+
   it('serves the session-list, per-session, and prompt streams with initial frames', async () => {
     const sid = await newSession(s)
     const events = s.sse('/api/sessions/events', (f) => f.event === 'sessions_changed' && (f.data as Json).reason === 'session_rename')

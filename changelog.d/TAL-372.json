@@ -1,0 +1,31 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "A Background work card above the composer shows running agents, commands and /background tasks with their status, and a finished /background result until you dismiss it, the same on every device.",
+      "highlight": true,
+      "components": [
+        "app",
+        "web"
+      ]
+    },
+    {
+      "category": "Changed",
+      "summary": "A delegation step in the chat now shows how many of its subagents are done or failed, and updates as they finish.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Background work and its results survive a reload, a server restart and a reopened app, and checking on them from one device no longer hides a result from another.",
+      "highlight": false,
+      "components": [
+        "app",
+        "web"
+      ]
+    }
+  ]
+}

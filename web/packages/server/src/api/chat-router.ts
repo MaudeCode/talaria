@@ -29,6 +29,12 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
   }
 }
 
+/** A session this request's profile may see (TAL-372 background work never crosses owners). */
+function visibleSession(ctx: RequestContext, sid: string): Session {
+  if (!ctx.deps.sessions.sessionIdVisible(sid)) throw new HttpError(404, 'Session not found')
+  return getSession(ctx, sid, true)
+}
+
 function getSession(ctx: RequestContext, sid: string, metadataOnly = false): Session {
   try {
     return ctx.deps.sessionStore.get(sid, { metadataOnly })
@@ -295,27 +301,44 @@ export const chatRouter = os.router({
       // Python: `uuid.uuid4().hex[:8]`; a failed run still completes the task so `/api/background/status` can report it,
       // and the hidden bg session file is removed afterwards.
       const taskId = randomUUID().replace(/-/g, '').slice(0, 8)
-      ctx.deps.background.track(parent.session_id, { task_id: taskId, bg_session_id: bg.session_id, prompt })
+      // TAL-372: the parent session keeps the task's record and result, so every client and a restart see it.
+      ctx.deps.background.trackCommand(parent.session_id, taskId, prompt)
       const cleanup = (): void => { try { ctx.deps.sessionStore.deleteFiles(bg.session_id, { tombstone: false }) } catch { /* best effort */ } }
       const started = ctx.deps.turns.start(bg, {
         msg: prompt, attachments: [], workspace: parent.workspace, model: parent.model, modelProvider: parent.model_provider, source: 'webui',
-        onDone: (answer) => { ctx.deps.background.complete(parent.session_id, taskId, answer); cleanup() },
-        onFailed: () => { ctx.deps.background.complete(parent.session_id, taskId, '(background task failed)'); cleanup() },
+        onDone: (answer) => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'completed', answer); cleanup() },
+        onFailed: () => { ctx.deps.background.settleCommand(parent.session_id, taskId, 'failed', '(background task failed)'); cleanup() },
       })
       if (started._status !== undefined && started._status >= 400) {
         // Admission refused (profile deleting, session busy…): nothing runs, so the tracked task and hidden
         // session must not linger as "running".
-        ctx.deps.background.forget(parent.session_id, taskId)
+        ctx.deps.background.forgetCommand(parent.session_id, taskId)
         cleanup()
         throw new HttpError(started._status, started.error ?? 'background start failed')
       }
-      ctx.deps.background.setStream(parent.session_id, taskId, str(started.stream_id))
+      ctx.deps.background.setCommandStream(parent.session_id, taskId, str(started.stream_id))
       return { ok: true as const, task_id: taskId, stream_id: str(started.stream_id), session_id: bg.session_id }
     })),
     status: os.background.status.handler(({ input, context: { ctx } }) => run(() => {
       const sid = str(input.session_id)
       if (!sid) throw new HttpError(400, 'Missing session_id')
-      return { results: ctx.deps.background.results(sid) }
+      return { results: ctx.deps.background.legacyResults(sid) }
+    })),
+    tasks: os.background.tasks.handler(({ input, context: { ctx } }) => run(async () => {
+      const s = visibleSession(ctx, input.session_id)
+      return { session_id: s.session_id, ...(await ctx.deps.background.snapshot(s.session_id, s.profile)) }
+    })),
+    result: os.background.result.handler(({ input, context: { ctx } }) => run(async () => {
+      const s = visibleSession(ctx, input.session_id)
+      const text = await ctx.deps.background.result(s.session_id, s.profile, input.task_id)
+      if (text === null) throw new HttpError(404, 'No result for this background task')
+      return { task_id: input.task_id, text }
+    })),
+    dismiss: os.background.dismiss.handler(({ input, context: { ctx } }) => run(() => {
+      const s = visibleSession(ctx, input.session_id)
+      const task = ctx.deps.background.dismiss(s.session_id, input.task_id)
+      if (!task) throw new HttpError(404, 'Background task not found')
+      return { ok: true as const, task }
     })),
     ack: os.background.ack.handler(({ input, context: { ctx } }) => run(() => {
       const body = input as Record<string, unknown>
@@ -349,47 +372,3 @@ export const chatRouter = os.router({
     return { stream_id: str(started.stream_id), session_id: ephemeral.session_id, parent_session_id: sid }
   })),
 })
-
-/** Python `api/background.py`: parent-scoped background task tracking. */
-export class BackgroundTasks {
-  private readonly tasks = new Map<string, Record<string, unknown>[]>()
-
-  constructor(private readonly now: () => number = () => Date.now() / 1000) {}
-
-  track(parent: string, task: { task_id: string; bg_session_id: string; prompt: string }): void {
-    const list = this.tasks.get(parent) ?? []
-    list.push({ ...task, stream_id: null, status: 'running', started_at: this.now(), answer: null, completed_at: null })
-    this.tasks.set(parent, list)
-  }
-
-  /** Drop a task that never started (admission refused) so status never reports it. */
-  forget(parent: string, taskId: string): void {
-    const rest = (this.tasks.get(parent) ?? []).filter((t) => t.task_id !== taskId)
-    if (rest.length) this.tasks.set(parent, rest)
-    else this.tasks.delete(parent)
-  }
-
-  setStream(parent: string, taskId: string, streamId: string): void {
-    for (const t of this.tasks.get(parent) ?? []) if (t.task_id === taskId) t.stream_id = streamId
-  }
-
-  complete(parent: string, taskId: string, answer: string): void {
-    for (const t of this.tasks.get(parent) ?? []) {
-      if (t.task_id === taskId && t.status === 'running') {
-        t.status = 'done'
-        t.answer = answer
-        t.completed_at = this.now()
-        break
-      }
-    }
-  }
-
-  results(parent: string): Record<string, unknown>[] {
-    const list = this.tasks.get(parent) ?? []
-    const done = list.filter((t) => t.status === 'done')
-    const running = list.filter((t) => t.status !== 'done')
-    if (running.length) this.tasks.set(parent, running)
-    else this.tasks.delete(parent)
-    return done.map((t) => ({ task_id: t.task_id, prompt: t.prompt, answer: t.answer, completed_at: t.completed_at }))
-  }
-}

@@ -46,6 +46,41 @@ final class BackgroundUpdateTranscriptUITests: ChatUITestCase {
     }
 }
 
+/// The session's background work is the server's record: the card above the composer shows what it pins with the full
+/// result on request and a shared Dismiss, and a delegation row shows its subagents' progress in place (TAL-372).
+final class BackgroundWorkUITests: ChatUITestCase {
+    func testTheCardShowsTheServersRecordsAndADelegationRowItsProgress() throws {
+        launchFixture(additionalArguments: ["--ui-test-background-updates"])
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        tapFixtureSession(session)
+        XCTAssertNotNil(waitForComposer(timeout: 30), "The background-work session never opened")
+
+        XCTAssertTrue(app.staticTexts["Background work"].awaitExistence(timeout: 15), "The background card is missing")
+        XCTAssertTrue(element(labelContaining: "Fix CI").awaitExistence(timeout: 5), "The running delegation is missing")
+        XCTAssertTrue(element(labelContaining: "Summarize the repo").exists, "The finished /background task is missing")
+        tapCenter(of: app.buttons["Worked"].firstMatch)
+        XCTAssertTrue(element(labelContaining: "2 of 3 done · 1 failed").awaitExistence(timeout: 10), "The delegation row does not show its subagents' progress")
+        let card = XCTAttachment(screenshot: app.screenshot())
+        card.name = "background-work"
+        card.lifetime = .keepAlways
+        add(card)
+
+        tapCenter(of: app.buttons["Show result"])
+        XCTAssertTrue(app.staticTexts["The repo has three packages."].awaitExistence(timeout: 10), "The full result did not load")
+        let result = XCTAttachment(screenshot: app.screenshot())
+        result.name = "background-result"
+        result.lifetime = .keepAlways
+        add(result)
+        tapCenter(of: app.buttons["Done"])
+        XCTAssertTrue(app.staticTexts["The repo has three packages."].awaitNonExistence(timeout: 10), "The result sheet did not close")
+
+        tapCenter(of: app.buttons["Dismiss"])
+        XCTAssertTrue(element(labelContaining: "Summarize the repo").awaitNonExistence(timeout: 10), "Dismiss left the finished task in the card")
+        XCTAssertTrue(element(labelContaining: "Fix CI").exists, "Dismiss removed running work")
+    }
+}
+
 /// A transcript of very long bodies opens collapsed to the server's excerpts, each expands and
 /// collapses in place, and the composer stays usable (TAL-456).
 final class LongBodyTranscriptUITests: ChatUITestCase {

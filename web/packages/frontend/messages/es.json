@@ -1859,5 +1859,21 @@
 	"steer_edit": "Editar indicación",
 	"steer_cancel": "Cancelar indicación",
 	"steer_already_taken": "El agente ya tomó esta indicación.",
-	"steer_stays_pending": "No hay nada en curso que pueda tomarla ahora; queda pendiente."
+	"steer_stays_pending": "No hay nada en curso que pueda tomarla ahora; queda pendiente.",
+	"bg_card_title": "Trabajo en segundo plano",
+	"bg_status_running": "En curso",
+	"bg_status_attention": "Requiere atención",
+	"bg_status_completed": "Listo",
+	"bg_status_failed": "Falló",
+	"bg_status_cancelled": "Detenido",
+	"bg_status_unknown": "Estado desconocido",
+	"bg_kind_delegation": "Agente",
+	"bg_kind_process": "Comando",
+	"bg_kind_background_command": "Tarea en segundo plano",
+	"bg_agents_progress": "{done} de {total} listos",
+	"bg_agents_failed": "{n} fallidos",
+	"bg_show_result": "Ver resultado",
+	"bg_hide_result": "Ocultar resultado",
+	"bg_result_unavailable": "El resultado ya no está disponible.",
+	"bg_usage": "Uso: /background <mensaje>"
 }

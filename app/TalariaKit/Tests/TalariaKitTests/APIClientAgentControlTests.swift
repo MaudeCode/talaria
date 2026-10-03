@@ -337,35 +337,31 @@ final class APIClientAgentControlTests: APIClientTestCase {
         XCTAssertEqual(response.sessionId, "background-1")
     }
 
-    func testBackgroundStatusBuildsExpectedQueryAndDecodesResults() async throws {
+    func testBackgroundTasksDecodeTheServersRecordsLeniently() async throws {
         let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/background/status")
+            XCTAssertEqual(request.url?.path, "/api/background/tasks")
             XCTAssertEqual(request.httpMethod, "GET")
-
             let components = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)
-            let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value) })
-            XCTAssertEqual(query["session_id"], "abc123")
-
+            XCTAssertEqual(components?.queryItems?.first { $0.name == "session_id" }?.value, "abc123")
             return apiTestJSONResponse("""
             {
-              "results": [
-                {
-                  "task_id": "task-1",
-                  "prompt": "audit tests",
-                  "answer": "looks good",
-                  "completed_at": 1770000000
-                }
+              "session_id": "abc123",
+              "agent_available": true,
+              "tasks": [
+                {"task_id": "d1", "kind": "delegation", "status": "attention", "title": "Fix CI", "started_at": 1, "updated_at": 2, "completed_at": null,
+                 "result_available": false, "child_session_id": null, "exit_code": null, "agents": {"total": 2, "completed": 1, "failed": 0, "running": 1}, "pinned": true, "dismissible": false},
+                {"task_id": "bg1", "kind": "background_command", "status": "completed", "title": "summarize", "result_available": true, "pinned": true, "dismissible": true},
+                {"task_id": "", "kind": "process"},
+                {"task_id": "p1", "kind": "future_kind", "status": "future_status", "title": "x"}
               ]
             }
             """, for: request)
         }
 
-        let response = try await client.backgroundStatus(sessionID: "abc123")
-        let result = try XCTUnwrap(response.results?.first)
-
-        XCTAssertEqual(result.taskId, "task-1")
-        XCTAssertEqual(result.prompt, "audit tests")
-        XCTAssertEqual(result.answer, "looks good")
-        XCTAssertEqual(result.completedAt, 1_770_000_000)
+        let response = try await client.backgroundTasks(sessionID: "abc123")
+        XCTAssertEqual(response.tasks.map(\.taskId), ["d1", "bg1", "p1"])
+        XCTAssertEqual(response.tasks[0], BackgroundWorkTask(taskId: "d1", kind: .delegation, status: .attention, title: "Fix CI", agents: .init(total: 2, completed: 1, failed: 0, running: 1), pinned: true))
+        XCTAssertTrue(response.tasks[1].resultAvailable && response.tasks[1].dismissible)
+        XCTAssertEqual(response.tasks[2].status, .unknown)
     }
 }

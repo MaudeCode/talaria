@@ -1899,5 +1899,21 @@
 	"steer_edit": "Modifica indicazione",
 	"steer_cancel": "Annulla indicazione",
 	"steer_already_taken": "L’agente ha già preso questa indicazione.",
-	"steer_stays_pending": "Non c’è nulla in esecuzione che possa prenderla ora; resta in attesa."
+	"steer_stays_pending": "Non c’è nulla in esecuzione che possa prenderla ora; resta in attesa.",
+	"bg_card_title": "Lavoro in background",
+	"bg_status_running": "In corso",
+	"bg_status_attention": "Richiede attenzione",
+	"bg_status_completed": "Fatto",
+	"bg_status_failed": "Non riuscito",
+	"bg_status_cancelled": "Interrotto",
+	"bg_status_unknown": "Stato sconosciuto",
+	"bg_kind_delegation": "Agente",
+	"bg_kind_process": "Comando",
+	"bg_kind_background_command": "Attività in background",
+	"bg_agents_progress": "{done} di {total} completati",
+	"bg_agents_failed": "{n} non riusciti",
+	"bg_show_result": "Mostra risultato",
+	"bg_hide_result": "Nascondi risultato",
+	"bg_result_unavailable": "Il risultato non è più disponibile.",
+	"bg_usage": "Uso: /background <messaggio>"
 }

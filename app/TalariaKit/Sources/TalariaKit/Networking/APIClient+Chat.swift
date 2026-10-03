@@ -156,9 +156,28 @@ extension APIClient {
         )
     }
 
+    /// TAL-372: every piece of the session's background work; reading never consumes a result.
+    public func backgroundTasks(sessionID: String) async throws -> BackgroundTasksResponse {
+        try await send(endpoint: .backgroundTasks(sessionID: sessionID), method: "GET")
+    }
+
+    /// ponytail: old-server fallback (TAL-372): a Web without `/api/background/tasks` reports each finished task once here.
     public func backgroundStatus(sessionID: String) async throws -> BackgroundStatusResponse {
         try await send(endpoint: .backgroundStatus(sessionID: sessionID), method: "GET")
     }
+
+    public func backgroundResult(sessionID: String, taskID: String) async throws -> BackgroundTaskResult {
+        try await send(endpoint: .backgroundResult(sessionID: sessionID, taskID: taskID), method: "GET")
+    }
+
+    public func dismissBackgroundTask(sessionID: String, taskID: String) async throws -> BackgroundDismissResponse {
+        try await send(endpoint: .backgroundDismiss, method: "POST", body: BackgroundDismissRequest(sessionId: sessionID, taskId: taskID))
+    }
+}
+
+private struct BackgroundDismissRequest: Encodable {
+    let sessionId: String
+    let taskId: String
 }
 
 private struct ChatStartRequest: Encodable {

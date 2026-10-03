@@ -58,7 +58,12 @@ extension ChatViewModelSendTests {
 
     func testAnnouncedChangesReloadOnlyWhenTheyConcernThisChat() async throws {
         let sessionReads = LockedCounter()
+        let backgroundReads = LockedCounter()
         let viewModel = try makeViewModel { request in
+            if request.url?.path == "/api/background/tasks" {
+                _ = backgroundReads.increment()
+                return apiTestJSONResponse(#"{"session_id":"session-abc","agent_available":true,"tasks":[]}"#, for: request)
+            }
             XCTAssertEqual(request.url?.path, "/api/session")
             return apiTestJSONResponse(
                 sessionReads.increment() == 1 ? Self.idleTranscript : Self.transcriptWithReplyFromElsewhere,
@@ -70,6 +75,7 @@ extension ChatViewModelSendTests {
         await viewModel.handleSessionsChange(.changed(reason: "turn_started", sessionID: "another-chat"))
         await viewModel.handleSessionsChange(.changed(reason: "attention_pending", sessionID: nil))
         XCTAssertEqual(sessionReads.count, 1, "Other chats and list-only changes must not reload this chat")
+        XCTAssertEqual(backgroundReads.count, 0, "Nor refresh its background work (TAL-372)")
 
         await viewModel.handleSessionsChange(.changed(reason: "session_done", sessionID: "session-abc"))
         XCTAssertEqual(sessionReads.count, 2)
@@ -77,6 +83,7 @@ extension ChatViewModelSendTests {
 
         await viewModel.handleSessionsChange(.resync)
         XCTAssertEqual(sessionReads.count, 3, "A reconnect may have missed events, so the chat resyncs")
+        XCTAssertEqual(backgroundReads.count, 2, "Each change to this chat refreshes its background work too")
     }
 
     func testARunThisChatIsStreamingIsLeftAlone() async throws {
@@ -89,6 +96,9 @@ extension ChatViewModelSendTests {
             case "/api/session":
                 _ = sessionReads.increment()
                 return apiTestJSONResponse(Self.idleTranscript, for: request)
+            case "/api/background/tasks":
+                // TAL-372: background work is separate from the stream and still refreshes.
+                return apiTestJSONResponse(#"{"session_id":"session-abc","agent_available":true,"tasks":[]}"#, for: request)
             default:
                 XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
                 throw URLError(.badURL)

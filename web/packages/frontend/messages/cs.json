@@ -1926,5 +1926,21 @@
 	"steer_edit": "Upravit pokyn",
 	"steer_cancel": "Zrušit pokyn",
 	"steer_already_taken": "Agent už tento pokyn převzal.",
-	"steer_stays_pending": "Teď neběží nic, co by ho převzalo; zůstává čekající."
+	"steer_stays_pending": "Teď neběží nic, co by ho převzalo; zůstává čekající.",
+	"bg_card_title": "Práce na pozadí",
+	"bg_status_running": "Běží",
+	"bg_status_attention": "Vyžaduje pozornost",
+	"bg_status_completed": "Hotovo",
+	"bg_status_failed": "Selhalo",
+	"bg_status_cancelled": "Zastaveno",
+	"bg_status_unknown": "Stav neznámý",
+	"bg_kind_delegation": "Agent",
+	"bg_kind_process": "Příkaz",
+	"bg_kind_background_command": "Úloha na pozadí",
+	"bg_agents_progress": "Hotovo {done} z {total}",
+	"bg_agents_failed": "Selhalo: {n}",
+	"bg_show_result": "Zobrazit výsledek",
+	"bg_hide_result": "Skrýt výsledek",
+	"bg_result_unavailable": "Výsledek už není k dispozici.",
+	"bg_usage": "Použití: /background <zpráva>"
 }

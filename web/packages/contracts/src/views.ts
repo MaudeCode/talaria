@@ -49,11 +49,22 @@ export const MessageRoleSchema = z.enum(['user', 'assistant', 'system', 'tool'])
 /** Persisted rows have integer ids; live rows carry string ids. */
 export const MessageIdSchema = z.union([z.string(), z.number()])
 
+/**
+ * TAL-372: the background work a delegation tool call started, on its scene row: the session's task ids it links to, their
+ * combined status, and the subagent counts the row shows in place ("3 subagents · 2 done, 1 failed").
+ */
+export const BackgroundLinkSchema = z.object({
+  task_ids: z.array(z.string()),
+  status: z.enum(['running', 'attention', 'completed', 'failed', 'cancelled', 'unknown']),
+  agents: z.object({ total: z.number().int(), completed: z.number().int(), failed: z.number().int(), running: z.number().int() }),
+})
+export type BackgroundLink = z.infer<typeof BackgroundLinkSchema>
+
 /** One normalized activity row: the server decides role, order, tool completion/error, and steering consumption. */
 export const ActivitySceneRowSchema = z.looseObject({
   row_id: z.string(), order_index: z.number().int(), role: z.enum(['prose', 'reasoning', 'tool', 'steering']), created_at: z.number().optional(),
   text: z.string().optional(), titles: z.array(z.string()).optional(),
-  tool: z.looseObject({ id: z.string(), name: z.string(), ...ToolDisplayFields, args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable() }).optional(),
+  tool: z.looseObject({ id: z.string(), name: z.string(), ...ToolDisplayFields, args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable(), background: BackgroundLinkSchema.optional() }).optional(),
   steering: z.looseObject({ steer_id: z.string(), consumed: z.boolean(), submitted_at: z.number().nullable(), consumed_at: z.number().nullable(), phase_duration: z.number().nullable().optional() }).optional(),
 })
 export type ActivitySceneRow = z.infer<typeof ActivitySceneRowSchema>
@@ -288,6 +299,38 @@ export const GoalViewSchema = z.looseObject({ text: z.string().optional(), state
 export const GoalResponseSchema = z.looseObject({ ok: z.boolean().optional(), action: z.string().optional(), goal: GoalViewSchema.nullable().optional(), message: z.string().optional(), message_key: z.string().optional(), stream_id: z.string().optional(), status: z.string().optional(), reason: z.string().optional() })
 export const BackgroundResultSchema = z.looseObject({ id: z.string().optional(), task_id: z.string().optional(), status: z.string().optional(), title: z.string().optional(), summary: z.string().optional(), prompt: z.string().optional(), answer: NullableString.optional(), error: z.string().optional(), completed_at: z.number().nullable().optional() })
 export const BackgroundStatusSchema = z.looseObject({ results: z.array(BackgroundResultSchema) })
+/**
+ * TAL-372: one piece of background work a session owns, the same record for every client, reload and restart.
+ * - `task_id` is stable: the delegation unit's id, the process id, or the `/background` task id.
+ * - `status` `attention` is a stalled agent or a matched watch; `unknown` is running work the Agent cannot confirm now.
+ * - `title` is the goal, command or prompt (one line, never output); `agents` counts a delegation's subagents.
+ * - `result_available` means `GET /api/background/result` returns its full result.
+ * - `pinned` puts it in the chat's background tray: running work, and a finished `/background` result until dismissed.
+ * - `dismissible` offers Dismiss: a finished `/background` result, or work nobody can confirm (`unknown`).
+ * - `active`: not settled yet (running, attention or unknown); clients keep refreshing while any record is active.
+ */
+export const BackgroundTaskSchema = z.object({
+  task_id: z.string(),
+  kind: z.enum(['delegation', 'process', 'background_command']),
+  status: BackgroundLinkSchema.shape.status,
+  title: z.string(),
+  started_at: z.number().nullable(),
+  updated_at: z.number(),
+  completed_at: z.number().nullable(),
+  result_available: z.boolean(),
+  child_session_id: z.string().nullable(),
+  exit_code: z.number().int().nullable(),
+  agents: BackgroundLinkSchema.shape.agents.nullable(),
+  pinned: z.boolean(),
+  dismissible: z.boolean(),
+  active: z.boolean(),
+})
+export type BackgroundTask = z.infer<typeof BackgroundTaskSchema>
+/** `agent_available: false` when the Agent could not be asked: running work then shows `unknown`. Reading never consumes a result. */
+export const BackgroundTasksResponseSchema = z.object({ session_id: z.string(), tasks: z.array(BackgroundTaskSchema), agent_available: z.boolean() })
+export const BackgroundTaskResultSchema = z.object({ task_id: z.string(), text: z.string() })
+export const BackgroundDismissRequestSchema = z.object({ session_id: SessionIdSchema, task_id: z.string().min(1) })
+export const BackgroundDismissResponseSchema = z.object({ ok: z.literal(true), task: BackgroundTaskSchema })
 export const ShareCreateResponseSchema = z.looseObject({ ok: z.literal(true), share: z.looseObject({ token: z.string(), url: z.string(), title: z.string(), message_count: z.number().int(), created_at: z.number(), updated_at: z.number() }), session: SessionRowSchema })
 export const ShareMessageSchema = z.looseObject({ role: z.string(), content: z.union([z.string(), z.null(), z.array(Json)]).optional() })
 export const ShareSchema = z.looseObject({ title: z.string(), messages: z.array(ShareMessageSchema), message_count: z.number().int(), created_at: z.number().optional(), updated_at: z.number().optional(), model: NullableString.optional() })

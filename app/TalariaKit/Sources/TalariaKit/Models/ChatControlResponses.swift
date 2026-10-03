@@ -38,6 +38,17 @@ public struct ChatCancelResponse: Decodable, Equatable {
     public let error: String?
 }
 
+/// ponytail: old-server fallback (TAL-372); delete with `APIClient.backgroundStatus` once every supported Web ships `/api/background/tasks`.
+public struct BackgroundStatusResponse: Decodable, Equatable {
+    public let results: [BackgroundResult]?
+}
+
+public struct BackgroundResult: Decodable, Equatable {
+    public let taskId: String?
+    public let prompt: String?
+    public let answer: String?
+}
+
 public struct ChatStreamStatusResponse: Decodable, Equatable {
     public let active: Bool?
     let streamId: String?
@@ -84,15 +95,4 @@ public struct BackgroundStartResponse: Decodable, Equatable {
     let streamId: String?
     let sessionId: String?
     public let error: String?
-}
-
-public struct BackgroundStatusResponse: Decodable, Equatable {
-    public let results: [BackgroundResult]?
-}
-
-public struct BackgroundResult: Decodable, Equatable {
-    public let taskId: String?
-    public let prompt: String?
-    public let answer: String?
-    let completedAt: Double?
 }

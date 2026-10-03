@@ -54,7 +54,12 @@ public enum Endpoint {
     case clarifyRespond
     case btw
     case background
+    /// TAL-372: the session's background work, one shared record each.
+    case backgroundTasks(sessionID: String)
+    /// ponytail: old-server fallback (TAL-372).
     case backgroundStatus(sessionID: String)
+    case backgroundResult(sessionID: String, taskID: String)
+    case backgroundDismiss
     case workspaces
     case workspaceSuggestions(prefix: String)
     case workspaceAdd
@@ -248,8 +253,14 @@ public enum Endpoint {
             return "/api/btw"
         case .background:
             return "/api/background"
+        case .backgroundTasks:
+            return "/api/background/tasks"
         case .backgroundStatus:
             return "/api/background/status"
+        case .backgroundResult:
+            return "/api/background/result"
+        case .backgroundDismiss:
+            return "/api/background/dismiss"
         case .workspaces:
             return "/api/workspaces"
         case .workspaceSuggestions:
@@ -525,8 +536,10 @@ public enum Endpoint {
             let .clarifyPending(sessionID),
             let .clarifyStream(sessionID):
             return [URLQueryItem(name: "session_id", value: sessionID)]
-        case let .backgroundStatus(sessionID):
+        case let .backgroundTasks(sessionID), let .backgroundStatus(sessionID):
             return [URLQueryItem(name: "session_id", value: sessionID)]
+        case let .backgroundResult(sessionID, taskID):
+            return [URLQueryItem(name: "session_id", value: sessionID), URLQueryItem(name: "task_id", value: taskID)]
         case let .directoryList(sessionID, path):
             var items = [URLQueryItem(name: "session_id", value: sessionID)]
             if let path {

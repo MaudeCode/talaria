@@ -29,7 +29,7 @@ struct ToolCallCardView: View {
                 header
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(String(localized: "\(AssistantActivitySummary.label(for: toolCall)), \(statusDisplay.detailText)"))
+            .accessibilityLabel(accessibilityText(statusDisplay))
             .accessibilityHint(isExpanded ? "Double tap to collapse details." : "Double tap to expand details.")
 
             if isExpanded {
@@ -75,6 +75,14 @@ struct ToolCallCardView: View {
 
             Spacer(minLength: 6)
 
+            // TAL-372: a delegation row shows its subagents' progress, updated in place as they finish.
+            if let background = toolCall.background {
+                Text(Self.backgroundSummary(background))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
             if hasExpandableContent {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
@@ -84,6 +92,20 @@ struct ToolCallCardView: View {
         }
         .frame(minHeight: 44)
         .contentShape(Rectangle())
+    }
+
+    private func accessibilityText(_ statusDisplay: ToolCallStatusDisplay) -> String {
+        let label = String(localized: "\(AssistantActivitySummary.label(for: toolCall)), \(statusDisplay.detailText)")
+        guard let background = toolCall.background else { return label }
+        return "\(label), \(Self.backgroundSummary(background))"
+    }
+
+    static func backgroundSummary(_ link: BackgroundLink) -> String {
+        let counts = BackgroundWorkCard.agentsSummary(link.agents)
+        switch link.status {
+        case .running, .completed: return counts
+        default: return "\(BackgroundWorkCard.statusLabel(link.status)) · \(counts)"
+        }
     }
 
     private var titleText: some View {

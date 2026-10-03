@@ -75,8 +75,8 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
       if (event.data.title && queryClient) void queryClient.invalidateQueries({ queryKey: keys.sessions.all })
       break
     case 'bg_task_complete':
-      showToast(event.data.title ? `${event.data.title}: ${event.data.status ?? 'done'}` : (event.data.summary ?? 'Background task complete'))
-      if (event.data.task_id) void api.ackBackgroundTask(sessionId, event.data.task_id).catch(() => undefined)
+      // TAL-372: the finished work is a server record; the background card and the chat show it, never a toast.
+      if (queryClient) void queryClient.invalidateQueries({ queryKey: keys.background(sessionId) })
       break
     case 'compressed': {
       const next = event.data.new_session_id ?? event.data.continuation_session_id

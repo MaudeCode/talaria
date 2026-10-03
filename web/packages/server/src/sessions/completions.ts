@@ -13,6 +13,7 @@ import type { SessionStore } from './store.js'
 import type { Session } from './session.js'
 import { str } from '../util.js'
 import { batchUpdate, recordBackgroundUpdate } from './background-updates.js'
+import type { BackgroundActivity } from './background-tasks.js'
 
 type Dict = Record<string, unknown>
 export const COMPLETION_POLL_MS = 1000
@@ -33,6 +34,8 @@ export interface CompletionDrainDeps {
   now: () => number
   log: (line: string) => void
   pollMs?: number
+  /** TAL-372: each routed completion settles its background record. */
+  background?: Pick<BackgroundActivity, 'recordEvent'>
 }
 
 /** `event` is the raw completion event: async delegations claim and acknowledge it in the Agent's ledger (TAL-459), and every
@@ -148,6 +151,7 @@ export class CompletionDrain {
     if (processId) seen.add(processId)
     this.pendingSessions.add(sid)
     const prompt = await this.wakeupPrompt(evt)
+    this.deps.background?.recordEvent(sid, evt, prompt)
     this.emitCoalesced(sid, this.buildPayload(evt, sid, prompt))
     if (!prompt) return true
     if (this.hasActiveTurn(sid)) this.recordDeferred(sid, processId, prompt, evt)

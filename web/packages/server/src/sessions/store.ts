@@ -36,6 +36,8 @@ export interface SessionStoreDeps {
   now: () => number
   log: (line: string) => void
   cacheMax: () => number
+  /** TAL-372: a deleted session's other in-memory state goes with it. */
+  onDeleted?: (sid: string) => void
 }
 
 const LOAD_STABLE_READ_ATTEMPTS = 3
@@ -676,6 +678,9 @@ export class SessionStore {
     try { this.pruneFromIndex(sid) } catch { /* ignore */ }
     try { rmSync(`${path}.bak`, { force: true }) } catch { /* ignore */ }
     try { this.deps.drafts.delete(sid) } catch { /* ignore */ }
+    // TAL-372: the session's background work records (`BackgroundTaskStore`) go with it.
+    try { rmSync(join(this.sessionDir, '_background', `${sid}.json`), { force: true }) } catch { /* ignore */ }
+    this.deps.onDeleted?.(sid)
     if (opts.tombstone ?? true) this.recordDeletedTombstone(sid)
     return true
   }

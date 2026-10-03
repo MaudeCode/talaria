@@ -1824,5 +1824,21 @@
 	"steer_edit": "編輯引導訊息",
 	"steer_cancel": "取消引導訊息",
 	"steer_already_taken": "代理已收到這則引導訊息。",
-	"steer_stays_pending": "目前沒有可接收它的執行，它將保持待處理。"
+	"steer_stays_pending": "目前沒有可接收它的執行，它將保持待處理。",
+	"bg_card_title": "背景工作",
+	"bg_status_running": "執行中",
+	"bg_status_attention": "需要留意",
+	"bg_status_completed": "完成",
+	"bg_status_failed": "失敗",
+	"bg_status_cancelled": "已停止",
+	"bg_status_unknown": "狀態不明",
+	"bg_kind_delegation": "代理",
+	"bg_kind_process": "指令",
+	"bg_kind_background_command": "背景任務",
+	"bg_agents_progress": "已完成 {done}/{total}",
+	"bg_agents_failed": "{n} 個失敗",
+	"bg_show_result": "顯示結果",
+	"bg_hide_result": "隱藏結果",
+	"bg_result_unavailable": "結果已無法取得。",
+	"bg_usage": "用法：/background <訊息>"
 }
