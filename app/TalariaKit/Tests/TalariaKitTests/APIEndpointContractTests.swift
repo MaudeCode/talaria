@@ -170,6 +170,8 @@ final class ContractReadinessTests: APIClientTestCase {
             .init(name: "models live", endpoint: .modelsLive, path: "/api/models/live"),
             .init(name: "commands", endpoint: .commands, path: "/api/commands"),
             .init(name: "default model", endpoint: .defaultModel, path: "/api/default-model"),
+            .init(name: "auxiliary models", endpoint: .auxiliaryModels, path: "/api/model/auxiliary"),
+            .init(name: "model set", endpoint: .setModel, path: "/api/model/set"),
             .init(name: "reasoning read", endpoint: .reasoning(), path: "/api/reasoning"),
             .init(
                 name: "reasoning read scoped to model",

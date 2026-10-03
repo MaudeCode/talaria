@@ -37,6 +37,23 @@ extension APIClient {
         )
     }
 
+    /// The active profile's auxiliary task slots (`GET /api/model/auxiliary`, TAL-388).
+    public func auxiliaryModels() async throws -> AuxiliaryModelsResponse {
+        try await send(endpoint: .auxiliaryModels, method: "GET")
+    }
+
+    /// Saves one auxiliary task slot (`__reset__` returns every slot to Auto).
+    /// `model` is a catalog entry id or a typed id and `provider` the entry's
+    /// group `provider_id`; the server splits `@provider:` ids itself. Auto is
+    /// provider `auto` with an empty model. Answers the refreshed slots.
+    public func setAuxiliaryModel(task: String, model: String, provider: String?) async throws -> AuxiliaryModelSetResponse {
+        try await send(
+            endpoint: .setModel,
+            method: "POST",
+            body: AuxiliaryModelSetRequest(scope: "auxiliary", task: task, model: model, provider: provider)
+        )
+    }
+
     /// Reasoning status for a specific model/provider (`GET /api/reasoning`).
     /// Passing the session's current model + provider makes `supported_efforts`
     /// model-accurate (mirrors the upstream WebUI composer chip, issue #18);
@@ -193,6 +210,13 @@ extension APIClient {
     public func insights(days: Int) async throws -> InsightsResponse {
         try await send(endpoint: .insights(days: days), method: "GET")
     }
+}
+
+private struct AuxiliaryModelSetRequest: Encodable {
+    let scope: String
+    let task: String
+    let model: String
+    let provider: String?
 }
 
 private struct DefaultModelRequest: Encodable {

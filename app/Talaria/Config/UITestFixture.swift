@@ -599,6 +599,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 "default_model": "fixture-model",
                 "active_provider": "fixture-provider"
             ])
+        case "/api/model/auxiliary":
+            return json(auxiliaryModelsResponse())
+        case "/api/model/set":
+            return json(["ok": true, "auxiliary": auxiliaryModelsResponse()])
         case "/api/workspaces":
             return json(["workspaces": [["path": "/fixture", "name": "Fixture Workspace"]]])
         case "/api/workspaces/suggest":
@@ -1050,6 +1054,32 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 updatedAt: "2026-09-26T12:48:00Z", readAt: "2026-09-26T12:49:00Z"
             )
         ]
+    }
+
+    /// TAL-388: one pinned slot, one saved model the catalog no longer lists, and the rest on Auto.
+    private static func auxiliaryModelsResponse() -> [String: Any] {
+        let slots: [(String, String, String)] = [
+            ("vision", "Vision", "image/screenshot analysis"), ("web_extract", "Web extract", "web page summarization"),
+            ("compression", "Compression", "context summarization"), ("approval", "Approval", "smart command approval"),
+            ("mcp", "MCP", "MCP tool reasoning"), ("title_generation", "Title generation", "session titles"),
+            ("skills_hub", "Skills hub", "skills search/install"), ("curator", "Curator", "skill-usage review pass"),
+            ("kanban_decomposer", "Kanban decomposer", "task decomposition"), ("profile_describer", "Profile describer", "profile summaries"),
+            ("triage_specifier", "Triage specifier", "issue/task triage specs"),
+        ]
+        let tasks: [[String: Any]] = slots.map { task, label, description in
+            var row: [String: Any] = [
+                "task": task, "label": label, "description": description, "provider": "auto", "model": "",
+                "is_auto": true, "value_label": "Fixture Model", "provider_label": "Fixture Provider",
+                "selected_option_id": NSNull(), "in_catalog": true,
+            ]
+            if task == "title_generation" {
+                row.merge(["provider": "fixture-provider", "model": "fixture-model", "is_auto": false, "selected_option_id": "fixture-model"]) { $1 }
+            } else if task == "vision" {
+                row.merge(["provider": "openrouter", "model": "legacy/vision-model", "is_auto": false, "value_label": "legacy/vision-model", "provider_label": "OpenRouter", "in_catalog": false]) { $1 }
+            }
+            return row
+        }
+        return ["main": ["provider": "fixture-provider", "model": "fixture-model"], "tasks": tasks]
     }
 
     private static func json(_ object: Any) -> Data {
