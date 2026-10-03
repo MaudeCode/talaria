@@ -1173,7 +1173,7 @@ struct ChatView: View {
             },
             shouldRenderMessageRow: shouldRenderMessageRow,
             onLoadMessages: {
-                await loadMessages(isUserRefresh: true)
+                await loadMessages(isUserRefresh: true, joinsLoadInFlight: true)
             },
             onLoadOlderMessages: {
                 await loadOlderMessages()
@@ -1505,7 +1505,7 @@ struct ChatView: View {
         let draftSettingsInteractionGeneration = viewModel.composerConfigurationInteractionGeneration
 
         if loadsInitialMessages {
-            await loadMessages(appliesInitialFocus: false)
+            await loadMessages(appliesInitialFocus: false, joinsLoadInFlight: true)
             guard !Task.isCancelled else { return }
         }
         viewedCompletionsThrough = Date()
@@ -1559,8 +1559,16 @@ struct ChatView: View {
         viewModel.isViewingCachedData || viewModel.activeStreamID != nil || viewModel.isSubmittingGoal
     }
 
-    private func loadMessages(appliesInitialFocus: Bool = true, isUserRefresh: Bool = false) async {
-        await viewModel.loadMessages(modelContext: modelContext, isUserRefresh: isUserRefresh)
+    private func loadMessages(
+        appliesInitialFocus: Bool = true,
+        isUserRefresh: Bool = false,
+        joinsLoadInFlight: Bool = false
+    ) async {
+        if joinsLoadInFlight {
+            await viewModel.refreshSession(modelContext: modelContext, isUserRefresh: isUserRefresh)
+        } else {
+            await viewModel.loadMessages(modelContext: modelContext, isUserRefresh: isUserRefresh)
+        }
         await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
         await viewModel.refreshBackgroundTasks()
         if appliesInitialFocus {
@@ -2876,9 +2884,14 @@ private struct ChatLiveSync: ViewModifier {
     let viewModel: ChatViewModel
     let onAPIError: (Error) -> Void
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
 
     func body(content: Content) -> some View {
         content
+            .task(id: scenePhase == .active) {
+                guard scenePhase == .active else { return }
+                await viewModel.recoverWhenServerReturns(modelContext: modelContext, afterAttempt: reportLastError)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .talariaReturnedToForeground)) { _ in
                 Task {
                     await viewModel.syncWithServer(modelContext: modelContext)

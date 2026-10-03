@@ -36,6 +36,7 @@ public final class ChatViewModel {
     @ObservationIgnored private var latestHandledSessionLoadFailureGeneration = 0
     @ObservationIgnored private var activeSessionLoadRequestGenerations: Set<Int> = []
     @ObservationIgnored private var sessionLoadWaiters: [SessionLoadWaiter] = []
+    @ObservationIgnored private var joinableSessionLoad: Task<Void, Never>?
     /// True while a recorded voice note is being transcribed, uploaded, and sent.
     /// Spans all three steps so the composer can show progress and disable input.
     public private(set) var isSendingVoiceNote = false
@@ -4415,18 +4416,63 @@ public final class ChatViewModel {
 
     /// Brings an open chat current with the server (TAL-434): an idle chat reloads, which also
     /// adopts a run started elsewhere; a suspended run reconnects; a run this chat is already
-    /// streaming is left alone.
+    /// streaming is left alone. The reload joins one already in flight (TAL-184).
     public func syncWithServer(modelContext: ModelContext? = nil) async {
+        await syncWithServer(modelContext: modelContext, joinsLoadInFlight: true)
+    }
+
+    private func syncWithServer(modelContext: ModelContext?, joinsLoadInFlight: Bool) async {
         if activeStreamID == nil {
-            await loadMessages(modelContext: modelContext)
+            if joinsLoadInFlight {
+                await refreshSession(modelContext: modelContext)
+            } else {
+                await loadMessages(modelContext: modelContext)
+            }
         }
         await reconnectStreamIfNeeded(modelContext: modelContext)
     }
 
-    /// Syncs when a change the server announced concerns this chat.
+    /// Loads the session for a refresh that needs nothing newer than a load already in flight
+    /// (opening, pull-to-refresh, foreground return, offline recovery), joining that load instead
+    /// of sending an equivalent request alongside it (TAL-184).
+    public func refreshSession(modelContext: ModelContext? = nil, isUserRefresh: Bool = false) async {
+        if let joinableSessionLoad {
+            await joinableSessionLoad.value
+            return
+        }
+        let load = Task { await loadMessages(modelContext: modelContext, isUserRefresh: isUserRefresh) }
+        joinableSessionLoad = load
+        await load.value
+        joinableSessionLoad = nil
+    }
+
+    /// Recovers a chat that fell back to its cached transcript once its server answers again
+    /// (TAL-184): every `interval` it retries the session load, skipping a tick while another
+    /// load is in flight. A failed retry stays silent and offline; success refreshes background
+    /// work like a manual refresh. Runs until cancelled, so the caller scopes it to an active
+    /// scene and the visible chat. `afterAttempt` reports each attempt's error.
+    public func recoverWhenServerReturns(
+        modelContext: ModelContext? = nil,
+        every interval: Duration = .seconds(30),
+        sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        afterAttempt: () -> Void = {}
+    ) async {
+        while (try? await sleep(interval)) != nil, !Task.isCancelled {
+            guard isViewingCachedData, activeSessionLoadRequestGenerations.isEmpty else { continue }
+            await syncWithServer(modelContext: modelContext)
+            afterAttempt()
+            // A chat closed meanwhile has stopped its polling; leave it stopped.
+            if !isViewingCachedData, !Task.isCancelled {
+                await refreshBackgroundTasks()
+            }
+        }
+    }
+
+    /// Syncs when a change the server announced concerns this chat. The change may postdate a
+    /// load in flight, so this always reads afresh.
     public func handleSessionsChange(_ change: SessionsChange, modelContext: ModelContext? = nil) async {
         guard let sessionID, SessionsChangeTrigger.session(sessionID).matches(change) else { return }
-        await syncWithServer(modelContext: modelContext)
+        await syncWithServer(modelContext: modelContext, joinsLoadInFlight: false)
         // TAL-372: a background task that changed announces it the same way.
         await refreshBackgroundTasks()
     }
