@@ -452,7 +452,7 @@ export class SessionService {
     if (this.deps.runtime.activeStreamIds.has(streamId)) return false
     if (this.deps.runtime.activeRunStream(session.session_id)) return false
     const pendingAge = session.pending_started_at ? this.deps.now() - session.pending_started_at : null
-    if (session.pending_user_message && pendingAge !== null && pendingAge < 30) return false
+    if (session.hasPendingPrompt && pendingAge !== null && pendingAge < 30) return false
     let target = session
     if (session.loadedMetadataOnly) {
       const full = this.store.load(session.session_id)
@@ -470,7 +470,7 @@ export class SessionService {
     // Python `_materialize_pending_user_turn_before_error` (#1361): the prompt that was in flight becomes a durable user
     // turn and an interruption marker follows it, so a dead stream never silently drops what the user sent.
     const pendingText = str(target.pending_user_message)
-    if (pendingText) {
+    if (target.hasPendingPrompt) {
       const turnId = str(target.active_stream_id)
       const startedAt = typeof target.pending_started_at === 'number' && target.pending_started_at > 0 ? target.pending_started_at : this.deps.now()
       const attachments = [...target.pending_attachments]

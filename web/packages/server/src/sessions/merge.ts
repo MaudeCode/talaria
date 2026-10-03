@@ -63,7 +63,8 @@ export function messageIdentity(msg: unknown): string | null {
   if (!isDict(msg)) return null
   const role = str(msg.role)
   let text = messageText(msg.content)
-  if (role === 'user') text = userPromptText(text)
+  // An attachment-only prompt has no typed text; its attached-files line tells one such turn from the next.
+  if (role === 'user') text = userPromptText(text) || stripWorkspacePrefix(text, true)
   if (!text && !msg.tool_call_id && !msg.tool_calls) {
     if (msg._partial) return JSON.stringify([role, '', '', `__partial__${str(msg.reasoning).split(/\s+/).join(' ').slice(0, 200)}`])
     return null
@@ -212,7 +213,7 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
   const merged: Message[] = [...prev]
   const seen = new Set(merged.map(messageIdentity).filter((k): k is string => k !== null))
   const currentUserKey = messageIdentity({ role: 'user', content: msgText })
-  const currentUserIn = candidates.some((m) => messageIdentity(m) === currentUserKey || looksLikeCurrentUserTurn(m, msgText))
+  const currentUserIn = candidates.some((m) => (currentUserKey !== null && messageIdentity(m) === currentUserKey) || looksLikeCurrentUserTurn(m, msgText))
   const alreadyCheckpointed = Boolean(opts.activeTurnToken) && merged.some((m) => isDict(m) && m.role === 'user' && m._active_turn_token === opts.activeTurnToken)
   if (currentUserKey !== null && !currentUserIn && !alreadyCheckpointed && candidates.some((m) => isDict(m) && (m.role === 'assistant' || m.role === 'tool'))) {
     const user: Message = { role: 'user', content: msgText, timestamp: opts.now ?? Date.now() / 1000 }
@@ -228,7 +229,7 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
     const key = messageIdentity(msg)
     const isCurrentUser = looksLikeCurrentUserTurn(msg, msgText)
     const last = merged[merged.length - 1]
-    if (((key !== null && key === currentUserKey) || isCurrentUser) && last && (messageIdentity(last) === currentUserKey || looksLikeCurrentUserTurn(last, msgText))) {
+    if (((key !== null && key === currentUserKey) || isCurrentUser) && last && ((currentUserKey !== null && messageIdentity(last) === currentUserKey) || looksLikeCurrentUserTurn(last, msgText))) {
       if (isDict(msg) && msg.id !== undefined && isDict(last) && last.id === undefined) last.id = msg.id
       continue
     }

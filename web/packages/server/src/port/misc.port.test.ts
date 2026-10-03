@@ -10,7 +10,7 @@ import { AgentConfig, ConfigUnavailable } from '../config/agent-config.js'
 import { probeServer } from '../tools/mcp-health.js'
 import { agentHealth } from '../tools/health.js'
 import { githubJson } from '../tools/updates.js'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
@@ -227,6 +227,9 @@ describe('image attachments in user messages (review round 14)', () => {
     s = await bootTestServer({ sidecar })
   })
   afterAll(() => s.close())
+  // TAL-276 tests swap the Agent's answer; every later test gets the default one back.
+  const agentAnswer = (params: Record<string, unknown>) => { sent = params.user_message; return { status: 'completed' as const, messages: [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, result_status: 'completed', tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } }
+  afterEach(() => { sidecar.respond('chat.start', agentAnswer) })
   const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16, 1)])
   const turn = async (attachments: Json[]): Promise<unknown> => {
     sent = null
@@ -262,9 +265,9 @@ describe('image attachments in user messages (review round 14)', () => {
     mode = 'native'
     writeFileSync(join(ws(), 'only.png'), png)
     const { sid, prompt, users } = await echoTurn('  ', [{ path: join(ws(), 'only.png'), mime: 'image/png', name: 'only.png' }])
-    // The image rides natively, so the text part names no attached file.
+    // The image rides natively, and the text part names it too.
     expect((prompt as Json[])[1]).toMatchObject({ type: 'image_url' })
-    expect(String((prompt as Json[])[0]!.text)).not.toContain('[Attached files:')
+    expect(String((prompt as Json[])[0]!.text)).toContain(`[Attached files: ${join(ws(), 'only.png')}]`)
     expect(users).toHaveLength(1)
     expect(users[0]!.content).toBe('')
     expect((users[0]!.attachments as Json[]).map((a) => a.name)).toEqual(['only.png'])
@@ -275,7 +278,7 @@ describe('image attachments in user messages (review round 14)', () => {
     expect((await post(s, '/api/chat/start', { session_id: sid, message: '', attachments: [{}, 'name-only'] })).status).toBe(400)
   })
 
-  it('names files the model cannot see as images in its prompt, and shows only the typed text (TAL-276)', async () => {
+  it('names attached files in the model prompt, and shows only the typed text (TAL-276)', async () => {
     mode = 'native'
     const doc = join(ws(), 'notes.pdf')
     const only = await echoTurn('', [{ path: doc, mime: 'application/pdf', name: 'notes.pdf' }])
@@ -295,6 +298,39 @@ describe('image attachments in user messages (review round 14)', () => {
     expect(String(image.prompt)).toContain(`[Attached files: ${join(ws(), 'textmode.png')}]`)
     expect(image.users[0]!.content).toBe('')
     mode = 'native'
+  })
+
+  it('keeps two attachment-only turns apart when the Agent answers both the same (TAL-276)', async () => {
+    mode = 'native'
+    const reply = (params: Record<string, unknown>) => ({ status: 'completed' as const, messages: [...(params.conversation_history as Json[]), { role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, result_status: 'completed', tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] })
+    sidecar.respond('chat.start', reply)
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    for (const name of ['a.pdf', 'b.pdf']) {
+      const res = await post(s, '/api/chat/start', { session_id: sid, message: '', attachments: [{ path: join(ws(), name), mime: 'application/pdf', name }] })
+      await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+    }
+    const messages = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(messages.filter((m) => m.role === 'user').map((m) => (m.attachments as Json[]).map((a) => a.name))).toEqual([['a.pdf'], ['b.pdf']])
+  })
+
+  it('keeps an attachment-only prompt when its turn fails or its stream goes stale (TAL-276)', async () => {
+    mode = 'native'
+    const doc = { path: join(ws(), 'kept.pdf'), mime: 'application/pdf', name: 'kept.pdf' }
+    sidecar.respond('chat.start', () => { throw new SidecarError('provider down', { condition: 'provider_error' }) })
+    const failed = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const res = await post(s, '/api/chat/start', { session_id: failed, message: '', attachments: [doc] })
+    await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+    const afterError = ((await json(await s.get(`/api/session?session_id=${failed}`))).session as Json).messages as Json[]
+    expect(afterError.filter((m) => m.role === 'user').map((m) => (m.attachments as Json[]).map((a) => a.name))).toEqual([['kept.pdf']])
+    // A stream that died with the server: recovery turns the in-flight prompt into a durable row.
+    const stale = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(stale)
+    Object.assign(session, { active_stream_id: 'dead-stream', pending_user_message: '', pending_attachments: [doc], pending_started_at: Date.now() / 1000 - 120 })
+    s.deps.sessionStore.save(session)
+    expect(s.deps.sessions.clearStaleStreamState(s.deps.sessionStore.get(stale))).toBe(true)
+    const recovered = s.deps.sessionStore.get(stale).messages
+    expect(recovered.filter((m) => m.role === 'user').map((m) => (m.attachments as Json[]).map((a) => a.name))).toEqual([['kept.pdf']])
   })
 
   it('sends plain text when the Agent resolves text mode for the model', async () => {

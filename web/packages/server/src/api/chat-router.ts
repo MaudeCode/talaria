@@ -74,7 +74,7 @@ function requireField(body: Record<string, unknown>, ...fields: string[]): void 
 function visibleOrRetag(ctx: RequestContext, s: Session, requestedProfile: string): void {
   const active = ctx.deps.activeProfile()
   if (ctx.deps.profilesMatch(s.profile, active)) return
-  const hasTurns = s.messages.length > 0 || s.context_messages.length > 0 || Boolean(s.pending_user_message)
+  const hasTurns = s.messages.length > 0 || s.context_messages.length > 0 || s.hasPendingPrompt
   if (requestedProfile && ctx.deps.profilesMatch(requestedProfile, active) && !hasTurns) {
     s.profile = requestedProfile
     return
@@ -251,7 +251,7 @@ export const chatRouter = os.router({
     if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     const requestedProfile = str(body.profile).trim()
     if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
-    if (requestedProfile && !ctx.deps.profilesMatch(s.profile, requestedProfile) && !s.messages.length && !s.context_messages.length && !s.pending_user_message) s.profile = requestedProfile
+    if (requestedProfile && !ctx.deps.profilesMatch(s.profile, requestedProfile) && !s.messages.length && !s.context_messages.length && !s.hasPendingPrompt) s.profile = requestedProfile
     let streamRunning = false
     if (s.active_stream_id) {
       streamRunning = ctx.deps.registry.liveIds.has(s.active_stream_id)

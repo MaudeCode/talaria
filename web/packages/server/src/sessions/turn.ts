@@ -261,7 +261,7 @@ export class TurnRunner {
       if (blocking) return { error: 'session already has an active stream', active_stream_id: blocking, _status: 409 }
     }
     const streamId = randomUUID().replace(/-/g, '')
-    const wasHiddenEmpty = !s.messages.length && !s.context_messages.length && !s.pending_user_message
+    const wasHiddenEmpty = !s.messages.length && !s.context_messages.length && !s.hasPendingPrompt
     const attachments = opts.attachments ?? []
     // A background wakeup stays one in a forked session too (TAL-460).
     const source = opts.source !== 'process_wakeup' && str(s.source_tag).toLowerCase() === 'fork' ? 'fork' : (opts.source ?? 'webui')
@@ -732,15 +732,14 @@ export class TurnRunner {
   /**
    * Python `_build_user_message`: image attachments are embedded as native `image_url` parts only when the Agent's
    * resolved image mode for this model is `native` (text mode routes them through the Agent's vision tool path), and
-   * only after the bytes are read through an anchored descriptor and sniffed as a real image format. Every other
-   * attached file is named by path after the text (TAL-276), so an attachment-only turn still gives the model a request.
+   * only after the bytes are read through an anchored descriptor and sniffed as a real image format. Every attached
+   * file is also named by path after the text (TAL-276), so an attachment-only turn still gives the model a request
+   * and its transcript row a distinct identity.
    */
   private async buildUserMessage(workspaceCtx: string, msgText: string, attachments: Record<string, unknown>[], workspace: string, sessionId: string, s: Session, opts: StartTurnOptions, signal: AbortSignal): Promise<string | Record<string, unknown>[]> {
     const text = workspaceCtx + msgText
-    const withFiles = (embedded: Record<string, unknown>[] = []): string => {
-      const named = attachments.filter((att) => !embedded.includes(att)).map((att) => str(att.path).trim()).filter(Boolean)
-      return named.length ? `${text}\n\n[Attached files: ${named.join(', ')}]` : text
-    }
+    const named = attachments.map((att) => str(att.path).trim()).filter(Boolean)
+    const withFiles = (): string => (named.length ? `${text}\n\n[Attached files: ${named.join(', ')}]` : text)
     const candidates = attachments.filter((att) => str(att.path).trim() && str(att.mime).trim().startsWith('image/'))
     if (!candidates.length) return withFiles()
     const sidecar = this.deps.sidecar()
@@ -762,7 +761,7 @@ export class TurnRunner {
       return withFiles()
     }
     const parts: Record<string, unknown>[] = []
-    const embedded: Record<string, unknown>[] = []
+    let images = 0
     const roots = [workspace, this.deps.attachmentDir(sessionId)].map((r) => resolvePathLikePython(r))
     for (const att of candidates) {
       const target = resolvePathLikePython(str(att.path).trim())
@@ -778,10 +777,10 @@ export class TurnRunner {
         const sniffed = sniffImageMime(bytes, str(att.mime))
         if (!sniffed) continue
         parts.push({ type: 'image_url', image_url: { url: `data:${sniffed};base64,${bytes.toString('base64')}` } })
-        embedded.push(att)
+        images += 1
       } catch { /* skip unreadable */ } finally { closeSync(fd) }
     }
-    return embedded.length ? [{ type: 'text', text: withFiles(embedded) }, ...parts] : withFiles()
+    return images ? [{ type: 'text', text: withFiles() }, ...parts] : withFiles()
   }
 
   /**
@@ -839,7 +838,7 @@ export class TurnRunner {
 
   private materializePendingUserTurn(s: Session, activeTurnToken: string | null, turnId: string): boolean {
     const pendingText = str(s.pending_user_message)
-    if (!pendingText) return false
+    if (!s.hasPendingPrompt) return false
     const recoveredTs = typeof s.pending_started_at === 'number' && s.pending_started_at > 0 ? s.pending_started_at : this.deps.now()
     const source = s.pending_user_source ?? 'webui'
     const attachments = [...s.pending_attachments]
