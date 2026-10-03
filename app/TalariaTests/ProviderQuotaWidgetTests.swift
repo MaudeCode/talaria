@@ -38,6 +38,25 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         XCTAssertEqual(store.load()?.sources.map(\.sourceID), ["qsrc_work"])
     }
 
+    /// TAL-272: older servers could return one source id twice; a snapshot cached from
+    /// that response must load with one row per id so every by-id lookup stays valid.
+    func testStoreLoadsOneRowPerSourceIDFromADuplicatedSnapshot() throws {
+        let suite = "ProviderQuotaWidgetDuplicates.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
+        let first = makeSource(id: "qsrc_custom", account: "My LLM")
+        let repeated = makeSource(id: "qsrc_custom", account: "my-llm")
+        let other = makeSource(id: "qsrc_work", account: "Work")
+
+        XCTAssertTrue(store.save(scopeID: "qscope_default", sources: [first, repeated, other]))
+
+        XCTAssertEqual(store.load()?.sources.map(\.sourceID), ["qsrc_custom", "qsrc_work"])
+        XCTAssertEqual(store.load()?.sources.first?.accountLabel, "My LLM")
+        XCTAssertTrue(store.save(scopeID: "qscope_default", sources: [other], updatedSourceIDs: ["qsrc_work"]))
+        XCTAssertEqual(store.load()?.sources.map(\.sourceID), ["qsrc_work"])
+    }
+
     func testStoreKeepsOnlyTheActiveServerProfileScope() throws {
         let suite = "ProviderQuotaWidgetScopes.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

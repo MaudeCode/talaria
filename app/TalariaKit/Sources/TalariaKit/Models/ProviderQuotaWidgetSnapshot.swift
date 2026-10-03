@@ -147,8 +147,16 @@ public struct ProviderQuotaWidgetSnapshotStore {
     }
 
     public func load() -> ProviderQuotaWidgetSnapshot? {
-        guard let data = defaults?.data(forKey: Self.storageKey) else { return nil }
-        return try? JSONDecoder().decode(ProviderQuotaWidgetSnapshot.self, from: data)
+        guard let data = defaults?.data(forKey: Self.storageKey),
+              let snapshot = try? JSONDecoder().decode(ProviderQuotaWidgetSnapshot.self, from: data)
+        else { return nil }
+        // A snapshot cached from an older server can repeat a source id; every reader
+        // looks rows up by id, so keep the first row per id.
+        var seen = Set<String>()
+        return ProviderQuotaWidgetSnapshot(
+            updatedAt: snapshot.updatedAt,
+            sources: snapshot.sources.filter { seen.insert($0.sourceID).inserted }
+        )
     }
 
     @discardableResult
