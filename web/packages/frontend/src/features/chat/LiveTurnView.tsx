@@ -1,9 +1,10 @@
-import { useLayoutEffect, useRef, type PointerEvent, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import { ArrowUp, Pencil, X } from 'lucide-react'
 import type { LiveTurn, PendingSteerRow } from '../../stream/reducer'
 import { sendSteerNow, withdrawSteer } from '../../api/endpoints'
+import type { SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 import { showToast } from '../toast/toast'
 import { returnToComposer } from '../composer/composerReturn'
 import { rememberLiveTurnHeight, SteerMessage, TurnActivityView } from './TurnActivityView'
@@ -45,25 +46,31 @@ export function LiveTurnView({ turn, name, mode, userVisible }: { turn: LiveTurn
  * takes it back into the composer, Cancel drops it, Send now delivers it at once. The buttons keep the composer's focus.
  */
 function PendingSteerMessage({ sessionId, steer }: { sessionId: string; steer: PendingSteerRow }) {
+  // One request at a time: a second click never sends twice or reports the first one's outcome as its own.
+  const [busy, setBusy] = useState(false)
   const keepFocus = (e: PointerEvent) => { e.preventDefault() }
-  const withdraw = async (reason: 'edit' | 'cancel') => {
-    const r = await withdrawSteer({ session_id: sessionId, steer_id: steer.steerId, reason }).catch(() => ({ withdrawn: false, text: undefined }))
+  const run = async (request: () => Promise<void>) => {
+    if (busy) return
+    setBusy(true)
+    try { await request() } catch (e) { showToast(e instanceof Error ? e.message : String(e), 4000, 'error') } finally { setBusy(false) }
+  }
+  const withdraw = (reason: SteerWithdrawRequest['reason']) => run(async () => {
+    const r = await withdrawSteer({ session_id: sessionId, steer_id: steer.steerId, reason })
     if (!r.withdrawn) { showToast(m.steer_already_taken(), 2500); return }
     if (reason === 'edit' && r.text !== undefined) returnToComposer(sessionId, r.text)
-  }
-  const sendNow = async () => {
-    const r = await sendSteerNow({ session_id: sessionId, steer_id: steer.steerId }).catch(() => ({ redirected: false }))
-    if (!r.redirected) showToast(m.steer_stays_pending(), 2500)
-  }
+  })
+  const sendNow = () => run(async () => {
+    if (!(await sendSteerNow({ session_id: sessionId, steer_id: steer.steerId })).redirected) showToast(m.steer_stays_pending(), 2500)
+  })
   const button = (label: string, icon: ReactNode, onClick: () => Promise<void>) => (
-    <button type="button" className="steer-action" aria-label={label} title={label} onPointerDown={keepFocus} onClick={() => { void onClick() }}>{icon}</button>
+    <button type="button" className="steer-action" aria-label={label} title={label} disabled={busy} onPointerDown={keepFocus} onClick={() => { void onClick() }}>{icon}</button>
   )
   const { edit, cancel, send_now: sendNowAllowed } = steer.actions
   const actions = edit || cancel || sendNowAllowed ? (
     <span className="steer-actions">
-      {sendNowAllowed && button(m.steer_send_now(), <ArrowUp size={13} aria-hidden="true" />, sendNow)}
-      {edit && button(m.steer_edit(), <Pencil size={13} aria-hidden="true" />, () => withdraw('edit'))}
-      {cancel && button(m.steer_cancel(), <X size={13} aria-hidden="true" />, () => withdraw('cancel'))}
+      {sendNowAllowed && button(m.steer_send_now(), <ArrowUp size={14} aria-hidden="true" />, sendNow)}
+      {edit && button(m.steer_edit(), <Pencil size={14} aria-hidden="true" />, () => withdraw('edit'))}
+      {cancel && button(m.steer_cancel(), <X size={14} aria-hidden="true" />, () => withdraw('cancel'))}
     </span>
   ) : null
   return <SteerMessage text={steer.text} state={steer.state} actions={actions} />

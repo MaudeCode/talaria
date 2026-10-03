@@ -119,6 +119,33 @@ describe('live steering', () => {
     stop()
   })
 
+  it('says so when the agent already took a steer being cancelled, and reports a failed request as an error', async () => {
+    const run = liveRun()
+    run.emit(pending('s1'))
+    vi.mocked(showToast).mockClear()
+    vi.mocked(api.withdrawSteer).mockResolvedValueOnce({ withdrawn: false }).mockRejectedValueOnce(new Error('Network down'))
+    const view = render(<View run={run} />)
+    fireEvent.click(view.getByRole('button', { name: 'Cancel steering message' }))
+    await waitFor(() => { expect(showToast).toHaveBeenCalledWith('The agent already took this steering message.', 2500) })
+    await waitFor(() => { expect(view.getByRole('button', { name: 'Cancel steering message' })).toBeEnabled() })
+    fireEvent.click(view.getByRole('button', { name: 'Cancel steering message' }))
+    await waitFor(() => { expect(showToast).toHaveBeenLastCalledWith('Network down', 4000, 'error') })
+  })
+
+  it('sends one request at a time from a pending steer\'s buttons', async () => {
+    const run = liveRun()
+    run.emit(pending('s1'))
+    let release: (v: { redirected: boolean }) => void = () => undefined
+    vi.mocked(api.sendSteerNow).mockClear().mockReturnValueOnce(new Promise((resolve) => { release = resolve }) as never)
+    const view = render(<View run={run} />)
+    fireEvent.click(view.getByRole('button', { name: 'Send now' }))
+    fireEvent.click(view.getByRole('button', { name: 'Send now' }))
+    expect(view.getByRole('button', { name: 'Edit steering message' })).toBeDisabled()
+    release({ redirected: true })
+    await waitFor(() => { expect(view.getByRole('button', { name: 'Send now' })).toBeEnabled() })
+    expect(api.sendSteerNow).toHaveBeenCalledTimes(1)
+  })
+
   it('renders a consumed steer as a user message where the agent took it', () => {
     const run = liveRun()
     run.emit({ event: 'tool', data: { id: 'a', name: 'read_file', args: { path: 'a.txt' } } })

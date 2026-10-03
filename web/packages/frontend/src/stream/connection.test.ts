@@ -18,6 +18,7 @@ vi.mock('../api/sse', () => ({
 
 const { attachToStream, resetConnectionsForTests, teardown } = await import('./connection')
 const { onReturnToComposer, rememberOwnSteer } = await import('../features/composer/composerReturn')
+const withdrawn = (steer_id: string | null, reason: string, text: string) => parseChatEvent('steer_withdrawn', JSON.stringify({ steer_id, reason, text }))!
 const { getStreamState, resetStreamStoreForTests } = await import('./store')
 const { liveText } = await import('./reducer')
 
@@ -74,6 +75,22 @@ describe('server pending steers on attach and Stop (TAL-425)', () => {
     opened[0]!.onEvent(parseChatEvent('steer_withdrawn', JSON.stringify({ steer_id: null, reason: 'stopped', text: 'another surface' }))!, '')
     expect(returned).toEqual(['mine text'])
     expect(getStreamState().turns[SID]!.pendingSteers).toEqual([])
+    stop()
+  })
+
+  it('remembers this tab\'s steers across a reload, forgets them once closed, and holds text until the composer is there', async () => {
+    rememberOwnSteer('kept')
+    rememberOwnSteer('taken')
+    // The ids live in this tab's sessionStorage, so a reloaded page still knows what it sent.
+    expect(JSON.parse(sessionStorage.getItem('talaria-own-steers') ?? '[]')).toEqual(expect.arrayContaining(['kept', 'taken']))
+    await attachToStream(SID, 'run-a', null, [steer('kept'), steer('taken')])
+    opened[0]!.onEvent(parseChatEvent('steer_consumed', JSON.stringify({ steer_id: 'taken', text: 'taken' }))!, '')
+    expect(JSON.parse(sessionStorage.getItem('talaria-own-steers') ?? '[]')).not.toContain('taken')
+    // No composer is mounted for the session yet: the stopped text waits for it instead of being dropped.
+    opened[0]!.onEvent(withdrawn('kept', 'stopped', 'kept text'), '')
+    const returned: string[] = []
+    const stop = onReturnToComposer(SID, (text) => { returned.push(text) })
+    expect(returned).toEqual(['kept text'])
     stop()
   })
 })

@@ -8,7 +8,7 @@ import type { UploadResponse, Session, Settings } from '../../contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import { adoptTurn, cancelTurn, startTurn } from '../../stream/connection'
-import { onReturnToComposer, rememberOwnSteer } from './composerReturn'
+import { forgetOwnSteer, onReturnToComposer, rememberOwnSteer } from './composerReturn'
 import { dispatch } from '../../stream/store'
 import { useBootstrap } from '../../app/bootstrap'
 import { cn } from '../../ui/cn'
@@ -274,9 +274,11 @@ export function Composer(props: ComposerProps) {
       if (r.started_turn) { adoptTurn(sessionId, text, r.started_turn); return true }
       if (r.accepted) return true
       dispatch({ type: 'steer_refused', sessionId, steerId })
+      forgetOwnSteer(steerId)
       showToast(r.fallback === 'gateway_steer_queued' ? m.steer_leftover_queued() : m.busy_steer_fallback(), 2500)
     } catch (e) {
       dispatch({ type: 'steer_refused', sessionId, steerId })
+      forgetOwnSteer(steerId)
       showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
     }
     return false

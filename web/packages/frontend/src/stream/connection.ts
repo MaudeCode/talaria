@@ -10,7 +10,7 @@ import { keys } from '../api/queryKeys'
 import type { ChatEvent } from '../contracts/sse'
 import type { ChatStartRequest, ChatStartResponse, Session } from '../contracts'
 import type { PendingSteer } from '@maudecode/talaria-web-contracts'
-import { returnStoppedSteer } from '../features/composer/composerReturn'
+import { forgetOwnSteer, returnStoppedSteer } from '../features/composer/composerReturn'
 import { RELAY_CLOSE_EVENTS } from '../contracts/sse'
 import { dispatch, getStreamState } from './store'
 import { isTerminal } from './reducer'
@@ -54,6 +54,10 @@ function applySideEffects(sessionId: string, event: ChatEvent): void {
     // TAL-425: a Stop gives a pending steer's text back to the tab that sent it.
     case 'steer_withdrawn':
       if (event.data.reason === 'stopped') returnStoppedSteer(sessionId, event.data.steer_id, event.data.text)
+      else if (event.data.steer_id) forgetOwnSteer(event.data.steer_id)
+      break
+    case 'steer_consumed':
+      if (event.data.steer_id) forgetOwnSteer(event.data.steer_id)
       break
     case 'done':
     case 'apperror':
