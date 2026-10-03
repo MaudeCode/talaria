@@ -808,8 +808,8 @@ def _checkpoint_required() -> bool:
         return False
 
 
-#: Compressed results awaiting the server's write: ``commit_token -> (agent, profile home)``.
-_PENDING_COMPRESSIONS: dict[str, tuple[Any, Any]] = {}
+#: Compressed results awaiting the server's write: ``commit_token -> (agent, profile home, expiry timer)``.
+_PENDING_COMPRESSIONS: dict[str, tuple[Any, Any, threading.Timer]] = {}
 _PENDING_COMPRESSIONS_LOCK = threading.Lock()
 #: A server that never answers (restart, crash) gets its compression discarded after this long.
 _PENDING_COMPRESSION_TTL = 600.0
@@ -838,7 +838,8 @@ def finalize_compression(token: str, committed: bool) -> bool:
         entry = _PENDING_COMPRESSIONS.pop(token, None)
     if entry is None:
         return False
-    agent, home = entry
+    agent, home, expiry = entry
+    expiry.cancel()  # a no-op when the timer itself is finalizing
     with scoped_home(home):
         _release_compression(agent, committed=committed)
     return True
@@ -908,11 +909,11 @@ def compress(ctx: CallContext, params: dict) -> dict:
         }
         if result.status == "compressed":
             token = uuid.uuid4().hex
-            with _PENDING_COMPRESSIONS_LOCK:
-                _PENDING_COMPRESSIONS[token] = (agent, home)
             # A server that never answers (restart, failed RPC) gets the compression discarded on its own.
             expiry = threading.Timer(_PENDING_COMPRESSION_TTL, finalize_compression, args=(token, False))
             expiry.daemon = True
+            with _PENDING_COMPRESSIONS_LOCK:
+                _PENDING_COMPRESSIONS[token] = (agent, home, expiry)
             expiry.start()
             held = True
             payload["commit_token"] = token

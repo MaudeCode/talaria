@@ -65,20 +65,20 @@ export function compressionStatusPayload(job: CompressionJob): Record<string, un
 export class CompressionJobs {
   private readonly jobs = new Map<string, CompressionJob>()
 
-  constructor(private readonly now: () => number) {}
-
-  /** Drops finished jobs older than the TTL; a running job is never evicted. */
   get(sid: string): CompressionJob | undefined {
-    const now = this.now()
-    for (const [id, job] of this.jobs) if (job.status !== 'running' && now - job.updated_at > COMPRESSION_JOB_TTL_SECONDS) this.jobs.delete(id)
     return this.jobs.get(sid)
+  }
+
+  set(job: CompressionJob): void {
+    this.jobs.set(job.session_id, job)
   }
 
   delete(sid: string): void {
     this.jobs.delete(sid)
   }
 
-  set(job: CompressionJob): void {
-    this.jobs.set(job.session_id, job)
+  /** Drops a finished job (and the session payload it holds) after the TTL, whether or not anything reads it again. */
+  expireLater(job: CompressionJob): void {
+    setTimeout(() => { if (this.jobs.get(job.session_id) === job) this.jobs.delete(job.session_id) }, COMPRESSION_JOB_TTL_SECONDS * 1000).unref()
   }
 }

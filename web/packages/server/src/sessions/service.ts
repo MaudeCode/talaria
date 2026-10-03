@@ -122,7 +122,7 @@ export class SessionService {
   private readonly compressionJobs: CompressionJobs
 
   constructor(readonly deps: SessionServiceDeps) {
-    this.compressionJobs = new CompressionJobs(deps.now)
+    this.compressionJobs = new CompressionJobs()
   }
 
   private get store(): SessionStore { return this.deps.store }
@@ -846,7 +846,7 @@ export class SessionService {
     const release = this.deps.profileActivity?.(profile)
     const now = this.deps.now()
     const job: CompressionJob = { session_id: sid, focus_topic: focusTopic, status: 'running', started_at: now, updated_at: now, done: Promise.resolve() }
-    job.done = this.compressSession(sid, focusTopic).finally(() => release?.()).then(
+    job.done = this.compressSession(sid, focusTopic).finally(() => { release?.(); this.compressionJobs.expireLater(job) }).then(
       (result) => { Object.assign(job, { status: 'done', result, updated_at: this.deps.now() }) },
       (error: unknown) => {
         const known = error instanceof HttpFailure
@@ -912,14 +912,16 @@ export class SessionService {
         let live: Session
         try { live = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
         if (streamState(live) !== streamBefore) throw new HttpFailure(409, 'Session stream state changed during compression; please retry.')
-        // One state.db read serves the check, the kept display rows, and the boundary. The clock is read first: rows the
-        // sidecar returns without a timestamp are stamped with it, so a CLI row committed after the read lies past the
-        // watermark and reaches both transcripts on the next read, after the compressed context.
-        const now = this.deps.now()
+        // One state.db read serves the check, the kept display rows, and the boundary.
         const stateRows = this.stateDbRows(live)
         if (transcriptKey(live, sanitizeMessagesForApi(this.modelContext(live, stateRows))) !== historyKey) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
+        // Rows the sidecar returns without a timestamp take the newest one this compression saw, never the clock: the
+        // boundary then hides no state.db row the append-only merge would still show (it already drops rows at or
+        // before the newest local row), so a CLI row committed after the read follows the compressed context.
+        const seen = [...live.messages, ...live.context_messages, ...stateRows].map((m) => Number(m.timestamp)).filter(Number.isFinite)
+        const stamp = seen.length ? Math.max(...seen) : this.deps.now()
         const compressed = copyJson(result.messages) as Message[]
-        for (const m of compressed) m.timestamp ??= now
+        for (const m of compressed) m.timestamp ??= stamp
         live.context_messages = compressed
         live.active_stream_id = null
         live.pending_user_message = null

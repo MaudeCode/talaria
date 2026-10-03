@@ -123,7 +123,10 @@ def test_compress_runs_the_shared_core_on_a_throwaway_agent_and_commits(agent_en
     assert "s1" not in chat._AGENT_CACHE
     # The context-engine notification waits for the server's write (second phase).
     assert calls["finalize"] == [] and not agent.closed
+    expiry = chat._PENDING_COMPRESSIONS[token][2]
     assert chat.finalize_compression(token, True) is True
+    expiry.join(1)
+    assert not expiry.is_alive()  # an explicit finalize cancels the expiry timer
     assert calls["finalize"] == [True]
     assert agent.closed and agent._end_session_on_close is False
     assert chat.finalize_compression(token, True) is False  # one shot

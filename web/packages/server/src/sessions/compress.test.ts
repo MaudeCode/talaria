@@ -9,6 +9,7 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { mergeSessionMessagesAppendOnly } from './merge.js'
+import { COMPRESSION_JOB_TTL_SECONDS, CompressionJobs, type CompressionJob } from './compress.js'
 
 type Json = Record<string, unknown>
 type CompressResult = SidecarResult<'chat.compress'>
@@ -135,8 +136,9 @@ describe('manual session compression', () => {
 
   it('commits from one state.db read: a CLI row written after it follows the compressed context', async () => {
     const sid = await seeded()
-    // Written after the commit's read, so the CLI stamped it later than the commit's clock.
-    const late = { role: 'user', content: 'late CLI row', timestamp: Date.now() / 1000 + 60 }
+    // Newer than every row the compression saw, older than the commit's wall clock: stamping the compressed rows with
+    // the clock would put the boundary past it and hide it for good.
+    const late = { role: 'user', content: 'late CLI row', timestamp: 4.9 }
     // Reads 1-2 are the admission and worker guards, read 3 is the commit's; the row exists only after that read.
     let reads = 0
     const spy = vi.spyOn(s.deps.sessions, 'stateDbRows').mockImplementation(() => (++reads > 3 ? [...structuredClone(ORIGINAL), structuredClone(late)] : structuredClone(ORIGINAL)))
@@ -357,5 +359,21 @@ describe('manual session compression', () => {
     sidecar.respond('chat.compress', (params) => { seen = params; return compressed(params) })
     await s.deps.sessions.startCompression(sid, null).then((job) => job.done)
     expect(seen).toMatchObject({ profile_home: s.deps.sessions.deps.profileHome('work'), model: 'openai/gpt-5.4-mini', model_provider: 'profile-provider' })
+  })
+})
+
+describe('compression job table', () => {
+  it('drops a finished job after the TTL even when nothing reads it again', () => {
+    vi.useFakeTimers()
+    try {
+      const jobs = new CompressionJobs()
+      const job: CompressionJob = { session_id: 's1', focus_topic: null, status: 'done', started_at: 0, updated_at: 0, result: { session: { messages: [] } }, done: Promise.resolve() }
+      jobs.set(job)
+      jobs.expireLater(job)
+      vi.advanceTimersByTime(COMPRESSION_JOB_TTL_SECONDS * 1000 - 1)
+      expect(jobs.get('s1')).toBe(job)
+      vi.advanceTimersByTime(1)
+      expect(jobs.get('s1')).toBeUndefined()
+    } finally { vi.useRealTimers() }
   })
 })
