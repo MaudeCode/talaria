@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import sys
+from pathlib import Path
 from typing import Any
 
 from ..errors import InvalidParams, RpcError
@@ -61,6 +63,91 @@ def auth_status(provider_id: str | None) -> dict:
     return _plain(status) if isinstance(status, dict) else {"logged_in": bool(status)}
 
 
+def _module_dir(module: Any) -> Path | None:
+    try:
+        return Path(module.__file__).resolve().parent
+    except Exception:  # noqa: BLE001 - namespace/builtin modules have no file
+        return None
+
+
+def installed_plugin_profiles() -> list[tuple[str, Any]]:
+    """``(manifest name, profile | None)`` for each enabled model-provider plugin installed in the scoped home.
+
+    Bundled providers are built-ins, not plugins. The Agent discovers providers once per process into one registry, so
+    a profile belongs to this home only when the module that registered it lives in one of this home's plugin
+    directories: another profile's plugin never appears, and an installed plugin this process has not loaded has no
+    profile. ponytail: ownership is read from the plugin module's globals, so a plugin that registers an unbound inline
+    profile reads as not loaded; track registrations in the Agent if one ever does.
+    """
+    try:
+        from hermes_cli.plugins_discovery import _get_disabled_plugins, _get_enabled_plugins, collect_directory_manifests, gate_manifest
+        from providers import list_providers
+        from providers.base import ProviderProfile
+    except Exception as exc:  # noqa: BLE001
+        raise RpcError(f"plugin providers unavailable: {exc}", condition="plugins_unavailable") from exc
+    disabled, enabled = _get_disabled_plugins(), _get_enabled_plugins()
+    roots = {
+        Path(m.path).resolve(): str(m.name)
+        for m in collect_directory_manifests()
+        if m.kind == "model-provider" and m.source == "user" and m.path and gate_manifest(m, disabled, enabled).enabled
+    }
+    if not roots:
+        return []
+    registered = {id(p): p for p in list_providers()}
+    owned: dict[Path, dict[int, Any]] = {root: {} for root in roots}
+    for module in list(sys.modules.values()):
+        directory = _module_dir(module) if module is not None else None
+        root = next((r for r in roots if directory is not None and (directory == r or r in directory.parents)), None)
+        if root is None:
+            continue
+        for value in list(vars(module).values()):
+            if isinstance(value, ProviderProfile) and id(value) in registered:
+                owned[root][id(value)] = value
+    return [(name, p) for root, name in roots.items() for p in (list(owned[root].values()) or [None])]
+
+
+def _setup_state(profile: Any) -> str:
+    """The Agent's own setup verdict for a plugin provider, without spawning its CLI or reading its credentials."""
+    try:
+        status = auth_status(profile.name)
+    except RpcError:
+        return "unavailable"
+    if status.get("error"):
+        return "unavailable"
+    if profile.auth_type == "external_process":
+        return "ready" if status.get("configured") else "missing_cli"
+    return "ready" if status.get("logged_in") or status.get("configured") else "needs_setup"
+
+
+def plugin_providers() -> list[dict]:
+    """Sanitized rows for this profile's enabled model-provider plugins: identity and setup state, no paths or secrets."""
+    rows = []
+    for manifest_name, profile in installed_plugin_profiles():
+        if profile is None:
+            rows.append({"name": manifest_name, "display_name": manifest_name, "auth_type": "", "setup": "not_loaded"})
+            continue
+        name = str(profile.name).strip().lower()
+        rows.append({"name": name, "display_name": str(profile.display_name or name).strip(), "auth_type": str(profile.auth_type), "setup": _setup_state(profile)})
+    return rows
+
+
+def _plugin_catalog(provider_id: str) -> list[str]:
+    """Discovery for an installed plugin the Agent's catalog has no fetcher for: the profile's own listing, then its fallback.
+
+    API-key plugins already get both from ``provider_model_ids`` with their key, so only keyless auth types list here.
+    """
+    for _name, profile in installed_plugin_profiles():
+        if profile is None or str(profile.name).strip().lower() != provider_id.strip().lower():
+            continue
+        try:
+            live = profile.fetch_models(timeout=8.0) if profile.supports_model_listing and profile.auth_type != "api_key" else None
+        except Exception:  # noqa: BLE001 - a broken plugin answers with its fallback catalog
+            log.debug("fetch_models(%r) failed", provider_id, exc_info=True)
+            live = None
+        return [str(m) for m in (live or profile.fallback_models or ()) if m]
+    return []
+
+
 def model_ids(provider_id: str, *, force_refresh: bool) -> list[str]:
     try:
         from hermes_cli.models import provider_model_ids
@@ -72,8 +159,14 @@ def model_ids(provider_id: str, *, force_refresh: bool) -> list[str]:
         ids = provider_model_ids(provider_id)
     except Exception:  # noqa: BLE001
         log.debug("provider_model_ids(%r) failed", provider_id, exc_info=True)
+        ids = []
+    ids = [str(m) for m in (ids or []) if m]
+    if ids:
+        return ids
+    try:
+        return _plugin_catalog(provider_id)
+    except RpcError:
         return []
-    return [str(m) for m in (ids or []) if m]
 
 
 def resolve_runtime(*, requested: str | None, api_key: str | None, base_url: str | None, target_model: str | None) -> dict:

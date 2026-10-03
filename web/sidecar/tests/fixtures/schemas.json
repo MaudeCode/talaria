@@ -717,24 +717,25 @@
             "display_name": {
               "type": "string"
             },
-            "env_vars": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+            "auth_type": {
+              "type": "string"
             },
-            "api_key_env": {
-              "type": [
-                "string",
-                "null"
+            "setup": {
+              "type": "string",
+              "enum": [
+                "ready",
+                "missing_cli",
+                "needs_setup",
+                "not_loaded",
+                "unavailable"
               ]
             }
           },
           "required": [
             "name",
             "display_name",
-            "env_vars",
-            "api_key_env"
+            "auth_type",
+            "setup"
           ],
           "additionalProperties": false
         }

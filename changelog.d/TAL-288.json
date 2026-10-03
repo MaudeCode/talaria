@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Web provider settings and the model picker include installed Hermes provider plugins, such as a Claude subscription, under their own name.",
+      "highlight": true,
+      "components": ["web"]
+    }
+  ]
+}
