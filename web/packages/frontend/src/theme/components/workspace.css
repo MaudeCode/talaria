@@ -25,7 +25,7 @@
 @media (max-width:900px){.rightpanel.mobile-open{right:0 !important;box-shadow:-4px 0 24px rgba(0,0,0,.4) !important}}
 @media (max-width:900px){.rightpanel .resize-handle{display:none}}
 /* z above .composer-wrap (10): the resize handle and edge tab overlap the card's right edge, which the composer wrap spans. */
-@media (min-width:641px){.rightpanel{position:relative;z-index:11}}
+@media (min-width:901px){.rightpanel{position:relative;z-index:11}}
 .rightpanel[data-active-tab="artifacts"] .file-tree{display:none !important}
 .rightpanel[data-active-tab="todos"] .file-tree{display:none !important}
 .rightpanel{border:0;border-radius:0;background:transparent}
