@@ -37,8 +37,8 @@ async function openList() {
 }
 
 beforeEach(() => {
-  vi.mocked(api.fetchAuxiliaryModels).mockReset().mockResolvedValue(auxState({ vision: { provider: 'openrouter', model: 'legacy/gone-model', is_auto: false, value_label: 'legacy/gone-model', provider_label: 'OpenRouter', selected_option_id: null, in_catalog: false } }) as never)
-  vi.mocked(api.fetchModels).mockReset().mockResolvedValue(CATALOG as never)
+  vi.mocked(api.fetchAuxiliaryModels).mockReset().mockResolvedValue(auxState({ vision: { provider: 'openrouter', model: 'legacy/gone-model', is_auto: false, value_label: 'legacy/gone-model', provider_label: 'OpenRouter', selected_option_id: null, in_catalog: false } }))
+  vi.mocked(api.fetchModels).mockReset().mockResolvedValue(CATALOG)
   vi.mocked(api.setAuxiliaryModel).mockReset()
 })
 
@@ -57,7 +57,7 @@ describe('Auxiliary models settings', () => {
   })
 
   it('searches the catalog, saves the picked entry with its provider, and shows the server state', async () => {
-    vi.mocked(api.setAuxiliaryModel).mockResolvedValue({ ok: true, auxiliary: auxState({ title_generation: pinnedBeta }) } as never)
+    vi.mocked(api.setAuxiliaryModel).mockResolvedValue({ ok: true, auxiliary: auxState({ title_generation: pinnedBeta }) })
     renderSetting()
     const list = await openList()
     await userEvent.click(list.getByRole('button', { name: /Title generation/ }))
@@ -73,7 +73,7 @@ describe('Auxiliary models settings', () => {
   })
 
   it('ticks only the server-selected entry when two providers list the same bare model', async () => {
-    vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState({ title_generation: pinnedBeta }) as never)
+    vi.mocked(api.fetchAuxiliaryModels).mockResolvedValue(auxState({ title_generation: pinnedBeta }))
     renderSetting()
     await userEvent.click((await openList()).getByRole('button', { name: /Title generation/ }))
     const dialog = screen.getByRole('dialog')
@@ -99,7 +99,7 @@ describe('Auxiliary models settings', () => {
   })
 
   it('resets every task only after confirmation', async () => {
-    vi.mocked(api.setAuxiliaryModel).mockResolvedValue({ ok: true, auxiliary: auxState() } as never)
+    vi.mocked(api.setAuxiliaryModel).mockResolvedValue({ ok: true, auxiliary: auxState() })
     renderSetting()
     await openList()
     await userEvent.click(screen.getByRole('button', { name: 'Reset all to auto' }))
