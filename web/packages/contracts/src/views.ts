@@ -306,7 +306,7 @@ export const BackgroundStatusSchema = z.looseObject({ results: z.array(Backgroun
  * - `title` is the goal, command or prompt (one line, never output); `agents` counts a delegation's subagents.
  * - `result_available` means `GET /api/background/result` returns its full result.
  * - `pinned` puts it in the chat's background tray: running work, and a finished `/background` result until dismissed.
- * - `dismissible` offers Dismiss: a pinned record that has finished.
+ * - `dismissible` offers Dismiss: a finished `/background` result, or work nobody can confirm (`unknown`).
  */
 export const BackgroundTaskSchema = z.object({
   task_id: z.string(),

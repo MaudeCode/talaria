@@ -1252,6 +1252,11 @@ describe('chat turns through the sidecar', () => {
     expect(offline.agent_available).toBe(false)
     expect(Object.fromEntries((offline.tasks as Json[]).map((t) => [str(t.task_id), t.status]))).toMatchObject({ 'd-a': 'completed', 'd-b': 'unknown', 'call-1-1': 'unknown', proc_1: 'failed', [String(bg.task_id)]: 'completed' })
     expect((await s.get('/api/background/tasks?session_id=nope')).status).toBe(404)
+    // Deleting the session removes its background records with it.
+    const records = join(s.deps.sessionStore.sessionDir, '_background', `${sid}.json`)
+    expect(existsSync(records)).toBe(true)
+    expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
+    expect(existsSync(records)).toBe(false)
   })
 
   it('shows the work a delegation row started on that row, updated in place (TAL-372)', async () => {

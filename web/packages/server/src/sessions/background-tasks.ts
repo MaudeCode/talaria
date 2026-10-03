@@ -125,6 +125,8 @@ export function mergeReceipt(prev: Receipt | undefined, next: Partial<Receipt> &
     // Settled once: later reports may add detail (the full result, counts) but never change the outcome.
     return { ...base, result: base.result ?? defined.result ?? null, agent_result: base.agent_result || Boolean(defined.agent_result), agents: base.agents ?? defined.agents ?? null, updated_at: base.updated_at }
   }
+  // A process's matched watch needs attention until it ends; the registry only knows it is still running.
+  if (base.kind === 'process' && base.status === 'attention' && defined.status === 'running') delete defined.status
   const merged: Receipt = { ...base, ...defined, task_id: base.task_id, kind: base.kind, updated_at: now }
   if (isTerminal(merged.status)) { merged.completed_at = merged.completed_at ?? now; merged.stream_id = null }
   return merged
@@ -135,15 +137,20 @@ function sameReceipt(a: Receipt | undefined, b: Receipt): boolean {
   return JSON.stringify({ ...a, updated_at: 0 }) === JSON.stringify({ ...b, updated_at: 0 })
 }
 
-/** The record every client sees; `live` overrides the status of running work the Agent did not confirm. */
+function dismissible(r: Receipt, status: Status): boolean {
+  return status === 'unknown' || (r.kind === 'background_command' && isTerminal(r.status))
+}
+
+/** The record every client sees; `unconfirmed` shows running work the Agent did not confirm as `unknown`. */
 export function taskView(r: Receipt, opts: { unconfirmed?: boolean } = {}): BackgroundTask {
   const status: Status = opts.unconfirmed && LIVE.has(r.status) ? 'unknown' : r.status
   return {
     task_id: r.task_id, kind: r.kind, status, title: r.title, started_at: r.started_at, updated_at: r.updated_at, completed_at: r.completed_at,
     result_available: isTerminal(r.status) || r.status === 'attention' ? Boolean(r.result) || r.agent_result : false,
     child_session_id: r.child_session_id, exit_code: r.exit_code, agents: r.agents,
-    pinned: LIVE.has(status) || (r.kind === 'background_command' && isTerminal(r.status) && r.dismissed_at === null),
-    dismissible: r.kind === 'background_command' && isTerminal(r.status) && r.dismissed_at === null,
+    // Work nobody can confirm (lost in an Agent or server restart) can be dismissed like a finished `/background` result.
+    pinned: status === 'running' || status === 'attention' || (dismissible(r, status) && r.dismissed_at === null),
+    dismissible: dismissible(r, status) && r.dismissed_at === null,
   }
 }
 

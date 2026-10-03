@@ -11,7 +11,6 @@ import { keys } from '../../api/queryKeys'
 import { Markdown } from '../chat/render/Markdown'
 import { m } from '../../paraglide/messages.js'
 
-const LIVE = new Set<BackgroundTask['status']>(['running', 'attention', 'unknown'])
 /** Running work changes on the Agent's side; a quiet refresh keeps the card current between server notices. */
 const LIVE_REFRESH_MS = 15_000
 
@@ -20,7 +19,8 @@ export function useBackgroundTasks(sessionId: string | null | undefined) {
     queryKey: keys.background(sessionId ?? ''),
     queryFn: () => api.fetchBackgroundTasks(sessionId ?? ''),
     enabled: Boolean(sessionId),
-    refetchInterval: (query) => (query.state.data?.tasks.some((t) => LIVE.has(t.status)) ? LIVE_REFRESH_MS : false),
+    // Pinned work that cannot be dismissed is still running.
+    refetchInterval: (query) => (query.state.data?.tasks.some((t) => t.pinned && !t.dismissible) ? LIVE_REFRESH_MS : false),
   })
 }
 

@@ -60,4 +60,27 @@ describe('background task records (TAL-372)', () => {
     store.update('s', [{ task_id: 'call-1-1', kind: 'delegation', status: 'attention', agents: { total: 1, completed: 0, failed: 0, running: 1 } }, { task_id: 'call-10', kind: 'delegation', status: 'running' }])
     expect(backgroundLink(['call-1'], store.list('s'))).toEqual({ task_ids: ['call-1-1'], status: 'attention', agents: { total: 1, completed: 0, failed: 0, running: 1 } })
   })
+
+  it('let anyone dismiss work nobody can confirm, which then leaves the card until it is confirmed running again', () => {
+    const store = new BackgroundTaskStore(tempDir(), () => 5)
+    store.update('s', [{ task_id: 'proc_lost', kind: 'process', status: 'running', title: 'server' }])
+    const lost = store.get('s', 'proc_lost')!
+    expect(taskView(lost, { unconfirmed: true })).toMatchObject({ status: 'unknown', pinned: true, dismissible: true })
+    const dismissed = store.mark('s', 'proc_lost', { dismissed_at: 6 })!
+    expect(taskView(dismissed, { unconfirmed: true })).toMatchObject({ status: 'unknown', pinned: false, dismissible: false })
+    expect(taskView(dismissed)).toMatchObject({ status: 'running', pinned: true, dismissible: false })
+  })
+
+  it('keep a matched watch in attention while the process runs, and clear a recovered agent stall', () => {
+    const store = new BackgroundTaskStore(tempDir(), () => 1)
+    store.update('s', [{ task_id: 'proc_w', kind: 'process', status: 'running', title: 'tail log' }])
+    store.update('s', [{ task_id: 'proc_w', kind: 'process', status: 'attention' }])
+    store.update('s', [{ task_id: 'proc_w', kind: 'process', status: 'running' }])
+    expect(store.get('s', 'proc_w')?.status).toBe('attention')
+    store.update('s', [{ task_id: 'proc_w', kind: 'process', status: 'completed' }])
+    expect(store.get('s', 'proc_w')?.status).toBe('completed')
+    store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'attention' }, { task_id: 'd1', kind: 'delegation', status: 'running' }])
+    expect(store.get('s', 'd1')?.status).toBe('running')
+  })
 })
+

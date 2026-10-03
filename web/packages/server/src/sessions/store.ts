@@ -676,6 +676,8 @@ export class SessionStore {
     try { this.pruneFromIndex(sid) } catch { /* ignore */ }
     try { rmSync(`${path}.bak`, { force: true }) } catch { /* ignore */ }
     try { this.deps.drafts.delete(sid) } catch { /* ignore */ }
+    // TAL-372: the session's background work records (`BackgroundTaskStore`) go with it.
+    try { rmSync(join(this.sessionDir, '_background', `${sid}.json`), { force: true }) } catch { /* ignore */ }
     if (opts.tombstone ?? true) this.recordDeletedTombstone(sid)
     return true
   }
