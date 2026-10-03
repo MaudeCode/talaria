@@ -9,6 +9,7 @@ import TalariaKit
 struct UITestFixtureEnvironment {
     nonisolated static let launchArgument = UITestFixtureLaunch.launchArgument
     nonisolated static let relayConnectedArgument = UITestFixtureLaunch.relayConnectedArgument
+    nonisolated static let approvalBypassArgument = "--ui-test-approval-bypass"
     nonisolated static let reauthenticationArgument = "--ui-test-reauthentication"
     nonisolated static let trustedReauthenticationArgument = "--ui-test-reauthentication-trusted"
     /// Launches with no saved server so the fixture lands on onboarding.
@@ -385,6 +386,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
     static let sessionID = "ui-fixture-session"
     static let sessionTitle = "UI Fixture Session"
     private static let recoveryState = NSLock()
+    nonisolated(unsafe) private static var approvalBypassOverride: Bool?
     nonisolated(unsafe) private static var sessionReads = 0
     nonisolated(unsafe) private static var transcriptReads = 0
     nonisolated(unsafe) private static var hasChangedWhileBackgrounded = false
@@ -663,7 +665,13 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             recoveryState.withLock { urgentNotificationAcknowledged = true; readUpdateNotificationIDs.insert("ui-update-urgent") }
             return json(updateNotificationRecord(id: "ui-update-urgent"))
         case "/api/session/yolo":
-            return json(["ok": true, "yolo_enabled": false])
+            let requested = request.httpMethod == "POST" ? requestJSON(request)["enabled"] as? Bool : nil
+            let enabled = recoveryState.withLock {
+                if let requested { approvalBypassOverride = requested }
+                return approvalBypassOverride
+                    ?? ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.approvalBypassArgument)
+            }
+            return json(["ok": true, "yolo_enabled": enabled])
         case "/api/chat/stream", "/api/approval/stream", "/api/clarify/stream", "/api/kanban/events/stream":
             return Data("event: stream_end\ndata: {}\n\n".utf8)
         default:

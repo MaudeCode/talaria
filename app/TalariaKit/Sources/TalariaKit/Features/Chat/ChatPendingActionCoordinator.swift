@@ -251,6 +251,30 @@ final class ChatPendingActionCoordinator {
         }
     }
 
+    func disableApprovalBypassForCurrentSession() async -> Bool {
+        guard isSessionApprovalBypassEnabled, !isRespondingToApproval,
+              let sessionID = delegate?.pendingActionSessionID else { return false }
+        isRespondingToApproval = true
+        approvalErrorMessage = nil
+        delegate?.pendingActionCoordinatorWillSubmitAction()
+        defer { isRespondingToApproval = false }
+        do {
+            let response = try await client.setSessionYolo(sessionID: sessionID, enabled: false)
+            guard response.yoloEnabled == false else {
+                throw NSError(domain: "Talaria.ApprovalBypass", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: String(localized: "The server did not confirm that approval bypass is off.")
+                ])
+            }
+            isSessionApprovalBypassEnabled = false
+            await refreshApprovalPending(sessionID: sessionID)
+            return true
+        } catch {
+            approvalErrorMessage = error.localizedDescription
+            delegate?.pendingActionCoordinatorDidFailAction(error)
+            return false
+        }
+    }
+
     func startMonitoring() {
         startApprovalMonitoring()
         startClarificationMonitoring()

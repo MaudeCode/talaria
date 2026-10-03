@@ -7,6 +7,73 @@ import UniformTypeIdentifiers
 
 @MainActor
 extension ChatViewModelSendTests {
+    func testAcceptedDenyClearsPromptWithoutReportingServerRejection() async throws {
+        let stream = SpySSEStreamingClient()
+        let approvals = SpySSEStreamingClient()
+        var submittedChoice: String?
+        let viewModel = try makeViewModel(streamClient: stream, approvalStreamClient: approvals,
+            clarifyStreamClient: SpySSEStreamingClient()) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                return apiTestJSONResponse(#"{"session_id":"session-abc","stream_id":"stream-123"}"#, for: request)
+            case "/api/approval/respond":
+                submittedChoice = try XCTUnwrap(apiTestJSONBody(from: request))["choice"] as? String
+                return apiTestJSONResponse(#"{"ok":true,"choice":"deny"}"#, for: request)
+            case "/api/approval/pending":
+                return apiTestJSONResponse(#"{"pending":null,"pending_count":0}"#, for: request)
+            default:
+                throw URLError(.badURL)
+            }
+        }
+        let started = await viewModel.sendMessage("Synthetic approval")
+        XCTAssertTrue(started)
+        approvals.emit(.approvalPending(ApprovalPendingResponse(
+            pending: PendingApproval(approvalId: "synthetic-deny", command: "synthetic-command"), pendingCount: 1
+        )))
+        XCTAssertNotNil(viewModel.approvalPrompt)
+        let denied = await viewModel.respondToApproval(.deny)
+        XCTAssertTrue(denied)
+        XCTAssertEqual(submittedChoice, "deny")
+        XCTAssertNil(viewModel.approvalPrompt)
+        XCTAssertNil(viewModel.approvalErrorMessage)
+    }
+
+    func testDisableApprovalBypassFailurePreservesTheServerFlagAndReportsError() async throws {
+        for response in [#"{"yolo_enabled":true}"#, #"{}"#] {
+            let viewModel = try makeViewModel { request in
+                let body = request.httpMethod == "POST" ? response : #"{"yolo_enabled":true}"#
+                return apiTestJSONResponse(body, for: request)
+            }
+            await viewModel.refreshApprovalBypassState()
+            let disabled = await viewModel.disableApprovalBypassForCurrentSession()
+            XCTAssertFalse(disabled)
+            XCTAssertTrue(viewModel.isSessionApprovalBypassEnabled)
+            XCTAssertNotNil(viewModel.sendErrorMessage)
+        }
+    }
+
+    func testDisableApprovalBypassRequiresServerConfirmedFalse() async throws {
+        var submitted = 0
+        let viewModel = try makeViewModel { request in
+            XCTAssertEqual(request.url?.path, "/api/session/yolo")
+            if request.httpMethod == "POST" {
+                let body = try XCTUnwrap(apiTestJSONBody(from: request))
+                XCTAssertEqual(body["session_id"] as? String, "session-abc")
+                XCTAssertEqual(body["enabled"] as? Bool, false)
+                submitted += 1
+                return apiTestJSONResponse(#"{"ok":true,"yolo_enabled":false}"#, for: request)
+            }
+            return apiTestJSONResponse(#"{"yolo_enabled":true}"#, for: request)
+        }
+        await viewModel.refreshApprovalBypassState()
+        XCTAssertTrue(viewModel.isSessionApprovalBypassEnabled)
+        let disabled = await viewModel.disableApprovalBypassForCurrentSession()
+        XCTAssertTrue(disabled)
+        XCTAssertEqual(submitted, 1)
+        XCTAssertFalse(viewModel.isSessionApprovalBypassEnabled)
+    }
+
+
     func testSelectWorkspaceUpdatesSelectionAndRollsBackOnFailure() async throws {
         var updateCount = 0
         let viewModel = try makeViewModel { request in

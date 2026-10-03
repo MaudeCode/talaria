@@ -9,6 +9,11 @@
       "category": "Changed",
       "summary": "Live Activities show Input when an agent is waiting for an answer.",
       "highlight": false
+    },
+    {
+      "category": "Changed",
+      "summary": "Tap the approval bypass status chip to confirm turning bypass off for the session.",
+      "highlight": false
     }
   ]
 }
