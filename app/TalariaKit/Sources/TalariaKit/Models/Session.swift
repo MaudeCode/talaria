@@ -175,20 +175,6 @@ public struct SessionCompressionSummary: Decodable, Equatable {
     public let tokenLine: String?
     let note: String?
     let referenceMessage: String?
-
-    public var compressedTokenEstimate: Int? {
-        guard let tokenLine, !tokenLine.isEmpty else { return nil }
-
-        let trailingTokenText = tokenLine
-            .components(separatedBy: "\u{2192}")
-            .last?
-            .components(separatedBy: "->")
-            .last ?? tokenLine
-
-        let digits = trailingTokenText.filter { $0.isNumber }
-        guard !digits.isEmpty else { return nil }
-        return Int(digits)
-    }
 }
 
 public struct SessionUndoResponse: Decodable, Equatable {
@@ -750,9 +736,12 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     let pendingAttachments: [JSONValue]?
     public let pendingStartedAt: Double?
     let worktreePath: String?
-    public let contextLength: Int?
     public let thresholdTokens: Int?
-    public let lastPromptTokens: Int?
+    /// The context ring's server figures (TAL-299); nil when unknown or from an older server.
+    public let contextUsedTokens: Int?
+    public let contextWindowTokens: Int?
+    public let contextUsagePercent: Int?
+    public let contextThresholdPercent: Int?
     let isCliSession: Bool?
     let sourceTag: String?
     let rawSource: String?
@@ -805,9 +794,11 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case pendingAttachments
         case pendingStartedAt
         case worktreePath
-        case contextLength
         case thresholdTokens
-        case lastPromptTokens
+        case contextUsedTokens
+        case contextWindowTokens
+        case contextUsagePercent
+        case contextThresholdPercent
         case isCliSession
         case sourceTag
         case rawSource
@@ -866,9 +857,11 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         pendingAttachments = try? container.decodeIfPresent([JSONValue].self, forKey: .pendingAttachments)
         pendingStartedAt = container.decodeLossyDoubleIfPresent(forKey: .pendingStartedAt)
         worktreePath = container.decodeLossyStringIfPresent(forKey: .worktreePath)
-        contextLength = container.decodeLossyIntIfPresent(forKey: .contextLength)
         thresholdTokens = container.decodeLossyIntIfPresent(forKey: .thresholdTokens)
-        lastPromptTokens = container.decodeLossyIntIfPresent(forKey: .lastPromptTokens)
+        contextUsedTokens = container.decodeLossyIntIfPresent(forKey: .contextUsedTokens)
+        contextWindowTokens = container.decodeLossyIntIfPresent(forKey: .contextWindowTokens)
+        contextUsagePercent = container.decodeLossyIntIfPresent(forKey: .contextUsagePercent)
+        contextThresholdPercent = container.decodeLossyIntIfPresent(forKey: .contextThresholdPercent)
         isCliSession = container.decodeLossyBoolIfPresent(forKey: .isCliSession)
         sourceTag = container.decodeLossyStringIfPresent(forKey: .sourceTag)
         rawSource = container.decodeLossyStringIfPresent(forKey: .rawSource)

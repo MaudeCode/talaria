@@ -804,9 +804,10 @@ extension ChatViewModelSendTests {
         )
         streamClient.emit(.done(DoneStreamEvent(
             usage: ContextWindowSnapshot(
-                contextLength: nil,
+                contextUsedTokens: nil,
+                contextWindowTokens: nil,
+                contextUsagePercent: nil,
                 thresholdTokens: nil,
-                lastPromptTokens: nil,
                 inputTokens: nil,
                 outputTokens: nil,
                 estimatedCost: nil,
@@ -850,7 +851,7 @@ extension ChatViewModelSendTests {
         )
         streamClient.emit(.reasoning(ReasoningStreamEvent(text: "Nothing here needs the user.")))
         streamClient.emit(.done(DoneStreamEvent(
-            usage: ContextWindowSnapshot(contextLength: nil, thresholdTokens: nil, lastPromptTokens: nil, inputTokens: nil, outputTokens: nil, estimatedCost: nil, durationSeconds: 7),
+            usage: ContextWindowSnapshot(contextUsedTokens: nil, contextWindowTokens: nil, contextUsagePercent: nil, thresholdTokens: nil, inputTokens: nil, outputTokens: nil, estimatedCost: nil, durationSeconds: 7),
             session: settled
         )))
 

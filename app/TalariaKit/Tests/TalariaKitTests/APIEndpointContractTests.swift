@@ -551,6 +551,20 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(detail.activeTurnOrigin, "background")
     }
 
+    func testSharedWebSessionContextRingComesFromServerFigures() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-299 has no such example.
+        guard let examples = object["context_usage_sessions"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        func label(_ key: String) throws -> String {
+            let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: try XCTUnwrap(examples[key])))
+            return ContextWindowIndicatorPresentation(snapshot: ContextWindowSnapshot(session: session)).percentageLabel
+        }
+        XCTAssertEqual(try label("populated"), "50")
+        XCTAssertEqual(try label("unknown_window"), "–")
+    }
+
     func testSharedWebSessionResolvesEveryToolCallOutcome() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-313 has no such example.

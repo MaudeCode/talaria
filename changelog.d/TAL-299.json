@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The context usage ring shows the same percentage on iPhone and in the browser, never exceeds 100%, and shows no percentage when the model's context window is unknown.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

@@ -1,9 +1,13 @@
 import Foundation
 
+/// The context ring's figures. The server computes the used tokens, the window, and both percents (TAL-299);
+/// a nil figure means unknown, and the ring then shows no percentage.
 public struct ContextWindowSnapshot: Decodable, Equatable {
-    let contextLength: Int?
+    let contextUsedTokens: Int?
+    let contextWindowTokens: Int?
+    let contextUsagePercent: Int?
+    let contextThresholdPercent: Int?
     let thresholdTokens: Int?
-    let lastPromptTokens: Int?
     public let inputTokens: Int?
     public let outputTokens: Int?
     public let estimatedCost: Double?
@@ -11,9 +15,11 @@ public struct ContextWindowSnapshot: Decodable, Equatable {
     public let durationSeconds: Double?
 
     enum CodingKeys: String, CodingKey {
-        case contextLength = "context_length"
+        case contextUsedTokens = "context_used_tokens"
+        case contextWindowTokens = "context_window_tokens"
+        case contextUsagePercent = "context_usage_percent"
+        case contextThresholdPercent = "context_threshold_percent"
         case thresholdTokens = "threshold_tokens"
-        case lastPromptTokens = "last_prompt_tokens"
         case inputTokens = "input_tokens"
         case outputTokens = "output_tokens"
         case estimatedCost = "estimated_cost"
@@ -22,18 +28,22 @@ public struct ContextWindowSnapshot: Decodable, Equatable {
     }
 
     public init(
-        contextLength: Int?,
+        contextUsedTokens: Int?,
+        contextWindowTokens: Int?,
+        contextUsagePercent: Int?,
+        contextThresholdPercent: Int? = nil,
         thresholdTokens: Int?,
-        lastPromptTokens: Int?,
         inputTokens: Int?,
         outputTokens: Int?,
         estimatedCost: Double?,
         tokensPerSecond: Double? = nil,
         durationSeconds: Double? = nil
     ) {
-        self.contextLength = contextLength
+        self.contextUsedTokens = contextUsedTokens
+        self.contextWindowTokens = contextWindowTokens
+        self.contextUsagePercent = contextUsagePercent
+        self.contextThresholdPercent = contextThresholdPercent
         self.thresholdTokens = thresholdTokens
-        self.lastPromptTokens = lastPromptTokens
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
         self.estimatedCost = estimatedCost
@@ -41,54 +51,37 @@ public struct ContextWindowSnapshot: Decodable, Equatable {
         self.durationSeconds = durationSeconds
     }
 
+    public init(session: SessionDetail) {
+        self.init(
+            contextUsedTokens: session.contextUsedTokens,
+            contextWindowTokens: session.contextWindowTokens,
+            contextUsagePercent: session.contextUsagePercent,
+            contextThresholdPercent: session.contextThresholdPercent,
+            thresholdTokens: session.thresholdTokens,
+            inputTokens: session.inputTokens,
+            outputTokens: session.outputTokens,
+            estimatedCost: session.estimatedCost
+        )
+    }
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        contextLength = container.decodeLossyIntIfPresent(forKey: .contextLength)
+        contextUsedTokens = container.decodeLossyIntIfPresent(forKey: .contextUsedTokens)
+        contextWindowTokens = container.decodeLossyIntIfPresent(forKey: .contextWindowTokens)
+        contextUsagePercent = container.decodeLossyIntIfPresent(forKey: .contextUsagePercent)
+        contextThresholdPercent = container.decodeLossyIntIfPresent(forKey: .contextThresholdPercent)
         thresholdTokens = container.decodeLossyIntIfPresent(forKey: .thresholdTokens)
-        lastPromptTokens = container.decodeLossyIntIfPresent(forKey: .lastPromptTokens)
         inputTokens = container.decodeLossyIntIfPresent(forKey: .inputTokens)
         outputTokens = container.decodeLossyIntIfPresent(forKey: .outputTokens)
         estimatedCost = container.decodeLossyDoubleIfPresent(forKey: .estimatedCost)
         tokensPerSecond = container.decodeLossyDoubleIfPresent(forKey: .tokensPerSecond)
         durationSeconds = container.decodeLossyDoubleIfPresent(forKey: .durationSeconds)
     }
-
-    var tokensUsed: Int? {
-        lastPromptTokens ?? inputTokens
-    }
-
-    public var percentage: Double? {
-        guard let used = tokensUsed, let total = contextLength, total > 0 else { return nil }
-        return Double(used) / Double(total)
-    }
-
-    public func replacingTokensUsed(_ tokens: Int?) -> ContextWindowSnapshot {
-        guard let tokens else { return self }
-
-        return ContextWindowSnapshot(
-            contextLength: contextLength,
-            thresholdTokens: thresholdTokens,
-            lastPromptTokens: tokens,
-            inputTokens: inputTokens,
-            outputTokens: outputTokens,
-            estimatedCost: estimatedCost,
-            tokensPerSecond: tokensPerSecond,
-            durationSeconds: durationSeconds
-        )
-    }
 }
 
 public enum ContextWindowFormatter {
-    static func compactIndicator(from snapshot: ContextWindowSnapshot) -> String? {
-        guard let used = snapshot.tokensUsed, let total = snapshot.contextLength, total > 0 else {
-            return nil
-        }
-        let pct = Int((Double(used) / Double(total)) * 100)
-        return String(localized: "\(pct)% context")
-    }
-
     public static func tokensLabel(from snapshot: ContextWindowSnapshot) -> String {
-        guard let used = snapshot.tokensUsed, let total = snapshot.contextLength else {
+        guard let used = snapshot.contextUsedTokens, let total = snapshot.contextWindowTokens else {
             return String(localized: "Unavailable")
         }
         return "\(formatTokens(used)) / \(formatTokens(total))"

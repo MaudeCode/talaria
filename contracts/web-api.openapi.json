@@ -1552,6 +1552,56 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "context_used_tokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991,
+                                "exclusiveMinimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_window_tokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991,
+                                "exclusiveMinimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_usage_percent": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_threshold_percent": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -1796,6 +1846,56 @@
                             "anyOf": [
                               {
                                 "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_used_tokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991,
+                                "exclusiveMinimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_window_tokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991,
+                                "exclusiveMinimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_usage_percent": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_threshold_percent": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100
                               },
                               {
                                 "type": "null"
@@ -2209,6 +2309,56 @@
                             "anyOf": [
                               {
                                 "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_used_tokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991,
+                                "exclusiveMinimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_window_tokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991,
+                                "exclusiveMinimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_usage_percent": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "context_threshold_percent": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100
                               },
                               {
                                 "type": "null"
@@ -3501,6 +3651,56 @@
                           "anyOf": [
                             {
                               "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
                             },
                             {
                               "type": "null"
@@ -5220,6 +5420,56 @@
                             }
                           ]
                         },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "enabled_toolsets": {
                           "anyOf": [
                             {
@@ -6679,6 +6929,56 @@
                             }
                           ]
                         },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "enabled_toolsets": {
                           "anyOf": [
                             {
@@ -7291,6 +7591,56 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -7584,6 +7934,56 @@
                           "anyOf": [
                             {
                               "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
                             },
                             {
                               "type": "null"
@@ -7889,6 +8289,56 @@
                           "anyOf": [
                             {
                               "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
                             },
                             {
                               "type": "null"
@@ -9081,6 +9531,56 @@
                             }
                           ]
                         },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "enabled_toolsets": {
                           "anyOf": [
                             {
@@ -9718,6 +10218,56 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -10008,6 +10558,56 @@
                           "anyOf": [
                             {
                               "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
                             },
                             {
                               "type": "null"
@@ -11368,6 +11968,56 @@
                             }
                           ]
                         },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "enabled_toolsets": {
                           "anyOf": [
                             {
@@ -12101,6 +12751,56 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -12392,6 +13092,56 @@
                           "anyOf": [
                             {
                               "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
                             },
                             {
                               "type": "null"
@@ -12726,6 +13476,56 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -13033,6 +13833,56 @@
                           "anyOf": [
                             {
                               "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
                             },
                             {
                               "type": "null"
@@ -14271,6 +15121,56 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -14561,6 +15461,56 @@
                           "anyOf": [
                             {
                               "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
                             },
                             {
                               "type": "null"
@@ -20860,6 +21810,56 @@
                             }
                           ]
                         },
+                        "context_used_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_window_tokens": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "exclusiveMinimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_usage_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "context_threshold_percent": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "enabled_toolsets": {
                           "anyOf": [
                             {
@@ -22379,6 +23379,56 @@
                               "anyOf": [
                                 {
                                   "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "context_used_tokens": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "context_window_tokens": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "context_usage_percent": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "context_threshold_percent": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 100
                                 },
                                 {
                                   "type": "null"

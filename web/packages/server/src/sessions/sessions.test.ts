@@ -86,6 +86,62 @@ describe('malformed session rows (TAL-37)', () => {
   })
 })
 
+describe('server-computed context ring (TAL-299)', () => {
+  it('uses the post-compression estimate, else the last prompt, never the cumulative input, over a known window only', async () => {
+    const { contextUsage } = await import('./session.js')
+    const ring = (used: number | null, window: number | null, percent: number | null, threshold: number | null = null) => ({ context_used_tokens: used, context_window_tokens: window, context_usage_percent: percent, context_threshold_percent: threshold })
+    expect(contextUsage({ last_prompt_tokens: 64_000, context_length: 128_000 })).toEqual(ring(64_000, 128_000, 50))
+    expect(contextUsage({ post_compression_context_tokens_estimate: 10_347, last_prompt_tokens: 120_000, context_length: 128_000 })).toEqual(ring(10_347, 128_000, 8))
+    expect(contextUsage({ input_tokens: 900_000, last_prompt_tokens: 0, context_length: 200_000 } as Json)).toEqual(ring(null, 200_000, null))
+    expect(contextUsage({ last_prompt_tokens: 5_000, context_length: null })).toEqual(ring(5_000, null, null))
+    expect(contextUsage({ last_prompt_tokens: 5_000, context_length: 0 }, () => 20_000)).toEqual(ring(5_000, 20_000, 25))
+    expect(contextUsage({ last_prompt_tokens: 300_000, context_length: 200_000, threshold_tokens: 160_000 })).toEqual(ring(300_000, 200_000, 100, 80))
+    expect(contextUsage({ last_prompt_tokens: 'junk', context_length: '128000', threshold_tokens: -1 })).toEqual(ring(null, 128_000, null))
+  })
+
+  it('fills the ring on index rows written before the fields existed, in the list and in search', async () => {
+    const s = await bootTestServer()
+    try {
+      const dir = s.deps.sessionStore.sessionDir
+      mkdirSync(dir, { recursive: true })
+      const base = { title: 'ring row', message_count: 2, last_message_at: 100, updated_at: 100, profile: 'default', archived: false }
+      const rows = [
+        { ...base, session_id: 'ring-cumulative', input_tokens: 900_000, context_length: 200_000 },
+        { ...base, session_id: 'ring-compressed', post_compression_context_tokens_estimate: 30_000, last_prompt_tokens: 150_000, context_length: 200_000, threshold_tokens: 160_000 },
+      ]
+      for (const row of rows) writeFileSync(join(dir, `${row.session_id}.json`), JSON.stringify({ ...row, messages: [{ role: 'user', content: 'ring' }] }))
+      writeFileSync(s.deps.sessionStore.indexFile, JSON.stringify(rows))
+      for (const path of ['/api/sessions', '/api/sessions/search?q=ring']) {
+        const listed = (await json(await s.get(path))).sessions as Json[]
+        expect(listed.find((r) => r.session_id === 'ring-cumulative'), path).toMatchObject({ context_used_tokens: null, context_window_tokens: 200_000, context_usage_percent: null })
+        expect(listed.find((r) => r.session_id === 'ring-compressed'), path).toMatchObject({ context_used_tokens: 30_000, context_window_tokens: 200_000, context_usage_percent: 15, context_threshold_percent: 80 })
+      }
+    } finally {
+      await s.close()
+    }
+  })
+
+  it('takes the window from the model catalog when the session has none, with no guessed default', async () => {
+    const s = await bootTestServer()
+    try {
+      const sid = String((await newSession(s)).session_id)
+      const session = s.deps.sessionStore.get(sid)
+      session.messages = [{ role: 'user', content: 'hi' }]
+      session.last_prompt_tokens = 64_000
+      session.context_length = null
+      s.deps.sessionStore.save(session)
+      const lookup = vi.spyOn(s.deps.sessions.deps, 'contextLengthFor').mockReturnValue(null)
+      const detail = async () => (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+      expect(await detail()).toMatchObject({ context_used_tokens: 64_000, context_window_tokens: null, context_usage_percent: null })
+      lookup.mockReturnValue(256_000)
+      expect(await detail()).toMatchObject({ context_used_tokens: 64_000, context_window_tokens: 256_000, context_usage_percent: 25 })
+      lookup.mockRestore()
+    } finally {
+      await s.close()
+    }
+  })
+})
+
 describe('session lifecycle over HTTP', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

@@ -2,15 +2,19 @@ import Foundation
 import SwiftUI
 
 public struct ContextWindowIndicatorPresentation: Equatable {
-    public let percentage: Double?
+    let percent: Int?
 
     public init(snapshot: ContextWindowSnapshot?) {
-        percentage = snapshot?.percentage
+        percent = snapshot?.contextUsagePercent
+    }
+
+    public var percentage: Double? {
+        percent.map { Double($0) / 100 }
     }
 
     public var percentageLabel: String {
-        guard let percentage else { return "–" }
-        return "\(Int(percentage * 100))"
+        guard let percent else { return "–" }
+        return "\(percent)"
     }
 
     public var isInteractive: Bool {

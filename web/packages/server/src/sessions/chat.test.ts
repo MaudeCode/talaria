@@ -132,6 +132,30 @@ describe('chat turns through the sidecar', () => {
     expect((list.sessions as Json[]).find((r) => r.session_id === sid)).toMatchObject({ title: 'Greeting exchange', message_count: 4 })
   })
 
+  it('ships one server-computed context ring on the done usage, the terminal session, a reload, and list and search rows (TAL-299)', async () => {
+    const sid = await newSession(s)
+    // The provider's cumulative prompt total (900K) is never the ring's numerator.
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Half full' }], {
+      usage: { prompt_tokens: 900_000, completion_tokens: 30, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null },
+      context: { context_length: 128_000, last_prompt_tokens: 64_000, threshold_tokens: 100_000 },
+    }))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Ring"', usage: null }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'fill the ring' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const done = frames.find((f) => f.event === 'done')?.data as Json
+    // The shared fixture's populated example is this session: every consumer decodes the same figures.
+    const example = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { context_usage_sessions: { populated: Json } }).context_usage_sessions.populated
+    const ring = { context_used_tokens: 64_000, context_window_tokens: 128_000, context_usage_percent: 50, context_threshold_percent: 78 }
+    expect(example).toMatchObject({ ...ring, input_tokens: 900_000, context_length: 128_000, last_prompt_tokens: 64_000, threshold_tokens: 100_000 })
+    expect(done.usage).toMatchObject(ring)
+    expect(done.session).toMatchObject(ring)
+    expect((await json(await s.get(`/api/session?session_id=${sid}`))).session).toMatchObject(ring)
+    const row = ((await json(await s.get('/api/sessions'))).sessions as Json[]).find((r) => r.session_id === sid)
+    expect(row).toMatchObject(ring)
+    expect(row).not.toHaveProperty('window_usage_percent')
+    expect(((await json(await s.get('/api/sessions/search?q=fill'))).sessions as Json[]).find((r) => r.session_id === sid)).toMatchObject(ring)
+  })
+
   it('redacts live, journaled and replayed tool frames and ships one kind and target live, after replay and after reload', async () => {
     const bearer = 'synthetic-bearer-0123456789abcdef'
     const pg = 'pgSyntheticSecret42'
