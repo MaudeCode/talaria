@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Typing in the Web composer no longer lags, including while a response streams or the draft is long.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

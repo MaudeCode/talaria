@@ -277,3 +277,61 @@ test('the wash under the composer has no edge around the card', async ({ page },
   expect(biggestJump(top)).toBeLessThan(4)
   expect(biggestJump(bottom)).toBeLessThan(4)
 })
+
+test('typing never refits the composer footer; a viewport or chip change does (TAL-278)', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'the test sets its own viewport widths')
+  let model = 'synthetic-model'
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'fit', title: 'Fit', model, messages: [] } } }))
+  await page.route('**/api/session/update', (route) => { model = (route.request().postDataJSON() as { model: string }).model; return route.fulfill({ json: { session: { session_id: 'fit', title: 'Fit', model, messages: [] } } }) })
+  await page.goto('/session/fit')
+  const footer = page.locator('.composer-footer')
+  const msg = page.locator('#msg')
+  await expect(msg).toBeVisible()
+  await expect(footer).not.toHaveClass(/cf-icons|cf-burger/)
+  // The fit pass is the only code that measures the chips in the footer's left group.
+  await page.evaluate(() => {
+    const w = window as unknown as { fits: number }
+    w.fits = 0
+    const rect = Object.getOwnPropertyDescriptor(Element.prototype, 'getBoundingClientRect')!.value as (this: Element) => DOMRect
+    Element.prototype.getBoundingClientRect = function (this: Element) { if (this.parentElement?.classList.contains('composer-left')) w.fits++; return rect.call(this) }
+  })
+  const fits = () => page.evaluate(() => (window as unknown as { fits: number }).fits)
+  const typed = 'Every character lands in order, at once. '.repeat(2)
+  await msg.pressSequentially(typed)
+  await expect(msg).toHaveValue(typed)
+  expect(await fits()).toBe(0)
+  await expect(footer).not.toHaveClass(/cf-icons|cf-burger/)
+
+  // Narrower than the full labels: icon-only chips; wide again: full labels; phone width: the burger.
+  await page.setViewportSize({ width: 800, height: 800 })
+  await expect(footer).toHaveClass(/cf-icons/)
+  await expect(footer).not.toHaveClass(/cf-burger/)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await expect(footer).not.toHaveClass(/cf-icons|cf-burger/)
+  await page.setViewportSize({ width: 600, height: 800 })
+  await expect(footer).toHaveClass(/cf-burger/)
+  await page.setViewportSize({ width: 860, height: 800 })
+  await expect(footer).not.toHaveClass(/cf-icons|cf-burger/)
+
+  // A longer model label (the chip's full 240 px) at the same width no longer fits: the chips change, the footer's size does not.
+  await msg.fill(`/model ${'synthetic-provider/an-extremely-long-model-name'.repeat(3)}`)
+  await msg.press('Enter')
+  await expect(page.locator('#composerModelChip')).toContainText('an-extremely-long-model-name')
+  await expect(footer).toHaveClass(/cf-icons/)
+})
+
+test('a draft typed with an IME just before a reload comes back (TAL-278)', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'one width is enough: the draft path is the same')
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'reload', title: 'Reload', messages: [] } } }))
+  await page.goto('/session/reload')
+  const msg = page.locator('#msg')
+  await msg.pressSequentially('Draft ')
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Input.imeSetComposition', { text: 'にほん', selectionStart: 3, selectionEnd: 3 })
+  await cdp.send('Input.insertText', { text: '日本' })
+  await expect(msg).toHaveValue('Draft 日本')
+  await page.reload()
+  await expect(msg).toHaveValue('Draft 日本')
+})

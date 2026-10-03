@@ -247,6 +247,10 @@ on layout or scroll. Keep these invariants when touching it:
 - The measure reads `scrollHeight`, which forces a synchronous layout of the whole
   document, so its cost grows with the rendered transcript; never run it from a
   scroll or resize handler, and prefer letting `field-sizing` do the work.
+- Typing and stream renders run no other measuring or storage work. The footer fit
+  pass (`cf-icons`/`cf-burger`) runs only when the footer's size or content changes,
+  and the local draft is written after a typing pause and at once when the session
+  changes, the composer unmounts, or the page hides.
 - The transcript's live-follow pin is decided by distance from the bottom, not by
   scroll direction, so a collapse above the tail (worklog fold, thinking card) that
   shrinks `scrollHeight` cannot unpin a reader who never scrolled.
