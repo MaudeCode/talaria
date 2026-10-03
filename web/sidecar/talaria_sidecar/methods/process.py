@@ -4,8 +4,12 @@ routing; the sidecar drains and formats registry events."""
 
 from __future__ import annotations
 
+import json
 import logging
 import queue
+import sqlite3
+from contextlib import closing
+from pathlib import Path
 
 from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
@@ -178,6 +182,117 @@ def list_sessions() -> list[dict]:
     return out
 
 
+_LEDGER_COLUMNS = "delegation_id, origin_ui_session_id, state, dispatched_at, completed_at, updated_at, task_json, result_json, event_json IS NOT NULL"
+_LEDGER_LIMIT = 200
+
+
+def _json(text) -> dict:
+    try:
+        value = json.loads(text) if text else {}
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _unit_goals(task: dict) -> list[str]:
+    goals = task.get("goals") if isinstance(task.get("goals"), list) else None
+    indexes = task.get("task_indexes") if isinstance(task.get("task_indexes"), list) else None
+    if goals and indexes:
+        return [str(goals[i]) for i in indexes if isinstance(i, int) and 0 <= i < len(goals)]
+    if goals:
+        return [str(g) for g in goals]
+    return [str(task.get("goal") or "")]
+
+
+def _child_statuses(result: dict) -> list[str]:
+    """Per-subagent outcome of a finished unit: a batch carries ``results``, a single task is its own result."""
+    if isinstance(result.get("results"), list):
+        return [str(r.get("status") or "") for r in result["results"] if isinstance(r, dict)]
+    return [str(result.get("status") or "")] if result else []
+
+
+def _ledger_rows(home: Path, session_ids: list[str]) -> list[dict]:
+    db_path = home / "state.db"
+    if not db_path.exists() or not session_ids:
+        return []
+    marks = ",".join("?" * len(session_ids))
+    with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True, timeout=5)) as conn:
+        try:
+            rows = conn.execute(f"SELECT {_LEDGER_COLUMNS} FROM async_delegations WHERE origin_ui_session_id IN ({marks}) ORDER BY dispatched_at DESC LIMIT ?", [*session_ids, _LEDGER_LIMIT]).fetchall()
+        except sqlite3.OperationalError:  # an Agent that never delegated has no ledger table yet
+            return []
+    out = []
+    for delegation_id, origin, state, dispatched_at, completed_at, updated_at, task_json, result_json, has_event in rows:
+        task, result = _json(task_json), _json(result_json)
+        goals = _unit_goals(task)
+        out.append({
+            "delegation_id": delegation_id, "origin_ui_session_id": origin, "state": state, "dispatched_at": dispatched_at,
+            "completed_at": completed_at, "updated_at": updated_at, "goals": goals,
+            "child_statuses": _child_statuses(result), "has_result": bool(has_event),
+        })
+    return out
+
+
+def _live_delegations() -> dict[str, dict]:
+    try:
+        from tools.async_delegation import list_async_delegations
+        items = list_async_delegations()
+    except Exception:  # noqa: BLE001 - an Agent without the live registry reports from the ledger alone
+        return {}
+    return {str(i.get("delegation_id")): {"status": str(i.get("status") or "")} for i in items if isinstance(i, dict) and i.get("delegation_id")}
+
+
+def _owned_processes(session_ids: set[str]) -> list[dict]:
+    """Notified or watched processes a WebUI session started (``session_key`` is the WebUI session id)."""
+    registry = _registry()
+    if registry is None:
+        return []
+    try:
+        with registry._lock:
+            sessions = [*registry._running.values(), *registry._finished.values()]
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for proc in sessions:
+        if str(getattr(proc, "session_key", "") or "") not in session_ids:
+            continue
+        watched = bool(getattr(proc, "watch_patterns", None))
+        if not (getattr(proc, "notify_on_complete", False) or watched):
+            continue
+        exited = bool(getattr(proc, "exited", False))
+        out.append({
+            "process_id": str(proc.id), "session_key": str(proc.session_key), "command": str(getattr(proc, "command", "") or "")[:200],
+            "started_at": float(getattr(proc, "started_at", 0) or 0) or None, "exited": exited,
+            "exited_at": float(getattr(proc, "exited_at", 0) or 0) or None, "exit_code": getattr(proc, "exit_code", None),
+            "completion_reason": str(getattr(proc, "completion_reason", "") or ""), "watched": watched,
+        })
+    return out
+
+
+def background_list(home: Path, session_ids: list[str]) -> dict:
+    """TAL-372: what the Agent knows about the background work of these WebUI sessions: delegations from the durable
+    ledger (with the live registry's status while they run) and notified processes from the process registry."""
+    live = _live_delegations()
+    delegations = _ledger_rows(home, session_ids)
+    for row in delegations:
+        row["live_status"] = live.get(row["delegation_id"], {}).get("status")
+    return {"delegations": delegations, "processes": _owned_processes(set(session_ids))}
+
+
+def delegation_result(home: Path, session_id: str, delegation_id: str) -> str:
+    """The full result of a finished delegation unit, as the Agent words it for its own notification."""
+    db_path = home / "state.db"
+    if not db_path.exists():
+        return ""
+    with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True, timeout=5)) as conn:
+        try:
+            row = conn.execute("SELECT event_json FROM async_delegations WHERE delegation_id = ? AND origin_ui_session_id = ?", (delegation_id, session_id)).fetchone()
+        except sqlite3.OperationalError:
+            return ""
+    event = _json(row[0]) if row else {}
+    return format_notification(event) if event else ""
+
+
 def register(registry_) -> None:
     @registry_.method("process.drain")
     def drain_(ctx: CallContext, params: dict) -> dict:
@@ -237,6 +352,26 @@ def register(registry_) -> None:
         if not isinstance(evt, dict):
             raise InvalidParams("event must be an object")
         return {"text": format_notification(evt)}
+
+    def _session_ids(params: dict) -> list[str]:
+        ids = params.get("session_ids")
+        if not isinstance(ids, list) or not all(isinstance(i, str) and i for i in ids):
+            raise InvalidParams("session_ids must be a list of session ids")
+        return ids
+
+    @registry_.method("process.background_list")
+    def background_list_(ctx: CallContext, params: dict) -> dict:
+        ids = _session_ids(params)
+        with scoped_home(profile_home_param(params)) as home:
+            return background_list(home, ids)
+
+    @registry_.method("process.delegation_result")
+    def delegation_result_(ctx: CallContext, params: dict) -> dict:
+        sid, did = str(params.get("session_id") or ""), str(params.get("delegation_id") or "")
+        if not sid or not did:
+            raise InvalidParams("session_id and delegation_id are required")
+        with scoped_home(profile_home_param(params)) as home:
+            return {"text": delegation_result(home, sid, did)}
 
     @registry_.method("process.list")
     def list_(ctx: CallContext, params: dict) -> dict:

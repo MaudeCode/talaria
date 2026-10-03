@@ -108,6 +108,11 @@ describe('request-profile session visibility', () => {
     expect((await s.get(`/api/git/status?session_id=${sid}`, { headers: work.headers })).status).toBe(404)
     expect((await s.get(`/api/session/draft?session_id=${sid}`, { headers: work.headers })).status).toBe(404)
     expect((await s.get(`/api/session/draft?session_id=${sid}`, { headers: root.headers })).status).toBe(200)
+    // TAL-372: another profile never sees a session's background work or its results.
+    expect((await s.get(`/api/background/tasks?session_id=${sid}`, { headers: work.headers })).status).toBe(404)
+    expect((await s.get(`/api/background/result?session_id=${sid}&task_id=t1`, { headers: work.headers })).status).toBe(404)
+    expect((await post(s, work, '/api/background/dismiss', { session_id: sid, task_id: 't1' })).status).toBe(404)
+    expect((await s.get(`/api/background/tasks?session_id=${sid}`, { headers: root.headers })).status).toBe(200)
   })
 
   it('a finished run replays from the journal only to the owning profile', async () => {

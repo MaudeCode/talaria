@@ -14,6 +14,7 @@ import { PresenceLeases, RelayService } from './sessions/relay.js'
 import { CliSessionSource } from './sessions/cli-sessions.js'
 import { GatewayWatcherRegistry } from './sessions/gateway-watcher.js'
 import { CompletionDrain } from './sessions/completions.js'
+import { BackgroundActivity, BackgroundTaskStore } from './sessions/background-tasks.js'
 import { HygieneTicker } from './tools/hygiene.js'
 import { McpHealthProber } from './tools/mcp-health.js'
 import { loadConfig, truthy, type Env, type LoadConfigOptions } from './config.js'
@@ -44,7 +45,6 @@ import { TurnRunner } from './sessions/turn.js'
 import { SessionChannels, StreamRegistry } from './sessions/streams.js'
 import { PendingPrompts } from './sessions/pending.js'
 import { RunJournal } from './sessions/journal.js'
-import { BackgroundTasks } from './api/chat-router.js'
 import { StreamSlots } from './api/sse-routes.js'
 import { AgentConfig, coerceProviderCostBudgetValue, dict as asDict, parseProviderQualifiedModel } from './config/agent-config.js'
 import { ProviderCatalog } from './providers/catalog.js'
@@ -221,6 +221,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   /** Detached sidecar work per profile (memory commits) that deletion has to wait out like a live run. */
   const profileOps = new Map<string, number>()
   const sessions = new SessionService({
+    backgroundReceipts: (sid) => background.receipts(sid),
     journal,
     clearRelayCompletions: (sid, profile) => { relay.clearDeleted(sid, profile) },
     store,
@@ -316,7 +317,13 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const uploads = new UploadInbox(attachmentRoot)
   const channels = new SessionChannels()
   const pending = new PendingPrompts(events, now)
-  const background = new BackgroundTasks(now)
+  // TAL-372: one durable record per piece of background work; a change refreshes every client showing the session.
+  const backgroundStore = new BackgroundTaskStore(config.sessionDir, now, (sid) => {
+    let profile: string | null = null
+    try { profile = store.get(sid, { metadataOnly: true, promote: false, cacheOnMiss: false }).profile } catch { profile = null }
+    events.publish('background_task', { profile, sessionId: sid })
+  })
+  const background = new BackgroundActivity({ store: backgroundStore, sidecar: () => sidecar, profileHome: (p) => profileHome(p ?? activeProfile()), liveStream: (id) => registry.liveIds.has(id), now, log })
   // Python `_MAX_SSE_CLIENTS_PER_IDENTITY`: eight concurrent streams per client identity unless overridden.
   const streamSlots = new StreamSlots(() => { const raw = Number.parseInt((env.HERMES_WEBUI_MAX_SSE_CLIENTS ?? '').trim(), 10); return Number.isFinite(raw) && raw > 0 ? raw : 8 })
   const mediaActiveWorkspace = (): string | null => {
@@ -451,7 +458,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       },
     }
   }
-  completions = new CompletionDrain({ sidecar: () => sidecar, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: (session, prompt) => turns.start(session, { msg: prompt, attachments: [], workspace: session.workspace, model: session.model, modelProvider: session.model_provider, source: 'process_wakeup' }), now, log, ...(opts.completionPollMs !== undefined ? { pollMs: opts.completionPollMs } : {}) })
+  completions = new CompletionDrain({ sidecar: () => sidecar, profileHome: (p) => profileHome(p ?? activeProfile()), activeProfile, store, channels, registry, startTurn: (session, prompt) => turns.start(session, { msg: prompt, attachments: [], workspace: session.workspace, model: session.model, modelProvider: session.model_provider, source: 'process_wakeup' }), background, now, log, ...(opts.completionPollMs !== undefined ? { pollMs: opts.completionPollMs } : {}) })
   const mcpHealth = new McpHealthProber({ fetch: () => lazyFetch, now, log })
   // Dashboard reachability is probed in the background (Python `dashboard_probe.get_dashboard_status`), never per request.
   let dashboardRunning = false

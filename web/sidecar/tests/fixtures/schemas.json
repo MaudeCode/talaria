@@ -3395,6 +3395,161 @@
     ],
     "additionalProperties": false
   },
+  "process.background_list": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "delegations": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "delegation_id": {
+              "type": "string"
+            },
+            "origin_ui_session_id": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            },
+            "dispatched_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "completed_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "updated_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "goals": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "child_statuses": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "has_result": {
+              "type": "boolean"
+            },
+            "live_status": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "delegation_id",
+            "origin_ui_session_id",
+            "state",
+            "dispatched_at",
+            "completed_at",
+            "updated_at",
+            "goals",
+            "child_statuses",
+            "has_result",
+            "live_status"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "processes": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "process_id": {
+              "type": "string"
+            },
+            "session_key": {
+              "type": "string"
+            },
+            "command": {
+              "type": "string"
+            },
+            "started_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "exited": {
+              "type": "boolean"
+            },
+            "exited_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "exit_code": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "completion_reason": {
+              "type": "string"
+            },
+            "watched": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "process_id",
+            "session_key",
+            "command",
+            "started_at",
+            "exited",
+            "exited_at",
+            "exit_code",
+            "completion_reason",
+            "watched"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "delegations",
+      "processes"
+    ],
+    "additionalProperties": false
+  },
+  "process.delegation_result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ],
+    "additionalProperties": false
+  },
   "usage.account": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

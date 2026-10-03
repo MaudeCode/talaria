@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { ChatStartRequestSchema, ChatStartResponseSchema, StreamStatusSchema, CancelResponseSchema, SteerResponseSchema, SteerWithdrawRequestSchema, SteerWithdrawResponseSchema, SteerSendNowRequestSchema, SteerSendNowResponseSchema, ApprovalPendingEnvelopeSchema, ApprovalRespondResponseSchema, ClarifyPendingEnvelopeSchema, ClarifyRespondResponseSchema, ClarifyAnswersSchema, GoalResponseSchema, BackgroundStatusSchema } from '../views.js'
+import { ChatStartRequestSchema, ChatStartResponseSchema, StreamStatusSchema, CancelResponseSchema, SteerResponseSchema, SteerWithdrawRequestSchema, SteerWithdrawResponseSchema, SteerSendNowRequestSchema, SteerSendNowResponseSchema, ApprovalPendingEnvelopeSchema, ApprovalRespondResponseSchema, ClarifyPendingEnvelopeSchema, ClarifyRespondResponseSchema, ClarifyAnswersSchema, GoalResponseSchema, BackgroundStatusSchema, BackgroundTasksResponseSchema, BackgroundTaskResultSchema, BackgroundDismissRequestSchema, BackgroundDismissResponseSchema } from '../views.js'
 
 /** Agent turns, approvals, clarify prompts, goals, background tasks, and side questions. */
 
@@ -31,7 +31,11 @@ export const chatContract = {
   goal: oc.route({ method: 'POST', path: '/api/goal', tags }).input(GoalRequestSchema).output(GoalResponseSchema),
   background: {
     start: oc.route({ method: 'POST', path: '/api/background', tags }).input(z.object({ session_id: z.string().optional(), prompt: z.string().optional() }).catchall(Json)).output(z.object({ ok: z.literal(true), task_id: z.string(), stream_id: z.string(), session_id: z.string() })),
+    /** Old clients only: each finished `/background` result once per server. `tasks` is the shared, non-destructive view. */
     status: oc.route({ method: 'GET', path: '/api/background/status', tags }).input(z.object({ session_id: z.string().optional() })).output(BackgroundStatusSchema),
+    tasks: oc.route({ method: 'GET', path: '/api/background/tasks', tags, summary: 'The background work a session owns: delegations, notified processes and /background tasks (TAL-372).' }).input(z.object({ session_id: z.string() })).output(BackgroundTasksResponseSchema),
+    result: oc.route({ method: 'GET', path: '/api/background/result', tags }).input(z.object({ session_id: z.string(), task_id: z.string() })).output(BackgroundTaskResultSchema),
+    dismiss: oc.route({ method: 'POST', path: '/api/background/dismiss', tags }).input(BackgroundDismissRequestSchema).output(BackgroundDismissResponseSchema),
     ack: oc.route({ method: 'POST', path: '/api/bg-task-complete-ack', tags }).input(z.object({ session_id: z.string().optional(), task_id: z.string().optional(), process_id: z.string().optional() }).catchall(Json)).output(z.object({ ok: z.literal(true), session_id: z.string(), task_id: z.string(), noop: z.literal(true) })),
   },
   btw: oc.route({ method: 'POST', path: '/api/btw', tags, summary: 'Ephemeral side question answered in a hidden session that inherits the transcript.' }).input(z.object({ session_id: z.string().optional(), question: z.string().optional() }).catchall(Json)).output(z.object({ stream_id: z.string(), session_id: z.string(), parent_session_id: z.string() })),

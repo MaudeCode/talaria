@@ -2790,6 +2790,64 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "background": {
+                                              "type": "object",
+                                              "properties": {
+                                                "task_ids": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "running",
+                                                    "attention",
+                                                    "completed",
+                                                    "failed",
+                                                    "cancelled",
+                                                    "unknown"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "agents": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "total": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "completed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "failed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "running": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "total",
+                                                    "completed",
+                                                    "failed",
+                                                    "running"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "task_ids",
+                                                "status",
+                                                "agents"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -4445,6 +4503,64 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "background": {
+                                              "type": "object",
+                                              "properties": {
+                                                "task_ids": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "running",
+                                                    "attention",
+                                                    "completed",
+                                                    "failed",
+                                                    "cancelled",
+                                                    "unknown"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "agents": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "total": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "completed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "failed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "running": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "total",
+                                                    "completed",
+                                                    "failed",
+                                                    "running"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "task_ids",
+                                                "status",
+                                                "agents"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -5845,6 +5961,64 @@
                                                 {
                                                   "type": "null"
                                                 }
+                                              ]
+                                            },
+                                            "background": {
+                                              "type": "object",
+                                              "properties": {
+                                                "task_ids": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "running",
+                                                    "attention",
+                                                    "completed",
+                                                    "failed",
+                                                    "cancelled",
+                                                    "unknown"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "agents": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "total": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "completed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "failed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "running": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "total",
+                                                    "completed",
+                                                    "failed",
+                                                    "running"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "task_ids",
+                                                "status",
+                                                "agents"
                                               ]
                                             }
                                           },
@@ -8190,6 +8364,64 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "background": {
+                                              "type": "object",
+                                              "properties": {
+                                                "task_ids": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "running",
+                                                    "attention",
+                                                    "completed",
+                                                    "failed",
+                                                    "cancelled",
+                                                    "unknown"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "agents": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "total": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "completed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "failed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "running": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "total",
+                                                    "completed",
+                                                    "failed",
+                                                    "running"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "task_ids",
+                                                "status",
+                                                "agents"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -10418,6 +10650,64 @@
                                                 {
                                                   "type": "null"
                                                 }
+                                              ]
+                                            },
+                                            "background": {
+                                              "type": "object",
+                                              "properties": {
+                                                "task_ids": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "running",
+                                                    "attention",
+                                                    "completed",
+                                                    "failed",
+                                                    "cancelled",
+                                                    "unknown"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "agents": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "total": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "completed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "failed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "running": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "total",
+                                                    "completed",
+                                                    "failed",
+                                                    "running"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "task_ids",
+                                                "status",
+                                                "agents"
                                               ]
                                             }
                                           },
@@ -13110,6 +13400,64 @@
                                   {
                                     "type": "null"
                                   }
+                                ]
+                              },
+                              "background": {
+                                "type": "object",
+                                "properties": {
+                                  "task_ids": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "status": {
+                                    "enum": [
+                                      "running",
+                                      "attention",
+                                      "completed",
+                                      "failed",
+                                      "cancelled",
+                                      "unknown"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "agents": {
+                                    "type": "object",
+                                    "properties": {
+                                      "total": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "completed": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "failed": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "running": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      }
+                                    },
+                                    "required": [
+                                      "total",
+                                      "completed",
+                                      "failed",
+                                      "running"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "task_ids",
+                                  "status",
+                                  "agents"
                                 ]
                               }
                             },
@@ -19795,6 +20143,64 @@
                                                   "type": "null"
                                                 }
                                               ]
+                                            },
+                                            "background": {
+                                              "type": "object",
+                                              "properties": {
+                                                "task_ids": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "status": {
+                                                  "enum": [
+                                                    "running",
+                                                    "attention",
+                                                    "completed",
+                                                    "failed",
+                                                    "cancelled",
+                                                    "unknown"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "agents": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "total": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "completed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "failed": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    "running": {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "total",
+                                                    "completed",
+                                                    "failed",
+                                                    "running"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "task_ids",
+                                                "status",
+                                                "agents"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -21278,6 +21684,47 @@
                                                     {
                                                       "type": "null"
                                                     }
+                                                  ]
+                                                },
+                                                "background": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "task_ids": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "anyOf": [
+                                                          {},
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      }
+                                                    },
+                                                    "status": {
+                                                      "enum": [
+                                                        "running",
+                                                        "attention",
+                                                        "completed",
+                                                        "failed",
+                                                        "cancelled",
+                                                        "unknown"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "agents": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "total": {},
+                                                        "completed": {},
+                                                        "failed": {},
+                                                        "running": {}
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "task_ids",
+                                                    "status",
+                                                    "agents"
                                                   ]
                                                 }
                                               },
@@ -23166,6 +23613,428 @@
                     "results"
                   ],
                   "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/background/tasks": {
+      "get": {
+        "operationId": "background.tasks",
+        "summary": "The background work a session owns: delegations, notified processes and /background tasks (TAL-372).",
+        "tags": [
+          "chat"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "tasks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "task_id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "delegation",
+                              "process",
+                              "background_command"
+                            ],
+                            "type": "string"
+                          },
+                          "status": {
+                            "enum": [
+                              "running",
+                              "attention",
+                              "completed",
+                              "failed",
+                              "cancelled",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "started_at": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "updated_at": {
+                            "type": "number"
+                          },
+                          "completed_at": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "result_available": {
+                            "type": "boolean"
+                          },
+                          "child_session_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "exit_code": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "agents": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "total": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "completed": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "failed": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "running": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "total",
+                                  "completed",
+                                  "failed",
+                                  "running"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "pinned": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "task_id",
+                          "kind",
+                          "status",
+                          "title",
+                          "started_at",
+                          "updated_at",
+                          "completed_at",
+                          "result_available",
+                          "child_session_id",
+                          "exit_code",
+                          "agents",
+                          "pinned"
+                        ]
+                      }
+                    },
+                    "agent_available": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "session_id",
+                    "tasks",
+                    "agent_available"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/background/result": {
+      "get": {
+        "operationId": "background.result",
+        "tags": [
+          "chat"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "task_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "task_id": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "task_id",
+                    "text"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/background/dismiss": {
+      "post": {
+        "operationId": "background.dismiss",
+        "tags": [
+          "chat"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                  },
+                  "task_id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "task_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "task": {
+                      "type": "object",
+                      "properties": {
+                        "task_id": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "enum": [
+                            "delegation",
+                            "process",
+                            "background_command"
+                          ],
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "running",
+                            "attention",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "started_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "updated_at": {
+                          "type": "number"
+                        },
+                        "completed_at": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "result_available": {
+                          "type": "boolean"
+                        },
+                        "child_session_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "exit_code": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "agents": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "completed": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "failed": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "running": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "total",
+                                "completed",
+                                "failed",
+                                "running"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "pinned": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "task_id",
+                        "kind",
+                        "status",
+                        "title",
+                        "started_at",
+                        "updated_at",
+                        "completed_at",
+                        "result_available",
+                        "child_session_id",
+                        "exit_code",
+                        "agents",
+                        "pinned"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "task"
+                  ]
                 }
               }
             }
