@@ -112,6 +112,28 @@ the onboarding flow when your Hermes config selects the corresponding provider.
 If the wizard points you back to `hermes model`, use that CLI flow first, then
 refresh WebUI.
 
+### Provider plugins
+
+Model-provider plugins installed in a profile (`hermes plugins install`, or a
+directory under `$HERMES_HOME/plugins/model-providers/`) appear in Settings ->
+Providers and in the model picker under their own name, for example a Claude
+subscription provider. Install, enable, and sign in to a plugin with Hermes;
+WebUI never installs a plugin, logs in, or reads its credentials, and never
+substitutes an API key provider for it.
+
+- A plugin listed in `plugins.disabled` does not appear.
+- A plugin that is not ready shows why on its provider card and offers no
+  models: its CLI was not found, its setup is unfinished, or it could not be
+  loaded (check it with `hermes plugins doctor`, then restart Talaria Web).
+- Models come from the plugin's own listing, falling back to the catalog the
+  plugin ships. A listing is cached for 24 hours unless a provider change or
+  `POST /api/models/refresh` clears it; setup state is re-read within 30
+  seconds.
+- Plugins belong to the profile whose `$HERMES_HOME` holds them; another
+  profile never sees them. Talaria Web runs one provider registry for every
+  profile, so a plugin cannot load when another profile's plugin already uses
+  its provider id or directory name.
+
 ## Base URL rules for local model servers
 
 For self-hosted providers, the Base URL should point to the OpenAI-compatible

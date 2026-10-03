@@ -35,7 +35,12 @@ export const CommandSchema = z.object({
   name: z.string(), description: z.string(), category: z.string(), aliases: z.array(z.string()), args_hint: z.string(), subcommands: z.array(z.string()),
   cli_only: z.boolean(), gateway_only: z.boolean(),
 })
-export const PluginProviderSchema = z.object({ name: z.string(), display_name: z.string(), env_vars: z.array(z.string()), api_key_env: z.string().nullable() })
+/**
+ * A model-provider plugin installed and enabled in the profile (TAL-288); bundled providers are built-ins. `setup` is the Agent's
+ * own verdict without spawning the plugin's CLI: `not_loaded` means the installed plugin could not be loaded (import failure, or its
+ * provider id or directory name is taken by another profile's plugin in this process-wide registry).
+ */
+export const PluginProviderSchema = z.object({ name: z.string(), display_name: z.string(), auth_type: z.string(), setup: z.enum(['ready', 'missing_cli', 'needs_setup', 'not_loaded', 'unavailable']) })
 export const COMMANDS_METHODS = {
   'commands.registry': { params: ProfileHomeParams, result: z.object({ commands: z.array(CommandSchema) }) },
   'commands.exec': { params: ProfileHomeParams.extend({ command: z.string().min(1) }), result: z.object({ output: z.string(), source: z.enum(['agent', 'plugin']) }) },

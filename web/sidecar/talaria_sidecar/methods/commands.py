@@ -9,6 +9,7 @@ from typing import Any
 from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
+from .providers import plugin_providers
 
 log = logging.getLogger("talaria_sidecar.commands")
 
@@ -230,27 +231,6 @@ def resolve_moa_config(preset: str | None) -> dict:
     return resolved
 
 
-def plugin_provider_profiles() -> list[dict]:
-    """Model-provider plugins registered with the Agent's provider registry."""
-    try:
-        from providers import list_providers
-    except Exception:  # noqa: BLE001
-        return []
-    out = []
-    try:
-        for profile in list_providers():
-            name = str(getattr(profile, "name", "") or "").strip().lower()
-            if not name:
-                continue
-            env_vars = [str(v) for v in (getattr(profile, "env_vars", ()) or ())]
-            api_key_env = next((v for v in env_vars if not v.upper().endswith(("_BASE_URL", "_URL", "_FOLDER_ID"))), None)
-            out.append({"name": name, "display_name": str(getattr(profile, "display_name", "") or name).strip(), "env_vars": env_vars, "api_key_env": api_key_env})
-    except Exception:  # noqa: BLE001
-        log.debug("Failed to enumerate model-provider plugins", exc_info=True)
-        return []
-    return out
-
-
 PLUGIN_VISIBILITY_HOOKS = ("pre_tool_call", "post_tool_call", "pre_llm_call", "post_llm_call")
 
 
@@ -332,7 +312,7 @@ def register(registry) -> None:
     @registry.method("plugins.providers")
     def providers(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
-            return {"providers": plugin_provider_profiles()}
+            return {"providers": plugin_providers()}
 
     @registry.method("plugins.list")
     def list_(ctx: CallContext, params: dict) -> dict:

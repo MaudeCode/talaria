@@ -15,6 +15,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
+import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { str } from '../util.js'
 import { loadEnvFile } from './env-file.js'
 import {
@@ -26,6 +27,7 @@ import {
 } from '../config/agent-config.js'
 
 export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean }
+type PluginProvider = SidecarResult<'plugins.providers'>['providers'][number]
 export interface ModelGroup { provider: string; provider_id: string; models: ModelEntry[]; extra_models?: ModelEntry[] }
 
 /** Python `_model_matches_picker_selection`: same bare id, and the routing hints agree when both name one. */
@@ -113,6 +115,15 @@ const LIVE_TTL_S = 86_400
 const PROVIDERS_TTL_S = 30
 const QUOTA_TIMEOUT_MS = 15_000
 const OPENROUTER_KEY_URL = 'https://openrouter.ai/api/v1/key'
+const PLUGIN_LIST_TIMEOUT_MS = 15_000
+/** TAL-288: the card text for a plugin provider the Agent does not report ready. */
+const PLUGIN_SETUP_ERRORS: Record<Exclude<PluginProvider['setup'], 'ready'>, string> = {
+  missing_cli: "This provider's CLI was not found on the server. Install it and sign in, then refresh.",
+  needs_setup: "This provider is not set up yet. Finish its setup in Hermes, then refresh.",
+  not_loaded: 'This provider is installed but could not be loaded. Check it with hermes plugins doctor, then restart Talaria Web.',
+  unavailable: "This provider's setup status is unavailable.",
+}
+const PLUGIN_NO_MODELS = 'This provider listed no models.'
 const COST_SNAPSHOT_MAX_DAYS = 365
 
 export function displayName(pid: string): string {
@@ -329,6 +340,22 @@ export class ProviderCatalog {
     return run
   }
 
+  /**
+   * TAL-288: the model-provider plugins installed and enabled in this profile, as the sidecar reads them from the Agent.
+   * A failed lookup lists none, so every other provider stays usable; an id that cannot be a provider routing hint is dropped.
+   */
+  private async pluginProviders(profileHome: string): Promise<PluginProvider[]> {
+    const sidecar = this.deps.sidecar()
+    if (!sidecar) return []
+    try {
+      const { providers } = await sidecar.call('plugins.providers', { profile_home: profileHome }, { timeoutMs: PLUGIN_LIST_TIMEOUT_MS })
+      return providers.filter((p, i, all) => /^[a-z0-9][a-z0-9._-]{0,63}$/.test(p.name) && all.findIndex((q) => q.name === p.name) === i)
+    } catch (error) {
+      this.deps.log(`[catalog] plugin providers failed: ${str((error as Error).message)}`)
+      return []
+    }
+  }
+
   /** Python `get_providers`. */
   async providers(profileHome: string): Promise<{ providers: Dict[]; active_provider: string | null }> {
     const config = await this.deps.config.read(profileHome)
@@ -338,10 +365,15 @@ export class ProviderCatalog {
     if (hit?.key === cacheKey && this.deps.now() - hit.at < PROVIDERS_TTL_S) return structuredClone(hit.payload)
     const active = activeProviderFromConfig(config)
     const known = new Set<string>([...Object.keys(PROVIDER_DISPLAY), ...Object.keys(PROVIDER_MODELS), ...OAUTH_PROVIDERS])
+    // A plugin never stands in for a built-in provider, by id or alias (that would route to the built-in's billing); it
+    // does own a `providers.<id>` config entry.
+    const plugins = (await this.pluginProviders(profileHome)).filter((p) => !known.has(p.name) && !known.has(providerIdentity(p.name)))
+    const pluginIds = new Set(plugins.map((p) => p.name))
     const providersCfg = dict(config.providers)
     for (const key of Object.keys(providersCfg)) {
       const identity = canonicaliseProviderId(key)
-      known.add(known.has(identity) ? identity : key)
+      const id = known.has(identity) ? identity : key
+      if (!pluginIds.has(id)) known.add(id)
     }
     const rows: Dict[] = []
     for (const pid of [...known].sort()) {
@@ -382,6 +414,17 @@ export class ProviderCatalog {
         env_var: providerEnvVar(pid),
         models,
         models_total: modelsTotal,
+      })
+    }
+    // TAL-288: a plugin is selectable only once the Agent reports its setup ready; it never borrows a built-in's key.
+    for (const plugin of plugins) {
+      const ready = plugin.setup === 'ready'
+      const live = ready ? await this.liveModelIds(profileHome, plugin.name) : []
+      rows.push({
+        id: plugin.name, display_name: plugin.display_name || plugin.name, has_key: ready,
+        configurable: false, is_oauth: false, is_plugin_provider: true, is_self_hosted: false, is_custom: false, key_source: ready ? 'plugin' : 'none',
+        base_url: null, auth_error: plugin.setup === 'ready' ? (live.length ? null : PLUGIN_NO_MODELS) : PLUGIN_SETUP_ERRORS[plugin.setup], env_var: null,
+        models: live.map((id) => ({ id, label: labelForModel(id, []) })), models_total: live.length,
       })
     }
     for (const cp of customProviderEntries(config)) {
@@ -440,10 +483,16 @@ export class ProviderCatalog {
       const canonical = canonicaliseProviderId(pid)
       if (canonical && this.providerHasKey(canonical, config, envValues, profileHome)) detected.add(canonical)
     }
-    // Python: OAuth providers the Agent reports as logged in join the picker with their live catalog (#1567, #2545).
-    const oauthLoggedIn = new Set<string>()
-    for (const row of (await this.providers(profileHome)).providers) if (row.is_oauth === true && row.has_key === true) oauthLoggedIn.add(str(row.id))
-    for (const pid of oauthLoggedIn) detected.add(pid)
+    // Python: OAuth providers the Agent reports as logged in join the picker with their live catalog (#1567, #2545); so do
+    // ready plugin providers (TAL-288), under their own name.
+    const signedIn = new Set<string>()
+    const pluginNames = new Map<string, string>()
+    for (const row of (await this.providers(profileHome)).providers) {
+      if (row.has_key !== true || (row.is_oauth !== true && row.is_plugin_provider !== true)) continue
+      signedIn.add(str(row.id))
+      if (row.is_plugin_provider === true) pluginNames.set(str(row.id), str(row.display_name) || str(row.id))
+    }
+    for (const pid of signedIn) detected.add(pid)
     const fallbackCfg = Array.isArray(config.fallback_providers) ? config.fallback_providers.filter(isDict) : []
     for (const entry of fallbackCfg) {
       const p = resolveProviderAlias(entry.provider)
@@ -469,7 +518,7 @@ export class ProviderCatalog {
       detected.add(named?.[0] ?? active ?? 'custom')
     }
     const groups: ModelGroup[] = []
-    for (const pid of [...detected].map((p) => (p.startsWith('custom') ? p : canonicaliseProviderId(p) || p)).filter((v, i, a) => v && a.indexOf(v) === i).sort()) {
+    for (const pid of [...detected].map((p) => (p.startsWith('custom') || pluginNames.has(p) ? p : canonicaliseProviderId(p) || p)).filter((v, i, a) => v && a.indexOf(v) === i).sort()) {
       if (pid.startsWith('custom:')) {
         const g = namedCustom.get(pid)
         const models = [...(g?.models ?? [])]
@@ -485,7 +534,7 @@ export class ProviderCatalog {
       const providerCfg = dict(providersCfg[rawKeyFor.get(pid) ?? pid])
       let raw: ModelEntry[] = []
       if ('models' in providerCfg && providerCfg.models_discovered !== true) raw = configuredModelOptions(providerCfg.models)
-      if (!raw.length && (this.providerHasKey(pid, config, envValues, profileHome) || oauthLoggedIn.has(pid))) {
+      if (!raw.length && (this.providerHasKey(pid, config, envValues, profileHome) || signedIn.has(pid))) {
         const live = await this.liveModelIds(profileHome, pid)
         if (live.length) raw = live.map((id) => ({ id, label: pid === 'nous' ? `${formatOllamaLabel(id.includes('/') ? id.slice(id.indexOf('/') + 1) : id)} (via Nous)` : labelForModel(id, []) }))
         // Python (#1567): an authenticated Nous account with an empty live catalog shows no group; only a failed lookup falls back to the curated list.
@@ -493,7 +542,7 @@ export class ProviderCatalog {
       }
       if (!raw.length) raw = pid === 'openrouter' ? FALLBACK_MODELS.map((m) => ({ id: m.id, label: m.label })) : [...(PROVIDER_MODELS[pid] ?? [])]
       for (const id of configuredIds.get(pid) ?? []) if (!raw.some((m) => m.id === id)) raw.push({ id, label: labelForModel(id, groups) })
-      if (raw.length) groups.push({ provider: displayName(pid), provider_id: pid, models: applyProviderPrefix(raw, pid, active) })
+      if (raw.length) groups.push({ provider: pluginNames.get(pid) ?? displayName(pid), provider_id: pid, models: applyProviderPrefix(raw, pid, active) })
     }
     if (defaultModel) {
       const all = new Set(groups.flatMap((g) => g.models.map((m) => m.id)))
