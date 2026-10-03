@@ -58,6 +58,10 @@ function staleRuntimeFailure(error: SidecarError): HttpFailure {
 export interface SessionServiceDeps {
   /** TAL-255: the Agent sidecar for manual compression (`chat.compress`); null while it is down. */
   sidecar?: () => SidecarLike | null
+  /** Detached sidecar work for a profile: deletion waits for the returned release, so the home outlives the work. */
+  profileActivity?: (profile: string | null) => () => void
+  /** A profile whose deletion has started takes no new detached work. */
+  profileDeleting?: (profile: string | null) => boolean
   /** TAL-372: the session's background work receipts, for the delegation rows that started them. */
   backgroundReceipts?: (sid: string) => Receipt[]
   store: SessionStore
@@ -219,8 +223,7 @@ export class SessionService {
    * rows (a WebUI conversation continued from the CLI shows the CLI turns). This is the coordinate space `GET
    * /api/session` exposes, so branching and the next model history slice/extend the same list.
    */
-  mergedTranscript(s: Session, local: Message[] = s.messages): Message[] {
-    const stateRows = this.stateDbRows(s)
+  mergedTranscript(s: Session, local: Message[] = s.messages, stateRows: Message[] = this.stateDbRows(s)): Message[] {
     if (!stateRows.length) return local
     return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark })
   }
@@ -230,9 +233,9 @@ export class SessionService {
    * extended append-only with the Agent's state.db rows (a CLI continuation of this session reaches the model), except
    * for a compressed context whose anchor cannot be verified — that stays context-only.
    */
-  modelContext(s: Session): Message[] {
+  modelContext(s: Session, stateRows?: Message[]): Message[] {
     const local: Message[] = s.context_messages.length ? s.context_messages : s.messages.filter((m) => !m._error && !m._partial)
-    return local.some((m) => isContextCompressionMarker(m)) ? local : this.mergedTranscript(s, local)
+    return local.some((m) => isContextCompressionMarker(m)) ? local : this.mergedTranscript(s, local, stateRows ?? this.stateDbRows(s))
   }
 
   /** Python `_lookup_cli_session_metadata`: the sidebar row for a state.db session in the active profile. */
@@ -828,7 +831,7 @@ export class SessionService {
    * finished job is replaced). The stale-runtime refusal comes before a job exists; a running job is joined without it.
    */
   async startCompression(sid: string, focusRaw: unknown): Promise<CompressionJob> {
-    this.compressionTarget(sid)
+    const { s } = this.compressionTarget(sid)
     const focusTopic = str(focusRaw).trim().slice(0, 500) || null
     const running = (): CompressionJob | undefined => { const job = this.compressionJobs.get(sid); return job?.status === 'running' ? job : undefined }
     const existing = running()
@@ -837,9 +840,13 @@ export class SessionService {
     // Another start may have admitted a job while the runtime check awaited.
     const admitted = running()
     if (admitted) return admitted
+    // The detached job (and its finalize) is the profile's activity until it settles; checked and taken in one step.
+    const profile = s.profile ?? null
+    if (this.deps.profileDeleting?.(profile)) throw new HttpFailure(409, `Profile '${str(profile)}' is being deleted.`)
+    const release = this.deps.profileActivity?.(profile)
     const now = this.deps.now()
     const job: CompressionJob = { session_id: sid, focus_topic: focusTopic, status: 'running', started_at: now, updated_at: now, done: Promise.resolve() }
-    job.done = this.compressSession(sid, focusTopic).then(
+    job.done = this.compressSession(sid, focusTopic).finally(() => release?.()).then(
       (result) => { Object.assign(job, { status: 'done', result, updated_at: this.deps.now() }) },
       (error: unknown) => {
         const known = error instanceof HttpFailure
@@ -905,8 +912,12 @@ export class SessionService {
         let live: Session
         try { live = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
         if (streamState(live) !== streamBefore) throw new HttpFailure(409, 'Session stream state changed during compression; please retry.')
-        if (transcriptKey(live, sanitizeMessagesForApi(this.modelContext(live))) !== historyKey) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
+        // One state.db read serves the check, the kept display rows, and the boundary. The clock is read first: rows the
+        // sidecar returns without a timestamp are stamped with it, so a CLI row committed after the read lies past the
+        // watermark and reaches both transcripts on the next read, after the compressed context.
         const now = this.deps.now()
+        const stateRows = this.stateDbRows(live)
+        if (transcriptKey(live, sanitizeMessagesForApi(this.modelContext(live, stateRows))) !== historyKey) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
         const compressed = copyJson(result.messages) as Message[]
         for (const m of compressed) m.timestamp ??= now
         live.context_messages = compressed
@@ -917,7 +928,7 @@ export class SessionService {
         live.pending_user_source = null
         // The compressed history included any state.db-only continuation; the new boundary would hide those rows from
         // the display, so the transcript keeps them before it is applied (and the anchor counts them).
-        const display = this.mergedTranscript(live)
+        const display = this.mergedTranscript(live, live.messages, stateRows)
         if (display.length > live.messages.length) live.messages = copyJson(display)
         const visible = visibleMessagesForAnchor(live.messages)
         live.compression_anchor_visible_idx = visible.length ? visible.length - 1 : null

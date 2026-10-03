@@ -133,6 +133,43 @@ describe('manual session compression', () => {
     } finally { spy.mockRestore() }
   })
 
+  it('commits from one state.db read: a CLI row written after it follows the compressed context', async () => {
+    const sid = await seeded()
+    // Written after the commit's read, so the CLI stamped it later than the commit's clock.
+    const late = { role: 'user', content: 'late CLI row', timestamp: Date.now() / 1000 + 60 }
+    // Reads 1-2 are the admission and worker guards, read 3 is the commit's; the row exists only after that read.
+    let reads = 0
+    const spy = vi.spyOn(s.deps.sessions, 'stateDbRows').mockImplementation(() => (++reads > 3 ? [...structuredClone(ORIGINAL), structuredClone(late)] : structuredClone(ORIGINAL)))
+    try {
+      expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
+      const stored = s.deps.sessionStore.get(sid)
+      // Not absorbed into the transcript the compressed context was built against...
+      expect(stored.messages.map((m) => m.content)).toEqual(['one', 'two', 'three', 'four'])
+      // ...and still reaching the next model request, after the compressed rows.
+      expect(s.deps.sessions.modelContext(stored).map((m) => m.content)).toEqual(['one', 'four', 'late CLI row'])
+    } finally { spy.mockRestore() }
+  })
+
+  it('holds the profile as active until the job and its finalize settle, and refuses a profile being deleted', async () => {
+    const sid = await seeded({ profile: 'work' })
+    const deps = s.deps.sessions.deps
+    const { profileActivity, profileDeleting } = deps
+    const events: string[] = []
+    try {
+      Object.assign(deps, { profileActivity: (profile: string | null) => { events.push(`acquire:${String(profile)}`); return () => { events.push('release') } } })
+      sidecar.respond('chat.compress_finalize', () => { events.push('finalize'); return { finalized: true } })
+      const job = await s.deps.sessions.startCompression(sid, null)
+      expect(events).toEqual(['acquire:work'])
+      await job.done
+      expect(events).toEqual(['acquire:work', 'finalize', 'release'])
+      Object.assign(deps, { profileDeleting: (profile: string | null) => profile === 'work' })
+      await expect(s.deps.sessions.startCompression(await seeded({ profile: 'work' }), null)).rejects.toMatchObject({ status: 409, message: "Profile 'work' is being deleted." })
+      expect(events).toHaveLength(3)
+    } finally {
+      Object.assign(deps, { profileActivity, profileDeleting })
+    }
+  })
+
   it('stops serving a finished job once its session is deleted', async () => {
     const sid = await seeded()
     expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
