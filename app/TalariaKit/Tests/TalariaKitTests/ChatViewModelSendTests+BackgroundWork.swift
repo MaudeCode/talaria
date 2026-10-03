@@ -64,6 +64,17 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(viewModel.pinnedBackgroundTasks.isEmpty)
     }
 
+    func testAWebDowngradedWhileWorkRunsStillGetsTheNextAnswer() async throws {
+        let log = BackgroundLog()
+        log.tasks = #"{"session_id":"session-abc","agent_available":true,"tasks":[{"task_id":"d1","kind":"delegation","status":"running","title":"Fix CI","pinned":true,"dismissible":false,"active":true}]}"#
+        let viewModel = try backgroundViewModel(log)
+        await viewModel.refreshBackgroundTasks()
+        // The Web is downgraded: the tasks route is gone while the card's poll runs.
+        log.tasksRouteMissing = true
+        _ = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "background")), args: "audit tests")
+        try await waitUntil { viewModel.messages.contains { ($0.content ?? "").contains("All tests pass.") } }
+    }
+
     func testTheCardShowsWhatTheServerPinsWithItsResultAndDismissAsksTheServer() async throws {
         let log = BackgroundLog()
         log.tasks = #"{"session_id":"session-abc","agent_available":true,"tasks":[{"task_id":"task-1","kind":"background_command","status":"completed","title":"audit tests","result_available":true,"pinned":true,"dismissible":true},{"task_id":"d-old","kind":"delegation","status":"completed","title":"Old","pinned":false,"dismissible":false}]}"#

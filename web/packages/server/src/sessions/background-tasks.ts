@@ -152,7 +152,8 @@ export function taskView(r: Receipt, opts: { unconfirmed?: boolean } = {}): Back
     child_session_id: r.child_session_id, exit_code: r.exit_code, agents: r.agents,
     // Work nobody can confirm (lost in an Agent or server restart) can be dismissed like a finished `/background` result.
     pinned: status === 'running' || status === 'attention' || (dismissible(r, status) && r.dismissed_at === null),
-    active: LIVE.has(status),
+    // Dismissed work nobody can confirm will not settle on its own; clients stop refreshing for it.
+    active: LIVE.has(status) && !(status === 'unknown' && r.dismissed_at !== null),
     dismissible: dismissible(r, status) && r.dismissed_at === null,
   }
 }
@@ -324,8 +325,11 @@ export class BackgroundActivity {
       const lost = this.deps.store.list(sid).filter((r) => LIVE.has(r.status) && r.status !== 'unknown' && !confirmed(r)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const }))
       const reportedIds = new Set(reported.map((r) => r.task_id))
       this.deps.store.update(sid, [...reported.map((r) => (confirmed(r as Receipt) || !RUNNING_LIKE.has(r.status ?? 'running') ? r : { ...r, status: 'unknown' as const })), ...lost.filter((r) => !reportedIds.has(r.task_id))])
+    } else {
+      // The Agent cannot be asked: a running delegation's record says unknown too, so its transcript row matches the
+      // card; it returns to running once the Agent reports it again.
+      this.deps.store.update(sid, this.deps.store.list(sid).filter((r) => r.kind === 'delegation' && RUNNING_LIKE.has(r.status)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const })))
     }
-    // While the Agent cannot be asked, its running work only shows unknown; nothing is recorded.
     const tasks = this.deps.store.list(sid).map((r) => taskView(r, { unconfirmed: !agent && !confirmed(r) }))
     tasks.sort((a, b) => (b.started_at ?? b.updated_at) - (a.started_at ?? a.updated_at))
     return { tasks, agent_available: agent !== null }

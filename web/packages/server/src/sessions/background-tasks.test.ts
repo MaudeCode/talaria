@@ -67,7 +67,7 @@ describe('background task records (TAL-372)', () => {
     const lost = store.get('s', 'proc_lost')!
     expect(taskView(lost, { unconfirmed: true })).toMatchObject({ status: 'unknown', pinned: true, dismissible: true })
     const dismissed = store.mark('s', 'proc_lost', { dismissed_at: 6 })!
-    expect(taskView(dismissed, { unconfirmed: true })).toMatchObject({ status: 'unknown', pinned: false, dismissible: false })
+    expect(taskView(dismissed, { unconfirmed: true })).toMatchObject({ status: 'unknown', pinned: false, dismissible: false, active: false })
     expect(taskView(dismissed)).toMatchObject({ status: 'running', pinned: true, dismissible: false })
   })
 

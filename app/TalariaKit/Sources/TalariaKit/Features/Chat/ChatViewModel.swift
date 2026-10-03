@@ -4684,9 +4684,11 @@ public final class ChatViewModel {
         await refreshBackgroundTasks()
     }
 
-    /// ponytail: old-server fallback (TAL-372); polls the status route until each tracked task's answer arrives.
+    /// ponytail: old-server fallback (TAL-372); polls the status route until each tracked task's answer arrives. It
+    /// replaces any running poll: a Web downgraded mid-session leaves the tasks poll with nothing to read.
     private func startLegacyBackgroundPolling(parentSessionID: String) {
-        guard backgroundPollTask == nil else { return }
+        backgroundPollTask?.cancel()
+        backgroundPollTask = nil
         let pollingInterval = pollingIntervals.backgroundNanoseconds
         let sleep = pollingIntervals.sleep
         backgroundPollTask = Task { @MainActor [weak self] in
@@ -4718,9 +4720,17 @@ public final class ChatViewModel {
             pollingLoop: while !Task.isCancelled {
                 try? await sleep(pollingInterval)
                 guard !Task.isCancelled, let self else { break pollingLoop }
-                guard let sessionID = self.sessionID,
-                      let response = try? await self.client.backgroundTasks(sessionID: sessionID)
-                else { continue }
+                guard let sessionID = self.sessionID else { continue }
+                let response: BackgroundTasksResponse
+                do {
+                    response = try await self.client.backgroundTasks(sessionID: sessionID)
+                } catch APIError.http(statusCode: 404, body: _) {
+                    // An older Web (TAL-372 fallback): nothing to refresh here.
+                    self.serverHasBackgroundTasks = false
+                    break pollingLoop
+                } catch {
+                    continue
+                }
                 guard !Task.isCancelled, self.sessionID == sessionID else { break pollingLoop }
                 self.backgroundTasks = response.tasks
                 guard self.backgroundTasks.contains(where: { $0.active }) else { break pollingLoop }
