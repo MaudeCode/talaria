@@ -206,11 +206,13 @@ const PHONE_RE = /(?<![A-Za-z0-9])\+[1-9]\d{6,14}(?![A-Za-z0-9])/g
  * A bare token as URL userinfo (`https://TOKEN@github.com`, `ssh://…@`): no `user:` part, at least 8 characters. Round-trip
  * URLs carry tokens in the query, so a bare userinfo credential is never one.
  */
-const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/]{8,})(?=@\S)/gi
+const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/?#]{8,})(?=@\S)/gi
 /** Control and zero-width characters that can split a token body (`ghp_abc\x1bdef`, `sk-abc\u200bdef`). */
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff]/
 const CONTROL_CHARS_RE = new RegExp(CONTROL_CHAR_RE.source, 'g')
 const CRED_TEST_RE = new RegExp(CRED_RE.source)
+/** `CRED_RE` from a given position, without its leading boundary (a split token checks the original one instead). */
+const CRED_STICKY_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, ''), 'y')
 const CRED_WHOLE_RE = new RegExp(`^${CRED_RE.source}$`)
 const CONTROL_SPLIT_SPAN_RE = /^[A-Za-z0-9_.\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff-]*$/
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
@@ -227,16 +229,39 @@ const REDACTED_ENV_VALUE_RE = /(?:\*{3,}|[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,32}\.\.\
  */
 function maskControlSplitTokens(text: string): string {
   const stripped = text.replace(CONTROL_CHARS_RE, '')
-  if (stripped.length === text.length || !CRED_TEST_RE.test(stripped)) return text
+  if (stripped.length === text.length) return text
   // The original index of each kept character.
   const kept: number[] = []
   for (let i = 0; i < text.length; i += 1) if (!CONTROL_CHAR_RE.test(text[i]!)) kept.push(i)
+  // Candidates start at a boundary of the stripped text, or where a stripped control hid the original one (`note\nghp_…`).
+  // The second kind is matched lazily: one inside an earlier candidate's span was decided with it, so each character is
+  // scanned once.
+  const bounded = [...stripped.matchAll(CRED_RE)].map((m): [number, string] => [m.index, m[1]!])
+  const hidden: number[] = []
+  for (let i = 1; i < kept.length; i += 1) if (kept[i]! - kept[i - 1]! > 1 && /[A-Za-z0-9_-]/.test(stripped[i - 1]!)) hidden.push(i)
+  if (!bounded.length && !hidden.length) return text
   let out = ''
   let last = 0
-  for (const m of stripped.matchAll(CRED_RE)) {
-    let token = m[1]!
-    const start = kept[m.index]!
-    let end = kept[m.index + token.length - 1]! + 1
+  let scanned = 0
+  let b = 0
+  let h = 0
+  while (b < bounded.length || h < hidden.length) {
+    let index: number
+    let found: string
+    if (h >= hidden.length || (b < bounded.length && bounded[b]![0] <= hidden[h]!)) [index, found] = bounded[b++]!
+    else {
+      index = hidden[h++]!
+      if (index < scanned) continue
+      CRED_STICKY_RE.lastIndex = index
+      const m = CRED_STICKY_RE.exec(stripped)
+      if (!m) continue
+      found = m[1]!
+    }
+    if (index < scanned) continue
+    scanned = index + found.length
+    let token = found
+    const start = kept[index]!
+    let end = kept[index + token.length - 1]! + 1
     if (/^[ \t]*=/.test(text.slice(end, end + 64))) {
       // The join ran into the next piece's `KEY=`: the credential is what precedes that piece, when it is whole.
       let cut = end - 1

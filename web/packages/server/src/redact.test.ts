@@ -432,7 +432,7 @@ describe('redactSensitive cost', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
     // Unquoted runs, and many credential keys inside one long quoted argument.
     // The Agent's ported families: env names, split tokens, JWT headers, phone numbers and bare URL userinfo.
-    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
@@ -653,5 +653,13 @@ describe('Agent redactor parity', () => {
     expect(redactText(`db_pass='!@#$%^&*' next`, true)).toBe(`db_pass='***' next`)
     expect(redactText('MYSQL_PASS=!@#% next', true)).toBe('MYSQL_PASS=*** next')
     expect(redactText('openai_key=xyzzy\\ plugh1234567890abcd next', true)).toBe('openai_key=*** next')
+  })
+
+  it('masks a split token after a line of text, and leaves an @ in a root URL query or fragment', () => {
+    expect(redactText('note\nghp_abcdef\n1234567890ABCDEF1234567890abcdef', true)).toBe('note\nghp_ab...cdef')
+    expect(redactText('note\u200bghp_abcdef\u200b1234567890ABCDEF1234567890abcdef', true)).toBe('note\u200bghp_ab...cdef')
+    expect(redactText('xghp_abcdef\n1234567890ABCDEF1234567890abcdef', true)).toBe('xghp_abcdef\n1234567890ABCDEF1234567890abcdef')
+    for (const url of ['https://example.com?q=user@example.com', 'https://example.com#contact=someone@example.com'])
+      expect(redactText(url, true)).toBe(url)
   })
 })
