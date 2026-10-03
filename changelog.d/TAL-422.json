@@ -4,7 +4,17 @@
       "category": "Fixed",
       "summary": "Scheduled tasks for other profiles can be created again and run with the selected profile's settings.",
       "highlight": false,
-      "components": ["web"]
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Task context pickers show compatible jobs for the selected execution profile.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
     }
   ]
 }

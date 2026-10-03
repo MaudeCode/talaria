@@ -1,6 +1,6 @@
 /** Cron jobs across profiles through the sidecar `cron.*` namespace (Python `api/routes.py` cron section). */
 import { join } from 'node:path'
-import type { CronRecentCompletion } from '@maudecode/talaria-web-contracts'
+import type { CronRecentCompletion, CronContextSources } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -196,6 +196,35 @@ export class CronService {
     const match = matches[0]!
     if (allRows.filter((row) => row.home === match.home && row.job.id === match.job.id).length !== 1) throw new HttpFailure(409, 'Ambiguous cron job reference')
     return match
+  }
+
+  async contextSources(home: string, input: { profile?: string | undefined; editing_job_id?: string | undefined; exclude_job_id?: string | undefined; selected_refs?: string[] | undefined }): Promise<CronContextSources> {
+    const active = await this.profileForHome(home)
+    const editing = input.editing_job_id ? await this.resolveStore(home, input.editing_job_id) : null
+    const profile = await this.normalizeProfile(input.profile)
+    if (profile && !(await this.profileNames(active)).some((name) => this.deps.profilesMatch(name, profile))) throw new HttpFailure(403, 'Execution profile is not accessible')
+    const executionHome = profile ? this.deps.profileHome(profile) : editing?.home ?? home
+    const rows = await this.storedJobs(active)
+    const inStore = rows.filter((row) => row.home === executionHome)
+    const excludeId = editing ? str(editing.job.id) : input.exclude_job_id
+    const counts = new Map<string, number>()
+    for (const row of inStore) counts.set(str(row.job.id), (counts.get(str(row.job.id)) ?? 0) + 1)
+    const sources: CronContextSources['sources'] = []
+    const included = new Set<string>()
+    for (const row of inStore) {
+      const id = str(row.job.id).trim()
+      if (!row.managed || !id || id === excludeId || counts.get(id) !== 1) continue
+      sources.push({ job_id: id, label: str(row.job.name).trim() || id, selectable: true })
+      included.add(id)
+    }
+    for (const raw of input.selected_refs ?? []) {
+      const id = raw.trim()
+      if (!id || id.toLowerCase() === 'self' || included.has(id)) continue
+      const owned = rows.find((row) => row.managed && row.job.id === id)
+      sources.push({ job_id: id, label: str(owned?.job.name).trim() || id, selectable: false })
+      included.add(id)
+    }
+    return { profile: profile ?? editing?.profile ?? active, sources }
   }
 
   /** Python `/api/crons`: the active profile's rows plus foreign rows (hidden unless `all_profiles`). */

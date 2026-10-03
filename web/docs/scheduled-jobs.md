@@ -96,10 +96,13 @@ incremental digests, where repeating yesterday's findings is the failure mode.
 Injects the most recent output of the selected jobs as context on every run.
 This chains jobs: job A collects, job B processes what A found.
 
-Context jobs must belong to the execution profile's store. The server refuses
+Context jobs must belong to the execution profile's store. The editor requests
+eligible choices from the server for the selected profile, including the
+existing physical store when editing with no profile override. The server refuses
 references to another store, including when jobs managed by the same creating
 profile run under different execution profiles. Jobs shown read-only with
-**Show all profiles** are not offered in the editor.
+**Show all profiles** are not offered in the editor. Saved or draft references
+that are no longer eligible remain removable, but cannot be selected again.
 
 For a job's *own* previous output, use **Continuity** rather than selecting
 itself.

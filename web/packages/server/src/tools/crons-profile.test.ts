@@ -45,6 +45,20 @@ function setup() {
 }
 
 describe('cross-profile cron ownership', () => {
+  it('computes context choices in the execution store and keeps invalid selections remove-only', async () => {
+    const { service, homes, stores } = setup()
+    const base = { toast_notifications: true, monitor: '', continuity: false }
+    stores.get(homes.default)?.push({ ...base, id: 'local-source', name: 'Local source', profile: null })
+    stores.get(homes.research)?.push({ ...base, id: 'editor', profile: 'research', owner_profile: 'default' }, { ...base, id: 'research-source', name: 'Research source', profile: 'research', owner_profile: 'default' })
+    expect(await service.contextSources(homes.default, { editing_job_id: 'editor', selected_refs: ['local-source'] })).toEqual({ profile: 'research', sources: [
+      { job_id: 'research-source', label: 'Research source', selectable: true },
+      { job_id: 'local-source', label: 'Local source', selectable: false },
+    ] })
+    expect(await service.contextSources(homes.default, { profile: 'research', exclude_job_id: 'editor' })).toEqual({ profile: 'research', sources: [{ job_id: 'research-source', label: 'Research source', selectable: true }] })
+    expect(await service.contextSources(homes.default, {})).toEqual({ profile: 'default', sources: [{ job_id: 'local-source', label: 'Local source', selectable: true }] })
+    await expect(service.contextSources(homes.default, { profile: 'hidden' })).rejects.toMatchObject({ status: 403 })
+  })
+
   it('stores a new job in the execution profile and routes creator lifecycle calls there', async () => {
     const { service, sidecar, homes, stores } = setup()
     const created = await service.create(homes.default, { schedule: 'every 1h', prompt: 'x', profile: 'research', owner_profile: 'hidden' })

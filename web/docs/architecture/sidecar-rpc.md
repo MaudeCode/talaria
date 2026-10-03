@@ -164,3 +164,10 @@ per-session agent cache lives in the sidecar.
 frames bumps it. The sidecar refuses to start on a mismatch. Both the fake
 sidecar and the real one are tested against the same fixtures, so a drift
 between them is a failing test, not a runtime surprise.
+
+The read-only HTTP `POST /api/crons/context-sources` projects eligible context
+choices from accessible, managed jobs in the editor's execution store. The server
+excludes the edited/source job and marks ineligible selected references
+`selectable: false` so the client can offer removal without offering them again.
+The Web form renders these explicit choices and does not filter its global job
+list to infer eligibility. This is a server projection, with no new sidecar RPC.

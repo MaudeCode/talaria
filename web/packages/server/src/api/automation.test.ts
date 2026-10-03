@@ -237,6 +237,25 @@ describe('crons, kanban, extensions, terminal', () => {
     for (const bad of ['Jan 2 2026', '2026', '2026-02-30', '2026-13-01', '2026-01-02T24:00', 'garbage', '', 0, null, true]) expect(completedAtSeconds(bad), String(bad)).toBeNull()
   })
 
+  it('context-source HTTP responses are computed for the selected execution store', async () => {
+    const fixture = new FakeSidecar()
+    fixture.respond('profiles.list', ({ base_home }) => ({ profiles: [
+      { name: 'default', path: base_home, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 },
+      { name: 'research', path: join(base_home, 'profiles', 'research'), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 },
+    ] }))
+    const server = await bootTestServer({ sidecar: fixture })
+    fixture.respond('cron.list', ({ profile_home }) => ({ jobs: (profile_home === server.state ? [
+      { id: 'local', name: 'Local' },
+    ] : [
+      { id: 'editor', name: 'Editor', owner_profile: 'default' }, { id: 'source', name: 'Source', owner_profile: 'default' },
+    ]).map((job) => ({ ...job, profile: null, toast_notifications: true, monitor: '', continuity: false })) }))
+    try {
+      const response = await post(server, '/api/crons/context-sources', { editing_job_id: 'editor', exclude_job_id: 'editor', selected_refs: ['local'] })
+      expect(response.status).toBe(200)
+      expect(await json(response)).toEqual({ profile: 'research', sources: [{ job_id: 'source', label: 'Source', selectable: true }, { job_id: 'local', label: 'Local', selectable: false }] })
+    } finally { await server.close() }
+  })
+
   it('crons/recent reads the request profile\'s cron store and state.db', async () => {
     const defaultHome = s.deps.profileHome('default')
     const workHome = join(defaultHome, 'profiles', 'work')

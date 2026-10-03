@@ -8,7 +8,7 @@ import type { CronJob } from '../../contracts'
 vi.mock(import('../../api/endpoints'), async (importOriginal) => ({
   ...(await importOriginal()),
   fetchCrons: vi.fn(), fetchCronStatus: vi.fn(), fetchCronHistory: vi.fn(), fetchCronRun: vi.fn(), cronAction: vi.fn(),
-  fetchCronDeliveryOptions: vi.fn(), fetchSkills: vi.fn(), fetchProfiles: vi.fn(), fetchModels: vi.fn(),
+  fetchCronContextSources: vi.fn(), fetchCronDeliveryOptions: vi.fn(), fetchSkills: vi.fn(), fetchProfiles: vi.fn(), fetchModels: vi.fn(),
 }))
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -59,6 +59,7 @@ describe('TasksPage', () => {
   beforeEach(() => {
     // jsdom has no matchMedia; the empty state asks whether the sidebar is a drawer.
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
+    vi.mocked(api.fetchCronContextSources).mockImplementation((input) => Promise.resolve({ profile: input.profile || 'work', sources: [{ job_id: feed.id!, label: 'Feed', selectable: true }] }))
     vi.mocked(api.fetchCronStatus).mockResolvedValue({ running: {} })
     vi.mocked(api.fetchCronHistory).mockResolvedValue({ job_id: 'x', runs, total: 73, offset: 0 })
     vi.mocked(api.fetchCronRun).mockReset().mockResolvedValue({ content: '# Not markdown\n| literal |', snippet: 'literal', usage: { input_tokens: 1000, output_tokens: 50 } })
@@ -67,6 +68,27 @@ describe('TasksPage', () => {
     vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'inbox' }] })
     vi.mocked(api.fetchProfiles).mockResolvedValue({ profiles: [{ name: 'work' }, { name: 'personal' }], active: 'work' })
     vi.mocked(api.fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-5.6-sol' }, { id: '@openai-codex:gpt-6-astra' }] }] })
+  })
+
+  it('renders only server-provided context choices for the execution store', async () => {
+    const local: CronJob = { ...feed, id: 'local-source', name: 'Local source', profile: 'personal', read_only: false }
+    const detail = await openJob('Digest', [full, feed, local])
+    await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
+    const form = await screen.findByRole('form', { name: /edit job/i })
+    expect(await within(form).findByRole('checkbox', { name: 'Feed' })).toBeVisible()
+    expect(within(form).queryByRole('checkbox', { name: 'Local source' })).not.toBeInTheDocument()
+  })
+
+  it('lets an unavailable selected context source be removed without offering it again', async () => {
+    vi.mocked(api.fetchCronContextSources).mockImplementation((input) => Promise.resolve({ profile: 'work', sources: (input.selected_refs ?? []).includes(feed.id!) ? [{ job_id: feed.id!, label: 'Feed', selectable: false }] : [] }))
+    const detail = await openJob('Digest')
+    await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
+    const form = await screen.findByRole('form', { name: /edit job/i })
+    const choice = await within(form).findByRole('checkbox', { name: /Feed/ })
+    expect(choice).toBeChecked()
+    expect(choice).toBeEnabled()
+    await userEvent.click(choice)
+    await waitFor(() => expect(within(form).queryByRole('checkbox', { name: /Feed/ })).not.toBeInTheDocument())
   })
 
   it('shows the actions, including Edit, as soon as a writable task is selected', async () => {
