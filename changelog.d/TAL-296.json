@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Scheduled tasks now show the same status and the same Resume or Pause action on iPhone and on the web, so a paused task always offers Resume.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Added",
+      "summary": "A scheduled task whose next run could not be calculated now shows a Schedule Error status on iPhone.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

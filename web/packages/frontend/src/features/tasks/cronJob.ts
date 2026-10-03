@@ -1,12 +1,8 @@
-/**
- * Pure helpers over the persisted cron job shape. The status rules are the
- * legacy Tasks panel's, ported verbatim so a job classifies the same way the
- * scheduler's own state machine reads it.
- */
+/** Pure display helpers over the cron job view. The server derives each job's status (`derived_state`, TAL-296). */
 import type { CronJob, CronRunUsageSchema, CronStatusSchema } from '../../contracts'
 import type { z } from 'zod'
 
-export type CronState = 'running' | 'needs_attention' | 'schedule_error' | 'paused' | 'off' | 'error' | 'active'
+export type CronState = 'running' | NonNullable<CronJob['derived_state']> | 'unknown'
 
 export function jobId(job: CronJob): string {
   return job.id ?? job.job_id ?? ''
@@ -17,17 +13,6 @@ export function scheduleText(job: CronJob): string {
   return job.schedule_display ?? job.schedule?.display ?? job.schedule?.expr ?? ''
 }
 
-function isRecurring(job: CronJob): boolean {
-  if (typeof job.schedule === 'object' && job.schedule) return job.schedule.kind === 'cron' || job.schedule.kind === 'interval'
-  // Legacy string schedules carry no kind; an unlimited repeat record marks the job recurring (a one-shot has times: 1).
-  return typeof job.schedule === 'string' && hasUnlimitedRepeat(job)
-}
-
-/** `repeat.times == null` means "forever" in the store; a missing record is not unlimited. */
-function hasUnlimitedRepeat(job: CronJob): boolean {
-  return !!job.repeat && typeof job.repeat === 'object' && job.repeat.times == null
-}
-
 /** Legacy `next_run` / `last_run` (epoch or ISO) fall back for the `*_at` timestamps of newer agents. */
 export function nextRunAt(job: CronJob): string | number | null {
   return job.next_run_at ?? (typeof job.next_run === 'number' || typeof job.next_run === 'string' ? job.next_run : null)
@@ -36,21 +21,10 @@ export function lastRunAt(job: CronJob): string | number | null {
   return job.last_run_at ?? (typeof job.last_run === 'number' || typeof job.last_run === 'string' ? job.last_run : null)
 }
 
+/** A live run overlays the server's state; a server that omits it shows a neutral status. */
 export function cronState(job: CronJob, running = false): CronState {
-  // Older agents report `paused` / `status` / `running` on the job instead of `state` / `last_status` / the status map; all stay supported.
-  const errored = job.state === 'error' || job.last_status === 'error' || job.status === 'error'
   if (running || job.running) return 'running'
-  if (isRecurring(job) && hasUnlimitedRepeat(job) && job.enabled === false && job.state === 'completed' && !nextRunAt(job)) return 'needs_attention'
-  // A paused job keeps the last run's error and has no next run; that is not a schedule failure.
-  if (job.state === 'paused' || job.paused) return 'paused'
-  if (isRecurring(job) && !nextRunAt(job) && errored) return 'schedule_error'
-  if (job.enabled === false) return 'off'
-  if (errored) return 'error'
-  return 'active'
-}
-
-export function needsAttention(state: CronState): boolean {
-  return state === 'needs_attention' || state === 'schedule_error'
+  return job.derived_state ?? 'unknown'
 }
 
 /** Schedule/status/error fields only: never the prompt, origin, or delivery targets. */

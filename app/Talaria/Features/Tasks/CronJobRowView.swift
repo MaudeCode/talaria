@@ -94,8 +94,10 @@ struct CronJobRowView: View {
             return .orange
         case .error:
             return .red
-        case .needsAttention:
+        case .needsAttention, .scheduleError:
             return .yellow
+        case .unknown:
+            return .gray
         }
     }
 

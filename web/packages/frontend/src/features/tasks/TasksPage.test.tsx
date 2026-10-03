@@ -22,9 +22,10 @@ const full: CronJob = {
   schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', repeat: { times: null, completed: 4 },
   enabled: true, state: 'scheduled', next_run_at: '2026-09-18T09:00:00+02:00', last_run_at: '2026-09-17T09:00:00+02:00', last_status: 'ok',
   last_error: null, last_delivery_error: null, deliver: 'telegram', workdir: '/srv/digest', reasoning_effort: 'high', profile: 'work', toast_notifications: false,
+  derived_state: 'active', needs_attention: false, resumable: false,
 }
 const feed: CronJob = { ...full, id: 'feed0000feed', name: 'Feed', context_from: [], continuity: false, monitor: '', skills: [], reasoning_effort: null, model: null, provider: null, workdir: null }
-const attention: CronJob = { ...feed, id: 'a77e0000a77e', name: 'Stuck', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401' }
+const attention: CronJob = { ...feed, id: 'a77e0000a77e', name: 'Stuck', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', derived_state: 'needs_attention', needs_attention: true, resumable: true }
 const foreign: CronJob = { ...feed, id: 'f0e1f0e1f0e1', name: 'Other profile job', read_only: true, owner_profile: 'personal', profile: 'personal' }
 
 /** The route without the app shell: selection is local state instead of `?job=`. */
@@ -237,6 +238,24 @@ describe('TasksPage', () => {
     const copied = JSON.parse(writeText.mock.calls[0]![0]) as Record<string, unknown>
     expect(copied).toMatchObject({ id: 'a77e0000a77e', state: 'completed', enabled: false, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', schedule_display: '0 9 * * *' })
     expect(copied).not.toHaveProperty('prompt')
+  })
+
+  it('renders the server state and action: a paused job with a stale error offers Resume', async () => {
+    const paused: CronJob = { ...feed, id: 'pa05ed00pa05', name: 'Paused', enabled: false, state: 'paused', next_run_at: null, last_status: 'error', last_error: 'boom', derived_state: 'paused', needs_attention: false, resumable: true }
+    const detail = await openJob('Paused', [paused, feed])
+    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'paused')
+    expect(detail.getByRole('button', { name: /^resume/i })).toBeVisible()
+    expect(detail.queryByRole('button', { name: /^pause/i })).toBeNull()
+    expect(detail.queryByText(/needs attention/i)).toBeNull()
+  })
+
+  it('shows a neutral status and no Pause/Resume when the server omits the derived fields', async () => {
+    const bare: CronJob = { ...feed, enabled: false, state: 'paused' }
+    delete bare.derived_state; delete bare.needs_attention; delete bare.resumable
+    const detail = await openJob('Feed', [bare])
+    expect(screen.getByTestId('cron-detail')).toHaveAttribute('data-state', 'unknown')
+    expect(detail.getByRole('button', { name: /run now/i })).toBeVisible()
+    expect(detail.queryByRole('button', { name: /^(pause|resume)/i })).toBeNull()
   })
 
   it('keeps read-only cross-profile tasks non-mutating and skips their output fetches', async () => {

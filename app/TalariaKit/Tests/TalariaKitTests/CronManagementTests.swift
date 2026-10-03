@@ -18,6 +18,7 @@ final class CronManagementModelTests: XCTestCase {
                 "schedule": "0 9 * * *",
                 "enabled": "true",
                 "state": "scheduled",
+                "derived_state": "active",
                 "model": "@openai:gpt-5.5",
                 "profile": "work",
                 "toast_notifications": "yes"
@@ -34,6 +35,48 @@ final class CronManagementModelTests: XCTestCase {
         XCTAssertEqual(job.model, "@openai:gpt-5.5")
         XCTAssertEqual(job.profile, "work")
         XCTAssertEqual(job.toastNotifications, true)
+    }
+
+    func testPausedRecurringJobWithStaleErrorRendersServerPausedState() throws {
+        let job = try JSONDecoder.cronTestDecoder.decode(CronJob.self, from: Data("""
+        {
+          "id": "paused-stale-error",
+          "schedule": {"kind": "cron", "expr": "0 9 * * *"},
+          "repeat": {"times": null, "completed": 4},
+          "enabled": false,
+          "state": "paused",
+          "next_run_at": null,
+          "last_status": "error",
+          "derived_state": "paused",
+          "needs_attention": false,
+          "resumable": true
+        }
+        """.utf8))
+
+        XCTAssertEqual(job.status, .paused)
+    }
+
+    func testCronJobRendersServerDerivedStateAndResumeAction() throws {
+        func decode(_ fields: String) throws -> CronJob {
+            try JSONDecoder.cronTestDecoder.decode(CronJob.self, from: Data(#"{"id": "job", \#(fields)}"#.utf8))
+        }
+
+        let paused = try decode(#""derived_state": "paused", "needs_attention": false, "resumable": true"#)
+        XCTAssertEqual(paused.resumable, true)
+
+        let scheduleError = try decode(#""derived_state": "schedule_error", "needs_attention": true, "resumable": true"#)
+        XCTAssertEqual(scheduleError.status, .scheduleError)
+        XCTAssertNotEqual(scheduleError.status.label, CronJobStatus.needsAttention.label)
+        XCTAssertEqual(scheduleError.needsAttention, true)
+        XCTAssertEqual(scheduleError.resumable, true)
+
+        let active = try decode(#""derived_state": "active", "needs_attention": false, "resumable": false"#)
+        XCTAssertEqual(active.status, .active)
+        XCTAssertEqual(active.resumable, false)
+
+        let oldServer = try decode(#""state": "paused", "enabled": false"#)
+        XCTAssertEqual(oldServer.status, .unknown)
+        XCTAssertNil(oldServer.resumable)
     }
 
     func testCronJobEditorDraftNormalizesFieldsAndSkills() {
@@ -552,7 +595,9 @@ final class CronManagementViewModelTests: APIClientTestCase {
                 "prompt": "Run it",
                 "schedule": {"kind": "cron", "expr": "0 7 * * *"},
                 "enabled": true,
-                "state": "paused"
+                "state": "paused",
+                "derived_state": "paused",
+                "resumable": true
               }
             }
             """, for: request)
@@ -1115,6 +1160,14 @@ final class CronManagementViewModelTests: APIClientTestCase {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(CronJob.self, from: Data(json.utf8))
+    }
+}
+
+private extension JSONDecoder {
+    static var cronTestDecoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return decoder
     }
 }
 

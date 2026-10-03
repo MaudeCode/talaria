@@ -99,12 +99,14 @@ struct TaskDetailView: View {
                     }
                     .disabled(isActionDisabled)
 
-                    Button {
-                        Task { await togglePauseResume() }
-                    } label: {
-                        Label(pauseResumeTitle, systemImage: pauseResumeSystemImage)
+                    if viewModel.job.resumable != nil {
+                        Button {
+                            Task { await togglePauseResume() }
+                        } label: {
+                            Label(pauseResumeTitle, systemImage: pauseResumeSystemImage)
+                        }
+                        .disabled(isActionDisabled)
                     }
-                    .disabled(isActionDisabled)
 
                     Button {
                         viewModel.clearActionError()
@@ -315,8 +317,10 @@ struct TaskDetailView: View {
             return .orange
         case .error:
             return .red
-        case .needsAttention:
+        case .needsAttention, .scheduleError:
             return .yellow
+        case .unknown:
+            return .gray
         }
     }
 
@@ -333,7 +337,7 @@ struct TaskDetailView: View {
     }
 
     private var shouldResume: Bool {
-        viewModel.job.status == .paused || viewModel.job.status == .off
+        viewModel.job.resumable == true
     }
 
     private func elapsedText(_ elapsed: Double) -> String {

@@ -33216,6 +33216,23 @@
                           },
                           "running": {
                             "type": "boolean"
+                          },
+                          "derived_state": {
+                            "enum": [
+                              "needs_attention",
+                              "schedule_error",
+                              "paused",
+                              "off",
+                              "error",
+                              "active"
+                            ],
+                            "type": "string"
+                          },
+                          "needs_attention": {
+                            "type": "boolean"
+                          },
+                          "resumable": {
+                            "type": "boolean"
                           }
                         },
                         "additionalProperties": {}
@@ -33898,6 +33915,23 @@
                         },
                         "running": {
                           "type": "boolean"
+                        },
+                        "derived_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active"
+                          ],
+                          "type": "string"
+                        },
+                        "needs_attention": {
+                          "type": "boolean"
+                        },
+                        "resumable": {
+                          "type": "boolean"
                         }
                       },
                       "additionalProperties": {}
@@ -34465,6 +34499,23 @@
                         },
                         "running": {
                           "type": "boolean"
+                        },
+                        "derived_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active"
+                          ],
+                          "type": "string"
+                        },
+                        "needs_attention": {
+                          "type": "boolean"
+                        },
+                        "resumable": {
+                          "type": "boolean"
                         }
                       },
                       "additionalProperties": {}
@@ -34835,6 +34886,23 @@
                           "type": "boolean"
                         },
                         "running": {
+                          "type": "boolean"
+                        },
+                        "derived_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active"
+                          ],
+                          "type": "string"
+                        },
+                        "needs_attention": {
+                          "type": "boolean"
+                        },
+                        "resumable": {
                           "type": "boolean"
                         }
                       },
@@ -35207,6 +35275,23 @@
                           "type": "boolean"
                         },
                         "running": {
+                          "type": "boolean"
+                        },
+                        "derived_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active"
+                          ],
+                          "type": "string"
+                        },
+                        "needs_attention": {
+                          "type": "boolean"
+                        },
+                        "resumable": {
                           "type": "boolean"
                         }
                       },
@@ -35590,6 +35675,23 @@
                         },
                         "running": {
                           "type": "boolean"
+                        },
+                        "derived_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active"
+                          ],
+                          "type": "string"
+                        },
+                        "needs_attention": {
+                          "type": "boolean"
+                        },
+                        "resumable": {
+                          "type": "boolean"
                         }
                       },
                       "additionalProperties": {}
@@ -35961,6 +36063,23 @@
                           "type": "boolean"
                         },
                         "running": {
+                          "type": "boolean"
+                        },
+                        "derived_state": {
+                          "enum": [
+                            "needs_attention",
+                            "schedule_error",
+                            "paused",
+                            "off",
+                            "error",
+                            "active"
+                          ],
+                          "type": "string"
+                        },
+                        "needs_attention": {
+                          "type": "boolean"
+                        },
+                        "resumable": {
                           "type": "boolean"
                         }
                       },
