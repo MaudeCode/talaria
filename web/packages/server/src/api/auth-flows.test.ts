@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { cborDecode } from '../auth/passkeys.js'
-import { canonicalJson, safeNextPath } from '../auth/oidc.js'
+import { canonicalJson, OidcService, safeNextPath } from '../auth/oidc.js'
 import { validatedRequestHost } from './auth-raw.js'
 import { SidecarClient } from '../sidecar/client.js'
 
@@ -490,6 +490,20 @@ describe('OIDC enablement', () => {
       expect(start.status).toBe(302)
       providerCode(start.headers.get('location') ?? '')
     } finally { await s.close() }
+  })
+
+  it('concurrent cold probes share one operator config read', async () => {
+    let reads = 0
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((r) => { release = r })
+    const oidc = new OidcService({
+      env: OIDC_ENV, operatorConfig: async () => { reads += 1; await gate; return {} }, profileHome: () => '', fetch: () => fetch,
+      pinned: () => { throw new Error('unused') }, now: () => Date.now() / 1000, log: () => undefined,
+    })
+    const probes = Promise.all(Array.from({ length: 5 }, () => oidc.enabled()))
+    release()
+    expect(await probes).toEqual([true, true, true, true, true])
+    expect(reads).toBe(1)
   })
 
   it('password-only auth keeps the OIDC flags false', async () => {

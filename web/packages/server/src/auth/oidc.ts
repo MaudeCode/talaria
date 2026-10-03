@@ -135,6 +135,7 @@ export class OidcService {
   private readonly jwks = new Map<string, { until: number; value: Dict }>()
   private lastConfig: OidcConfig | null = null
   private lastConfigAt = 0
+  private inflight: Promise<OidcConfig> | null = null
   private warnedOwnerPolicy = false
 
   constructor(private readonly deps: OidcDeps) {}
@@ -152,9 +153,14 @@ export class OidcService {
     return this.enabledSync()
   }
 
-  /** Python `_resolve_oidc_config`, cached for 5 s. */
-  async resolve(): Promise<OidcConfig> {
-    if (this.lastConfig && this.deps.now() - this.lastConfigAt < 5) return this.lastConfig
+  /** Python `_resolve_oidc_config`, cached for 5 s; concurrent misses share one operator config read. */
+  resolve(): Promise<OidcConfig> {
+    if (this.lastConfig && this.deps.now() - this.lastConfigAt < 5) return Promise.resolve(this.lastConfig)
+    this.inflight ??= this.load().finally(() => { this.inflight = null })
+    return this.inflight
+  }
+
+  private async load(): Promise<OidcConfig> {
     const env = this.deps.env
     let raw: Dict = {}
     let readFailed = false
