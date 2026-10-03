@@ -7,7 +7,9 @@ const opened: { streamId: string; replay: { afterSeq: number; afterEventId: stri
 
 vi.mock('../api/endpoints', () => ({
   fetchStreamStatus: vi.fn(() => Promise.resolve({ active: true, replay_available: true })),
+  ackBackgroundTask: vi.fn(() => Promise.resolve({})),
 }))
+vi.mock('../features/toast/toast', () => ({ showToast: vi.fn() }))
 vi.mock('../api/sse', () => ({
   SSE_CLOSED: 2,
   openChatStream: (streamId: string, replay: { afterSeq: number; afterEventId: string } | null, cb: { onEvent: (event: ChatEvent, lastEventId: string) => void }) => {
@@ -21,6 +23,9 @@ const { onReturnToComposer, rememberOwnSteer } = await import('../features/compo
 const withdrawn = (steer_id: string | null, reason: string, text: string) => parseChatEvent('steer_withdrawn', JSON.stringify({ steer_id, reason, text }))!
 const { getStreamState, resetStreamStoreForTests } = await import('./store')
 const { liveText } = await import('./reducer')
+
+const api = await import('../api/endpoints')
+const { showToast } = await import('../features/toast/toast')
 
 const SID = 'sess-1'
 const token = (text: string): ChatEvent => parseChatEvent('token', JSON.stringify({ text }))!
@@ -92,5 +97,17 @@ describe('server pending steers on attach and Stop (TAL-425)', () => {
     const stop = onReturnToComposer(SID, (text) => { returned.push(text) })
     expect(returned).toEqual(['kept text'])
     stop()
+  })
+})
+
+describe('finished background work (TAL-372)', () => {
+  beforeEach(() => { opened.length = 0; readyState = 1; resetStreamStoreForTests(); vi.mocked(showToast).mockClear() })
+  afterEach(() => { resetConnectionsForTests() })
+
+  it('is the server\'s record in the background card, never a toast or a per-tab acknowledgement', async () => {
+    await attachToStream(SID, 'run-a', null)
+    opened[0]!.onEvent(parseChatEvent('bg_task_complete', JSON.stringify({ session_id: SID, task_id: 'proc_1', summary: 'Background process proc_1 completed (exit_code=2).' }))!, '')
+    expect(showToast).not.toHaveBeenCalled()
+    expect((api as Record<string, unknown>).ackBackgroundTask).not.toHaveBeenCalled()
   })
 })

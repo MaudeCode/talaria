@@ -8,6 +8,6 @@ public struct ChatPollingIntervals {
     public static let standard = ChatPollingIntervals(
         approvalNanoseconds: 1_500_000_000,
         clarificationNanoseconds: 1_500_000_000,
-        backgroundNanoseconds: 3_000_000_000
+        backgroundNanoseconds: 15_000_000_000
     )
 }

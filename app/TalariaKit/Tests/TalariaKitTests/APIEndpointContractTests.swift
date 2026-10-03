@@ -122,11 +122,18 @@ final class ContractReadinessTests: APIClientTestCase {
             .init(name: "btw", endpoint: .btw, path: "/api/btw"),
             .init(name: "background", endpoint: .background, path: "/api/background"),
             .init(
-                name: "background status",
-                endpoint: .backgroundStatus(sessionID: "session-123"),
-                path: "/api/background/status",
+                name: "background tasks",
+                endpoint: .backgroundTasks(sessionID: "session-123"),
+                path: "/api/background/tasks",
                 query: ["session_id": "session-123"]
             ),
+            .init(
+                name: "background result",
+                endpoint: .backgroundResult(sessionID: "session-123", taskID: "task-1"),
+                path: "/api/background/result",
+                query: ["session_id": "session-123", "task_id": "task-1"]
+            ),
+            .init(name: "background dismiss", endpoint: .backgroundDismiss, path: "/api/background/dismiss"),
             .init(name: "workspaces", endpoint: .workspaces, path: "/api/workspaces"),
             .init(
                 name: "workspace suggestions",

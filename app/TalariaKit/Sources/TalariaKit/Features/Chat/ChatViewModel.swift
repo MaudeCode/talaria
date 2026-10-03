@@ -382,7 +382,10 @@ public final class ChatViewModel {
     private var activeBtwMessageID: String?
     private var activeBtwQuestion: String?
     private var activeBtwAnswer = ""
-    private var backgroundPromptsByTaskID: [String: String] = [:]
+    /// TAL-372: the session's background work, as the server records it for every client.
+    public private(set) var backgroundTasks: [BackgroundWorkTask] = []
+    /// What the card above the composer shows: the records the server pins.
+    public var pinnedBackgroundTasks: [BackgroundWorkTask] { backgroundTasks.filter(\.pinned) }
     @ObservationIgnored private var backgroundPollTask: Task<Void, Never>?
     private var isRefreshingCompletedResponseTitle = false
     private var latestServerLoadHadAssistantResponseAfterLatestUser = false
@@ -2967,7 +2970,8 @@ public final class ChatViewModel {
     private func statusMessageFromSlashCommand() -> String {
         let running = activeStreamID == nil ? String(localized: "No") : String(localized: "Yes")
         let queued = queuedSlashMessages.count
-        let backgroundTasks = backgroundPromptsByTaskID.count
+        // Pinned work that cannot be dismissed is work that is still running.
+        let backgroundTasks = backgroundTasks.filter { $0.pinned && !$0.dismissible }.count
         let profile = selectedProfileName ?? currentProfile ?? "default"
         let workspace = currentWorkspace ?? String(localized: "Unknown")
         let model = currentModel ?? String(localized: "Unknown")
@@ -3064,8 +3068,8 @@ public final class ChatViewModel {
                 return .unsupported(friendlyMessage: String(localized: "The server did not return a background task."))
             }
 
-            backgroundPromptsByTaskID[taskID] = prompt
-            startBackgroundPollingIfNeeded(parentSessionID: sessionID)
+            _ = taskID
+            await refreshBackgroundTasks()
             return .executed(message: String(localized: "Background task started. I'll add the result here when it completes."))
         } catch {
             lastError = error
@@ -4433,6 +4437,8 @@ public final class ChatViewModel {
     public func handleSessionsChange(_ change: SessionsChange, modelContext: ModelContext? = nil) async {
         guard let sessionID, SessionsChangeTrigger.session(sessionID).matches(change) else { return }
         await syncWithServer(modelContext: modelContext)
+        // TAL-372: a background task that changed announces it the same way.
+        await refreshBackgroundTasks()
     }
 
     func refreshTranscriptIfActiveStreamCompleted(
@@ -4630,61 +4636,64 @@ public final class ChatViewModel {
         backgroundPollTask?.cancel()
         backgroundPollTask = nil
         if clearTrackedPrompts {
-            backgroundPromptsByTaskID.removeAll()
+            backgroundTasks = []
         }
     }
 
-    private func startBackgroundPollingIfNeeded(parentSessionID: String) {
+    /// TAL-372: reload the session's background records. A failed read keeps what is shown; reading consumes nothing.
+    public func refreshBackgroundTasks() async {
+        guard let sessionID, !isViewingCachedData else { return }
+        do {
+            let response = try await client.backgroundTasks(sessionID: sessionID)
+            guard self.sessionID == sessionID else { return }
+            backgroundTasks = response.tasks
+        } catch {
+            return
+        }
+        if backgroundTasks.contains(where: { $0.pinned && !$0.dismissible }) {
+            startBackgroundPollingIfNeeded()
+        }
+    }
+
+    /// The full result of a finished task, from the server.
+    public func backgroundResult(taskID: String) async -> String? {
+        guard let sessionID else { return nil }
+        return try? await client.backgroundResult(sessionID: sessionID, taskID: taskID).text
+    }
+
+    /// Dismissing is shared read state: the task leaves the card on every device and stays in the history.
+    public func dismissBackgroundTask(taskID: String) async {
+        guard let sessionID else { return }
+        do {
+            _ = try await client.dismissBackgroundTask(sessionID: sessionID, taskID: taskID)
+        } catch {
+            lastError = error
+            return
+        }
+        await refreshBackgroundTasks()
+    }
+
+    /// While work runs, the card refreshes quietly; it stops once nothing is running.
+    private func startBackgroundPollingIfNeeded() {
         guard backgroundPollTask == nil else { return }
 
         let pollingInterval = pollingIntervals.backgroundNanoseconds
         let sleep = pollingIntervals.sleep
         backgroundPollTask = Task { @MainActor [weak self] in
             pollingLoop: while !Task.isCancelled {
-                do {
-                    guard let self,
-                          !self.backgroundPromptsByTaskID.isEmpty
-                    else { break pollingLoop }
-
-                    do {
-                        let response = try await self.client.backgroundStatus(sessionID: parentSessionID)
-                        self.handleBackgroundResults(response.results ?? [])
-                    } catch {
-                        self.lastError = error
-                    }
-
-                    guard !Task.isCancelled, !self.backgroundPromptsByTaskID.isEmpty else {
-                        break pollingLoop
-                    }
-                }
-
                 try? await sleep(pollingInterval)
+                guard !Task.isCancelled, let self else { break pollingLoop }
+                guard let sessionID = self.sessionID,
+                      let response = try? await self.client.backgroundTasks(sessionID: sessionID)
+                else { continue }
+                guard !Task.isCancelled, self.sessionID == sessionID else { break pollingLoop }
+                self.backgroundTasks = response.tasks
+                guard self.backgroundTasks.contains(where: { $0.pinned && !$0.dismissible }) else { break pollingLoop }
             }
 
             if !Task.isCancelled {
                 self?.backgroundPollTask = nil
             }
-        }
-    }
-
-    private func handleBackgroundResults(_ results: [BackgroundResult]) {
-        for result in results {
-            let prompt: String
-            if let taskID = result.taskId,
-               let trackedPrompt = backgroundPromptsByTaskID.removeValue(forKey: taskID) {
-                prompt = trackedPrompt
-            } else if let resultPrompt = result.prompt, !resultPrompt.isEmpty {
-                prompt = resultPrompt
-            } else {
-                prompt = "Background task"
-            }
-
-            appendLocalAssistantMessage(
-                Self.backgroundResultText(
-                    prompt: prompt,
-                    answer: result.answer
-                )
-            )
         }
     }
 
@@ -5465,18 +5474,6 @@ public final class ChatViewModel {
 
         return """
         **BTW** \(question)
-
-        \(body)
-        """
-    }
-
-    private static func backgroundResultText(prompt: String, answer: String?) -> String {
-        let trimmedAnswer = answer?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let body = trimmedAnswer.isEmpty ? String(localized: "No answer produced.") : trimmedAnswer
-        let summary = prompt.count > 80 ? "\(prompt.prefix(80))..." : prompt
-
-        return """
-        **Background** \(summary)
 
         \(body)
         """

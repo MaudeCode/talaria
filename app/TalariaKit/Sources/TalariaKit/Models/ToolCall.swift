@@ -12,6 +12,8 @@ public struct ToolCall: Identifiable, Equatable {
     public var isError: Bool?
     public var isCompleted: Bool
     public let startedAt: Double
+    /// TAL-372: the background work a delegation call started (server scene field); nil on any other call.
+    public var background: BackgroundLink?
 
     public init(
         id: String = "live-tool-\(UUID().uuidString)",

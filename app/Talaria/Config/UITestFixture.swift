@@ -1,6 +1,7 @@
 #if DEBUG
 import AppIntents
 import Foundation
+import os
 import notify
 import UIKit
 import TalariaKit
@@ -568,6 +569,13 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             return json(["sessions": [], "query": "", "count": 0])
         case "/api/session":
             return UITestChatScenario.current == nil ? sessionResponse() : chatSessionResponse()
+        case "/api/background/tasks" where UITestFixtureEnvironment.hasBackgroundUpdates:
+            return json(["session_id": sessionID, "agent_available": true, "tasks": Self.backgroundTasks()])
+        case "/api/background/result" where UITestFixtureEnvironment.hasBackgroundUpdates:
+            return json(["task_id": "bg-ui", "text": Self.backgroundResultText])
+        case "/api/background/dismiss" where UITestFixtureEnvironment.hasBackgroundUpdates:
+            Self.backgroundDismissed.withLock { $0 = true }
+            return json(["ok": true, "task": Self.backgroundTasks()[1]])
         case "/api/session/new":
             // The title echoes the requested profile so a UI test can see that a
             // "new chat in <profile>" entry point pinned the session (TAL-77).
@@ -768,9 +776,36 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         return json(["session": detail])
     }
 
+    static let backgroundResultText = "The repo has three packages."
+    private static let backgroundDismissed = OSAllocatedUnfairLock(initialState: false)
+
+    /// TAL-372: a running delegation and a finished `/background` task the server pins, until the task is dismissed.
+    private static func backgroundTasks() -> [[String: Any]] {
+        let dismissed = backgroundDismissed.withLock { $0 }
+        return [
+            ["task_id": "deleg-ui-1", "kind": "delegation", "status": "running", "title": "Fix CI", "started_at": 2_000_000_010, "updated_at": 2_000_000_011, "completed_at": NSNull(),
+             "result_available": false, "child_session_id": NSNull(), "exit_code": NSNull(), "agents": NSNull(), "pinned": true, "dismissible": false],
+            ["task_id": "bg-ui", "kind": "background_command", "status": "completed", "title": "Summarize the repo", "started_at": 2_000_000_012, "updated_at": 2_000_000_013, "completed_at": 2_000_000_013,
+             "result_available": true, "child_session_id": NSNull(), "exit_code": NSNull(), "agents": NSNull(), "pinned": !dismissed, "dismissible": !dismissed]
+        ]
+    }
+
     /// A typed marker the user sent, a batched wakeup with its reply, and a wakeup whose reply was a silence marker, as
-    /// the server marks them (TAL-371, TAL-460).
+    /// the server marks them (TAL-371, TAL-460). TAL-372: a delegation row that shows its subagents' progress in place.
     private static let backgroundUpdateMessages: [[String: Any]] = [
+        ["role": "user", "content": "Split the audit", "message_id": "split-user", "_ts": 1_999_999_990, "_turn_id": "split"],
+        [
+            "role": "assistant", "content": "Started three subagents.", "message_id": "split-reply", "_ts": 1_999_999_991, "_turn_id": "split",
+            "_anchor_activity_scene": [
+                "version": "activity_scene_v1", "final_answer": "Started three subagents.",
+                "activity_rows": [[
+                    "row_id": "tool:split-call", "order_index": 0, "role": "tool",
+                    "tool": ["id": "split-call", "name": "delegate_task", "kind": "delegate", "target": "", "args": [:], "preview": NSNull(), "result": NSNull(),
+                             "done": true, "is_error": false, "duration": NSNull(), "cost_usd": NSNull(),
+                             "background": ["task_ids": ["split-1", "split-2"], "status": "completed", "agents": ["total": 3, "completed": 2, "failed": 1, "running": 0]]]
+                ]]
+            ]
+        ],
         ["role": "user", "content": "[ASYNC DELEGATION BATCH COMPLETE — typed] I typed this", "message_id": "typed-marker-user", "_ts": 2_000_000_000],
         ["role": "assistant", "content": "Noted.", "message_id": "typed-marker-reply", "_ts": 2_000_000_001],
         [

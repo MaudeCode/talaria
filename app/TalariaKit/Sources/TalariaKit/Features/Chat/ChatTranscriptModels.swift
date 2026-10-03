@@ -610,7 +610,7 @@ public struct AssistantActivityTimeline: Equatable {
     /// A server-normalized scene tool: every field is explicit, so nothing is inferred here.
     private static func sceneToolCall(_ object: [String: JSONValue]?, fallbackID: String) -> ToolCall? {
         guard let object else { return nil }
-        return ToolCall(
+        var call = ToolCall(
             id: Self.nonEmpty(Self.string(object["id"])) ?? fallbackID,
             name: Self.nonEmpty(Self.string(object["name"])) ?? "tool",
             preview: Self.nonEmpty(Self.string(object["preview"])) ?? Self.nonEmpty(Self.string(object["result"])),
@@ -621,6 +621,15 @@ public struct AssistantActivityTimeline: Equatable {
             isError: Self.bool(object["is_error"]),
             isCompleted: Self.bool(object["done"]) == true
         )
+        call.background = Self.backgroundLink(object["background"])
+        return call
+    }
+
+    private static func backgroundLink(_ value: JSONValue?) -> BackgroundLink? {
+        guard let value, case .object = value, let data = try? JSONEncoder().encode(value) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try? decoder.decode(BackgroundLink.self, from: data)
     }
 
     private static func toolCall(

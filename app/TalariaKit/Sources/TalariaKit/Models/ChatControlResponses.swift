@@ -86,13 +86,4 @@ public struct BackgroundStartResponse: Decodable, Equatable {
     public let error: String?
 }
 
-public struct BackgroundStatusResponse: Decodable, Equatable {
-    public let results: [BackgroundResult]?
-}
 
-public struct BackgroundResult: Decodable, Equatable {
-    public let taskId: String?
-    public let prompt: String?
-    public let answer: String?
-    let completedAt: Double?
-}

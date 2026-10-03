@@ -491,3 +491,35 @@ func testOlderServerSceneWithoutFinalAnswerKeepsTheMessageTextAsTheAnswer() thro
     XCTAssertEqual(withAnswerRow.workRows.map(\.kind), ["tools"])
 }
 }
+
+extension APIClientSessionDetailTests {
+func testADelegationRowCarriesTheServersProgressForTheWorkItStarted() async throws {
+    // TAL-372: the server links the delegate_task row to the units it started and counts their subagents.
+    let client = makeClient { request in
+        apiTestJSONResponse("""
+        {
+          "session": {
+            "session_id": "abc123",
+            "messages": [{
+              "role": "assistant", "content": "Started.", "message_id": "assistant-1",
+              "_anchor_activity_scene": {
+                "version": "activity_scene_v1", "final_answer": "Started.",
+                "activity_rows": [
+                  {"row_id":"tool:c1","order_index":0,"role":"tool","tool":{"id":"c1","name":"delegate_task","kind":"delegate","args":{},"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null,
+                   "background":{"task_ids":["call-1-1","call-1-2"],"status":"completed","agents":{"total":3,"completed":2,"failed":1,"running":0}}}},
+                  {"row_id":"tool:c2","order_index":1,"role":"tool","tool":{"id":"c2","name":"read_file","args":{},"preview":null,"result":null,"done":true,"is_error":false,"duration":null,"cost_usd":null,"background":"not a link"}}
+                ]
+              }
+            }]
+          }
+        }
+        """, for: request)
+    }
+
+    let response = try await client.session(id: "abc123")
+    let message = try XCTUnwrap(response.session?.messages?.first)
+    let calls = AssistantActivityTimeline.persisted(message: message, reasoningGroups: [], toolCallGroups: []).toolCalls
+    XCTAssertEqual(calls.first?.background, BackgroundLink(taskIds: ["call-1-1", "call-1-2"], status: .completed, agents: .init(total: 3, completed: 2, failed: 1, running: 0)))
+    XCTAssertNil(calls.last?.background)
+}
+}

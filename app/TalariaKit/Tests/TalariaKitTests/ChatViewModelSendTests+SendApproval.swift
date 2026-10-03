@@ -895,9 +895,10 @@ extension ChatViewModelSendTests {
                 return apiTestJSONResponse(#"{"pending": null, "pending_count": 0}"#, for: request)
             case "/api/background":
                 return apiTestJSONResponse(#"{"task_id": "task-1", "stream_id": "stream-bg", "session_id": "background-1"}"#, for: request)
-            case "/api/background/status":
+            case "/api/background/tasks":
                 _ = backgroundStatusRequests.increment()
-                return apiTestJSONResponse(#"{"results": []}"#, for: request)
+                // TAL-372: the started task runs until cleanup, so the card keeps refreshing.
+                return apiTestJSONResponse(#"{"session_id":"session-abc","agent_available":true,"tasks":[{"task_id":"task-1","kind":"background_command","status":"running","title":"audit tests","pinned":true,"dismissible":false}]}"#, for: request)
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
                 throw URLError(.badURL)
