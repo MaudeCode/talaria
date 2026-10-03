@@ -262,7 +262,9 @@ export const settingsRouter = os.router({
         if (scope === 'auxiliary') {
           const saved = await setAuxiliaryModel(ctx.deps.agentConfig, home(ctx), str(input.task).trim(), provider, model, input.advanced)
           ctx.deps.catalog.invalidate()
-          return { ...saved, auxiliary: await auxiliaryState(ctx) as never }
+          // The write is saved; a catalog failure only drops the refreshed state, and clients then reread it.
+          const auxiliary = await auxiliaryState(ctx).catch(() => undefined)
+          return { ...saved, ...(auxiliary ? { auxiliary: auxiliary as never } : {}) }
         }
         if (scope === 'main') return await setDefaultModel(ctx.deps.agentConfig, home(ctx), model, provider === 'auto' ? null : provider, input.advanced)
       } catch (error) {
