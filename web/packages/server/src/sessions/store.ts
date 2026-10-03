@@ -13,7 +13,8 @@ import { str } from '../util.js'
  */
 import { closeSync, existsSync, fstatSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import { writeFully } from '../fs/atomic.js'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
+import { sanitizeSessionRow } from './list.js'
 import type { DraftStore } from './drafts.js'
 import type { SessionEventBus } from './events.js'
 import { anchorSceneIndexFromRecords, collapseAdjacentDuplicatePartials, isSafeSessionId, Session, type SessionDefaults, type SessionInit } from './session.js'
@@ -219,7 +220,10 @@ export class SessionStore {
   // ── creation / resolution ────────────────────────────────────────────────
 
   private construct(init: SessionInit, profile: string | null): Session {
-    return new Session(init, this.deps.defaults(profile))
+    const session = new Session(init, this.deps.defaults(profile))
+    // New-session defaults must not replace the title supplied by the read projection.
+    if (typeof init.title === 'string') session.title = init.title
+    return session
   }
 
   /** In-memory only until the first message is persisted (Python `new_session`). */
@@ -270,6 +274,9 @@ export class SessionStore {
       const postSig = statSignature(path)
       if (preSig !== null && preSig === postSig) { signature = postSig; break }
     }
+    const clean = sanitizeSessionRow(data, this, basename(path))
+    if (!clean) return null
+    data = clean
     const [messages, collapsed] = collapseAdjacentDuplicatePartials(data.messages)
     data.messages = messages
     const session = this.construct(data, (data.profile as string | null | undefined) ?? null)
@@ -291,7 +298,8 @@ export class SessionStore {
     try {
       const { prefix, signature } = readMetadataJsonPrefixWithSignature(path)
       if (!prefix) return this.load(sid)
-      const parsed = JSON.parse(prefix) as Record<string, unknown>
+      const parsed = sanitizeSessionRow(JSON.parse(prefix) as Record<string, unknown>, this, basename(path))
+      if (!parsed) return null
       for (const key of ['session_id', 'title', 'created_at', 'updated_at']) if (!(key in parsed)) return this.load(sid)
       const sidecarCount = parsed.message_count
       const modernCount = typeof sidecarCount === 'number' && Number.isInteger(sidecarCount) && sidecarCount >= 0 ? sidecarCount : null
@@ -472,7 +480,8 @@ export class SessionStore {
 
   private loadSessionFromPath(path: string): Session | null {
     try {
-      const data = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+      const data = sanitizeSessionRow(JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>, this, basename(path))
+      if (!data) return null
       const [messages] = collapseAdjacentDuplicatePartials(data.messages)
       data.messages = messages
       return this.construct(data, (data.profile as string | null | undefined) ?? null)

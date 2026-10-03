@@ -115,6 +115,26 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         leavePanel("Insights")
     }
 
+    func testInsightsFailureDoesNotAggregateSessionRows() throws {
+        launchPanelFixture("--ui-test-panels-error")
+        openPanel("Insights")
+        let error = element(labelContaining: "Could Not Load Analytics")
+        let hasError = error.awaitExistence(timeout: 10)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Insights failed server request"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertTrue(hasError, "Insights must surface the server error instead of deriving session totals")
+        XCTAssertFalse(element(labelContaining: "Source: local session metadata").exists)
+        tapRetry(in: "Insights")
+        assertLoadingResolves("Loading analytics…", panel: "Insights")
+        XCTAssertTrue(element(labelContaining: "Sessions").awaitExistence(timeout: 10))
+        let recovered = XCTAttachment(screenshot: app.screenshot())
+        recovered.name = "Insights recovered server snapshot"
+        recovered.lifetime = .keepAlways
+        add(recovered)
+    }
+
     private func assertTasksPanelOpensDetailAndEditorWithoutLosingItsList() throws {
         openPanel("Tasks")
         recoverFromFailedLoad("Tasks", error: "Could Not Load Tasks", loading: "Loading tasks...")

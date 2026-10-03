@@ -25,7 +25,6 @@ final class UITestPanelFixtureState: @unchecked Sendable {
     private let lock = NSLock()
     private var failedPaths: Set<String> = []
     private var delayedPaths: Set<String> = []
-    private var analyticsFallbackFails = false
     private var disabledSkills: Set<String> = ["fixture-archivist"]
     private var memoryOverrides: [String: String] = [:]
 
@@ -37,17 +36,6 @@ final class UITestPanelFixtureState: @unchecked Sendable {
     /// True once per path, so only a panel's first load renders its loading state.
     func consumeDelay(for path: String) -> Bool {
         lock.withLock { delayedPaths.insert(path).inserted }
-    }
-
-    /// Insights falls back to `/api/sessions` when analytics fail, so the fallback has to
-    /// fail with them to reach the analytics error state. Scoping it to the failing
-    /// analytics load leaves the session list's own load alone.
-    var analyticsFallbackFailsWithInsights: Bool {
-        lock.withLock { analyticsFallbackFails }
-    }
-
-    func setAnalyticsFallbackFails(_ fails: Bool) {
-        lock.withLock { analyticsFallbackFails = fails }
     }
 
     func setSkill(_ name: String, disabled: Bool) {
@@ -74,14 +62,13 @@ final class UITestPanelFixtureState: @unchecked Sendable {
 }
 
 extension UITestFixtureURLProtocol {
-    /// Panel loads the failing scenario breaks once. `/api/insights` and `/api/sessions`
-    /// are handled separately because Insights masks an analytics failure with a session
-    /// fallback.
+    /// Panel loads the failing scenario breaks once.
     private static let panelFailurePaths: Set<String> = [
         "/api/crons",
         "/api/crons/status",
         "/api/skills",
         "/api/memory",
+        "/api/insights",
         "/api/kanban/board"
     ]
 
@@ -100,15 +87,6 @@ extension UITestFixtureURLProtocol {
         let state = UITestPanelFixtureState.shared
 
         switch url.path {
-        case "/api/insights":
-            guard state.consumeFailure(for: url.path) else {
-                state.setAnalyticsFallbackFails(false)
-                return nil
-            }
-            state.setAnalyticsFallbackFails(true)
-            return URLError(.cannotConnectToHost)
-        case "/api/sessions":
-            return state.analyticsFallbackFailsWithInsights ? URLError(.cannotConnectToHost) : nil
         case "/api/kanban/board":
             // The Board's incremental poll carries `since=`; only the full load is broken.
             guard url.query?.contains("since=") != true else { return nil }

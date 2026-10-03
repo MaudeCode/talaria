@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Session lists and search stay available when saved session metadata is malformed.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Insights keeps server analytics after a failed refresh instead of calculating totals from chat rows.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

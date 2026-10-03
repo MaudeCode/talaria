@@ -13,9 +13,47 @@ import type { SessionStore } from './store.js'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, normalizeAgentSessionSource } from './state-db.js'
 import { MESSAGING_SOURCES, sourceKind } from './source-kind.js'
+import { SessionRowSchema } from '@maudecode/talaria-web-contracts'
 
 export type Row = Record<string, unknown>
 const num = (v: unknown): number => { const n = Number(v ?? 0); return Number.isFinite(n) && n > 0 ? n : 0 }
+const malformedFiles = new WeakMap<SessionStore, Set<string>>()
+
+/** Read-only projection; never let a corrupt identity acquire a generated ID. */
+export function sanitizeSessionRow(value: unknown, store: SessionStore, file?: string): Row | null {
+  const row = value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {}
+  file ??= `${str(row.session_id)}.json`
+  const mismatchedFile = file.endsWith('.json') && file !== '_index.json' && row.session_id !== file.slice(0, -5)
+  if (!SessionRowSchema.shape.session_id.safeParse(row.session_id).success || mismatchedFile) {
+    const logged = malformedFiles.get(store) ?? new Set<string>()
+    if (!logged.has(file)) {
+      store.deps.log(`[webui] WARNING: skipping session row with invalid session_id in ${JSON.stringify(file)}`)
+      logged.add(file)
+      malformedFiles.set(store, logged)
+    }
+    return null
+  }
+  const result: Row = { ...row, title: row.title ?? '' }
+  for (const [key, schema] of Object.entries(SessionRowSchema.shape)) {
+    const value = result[key]
+    if (value === undefined || schema.safeParse(value).success) continue
+    const coerced = typeof value === 'string' && value.trim() !== ''
+      ? value.trim() === 'true' ? true : value.trim() === 'false' ? false : Number(value)
+      : typeof value === 'number' || typeof value === 'boolean' ? String(value) : undefined
+    const boolean = value === 0 || value === 1 ? value === 1 : coerced === 0 || coerced === 1 ? coerced === 1 : undefined
+    if (coerced !== undefined && schema.safeParse(coerced).success) result[key] = coerced
+    else if (boolean !== undefined && schema.safeParse(boolean).success) result[key] = boolean
+    else if (key === 'title') result[key] = ''
+    // Invalid persisted permissions must not turn a locked session into an editable one.
+    else if (key === 'read_only') result[key] = true
+    else Reflect.deleteProperty(result, key)
+  }
+  // These persisted flags affect list filtering before the wire flags are computed.
+  for (const key of ['pre_compression_snapshot', 'default_hidden', 'has_pending_user_message']) {
+    if (result[key] === 'true' || result[key] === 'false') result[key] = result[key] === 'true'
+  }
+  return result
+}
 
 export function sessionSortTimestamp(row: Row): number {
   return num(row.last_message_at) || num(row.updated_at)
@@ -152,6 +190,7 @@ export interface AllSessionsOptions { sidebarMetadataOnly?: boolean }
 export function allSessions(store: SessionStore, opts: AllSessionsOptions = {}): Row[] {
   const activeStreamIds = store.deps.activeStreamIds()
   const finish = (result: Row[]): Row[] => {
+    result = result.flatMap((row) => { const clean = sanitizeSessionRow(row, store); return clean ? [clean] : [] })
     result = preferFullerSnapshots(result)
     const candidates = result
     const visible = candidates.filter((r) => !hideFromDefaultSidebar(r))
@@ -170,7 +209,10 @@ export function allSessions(store: SessionStore, opts: AllSessionsOptions = {}):
     try { store.writeIndex() } catch { /* fall through to the scan */ }
   }
   try {
-    let index = store.readIndexEntries().map((row) => ({ ...row }))
+    let index = store.readIndexEntries().flatMap((row) => {
+      const clean = sanitizeSessionRow(row, store, '_index.json')
+      return clean ? [clean] : []
+    })
     const inMemory = new Set(store.sessions.keys())
     const persisted = store.persistedIds()
     if (!index.length && store.hasPersistedSessionFiles()) throw new Error('empty session index while session files exist')
@@ -634,7 +676,8 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
   if (params.stateDbSources) webuiSessions = withOwnerLocks(webuiSessions, params.stateDbSources)
   let dedupedCli: Row[] = []
   if (params.cliRows) {
-    const cliById = new Map(params.cliRows.map((r) => [str(r.session_id), r]))
+    const cliRows = params.cliRows.flatMap((r) => { const clean = sanitizeSessionRow(r, store, 'state.db'); return clean ? [clean] : [] })
+    const cliById = new Map(cliRows.map((r) => [str(r.session_id), r]))
     webuiSessions = webuiSessions.map((s) => {
       const meta = cliById.get(str(s.session_id))
       if (!meta) return s
@@ -648,7 +691,7 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
     webuiSessions = webuiSessions.filter(isCliSessionRowVisible)
     const represented = new Set<string>()
     for (const s of webuiSessions) for (const id of sessionLineageIds(s)) represented.add(id)
-    dedupedCli = dedupeCliSidebarSessions(params.cliRows, represented, { showCli: params.showCliSessions, showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions, sourceFilter: params.sourceFilter ?? null, requestVisibilityOverrides: params.requestVisibilityOverrides })
+    dedupedCli = dedupeCliSidebarSessions(cliRows, represented, { showCli: params.showCliSessions, showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions, sourceFilter: params.sourceFilter ?? null, requestVisibilityOverrides: params.requestVisibilityOverrides })
       // A sidecar-less foreign row whose owner refuses claiming is read-only, as its detail and mutations are.
       .map((r) => ({ ...r, read_only: !isClaimableCliSource(r, str(r.source)), can_duplicate: false }))
   } else {
