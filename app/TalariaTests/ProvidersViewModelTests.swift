@@ -581,6 +581,124 @@ final class ProvidersViewModelTests: APIClientTestCase {
     }
 
     @MainActor
+    func testQuotaRefreshLoopReconcilesLoadedButStaleSourcesImmediately() async throws {
+        let suite = "ProvidersViewModelStaleQuota.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
+        var requestedRefreshes: [Bool] = []
+        let client = makeClient { request in
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+            let forced = components?.queryItems?.contains(URLQueryItem(name: "refresh", value: "1")) == true
+            requestedRefreshes.append(forced)
+            return apiTestJSONResponse("""
+            {
+              "version": 1,
+              "scope_id": "qscope_widget",
+              "profile_id": "default",
+              "sources": [
+                { "source_id": "qsrc_a", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "A", "status": "available", "supported": true, "windows": [{ "label": "Session", "used_percent": \(forced ? 80 : 20) }] }
+              ]
+            }
+            """, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client, quotaSnapshotStore: store)
+        await model.loadQuotas()
+        XCTAssertEqual(model.quotaSources.first?.windows.first?.usedPercent, 20)
+
+        // Insights and the session list both join the shared schedule; with a long
+        // interval, only the entry reconcile can produce a request.
+        let insightsLoop = Task { await model.refreshQuotasPeriodically(every: .seconds(60)) }
+        let sessionListLoop = Task { await model.refreshQuotasPeriodically(every: .seconds(60)) }
+        try await Task.sleep(for: .milliseconds(500))
+        insightsLoop.cancel()
+        sessionListLoop.cancel()
+        await insightsLoop.value
+        await sessionListLoop.value
+
+        XCTAssertEqual(requestedRefreshes, [false, true])
+        XCTAssertEqual(model.quotaSources.first?.windows.first?.usedPercent, 80)
+        XCTAssertEqual(store.load()?.sources.first?.windows.first?.usedPercent, 80)
+        XCTAssertFalse(model.isQuotaLoading)
+    }
+
+    @MainActor
+    func testQuotaRefreshLoopSkipsEntryRefreshWhenRecentlyForced() async throws {
+        var requestCount = 0
+        let client = makeClient { request in
+            requestCount += 1
+            return apiTestJSONResponse("""
+            { "version": 1, "scope_id": "qscope_widget", "profile_id": "default", "sources": [] }
+            """, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+        await model.loadQuotas(refresh: true)
+
+        let loop = Task { await model.refreshQuotasPeriodically(every: .seconds(60)) }
+        try await Task.sleep(for: .milliseconds(300))
+        loop.cancel()
+        await loop.value
+
+        XCTAssertEqual(requestCount, 1)
+    }
+
+    @MainActor
+    func testOlderFullQuotaLoadCannotOverwriteNewerTargetedRefresh() async throws {
+        let initialRequestArrived = expectation(description: "initial quota request arrived")
+        let fullRequestArrived = expectation(description: "full quota request arrived")
+        let targetedRequestArrived = expectation(description: "targeted quota request arrived")
+        let requests = DeferredRequests()
+
+        DeferredMockURLProtocol.onRequest = { pendingRequest in
+            switch requests.append(pendingRequest) {
+            case 1: initialRequestArrived.fulfill()
+            case 2: fullRequestArrived.fulfill()
+            case 3: targetedRequestArrived.fulfill()
+            default: XCTFail("unexpected extra quota request")
+            }
+        }
+        defer { DeferredMockURLProtocol.onRequest = nil }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredMockURLProtocol.self]
+        let client = APIClient(baseURL: Self.serverURL, session: URLSession(configuration: configuration))
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        func response(usedPercent: Int, requestedSourceID: String? = nil) -> String {
+            """
+            {
+              "version": 1,
+              "scope_id": "qscope_widget",
+              "profile_id": "default",
+              \(requestedSourceID.map { "\"requested_source_id\": \"\($0)\"," } ?? "")
+              "sources": [
+                { "source_id": "qsrc_a", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "A", "status": "available", "supported": true, "windows": [{ "label": "Session", "used_percent": \(usedPercent) }] },
+                { "source_id": "qsrc_b", "provider_id": "openrouter", "provider_label": "OpenRouter", "account_label": "B", "status": "available", "supported": true, "windows": [{ "label": "Session", "used_percent": \(usedPercent) }] }
+              ]
+            }
+            """
+        }
+
+        let initialLoad = Task { await model.loadQuotas() }
+        await fulfillment(of: [initialRequestArrived], timeout: 5)
+        requests.request(at: 0).complete(withJSON: response(usedPercent: 10))
+        await initialLoad.value
+
+        let periodicLoad = Task { await model.loadQuotas(refresh: true) }
+        await fulfillment(of: [fullRequestArrived], timeout: 5)
+        let targetedRefresh = Task { await model.refreshQuota(sourceID: "qsrc_a") }
+        await fulfillment(of: [targetedRequestArrived], timeout: 5)
+        requests.request(at: 2).complete(withJSON: response(usedPercent: 90, requestedSourceID: "qsrc_a"))
+        await targetedRefresh.value
+        requests.request(at: 1).complete(withJSON: response(usedPercent: 30))
+        await periodicLoad.value
+
+        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_a", "qsrc_b"])
+        XCTAssertEqual(model.quotaSources.first(where: { $0.id == "qsrc_a" })?.windows.first?.usedPercent, 90)
+        XCTAssertEqual(model.quotaSources.first(where: { $0.id == "qsrc_b" })?.windows.first?.usedPercent, 30)
+    }
+
+    @MainActor
     func testLoadPopulatesProvidersPreservingServerOrder() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/providers")
