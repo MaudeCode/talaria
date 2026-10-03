@@ -98,6 +98,31 @@ describe('manual session compression', () => {
     expect(existsSync(bak)).toBe(false)
   })
 
+  it('compresses the model context a turn would send, so a repeat compression keeps the earlier summary', async () => {
+    const context: Json[] = [
+      { role: 'user', content: '[CONTEXT COMPACTION] earlier turns summarized', timestamp: 2.5 },
+      { role: 'user', content: 'three', timestamp: 3 },
+      { role: 'assistant', content: 'four', timestamp: 4 },
+      { role: 'user', content: 'five', timestamp: 5 },
+    ]
+    const sid = await seeded({ messages: [...structuredClone(ORIGINAL), { role: 'user', content: 'five', timestamp: 5 }], context_messages: structuredClone(context) })
+    let sent: unknown
+    sidecar.respond('chat.compress', (params) => { sent = params.conversation_history; return compressed(params) })
+    expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
+    expect(sent).toEqual(context.map(({ role, content }) => ({ role, content })))
+    expect(s.deps.sessionStore.get(sid).context_messages.map((m) => m.content)).toEqual(['[CONTEXT COMPACTION] earlier turns summarized', 'five'])
+  })
+
+  it('stops serving a finished job once its session is deleted', async () => {
+    const sid = await seeded()
+    expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
+    expect((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status).toBe('done')
+    expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
+    const res = await s.get(`/api/session/compress/status?session_id=${sid}`)
+    expect(res.status).toBe(404)
+    expect(JSON.stringify(await json(res))).not.toContain('"messages"')
+  })
+
   it('caps the focus topic at 500 characters and accepts the `topic` alias', async () => {
     const sid = await seeded()
     let topic: unknown

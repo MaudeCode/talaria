@@ -74,6 +74,10 @@ export class CompressionJobs {
     return this.jobs.get(sid)
   }
 
+  delete(sid: string): void {
+    this.jobs.delete(sid)
+  }
+
   set(job: CompressionJob): void {
     this.jobs.set(job.session_id, job)
   }

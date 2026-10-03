@@ -29,7 +29,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, escapeWorkspacePrefixPath, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, toolOutcome, withAttachmentObjects, withBodyExcerpts, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, escapeWorkspacePrefixPath, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, toolOutcome, withAttachmentObjects, withBodyExcerpts, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
@@ -352,11 +352,7 @@ export class TurnRunner {
     }
     const msgText = opts.msg
     const previousMessages = structuredClone(s.messages)
-    // Python `reconciled_state_db_messages_for_session(prefer_context=True)`: the model history is the owner context
-    // extended append-only with the Agent's state.db rows (a CLI continuation of this session reaches the model), except
-    // for a compressed context whose anchor cannot be verified — that stays context-only.
-    const localContext: Message[] = s.context_messages.length ? s.context_messages : s.messages.filter((m) => !m._error && !m._partial)
-    const previousContext = structuredClone(localContext.some((m) => isContextCompressionMarker(m)) ? localContext : deps.service().mergedTranscript(s, localContext))
+    const previousContext = structuredClone(deps.service().modelContext(s))
     // Python `_sanitize_messages_for_api`: the model never sees display-only rows or a replayed cancelled prompt.
     const apiHistory = sanitizeMessagesForApi(previousContext)
     const workspaceCtx = workspaceContextPrefix(opts.workspace)

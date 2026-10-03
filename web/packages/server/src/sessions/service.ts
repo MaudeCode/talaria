@@ -20,7 +20,7 @@ import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { attachmentObjects, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, withAttachmentObjects, withBodyExcerpts, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
+import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, withAttachmentObjects, withBodyExcerpts, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -223,6 +223,16 @@ export class SessionService {
     const stateRows = this.stateDbRows(s)
     if (!stateRows.length) return local
     return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark })
+  }
+
+  /**
+   * Python `reconciled_state_db_messages_for_session(prefer_context=True)`: the model history is the owner context
+   * extended append-only with the Agent's state.db rows (a CLI continuation of this session reaches the model), except
+   * for a compressed context whose anchor cannot be verified — that stays context-only.
+   */
+  modelContext(s: Session): Message[] {
+    const local: Message[] = s.context_messages.length ? s.context_messages : s.messages.filter((m) => !m._error && !m._partial)
+    return local.some((m) => isContextCompressionMarker(m)) ? local : this.mergedTranscript(s, local)
   }
 
   /** Python `_lookup_cli_session_metadata`: the sidebar row for a state.db session in the active profile. */
@@ -841,17 +851,20 @@ export class SessionService {
     return job
   }
 
-  /** The session a compression may run on now, and the model history it compresses. */
+  /** The session a compression may run on now, and the model history it compresses: the context a turn would send, so a
+   * repeat compression builds on the previous summary instead of re-reading the whole display transcript. */
   private compressionTarget(sid: string): { s: Session; history: Message[] } {
     this.rejectSubagent(sid, 'compressed')
     const s = this.mutationTarget(sid, 'compressed')
     if (s.active_stream_id) throw new HttpFailure(409, 'Session is still streaming; wait for the current turn to finish.')
-    const history = sanitizeMessagesForApi(s.messages)
+    const history = sanitizeMessagesForApi(this.modelContext(s))
     if (history.length < 4) throw new HttpFailure(400, 'Not enough conversation to compress (need at least 4 messages).')
     return { s, history }
   }
 
+  /** The session's compression job; a deleted session's finished result is dropped rather than served. */
   compressionJob(sid: string): CompressionJob | undefined {
+    try { this.store.get(sid, { metadataOnly: true }) } catch { this.compressionJobs.delete(sid); throw new HttpFailure(404, 'Session not found') }
     return this.compressionJobs.get(sid)
   }
 
@@ -863,7 +876,9 @@ export class SessionService {
    */
   private async compressSession(sid: string, focusTopic: string | null): Promise<Record<string, unknown>> {
     const { s, history } = this.compressionTarget(sid)
-    const historyKey = JSON.stringify(history)
+    // The display transcript and the model context must both be where the compression left them.
+    const transcriptKey = (x: Session): string => JSON.stringify([sanitizeMessagesForApi(x.messages), sanitizeMessagesForApi(this.modelContext(x))])
+    const historyKey = transcriptKey(s)
     const streamState = (x: Session): string => JSON.stringify([x.active_stream_id ?? null, x.pending_user_message ?? null, x.pending_attachments ?? null, x.pending_started_at ?? null])
     const streamBefore = streamState(s)
     const sidecar = this.deps.sidecar?.()
@@ -887,7 +902,7 @@ export class SessionService {
       let live: Session
       try { live = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
       if (streamState(live) !== streamBefore) throw new HttpFailure(409, 'Session stream state changed during compression; please retry.')
-      if (JSON.stringify(sanitizeMessagesForApi(live.messages)) !== historyKey) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
+      if (transcriptKey(live) !== historyKey) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
       const now = this.deps.now()
       const compressed = copyJson(result.messages) as Message[]
       for (const m of compressed) m.timestamp ??= now
