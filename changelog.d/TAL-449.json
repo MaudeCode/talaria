@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "A running chat shows Waiting for network while your iPhone is offline and picks the response back up as soon as the connection returns.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

@@ -27,7 +27,6 @@ struct ChatTranscriptView: View {
     let toolCallAnchorMessageID: String?
     let streamingAssistantMessageID: String?
     let liveTokensPerSecond: Double?
-    let activeStreamRecoveryState: ActiveStreamRecoveryState
     /// The run state is still being confirmed by the first session load (TAL-250).
     let showsRunStateCheck: Bool
     let clarificationPrompt: ClarificationPromptState?
@@ -426,13 +425,6 @@ struct ChatTranscriptView: View {
                         )
                     )
                 }
-            }
-
-            if let recovery = ChatActiveRunStatusPresentation(recoveryState: activeStreamRecoveryState) {
-                StatusChip(recovery, agentName: assistantName)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityHidden(hidesRunStatusAccessibility)
-                    .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
             }
         } else if showsRunStateCheck {
             StatusChip(ChatActiveRunStatusPresentation(kind: .checking), agentName: assistantName)

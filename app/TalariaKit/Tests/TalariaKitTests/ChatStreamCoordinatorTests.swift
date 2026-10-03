@@ -1,3 +1,4 @@
+import Observation
 import SwiftData
 import XCTest
 @testable import TalariaKit
@@ -791,6 +792,174 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testGoingOfflineMidRunWaitsForNetworkThenReconnectsOnceWhenOnline() async throws {
+        var statusRequests = 0
+        let networkPath = FakeNetworkPath()
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate, networkPath: networkPath) { request in
+            statusRequests += 1
+            return apiTestJSONResponse(
+                #"{"active": true, "stream_id": "stream-123", "replay_available": true}"#,
+                for: request
+            )
+        }
+
+        coordinator.start(streamID: "stream-123")
+        streamClient.emit(.token("Partial answer."), lastEventID: "stream-123:4")
+        networkPath.isSatisfied = false
+
+        try await waitUntil { coordinator.recoveryState == .waitingForNetwork }
+        XCTAssertTrue(coordinator.isConnectionSuspended)
+        XCTAssertEqual(streamClient.stopCount, 1)
+        // Foreground reconnects and stale-recovery ticks stay quiet while offline.
+        await coordinator.reconnectIfNeeded()
+        await coordinator.recoverStaleStreamIfNeeded(now: Self.fixedNow.addingTimeInterval(3600))
+        XCTAssertEqual(statusRequests, 0)
+        XCTAssertEqual(streamClient.startedURLs.count, 1)
+        XCTAssertEqual(coordinator.recoveryState, .waitingForNetwork)
+        XCTAssertEqual(delegate.recoveryErrors, [])
+
+        networkPath.isSatisfied = true
+
+        try await waitUntil { streamClient.startedURLs.count == 2 }
+        XCTAssertEqual(statusRequests, 1)
+        XCTAssertFalse(coordinator.isConnectionSuspended)
+        let resumedURL = try XCTUnwrap(streamClient.startedURLs.last)
+        let queryItems = URLComponents(url: resumedURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(queryItems.first(where: { $0.name == "after_seq" })?.value, "4")
+        streamClient.emit(.token("Partial answer."), lastEventID: "stream-123:4")
+        streamClient.emit(.token(" More."), lastEventID: "stream-123:5")
+        XCTAssertEqual(delegate.tokens, ["Partial answer.", " More."])
+        XCTAssertEqual(coordinator.recoveryState, .idle)
+    }
+
+    @MainActor
+    func testTransportErrorWhileOfflineWaitsWithoutStatusRequestsOrErrors() async throws {
+        var statusRequests = 0
+        let networkPath = FakeNetworkPath()
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate, networkPath: networkPath) { request in
+            statusRequests += 1
+            throw URLError(.notConnectedToInternet)
+        }
+
+        coordinator.start(streamID: "stream-123")
+        networkPath.isSatisfied = false
+        streamClient.emit(.transportError("The network connection was lost."))
+
+        try await waitUntil { coordinator.recoveryState == .waitingForNetwork }
+        await coordinator.reconnectIfNeeded()
+        XCTAssertEqual(statusRequests, 0)
+        XCTAssertEqual(delegate.recoveryErrors, [])
+        XCTAssertEqual(coordinator.recoveryState, .waitingForNetwork)
+    }
+
+    @MainActor
+    func testServerErrorWhileOnlineShowsReconnectingAndRetriesOnCooldown() async throws {
+        var statusAttempts = 0
+        let networkPath = FakeNetworkPath()
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let timing = ChatStreamCoordinatorTiming(
+            checkingInterval: 5,
+            reconnectInterval: 18,
+            runningToolReconnectInterval: 25,
+            statusPollCooldown: 0.3,
+            transportFreshInterval: 12
+        )
+        let coordinator = makeCoordinator(
+            streamClient: streamClient,
+            delegate: delegate,
+            timing: timing,
+            networkPath: networkPath
+        ) { request in
+            statusAttempts += 1
+            if statusAttempts == 1 {
+                return apiTestJSONResponse(#"{"error": "bad gateway"}"#, statusCode: 502, for: request)
+            }
+            return apiTestJSONResponse(#"{"active": true, "stream_id": "stream-123"}"#, for: request)
+        }
+
+        coordinator.start(streamID: "stream-123")
+        streamClient.emit(.transportError("lost connection"))
+
+        try await waitUntil { delegate.recoveryErrors.count == 1 }
+        XCTAssertEqual(coordinator.recoveryState, .reconnecting)
+        XCTAssertEqual(statusAttempts, 1)
+
+        try await waitUntil { statusAttempts == 2 && streamClient.startedURLs.count == 2 }
+        XCTAssertFalse(coordinator.isConnectionSuspended)
+    }
+
+    @MainActor
+    func testChatHiddenMidRecoveryNeitherRetriesNorReconnectsWhenTheNetworkReturns() async throws {
+        var statusAttempts = 0
+        let networkPath = FakeNetworkPath()
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let timing = ChatStreamCoordinatorTiming(
+            checkingInterval: 5,
+            reconnectInterval: 18,
+            runningToolReconnectInterval: 25,
+            statusPollCooldown: 0.2,
+            transportFreshInterval: 12
+        )
+        let coordinator = makeCoordinator(
+            streamClient: streamClient,
+            delegate: delegate,
+            timing: timing,
+            networkPath: networkPath
+        ) { request in
+            statusAttempts += 1
+            return apiTestJSONResponse(#"{"error": "bad gateway"}"#, statusCode: 502, for: request)
+        }
+
+        coordinator.start(streamID: "stream-123")
+        streamClient.emit(.transportError("lost connection"))
+        try await waitUntil { coordinator.recoveryState == .reconnecting }
+
+        // The chat leaves the screen while its retry is pending.
+        coordinator.suspendActiveStreamConnection()
+        networkPath.isSatisfied = false
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(coordinator.recoveryState, .idle)
+        networkPath.isSatisfied = true
+        try await Task.sleep(nanoseconds: 400_000_000)
+
+        XCTAssertEqual(statusAttempts, 1)
+        XCTAssertEqual(streamClient.startedURLs.count, 1)
+        XCTAssertTrue(coordinator.isConnectionSuspended)
+        XCTAssertEqual(coordinator.recoveryState, .idle)
+    }
+
+    @MainActor
+    func testGoingOfflineWithoutActiveRunChangesNothing() async throws {
+        var statusRequests = 0
+        let networkPath = FakeNetworkPath()
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let coordinator = makeCoordinator(streamClient: streamClient, delegate: delegate, networkPath: networkPath) { request in
+            statusRequests += 1
+            return apiTestJSONResponse(#"{"active": true}"#, for: request)
+        }
+
+        networkPath.isSatisfied = false
+        try await Task.sleep(nanoseconds: 50_000_000)
+        networkPath.isSatisfied = true
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(coordinator.recoveryState, .idle)
+        XCTAssertFalse(coordinator.isConnectionSuspended)
+        XCTAssertNil(coordinator.activeStreamID)
+        XCTAssertEqual(statusRequests, 0)
+        XCTAssertEqual(streamClient.startedURLs, [])
+        XCTAssertEqual(streamClient.stopCount, 0)
+        XCTAssertEqual(delegate.loadMessagesCount, 0)
+    }
+
+    @MainActor
     func testCancelDoesNotFinishReplacementStreamWhenResponseReturnsLate() async throws {
         let cancelRequestStarted = expectation(description: "cancel request started")
         let releaseCancelResponse = DispatchSemaphore(value: 0)
@@ -1535,6 +1704,7 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         delegate: CoordinatorDelegateSpy? = nil,
         timing: ChatStreamCoordinatorTiming = .standard,
         now: @escaping () -> Date = { ChatStreamCoordinatorTests.fixedNow },
+        networkPath: (any NetworkPathObserving)? = nil,
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
             apiTestJSONResponse(#"{"active": true}"#, for: request)
         }
@@ -1548,7 +1718,8 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
             liveActivityManager: liveActivityManager,
             showsLiveActivityResponseExcerpts: false,
             timing: timing,
-            now: now
+            now: now,
+            networkPath: networkPath
         )
         coordinator.attach(delegate: delegate)
         return coordinator
@@ -1567,6 +1738,12 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
         }
         XCTFail("Timed out waiting for condition")
     }
+}
+
+@MainActor
+@Observable
+private final class FakeNetworkPath: NetworkPathObserving {
+    var isSatisfied = true
 }
 
 @MainActor

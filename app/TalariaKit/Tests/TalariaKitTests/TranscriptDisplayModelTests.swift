@@ -676,6 +676,21 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         XCTAssertEqual(presentation?.accessibilityLabel(agentName: "Hermes"), "Hermes is reconnecting the response stream")
     }
 
+    // TAL-449: recovery lives only in the chip above the composer, so it shows at the transcript bottom too.
+    func testRecoveryShowsEvenWhenTranscriptBottomIsVisible() {
+        for state: ActiveStreamRecoveryState in [.checking, .reconnecting, .waitingForNetwork] {
+            let presentation = ChatActiveRunStatusPolicy.presentation(
+                isStartingChat: false,
+                hasActiveStream: true,
+                activeStreamRecoveryState: state,
+                isCancellingStream: false,
+                isScrolledNearBottom: true
+            )
+            XCTAssertEqual(presentation, ChatActiveRunStatusPresentation(recoveryState: state), "\(state)")
+            XCTAssertEqual(presentation?.reservesTranscriptSpace, true, "\(state)")
+        }
+    }
+
     func testStatusPrioritizesCancellationOverOtherStates() {
         let presentation = ChatActiveRunStatusPolicy.presentation(
             isStartingChat: true,
@@ -732,18 +747,9 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         XCTAssertNil(ChatActiveRunStatusPresentation(recoveryState: .idle))
         XCTAssertEqual(ChatActiveRunStatusPresentation(recoveryState: .checking)?.kind, .checking)
         XCTAssertEqual(ChatActiveRunStatusPresentation(recoveryState: .reconnecting)?.label(agentName: "Hermes"), "Reconnecting stream")
-    }
-
-    func testSyncingPillHidesTheTranscriptRecoveryChip() {
-        XCTAssertEqual(ChatActiveRunStatusPolicy.transcriptRecoveryState(
-            .reconnecting,
-            statusPresentation: ChatActiveRunStatusPresentation(kind: .syncing)
-        ), .idle)
-        XCTAssertEqual(ChatActiveRunStatusPolicy.transcriptRecoveryState(
-            .checking,
-            statusPresentation: ChatActiveRunStatusPresentation(kind: .checking)
-        ), .checking)
-        XCTAssertEqual(ChatActiveRunStatusPolicy.transcriptRecoveryState(.checking, statusPresentation: nil), .checking)
+        let waiting = ChatActiveRunStatusPresentation(recoveryState: .waitingForNetwork)
+        XCTAssertEqual(waiting?.label(agentName: "Hermes"), "Waiting for network")
+        XCTAssertEqual(waiting?.accessibilityLabel(agentName: "Hermes"), "Hermes is waiting for a network connection")
     }
 
     func testStoppingAndStartingOutrankSyncing() {
@@ -767,7 +773,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
 
     func testSyncingPillFloatsOverTheTranscriptInsteadOfPushingItUp() {
         XCTAssertFalse(ChatActiveRunStatusPresentation(kind: .syncing).reservesTranscriptSpace)
-        for kind: ChatActiveRunStatusKind in [.starting, .active, .checking, .reconnecting, .stopping] {
+        for kind: ChatActiveRunStatusKind in [.starting, .active, .checking, .reconnecting, .waitingForNetwork, .stopping] {
             XCTAssertTrue(ChatActiveRunStatusPresentation(kind: kind).reservesTranscriptSpace, "\(kind)")
         }
     }
