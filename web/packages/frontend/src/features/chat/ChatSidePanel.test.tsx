@@ -62,6 +62,15 @@ describe('chat side panel (TAL-373)', () => {
     await waitFor(() => { expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('aria-selected', 'true') })
   })
 
+  it('asks again on every visit, even within the app\'s stale time, before picking the first page', async () => {
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 15_000 } } })
+    qc.setQueryData(['sessions', 'background', 's1', 'agents'], tasks([agent({ task_id: 'd1' })]))
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue(tasks([agent({ task_id: 'd1' })]))
+    render(<Panel />)
+    await waitFor(() => { expect(screen.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true') })
+    expect(api.fetchBackgroundTasks).toHaveBeenCalledWith('s1', 'delegation')
+  })
+
   it('lists only agents even when an older server ignores the kind filter', async () => {
     localStorage.setItem('talaria-right-panel-page', 'agents')
     vi.mocked(api.fetchBackgroundTasks).mockResolvedValue(tasks([agent({ task_id: 'd1' }), agent({ task_id: 'proc_1', kind: 'process', title: 'make test' }), agent({ task_id: 'bg1', kind: 'background_command', title: 'summarize' })]))

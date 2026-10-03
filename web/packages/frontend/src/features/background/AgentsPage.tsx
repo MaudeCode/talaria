@@ -22,7 +22,8 @@ const fetchAgents = async (sessionId: string) => {
 /** Whether the session has agents running or needing attention (the panel's first default page); undefined until this
  * mount has its own answer, so a snapshot cached from an earlier visit never picks the page. */
 export function useHasActiveAgents(sessionId: string): boolean | undefined {
-  const query = useQuery({ queryKey: keys.backgroundAgents(sessionId), queryFn: () => fetchAgents(sessionId) })
+  // Always ask on mount: a snapshot still fresh under the app's stale time is from an earlier visit, not this one.
+  const query = useQuery({ queryKey: keys.backgroundAgents(sessionId), queryFn: () => fetchAgents(sessionId), refetchOnMount: 'always' })
   if (!query.isFetchedAfterMount && !query.isError) return undefined
   // ponytail: old-server fallback — a server before TAL-373 sends no `agents_working`; it then opens on the last page.
   return query.data?.agents_working ?? false
