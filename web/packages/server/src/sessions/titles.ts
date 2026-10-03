@@ -188,3 +188,19 @@ export function titleLanguageMismatch(userText: string, title: string): boolean 
   const hits = (lower.match(/[a-z]+/g) ?? []).filter((tok) => ENGLISH_MARKERS.has(tok)).length
   return hits >= 2
 }
+
+/** A source name without its trailing ` session` (`Tui Session` → `tui`). */
+export function normalizeSourceName(value: unknown): string {
+  let source = str(value).trim().toLowerCase()
+  if (source.endsWith(' session')) source = source.slice(0, -' session'.length).trim()
+  return source
+}
+
+/** A title the CLI row got by default (`Cli Session`, `Tui Session`, ...), which title generation may replace. */
+export function looksLikeDefaultCliTitle(row: Record<string, unknown>): boolean {
+  const title = str(row.title).trim().toLowerCase()
+  if (!title || title === 'untitled' || title === 'cli' || title === 'cli session') return true
+  const candidates = new Set([row.source, row.session_source, row.source_tag, row.raw_source, row.source_label].map(normalizeSourceName).filter(Boolean))
+  candidates.add('cli')
+  return [...candidates].some((c) => title === `${c} session`)
+}

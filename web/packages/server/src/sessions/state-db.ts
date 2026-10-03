@@ -9,6 +9,7 @@ import { existsSync, openSync, readSync, closeSync, statSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { str } from '../util.js'
 import { MESSAGING_SOURCES } from './source-kind.js'
+import { looksLikeDefaultCliTitle, normalizeSourceName } from './titles.js'
 
 export type Dict = Record<string, unknown>
 
@@ -37,20 +38,6 @@ export function normalizeAgentSessionSource(rawSource: unknown): { raw_source: s
   else sessionSource = 'other'
   const label = SOURCE_LABELS[raw] ?? (raw === 'unknown' ? 'Agent' : raw.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
   return { raw_source: raw === 'unknown' ? null : raw, session_source: sessionSource, source_label: label }
-}
-
-function normalizeSourceName(value: unknown): string {
-  let source = lower(value)
-  if (source.endsWith(' session')) source = source.slice(0, -' session'.length).trim()
-  return source
-}
-
-function looksLikeDefaultCliTitle(row: Dict): boolean {
-  const title = lower(row.title)
-  if (!title || title === 'untitled' || title === 'cli' || title === 'cli session') return true
-  const candidates = new Set([row.source, row.session_source, row.source_tag, row.raw_source, row.source_label].map(normalizeSourceName).filter(Boolean))
-  candidates.add('cli')
-  return [...candidates].some((c) => title === `${c} session`)
 }
 
 const positiveInt = (v: unknown): number => { const n = Number.parseFloat(str(v)); return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0 }

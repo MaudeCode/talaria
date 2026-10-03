@@ -4,6 +4,9 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
+import { FakeSidecar } from '../sidecar/fake.js'
+import type { SidecarResult } from '@maudecode/talaria-web-contracts'
+import { str } from '../util.js'
 import { agentSessionRowsExisting, cheapChangeFingerprint, latestCronSessionInfo, isCliSessionRowVisible, normalizeAgentSessionSource, projectAgentSessionRows, readImportableAgentSessionRows, stateDbHasSession, stateDbSessionSources } from './state-db.js'
 import { GatewayWatcher, snapshotHash } from './gateway-watcher.js'
 import { capRecentCliSessions, keepLatestMessagingSessionPerSource, mergeCliSidebarMetadata, withOwnerLocks, type GatewayIdentity } from './list.js'
@@ -250,6 +253,8 @@ describe('state.db projection', () => {
     expect(res.status).toBe(200)
     expect(s.deps.sessionStore.loadMetadataOnly('tui-tip')?.archived).toBe(true)
     expect(s.deps.sessionStore.get('tui-tip').messages).toHaveLength(4)
+    // The tip's transcript already stitches its compression parent in, so the claim must not record that parent as lineage.
+    expect(s.deps.sessionStore.get('tui-tip').parent_session_id).toBeNull()
     // A messaging-owned session renders read-only and refuses mutation with 403 rather than 404.
     insertSession(db, { id: 'tg-owned', source: 'telegram', started_at: 2000, title: 'From TG', chat_id: '77', messages: [['user', 2001], ['assistant', 2002]] })
     res = await s.get('/api/session?session_id=tg-owned')
@@ -348,5 +353,65 @@ describe('state.db projection', () => {
     expect(stateDbSessionSources(unreadable, ['a'])).toBeNull()
     const rows = withOwnerLocks([{ session_id: 'a' }, { session_id: 'b', source_tag: 'webui' }], () => null)
     expect(rows.map((r) => r.read_only)).toEqual([true, undefined])
+  })
+})
+
+describe('claiming a CLI session for WebUI (TAL-256)', () => {
+  let s: TestServer
+  let db: DatabaseSync
+  let sidecar: FakeSidecar
+  const post = (path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+  beforeAll(async () => {
+    sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar })
+    db = createStateDb(join(s.state, 'state.db'))
+  })
+  afterAll(async () => { db.close(); await s.close() })
+
+  const finished = (params: Record<string, unknown>, sid: string): SidecarResult<'chat.start'> => ({
+    status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'continued' }], final_response: 'continued', error: null, result_status: 'completed', tool_limit_reached: false,
+    usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: { context_length: 1000 }, model: 'm', provider: 'p', compressed: false,
+    agent_session_id: sid, token_sent: true, pending_steer: '', live_tool_calls: [],
+  })
+  const send = async (sid: string): Promise<void> => {
+    const res = await post('/api/chat/start', { session_id: sid, message: 'carry on' })
+    expect(res.status).toBe(200)
+    await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}`, (f) => f.event === 'stream_end')
+  }
+
+  it('keeps the CLI row\'s lineage and channel identity when its first WebUI send claims it', async () => {
+    insertSession(db, { id: 'cli-parent', source: 'cli', started_at: 1000, title: 'Earlier work', ended_at: 1050, end_reason: 'user_exit', messages: [['user', 1001], ['assistant', 1002]] })
+    insertSession(db, { id: 'cli-child', source: 'cli', started_at: 1100, title: 'Child work', parent: 'cli-parent', chat_id: '42', messages: [['user', 1101], ['assistant', 1102]] })
+    sidecar.respond('chat.start', (params) => finished(params, 'cli-child'))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Unused"', usage: null }))
+
+    expect((await json(await s.get('/api/session?session_id=cli-child&messages=0'))).session).toMatchObject({ read_only: false, is_cli_session: true })
+    await send('cli-child')
+
+    const claimed = s.deps.sessionStore.get('cli-child')
+    expect(claimed.parent_session_id).toBe('cli-parent')
+    expect(claimed.extra.chat_id).toBe('42')
+    // A real CLI title is not a placeholder, so title generation leaves it alone.
+    expect(claimed.title).toBe('Child work')
+  })
+
+  it('titles a claimed CLI session that still carries its default "<Source> Session" title', async () => {
+    insertSession(db, { id: 'cli-untitled', source: 'cli', started_at: 1150, messages: [['user', 1151], ['assistant', 1152]] })
+    sidecar.respond('chat.start', (params) => finished(params, 'cli-untitled'))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Resumed CLI work"', usage: null }))
+
+    await send('cli-untitled')
+
+    expect(s.deps.sessionStore.get('cli-untitled').title).toBe('Resumed CLI work')
+  })
+
+  it('files a claimed webhook session in the Webhooks project its sidebar row already shows', async () => {
+    insertSession(db, { id: 'hook-run', source: 'webhook', started_at: 1200, title: 'Hook run', messages: [['user', 1201], ['assistant', 1202]] })
+
+    expect((await post('/api/session/pin', { session_id: 'hook-run', pinned: true })).status).toBe(200)
+
+    const webhooks = s.deps.projects.ensureSystemProject('webhook', 'default', { create: false })
+    expect(webhooks).toBeTruthy()
+    expect(s.deps.sessionStore.get('hook-run').project_id).toBe(webhooks)
   })
 })

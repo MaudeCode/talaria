@@ -12,7 +12,7 @@ import { buildActiveTurnToken, copyJson, redactSessionData, redactValue, stripPu
 import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
-import { allSessions, buildSessionListPayload, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
+import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
@@ -252,6 +252,10 @@ export class SessionService {
       messages: msgs, created_at: Number(meta.created_at) || 0, updated_at: Number(meta.updated_at) || 0, profile: str(meta.profile) || null,
       is_cli_session: claimable ? true : !subagentChild, source_tag: str(meta.source_tag) || null, raw_source: str(meta.raw_source) || null,
       session_source: str(meta.session_source) || null, source_label: str(meta.source_label) || null, read_only: !claimable,
+      // Python `import_cli_session`: the claimed sidecar keeps the row's lineage, background project and channel identity
+      // (identity persists through `Session.extra`).
+      parent_session_id: str(meta.parent_session_id) || null, project_id: str(meta.project_id) || null,
+      ...Object.fromEntries(CLI_IDENTITY_FIELDS.filter((k) => meta[k] != null && meta[k] !== '').map((k) => [k, meta[k]])),
     }, defaults)
     return { session, reason: claimable ? 'materialized' : 'not_claimable' }
   }
