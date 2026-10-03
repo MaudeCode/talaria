@@ -98,6 +98,8 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("process.complete_delivery", {"profile_home": "{home}", "event": {"type": "async_delegation", "delegation_id": "deleg_fixture"}, "claim_id": ""}),
     ("process.release_delivery", {"profile_home": "{home}", "event": {"type": "async_delegation", "delegation_id": "deleg_fixture"}, "claim_id": ""}),
     ("process.defer_delivery", {"profile_home": "{home}", "event": {"type": "async_delegation", "delegation_id": "deleg_fixture"}, "claim_id": ""}),
+    ("process.background_list", {"profile_home": "{home}", "session_ids": ["webui-fixture"]}),
+    ("process.delegation_result", {"profile_home": "{home}", "session_id": "webui-fixture", "delegation_id": "deleg_fixture"}),
 ]
 
 # Scenarios whose params hold ids produced by earlier calls; resolved at run time.

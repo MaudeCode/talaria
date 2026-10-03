@@ -115,5 +115,31 @@
         "ok": false
       }
     }
+  ],
+  "process.background_list": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_ids": [
+          "webui-fixture"
+        ]
+      },
+      "result": {
+        "delegations": [],
+        "processes": []
+      }
+    }
+  ],
+  "process.delegation_result": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "session_id": "webui-fixture",
+        "delegation_id": "deleg_fixture"
+      },
+      "result": {
+        "text": ""
+      }
+    }
   ]
 }
