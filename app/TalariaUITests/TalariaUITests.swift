@@ -907,6 +907,18 @@ final class QuotaInsightsUITests: QuotaWidgetUITestCase {
         XCTAssertFalse(app.staticTexts["device_code"].exists)
         XCTAssertTrue(app.images["Active provider"].exists)
 
+        let quotaCell = app.cells.containing(.any, identifier: quotaSource.identifier).firstMatch
+        let resetCaption = app.staticTexts
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Resets"))
+            .firstMatch
+        XCTAssertTrue(quotaCell.exists, "Expected the quota source to render inside a list cell")
+        XCTAssertTrue(resetCaption.exists, "Expected the quota window's reset caption")
+        XCTAssertGreaterThanOrEqual(
+            quotaCell.frame.maxY - resetCaption.frame.maxY,
+            10,
+            "Expected bottom padding below the reset caption"
+        )
+
         let warning = app.buttons["Provider quota warning"]
         XCTAssertFalse(app.staticTexts["This server supports active-provider quota only. Multi-account sources require the companion server update."].exists)
 

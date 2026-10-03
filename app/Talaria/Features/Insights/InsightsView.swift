@@ -115,7 +115,7 @@ struct InsightsView: View {
                         hide: { hideProvider(source.providerID) }
                     )
                     .id(source.id)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
                     .swipeActions(edge: .trailing) {
                         Button {
                             hideProvider(source.providerID)
