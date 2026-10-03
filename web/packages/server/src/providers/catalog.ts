@@ -22,7 +22,7 @@ import {
 } from './tables.js'
 import {
   activeProviderFromConfig, canonicaliseProviderId, configuredModelIds, configuredModelOptions, customProviderEntries, customProviderSlug, dict, effectiveDefaultModel, isDict,
-  isOpenAiFamilyProvider, mainModelSupportsServiceTier, modelSection, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict,
+  isOpenAiFamilyProvider, mainModelSupportsServiceTier, modelSection, parseProviderQualifiedModel, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict,
 } from '../config/agent-config.js'
 
 export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean }
@@ -52,6 +52,28 @@ export function splitPickerOverflow(models: ModelEntry[], selected: string, prov
   return [visible, extras]
 }
 export interface ModelsCatalog { active_provider: string | null; default_model: string; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }> }
+
+/**
+ * TAL-388: stamp each auxiliary slot with its display value and the catalog entry whose provider/model pair equals the
+ * saved one, so clients tick exactly one option (a bare id listed under two providers matches only its own provider).
+ */
+export function stampAuxiliarySelections(aux: { tasks: Dict[]; main: Dict }, catalog: ModelsCatalog): { tasks: Dict[]; main: Dict } {
+  const options = catalog.groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])].map((m) => {
+    const parsed = parseProviderQualifiedModel(m.id)
+    return { id: m.id, label: m.label, group: g.provider, provider: canonicaliseProviderId(parsed?.[1] ?? g.provider_id), bare: parsed?.[0] ?? m.id }
+  }))
+  const tasks = aux.tasks.map((t) => {
+    const provider = str(t.provider).trim() || 'auto'
+    const model = str(t.model).trim()
+    if (provider === 'auto' && !model) return { ...t, is_auto: true, value_label: null, provider_label: null, selected_option_id: null, in_catalog: false }
+    const key = canonicaliseProviderId(provider)
+    const match = provider === 'auto' ? undefined : options.find((o) => o.provider === key && o.bare === model)
+    if (match) return { ...t, is_auto: false, value_label: match.label || match.bare, provider_label: match.group, selected_option_id: match.id, in_catalog: true }
+    const group = catalog.groups.find((g) => canonicaliseProviderId(g.provider_id) === key)
+    return { ...t, is_auto: false, value_label: model || null, provider_label: provider === 'auto' ? null : group?.provider ?? displayName(provider), selected_option_id: null, in_catalog: false }
+  })
+  return { ...aux, tasks }
+}
 
 export interface CatalogDeps {
   sidecar: () => SidecarLike | null

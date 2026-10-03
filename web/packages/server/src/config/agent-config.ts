@@ -463,32 +463,38 @@ export function auxiliaryModels(config: Config): { tasks: Dict[]; main: Dict } {
   }
 }
 
-function providerNativeAuxiliaryModel(provider: string, model: string): string {
-  const pid = provider.trim() || 'auto'
-  const id = model.trim()
-  if (!id.startsWith('@') || !id.includes(':')) return id
-  const prefix = `@${pid}:`
-  if (pid !== 'auto' && id.startsWith(prefix) && id.length > prefix.length) return id.slice(prefix.length)
-  throw new Error('provider-qualified auxiliary model must match the selected provider and include a model name')
+/** A picked `/api/models` id (`@provider:model`) splits into its provider and bare model; a qualified id must agree with an explicit provider. */
+function auxiliarySelection(providerRaw: string, modelRaw: string): [string, string] {
+  const provider = providerRaw.trim() || 'auto'
+  const model = modelRaw.trim()
+  if (!model.startsWith('@')) return [provider, model]
+  const parsed = parseProviderQualifiedModel(model)
+  if (!parsed?.[0] || !parsed[1] || (provider !== 'auto' && canonicaliseProviderId(provider) !== canonicaliseProviderId(parsed[1]))) {
+    throw new Error('provider-qualified auxiliary model must match the selected provider and include a model name')
+  }
+  return [provider === 'auto' ? parsed[1] : provider, parsed[0]]
 }
 
+const isCustomProvider = (provider: unknown): boolean => { const p = str(provider).trim(); return p === 'custom' || p.startsWith('custom:') }
+
 export async function setAuxiliaryModel(store: AgentConfig, home: string, task: string, providerRaw: string, modelRaw: string, advanced: unknown): Promise<{ ok: true; task: string; provider: string; model: string }> {
-  const provider = providerRaw.trim() || 'auto'
-  let model = modelRaw.trim()
   if (task !== '__reset__' && !AUX_TASK_SLOTS.includes(task)) throw new Error(`Unknown auxiliary task slot: '${task}'. Valid: [${AUX_TASK_SLOTS.map((s) => `'${s}'`).join(', ')}]`)
+  const [provider, model] = task === '__reset__' ? ['auto', ''] : auxiliarySelection(providerRaw, modelRaw)
   await store.update(home, (config) => {
     const aux = dict(config.auxiliary)
+    // Auto clears the override, including a custom endpoint's base_url (which would otherwise keep routing there).
+    const autoSlot = (entry: unknown): Dict => { const slot: Dict = { ...dict(entry), provider: 'auto', model: '' }; Reflect.deleteProperty(slot, 'base_url'); return slot }
     if (task === '__reset__') {
       for (const retired of RETIRED_AUX_TASK_SLOTS) Reflect.deleteProperty(aux, retired)
-      for (const slot of AUX_TASK_SLOTS) aux[slot] = { ...dict(aux[slot]), provider: 'auto', model: '' }
+      for (const slot of AUX_TASK_SLOTS) aux[slot] = autoSlot(aux[slot])
       config.auxiliary = aux
       return
     }
-    model = providerNativeAuxiliaryModel(provider, model)
-    const slot = dict(aux[task])
+    const slot = provider === 'auto' && !model ? autoSlot(aux[task]) : dict(aux[task])
+    if (isCustomProvider(slot.provider) && !isCustomProvider(provider)) Reflect.deleteProperty(slot, 'base_url')
     slot.provider = provider
     slot.model = model
-    if (provider === 'custom' || provider.startsWith('custom:')) {
+    if (isCustomProvider(provider)) {
       let base: string | null = null
       if (provider.startsWith('custom:')) {
         const match = customProviderEntries(config).find((e) => customProviderSlug(e.name) === provider)

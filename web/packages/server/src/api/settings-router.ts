@@ -12,11 +12,11 @@ import { isNonGlobalAddress } from '../http/addresses.js'
 import { isIP } from 'node:net'
 import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
-import { canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, personalityPrompt, personalityRows, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
+import { auxiliaryModels, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, personalityPrompt, personalityRows, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { writeEnvFile } from '../providers/env-file.js'
-import { displayName, providerEnvVar } from '../providers/catalog.js'
+import { displayName, providerEnvVar, stampAuxiliarySelections } from '../providers/catalog.js'
 import { OAUTH_PROVIDERS } from '../providers/tables.js'
 import { displayBotName, SETTINGS_SPEECH_KEYS, pyBool } from '../settings.js'
 import { str } from '../util.js'
@@ -42,6 +42,8 @@ async function run<T>(fn: () => Promise<T> | T): Promise<never> {
 }
 
 const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfileName(ctx))
+/** The active profile's auxiliary slots, stamped against the same catalog `/api/models` answers. */
+const auxiliaryState = async (ctx: RequestContext): Promise<Dict> => stampAuxiliarySelections(auxiliaryModels(await ctx.deps.agentConfig.read(home(ctx))), await ctx.deps.catalog.models(home(ctx)))
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase())
 
 /** Python `addr.is_loopback or addr.is_private` (`ipaddress` treats every non-global range as private). */
@@ -251,16 +253,17 @@ export const settingsRouter = os.router({
       ctx.deps.agentConfig.invalidate(home(ctx))
       return { ok: true as const, provider, models: await ctx.deps.catalog.models(home(ctx)) }
     })),
-    auxiliary: os.models.auxiliary.handler(({ context: { ctx } }) => run(async () => {
-      const { auxiliaryModels } = await import('../config/agent-config.js')
-      return auxiliaryModels(await ctx.deps.agentConfig.read(home(ctx))) as never
-    })),
+    auxiliary: os.models.auxiliary.handler(({ context: { ctx } }) => run(() => auxiliaryState(ctx) as never)),
     set: os.models.set.handler(({ input, context: { ctx } }) => run(async () => {
       const scope = str(input.scope).trim()
       const provider = str(input.provider).trim() || 'auto'
       const model = str(input.model).trim()
       try {
-        if (scope === 'auxiliary') return await setAuxiliaryModel(ctx.deps.agentConfig, home(ctx), str(input.task).trim(), provider, model, input.advanced)
+        if (scope === 'auxiliary') {
+          const saved = await setAuxiliaryModel(ctx.deps.agentConfig, home(ctx), str(input.task).trim(), provider, model, input.advanced)
+          ctx.deps.catalog.invalidate()
+          return { ...saved, auxiliary: await auxiliaryState(ctx) as never }
+        }
         if (scope === 'main') return await setDefaultModel(ctx.deps.agentConfig, home(ctx), model, provider === 'auto' ? null : provider, input.advanced)
       } catch (error) {
         if (error instanceof ConfigUnavailable) throw error

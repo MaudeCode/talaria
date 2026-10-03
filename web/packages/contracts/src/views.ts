@@ -335,8 +335,22 @@ export const QuotaSourceSchema = z.looseObject({
 /** Python `get_provider_quotas`: the stable identity envelope the iOS quota widget persists (`scope_id`/`profile_id`). */
 export const ProviderQuotasSchema = z.looseObject({ version: z.number(), scope_id: z.string(), profile_id: z.string(), active_provider: NullableString, requested_source_id: NullableString, missing_source: z.boolean(), sources: z.array(QuotaSourceSchema) })
 export const PersonalitiesSchema = z.looseObject({ personalities: z.array(z.looseObject({ name: z.string(), description: z.string().optional() })) })
-export const AuxiliaryTaskSchema = z.looseObject({ task: z.string(), label: z.string().optional(), description: z.string().optional(), model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional() })
-export const AuxiliaryModelsSchema = z.looseObject({ main: z.looseObject({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional() }).optional(), tasks: z.array(AuxiliaryTaskSchema).optional() })
+/** One auxiliary task slot in server order (TAL-388). The server owns ordering, normalization, and catalog matching. */
+export const AuxiliaryTaskSchema = z.looseObject({
+  task: z.string(), label: z.string(), description: z.string(),
+  /** Saved provider (`auto` when unset) and bare model id. */
+  provider: z.string(), model: z.string(),
+  base_url: z.string().optional(), api_key_set: z.boolean().optional(),
+  /** No override is saved: the Agent chooses the model when the task runs. */
+  is_auto: z.boolean(),
+  /** Pinned selection display: the catalog label (else the saved model id) and its provider name. Null when `is_auto`. */
+  value_label: z.string().nullable(), provider_label: z.string().nullable(),
+  /** The `/api/models` entry id matching the saved provider/model pair; null for Auto or a model absent from the catalog. */
+  selected_option_id: z.string().nullable(),
+  /** False for a pinned model the current catalog does not list; it stays visible and editable. */
+  in_catalog: z.boolean(),
+})
+export const AuxiliaryModelsSchema = z.looseObject({ main: z.looseObject({ model: z.string().optional(), provider: z.string().optional(), base_url: z.string().optional(), api_key_set: z.boolean().optional() }), tasks: z.array(AuxiliaryTaskSchema) })
 export const MaxTokensSchema = z.looseObject({ max_tokens: NullableNumber, max_tokens_effective: NullableNumber, max_tokens_fallback: NullableNumber })
 
 // ── workspaces, files, git ───────────────────────────────────────────────

@@ -24494,10 +24494,10 @@
                           "description": {
                             "type": "string"
                           },
-                          "model": {
+                          "provider": {
                             "type": "string"
                           },
-                          "provider": {
+                          "model": {
                             "type": "string"
                           },
                           "base_url": {
@@ -24505,15 +24505,64 @@
                           },
                           "api_key_set": {
                             "type": "boolean"
+                          },
+                          "is_auto": {
+                            "type": "boolean"
+                          },
+                          "value_label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "provider_label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "selected_option_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "in_catalog": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
-                          "task"
+                          "task",
+                          "label",
+                          "description",
+                          "provider",
+                          "model",
+                          "is_auto",
+                          "value_label",
+                          "provider_label",
+                          "selected_option_id",
+                          "in_catalog"
                         ],
                         "additionalProperties": {}
                       }
                     }
                   },
+                  "required": [
+                    "main",
+                    "tasks"
+                  ],
                   "additionalProperties": {}
                 }
               }
@@ -24525,7 +24574,7 @@
     "/api/model/set": {
       "post": {
         "operationId": "models.set",
-        "summary": "scope=main sets config.yaml model.default; scope=auxiliary assigns one task slot (`__reset__` clears all).",
+        "summary": "scope=main sets config.yaml model.default; scope=auxiliary assigns one task slot (`__reset__` clears all) and answers the refreshed auxiliary state. An auxiliary `model` may be a `/api/models` entry id; provider `auto` with an empty model clears the override.",
         "tags": [
           "settings"
         ],
@@ -24597,6 +24646,112 @@
                     "session": {},
                     "error": {
                       "type": "string"
+                    },
+                    "auxiliary": {
+                      "type": "object",
+                      "properties": {
+                        "main": {
+                          "type": "object",
+                          "properties": {
+                            "model": {
+                              "type": "string"
+                            },
+                            "provider": {
+                              "type": "string"
+                            },
+                            "base_url": {
+                              "type": "string"
+                            },
+                            "api_key_set": {
+                              "type": "boolean"
+                            }
+                          },
+                          "additionalProperties": {}
+                        },
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "task": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "provider": {
+                                "type": "string"
+                              },
+                              "model": {
+                                "type": "string"
+                              },
+                              "base_url": {
+                                "type": "string"
+                              },
+                              "api_key_set": {
+                                "type": "boolean"
+                              },
+                              "is_auto": {
+                                "type": "boolean"
+                              },
+                              "value_label": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "provider_label": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "selected_option_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "in_catalog": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "task",
+                              "label",
+                              "description",
+                              "provider",
+                              "model",
+                              "is_auto",
+                              "value_label",
+                              "provider_label",
+                              "selected_option_id",
+                              "in_catalog"
+                            ],
+                            "additionalProperties": {}
+                          }
+                        }
+                      },
+                      "required": [
+                        "main",
+                        "tasks"
+                      ],
+                      "additionalProperties": {}
                     }
                   },
                   "additionalProperties": {}
