@@ -243,7 +243,6 @@ export class SessionService {
       if (!meta.workspace && row.cwd) meta.workspace = row.cwd
       if (!meta.created_at && row.started_at) meta.created_at = row.started_at
       if (!meta.updated_at && (row.ended_at || row.started_at)) meta.updated_at = row.ended_at || row.started_at
-      if (!meta.parent_session_id && row.parent_session_id) meta.parent_session_id = row.parent_session_id
     }
     const claimable = isClaimableCliSource(meta, stateDbSource)
     const workspace = str(meta.workspace || meta.cwd).trim() || this.deps.workspaces.lastWorkspace(profile)

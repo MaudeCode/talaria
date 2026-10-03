@@ -253,6 +253,8 @@ describe('state.db projection', () => {
     expect(res.status).toBe(200)
     expect(s.deps.sessionStore.loadMetadataOnly('tui-tip')?.archived).toBe(true)
     expect(s.deps.sessionStore.get('tui-tip').messages).toHaveLength(4)
+    // The tip's transcript already stitches its compression parent in, so the claim must not record that parent as lineage.
+    expect(s.deps.sessionStore.get('tui-tip').parent_session_id).toBeNull()
     // A messaging-owned session renders read-only and refuses mutation with 403 rather than 404.
     insertSession(db, { id: 'tg-owned', source: 'telegram', started_at: 2000, title: 'From TG', chat_id: '77', messages: [['user', 2001], ['assistant', 2002]] })
     res = await s.get('/api/session?session_id=tg-owned')
