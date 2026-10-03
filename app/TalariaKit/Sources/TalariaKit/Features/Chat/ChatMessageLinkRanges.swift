@@ -148,8 +148,8 @@ public enum MarkdownLinkRanges {
     }
 }
 
-/// The link geometry of one message row, filled in by the paragraphs it renders
-/// and read by the long-press handler.
+/// The link and control geometry of one message row, filled in by the
+/// paragraphs and controls it renders and read by the long-press handler.
 ///
 /// `TextRenderer.draw` is not bound to an actor, so access is serialized with a
 /// lock rather than actor isolation — the same arrangement
@@ -162,6 +162,7 @@ public final class ChatMessageLinkRegionStore: @unchecked Sendable {
 
     private let lock = NSLock()
     private var paragraphs: [UUID: Paragraph] = [:]
+    private var controls: [UUID: CGRect] = [:]
 
     public init() {}
 
@@ -183,6 +184,20 @@ public final class ChatMessageLinkRegionStore: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         paragraphs.removeValue(forKey: id)
+    }
+
+    /// A control's frame in the row's coordinate space; nil removes it.
+    public func setControlFrame(_ frame: CGRect?, forControl id: UUID) {
+        lock.lock()
+        defer { lock.unlock() }
+        controls[id] = frame
+    }
+
+    /// Every control frame in the row's coordinate space.
+    public func controlRegions() -> [CGRect] {
+        lock.lock()
+        defer { lock.unlock() }
+        return Array(controls.values)
     }
 
     /// Every link hit target in the row's coordinate space.

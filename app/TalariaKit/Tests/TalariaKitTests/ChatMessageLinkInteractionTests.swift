@@ -49,6 +49,19 @@ final class ChatMessageMenuPolicyTests: XCTestCase {
             .link(link.url)
         )
     }
+
+    /// A press on Show more keeps the button's tap, even over a link (TAL-485).
+    func testPressOnAControlResolvesToTheControl() {
+        let toggle = CGRect(x: 60, y: 95, width: 100, height: 30)
+        XCTAssertEqual(
+            ChatMessageMenuPolicy.target(at: CGPoint(x: 80, y: 109), linkRegions: [link], controlRegions: [toggle]),
+            .control
+        )
+        XCTAssertEqual(
+            ChatMessageMenuPolicy.target(at: CGPoint(x: 80, y: 140), linkRegions: [link], controlRegions: [toggle]),
+            .message
+        )
+    }
 }
 
 final class MarkdownLinkRangesTests: XCTestCase {
@@ -131,6 +144,17 @@ final class ChatMessageLinkRegionStoreTests: XCTestCase {
         store.removeParagraph(paragraph)
 
         XCTAssertEqual(store.regions(), [])
+    }
+
+    func testControlFramesAreReportedUntilRemoved() {
+        let store = ChatMessageLinkRegionStore()
+        let control = UUID()
+        let frame = CGRect(x: 200, y: 400, width: 90, height: 22)
+        store.setControlFrame(frame, forControl: control)
+        XCTAssertEqual(store.controlRegions(), [frame])
+
+        store.setControlFrame(nil, forControl: control)
+        XCTAssertEqual(store.controlRegions(), [])
     }
 
     private let paragraph = UUID()

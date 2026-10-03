@@ -5,6 +5,9 @@ import SwiftUI
 public enum ChatMessageMenuTarget: Equatable {
     case link(URL)
     case message
+    /// A control inside the row, such as Show more, which keeps its own touch:
+    /// the press opens no menu (TAL-485).
+    case control
 }
 
 public enum ChatMessageMenuPolicy {
@@ -13,13 +16,17 @@ public enum ChatMessageMenuPolicy {
     /// prose above and below a link still opens the message menu.
     public static let linkTouchSlop: CGFloat = 4
 
-    /// Links win at their own hit target; everything else in the row belongs to
-    /// the message menu.
+    /// Controls win at their own frame and links at their own hit target;
+    /// everything else in the row belongs to the message menu.
     public static func target(
         at point: CGPoint,
         linkRegions: [ChatMessageLinkRegion],
+        controlRegions: [CGRect] = [],
         touchSlop: CGFloat = linkTouchSlop
     ) -> ChatMessageMenuTarget {
+        if controlRegions.contains(where: { $0.contains(point) }) {
+            return .control
+        }
         let hit = linkRegions.first {
             $0.rect.insetBy(dx: -touchSlop, dy: -touchSlop).contains(point)
         }

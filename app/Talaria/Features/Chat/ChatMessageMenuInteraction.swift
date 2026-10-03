@@ -8,6 +8,7 @@ struct ChatMessageMenuContent {
     let messageID: String
     let actions: [ChatMessageAction]
     let linkRegions: [ChatMessageLinkRegion]
+    let controlRegions: [CGRect]
 }
 
 /// The message rows currently on screen, keyed by their marker view.
@@ -187,15 +188,17 @@ final class ChatMessageMenuHostView: UIView, UIGestureRecognizerDelegate {
         guard recognizer.state == .began, let scrollView = attachedScrollView else { return }
 
         let point = recognizer.location(in: scrollView)
-        guard let hit = registry.hit(at: point, in: scrollView) else { return }
+        guard let (hit, target) = resolve(point, in: scrollView) else { return }
 
         let menu: UIMenu
-        switch ChatMessageMenuPolicy.target(at: hit.localPoint, linkRegions: hit.content.linkRegions) {
+        switch target {
         case .link(let url):
             menu = linkMenu(for: url)
         case .message:
             guard !hit.content.actions.isEmpty else { return }
             menu = messageMenu(for: hit.content.actions)
+        case .control:
+            return
         }
 
         if anchor.superview !== scrollView {
@@ -204,6 +207,19 @@ final class ChatMessageMenuHostView: UIView, UIGestureRecognizerDelegate {
         anchor.frame = CGRect(x: point.x, y: point.y, width: 1, height: 1)
         anchor.menu = menu
         anchor.performPrimaryAction()
+    }
+
+    private func resolve(
+        _ point: CGPoint,
+        in scrollView: UIScrollView
+    ) -> (ChatMessageMenuRegistry.Hit, ChatMessageMenuTarget)? {
+        guard let hit = registry.hit(at: point, in: scrollView) else { return nil }
+        let target = ChatMessageMenuPolicy.target(
+            at: hit.localPoint,
+            linkRegions: hit.content.linkRegions,
+            controlRegions: hit.content.controlRegions
+        )
+        return (hit, target)
     }
 
     private func messageMenu(for actions: [ChatMessageAction]) -> UIMenu {
@@ -249,6 +265,20 @@ final class ChatMessageMenuHostView: UIView, UIGestureRecognizerDelegate {
         controller.popoverPresentationController?.sourceView = anchor
         controller.popoverPresentationController?.sourceRect = anchor.bounds
         presenter.present(controller, animated: true)
+    }
+
+    /// A touch that lands on a control is not the press's to measure, so it
+    /// cannot cancel the control's own tap however long it is held (TAL-485).
+    nonisolated func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldReceive touch: UITouch
+    ) -> Bool {
+        MainActor.assumeIsolated {
+            guard let scrollView = attachedScrollView,
+                  let (_, target) = resolve(touch.location(in: scrollView), in: scrollView)
+            else { return true }
+            return target != .control
+        }
     }
 
     /// The transcript keeps scrolling and selecting while the press is measured;
