@@ -1,0 +1,1 @@
+{"skip": "CI only: hosted UI shard memory samples also record SimRenderServer's lifetime peak; no app behavior changes."}
