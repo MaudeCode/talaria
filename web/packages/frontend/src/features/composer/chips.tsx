@@ -110,7 +110,7 @@ export interface ContextFigures { percent: number | null | undefined; used: numb
 function contextStats({ percent, used, window, thresholdPercent }: ContextFigures) {
   if (percent == null || used == null || window == null) return null
   const tone = percent >= 90 ? 'high' : percent >= 70 ? 'mid' : 'low'
-  const title = `${m.composer_context_usage()}: ${percent}% (${used.toLocaleString()} / ${window.toLocaleString()})${thresholdPercent ? ` · ${m.auto_compress_label()}: ${thresholdPercent}%` : ''}`
+  const title = `${m.composer_context_usage()}: ${percent}% (${used.toLocaleString()} / ${window.toLocaleString()})${thresholdPercent != null ? ` · ${m.auto_compress_label()}: ${thresholdPercent}%` : ''}`
   return { pct: percent, used, window, tone, title }
 }
 
@@ -144,7 +144,7 @@ export function ContextRow(figures: ContextFigures) {
         <span className="composer-mobile-config-kicker">{m.composer_mobile_context()}</span>
         <span className="composer-mobile-config-value">{m.composer_context_usage()}: {st.pct}%</span>
         <span className="composer-mobile-context-detail">{st.used.toLocaleString()} / {st.window.toLocaleString()}</span>
-        {figures.thresholdPercent ? <span className="composer-mobile-context-detail">{m.auto_compress_label()}: {figures.thresholdPercent}%</span> : null}
+        {figures.thresholdPercent != null ? <span className="composer-mobile-context-detail">{m.auto_compress_label()}: {figures.thresholdPercent}%</span> : null}
       </span>
     </div>
   )

@@ -91,9 +91,13 @@ describe('Composer', () => {
     const { unmount } = renderComposer({ ...idle, input_tokens: 900_000, last_prompt_tokens: 900_000, context_usage_percent: null, context_used_tokens: 900_000, context_window_tokens: null })
     expect(document.getElementById('ctxIndicator')).toBeNull()
     unmount()
-    renderComposer({ ...idle, last_prompt_tokens: 120_000, post_compression_context_tokens_estimate: 10_347, context_length: 128_000, context_used_tokens: 10_347, context_window_tokens: 128_000, context_usage_percent: 8, context_threshold_percent: 78 })
+    const second = renderComposer({ ...idle, last_prompt_tokens: 120_000, post_compression_context_tokens_estimate: 10_347, context_length: 128_000, context_used_tokens: 10_347, context_window_tokens: 128_000, context_usage_percent: 8, context_threshold_percent: 78 })
     expect(document.getElementById('ctxPercent')).toHaveTextContent('8')
     expect(document.getElementById('ctxIndicator')?.getAttribute('aria-label')).toMatch(/: 8% \(10,347 \/ 128,000\) · .*: 78%$/)
+    second.unmount()
+    // A threshold under half a percent of a large window is the server's 0, still shown.
+    renderComposer({ ...idle, context_used_tokens: 10_000, context_window_tokens: 1_000_000, context_usage_percent: 1, context_threshold_percent: 0 })
+    expect(document.getElementById('ctxIndicator')?.getAttribute('aria-label')).toMatch(/ · .*: 0%$/)
   })
 
   it('keeps only Stop while a turn runs and the draft is empty', () => {
