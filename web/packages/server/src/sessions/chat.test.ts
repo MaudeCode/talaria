@@ -1318,6 +1318,10 @@ describe('chat turns through the sidecar', () => {
       return (rows.find((r) => (r.tool as Json | undefined)?.name === 'delegate_task')?.tool as Json | undefined)?.background
     }
     expect(await link()).toEqual({ task_ids: ['call-1-1', 'call-1-2'], status: 'running', agents: { total: 3, completed: 0, failed: 0, running: 3 } })
+    // TAL-494: the sidecar names each unit's subagent sessions; the record links each one to its read-only transcript.
+    delegations = [unit('call-1-1', ['Write docs'], { children: [{ goal: 'Write docs', session_id: 'child-docs' }] }), unit('call-1-2', ['Write tests', 'Run tests'])]
+    const linked = ((await json(await s.get(`/api/background/tasks?session_id=${sid}&kind=delegation`))).tasks as Json[]).map((t) => [t.task_id, t.child_sessions])
+    expect(linked).toEqual(expect.arrayContaining([['call-1-1', [{ goal: 'Write docs', session_id: 'child-docs' }]], ['call-1-2', []]]))
     // The Agent cannot be asked: the running unit's row says unknown, like the card.
     sidecar.respond('process.background_list', () => { throw new SidecarError('agent down', { condition: 'sidecar_error' }) })
     expect(await link()).toMatchObject({ status: 'unknown' })

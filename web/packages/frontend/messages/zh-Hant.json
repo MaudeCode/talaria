@@ -1847,5 +1847,6 @@
 	"panel_agents_unavailable": "代理目前無法回報狀態。",
 	"panel_agents_updated": "更新於 {time}",
 	"panel_agents_transcript": "開啟對話紀錄",
-	"panel_files_unavailable": "此對話沒有工作區。"
+	"panel_files_unavailable": "此對話沒有工作區。",
+	"panel_agents_transcript_for": "對話紀錄：{goal}"
 }

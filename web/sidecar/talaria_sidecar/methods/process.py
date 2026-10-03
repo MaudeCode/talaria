@@ -8,6 +8,7 @@ import json
 import logging
 import queue
 import sqlite3
+import time
 from contextlib import closing
 from pathlib import Path
 
@@ -269,13 +270,106 @@ def _owned_processes(session_ids: set[str]) -> list[dict]:
     return out
 
 
+_CHILD_WINDOW_S = 5
+
+
+def _live_children() -> list[dict]:
+    """Running subagents from the Agent's in-process registry: the only place a child's session id sits next to its
+    delegation id. An Agent without the registry reports none."""
+    try:
+        from tools.delegate_tool_registry import _active_subagents, _active_subagents_lock
+        with _active_subagents_lock:
+            records = list(_active_subagents.values())
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for r in records:
+        sid = getattr(r.get("agent"), "session_id", None)
+        if isinstance(sid, str) and sid:
+            out.append({"delegation_id": str(r.get("delegation_id") or ""), "goal": str(r.get("goal") or ""), "owner": str(r.get("owner_agent_session_id") or ""), "session_id": sid})
+    return out
+
+
+def _ledger_children(home: Path, owners: list[str]) -> list[dict]:
+    """Finished subagents' own sessions in state.db: ``source = subagent`` rows tagged ``_delegate_from`` with their
+    parent's session, each with its start time and first user message (the child's goal, sent verbatim)."""
+    db_path = home / "state.db"
+    if not db_path.exists() or not owners:
+        return []
+    marks = ",".join("?" * len(owners))
+    with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True, timeout=5)) as conn:
+        try:
+            # Only these chats' children: a long-lived profile keeps every subagent session it ever ran.
+            rows = conn.execute(
+                "SELECT s.id, s.model_config, s.started_at, (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.role = 'user' ORDER BY m.id LIMIT 1)"
+                f" FROM sessions s WHERE s.source = 'subagent' AND json_extract(s.model_config, '$._delegate_from') IN ({marks})", owners).fetchall()
+        except sqlite3.OperationalError:
+            return []
+    out = []
+    for sid, model_config, started_at, first in rows:
+        owner = _json(model_config).get("_delegate_from")
+        goal = _goal_text(first)
+        if owner in owners and goal:
+            out.append({"owner": owner, "session_id": sid, "started_at": started_at, "goal": goal})
+    return out
+
+
+_CONTENT_JSON_PREFIX = "\x00json:"
+_IMAGE_HINTS = "\n\n[Image attached"
+
+
+def _goal_text(content) -> str:
+    """The goal a child was sent, from its stored first message: a task with images is stored as multimodal parts
+    (native image input; the goal is the text part) or as the goal followed by image hints (text input)."""
+    if not isinstance(content, str):
+        return ""
+    if content.startswith(_CONTENT_JSON_PREFIX):
+        try:
+            parts = json.loads(content[len(_CONTENT_JSON_PREFIX):])
+        except ValueError:
+            return ""
+        texts = [p.get("text") for p in parts if isinstance(p, dict) and p.get("type") == "text"] if isinstance(parts, list) else []
+        return str(texts[0]) if texts and texts[0] else ""
+    return content.split(_IMAGE_HINTS, 1)[0]
+
+
+def unit_children(unit: dict, owner: str, live: list[dict], finished: list[dict], now: float) -> list[dict]:
+    """The subagent sessions one delegation unit ran, as ``{goal, session_id}`` per task, in task order. A live registry
+    record is exact (same owner, the unit's call id, the task's goal) and is used once. Without one, finished sessions
+    of that owner whose goal matches, started in the unit's window, count only when there are exactly as many as tasks
+    with that goal; anything else stays unlinked rather than guessed."""
+    unit_id, goals = unit["delegation_id"], [g for g in unit["goals"] if g]
+    pool = [r for r in live if r["owner"] == owner and r["delegation_id"] and (unit_id == r["delegation_id"] or unit_id.startswith(f"{r['delegation_id']}-"))]
+    linked: list[str | None] = []
+    used: set[str] = set()
+    for goal in goals:
+        record = next((r for r in pool if r["goal"] == goal and r["session_id"] not in used), None)
+        if record:
+            used.add(record["session_id"])
+        linked.append(record["session_id"] if record else None)
+    start = (unit.get("dispatched_at") or 0) - _CHILD_WINDOW_S
+    end = (unit.get("completed_at") or now) + _CHILD_WINDOW_S
+    for goal in {g for g, sid in zip(goals, linked) if sid is None}:
+        slots = [i for i, (g, sid) in enumerate(zip(goals, linked)) if g == goal and sid is None]
+        matches = sorted((c for c in finished if c["owner"] == owner and c["goal"] == goal and c["session_id"] not in used and start <= (c["started_at"] or 0) <= end), key=lambda c: c["started_at"] or 0)
+        if len(matches) == len(slots):
+            for i, c in zip(slots, matches):
+                linked[i] = c["session_id"]
+    return [{"goal": g, "session_id": sid} for g, sid in zip(goals, linked) if sid]
+
+
 def background_list(home: Path, session_ids: list[str]) -> dict:
     """TAL-372: what the Agent knows about the background work of these WebUI sessions: delegations from the durable
-    ledger (with the live registry's status while they run) and notified processes from the process registry."""
+    ledger (with the live registry's status while they run) and notified processes from the process registry.
+    TAL-494: each delegation also names the subagent sessions it ran."""
     live = _live_delegations()
     delegations = _ledger_rows(home, session_ids)
+    live_children = _live_children()
+    finished = _ledger_children(home, session_ids) if delegations else []
+    now = time.time()
     for row in delegations:
         row["live_status"] = live.get(row["delegation_id"], {}).get("status")
+        row["children"] = unit_children(row, row["origin_ui_session_id"], live_children, finished, now)
     return {"delegations": delegations, "processes": _owned_processes(set(session_ids))}
 
 

@@ -1922,5 +1922,6 @@
 	"panel_agents_unavailable": "L’agente non può riportare lo stato in questo momento.",
 	"panel_agents_updated": "Aggiornato {time}",
 	"panel_agents_transcript": "Apri trascrizione",
-	"panel_files_unavailable": "Questa chat non ha uno spazio di lavoro."
+	"panel_files_unavailable": "Questa chat non ha uno spazio di lavoro.",
+	"panel_agents_transcript_for": "Trascrizione: {goal}"
 }

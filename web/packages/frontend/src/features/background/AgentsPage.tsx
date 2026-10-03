@@ -55,8 +55,17 @@ export function AgentsPage({ sessionId, active }: { sessionId: string; active: b
               <div className="flex min-w-0 items-center gap-2 pl-5 text-[11px] text-muted">
                 {t.agents && <span>{agentsSummary(t.agents)}</span>}
                 <span>{m.panel_agents_updated({ time: relativeTime(t.updated_at) })}</span>
-                {t.child_session_id && <Link to="/session/$sessionId" params={{ sessionId: t.child_session_id }} className="ml-auto text-accent-text underline">{m.panel_agents_transcript()}</Link>}
               </div>
+              {/* TAL-494: each subagent's own read-only transcript, by its goal when the unit ran several. */}
+              {t.child_sessions.length > 0 && (
+                <div className="flex min-w-0 flex-col gap-0.5 pl-5 text-[11px]">
+                  {t.child_sessions.map((c) => (
+                    <Link key={c.session_id} to="/session/$sessionId" params={{ sessionId: c.session_id }} className="min-w-0 truncate text-accent-text underline" title={c.goal}>
+                      {t.child_sessions.length > 1 ? m.panel_agents_transcript_for({ goal: c.goal }) : m.panel_agents_transcript()}
+                    </Link>
+                  ))}
+                </div>
+              )}
             </li>
           ))}
         </ul>

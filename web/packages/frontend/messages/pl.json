@@ -1956,5 +1956,6 @@
 	"panel_agents_unavailable": "Agent nie może teraz podać stanu.",
 	"panel_agents_updated": "Zaktualizowano {time}",
 	"panel_agents_transcript": "Otwórz zapis",
-	"panel_files_unavailable": "Ten czat nie ma obszaru roboczego."
+	"panel_files_unavailable": "Ten czat nie ma obszaru roboczego.",
+	"panel_agents_transcript_for": "Zapis: {goal}"
 }

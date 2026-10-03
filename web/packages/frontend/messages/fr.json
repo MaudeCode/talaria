@@ -1940,5 +1940,6 @@
 	"panel_agents_unavailable": "L’agent ne peut pas indiquer son état pour le moment.",
 	"panel_agents_updated": "Mis à jour {time}",
 	"panel_agents_transcript": "Ouvrir la transcription",
-	"panel_files_unavailable": "Cette discussion n’a pas d’espace de travail."
+	"panel_files_unavailable": "Cette discussion n’a pas d’espace de travail.",
+	"panel_agents_transcript_for": "Transcription : {goal}"
 }

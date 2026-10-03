@@ -198,6 +198,8 @@ export const PROCESS_METHODS = {
       delegations: z.array(z.object({
         delegation_id: z.string(), origin_ui_session_id: z.string(), state: z.string(), dispatched_at: z.number().nullable(), completed_at: z.number().nullable(),
         updated_at: z.number().nullable(), goals: z.array(z.string()), child_statuses: z.array(z.string()), has_result: z.boolean(), live_status: z.string().nullable(),
+        /** TAL-494: the subagent sessions this unit ran (absent from a sidecar before TAL-494). */
+        children: z.array(z.object({ goal: z.string(), session_id: z.string() })).optional(),
       })),
       processes: z.array(z.object({
         process_id: z.string(), session_key: z.string(), command: z.string(), started_at: z.number().nullable(), exited: z.boolean(), exited_at: z.number().nullable(),

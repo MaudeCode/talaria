@@ -3451,6 +3451,25 @@
                 "string",
                 "null"
               ]
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "goal": {
+                    "type": "string"
+                  },
+                  "session_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "goal",
+                  "session_id"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [

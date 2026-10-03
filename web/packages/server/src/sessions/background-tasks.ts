@@ -30,7 +30,8 @@ export interface Receipt {
   completed_at: number | null
   exit_code: number | null
   agents: Agents | null
-  child_session_id: string | null
+  /** TAL-494: the subagent sessions a delegation ran, kept once seen (the Agent forgets a child's id when it ends). */
+  children?: ChildSession[]
   result: string | null
   /** The Agent has the full result (a delegation's ledger row). */
   agent_result: boolean
@@ -41,7 +42,8 @@ export interface Receipt {
   legacy_reported: boolean
 }
 
-export interface DelegationRow { delegation_id: string; state: string; dispatched_at: number | null; completed_at: number | null; updated_at: number | null; goals: string[]; child_statuses: string[]; has_result: boolean; live_status: string | null }
+export interface ChildSession { goal: string; session_id: string }
+export interface DelegationRow { delegation_id: string; state: string; dispatched_at: number | null; completed_at: number | null; updated_at: number | null; goals: string[]; child_statuses: string[]; has_result: boolean; live_status: string | null; children?: ChildSession[] | undefined }
 export interface ProcessRow { process_id: string; command: string; started_at: number | null; exited: boolean; exited_at: number | null; exit_code: number | null; completion_reason: string; watched: boolean }
 
 const DIR_NAME = '_background'
@@ -89,6 +91,7 @@ export function delegationReceipt(row: DelegationRow, now: number): Partial<Rece
     task_id: row.delegation_id, kind: 'delegation', status, title: taskTitle(goals.length > 1 ? `${goals.length} subagents: ${goals.join('; ')}` : goals[0]),
     started_at: row.dispatched_at, completed_at: running ? null : row.completed_at ?? row.updated_at ?? now,
     agents: agentCounts(goals.length, running ? [] : row.child_statuses, running), agent_result: row.has_result,
+    ...(row.children?.length ? { children: row.children } : {}),
   }
 }
 
@@ -119,17 +122,25 @@ export function eventReceipt(evt: Dict, prompt: string, now: number): (Partial<R
   return { task_id: id, kind: 'process', status: 'attention', title: taskTitle(evt.command), result: prompt ? bounded(prompt) : null }
 }
 
+/** Children seen so far plus newly reported ones, by session id, first-seen order. */
+function mergeChildren(known: ChildSession[] | undefined, reported: ChildSession[] | undefined): ChildSession[] {
+  const out = [...(known ?? [])]
+  for (const c of reported ?? []) if (!out.some((k) => k.session_id === c.session_id)) out.push(c)
+  return out
+}
+
 /** Fold an update into a receipt: a terminal record never reopens, and fields an update leaves out are kept. */
 export function mergeReceipt(prev: Receipt | undefined, next: Partial<Receipt> & Pick<Receipt, 'task_id' | 'kind'>, now: number): Receipt {
-  const base: Receipt = prev ?? { task_id: next.task_id, kind: next.kind, status: 'running', title: '', started_at: null, updated_at: now, completed_at: null, exit_code: null, agents: null, child_session_id: null, result: null, agent_result: false, stream_id: null, dismissed_at: null, legacy_reported: false }
+  const base: Receipt = prev ?? { task_id: next.task_id, kind: next.kind, status: 'running', title: '', started_at: null, updated_at: now, completed_at: null, exit_code: null, agents: null, result: null, agent_result: false, stream_id: null, dismissed_at: null, legacy_reported: false }
   const defined = Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined && v !== null && v !== '')) as Partial<Receipt>
+  const children = mergeChildren(base.children, defined.children)
   if (isTerminal(base.status)) {
-    // Settled once: later reports may add detail (the full result, counts) but never change the outcome.
-    return { ...base, result: base.result ?? defined.result ?? null, agent_result: base.agent_result || Boolean(defined.agent_result), agents: base.agents ?? defined.agents ?? null, updated_at: base.updated_at }
+    // Settled once: later reports may add detail (the full result, counts, child sessions) but never change the outcome.
+    return { ...base, result: base.result ?? defined.result ?? null, agent_result: base.agent_result || Boolean(defined.agent_result), agents: base.agents ?? defined.agents ?? null, ...(children.length ? { children } : {}), updated_at: base.updated_at }
   }
   // A process's matched watch needs attention until it ends; the registry only knows it is still running.
   if (base.kind === 'process' && base.status === 'attention' && defined.status === 'running') delete defined.status
-  const merged: Receipt = { ...base, ...defined, task_id: base.task_id, kind: base.kind, updated_at: now }
+  const merged: Receipt = { ...base, ...defined, task_id: base.task_id, kind: base.kind, ...(children.length ? { children } : {}), updated_at: now }
   if (isTerminal(merged.status)) { merged.completed_at = merged.completed_at ?? now; merged.stream_id = null }
   return merged
 }
@@ -149,7 +160,7 @@ export function taskView(r: Receipt, opts: { unconfirmed?: boolean } = {}): Back
   return {
     task_id: r.task_id, kind: r.kind, status, title: r.title, started_at: r.started_at, updated_at: r.updated_at, completed_at: r.completed_at,
     result_available: isTerminal(r.status) || r.status === 'attention' ? Boolean(r.result) || r.agent_result : false,
-    child_session_id: r.child_session_id, exit_code: r.exit_code, agents: r.agents,
+    child_sessions: (r.children ?? []).filter((c) => isSafeSessionId(c.session_id)).map((c) => ({ goal: c.goal, session_id: c.session_id })), exit_code: r.exit_code, agents: r.agents,
     // Work nobody can confirm (lost in an Agent or server restart) can be dismissed like a finished `/background` result.
     pinned: status === 'running' || status === 'attention' || (dismissible(r, status) && r.dismissed_at === null),
     // Dismissed work nobody can confirm will not settle on its own; clients stop refreshing for it.

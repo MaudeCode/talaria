@@ -1914,5 +1914,6 @@
 	"panel_agents_unavailable": "지금은 에이전트가 상태를 알릴 수 없습니다.",
 	"panel_agents_updated": "업데이트 {time}",
 	"panel_agents_transcript": "대화 기록 열기",
-	"panel_files_unavailable": "이 채팅에는 작업 공간이 없습니다."
+	"panel_files_unavailable": "이 채팅에는 작업 공간이 없습니다.",
+	"panel_agents_transcript_for": "대화 기록: {goal}"
 }

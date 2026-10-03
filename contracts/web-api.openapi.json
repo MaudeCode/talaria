@@ -28790,15 +28790,24 @@
                           "result_available": {
                             "type": "boolean"
                           },
-                          "child_session_id": {
-                            "anyOf": [
-                              {
-                                "type": "string"
+                          "child_sessions": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "goal": {
+                                  "type": "string"
+                                },
+                                "session_id": {
+                                  "type": "string",
+                                  "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                                }
                               },
-                              {
-                                "type": "null"
-                              }
-                            ]
+                              "required": [
+                                "goal",
+                                "session_id"
+                              ]
+                            }
                           },
                           "exit_code": {
                             "anyOf": [
@@ -28869,7 +28878,7 @@
                           "updated_at",
                           "completed_at",
                           "result_available",
-                          "child_session_id",
+                          "child_sessions",
                           "exit_code",
                           "agents",
                           "pinned",
@@ -29046,15 +29055,24 @@
                         "result_available": {
                           "type": "boolean"
                         },
-                        "child_session_id": {
-                          "anyOf": [
-                            {
-                              "type": "string"
+                        "child_sessions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "goal": {
+                                "type": "string"
+                              },
+                              "session_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+                              }
                             },
-                            {
-                              "type": "null"
-                            }
-                          ]
+                            "required": [
+                              "goal",
+                              "session_id"
+                            ]
+                          }
                         },
                         "exit_code": {
                           "anyOf": [
@@ -29125,7 +29143,7 @@
                         "updated_at",
                         "completed_at",
                         "result_available",
-                        "child_session_id",
+                        "child_sessions",
                         "exit_code",
                         "agents",
                         "pinned",

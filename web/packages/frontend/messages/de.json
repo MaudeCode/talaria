@@ -1858,5 +1858,6 @@
 	"panel_agents_unavailable": "Der Agent kann gerade keinen Status melden.",
 	"panel_agents_updated": "Aktualisiert {time}",
 	"panel_agents_transcript": "Verlauf öffnen",
-	"panel_files_unavailable": "Dieser Chat hat keinen Arbeitsbereich."
+	"panel_files_unavailable": "Dieser Chat hat keinen Arbeitsbereich.",
+	"panel_agents_transcript_for": "Verlauf: {goal}"
 }

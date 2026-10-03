@@ -1949,5 +1949,6 @@
 	"panel_agents_unavailable": "Agent teď nemůže hlásit stav.",
 	"panel_agents_updated": "Aktualizováno {time}",
 	"panel_agents_transcript": "Otevřít přepis",
-	"panel_files_unavailable": "Tento chat nemá pracovní prostor."
+	"panel_files_unavailable": "Tento chat nemá pracovní prostor.",
+	"panel_agents_transcript_for": "Přepis: {goal}"
 }

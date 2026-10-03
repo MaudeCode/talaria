@@ -1849,5 +1849,6 @@
 	"panel_agents_unavailable": "エージェントは現在状態を報告できません。",
 	"panel_agents_updated": "更新 {time}",
 	"panel_agents_transcript": "トランスクリプトを開く",
-	"panel_files_unavailable": "このチャットにはワークスペースがありません。"
+	"panel_files_unavailable": "このチャットにはワークスペースがありません。",
+	"panel_agents_transcript_for": "トランスクリプト: {goal}"
 }

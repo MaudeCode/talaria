@@ -1793,5 +1793,6 @@
 	"panel_agents_unavailable": "代理目前无法报告状态。",
 	"panel_agents_updated": "更新于 {time}",
 	"panel_agents_transcript": "打开对话记录",
-	"panel_files_unavailable": "此对话没有工作区。"
+	"panel_files_unavailable": "此对话没有工作区。",
+	"panel_agents_transcript_for": "对话记录：{goal}"
 }

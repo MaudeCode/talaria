@@ -329,7 +329,8 @@ export const BackgroundTaskSchema = z.object({
   updated_at: z.number(),
   completed_at: z.number().nullable(),
   result_available: z.boolean(),
-  child_session_id: z.string().nullable(),
+  /** TAL-494: each subagent session a delegation ran, by its goal: a read-only transcript to open. */
+  child_sessions: z.array(z.object({ goal: z.string(), session_id: SessionIdSchema })),
   exit_code: z.number().int().nullable(),
   agents: BackgroundLinkSchema.shape.agents.nullable(),
   pinned: z.boolean(),
