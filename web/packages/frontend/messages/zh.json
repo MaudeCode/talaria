@@ -1786,5 +1786,12 @@
 	"bg_show_result": "显示结果",
 	"bg_hide_result": "隐藏结果",
 	"bg_result_unavailable": "结果已不可用。",
-	"bg_usage": "用法：/background <消息>"
+	"bg_usage": "用法：/background <消息>",
+	"panel_label": "侧边面板",
+	"panel_agents": "代理",
+	"panel_agents_empty": "此对话中尚无代理运行。",
+	"panel_agents_unavailable": "代理目前无法报告状态。",
+	"panel_agents_updated": "更新于 {time}",
+	"panel_agents_transcript": "打开对话记录",
+	"panel_files_unavailable": "此对话没有工作区。"
 }

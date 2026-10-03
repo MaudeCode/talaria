@@ -326,7 +326,8 @@ export const chatRouter = os.router({
     })),
     tasks: os.background.tasks.handler(({ input, context: { ctx } }) => run(async () => {
       const s = visibleSession(ctx, input.session_id)
-      return { session_id: s.session_id, ...(await ctx.deps.background.snapshot(s.session_id, s.profile)) }
+      const snapshot = await ctx.deps.background.snapshot(s.session_id, s.profile)
+      return { session_id: s.session_id, ...snapshot, tasks: input.kind ? snapshot.tasks.filter((t) => t.kind === input.kind) : snapshot.tasks }
     })),
     result: os.background.result.handler(({ input, context: { ctx } }) => run(async () => {
       const s = visibleSession(ctx, input.session_id)

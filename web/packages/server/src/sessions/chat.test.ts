@@ -1252,6 +1252,11 @@ describe('chat turns through the sidecar', () => {
     expect(byId['d-b']).toMatchObject({ kind: 'delegation', status: 'attention', title: 'Fix CI', pinned: true })
     expect(byId['call-1-2']).toMatchObject({ title: '2 subagents: Write tests; Run tests', agents: { total: 2, completed: 0, failed: 0, running: 2 } })
     expect(byId.proc_1).toMatchObject({ kind: 'process', status: 'running', title: 'make test', pinned: true })
+    // TAL-373: the Agents page asks for delegations only; the server narrows the same records, in the same order.
+    const agents = (await json(await s.get(`/api/background/tasks?session_id=${sid}&kind=delegation`))).tasks as Json[]
+    expect(agents.map((t) => t.task_id)).toEqual(((await read()).tasks as Json[]).filter((t) => t.kind === 'delegation').map((t) => t.task_id))
+    expect(new Set(agents.map((t) => t.kind))).toEqual(new Set(['delegation']))
+    expect((await s.get(`/api/background/tasks?session_id=${sid}&kind=nope`)).status).toBe(400)
 
     // Reading never consumes: an old client's status read, then another client, still see the result.
     expect((await json(await s.get(`/api/background/status?session_id=${sid}`))).results).toEqual([expect.objectContaining({ task_id: bg.task_id, answer: 'answer to it' })])

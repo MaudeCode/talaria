@@ -1915,5 +1915,12 @@
 	"bg_show_result": "Mostra risultato",
 	"bg_hide_result": "Nascondi risultato",
 	"bg_result_unavailable": "Il risultato non è più disponibile.",
-	"bg_usage": "Uso: /background <messaggio>"
+	"bg_usage": "Uso: /background <messaggio>",
+	"panel_label": "Pannello laterale",
+	"panel_agents": "Agenti",
+	"panel_agents_empty": "Nessun agente ha lavorato in questa chat.",
+	"panel_agents_unavailable": "L’agente non può riportare lo stato in questo momento.",
+	"panel_agents_updated": "Aggiornato {time}",
+	"panel_agents_transcript": "Apri trascrizione",
+	"panel_files_unavailable": "Questa chat non ha uno spazio di lavoro."
 }

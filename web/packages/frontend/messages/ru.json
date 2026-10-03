@@ -2002,5 +2002,12 @@
 	"bg_show_result": "Показать результат",
 	"bg_hide_result": "Скрыть результат",
 	"bg_result_unavailable": "Результат больше недоступен.",
-	"bg_usage": "Использование: /background <сообщение>"
+	"bg_usage": "Использование: /background <сообщение>",
+	"panel_label": "Боковая панель",
+	"panel_agents": "Агенты",
+	"panel_agents_empty": "В этом чате агенты ещё не работали.",
+	"panel_agents_unavailable": "Агент сейчас не может сообщить статус.",
+	"panel_agents_updated": "Обновлено {time}",
+	"panel_agents_transcript": "Открыть запись",
+	"panel_files_unavailable": "У этого чата нет рабочей папки."
 }

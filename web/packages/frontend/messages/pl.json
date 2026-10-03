@@ -1949,5 +1949,12 @@
 	"bg_show_result": "Pokaż wynik",
 	"bg_hide_result": "Ukryj wynik",
 	"bg_result_unavailable": "Wynik nie jest już dostępny.",
-	"bg_usage": "Użycie: /background <wiadomość>"
+	"bg_usage": "Użycie: /background <wiadomość>",
+	"panel_label": "Panel boczny",
+	"panel_agents": "Agenci",
+	"panel_agents_empty": "W tym czacie nie działał jeszcze żaden agent.",
+	"panel_agents_unavailable": "Agent nie może teraz podać stanu.",
+	"panel_agents_updated": "Zaktualizowano {time}",
+	"panel_agents_transcript": "Otwórz zapis",
+	"panel_files_unavailable": "Ten czat nie ma obszaru roboczego."
 }

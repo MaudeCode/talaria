@@ -45,7 +45,7 @@ export function agentsSummary(agents: BackgroundLink['agents']): string {
   return parts.join(' · ')
 }
 
-function StatusIcon({ status }: { status: BackgroundTask['status'] }) {
+export function StatusIcon({ status }: { status: BackgroundTask['status'] }) {
   if (status === 'running') return <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" aria-hidden="true" />
   if (status === 'completed') return <Check size={13} className="shrink-0 text-success" aria-hidden="true" />
   if (status === 'unknown') return <CircleHelp size={13} className="shrink-0 text-muted" aria-hidden="true" />

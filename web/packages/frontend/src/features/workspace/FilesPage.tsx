@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, Download, Eye, EyeOff, File as FileIcon, Folder, RefreshCw } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
@@ -10,8 +10,6 @@ import { ErrorState, LoadingState, formatBytes } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
 import { Markdown } from '../chat/render/Markdown'
-import { writePersisted } from '../../lib/persisted'
-import { RightPanel } from '../../shell/RightPanel'
 
 function joinPath(dir: string, name: string): string {
   return dir === '.' || dir === '' ? name : `${dir.replace(/\/$/, '')}/${name}`
@@ -22,38 +20,34 @@ function parentOf(path: string): string {
   return parts.length ? parts.join('/') : '.'
 }
 
-/** Right-hand workspace panel: directory tree, file preview/edit, git status badge. */
-export function WorkspacePanel({ workspace, sessionId, open, onToggle, onClose }: { workspace: string; sessionId: string; open: boolean; onToggle: () => void; onClose: () => void }) {
+/** The right panel's Files page (TAL-373): directory tree, file preview/edit, git status. Its folder, preview and draft
+ * stay while another page is shown; it fetches only while `active`. */
+export function FilesPage({ workspace, sessionId, active }: { workspace: string | null | undefined; sessionId: string; active: boolean }) {
+  if (!workspace) return <div className="p-3 text-xs text-muted" role="status">{m.panel_files_unavailable()}</div>
+  return <WorkspaceFiles key={workspace} workspace={workspace} sessionId={sessionId} active={active} />
+}
+
+function WorkspaceFiles({ workspace, sessionId, active }: { workspace: string; sessionId: string; active: boolean }) {
   const qc = useQueryClient()
   const [dir, setDir] = useState('.')
   const [showHidden, setShowHidden] = useState(false)
   const [file, setFile] = useState<string | null>(null)
   const [draft, setDraft] = useState<string | null>(null)
-  useEffect(() => { writePersisted('hermes-webui-workspace-panel', open ? 'open' : 'closed') }, [open])
-  const listing = useQuery({ queryKey: keys.files.list(workspace, dir, showHidden), queryFn: () => api.listDir(sessionId, dir, showHidden), staleTime: 10_000, enabled: open })
-  const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: open })
-  const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? ''), enabled: !!file && open, staleTime: 5_000 })
+  const listing = useQuery({ queryKey: keys.files.list(workspace, dir, showHidden), queryFn: () => api.listDir(sessionId, dir, showHidden), staleTime: 10_000, enabled: active })
+  const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: active })
+  const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? ''), enabled: !!file && active, staleTime: 5_000 })
   const save = useMutation({ mutationFn: (text: string) => api.saveFile(sessionId, file ?? '', text), onSuccess: () => { showToast(m.ws_panel_saved()); setDraft(null); void qc.invalidateQueries({ queryKey: keys.files.content(workspace, file ?? '') }) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
   const entries = (listing.data?.entries ?? []).slice().sort((a, b) => Number(!!b.is_dir) - Number(!!a.is_dir) || a.name.localeCompare(b.name))
   const g = git.data?.git
   const isMarkdown = !!file && /\.(md|markdown)$/i.test(file)
   const text = draft ?? content.data?.content ?? ''
   return (
-    <RightPanel
-      open={open}
-      onToggle={onToggle}
-      onClose={onClose}
-      label={m.ws_panel_title()}
-      panelId="workspace"
-      title={m.ws_panel_title()}
-      subtitle={`${workspace}${g?.is_git && g.branch ? ` · ${g.branch}${g.dirty ? ` (${g.dirty}±)` : ''}` : ''}`}
-      actions={
-        <>
-          <IconButton label={showHidden ? m.ws_panel_hidden() : m.ws_panel_hidden()} active={showHidden} className="h-7 w-7" onClick={() => setShowHidden((h) => !h)}>{showHidden ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}</IconButton>
-          <IconButton label={m.refresh()} className="h-7 w-7" onClick={() => { void listing.refetch(); void git.refetch() }}><RefreshCw size={14} aria-hidden="true" /></IconButton>
-        </>
-      }
-    >
+    <>
+      <div className="flex items-center gap-1 border-b border-border-subtle px-3 py-1" data-files-toolbar>
+        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted" title={workspace}>{`${workspace}${g?.is_git && g.branch ? ` · ${g.branch}${g.dirty ? ` (${g.dirty}±)` : ''}` : ''}`}</span>
+        <IconButton label={m.ws_panel_hidden()} active={showHidden} className="h-7 w-7" onClick={() => setShowHidden((h) => !h)}>{showHidden ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}</IconButton>
+        <IconButton label={m.refresh()} className="h-7 w-7" onClick={() => { void listing.refetch(); void git.refetch() }}><RefreshCw size={14} aria-hidden="true" /></IconButton>
+      </div>
       {file ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-1 border-b border-border-subtle px-2 py-1 text-xs">
@@ -105,6 +99,6 @@ export function WorkspacePanel({ workspace, sessionId, open, onToggle, onClose }
           </div>
         </div>
       )}
-    </RightPanel>
+    </>
   )
 }

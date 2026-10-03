@@ -1933,5 +1933,12 @@
 	"bg_show_result": "Voir le résultat",
 	"bg_hide_result": "Masquer le résultat",
 	"bg_result_unavailable": "Le résultat n’est plus disponible.",
-	"bg_usage": "Utilisation : /background <message>"
+	"bg_usage": "Utilisation : /background <message>",
+	"panel_label": "Panneau latéral",
+	"panel_agents": "Agents",
+	"panel_agents_empty": "Aucun agent n’a travaillé dans cette discussion.",
+	"panel_agents_unavailable": "L’agent ne peut pas indiquer son état pour le moment.",
+	"panel_agents_updated": "Mis à jour {time}",
+	"panel_agents_transcript": "Ouvrir la transcription",
+	"panel_files_unavailable": "Cette discussion n’a pas d’espace de travail."
 }

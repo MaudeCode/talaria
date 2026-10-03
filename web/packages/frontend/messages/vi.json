@@ -1840,5 +1840,12 @@
 	"bg_show_result": "Xem kết quả",
 	"bg_hide_result": "Ẩn kết quả",
 	"bg_result_unavailable": "Kết quả không còn nữa.",
-	"bg_usage": "Cách dùng: /background <tin nhắn>"
+	"bg_usage": "Cách dùng: /background <tin nhắn>",
+	"panel_label": "Bảng bên",
+	"panel_agents": "Tác tử",
+	"panel_agents_empty": "Chưa có tác tử nào chạy trong cuộc trò chuyện này.",
+	"panel_agents_unavailable": "Tác tử hiện không báo được trạng thái.",
+	"panel_agents_updated": "Cập nhật {time}",
+	"panel_agents_transcript": "Mở bản ghi",
+	"panel_files_unavailable": "Cuộc trò chuyện này không có không gian làm việc."
 }

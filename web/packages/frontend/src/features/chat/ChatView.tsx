@@ -23,7 +23,7 @@ import { ClarifyCard } from './ClarifyCard'
 import { useClarify } from './useClarify'
 import { useMarkViewed } from './useMarkViewed'
 import { TerminalPanel } from '../terminal/TerminalPanel'
-import { WorkspacePanel } from '../workspace/WorkspacePanel'
+import { ChatSidePanel } from './ChatSidePanel'
 import { workspaceLabel } from '../workspaces/label'
 import { useRuntimeNotices } from '../notices/useRuntimeNotices'
 import { showToast } from '../toast/toast'
@@ -343,7 +343,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <span className="sr-only" aria-live="polite" id="a11yAnnouncer">{live?.status === 'done' ? m.done() : ''}</span>
       </div>
       {/* Always mounted beside main (its queries run only while open) so opening and closing animate and the edge tab is always there. */}
-      {workspace && sessionId && <WorkspacePanel key={workspace} workspace={workspace} sessionId={sessionId} open={workspaceOpen} onToggle={() => setWorkspaceOpen((o) => !o)} onClose={() => setWorkspaceOpen(false)} />}
+      {sessionId && <ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} open={workspaceOpen} onToggle={() => setWorkspaceOpen((o) => !o)} onClose={() => setWorkspaceOpen(false)} />}
     </>
   )
 }
