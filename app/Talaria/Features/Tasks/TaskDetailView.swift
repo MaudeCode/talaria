@@ -179,7 +179,7 @@ struct TaskDetailView: View {
                 Spacer(minLength: 8)
 
                 StatusBadge(
-                    text: isRunning ? String(localized: "Running") : viewModel.job.status.label,
+                    text: viewModel.runningElapsed == nil ? viewModel.job.status.label : String(localized: "Running"),
                     color: statusColor
                 )
             }
@@ -305,13 +305,8 @@ struct TaskDetailView: View {
         )
     }
 
-    /// The live-run overlay: the status poll or the server's manual-run flag.
-    private var isRunning: Bool {
-        viewModel.runningElapsed != nil || viewModel.job.running == true
-    }
-
     private var statusColor: Color {
-        if isRunning {
+        if viewModel.runningElapsed != nil {
             return .blue
         }
 

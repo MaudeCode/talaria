@@ -15,7 +15,7 @@ struct CronJobRowView: View {
                 Spacer(minLength: 8)
 
                 StatusBadge(
-                    text: isRunning ? String(localized: "Running") : job.status.label,
+                    text: runningElapsed == nil ? job.status.label : String(localized: "Running"),
                     color: statusColor
                 )
             }
@@ -82,13 +82,8 @@ struct CronJobRowView: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// The live-run overlay: the status poll or the server's manual-run flag.
-    private var isRunning: Bool {
-        runningElapsed != nil || job.running == true
-    }
-
     private var statusColor: Color {
-        if isRunning {
+        if runningElapsed != nil {
             return .blue
         }
 

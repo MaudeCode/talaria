@@ -57,11 +57,11 @@ public struct CronJob: Decodable, Equatable, Identifiable {
     public let provider: String?
     public let profile: String?
     public let toastNotifications: Bool?
-    /// Server-derived (TAL-296): the status, attention flag, Resume/Pause choice, and manual-run flag.
+    /// Server-derived (TAL-296): the status, attention flag, and Resume/Pause choice. Running state comes only from
+    /// the live status poll, never from a (possibly cached) job row.
     let derivedState: String?
     public let needsAttention: Bool?
     public let resumable: Bool?
-    public let running: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -84,7 +84,6 @@ public struct CronJob: Decodable, Equatable, Identifiable {
         case derivedState
         case needsAttention
         case resumable
-        case running
     }
 
     public init(from decoder: Decoder) throws {
@@ -109,7 +108,6 @@ public struct CronJob: Decodable, Equatable, Identifiable {
         derivedState = container.decodeLossyStringIfPresent(forKey: .derivedState)
         needsAttention = container.decodeLossyBoolIfPresent(forKey: .needsAttention)
         resumable = container.decodeLossyBoolIfPresent(forKey: .resumable)
-        running = container.decodeLossyBoolIfPresent(forKey: .running)
     }
 
     public var displayName: String {

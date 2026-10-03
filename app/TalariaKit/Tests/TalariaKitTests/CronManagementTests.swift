@@ -64,12 +64,11 @@ final class CronManagementModelTests: XCTestCase {
         let paused = try decode(#""derived_state": "paused", "needs_attention": false, "resumable": true"#)
         XCTAssertEqual(paused.resumable, true)
 
-        let scheduleError = try decode(#""derived_state": "schedule_error", "needs_attention": true, "resumable": true, "running": true"#)
+        let scheduleError = try decode(#""derived_state": "schedule_error", "needs_attention": true, "resumable": true"#)
         XCTAssertEqual(scheduleError.status, .scheduleError)
         XCTAssertNotEqual(scheduleError.status.label, CronJobStatus.needsAttention.label)
         XCTAssertEqual(scheduleError.needsAttention, true)
         XCTAssertEqual(scheduleError.resumable, true)
-        XCTAssertEqual(scheduleError.running, true)
 
         let active = try decode(#""derived_state": "active", "needs_attention": false, "resumable": false"#)
         XCTAssertEqual(active.status, .active)
