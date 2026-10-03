@@ -45,7 +45,8 @@ function normalizeSourceName(value: unknown): string {
   return source
 }
 
-function looksLikeDefaultCliTitle(row: Dict): boolean {
+/** A title the CLI row got by default (`Cli Session`, `Tui Session`, ...), which title generation may replace. */
+export function looksLikeDefaultCliTitle(row: Dict): boolean {
   const title = lower(row.title)
   if (!title || title === 'untitled' || title === 'cli' || title === 'cli session') return true
   const candidates = new Set([row.source, row.session_source, row.source_tag, row.raw_source, row.source_label].map(normalizeSourceName).filter(Boolean))

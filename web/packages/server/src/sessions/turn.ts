@@ -34,6 +34,7 @@ import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './backg
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import { str } from '../util.js'
+import { looksLikeDefaultCliTitle } from './state-db.js'
 
 export const CHAT_LOCK_WAIT_SECONDS = 2
 const IMAGE_MODE_TIMEOUT_MS = 15_000
@@ -1016,7 +1017,9 @@ export class TurnRunner {
     const sessionId = s.session_id
     const placeholder = str(s.title).trim()
     const invalidExisting = looksInvalidGeneratedTitle(s.title)
-    const eligible = ['Untitled', 'New Chat', ''].includes(placeholder) || placeholder === titleFrom(s.messages, '') || invalidExisting
+    // A claimed CLI session still carrying its default `<Source> Session` title is retitled like a new chat (TAL-256).
+    const defaultTitle = (session: Session): boolean => looksLikeDefaultCliTitle({ title: session.title, source_tag: session.source_tag, raw_source: session.raw_source, session_source: session.session_source, source_label: session.source_label })
+    const eligible = ['Untitled', 'New Chat', ''].includes(placeholder) || placeholder === titleFrom(s.messages, '') || invalidExisting || defaultTitle(s)
     const [userText, assistantText] = firstExchangeSnippets(s.messages)
     // Python `_put_title_status`: empty reason/title/raw_preview keys are omitted.
     const status = (status: string, reason = '', title = '', rawPreview = ''): void => {
@@ -1040,7 +1043,7 @@ export class TurnRunner {
       let effective = str(current.title).trim()
       let wrote = false
       if (next) {
-        const stillAuto = effective === placeholder || ['Untitled', 'New Chat', ''].includes(effective) || effective === titleFrom(current.messages, '') || looksInvalidGeneratedTitle(current.title)
+        const stillAuto = effective === placeholder || ['Untitled', 'New Chat', ''].includes(effective) || effective === titleFrom(current.messages, '') || looksInvalidGeneratedTitle(current.title) || defaultTitle(current)
         if (current.manual_title || !stillAuto) { status('skipped', 'manual_title', effective); return }
         if (next !== effective) {
           current.title = next
