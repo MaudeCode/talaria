@@ -120,13 +120,22 @@ const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENT
 const ENV_SUFFIX_RE = /(?<![A-Za-z0-9_])((?=[A-Z0-9_]*(?:KEY|PASS|PW))[A-Z0-9_]+|[A-Za-z0-9_]+_(?:[Kk][Ee][Yy]|[Pp][Aa][Ss][Ss]|[Pp][Ww])(?![A-Za-z0-9_]))[ \t]*=[ \t]*/g
 /** The prefilter's view of `ENV_SUFFIX_RE`. */
 const ENV_SUFFIX_TEST_RE = new RegExp(ENV_SUFFIX_RE.source)
-/** A keyword at a word edge of an env name (`DB_PW`, `MYSQL_PASS`), never inside a word (`KEYBOARD`, `PASSAGE`). */
-const ENV_SUFFIX_WORD_RE = /(?:^|[^A-Za-z])(?:KEY|PASS|PW)S?(?![A-Za-z])/i
+/**
+ * The Agent's env-name keywords, as whole name words (`DB_PW`, `GITHUB_TOKEN`), never inside a word (`KEYBOARD`, `PASSAGE`,
+ * `TOKENIZER`, `AUTHOR_KEY`'s `AUTH`).
+ */
+const ENV_KEYWORD_RE = /(?:^|[^A-Za-z])(?:(?:api|auth|access|refresh|session|secret)[ _.-]?(?:key|token)|token|secret|passwd|password|pass|pw|credential|auth|key)s?(?![A-Za-z])/i
 /**
  * Env names whose value is a credential whatever its shape, as whole name words (`DB_PASS`, not `COMPASS_KEY` or
  * `AUTHOR_KEY`); a bare `KEY` needs an opaque value (`SORT_KEY=name` stays).
  */
 const ENV_STRONG_NAME_RE = /(?:^|[^A-Za-z])(?:(?:api|auth|access|refresh|session|id|bearer)[ _.-]?(?:key|token)|key[ _.-]?material|secret|passwd|password|pass|pw|credentials?|auth|bearer)s?(?![A-Za-z])/i
+/**
+ * The Agent's env-assignment gate: a name holding a whole keyword whose value is a credential, because the name is strong
+ * or the value opaque (`GITHUB_TOKEN=abc` and `MAX_TOKENS=100` stay). Env lookups (`os.getenv(…)`) name a variable.
+ */
+const isEnvCredential = (key: string, value: string): boolean =>
+  !/^(?:os\.(?:getenv|environ)|process\.env|\$ENV\{)/.test(value) && ENV_KEYWORD_RE.test(key) && (ENV_STRONG_NAME_RE.test(key) || looksOpaque(value))
 /** The Agent's `_looks_like_opaque_credential`: a value shaped like a generated secret rather than a word. */
 function looksOpaque(value: string): boolean {
   if (value === '***' || /^[A-Fa-f0-9]{16,}$/.test(value) || /^[A-Za-z0-9_./+=-]{20,}$/.test(value)) return true
@@ -253,7 +262,7 @@ function splitTokenEnd(text: string, stripped: string, kept: number[], i: number
     lineStart = end + 1
   }
   for (let e = i + run.length; e > i; e -= 1) {
-    const atBoundary = e === stripped.length || kept[e]! - kept[e - 1]! > 1 || (e === i + run.length && !/[A-Za-z0-9_.-]/.test(stripped[e]!))
+    const atBoundary = e === stripped.length || kept[e]! - kept[e - 1]! > 1 || (e === i + run.length && !/[A-Za-z0-9_-]/.test(stripped[e]!))
     const originalEnd = kept[e - 1]! + 1
     if (!atBoundary || originalEnd > limit || !CRED_WHOLE_RE.test(stripped.slice(i, e)) || /^[ \t]*=/.test(text.slice(originalEnd, originalEnd + 64))) continue
     return e
@@ -505,12 +514,11 @@ function redactEnvSuffixes(text: string): string {
     wordEnd = valueStart < wordEnd ? wordEnd : shellWordEnd(text, valueStart, quoteAt(valueStart), closeOf)
     // A URL query parameter's value ends at the next `&` or `#`, as in `redactCredentialParams`.
     QUERY_VALUE_RE.lastIndex = valueStart
-    const valueEnd = /[?&]/.test(text[m.index - 1] ?? '') && m[0].endsWith('=') ? Math.min(wordEnd, valueStart + QUERY_VALUE_RE.exec(text)![0].length) : wordEnd
+    const valueEnd = /[?&]/.test(text[m.index - 1] ?? '') ? Math.min(wordEnd, valueStart + QUERY_VALUE_RE.exec(text)![0].length) : wordEnd
     const value = text.slice(valueStart, valueEnd)
-    const head = value.slice(0, 512)
+    const head = value.slice(0, 128)
     const inner = shellWordInner(head)
-    if (!inner.trim() || inner === '***' || /^(?:os\.(?:getenv|environ)|process\.env|\$ENV\{)/.test(inner) || !ENV_SUFFIX_WORD_RE.test(key)) continue
-    if (!ENV_STRONG_NAME_RE.test(key) && !looksOpaque(shellDequote(head))) continue
+    if (!inner.trim() || inner === '***' || !isEnvCredential(key, shellDequote(head))) continue
     out += text.slice(last, valueStart) + (/^[^\s'"\\$`]+$/.test(value) ? mask(value) : maskShellWord(value))
     last = valueEnd
     ENV_SUFFIX_RE.lastIndex = Math.max(valueEnd, ENV_SUFFIX_RE.lastIndex)
@@ -1284,7 +1292,7 @@ function redactRules(text: string): string {
   out = redactHeaderCredentials(out, BEARER_RE)
   for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = redactCredentialParams(out)
-  out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
+  out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) && isEnvCredential(key, value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
   out = redactEnvSuffixes(out)
   out = out.replace(LISTED_FLAG_RE, (whole, q: string, dash: string, key: string, gap: string, vq: string | undefined, quotedValue: string | undefined, bare: string | undefined) => {
     // An unquoted value (a number, `True`, a nested list) is masked whole.

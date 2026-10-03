@@ -584,6 +584,20 @@ const AGENT_PARITY: Record<string, [string, string][]> = {
     ['PASSAGE=notsecret', 'PASSAGE=notsecret'],
     ['SORT_KEY=name', 'SORT_KEY=name'],
   ],
+  'all-caps env names, by whole keyword and value shape': [
+    ['AUTHOR_KEY=name', 'AUTHOR_KEY=name'],
+    ['MAX_TOKENS=100', 'MAX_TOKENS=100'],
+    ['GITHUB_TOKEN=abc', 'GITHUB_TOKEN=abc'],
+    ['MYTOKEN=abc123def456ghi', 'MYTOKEN=abc123def456ghi'],
+    ['TOKENIZER=cl100k', 'TOKENIZER=cl100k'],
+    ['SECRETARY=bob', 'SECRETARY=bob'],
+    ['AUTH_TOKEN=abc', 'AUTH_TOKEN=***'],
+    ['DB_PASSWORD=x', 'DB_PASSWORD=***'],
+    ['CLIENT_SECRET=short', 'CLIENT_SECRET=***'],
+    ['API_KEY=abc', 'API_KEY=***'],
+    ['PASSWORD_POLICY=strict', 'PASSWORD_POLICY=***'],
+    ['MY_CREDENTIAL=abc', 'MY_CREDENTIAL=***'],
+  ],
   'Telegram bot tokens and phone numbers': [
     ['bot123456789:ABCDEfghij-KLMNopqrst_UVWXyz12345', 'bot123456789:***'],
     ['12345678901:ABCDEfghijKLMNopqrstUVWXyz1234567890', '12345678901:***'],
@@ -675,5 +689,10 @@ describe('Agent redactor parity', () => {
     expect(redactText('ghp_abcdef\x1b1234567890ABCDEF1234567890abcdef\x1b-x', true)).toBe('ghp_ab...cdef\x1b-x')
     for (const text of ['author_key=name', 'COMPASS_KEY=north', 'PASSAGE_KEY=title', 'compass_key=north']) expect(redactText(text, true)).toBe(text)
     expect(redactText('DB_PASS=north', true)).toBe('DB_PASS=***')
+  })
+
+  it('masks a split token before a sentence period, and a spaced URL query value up to its fragment', () => {
+    expect(redactText('ghp_abcdef\n1234567890ABCDEF1234567890abcdef.', true)).toBe('ghp_ab...cdef.')
+    expect(redactText('https://x.test/?db_pass= hunter2#long-fragment-name', true)).toBe('https://x.test/?db_pass= ***#long-fragment-name')
   })
 })
