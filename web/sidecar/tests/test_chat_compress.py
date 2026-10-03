@@ -7,6 +7,7 @@ import contextlib
 import importlib.util
 import inspect
 import sys
+import time
 import types
 
 import pytest
@@ -130,9 +131,12 @@ def test_compress_runs_the_shared_core_on_a_throwaway_agent_and_commits(agent_en
 
 def test_a_server_that_never_finalizes_has_its_compression_discarded(agent_env, monkeypatch) -> None:
     calls, _ = agent_env
+    monkeypatch.setattr(chat, "_PENDING_COMPRESSION_TTL", 0.05)
     token = chat.compress(Ctx(), _params())["commit_token"]
-    monkeypatch.setattr(chat, "_PENDING_COMPRESSION_TTL", -1.0)
-    chat._sweep_pending_compressions()
+    # No further compression runs: the token's own timer discards it.
+    deadline = time.monotonic() + 5
+    while token in chat._PENDING_COMPRESSIONS and time.monotonic() < deadline:
+        time.sleep(0.01)
     assert token not in chat._PENDING_COMPRESSIONS
     assert calls["finalize"] == [False] and ThrowawayAgent.instances[0].closed
 

@@ -117,6 +117,22 @@ describe('manual session compression', () => {
     expect(s.deps.sessionStore.get(sid).context_messages.map((m) => m.content)).toEqual(['[CONTEXT COMPACTION] earlier turns summarized', 'five'])
   })
 
+  it('keeps state.db-only continuations visible once the boundary covers them', async () => {
+    const sid = await seeded()
+    const cli = { role: 'user', content: 'continued from the CLI', timestamp: 4.5 }
+    const cliAnswer = { role: 'assistant', content: 'CLI answer', timestamp: 4.6 }
+    const spy = vi.spyOn(s.deps.sessions, 'stateDbRows').mockImplementation(() => [...structuredClone(ORIGINAL), structuredClone(cli), structuredClone(cliAnswer)])
+    try {
+      let sent: Json[] = []
+      sidecar.respond('chat.compress', (params) => { sent = params.conversation_history; return compressed(params) })
+      const res = await json(await post(s, '/api/session/compress', { session_id: sid }))
+      expect(sent.map((m) => m.content)).toEqual(['one', 'two', 'three', 'four', 'continued from the CLI', 'CLI answer'])
+      expect((res.session as Json).compression_anchor_message_key).toMatchObject({ text: 'CLI answer', ts: 4.6 })
+      const detail = ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+      expect(detail.map((m) => m.content)).toEqual(['one', 'two', 'three', 'four', 'continued from the CLI', 'CLI answer'])
+    } finally { spy.mockRestore() }
+  })
+
   it('stops serving a finished job once its session is deleted', async () => {
     const sid = await seeded()
     expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)

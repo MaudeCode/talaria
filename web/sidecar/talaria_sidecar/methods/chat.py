@@ -808,8 +808,8 @@ def _checkpoint_required() -> bool:
         return False
 
 
-#: Compressed results awaiting the server's write: ``commit_token -> (agent, profile home, monotonic start)``.
-_PENDING_COMPRESSIONS: dict[str, tuple[Any, Any, float]] = {}
+#: Compressed results awaiting the server's write: ``commit_token -> (agent, profile home)``.
+_PENDING_COMPRESSIONS: dict[str, tuple[Any, Any]] = {}
 _PENDING_COMPRESSIONS_LOCK = threading.Lock()
 #: A server that never answers (restart, crash) gets its compression discarded after this long.
 _PENDING_COMPRESSION_TTL = 600.0
@@ -832,24 +832,13 @@ def _release_compression(agent, committed: bool) -> None:
                 log.debug("compression agent close failed", exc_info=True)
 
 
-def _sweep_pending_compressions() -> None:
-    now = time.monotonic()
-    with _PENDING_COMPRESSIONS_LOCK:
-        expired = [(t, e) for t, e in _PENDING_COMPRESSIONS.items() if now - e[2] > _PENDING_COMPRESSION_TTL]
-        for token, _ in expired:
-            _PENDING_COMPRESSIONS.pop(token, None)
-    for _, (agent, home, _) in expired:
-        with scoped_home(home):
-            _release_compression(agent, committed=False)
-
-
 def finalize_compression(token: str, committed: bool) -> bool:
     """``chat.compress_finalize``: the server reports whether it installed the result; unknown tokens are a no-op."""
     with _PENDING_COMPRESSIONS_LOCK:
         entry = _PENDING_COMPRESSIONS.pop(token, None)
     if entry is None:
         return False
-    agent, home, _ = entry
+    agent, home = entry
     with scoped_home(home):
         _release_compression(agent, committed=committed)
     return True
@@ -861,7 +850,6 @@ def compress(ctx: CallContext, params: dict) -> dict:
     installs ``messages`` itself, so nothing here touches history or the cached turn agent. The agent has no session
     store, so the Agent neither rotates nor writes state.db; its one deferred effect, the context-engine notification,
     waits for ``chat.compress_finalize`` with the returned ``commit_token`` (two-phase, like the gateway's commit)."""
-    _sweep_pending_compressions()
     home = profile_home_param(params)
     session_id = str(params.get("session_id") or "").strip()
     if not session_id:
@@ -921,7 +909,11 @@ def compress(ctx: CallContext, params: dict) -> dict:
         if result.status == "compressed":
             token = uuid.uuid4().hex
             with _PENDING_COMPRESSIONS_LOCK:
-                _PENDING_COMPRESSIONS[token] = (agent, home, time.monotonic())
+                _PENDING_COMPRESSIONS[token] = (agent, home)
+            # A server that never answers (restart, failed RPC) gets the compression discarded on its own.
+            expiry = threading.Timer(_PENDING_COMPRESSION_TTL, finalize_compression, args=(token, False))
+            expiry.daemon = True
+            expiry.start()
             held = True
             payload["commit_token"] = token
         return payload

@@ -915,6 +915,10 @@ export class SessionService {
         live.pending_attachments = []
         live.pending_started_at = null
         live.pending_user_source = null
+        // The compressed history included any state.db-only continuation; the new boundary would hide those rows from
+        // the display, so the transcript keeps them before it is applied (and the anchor counts them).
+        const display = this.mergedTranscript(live)
+        if (display.length > live.messages.length) live.messages = copyJson(display)
         const visible = visibleMessagesForAnchor(live.messages)
         live.compression_anchor_visible_idx = visible.length ? visible.length - 1 : null
         live.compression_anchor_message_key = anchorMessageKey(visible.at(-1))
