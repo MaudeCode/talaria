@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Scheduled tasks for other profiles can be created again and use the selected profile's model.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

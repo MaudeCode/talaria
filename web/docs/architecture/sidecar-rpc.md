@@ -123,6 +123,14 @@ kanban query parsing and the SSE poll loop, cron cross-profile merging and
 running-state display, provider catalog composition and caches, dashboard
 plugin manifests, `state.db` read-only projections.
 
+For `cron.create` targeting another profile, the sidecar resolves that execution
+profile's main model before writing to the owning store. It fills empty caller
+model/provider fields with ordinary per-job pins, since the Agent scheduler
+does not interpret Talaria's `profile` field or legacy snapshot keys. A profile
+without a main model returns `cron_snapshot_failed` and leaves the store
+unchanged. An explicit model and provider, or a script-only `no_agent` job,
+skips this resolution.
+
 Chat turns use the Agent's in-process callback model inside the sidecar:
 `AIAgent` is constructed with signature-gated
 kwargs, callbacks translate to stream frames, `interrupt()` is `chat.interrupt`,
