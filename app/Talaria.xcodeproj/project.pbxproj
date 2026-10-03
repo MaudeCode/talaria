@@ -11,6 +11,7 @@
 		D81000000000000000000021 /* ShareExtensionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000022 /* ShareExtensionUITests.swift */; };
 		D81000000000000000000001 /* ShareExtensionUITestHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = D81000000000000000000002 /* ShareExtensionUITestHost.swift */; };
 		26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F1 /* ProvidersViewModel.swift */; };
+		26AB000000000000000388B1 /* AuxiliaryModelsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000388F1 /* AuxiliaryModelsSettingsView.swift */; };
 		26AB000000000000000000B2 /* ProvidersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F2 /* ProvidersView.swift */; };
 		A06100000000000000000003 /* ProviderQuotaWidgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */; };
 		26AB000000000000000000B4 /* ProvidersViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AB000000000000000000F4 /* ProvidersViewModelTests.swift */; };
@@ -767,6 +768,7 @@
 		C166A0000000000000000101 /* TaskRunHistoryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRunHistoryViews.swift; sourceTree = "<group>"; };
 		57B5FD09B6B5937573B5F9A4 /* InsightsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
 		26AB000000000000000000F1 /* ProvidersViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersViewModel.swift; sourceTree = "<group>"; };
+		26AB000000000000000388F1 /* AuxiliaryModelsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliaryModelsSettingsView.swift; sourceTree = "<group>"; };
 		26AB000000000000000000F2 /* ProvidersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersView.swift; sourceTree = "<group>"; };
 		A06100000000000000000004 /* ProviderQuotaWidgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderQuotaWidgetTests.swift; sourceTree = "<group>"; };
 		26AB000000000000000000F4 /* ProvidersViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersViewModelTests.swift; sourceTree = "<group>"; };
@@ -1288,6 +1290,7 @@
 				C107I000000000000000016 /* ProviderRow.swift */,
 				C107I000000000000000017 /* ProvidersStatusRow.swift */,
 				26AB000000000000000000F1 /* ProvidersViewModel.swift */,
+				26AB000000000000000388F1 /* AuxiliaryModelsSettingsView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -1952,6 +1955,7 @@
 				8618A9261B8047CEA6084798 /* SlashCommandAutocompleteView.swift in Sources */,
 				8B71DA2AAC521382F54A841C /* InsightsView.swift in Sources */,
 				26AB000000000000000000B1 /* ProvidersViewModel.swift in Sources */,
+				26AB000000000000000388B1 /* AuxiliaryModelsSettingsView.swift in Sources */,
 				26AB000000000000000000B2 /* ProvidersView.swift in Sources */,
 				C107I000000000000000006 /* ProviderRow.swift in Sources */,
 				C107I000000000000000007 /* ProvidersStatusRow.swift in Sources */,

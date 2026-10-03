@@ -25,6 +25,19 @@ export function useSetDefaultModel() {
   return useMutation({ mutationFn: ({ model, provider }: { model: string; provider?: string | null }) => api.setDefaultModel(model, provider), onSuccess: () => { void qc.invalidateQueries({ queryKey: keys.settings }); void qc.invalidateQueries({ queryKey: keys.models }) } })
 }
 
+export function useAuxiliaryModelsQuery(enabled = true) {
+  return useQuery({ queryKey: keys.auxiliaryModels, queryFn: api.fetchAuxiliaryModels, staleTime: 30_000, enabled })
+}
+
+/** Writes one auxiliary slot; the server's refreshed state replaces the cached list. */
+export function useSetAuxiliaryModel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ task, model, provider }: { task: string; model: string; provider?: string | null }) => api.setAuxiliaryModel(task, model, provider),
+    onSuccess: (res) => { if (res.auxiliary) qc.setQueryData(keys.auxiliaryModels, res.auxiliary); else void qc.invalidateQueries({ queryKey: keys.auxiliaryModels }) },
+  })
+}
+
 export function useProfilesQuery() {
   return useQuery({ queryKey: keys.profiles, queryFn: api.fetchProfiles, staleTime: 30_000 })
 }

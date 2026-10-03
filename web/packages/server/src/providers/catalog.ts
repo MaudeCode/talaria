@@ -22,7 +22,7 @@ import {
 } from './tables.js'
 import {
   activeProviderFromConfig, canonicaliseProviderId, configuredModelIds, configuredModelOptions, customProviderEntries, customProviderSlug, dict, effectiveDefaultModel, isDict,
-  isOpenAiFamilyProvider, mainModelSupportsServiceTier, modelSection, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict,
+  isOpenAiFamilyProvider, mainModelSupportsServiceTier, modelSection, parseProviderQualifiedModel, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict,
 } from '../config/agent-config.js'
 
 export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean }
@@ -52,6 +52,36 @@ export function splitPickerOverflow(models: ModelEntry[], selected: string, prov
   return [visible, extras]
 }
 export interface ModelsCatalog { active_provider: string | null; default_model: string; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }> }
+
+/**
+ * TAL-388: stamp each auxiliary slot with its display value and the catalog entry whose provider/model pair equals the
+ * saved one, so clients tick exactly one option (a bare id listed under two providers matches only its own provider).
+ */
+export function stampAuxiliarySelections(aux: { tasks: Dict[]; main: Dict }, catalog: ModelsCatalog): { tasks: Dict[]; main: Dict } {
+  const options = catalog.groups.flatMap((g) => [...g.models, ...(g.extra_models ?? [])].map((m) => {
+    const parsed = parseProviderQualifiedModel(m.id)
+    return { id: m.id, label: m.label, group: g.provider, provider: canonicaliseProviderId(parsed?.[1] ?? g.provider_id), bare: parsed?.[0] ?? m.id }
+  }))
+  const describe = (providerRaw: unknown, modelRaw: unknown): { value_label: string | null; provider_label: string | null; option_id: string | null } => {
+    const provider = str(providerRaw).trim() || 'auto'
+    const model = str(modelRaw).trim()
+    const key = canonicaliseProviderId(provider)
+    const match = provider === 'auto' ? undefined : options.find((o) => o.provider === key && o.bare === model)
+    if (match) return { value_label: match.label || match.bare, provider_label: match.group, option_id: match.id }
+    const group = catalog.groups.find((g) => canonicaliseProviderId(g.provider_id) === key)
+    return { value_label: model || null, provider_label: provider === 'auto' ? null : group?.provider ?? displayName(provider), option_id: null }
+  }
+  // Auto falls back to the main chat model; name the effective one the catalog resolved (a legacy string `model` or a
+  // `HERMES_MODEL`-style override never reaches `aux.main`).
+  const mainParsed = parseProviderQualifiedModel(catalog.default_model)
+  const main = describe(mainParsed?.[1] ?? catalog.active_provider ?? aux.main.provider, mainParsed?.[0] ?? (catalog.default_model || aux.main.model))
+  const tasks = aux.tasks.map((t) => {
+    if ((str(t.provider).trim() || 'auto') === 'auto' && !str(t.model).trim()) return { ...t, is_auto: true, value_label: main.value_label, provider_label: main.provider_label, selected_option_id: null, in_catalog: true }
+    const pinned = describe(t.provider, t.model)
+    return { ...t, is_auto: false, value_label: pinned.value_label, provider_label: pinned.provider_label, selected_option_id: pinned.option_id, in_catalog: pinned.option_id !== null }
+  })
+  return { ...aux, tasks }
+}
 
 export interface CatalogDeps {
   sidecar: () => SidecarLike | null

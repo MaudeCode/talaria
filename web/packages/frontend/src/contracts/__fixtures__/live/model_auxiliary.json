@@ -19,12 +19,17 @@
         "description": "image/screenshot analysis",
         "download_timeout": "",
         "extra_body": {},
+        "in_catalog": true,
+        "is_auto": true,
         "label": "Vision",
         "max_concurrency": "",
         "model": "",
         "provider": "auto",
+        "provider_label": null,
+        "selected_option_id": null,
         "task": "vision",
-        "timeout": ""
+        "timeout": "",
+        "value_label": null
       },
       {
         "api_key_set": false,
@@ -32,12 +37,17 @@
         "description": "web page summarization",
         "download_timeout": "",
         "extra_body": {},
+        "in_catalog": true,
+        "is_auto": true,
         "label": "Web extract",
         "max_concurrency": "",
         "model": "",
         "provider": "auto",
+        "provider_label": null,
+        "selected_option_id": null,
         "task": "web_extract",
-        "timeout": ""
+        "timeout": "",
+        "value_label": null
       },
       {
         "api_key_set": false,
@@ -45,12 +55,17 @@
         "description": "context summarization",
         "download_timeout": "",
         "extra_body": {},
+        "in_catalog": true,
+        "is_auto": true,
         "label": "Compression",
         "max_concurrency": "",
         "model": "",
         "provider": "auto",
+        "provider_label": null,
+        "selected_option_id": null,
         "task": "compression",
-        "timeout": ""
+        "timeout": "",
+        "value_label": null
       },
       {
         "api_key_set": false,
@@ -58,12 +73,17 @@
         "description": "smart command approval",
         "download_timeout": "",
         "extra_body": {},
+        "in_catalog": true,
+        "is_auto": true,
         "label": "Approval",
         "max_concurrency": "",
         "model": "",
         "provider": "auto",
+        "provider_label": null,
+        "selected_option_id": null,
         "task": "approval",
-        "timeout": ""
+        "timeout": "",
+        "value_label": null
       },
       {
         "api_key_set": false,
@@ -71,12 +91,17 @@
         "description": "MCP tool reasoning",
         "download_timeout": "",
         "extra_body": {},
+        "in_catalog": true,
+        "is_auto": true,
         "label": "MCP",
         "max_concurrency": "",
         "model": "",
         "provider": "auto",
+        "provider_label": null,
+        "selected_option_id": null,
         "task": "mcp",
-        "timeout": ""
+        "timeout": "",
+        "value_label": null
       },
       {
         "api_key_set": false,
@@ -84,12 +109,17 @@
         "description": "session titles",
         "download_timeout": "",
         "extra_body": {},
+        "in_catalog": true,
+        "is_auto": true,
         "label": "Title generation",
         "max_concurrency": "",
         "model": "",
         "provider": "auto",
+        "provider_label": null,
+        "selected_option_id": null,
         "task": "title_generation",
-        "timeout": ""
+        "timeout": "",
+        "value_label": null
       },
       {
         "api_key_set": false,
@@ -97,12 +127,17 @@
         "description": "skills search/install",
         "download_timeout": "",
         "extra_body": {},
+        "in_catalog": true,
+        "is_auto": true,
         "label": "Skills hub",
         "max_concurrency": "",
         "model": "",
         "provider": "auto",
+        "provider_label": null,
+        "selected_option_id": null,
         "task": "skills_hub",
-        "timeout": ""
+        "timeout": "",
+        "value_label": null
       },
       {
         "api_key_set": false,
@@ -110,12 +145,17 @@
         "description": "skill-usage review pass",
         "download_timeout": "",
         "extra_body": {},
+        "in_catalog": true,
+        "is_auto": true,
         "label": "Curator",
         "max_concurrency": "",
         "model": "",
         "provider": "auto",
+        "provider_label": null,
+        "selected_option_id": null,
         "task": "curator",
-        "timeout": ""
+        "timeout": "",
+        "value_label": null
       },
       {
         "api_key_set": false,
@@ -123,12 +163,17 @@
         "description": "task decomposition",
         "download_timeout": "",
         "extra_body": {},
+        "in_catalog": true,
+        "is_auto": true,
         "label": "Kanban decomposer",
         "max_concurrency": "",
         "model": "",
         "provider": "auto",
+        "provider_label": null,
+        "selected_option_id": null,
         "task": "kanban_decomposer",
-        "timeout": ""
+        "timeout": "",
+        "value_label": null
       },
       {
         "api_key_set": false,
@@ -136,12 +181,17 @@
         "description": "profile summaries",
         "download_timeout": "",
         "extra_body": {},
+        "in_catalog": true,
+        "is_auto": true,
         "label": "Profile describer",
         "max_concurrency": "",
         "model": "",
         "provider": "auto",
+        "provider_label": null,
+        "selected_option_id": null,
         "task": "profile_describer",
-        "timeout": ""
+        "timeout": "",
+        "value_label": null
       },
       {
         "api_key_set": false,
@@ -149,12 +199,17 @@
         "description": "issue/task triage specs",
         "download_timeout": "",
         "extra_body": {},
+        "in_catalog": true,
+        "is_auto": true,
         "label": "Triage specifier",
         "max_concurrency": "",
         "model": "",
         "provider": "auto",
+        "provider_label": null,
+        "selected_option_id": null,
         "task": "triage_specifier",
-        "timeout": ""
+        "timeout": "",
+        "value_label": null
       }
     ]
   },

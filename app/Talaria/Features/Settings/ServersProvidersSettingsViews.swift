@@ -133,6 +133,19 @@ struct ServersSettingsView: View {
 
                 SettingsDivider()
 
+                NavigationLink {
+                    AuxiliaryModelsSettingsView(server: server)
+                } label: {
+                    SettingsAccessoryRow(
+                        title: String(localized: "Auxiliary Models"),
+                        systemImage: "square.stack.3d.up"
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the models used for side tasks such as session titles.")
+
+                SettingsDivider()
+
                 HapticButton {
                     showDefaultProfilePicker = true
                 } label: {

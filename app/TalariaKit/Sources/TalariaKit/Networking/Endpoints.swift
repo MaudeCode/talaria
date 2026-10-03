@@ -83,6 +83,8 @@ public enum Endpoint {
     case modelsLive
     case commands
     case defaultModel
+    case auxiliaryModels
+    case setModel
     case reasoning(model: String? = nil, provider: String? = nil)
     case personalities
     case setPersonality
@@ -302,6 +304,10 @@ public enum Endpoint {
             return "/api/commands"
         case .defaultModel:
             return "/api/default-model"
+        case .auxiliaryModels:
+            return "/api/model/auxiliary"
+        case .setModel:
+            return "/api/model/set"
         case .reasoning:
             return "/api/reasoning"
         case .personalities:

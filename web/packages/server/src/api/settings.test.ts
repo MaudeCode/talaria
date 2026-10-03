@@ -391,7 +391,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(await json(res)).toEqual({ ok: true, model: 'anthropic/claude-opus-4.7', provider: 'openrouter' })
     expect(configs.get(s.state)?.model).toEqual({ default: 'anthropic/claude-opus-4.7', provider: 'openrouter' })
     res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'vision', provider: 'openai', model: '@openai:gpt-4o' })
-    expect(await json(res)).toEqual({ ok: true, task: 'vision', provider: 'openai', model: 'gpt-4o' })
+    expect(await json(res)).toMatchObject({ ok: true, task: 'vision', provider: 'openai', model: 'gpt-4o' })
     res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'nope', provider: 'auto', model: '' })
     expect(res.status).toBe(400)
     res = await post(s, '/api/model/set', { scope: 'weird' })
@@ -423,6 +423,100 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     res = await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' })
     expect(res.status).toBe(200)
     expect((configs.get(s.state)?.auxiliary as Json).vision).toEqual({ provider: 'auto', model: '' })
+  })
+
+  it('auxiliary slots are typed, server-matched against the catalog, written one at a time, and profile-scoped (TAL-388)', async () => {
+    const saved = configs.get(s.state)
+    const reset = (config: Json): void => { configs.set(s.state, config); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
+    interface Task { task: string; provider: string; model: string; is_auto: boolean; value_label: string | null; provider_label: string | null; selected_option_id: string | null; in_catalog: boolean }
+    const tasksOf = (body: Json): Task[] => body.tasks as Task[]
+    const read = async (headers: Record<string, string> = {}): Promise<Task[]> => tasksOf(await json(await s.get('/api/model/auxiliary', { headers })))
+    // Two custom providers list the same bare model id; only the saved provider's entry may match.
+    reset({
+      model: { default: 'claude-sonnet-4-6', provider: 'anthropic' },
+      custom_providers: [{ name: 'alpha', base_url: 'http://alpha.test/v1', model: 'llama3' }, { name: 'beta', base_url: 'http://beta.test/v1/', model: 'llama3' }],
+      auxiliary: { vision: { provider: 'openrouter', model: 'legacy/gone-model' } },
+    })
+    const profileHome = join(s.state, 'profiles', 'auxp')
+    try {
+      const groups = (await json(await s.get('/api/models'))).groups as { provider: string; provider_id: string; models: { id: string; label: string }[] }[]
+      const beta = groups.find((g) => g.provider_id === 'custom:beta')!
+      const alpha = groups.find((g) => g.provider_id === 'custom:alpha')!
+      const betaOption = beta.models[0]!
+      expect(alpha.models[0]!.id).not.toBe(betaOption.id)
+      const mainOption = groups.find((g) => g.provider_id === 'anthropic')!.models.find((m) => m.id.endsWith('claude-sonnet-4-6'))!
+
+      // Read: server order, Auto, and a saved model the catalog no longer lists stay explicit.
+      let tasks = await read()
+      expect(tasks.map((t) => t.task)).toEqual(['vision', 'web_extract', 'compression', 'approval', 'mcp', 'title_generation', 'skills_hub', 'curator', 'kanban_decomposer', 'profile_describer', 'triage_specifier'])
+      expect(tasks.find((t) => t.task === 'title_generation')).toMatchObject({ label: 'Title generation', provider: 'auto', model: '', is_auto: true, value_label: mainOption.label, provider_label: 'Anthropic', selected_option_id: null, in_catalog: true })
+      expect(tasks.find((t) => t.task === 'vision')).toMatchObject({ is_auto: false, value_label: 'legacy/gone-model', provider_label: 'OpenRouter', selected_option_id: null, in_catalog: false })
+      // Auto names the effective main model, including an environment override the config section does not hold.
+      const otherOption = groups.find((g) => g.provider_id === 'anthropic')!.models.find((m) => !m.id.startsWith('@') && m.id !== 'claude-sonnet-4-6')!
+      s.deps.config.env.HERMES_MODEL = otherOption.id
+      s.deps.catalog.invalidate()
+      try {
+        expect((await read()).find((t) => t.task === 'title_generation')).toMatchObject({ is_auto: true, value_label: otherOption.label, provider_label: 'Anthropic' })
+      } finally {
+        Reflect.deleteProperty(s.deps.config.env, 'HERMES_MODEL')
+        s.deps.catalog.invalidate()
+      }
+
+      // Write one task with the picked catalog id: it answers the refreshed state and ticks exactly the beta entry.
+      let res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'title_generation', provider: beta.provider_id, model: betaOption.id })
+      expect(res.status).toBe(200)
+      let body = await json(res)
+      expect(body).toMatchObject({ ok: true, task: 'title_generation', provider: 'custom:beta', model: 'llama3' })
+      const title = tasksOf(dictOf(body.auxiliary)).find((t) => t.task === 'title_generation')
+      expect(title).toMatchObject({ is_auto: false, value_label: betaOption.label, provider_label: beta.provider, selected_option_id: betaOption.id, in_catalog: true })
+      expect((configs.get(s.state)?.auxiliary as Json).title_generation).toEqual({ provider: 'custom:beta', model: 'llama3', base_url: 'http://beta.test/v1' })
+      // The other ten slots and the main model are untouched.
+      tasks = await read()
+      expect(tasks.filter((t) => t.task !== 'title_generation' && t.task !== 'vision').every((t) => t.is_auto)).toBe(true)
+      expect(tasks.find((t) => t.task === 'vision')).toMatchObject({ provider: 'openrouter', model: 'legacy/gone-model' })
+      expect(configs.get(s.state)?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
+
+      // Invalid input is rejected without changing saved state.
+      const before = JSON.stringify(configs.get(s.state))
+      for (const bad of [
+        { task: 'nope', provider: 'auto', model: '' },
+        { task: 'title_generation', provider: 'openai', model: alpha.models[0]!.id },
+        { task: 'title_generation', provider: 'auto', model: '@nocolon' },
+        { task: 'title_generation', provider: 'auto', model: '@openai:' },
+      ]) {
+        res = await post(s, '/api/model/set', { scope: 'auxiliary', ...bad })
+        expect(res.status).toBe(400)
+      }
+      expect(JSON.stringify(configs.get(s.state))).toBe(before)
+
+      // Auto clears the override, including the custom endpoint's base_url.
+      body = await json(await post(s, '/api/model/set', { scope: 'auxiliary', task: 'title_generation', provider: 'auto', model: '' }))
+      expect(tasksOf(dictOf(body.auxiliary)).find((t) => t.task === 'title_generation')).toMatchObject({ is_auto: true, selected_option_id: null })
+      expect((configs.get(s.state)?.auxiliary as Json).title_generation).toEqual({ provider: 'auto', model: '' })
+
+      // Profiles keep separate selections.
+      mkdirSync(profileHome, { recursive: true })
+      writeFileSync(join(profileHome, 'config.yaml'), '# seed\n')
+      configs.set(profileHome, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' } })
+      sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }, { name: 'auxp', path: profileHome, is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+      s.deps.profiles.invalidate()
+      const cookie = ((await post(s, '/api/profile/switch', { name: 'auxp' })).headers.get('set-cookie') ?? '').split(';')[0] ?? ''
+      res = await post(s, '/api/model/set', { scope: 'auxiliary', task: 'compression', provider: 'anthropic', model: 'claude-opus-4-7' }, { cookie })
+      expect(res.status).toBe(200)
+      expect((await read({ cookie })).find((t) => t.task === 'compression')).toMatchObject({ provider: 'anthropic', model: 'claude-opus-4-7' })
+      expect((await read()).find((t) => t.task === 'compression')).toMatchObject({ is_auto: true })
+      expect((await read({ cookie })).find((t) => t.task === 'vision')).toMatchObject({ is_auto: true })
+
+      // Reset all returns every slot to Auto.
+      body = await json(await post(s, '/api/model/set', { scope: 'auxiliary', task: '__reset__', provider: 'auto', model: '' }))
+      expect(tasksOf(dictOf(body.auxiliary)).every((t) => t.is_auto)).toBe(true)
+      expect(configs.get(s.state)?.model).toEqual({ default: 'claude-sonnet-4-6', provider: 'anthropic' })
+    } finally {
+      sidecar.respond('profiles.list', () => ({ profiles: [{ name: 'default', path: s.state, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 }] }))
+      s.deps.profiles.invalidate()
+      configs.delete(profileHome)
+      if (saved) reset(saved)
+    }
   })
 
   it('a renamed root profile (is_default from the Agent) is a root alias for switching, home lookup, and session visibility', async () => {
