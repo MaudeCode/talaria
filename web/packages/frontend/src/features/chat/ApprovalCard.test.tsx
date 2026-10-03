@@ -34,4 +34,13 @@ describe('ApprovalCard', () => {
     await userEvent.keyboard('{Enter}')
     expect(api.respondApproval).not.toHaveBeenCalled()
   })
+
+  it('stops answering Enter once dismissed', async () => {
+    render(<ApprovalCard sessionId="s1" pending={{ approval_id: 'a4', command: 'rm -rf build' }} onResolved={() => undefined} />)
+    vi.mocked(api.respondApproval).mockClear()
+    await userEvent.click(screen.getByRole('button', { name: /dismiss approval/i }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    await userEvent.keyboard('{Enter}')
+    expect(api.respondApproval).not.toHaveBeenCalled()
+  })
 })

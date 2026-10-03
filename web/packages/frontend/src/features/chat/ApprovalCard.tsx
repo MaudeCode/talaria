@@ -31,6 +31,7 @@ export function ApprovalCard({ sessionId, pending, onResolved }: { sessionId: st
     }
   }
   useEffect(() => {
+    if (dismissed) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' || e.metaKey || e.ctrlKey || e.shiftKey) return
       const t = e.target as HTMLElement | null
@@ -41,7 +42,7 @@ export function ApprovalCard({ sessionId, pending, onResolved }: { sessionId: st
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, pending.approval_id])
+  }, [sessionId, pending.approval_id, dismissed])
   if (dismissed) return null
   const command = pending.command ?? pending.action ?? ''
   return (
