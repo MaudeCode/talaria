@@ -808,10 +808,61 @@ def _checkpoint_required() -> bool:
         return False
 
 
+#: Compressed results awaiting the server's write: ``commit_token -> (agent, profile home, monotonic start)``.
+_PENDING_COMPRESSIONS: dict[str, tuple[Any, Any, float]] = {}
+_PENDING_COMPRESSIONS_LOCK = threading.Lock()
+#: A server that never answers (restart, crash) gets its compression discarded after this long.
+_PENDING_COMPRESSION_TTL = 600.0
+
+
+def _release_compression(agent, committed: bool) -> None:
+    """Emit (committed) or discard the Agent's deferred context-engine notification, then close the throwaway agent."""
+    from agent.conversation_compression import finalize_context_engine_compression_notification
+
+    try:
+        finalize_context_engine_compression_notification(agent, committed=committed)
+    finally:
+        with contextlib.suppress(Exception):
+            agent._end_session_on_close = False
+        close = getattr(agent, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:  # noqa: BLE001
+                log.debug("compression agent close failed", exc_info=True)
+
+
+def _sweep_pending_compressions() -> None:
+    now = time.monotonic()
+    with _PENDING_COMPRESSIONS_LOCK:
+        expired = [(t, e) for t, e in _PENDING_COMPRESSIONS.items() if now - e[2] > _PENDING_COMPRESSION_TTL]
+        for token, _ in expired:
+            _PENDING_COMPRESSIONS.pop(token, None)
+    for _, (agent, home, _) in expired:
+        with scoped_home(home):
+            _release_compression(agent, committed=False)
+
+
+def finalize_compression(token: str, committed: bool) -> bool:
+    """``chat.compress_finalize``: the server reports whether it installed the result; unknown tokens are a no-op."""
+    with _PENDING_COMPRESSIONS_LOCK:
+        entry = _PENDING_COMPRESSIONS.pop(token, None)
+    if entry is None:
+        return False
+    agent, home, _ = entry
+    with scoped_home(home):
+        _release_compression(agent, committed=committed)
+    return True
+
+
 def compress(ctx: CallContext, params: dict) -> dict:
     """Manual ``/compress`` of ``conversation_history`` through the Agent's shared core (``compress_now``) on a throwaway
     agent, like the gateway's ``_run_manual_compression``. The server owns the transcript: it re-checks the session and
-    installs ``messages`` itself, so nothing here touches history or the cached turn agent."""
+    installs ``messages`` itself, so nothing here touches history or the cached turn agent. The agent has no session
+    store, so the Agent neither rotates nor writes state.db; its one deferred effect, the context-engine notification,
+    waits for ``chat.compress_finalize`` with the returned ``commit_token`` (two-phase, like the gateway's commit)."""
+    _sweep_pending_compressions()
+    home = profile_home_param(params)
     session_id = str(params.get("session_id") or "").strip()
     if not session_id:
         raise InvalidParams("session_id is required")
@@ -825,7 +876,6 @@ def compress(ctx: CallContext, params: dict) -> dict:
     runtime = _resolve_runtime(provider, model)
     if not runtime.get("api_key"):
         raise RpcError("No provider configured -- cannot compress.", condition="credential_missing")
-    from agent.conversation_compression import finalize_context_engine_compression_notification
     from agent.conversation_compression_manual import CompressRequest, compress_now
 
     AIAgent = _agent_class()
@@ -850,7 +900,7 @@ def compress(ctx: CallContext, params: dict) -> dict:
         if _supported(AIAgent, name) and value is not None:
             kwargs[name] = value
     agent = AIAgent(**kwargs)
-    committed = False
+    held = False
     try:
         result = compress_now(agent, history, CompressRequest(focus_topic=focus_topic), task_id=session_id)
         message = None
@@ -866,21 +916,18 @@ def compress(ctx: CallContext, params: dict) -> dict:
             "summary": json.loads(json.dumps(result.summary, default=str)) if isinstance(result.summary, dict) else None,
             "message": message,
             "agent_session_id": str(getattr(agent, "session_id", None) or session_id),
+            "commit_token": None,
         }
-        # ponytail: "committed" is the Agent's result, not the server's write; a server-side 409 after this cannot
-        # retract a context engine's notification. A commit RPC fixes that if an engine ever depends on it.
-        committed = result.status == "compressed"
+        if result.status == "compressed":
+            token = uuid.uuid4().hex
+            with _PENDING_COMPRESSIONS_LOCK:
+                _PENDING_COMPRESSIONS[token] = (agent, home, time.monotonic())
+            held = True
+            payload["commit_token"] = token
         return payload
     finally:
-        finalize_context_engine_compression_notification(agent, committed=committed)
-        with contextlib.suppress(Exception):
-            agent._end_session_on_close = False  # a rotated child is the session's continuation, not ended
-        close = getattr(agent, "close", None)
-        if callable(close):
-            try:
-                close()
-            except Exception:  # noqa: BLE001
-                log.debug("compression agent close failed", exc_info=True)
+        if not held:
+            _release_compression(agent, committed=False)
 
 
 def _run_for(params: dict) -> _Run | None:
@@ -910,6 +957,13 @@ def register(registry) -> None:
     def compress_(ctx: CallContext, params: dict) -> dict:
         with scoped_home(profile_home_param(params)):
             return compress(ctx, params)
+
+    @registry.method("chat.compress_finalize", requires_agent=False)
+    def compress_finalize_(ctx: CallContext, params: dict) -> dict:
+        token = str(params.get("commit_token") or "").strip()
+        if not token:
+            raise InvalidParams("commit_token is required")
+        return {"finalized": finalize_compression(token, params.get("committed") is True)}
 
     @registry.method("chat.interrupt", requires_agent=False)
     def interrupt_(ctx: CallContext, params: dict) -> dict:

@@ -876,9 +876,10 @@ export class SessionService {
    */
   private async compressSession(sid: string, focusTopic: string | null): Promise<Record<string, unknown>> {
     const { s, history } = this.compressionTarget(sid)
-    // The display transcript and the model context must both be where the compression left them.
-    const transcriptKey = (x: Session): string => JSON.stringify([sanitizeMessagesForApi(x.messages), sanitizeMessagesForApi(this.modelContext(x))])
-    const historyKey = transcriptKey(s)
+    // The display transcript and the model context must both be where the compression found them; the key starts from
+    // the exact history sent, so a state.db row that lands after this read fails the commit instead of being dropped.
+    const transcriptKey = (x: Session, context: Message[]): string => JSON.stringify([sanitizeMessagesForApi(x.messages), context])
+    const historyKey = transcriptKey(s, history)
     const streamState = (x: Session): string => JSON.stringify([x.active_stream_id ?? null, x.pending_user_message ?? null, x.pending_attachments ?? null, x.pending_started_at ?? null])
     const streamBefore = streamState(s)
     const sidecar = this.deps.sidecar?.()
@@ -898,38 +899,47 @@ export class SessionService {
     // A held compression lock is a conflict to retry; `nothing_to_do` is the Agent's verdict on this transcript.
     if (result.status !== 'compressed') throw new HttpFailure(result.status === 'lock_skipped' ? 409 : 400, result.message ?? 'Nothing to compress yet.')
     const summary = result.summary ?? {}
-    const current = await this.store.withLock(sid, () => {
-      let live: Session
-      try { live = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
-      if (streamState(live) !== streamBefore) throw new HttpFailure(409, 'Session stream state changed during compression; please retry.')
-      if (transcriptKey(live) !== historyKey) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
-      const now = this.deps.now()
-      const compressed = copyJson(result.messages) as Message[]
-      for (const m of compressed) m.timestamp ??= now
-      live.context_messages = compressed
-      live.active_stream_id = null
-      live.pending_user_message = null
-      live.pending_attachments = []
-      live.pending_started_at = null
-      live.pending_user_source = null
-      const visible = visibleMessagesForAnchor(live.messages)
-      live.compression_anchor_visible_idx = visible.length ? visible.length - 1 : null
-      live.compression_anchor_message_key = anchorMessageKey(visible.at(-1))
-      live.compression_anchor_summary = anchorSummary(summary, compressed)
-      live.compression_anchor_mode = 'manual'
-      // #4836: an intentional-shrink boundary, so append-only state.db reconciliation does not replay compressed rows.
-      live.truncation_watermark = truncationWatermarkFor(compressed)
-      live.truncation_boundary = live.truncation_watermark
-      live.last_prompt_tokens = result.after_tokens
-      live.post_compression_context_tokens_estimate = result.after_tokens
-      this.store.save(live)
-      // A backup from before the compression would restore the uncompressed context.
-      try { rmSync(`${this.store.pathFor(sid)}.bak`, { force: true }) } catch { /* ignore */ }
-      return live
-    })
-    // The cached turn agent still carries the uncompressed state; the next turn builds a fresh one (gateway parity).
-    this.deps.runtime.evictAgent(sid)
-    return { ok: true, session: this.publicSession(current), summary, focus_topic: focusTopic }
+    let committed = false
+    try {
+      const current = await this.store.withLock(sid, () => {
+        let live: Session
+        try { live = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
+        if (streamState(live) !== streamBefore) throw new HttpFailure(409, 'Session stream state changed during compression; please retry.')
+        if (transcriptKey(live, sanitizeMessagesForApi(this.modelContext(live))) !== historyKey) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
+        const now = this.deps.now()
+        const compressed = copyJson(result.messages) as Message[]
+        for (const m of compressed) m.timestamp ??= now
+        live.context_messages = compressed
+        live.active_stream_id = null
+        live.pending_user_message = null
+        live.pending_attachments = []
+        live.pending_started_at = null
+        live.pending_user_source = null
+        const visible = visibleMessagesForAnchor(live.messages)
+        live.compression_anchor_visible_idx = visible.length ? visible.length - 1 : null
+        live.compression_anchor_message_key = anchorMessageKey(visible.at(-1))
+        live.compression_anchor_summary = anchorSummary(summary, compressed)
+        live.compression_anchor_mode = 'manual'
+        // #4836: an intentional-shrink boundary, so append-only state.db reconciliation does not replay compressed rows.
+        live.truncation_watermark = truncationWatermarkFor(compressed)
+        live.truncation_boundary = live.truncation_watermark
+        live.last_prompt_tokens = result.after_tokens
+        live.post_compression_context_tokens_estimate = result.after_tokens
+        this.store.save(live)
+        // A backup from before the compression would restore the uncompressed context.
+        try { rmSync(`${this.store.pathFor(sid)}.bak`, { force: true }) } catch { /* ignore */ }
+        return live
+      })
+      committed = true
+      // The cached turn agent still carries the uncompressed state; the next turn builds a fresh one (gateway parity).
+      this.deps.runtime.evictAgent(sid)
+      return { ok: true, session: this.publicSession(current), summary, focus_topic: focusTopic }
+    } finally {
+      // Second phase: the Agent's context-engine notification fires only for a result the session now holds.
+      if (result.commit_token) {
+        try { await sidecar.call('chat.compress_finalize', { commit_token: result.commit_token, committed }) } catch (error) { this.deps.log(`[webui] compression finalize for ${sid} failed: ${(error as Error).message}`) }
+      }
+    }
   }
 
   async clear(sid: string): Promise<Record<string, unknown>> {

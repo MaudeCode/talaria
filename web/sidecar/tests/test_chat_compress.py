@@ -92,9 +92,11 @@ def agent_env(monkeypatch):
     for name, module in (("agent", package), ("agent.conversation_compression_manual", manual), ("agent.conversation_compression", engine), ("agent.manual_compression_feedback", describe)):
         monkeypatch.setitem(sys.modules, name, module)
     ThrowawayAgent.instances.clear()
+    monkeypatch.setattr(chat, "_PENDING_COMPRESSIONS", {})
     monkeypatch.setattr(chat, "_resolve_runtime", lambda provider, model: {"model": "m", "provider": provider or "p", "api_key": "k", "base_url": "https://example.invalid/v1", "api_mode": "chat_completions"})
     monkeypatch.setattr(chat, "_agent_class", lambda: ThrowawayAgent)
     monkeypatch.setattr(chat, "_checkpoint_required", lambda: False)
+    monkeypatch.setattr(chat, "scoped_home", lambda home: contextlib.nullcontext(home))
     return calls, outcome
 
 
@@ -110,14 +112,29 @@ def test_compress_runs_the_shared_core_on_a_throwaway_agent_and_commits(agent_en
     assert isinstance(result["messages"][1]["_db_persisted"], str)  # JSON-safe for the RPC frame
     assert result["summary"]["headline"] == "Compressed: 4 → 3 messages"
     assert (result["before_tokens"], result["after_tokens"], result["message"], result["agent_session_id"]) == (400, 120, None, "s1")
+    token = result["commit_token"]
+    assert token in chat._PENDING_COMPRESSIONS
     call = calls["compress"][0]
     assert call["history"] == HISTORY and call["request"].focus_topic == "schema" and call["task_id"] == "s1"
     agent = ThrowawayAgent.instances[0]
     assert agent.kwargs["session_id"] == "s1" and agent.kwargs["platform"] == "webui" and agent.kwargs["enabled_toolsets"] == ["memory"]
-    assert agent.closed and agent._end_session_on_close is False
     # The cached turn agent is never used for a manual compression.
     assert "s1" not in chat._AGENT_CACHE
+    # The context-engine notification waits for the server's write (second phase).
+    assert calls["finalize"] == [] and not agent.closed
+    assert chat.finalize_compression(token, True) is True
     assert calls["finalize"] == [True]
+    assert agent.closed and agent._end_session_on_close is False
+    assert chat.finalize_compression(token, True) is False  # one shot
+
+
+def test_a_server_that_never_finalizes_has_its_compression_discarded(agent_env, monkeypatch) -> None:
+    calls, _ = agent_env
+    token = chat.compress(Ctx(), _params())["commit_token"]
+    monkeypatch.setattr(chat, "_PENDING_COMPRESSION_TTL", -1.0)
+    chat._sweep_pending_compressions()
+    assert token not in chat._PENDING_COMPRESSIONS
+    assert calls["finalize"] == [False] and ThrowawayAgent.instances[0].closed
 
 
 def test_a_held_lock_is_reported_and_not_committed(agent_env) -> None:
@@ -127,7 +144,8 @@ def test_a_held_lock_is_reported_and_not_committed(agent_env) -> None:
     assert result["status"] == "lock_skipped"
     assert result["message"] == "⏳ Compression already in progress for this session (holder: cli). Please wait for it to finish."
     assert result["messages"] == HISTORY
-    assert calls["finalize"] == [False]
+    assert result["commit_token"] is None
+    assert calls["finalize"] == [False] and ThrowawayAgent.instances[0].closed
 
 
 def test_no_api_key_is_refused_before_an_agent_exists(agent_env, monkeypatch) -> None:
@@ -152,5 +170,8 @@ def test_registered_method_scopes_the_profile_home(agent_env, monkeypatch) -> No
     monkeypatch.setattr(chat, "scoped_home", scoped)
     registry = Registry(runtime=types.SimpleNamespace(load=lambda: None, ensure_current=lambda: None))
     chat.register(registry)
-    assert registry.methods["chat.compress"](Ctx(), _params(profile_home="/tmp/profiles/work"))["status"] == "compressed"
-    assert homes == ["/tmp/profiles/work"]
+    result = registry.methods["chat.compress"](Ctx(), _params(profile_home="/tmp/profiles/work"))
+    assert result["status"] == "compressed"
+    # The second phase runs in the same profile home, without the runtime gate.
+    assert registry.methods["chat.compress_finalize"](Ctx(), {"commit_token": result["commit_token"], "committed": False}) == {"finalized": True}
+    assert homes == ["/tmp/profiles/work", "/tmp/profiles/work"]

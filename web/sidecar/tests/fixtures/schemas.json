@@ -4023,6 +4023,12 @@
       },
       "agent_session_id": {
         "type": "string"
+      },
+      "commit_token": {
+        "type": [
+          "string",
+          "null"
+        ]
       }
     },
     "required": [
@@ -4032,7 +4038,21 @@
       "after_tokens",
       "summary",
       "message",
-      "agent_session_id"
+      "agent_session_id",
+      "commit_token"
+    ],
+    "additionalProperties": false
+  },
+  "chat.compress_finalize": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "finalized": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "finalized"
     ],
     "additionalProperties": false
   },

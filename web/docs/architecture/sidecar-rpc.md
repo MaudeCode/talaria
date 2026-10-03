@@ -162,7 +162,10 @@ shared `compress_now` core over the history the server sends and returns the
 compressed messages and summary without persisting anything. The server
 re-checks the session under its lock (a stream that started or a transcript
 that changed during the call is a 409) before it installs the result as the
-model context, so the browser job and the iOS route share one worker.
+model context, so the browser job and the iOS route share one worker. The
+Agent's context-engine notification is two-phase: a compressed result carries a
+`commit_token`, and the server answers `chat.compress_finalize` with whether it
+installed the result (an unanswered token is discarded after ten minutes).
 
 ## Versioning
 

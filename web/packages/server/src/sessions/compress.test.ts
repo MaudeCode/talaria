@@ -3,7 +3,7 @@
  * job the browser polls, against a fake `chat.compress`.
  */
 import { existsSync, writeFileSync } from 'node:fs'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
@@ -27,7 +27,7 @@ const TOOL_CALLS = [{ id: 'call_1', name: 'terminal', assistant_msg_idx: 1, done
 const compressed = (params: SidecarParams<'chat.compress'>): CompressResult => {
   const history = params.conversation_history
   return {
-    status: 'compressed', messages: [history[0]!, history.at(-1)!], before_tokens: 400, after_tokens: 120, message: null, agent_session_id: params.session_id,
+    status: 'compressed', messages: [history[0]!, history.at(-1)!], before_tokens: 400, after_tokens: 120, message: null, agent_session_id: params.session_id, commit_token: 'token-1',
     summary: { noop: false, headline: `Compressed: ${history.length} → 2 messages`, token_line: 'Approx request size: ~400 → ~120 tokens', note: null },
   }
 }
@@ -50,9 +50,13 @@ describe('manual session compression', () => {
     s = await bootTestServer({ sidecar })
   })
   afterAll(() => s.close())
+  /** `committed` of every `chat.compress_finalize` the server sent. */
+  let finalized: boolean[] = []
   beforeEach(() => {
     ensureCurrent()
     sidecar.respond('chat.compress', compressed)
+    finalized = []
+    sidecar.respond('chat.compress_finalize', (params) => { finalized.push(params.committed); return { finalized: true } })
   })
 
   async function seeded(extra: Json = {}): Promise<string> {
@@ -236,6 +240,22 @@ describe('manual session compression', () => {
     expect(stored.messages.at(-1)?.content).toBe('concurrent edit')
     expect(stored.context_messages).toEqual([])
     expect(stored.compression_anchor_mode).toBeNull()
+    expect(finalized).toEqual([false])
+  })
+
+  it('refuses a result that missed a state.db continuation landing right after its history was read', async () => {
+    const sid = await seeded()
+    const service = s.deps.sessions
+    const merged = service.mergedTranscript.bind(service)
+    // Reads 1-2 are the admission and worker guards (the second is the history sent); the CLI row exists from read 3 on.
+    let reads = 0
+    const spy = vi.spyOn(service, 'mergedTranscript').mockImplementation((session, local) => (++reads > 2 ? [...merged(session, local), { role: 'user', content: 'from the CLI', timestamp: 9 }] : merged(session, local)))
+    try {
+      const res = await post(s, '/api/session/compress', { session_id: sid })
+      expect([res.status, (await json(res)).error]).toEqual([409, 'Session was modified during compression; please retry.'])
+      expect(s.deps.sessionStore.get(sid).truncation_watermark).toBeNull()
+      expect(finalized).toEqual([false])
+    } finally { spy.mockRestore() }
   })
 
   it('does not compress over a stream that started while the runtime check awaited', async () => {
@@ -258,7 +278,9 @@ describe('manual session compression', () => {
     const sid = await seeded()
     const before = sidecar.calls.length
     expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
-    expect(sidecar.calls.slice(before).map((c) => c.method)).toEqual(['runtime.ensure_current', 'chat.compress', 'chat.evict_agent'])
+    expect(sidecar.calls.slice(before).map((c) => c.method)).toEqual(['runtime.ensure_current', 'chat.compress', 'chat.evict_agent', 'chat.compress_finalize'])
+    // The Agent's context-engine notification is committed only once the session holds the result.
+    expect(finalized).toEqual([true])
   })
 
   it('refuses a result once a stream started during the compression', async () => {
