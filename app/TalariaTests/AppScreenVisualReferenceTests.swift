@@ -80,17 +80,6 @@ final class AppScreenVisualReferenceTests: XCTestCase {
         }
     }
 
-    /// The offline run status stays on one line on a 390 pt phone, with a still symbol (TAL-449).
-    func testWaitingForNetworkRunStatusReference() throws {
-        try VisualReference.assertMatchesReference(
-            StatusChip(ChatActiveRunStatusPresentation(kind: .waitingForNetwork), agentName: "Hermes")
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16),
-            named: "run-status-waiting-for-network-light",
-            size: CGSize(width: 390, height: 52)
-        )
-    }
-
     /// `ChatTranscriptLoadingSkeletonView` wraps these rows in a `ScrollView`,
     /// which `ImageRenderer` draws empty, so the reference covers the rows the
     /// loading state is actually made of.

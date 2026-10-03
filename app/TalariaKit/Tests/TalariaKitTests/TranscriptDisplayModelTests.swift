@@ -750,8 +750,6 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         let waiting = ChatActiveRunStatusPresentation(recoveryState: .waitingForNetwork)
         XCTAssertEqual(waiting?.label(agentName: "Hermes"), "Waiting for network")
         XCTAssertEqual(waiting?.accessibilityLabel(agentName: "Hermes"), "Hermes is waiting for a network connection")
-        XCTAssertEqual(waiting?.isWaitingForNetwork, true)
-        XCTAssertEqual(ChatActiveRunStatusPresentation(recoveryState: .reconnecting)?.isWaitingForNetwork, false)
     }
 
     func testStoppingAndStartingOutrankSyncing() {

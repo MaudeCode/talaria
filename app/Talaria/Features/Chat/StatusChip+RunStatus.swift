@@ -6,7 +6,7 @@ extension StatusChip {
         self.init(
             label: presentation.label(agentName: agentName),
             accessibilityLabel: presentation.accessibilityLabel(agentName: agentName),
-            icon: presentation.isWaitingForNetwork ? .symbol("wifi.slash") : .activity
+            icon: .activity
         )
     }
 }
