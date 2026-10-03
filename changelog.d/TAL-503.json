@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Pressing Enter after dismissing a command approval no longer approves the hidden command, and the next approval in the turn shows again.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

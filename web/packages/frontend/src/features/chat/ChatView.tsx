@@ -312,7 +312,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <div ref={dock} className={cn('composer-dock', hero && 'composer-dock--hero')}>
         {hero && <h2 className="composer-hero-title" id="emptyHeroTitle">{wsLabel ? m.empty_hero_title_workspace({ a0: wsLabel }) : m.empty_hero_title()}</h2>}
         <div className="composer-flyout">
-          {sessionId && live?.approval && <ApprovalCard sessionId={sessionId} pending={live.approval} onResolved={() => dispatch({ type: 'clear_approval', sessionId })} />}
+          {sessionId && live?.approval && <ApprovalCard key={live.approval.approval_id} sessionId={sessionId} pending={live.approval} onResolved={() => dispatch({ type: 'clear_approval', sessionId })} />}
           {clarify && <ClarifyCard key={clarify.pending.clarify_id} clarify={clarify} />}
           {terminalOpen && sessionId && <TerminalPanel sessionId={sessionId} workspace={workspace} onClose={() => setTerminalOpen(false)} />}
         </div>
