@@ -76,9 +76,10 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       .finally(() => { draining.current = false })
   }, [live?.status, sessionId, session, queued, live])
 
-  const ensureSession = useCallback(async (): Promise<Session> => {
+  const ensureSession = useCallback(async (onCreated?: (sessionId: string) => void): Promise<Session> => {
     if (session) return session
     const created = await createSessionNow({ ...(settings.data?.default_workspace ? { workspace: settings.data.default_workspace } : {}), ...pending, profile: bootstrap.profile?.name ?? 'default' })
+    onCreated?.(created.session_id)
     qc.setQueryData(keys.sessions.detail(created.session_id), { session: created })
     bindFirstSend(created.session_id)
     await navigate({ to: '/session/$sessionId', params: { sessionId: created.session_id }, replace: true })

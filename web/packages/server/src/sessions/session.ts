@@ -385,10 +385,15 @@ export class Session {
     return n
   }
 
+  /** A prompt is in flight: its text, or attachments alone (TAL-276). */
+  get hasPendingPrompt(): boolean {
+    return Boolean(this.pending_user_message) || this.pending_attachments.length > 0
+  }
+
   /** Sidebar/index row (Python `Session.compact`). */
   compact(opts: { includeRuntime?: boolean; activeStreamIds?: Set<string>; sidebarMetadataOnly?: boolean } = {}): Record<string, unknown> {
     const activeStreamIds = opts.activeStreamIds ?? new Set<string>()
-    const hasPending = Boolean(this.pending_user_message)
+    const hasPending = this.hasPendingPrompt
     let messageCount = this.metadataMessageCount ?? this.messages.length
     if (hasPending) messageCount = Math.max(messageCount, 1)
     let lastMessageAt: number = lastMessageTimestamp(this.messages) ?? this.updated_at
@@ -482,7 +487,8 @@ export function titleFrom(messages: unknown[], fallback = 'Untitled'): string {
   return fallback
 }
 
-const ATTACHED_FILES_RE = /\n\n\[Attached files: [^\]]+\]$/
+// Paths are escaped like the workspace prefix (`\\` and `\]`), so a `]` in a path stays inside the line.
+const ATTACHED_FILES_RE = /\n\n\[Attached files: (?:\\.|[^\]\\])+\]$/
 export function stripAttachedFilesMarker(text: string): string {
   return text.replace(ATTACHED_FILES_RE, '').trim()
 }

@@ -40,7 +40,8 @@ export interface ComposerProps {
   pendingChoices?: { model?: string; workspace?: string; enabled_toolsets?: string[] | null } | undefined
   live: LiveTurn | null
   settings: Settings | undefined
-  onEnsureSession: () => Promise<Session>
+  /** Creates the unsaved chat's session; `onCreated` hears its id before the route changes to it. */
+  onEnsureSession: (onCreated?: (sessionId: string) => void) => Promise<Session>
   onLocalCommand: (name: string, args: string) => Promise<boolean>
   terminalOpen: boolean
   onToggleTerminal: () => void
@@ -105,8 +106,12 @@ function fileKey(f: File): string {
  * paste), slash commands, busy modes (steer / queue / interrupt), dictation,
  * and the model, reasoning, toolsets, workspace and profile chips.
  */
-/** Draft and files handed from the empty chat's composer to the one mounted for the session it just created. */
-let handoff: { text: string; files: File[] } | null = null
+/**
+ * Draft and files handed from the empty chat's composer to the one mounted for the session it just created, and only
+ * that one: `sessionId` is set once the session exists. The draft is read at adoption, so text typed or pasted while
+ * the session is created comes along too.
+ */
+let handoff: { draft: { readonly current: string }; files: File[]; sessionId: string | null } | null = null
 
 export function Composer(props: ComposerProps) {
   const { sessionId, session, live, settings, onEnsureSession, onLocalCommand, terminalOpen, onToggleTerminal, onModelChange, onWorkspaceChange, onToolsetsChange, onReasoningChange, reasoning, reasoningLevels, reasoningSupported = true, pendingChoices, locked = false, yolo, onToggleYolo, queued, onQueue, clarify, notices = [] } = props
@@ -190,10 +195,13 @@ export function Composer(props: ComposerProps) {
   // Session change resets the draft and tray, unless this session's composer just adopted a hand-off (below); the
   // guard also keeps StrictMode's effect replay from wiping the adopted state.
   const adopted = useRef<string | null>(null)
+  // Each chip's upload in flight; a receipt whose attempt is gone (chip removed, tray reset) is rolled back.
+  const inflight = useRef(new Map<string, object>())
   useEffect(() => {
     if (adopted.current === sessionId) return
     setText(sessionId ? readLocalDraft(sessionId) : '')
     setFiles([])
+    inflight.current.clear()
     setRestRequested(false)
   }, [sessionId])
 
@@ -208,48 +216,79 @@ export function Composer(props: ComposerProps) {
     el.style.height = `${Math.min(el.scrollHeight, 320)}px`
   }, [value])
 
+  const draft = useRef(text)
+  useLayoutEffect(() => { draft.current = text })
   const maxBytes = bootstrap.max_upload_bytes
+  const upload = useCallback((key: string, file: File) => {
+    if (!sessionId) return
+    const attempt = {}
+    inflight.current.set(key, attempt)
+    void api.uploadFile(sessionId, file).then(
+      (receipt) => {
+        if (inflight.current.get(key) !== attempt) {
+          if (receipt.rollback_token) void api.rollbackUpload(sessionId, [receipt.rollback_token]).catch(() => undefined)
+          return
+        }
+        inflight.current.delete(key)
+        setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'done', upload: receipt } : p)))
+      },
+      (e: unknown) => {
+        if (inflight.current.get(key) !== attempt) return
+        inflight.current.delete(key)
+        setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'error', error: e instanceof Error ? e.message : String(e) } : p)))
+        showToast(m.composer_upload_failed({ name: file.name }), 4000, 'error')
+      },
+    )
+  }, [sessionId])
   const addFiles = useCallback((incoming: FileList | File[]) => {
-    const list = Array.from(incoming)
+    // One chip and one upload per file, however often it is picked, pasted or handed off.
+    const list = Array.from(incoming).filter((file, i, all) => all.findIndex((f) => fileKey(f) === fileKey(file)) === i)
     if (list.length === 0) return
+    const pending = list.map((file): PendingFile => ({ key: fileKey(file), file, status: 'uploading' }))
+    const add = (rows: PendingFile[]) => setFiles((prev) => [...prev, ...rows.filter((r) => !prev.some((p) => p.key === r.key))])
     // Attaching to the empty chat: the index route and the session route mount separate composers, so the navigation
     // that lazy session creation causes would drop this state. Hand the draft and files to the composer that mounts
-    // for the new session; it runs the uploads with the session in hand.
-    if (!session) {
-      handoff = { text, files: list }
-      void onEnsureSession().catch((e: unknown) => { handoff = null; showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
+    // for the new session; it runs the uploads. A selected session uploads by its id, loaded or not, so attaching
+    // while its transcript loads never creates another session.
+    if (!sessionId) {
+      add(pending)
+      // One session per hand-off: files attached while it is created join it.
+      if (handoff) { const h = handoff; h.files.push(...list.filter((file) => !h.files.some((f) => fileKey(f) === fileKey(file)))); return }
+      const h = { draft, files: list, sessionId: null as string | null }
+      handoff = h
+      void onEnsureSession((id) => { h.sessionId = id }).catch((e: unknown) => {
+        const error = e instanceof Error ? e.message : String(e)
+        if (handoff === h) handoff = null
+        setFiles((prev) => prev.map((p) => (p.status === 'uploading' ? { ...p, status: 'error', error } : p)))
+        showToast(error, 4000, 'error')
+      })
       return
     }
-    for (const f of list) {
-      if (f.size > maxBytes) { showToast(m.composer_too_large({ name: f.name, max: Math.round(maxBytes / 1024 / 1024) }), 4000, 'error'); continue }
-      const key = fileKey(f)
-      setFiles((prev) => (prev.some((p) => p.key === key) ? prev : [...prev, { key, file: f, status: 'uploading' }]))
-      void (async () => {
-        try {
-          const target = session ?? (await onEnsureSession())
-          const upload = await api.uploadFile(target.session_id, f)
-          setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'done', upload } : p)))
-        } catch (e) {
-          setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'error', error: e instanceof Error ? e.message : String(e) } : p)))
-          showToast(m.composer_upload_failed({ name: f.name }), 4000, 'error')
-        }
-      })()
-    }
-  }, [maxBytes, session, onEnsureSession, text])
+    const fresh = pending.filter((p) => {
+      if (files.some((f) => f.key === p.key)) return false
+      if (p.file.size <= maxBytes) return true
+      showToast(m.composer_too_large({ name: p.file.name, max: Math.round(maxBytes / 1024 / 1024) }), 4000, 'error')
+      return false
+    })
+    add(fresh)
+    for (const p of fresh) upload(p.key, p.file)
+  }, [maxBytes, sessionId, onEnsureSession, files, upload])
 
   // Adopt a hand-off from the empty chat's composer (see addFiles). Runs after the session-change reset above.
   useEffect(() => {
-    if (!sessionId || !session || !handoff) return
+    if (!sessionId || handoff?.sessionId !== sessionId) return
     const h = handoff; handoff = null
     adopted.current = sessionId
-    setText(h.text)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time adoption of module state left by the composer that unmounted
+    setText(h.draft.current)
     addFiles(h.files)
-  }, [sessionId, session, addFiles])
+  }, [sessionId, addFiles])
 
   // A first send that failed hands its text back to the composer now mounted for it (sendMotion.ts).
   const firstSend = useFirstSend()
   useEffect(() => {
     if (!firstSend?.failed || !ownsFirstSend(firstSend, sessionId)) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hand-back from the first-send store
     setText(firstSend.text)
     endFirstSend()
   }, [firstSend, sessionId])
@@ -257,7 +296,18 @@ export function Composer(props: ComposerProps) {
   const removeFile = (key: string) => {
     const f = files.find((p) => p.key === key)
     setFiles((prev) => prev.filter((p) => p.key !== key))
-    if (f?.upload?.rollback_token && session) void api.rollbackUpload(session.session_id, [f.upload.rollback_token]).catch(() => undefined)
+    inflight.current.delete(key)
+    // Removed before the new chat exists: the file must not ride the hand-off into it.
+    if (handoff) handoff.files = handoff.files.filter((file) => fileKey(file) !== key)
+    if (f?.upload?.rollback_token && sessionId) void api.rollbackUpload(sessionId, [f.upload.rollback_token]).catch(() => undefined)
+  }
+  // A failed upload runs again; without a session yet, the file goes back through the hand-off.
+  const retryFile = (key: string) => {
+    const f = files.find((p) => p.key === key)
+    if (!f) return
+    if (!sessionId) { setFiles((prev) => prev.filter((p) => p.key !== key)); addFiles([f.file]); return }
+    setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'uploading', error: undefined } : p)))
+    upload(key, f.file)
   }
 
   // Steer: deliver mid-run, shown in the turn as a pending user message; if the server did not accept it, the draft stays in the box.
@@ -323,6 +373,8 @@ export function Composer(props: ComposerProps) {
       setFiles([])
       return
     }
+    // The selected session's transcript is still loading: sending must not start a new chat in its place.
+    if (sessionId && !session) { showToast(m.loading()); return }
     // First send from the unsaved chat: the hero gives way and the text shows as the pending user row at once, before
     // the session or the turn exists. The index view unmounts mid-send, so a failure returns the text through the store.
     if (!session) {
@@ -378,15 +430,16 @@ export function Composer(props: ComposerProps) {
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     // A clarification answer is text only: pasted files and long text stay out of the parked message.
     if (clarify) return
-    const items = Array.from(e.clipboardData.items)
-    const images = items.filter((i) => i.kind === 'file').map((i) => i.getAsFile()).filter((f): f is File => !!f)
-    if (images.length) { e.preventDefault(); addFiles(images); return }
+    // Real files attach; string items (rich-text HTML and the like) never do. Accompanying plain text pastes natively.
+    const pastedFiles = Array.from(e.clipboardData.items).filter((i) => i.kind === 'file').map((i) => i.getAsFile()).filter((f): f is File => !!f)
     const pasted = e.clipboardData.getData('text/plain')
     if (settings?.large_text_paste_as_attachment !== false && pasted.length > 8000) {
       e.preventDefault()
-      addFiles([new File([pasted], `pasted-${Date.now()}.txt`, { type: 'text/plain' })])
-      showToast(m.text_pasted() + `pasted-${Date.now()}.txt`, 2500)
-    }
+      const name = `pasted-${Date.now()}.txt`
+      pastedFiles.push(new File([pasted], name, { type: 'text/plain' }))
+      showToast(m.text_pasted() + name, 2500)
+    } else if (pastedFiles.length && !pasted) e.preventDefault()
+    addFiles(pastedFiles)
   }
   const onDrop = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setDragOver(false); if (!clarify) addFiles(e.dataTransfer.files) }
 
@@ -483,7 +536,7 @@ export function Composer(props: ComposerProps) {
       >
         {palette.open && <CommandPaletteList items={palette.items} active={palette.active} listId={palette.listId} onPick={applySuggestion} onHover={palette.setActive} />}
         {dragOver && <div className="drop-hint active" id="dropHint" aria-hidden="true">{m.drop_files_to_attach()}</div>}
-        {!clarify && <AttachmentTray files={files} onRemove={removeFile} />}
+        {!clarify && <AttachmentTray files={files} onRemove={removeFile} onRetry={retryFile} />}
         <textarea
           ref={textarea}
           id="msg"

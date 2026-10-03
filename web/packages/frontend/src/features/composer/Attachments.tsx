@@ -1,11 +1,11 @@
-import { X, FileText, Image as ImageIcon } from 'lucide-react'
+import { X, FileText, Image as ImageIcon, RotateCw } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { UploadResponse } from '../../contracts'
 import { IconButton } from '../../ui/Button'
 
 export interface PendingFile { key: string; file: File; status: 'uploading' | 'done' | 'error'; upload?: UploadResponse | undefined; error?: string | undefined }
 
-export function AttachmentTray({ files, onRemove }: { files: PendingFile[]; onRemove: (key: string) => void }) {
+export function AttachmentTray({ files, onRemove, onRetry }: { files: PendingFile[]; onRemove: (key: string) => void; onRetry: (key: string) => void }) {
   if (files.length === 0) return null
   return (
     <ul className="attach-tray flex flex-wrap gap-2 px-3 pt-2" aria-label={m.attachments_label()}>
@@ -15,6 +15,7 @@ export function AttachmentTray({ files, onRemove }: { files: PendingFile[]; onRe
           <span className="max-w-48 truncate">{f.file.name}</span>
           {f.status === 'uploading' && <span className="text-muted">…</span>}
           {f.status === 'error' && f.error && <span className="sr-only">{f.error}</span>}
+          {f.status === 'error' && <IconButton label={`${m.retry()} ${f.file.name}`} className="h-5 w-5" onClick={() => onRetry(f.key)}><RotateCw size={12} aria-hidden="true" /></IconButton>}
           <IconButton label={`${m.remove()} ${f.file.name}`} className="h-5 w-5" onClick={() => onRemove(f.key)}><X size={12} aria-hidden="true" /></IconButton>
         </li>
       ))}

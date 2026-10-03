@@ -208,7 +208,7 @@ export function allSessions(store: SessionStore, opts: AllSessionsOptions = {}):
   const out = store.scanAll()
   for (const s of store.sessions.values()) if (!out.some((x) => x.session_id === s.session_id)) out.push(s)
   const rows = out
-    .filter((s) => !(s.title === 'Untitled' && s.messages.length === 0 && !s.active_stream_id && !s.pending_user_message && !s.worktree_path))
+    .filter((s) => !(s.title === 'Untitled' && s.messages.length === 0 && !s.active_stream_id && !s.hasPendingPrompt && !s.worktree_path))
     .map((s) => s.compact({ includeRuntime: true, activeStreamIds, sidebarMetadataOnly: opts.sidebarMetadataOnly ?? false }))
   return finish(sortRows(rows))
 }
@@ -756,7 +756,7 @@ export function overlayRuntimeRows(rows: Row[], overlay: RuntimeOverlay): Row[] 
     const live = overlay.live(sid)
     if (live) {
       item.active_stream_id = live.active_stream_id || null
-      item.has_pending_user_message = Boolean(live.pending_user_message)
+      item.has_pending_user_message = live.hasPendingPrompt
       for (const key of ['pending_started_at', 'updated_at', 'last_message_at'] as const) {
         const current = num(item[key])
         const raw = key === 'last_message_at' ? live.compact().last_message_at : (live as unknown as Row)[key]

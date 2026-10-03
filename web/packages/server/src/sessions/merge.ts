@@ -5,7 +5,7 @@
  */
 import { buildActiveTurnToken } from '../redact.js'
 import { str } from '../util.js'
-import type { Message } from './session.js'
+import { stripAttachedFilesMarker, type Message } from './session.js'
 
 export const WORKSPACE_PREFIX_RE = /^\s*\[Workspace::v1:\s*(?:\\.|[^\]\\])+\]\s*/
 const LEGACY_WORKSPACE_PREFIX_RE = /^\s*\[Workspace:[^\]]+\]\s*/
@@ -63,7 +63,14 @@ export function messageIdentity(msg: unknown): string | null {
   if (!isDict(msg)) return null
   const role = str(msg.role)
   let text = messageText(msg.content)
-  if (role === 'user') text = stripWorkspacePrefix(text, true)
+  if (role === 'user') {
+    const typed = userPromptText(text)
+    // An attachment-only prompt has no typed text; its whole attached-files line (never truncated) tells one such turn
+    // from the next.
+    const line = typed ? '' : stripWorkspacePrefix(text, true)
+    if (line) return JSON.stringify([role, line, '', '[]'])
+    text = typed
+  }
   if (!text && !msg.tool_call_id && !msg.tool_calls) {
     if (msg._partial) return JSON.stringify([role, '', '', `__partial__${str(msg.reasoning).split(/\s+/).join(' ').slice(0, 200)}`])
     return null
@@ -95,14 +102,18 @@ export function isContextCompressionMarker(msg: unknown): boolean {
   return str(msg.role) === 'user' && text.startsWith('[CONTEXT COMPACTION]')
 }
 
-const normalizeUserText = (text: string): string => stripWorkspacePrefix(text, true).split(/\s+/).join(' ').trim()
+/** A user prompt as the user typed it: without the workspace prefix and the attached-files line the server adds. */
+const userPromptText = (text: string): string => stripWorkspacePrefix(stripAttachedFilesMarker(text), true)
+const normalizeUserText = (text: string): string => userPromptText(text).split(/\s+/).join(' ').trim()
 
 export function looksLikeCurrentUserTurn(msg: unknown, msgText: string): boolean {
   // A persisted steer is display-only: it is never the prompt that opened a turn.
   if (!isDict(msg) || str(msg.role) !== 'user' || isDict(msg._steer)) return false
   const candidate = normalizeUserText(messageText(msg.content))
   const target = normalizeUserText(msgText)
-  if (!candidate || !target) return false
+  // An attachment-only prompt (TAL-276) has no text: the Agent's row for it carries none either.
+  if (!target) return !candidate
+  if (!candidate) return false
   return candidate === target || candidate.startsWith(`${target}\n`) || candidate.endsWith(target)
 }
 
@@ -125,7 +136,8 @@ export function findCurrentUserTurn(messages: unknown[], msgText: string): numbe
   return null
 }
 
-export interface MergeOptions { source?: string; activeTurnToken?: string | null; now?: number; turnId?: string }
+/** `attachments`: the turn's files, which let an attachment-only prompt (no text to match) open its own user row (TAL-276). */
+export interface MergeOptions { source?: string; activeTurnToken?: string | null; now?: number; turnId?: string; attachments?: unknown[] }
 
 /** Python `_merge_display_messages_after_agent_result` (append-only display merge). */
 /** Python `_assistant_message_has_final_visible_text`: a non-error assistant row carrying visible answer text. */
@@ -208,10 +220,12 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
   const merged: Message[] = [...prev]
   const seen = new Set(merged.map(messageIdentity).filter((k): k is string => k !== null))
   const currentUserKey = messageIdentity({ role: 'user', content: msgText })
-  const currentUserIn = candidates.some((m) => messageIdentity(m) === currentUserKey || looksLikeCurrentUserTurn(m, msgText))
+  const currentUserIn = candidates.some((m) => (currentUserKey !== null && messageIdentity(m) === currentUserKey) || looksLikeCurrentUserTurn(m, msgText))
   const alreadyCheckpointed = Boolean(opts.activeTurnToken) && merged.some((m) => isDict(m) && m.role === 'user' && m._active_turn_token === opts.activeTurnToken)
-  if (currentUserKey !== null && !currentUserIn && !alreadyCheckpointed && candidates.some((m) => isDict(m) && (m.role === 'assistant' || m.role === 'tool'))) {
+  const promptless = currentUserKey === null && Boolean(opts.attachments?.length)
+  if ((currentUserKey !== null || promptless) && !currentUserIn && !alreadyCheckpointed && candidates.some((m) => isDict(m) && (m.role === 'assistant' || m.role === 'tool'))) {
     const user: Message = { role: 'user', content: msgText, timestamp: opts.now ?? Date.now() / 1000 }
+    if (promptless) user.attachments = [...opts.attachments!]
     if (opts.activeTurnToken) user._active_turn_token = opts.activeTurnToken
     if (opts.turnId) user._turn_id = opts.turnId
     if (opts.source && opts.source !== 'webui') user._source = opts.source
@@ -224,7 +238,7 @@ export function mergeDisplayMessagesAfterAgentResult(previousDisplay: Message[],
     const key = messageIdentity(msg)
     const isCurrentUser = looksLikeCurrentUserTurn(msg, msgText)
     const last = merged[merged.length - 1]
-    if (((key !== null && key === currentUserKey) || isCurrentUser) && last && (messageIdentity(last) === currentUserKey || looksLikeCurrentUserTurn(last, msgText))) {
+    if (((key !== null && key === currentUserKey) || isCurrentUser) && last && ((currentUserKey !== null && messageIdentity(last) === currentUserKey) || looksLikeCurrentUserTurn(last, msgText))) {
       if (isDict(msg) && msg.id !== undefined && isDict(last) && last.id === undefined) last.id = msg.id
       continue
     }

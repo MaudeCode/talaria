@@ -74,7 +74,7 @@ function requireField(body: Record<string, unknown>, ...fields: string[]): void 
 function visibleOrRetag(ctx: RequestContext, s: Session, requestedProfile: string): void {
   const active = ctx.deps.activeProfile()
   if (ctx.deps.profilesMatch(s.profile, active)) return
-  const hasTurns = s.messages.length > 0 || s.context_messages.length > 0 || Boolean(s.pending_user_message)
+  const hasTurns = s.messages.length > 0 || s.context_messages.length > 0 || s.hasPendingPrompt
   if (requestedProfile && ctx.deps.profilesMatch(requestedProfile, active) && !hasTurns) {
     s.profile = requestedProfile
     return
@@ -140,10 +140,11 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>): Pr
   if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
   visibleOrRetag(ctx, s, requestedProfile)
   const msg = str(body.message).trim()
-  if (!msg) throw new HttpError(400, 'message is required')
+  const attachments = normalizeChatAttachments(body.attachments).slice(0, 20)
+  // TAL-276: an attached file alone makes a turn; one with neither text nor a file path is refused.
+  if (!msg && !attachments.some((att) => str(att.path))) throw new HttpError(400, 'message is required')
   // TAL-460: the user's message never joins a background turn; that turn stops quietly and this one takes its place.
   if (await ctx.deps.turns.yieldBackgroundTurn(sid)) s = ctx.deps.sessionStore.get(sid)
-  const attachments = normalizeChatAttachments(body.attachments).slice(0, 20)
   // Python `compression_recovery_payload_for_session` + `is_generic_continuation_intent`.
   const recovery = s.compression_recovery
   const recoveryLive = recovery.terminal_state === 'compression_exhausted' && str(recovery.recommended_action || s.recommended_recovery_action) === 'start_focused_continuation'
@@ -250,7 +251,7 @@ export const chatRouter = os.router({
     if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     const requestedProfile = str(body.profile).trim()
     if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
-    if (requestedProfile && !ctx.deps.profilesMatch(s.profile, requestedProfile) && !s.messages.length && !s.context_messages.length && !s.pending_user_message) s.profile = requestedProfile
+    if (requestedProfile && !ctx.deps.profilesMatch(s.profile, requestedProfile) && !s.messages.length && !s.context_messages.length && !s.hasPendingPrompt) s.profile = requestedProfile
     let streamRunning = false
     if (s.active_stream_id) {
       streamRunning = ctx.deps.registry.liveIds.has(s.active_stream_id)

@@ -29,7 +29,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, toolOutcome, withAttachmentObjects, withBodyExcerpts, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, escapeWorkspacePrefixPath, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, toolOutcome, withAttachmentObjects, withBodyExcerpts, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
@@ -261,7 +261,7 @@ export class TurnRunner {
       if (blocking) return { error: 'session already has an active stream', active_stream_id: blocking, _status: 409 }
     }
     const streamId = randomUUID().replace(/-/g, '')
-    const wasHiddenEmpty = !s.messages.length && !s.context_messages.length && !s.pending_user_message
+    const wasHiddenEmpty = !s.messages.length && !s.context_messages.length && !s.hasPendingPrompt
     const attachments = opts.attachments ?? []
     // A background wakeup stays one in a forked session too (TAL-460).
     const source = opts.source !== 'process_wakeup' && str(s.source_tag).toLowerCase() === 'fork' ? 'fork' : (opts.source ?? 'webui')
@@ -542,7 +542,7 @@ export class TurnRunner {
       // sidecar reports `completed` whenever a failed run still carries messages).
       // Python's second chance: a turn that emitted no new row still counts when the merged transcript it produced
       // ends on a final answer (the current user row or trailing tool activity makes it "lacking").
-      const mergedForCheck = (): Message[] => mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId })
+      const mergedForCheck = (): Message[] => mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] })
       const assistantAdded = assistantReplyAddedAfterCurrentTurn(resultMessages, previousContext, msgText) || !sessionLacksFinalAssistantAnswer(mergedForCheck())
       const lastErr = result.error ?? capturedTerminalError ?? ''
       // Python `_turn_transcript_lacks_final_assistant_answer`: a partial result with no final answer is a silent failure even if tokens streamed.
@@ -569,7 +569,7 @@ export class TurnRunner {
       // The Agent's last pending-steer text settles the remaining steers before the turn is written back.
       await this.steerRewrites.get(streamId)
       const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, result.pending_steer, 'followup')
-      s.messages = mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId })
+      s.messages = mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] })
       s.context_messages = dedupeContext(resultMessages)
       for (const m of s.messages) {
         if (m.role !== 'assistant') continue
@@ -606,7 +606,8 @@ export class TurnRunner {
           if (m.role === 'user') {
             const content = messageText(m.content)
             const base = msgText.includes('\n\n[Attached files:') ? (msgText.split('\n\n[Attached files:')[0] ?? '').trim() : msgText
-            if (content.includes(base.slice(0, 60)) || msgText.includes(content.slice(0, 60))) m.attachments = [...attachments]
+            // An attachment-only prompt has no text to match: only this turn's own row takes its files.
+            if (msgText ? content.includes(base.slice(0, 60)) || msgText.includes(content.slice(0, 60)) : m._turn_id === streamId) m.attachments = [...attachments]
             break
           }
         }
@@ -732,14 +733,18 @@ export class TurnRunner {
   /**
    * Python `_build_user_message`: image attachments are embedded as native `image_url` parts only when the Agent's
    * resolved image mode for this model is `native` (text mode routes them through the Agent's vision tool path), and
-   * only after the bytes are read through an anchored descriptor and sniffed as a real image format.
+   * only after the bytes are read through an anchored descriptor and sniffed as a real image format. Every attached
+   * file is also named by path after the text (TAL-276), so an attachment-only turn still gives the model a request
+   * and its transcript row a distinct identity.
    */
   private async buildUserMessage(workspaceCtx: string, msgText: string, attachments: Record<string, unknown>[], workspace: string, sessionId: string, s: Session, opts: StartTurnOptions, signal: AbortSignal): Promise<string | Record<string, unknown>[]> {
     const text = workspaceCtx + msgText
+    const named = attachments.map((att) => str(att.path).trim()).filter(Boolean).map(escapeWorkspacePrefixPath)
+    const withFiles = (): string => (named.length ? `${text}\n\n[Attached files: ${named.join(', ')}]` : text)
     const candidates = attachments.filter((att) => str(att.path).trim() && str(att.mime).trim().startsWith('image/'))
-    if (!candidates.length) return text
+    if (!candidates.length) return withFiles()
     const sidecar = this.deps.sidecar()
-    if (!sidecar) return text
+    if (!sidecar) return withFiles()
     // A cancel that landed before this point is final: never start the lookup or wait on it.
     if (signal.aborted) return text
     try {
@@ -750,13 +755,13 @@ export class TurnRunner {
       // KNOWN to be text-only; an unknown/custom model forwards natively and lets the Agent's retry guard downgrade.
       if (mode.mode !== 'native') {
         const cfg = (await this.deps.profileConfig?.(s.profile ?? null)) ?? {}
-        if (explicitTextSignal(cfg) || mode.supports_vision === false) return text
+        if (explicitTextSignal(cfg) || mode.supports_vision === false) return withFiles()
       }
     } catch (error) {
       if (!signal.aborted) this.deps.log(`[webui] image mode lookup failed for ${sessionId}: ${(error as Error).message}`)
-      return text
+      return withFiles()
     }
-    const parts: Record<string, unknown>[] = [{ type: 'text', text }]
+    const parts: Record<string, unknown>[] = []
     let images = 0
     const roots = [workspace, this.deps.attachmentDir(sessionId)].map((r) => resolvePathLikePython(r))
     for (const att of candidates) {
@@ -776,7 +781,7 @@ export class TurnRunner {
         images += 1
       } catch { /* skip unreadable */ } finally { closeSync(fd) }
     }
-    return images ? parts : text
+    return images ? [{ type: 'text', text: withFiles() }, ...parts] : withFiles()
   }
 
   /**
@@ -834,7 +839,7 @@ export class TurnRunner {
 
   private materializePendingUserTurn(s: Session, activeTurnToken: string | null, turnId: string): boolean {
     const pendingText = str(s.pending_user_message)
-    if (!pendingText) return false
+    if (!s.hasPendingPrompt) return false
     const recoveredTs = typeof s.pending_started_at === 'number' && s.pending_started_at > 0 ? s.pending_started_at : this.deps.now()
     const source = s.pending_user_source ?? 'webui'
     const attachments = [...s.pending_attachments]

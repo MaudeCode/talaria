@@ -6,7 +6,7 @@
 .drop-hint{display:none;position:absolute;inset:0;align-items:center;justify-content:center;gap:10px;background:linear-gradient(var(--input-bg),var(--input-bg)),var(--bg);border:2px dashed var(--accent);border-radius:16px;font-size:13.5px;font-weight:600;color:var(--accent-text);pointer-events:none;z-index:30;flex-direction:column;text-align:center;padding:8px}
 .composer-wrap.drag-over .drop-hint{display:flex}
 .drop-hint svg{opacity:.85}
-.attach-tray{display:none;flex-wrap:wrap;gap:6px;padding:10px 14px 0}
+.attach-tray{display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px 0}
 .composer-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px 10px;position:relative;container-type:inline-size;container-name:composer-footer}
 .composer-left::-webkit-scrollbar{display:none}
 .composer-divider{width:1px;height:16px;background:var(--border);margin:0 3px;flex-shrink:0}
