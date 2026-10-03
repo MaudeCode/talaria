@@ -87,6 +87,9 @@ extension UITestFixtureURLProtocol {
         let state = UITestPanelFixtureState.shared
 
         switch url.path {
+        case "/api/insights" where ProcessInfo.processInfo.arguments.contains("--ui-test-insights-refresh-error")
+            && URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "days" && $0.value == "7" }) == true:
+            return state.consumeFailure(for: "insights-refresh") ? URLError(.cannotConnectToHost) : nil
         case "/api/kanban/board":
             // The Board's incremental poll carries `since=`; only the full load is broken.
             guard url.query?.contains("since=") != true else { return nil }

@@ -132592,6 +132592,119 @@
           }
         }
       }
+    },
+    "Showing cached server analytics. Refresh failed: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Showing cached server analytics. Refresh failed: %@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zwischengespeicherte Serveranalysen werden angezeigt. Aktualisierung fehlgeschlagen: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se muestran los análisis del servidor guardados en caché. Error al actualizar: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les analyses du serveur en cache sont affichées. Échec de l’actualisation : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vengono mostrate le analisi del server memorizzate nella cache. Aggiornamento non riuscito: %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opgeslagen serveranalyses worden getoond. Vernieuwen mislukt: %@"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wyświetlane są zapisane analizy serwera. Odświeżanie nie powiodło się: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mostrando análises do servidor em cache. Falha ao atualizar: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Показана сохранённая аналитика сервера. Не удалось обновить: %@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Önbellekteki sunucu analizleri gösteriliyor. Yenileme başarısız: %@"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تُعرض تحليلات الخادم المخزّنة مؤقتًا. فشل التحديث: %@"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מוצגים נתוני ניתוח שרת מהמטמון. הרענון נכשל: %@"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "سرور کے محفوظ شدہ تجزیات دکھائے جا رہے ہیں۔ تازہ کاری ناکام ہو گئی: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "キャッシュされたサーバー分析を表示しています。更新に失敗しました: %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "캐시된 서버 분석을 표시합니다. 새로 고침 실패: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在显示缓存的服务器分析。刷新失败：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在顯示快取的伺服器分析。重新整理失敗：%@"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在顯示快取的伺服器分析。重新整理失敗：%@"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

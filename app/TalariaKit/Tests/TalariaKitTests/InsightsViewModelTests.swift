@@ -164,6 +164,16 @@ final class InsightsViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.hasLoadedAnalytics)
         XCTAssertNil(viewModel.errorMessage)
         XCTAssertEqual(viewModel.fallbackReason, "Server insights unavailable")
+        XCTAssertTrue(viewModel.sourceDescription.contains("Server insights unavailable"))
+
+        let retry = Task { await viewModel.load() }
+        await client.waitForPendingRequest()
+        client.completePendingRequest(with: .success(try decodeInsights(
+            #"{"period_days":30,"total_sessions":2,"total_tokens":125}"#
+        )))
+        await retry.value
+        XCTAssertEqual(viewModel.totalTokens, 125)
+        XCTAssertFalse(viewModel.sourceDescription.contains("Server insights unavailable"))
     }
 
     private func decodeInsights(_ json: String) throws -> InsightsResponse {
