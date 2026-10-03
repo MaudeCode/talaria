@@ -230,13 +230,34 @@ struct SidebarEdgePanGesture: UIGestureRecognizerRepresentable {
             _ gestureRecognizer: UIGestureRecognizer,
             shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
-            guard let view = otherGestureRecognizer.view else { return false }
+            Self.isNavigationPop(otherGestureRecognizer)
+        }
+
+        /// A list row's swipe actions start from the same edge, and whichever pan began first used to
+        /// win (TAL-490). Content pans wait for this one, which fails at once for a touch away from the
+        /// edge; scrolling and the stacks' back gestures keep their own arbitration.
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            guard otherGestureRecognizer is UIPanGestureRecognizer,
+                  !Self.isNavigationPop(otherGestureRecognizer)
+            else { return false }
+            if let scrollView = otherGestureRecognizer.view as? UIScrollView,
+               otherGestureRecognizer === scrollView.panGestureRecognizer {
+                return false
+            }
+            return true
+        }
+
+        private static func isNavigationPop(_ recognizer: UIGestureRecognizer) -> Bool {
+            guard let view = recognizer.view else { return false }
             return sequence(first: view as UIResponder, next: \.next).contains { responder in
                 guard let navigation = responder as? UINavigationController else { return false }
-                if #available(iOS 26.0, *), otherGestureRecognizer === navigation.interactiveContentPopGestureRecognizer {
+                if #available(iOS 26.0, *), recognizer === navigation.interactiveContentPopGestureRecognizer {
                     return true
                 }
-                return otherGestureRecognizer === navigation.interactivePopGestureRecognizer
+                return recognizer === navigation.interactivePopGestureRecognizer
             }
         }
     }
