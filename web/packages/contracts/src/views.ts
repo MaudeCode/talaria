@@ -397,7 +397,11 @@ export const QuotaSourceSchema = z.looseObject({
   is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: Json.optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
 })
 /** Python `get_provider_quotas`: the stable identity envelope the iOS quota widget persists (`scope_id`/`profile_id`). */
-export const ProviderQuotasSchema = z.looseObject({ version: z.number(), scope_id: z.string(), profile_id: z.string(), active_provider: NullableString, requested_source_id: NullableString, missing_source: z.boolean(), sources: z.array(QuotaSourceSchema) })
+export const ProviderQuotasSchema = z.looseObject({
+  version: z.number(), scope_id: z.string(), profile_id: z.string(), active_provider: NullableString, requested_source_id: NullableString,
+  missing_source: z.boolean().describe('True when `?source=` names a source id this scope no longer has; `sources` is then empty.'),
+  sources: z.array(QuotaSourceSchema).describe('Each live source id exactly once, ordered by `provider_id`, then `account_label`, then `source_id`. Clients render this list as-is; a `?source=` read returns that one row.'),
+})
 export const PersonalitiesSchema = z.looseObject({ personalities: z.array(z.looseObject({ name: z.string(), description: z.string().optional() })) })
 /** One auxiliary task slot in server order (TAL-388). The server owns ordering, normalization, and catalog matching. */
 export const AuxiliaryTaskSchema = z.looseObject({

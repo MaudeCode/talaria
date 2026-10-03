@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Insights shows each provider quota account once, in a consistent order, instead of repeating a provider as a removed card.",
+      "highlight": false
+    }
+  ]
+}

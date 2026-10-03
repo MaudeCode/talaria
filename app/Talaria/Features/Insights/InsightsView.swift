@@ -353,7 +353,6 @@ struct InsightsView: View {
 
     private var quotaNoticeMessages: [String] {
         [
-            quotaViewModel.quotaCapabilityMessage,
             quotaViewModel.quotaErrorMessage.map {
                 String(localized: "Couldn't refresh quotas. Showing the last loaded values. \($0)")
             },

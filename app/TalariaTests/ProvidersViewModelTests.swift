@@ -91,9 +91,121 @@ final class ProvidersViewModelTests: APIClientTestCase {
         await model.loadQuotas()
         await model.loadQuotas(refresh: true)
 
-        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_b", "qsrc_a"])
+        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_b"])
         XCTAssertEqual(model.quotaSources[0].accountLabel, "B renamed")
-        XCTAssertEqual(model.quotaSources[1].status, "removed")
+    }
+
+    /// TAL-272: a same-scope reload whose provider now carries a new source id used to
+    /// keep the old id as a `removed` row, so Insights showed the provider twice.
+    @MainActor
+    func testSameScopeReloadRendersOnlyServerSourcesWithoutDuplicateProviderCards() async throws {
+        var load = 0
+        let client = makeClient { request in
+            load += 1
+            let codexID = load == 1 ? "qsrc_codex_old" : "qsrc_codex_new"
+            return apiTestJSONResponse("""
+            {
+              "version": 1,
+              "scope_id": "qscope_default",
+              "profile_id": "default",
+              "sources": [
+                { "source_id": "\(codexID)", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "Codex", "status": "available", "supported": true, "windows": [] },
+                { "source_id": "qsrc_openrouter", "provider_id": "openrouter", "provider_label": "OpenRouter", "account_label": "OpenRouter", "status": "available", "supported": true, "windows": [] }
+              ]
+            }
+            """, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        await model.loadQuotas()
+        await model.loadQuotas(refresh: true)
+
+        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_codex_new", "qsrc_openrouter"])
+        XCTAssertEqual(model.quotaSources.map(\.providerID), ["openai-codex", "openrouter"])
+    }
+
+    @MainActor
+    func testSnapshotRestoreDropsRemovedRowsFromOlderBuilds() throws {
+        let suite = "ProvidersViewModelSnapshotRestore.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
+        let row = { (id: String, status: String) in
+            ProviderQuotaWidgetSource(
+                sourceID: id,
+                scopeLabel: "Server · default",
+                providerID: "openai-codex",
+                providerLabel: "Codex",
+                accountLabel: "Codex",
+                isActiveProvider: false,
+                status: status,
+                plan: nil,
+                windows: [],
+                retryAfter: nil,
+                fetchedAt: nil
+            )
+        }
+        XCTAssertTrue(store.save(
+            scopeID: "qscope_default",
+            sources: [row("qsrc_codex_new", "available"), row("qsrc_codex_old", "removed")]
+        ))
+
+        let model = ProvidersViewModel(
+            server: Self.serverURL,
+            client: makeClient { request in apiTestJSONResponse("{}", for: request) },
+            quotaSnapshotStore: store,
+            reloadQuotaWidgets: {}
+        )
+
+        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_codex_new"])
+    }
+
+    @MainActor
+    func testTargetedRefreshOfMissingSourceDropsItsRowAndNeverAppendsUnknownRows() async throws {
+        var requestCount = 0
+        let client = makeClient { request in
+            requestCount += 1
+            let source = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "source" }?.value
+            switch source {
+            case nil:
+                return apiTestJSONResponse("""
+                {
+                  "version": 1,
+                  "scope_id": "qscope_default",
+                  "profile_id": "default",
+                  "sources": [
+                    { "source_id": "qsrc_a", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "A", "status": "available", "supported": true, "windows": [] },
+                    { "source_id": "qsrc_b", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "B", "status": "available", "supported": true, "windows": [] }
+                  ]
+                }
+                """, for: request)
+            case "qsrc_a":
+                return apiTestJSONResponse("""
+                { "version": 1, "scope_id": "qscope_default", "profile_id": "default", "requested_source_id": "qsrc_a", "missing_source": true, "sources": [] }
+                """, for: request)
+            default:
+                return apiTestJSONResponse("""
+                {
+                  "version": 1,
+                  "scope_id": "qscope_default",
+                  "profile_id": "default",
+                  "requested_source_id": "qsrc_c",
+                  "sources": [
+                    { "source_id": "qsrc_c", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "C", "status": "available", "supported": true, "windows": [] }
+                  ]
+                }
+                """, for: request)
+            }
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client)
+
+        await model.loadQuotas()
+        await model.refreshQuota(sourceID: "qsrc_a")
+        await model.refreshQuota(sourceID: "qsrc_c")
+
+        XCTAssertEqual(requestCount, 3)
+        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_b"])
     }
 
     @MainActor
@@ -217,49 +329,21 @@ final class ProvidersViewModelTests: APIClientTestCase {
     }
 
     @MainActor
-    func testMissingMultiSourceEndpointFallsBackToActiveOnlyQuota() async throws {
+    func testMissingMultiSourceEndpointIsAnError() async throws {
         let client = makeClient { request in
-            switch request.url?.path {
-            case "/api/provider/quotas":
-                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
-                XCTAssertTrue(query?.contains(URLQueryItem(name: "refresh", value: "1")) == true)
-                return (
-                    HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
-                    Data()
-                )
-            case "/api/provider/quota":
-                XCTAssertEqual(request.httpMethod, "GET")
-                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
-                XCTAssertTrue(query?.contains(URLQueryItem(name: "refresh", value: "1")) == true)
-                return apiTestJSONResponse("""
-                {
-                  "ok": true,
-                  "provider": "openai-codex",
-                  "display_name": "Codex",
-                  "supported": true,
-                  "status": "available",
-                  "account_limits": {
-                    "plan": "Pro",
-                    "windows": [{ "label": "Session", "used_percent": 10, "remaining_percent": 90 }]
-                  }
-                }
-                """, for: request)
-            default:
-                XCTFail("Unexpected request: \(request.url?.absoluteString ?? "nil")")
-                return apiTestJSONResponse("{}", for: request)
-            }
+            XCTAssertEqual(request.url?.path, "/api/provider/quotas")
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
+                Data()
+            )
         }
         let model = ProvidersViewModel(server: Self.serverURL, client: client)
 
         await model.loadQuotas(refresh: true)
 
-        XCTAssertEqual(model.quotaSources.map(\.providerID), ["openai-codex"])
+        XCTAssertTrue(model.quotaSources.isEmpty)
         XCTAssertFalse(model.hasStableQuotaSources)
-        XCTAssertEqual(
-            model.quotaCapabilityMessage,
-            "This server supports active-provider quota only. Multi-account sources require the companion server update."
-        )
-        XCTAssertNil(model.quotaErrorMessage)
+        XCTAssertNotNil(model.quotaErrorMessage)
     }
 
     @MainActor

@@ -20,7 +20,6 @@ final class ProvidersViewModel {
     private(set) var isQuotaLoading = false
     private(set) var refreshingQuotaSourceIDs: Set<String> = []
     private(set) var quotaErrorMessage: String?
-    private(set) var quotaCapabilityMessage: String?
     private(set) var quotaProfileID: String?
     private(set) var quotaScopeID: String?
 
@@ -61,7 +60,8 @@ final class ProvidersViewModel {
         if let snapshot = self.quotaSnapshotStore?.load(),
            !snapshot.sources.isEmpty,
            snapshot.sources.allSatisfy({ $0.scopeLabel.hasPrefix("\(self.quotaServerLabel) · ") }) {
-            quotaSources = snapshot.sources.map(Self.cachedQuotaSource)
+            // Older builds cached `removed` rows; Insights renders only live server sources.
+            quotaSources = snapshot.sources.filter { $0.status != "removed" }.map(Self.cachedQuotaSource)
             hasStableQuotaSources = true
             quotaScopeID = snapshot.sources.first?.scopeID
         }
@@ -103,23 +103,7 @@ final class ProvidersViewModel {
         do {
             let response = try await client.providerQuotas(refresh: refresh)
             guard generation == quotaLoadGeneration else { return }
-            applyStableQuotaResponse(response)
-        } catch APIError.http(let statusCode, _) where statusCode == 404 {
-            do {
-                let legacy = try await client.activeProviderQuota(refresh: refresh)
-                guard generation == quotaLoadGeneration else { return }
-                quotaSources = Self.legacyQuotaSources(legacy)
-                hasStableQuotaSources = false
-                quotaProfileID = nil
-                quotaScopeID = nil
-                clearQuotaWidgetSnapshot()
-                quotaCapabilityMessage = String(
-                    localized: "This server supports active-provider quota only. Multi-account sources require the companion server update."
-                )
-            } catch {
-                guard generation == quotaLoadGeneration else { return }
-                quotaErrorMessage = error.localizedDescription
-            }
+            applyQuotaResponse(response)
         } catch is CancellationError {
             // The view was dismissed while quota was loading.
         } catch let error as URLError where error.code == .cancelled {
@@ -170,14 +154,13 @@ final class ProvidersViewModel {
                   scopeID == quotaScopeID,
                   response.scopeID == nil || response.scopeID == scopeID
             else { return }
+            // The server list owns which rows exist: a targeted read replaces its own row
+            // or drops it when missing, and never adds a row the full list lacks.
             if response.missingSource {
-                quotaSources = quotaSources.map { $0.id == sourceID ? $0.removed() : $0 }
-            } else if let refreshed = response.sources.first(where: { $0.id == sourceID }) {
-                if let index = quotaSources.firstIndex(where: { $0.id == sourceID }) {
-                    quotaSources[index] = refreshed
-                } else {
-                    quotaSources.append(refreshed)
-                }
+                quotaSources.removeAll { $0.id == sourceID }
+            } else if let refreshed = response.sources.first(where: { $0.id == sourceID }),
+                      let index = quotaSources.firstIndex(where: { $0.id == sourceID }) {
+                quotaSources[index] = refreshed
             }
             persistQuotaWidgetSnapshot(updatedSourceIDs: [sourceID])
         } catch is CancellationError {
@@ -190,23 +173,13 @@ final class ProvidersViewModel {
         }
     }
 
-    private func applyStableQuotaResponse(_ response: ProviderQuotasResponse) {
-        let sameProfile = quotaProfileID == nil || quotaProfileID == response.profileID
-        let sameScope = quotaScopeID != nil && quotaScopeID == response.scopeID
-        let incomingIDs = Set(response.sources.map(\.id))
-        let removed = sameProfile && sameScope && hasStableQuotaSources
-            ? quotaSources.filter { !incomingIDs.contains($0.id) }.map { $0.removed() }
-            : []
-        quotaSources = response.sources + removed
-        hasStableQuotaSources = response.version == 1
+    /// The server's `sources` is the whole list, unique by source ID and already ordered.
+    private func applyQuotaResponse(_ response: ProviderQuotasResponse) {
+        quotaSources = response.sources
+        hasStableQuotaSources = true
         quotaProfileID = response.profileID
         quotaScopeID = response.scopeID
-        quotaCapabilityMessage = hasStableQuotaSources
-            ? nil
-            : String(localized: "This server returned quota data without stable source identity.")
-        if hasStableQuotaSources {
-            persistQuotaWidgetSnapshot()
-        }
+        persistQuotaWidgetSnapshot()
     }
 
     private func persistQuotaWidgetSnapshot(updatedSourceIDs: Set<String>? = nil) {
@@ -252,56 +225,6 @@ final class ProvidersViewModel {
                 cookies: cookies
             )
         )
-    }
-
-    private func clearQuotaWidgetSnapshot() {
-        guard quotaSnapshotStore?.clear() == true else { return }
-        reloadQuotaWidgets()
-    }
-
-    private static func legacyQuotaSources(_ response: LegacyProviderQuotaResponse) -> [ProviderQuotaSource] {
-        let providerID = response.provider ?? "unknown"
-        let providerLabel = response.displayName ?? response.provider ?? String(localized: "Provider")
-        let limits = response.accountLimits
-        if let credentials = limits?.pool?.credentials, !credentials.isEmpty {
-            return credentials.enumerated().map { index, credential in
-                ProviderQuotaSource(
-                    id: "legacy-active-\(index)",
-                    providerID: providerID,
-                    providerLabel: providerLabel,
-                    accountLabel: credential.label ?? providerLabel,
-                    isActiveProvider: true,
-                    supported: response.supported ?? false,
-                    status: credential.status ?? response.status ?? "unavailable",
-                    plan: credential.plan,
-                    windows: credential.windows ?? [],
-                    quota: response.quota,
-                    details: credential.details ?? [],
-                    unavailableReason: credential.unavailableReason,
-                    retryAfter: credential.retryAfter,
-                    fetchedAt: credential.fetchedAt,
-                    message: response.message
-                )
-            }
-        }
-        return [
-            ProviderQuotaSource(
-                id: "legacy-active",
-                providerID: providerID,
-                providerLabel: providerLabel,
-                accountLabel: providerLabel,
-                isActiveProvider: true,
-                supported: response.supported ?? false,
-                status: response.status ?? "unavailable",
-                plan: limits?.plan,
-                windows: limits?.windows ?? [],
-                quota: response.quota,
-                details: limits?.details ?? [],
-                unavailableReason: limits?.unavailableReason,
-                fetchedAt: limits?.fetchedAt,
-                message: response.message
-            )
-        ]
     }
 
     private static func cachedQuotaSource(_ source: ProviderQuotaWidgetSource) -> ProviderQuotaSource {
