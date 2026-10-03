@@ -217,7 +217,7 @@ def test_a_rotated_credential_never_reuses_the_cached_agent(monkeypatch) -> None
 
 
 def test_the_turn_binds_its_session_identity_and_workspace(monkeypatch, tmp_path) -> None:
-    """The approval key, gateway session vars, and session cwd are bound for the turn and reset afterwards."""
+    """The approval key, gateway session vars (with the profile), and session cwd are bound for the turn and reset afterwards."""
     import contextvars
     import sys
     import types
@@ -230,7 +230,7 @@ def test_the_turn_binds_its_session_identity_and_workspace(monkeypatch, tmp_path
     tools_pkg = types.ModuleType("tools")
     tools_pkg.approval_context = approval_ctx
     sc = types.ModuleType("gateway.session_context")
-    for name in ("_SESSION_KEY", "_SESSION_UI_SESSION_ID", "_SESSION_PLATFORM", "_SESSION_CHAT_ID", "_SESSION_ID"):
+    for name in ("_SESSION_KEY", "_SESSION_UI_SESSION_ID", "_SESSION_PLATFORM", "_SESSION_CHAT_ID", "_SESSION_ID", "_SESSION_PROFILE"):
         setattr(sc, name, contextvars.ContextVar(name, default=""))
     gateway_pkg = types.ModuleType("gateway")
     gateway_pkg.session_context = sc
@@ -238,12 +238,19 @@ def test_the_turn_binds_its_session_identity_and_workspace(monkeypatch, tmp_path
     cwd_mod._SESSION_CWD = contextvars.ContextVar("cwd", default="")
     agent_pkg = types.ModuleType("agent")
     agent_pkg.runtime_cwd = cwd_mod
-    for name, mod in {"tools": tools_pkg, "tools.approval_context": approval_ctx, "gateway": gateway_pkg, "gateway.session_context": sc, "agent": agent_pkg, "agent.runtime_cwd": cwd_mod}.items():
+    constants = types.ModuleType("hermes_constants")
+    constants.get_hermes_home = lambda: tmp_path / "profiles" / "work"
+    constants.profile_name_for_home = lambda home: home.name
+    profiles = types.ModuleType("hermes_cli.profiles")
+    profiles.get_active_profile_name = lambda: "custom"
+    stubs = {"tools": tools_pkg, "tools.approval_context": approval_ctx, "gateway": gateway_pkg, "gateway.session_context": sc, "agent": agent_pkg, "agent.runtime_cwd": cwd_mod,
+             "hermes_constants": constants, "hermes_cli.profiles": profiles}
+    for name, mod in stubs.items():
         monkeypatch.setitem(sys.modules, name, mod)
 
     class ObservingAgent(FakeAgent):
         def run_conversation(self, **kwargs):
-            seen.update(key=key_var.get(), platform=sc._SESSION_PLATFORM.get(), chat_id=sc._SESSION_CHAT_ID.get(), ui=sc._SESSION_UI_SESSION_ID.get(), cwd=cwd_mod._SESSION_CWD.get())
+            seen.update(key=key_var.get(), platform=sc._SESSION_PLATFORM.get(), chat_id=sc._SESSION_CHAT_ID.get(), ui=sc._SESSION_UI_SESSION_ID.get(), profile=sc._SESSION_PROFILE.get(), cwd=cwd_mod._SESSION_CWD.get())
             return super().run_conversation(**kwargs)
 
     _patch(monkeypatch)
@@ -251,9 +258,9 @@ def test_the_turn_binds_its_session_identity_and_workspace(monkeypatch, tmp_path
     workspace = str(tmp_path / "ws")
     with chat._turn_identity("s-ident", workspace):
         assert chat.start(Ctx(), {**_params("st-9", "s-ident"), "workspace": workspace})["status"] == "completed"
-    assert seen == {"key": "s-ident", "platform": "webui", "chat_id": "s-ident", "ui": "s-ident", "cwd": workspace}
+    assert seen == {"key": "s-ident", "platform": "webui", "chat_id": "s-ident", "ui": "s-ident", "profile": "work", "cwd": workspace}
     # Everything is reset once the turn is over.
-    assert key_var.get() == "default" and sc._SESSION_PLATFORM.get() == "" and cwd_mod._SESSION_CWD.get() == ""
+    assert key_var.get() == "default" and sc._SESSION_PLATFORM.get() == "" and sc._SESSION_PROFILE.get() == "" and cwd_mod._SESSION_CWD.get() == ""
 
 
 def test_a_turn_on_a_busy_session_never_shares_the_live_agent(monkeypatch) -> None:

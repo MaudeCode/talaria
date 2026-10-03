@@ -372,7 +372,7 @@ def _resolve_runtime(provider: str | None, model: str) -> dict:
 def _turn_identity(session_id: str, workspace: str):
     """Bind this turn's identity to the calling context the way the predecessor's ``_set_turn_session_identity`` did:
     the approval session key (so ``register_gateway_notify`` cards reach this turn and dangerous commands are gated
-    instead of auto-approved), the gateway session vars (platform ``webui``, chat/ui session ids), and the session cwd
+    instead of auto-approved), the gateway session vars (platform ``webui``, chat/ui session ids, profile), and the session cwd
     (so terminals and AGENTS.md discovery run in the selected workspace, not the sidecar's launch directory). Every
     binding is a context variable, so concurrent turns cannot overwrite each other. Missing Agent surfaces are logged,
     not fatal."""
@@ -388,10 +388,14 @@ def _turn_identity(session_id: str, workspace: str):
         log.debug("per-turn approval session-key bind failed", exc_info=True)
     try:
         from gateway import session_context as sc
+        from hermes_cli.profiles import get_active_profile_name
+        from hermes_constants import get_hermes_home, profile_name_for_home
 
+        # The persistent Docker sandbox is keyed by the profile name; unbound, every profile reuses "default".
+        profile = profile_name_for_home(get_hermes_home()) or get_active_profile_name()
         pairs = [
             (sc._SESSION_KEY, session_id), (sc._SESSION_UI_SESSION_ID, session_id), (sc._SESSION_PLATFORM, "webui"),
-            (sc._SESSION_CHAT_ID, session_id), (sc._SESSION_ID, session_id),
+            (sc._SESSION_CHAT_ID, session_id), (sc._SESSION_ID, session_id), (sc._SESSION_PROFILE, profile),
         ]
         for var, value in pairs:
             tok = var.set(value)

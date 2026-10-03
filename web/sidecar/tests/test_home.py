@@ -38,6 +38,7 @@ def _fake_secret_scope(calls: list) -> types.ModuleType:
     module.build_profile_secret_scope = build_profile_secret_scope
     module.set_secret_scope = set_secret_scope
     module.reset_secret_scope = reset_secret_scope
+    module.is_multiplex_active = lambda: False
     return module
 
 
@@ -51,10 +52,15 @@ def scope_calls(monkeypatch):
     launch_policy = types.ModuleType("tui_gateway.launch_profile_policy")
     launch_policy.activate_multi_profile_hosting = lambda: calls.append(("activate", True))
     launch_policy.launch_secret_scope = lambda home: calls.append(("launch-scope", Path(home))) or agent.secret_scope.build_profile_secret_scope(home)
+    launch_policy.launch_terminal_env = lambda: pytest.fail("the launch env is frozen only once multiplexing is active")
+    terminal = types.ModuleType("tools.terminal_scope")
+    terminal.install_profile_terminal_scope = lambda home, env_overlay=None: calls.append(("terminal", Path(home), env_overlay)) or "terminal-token"
+    terminal.reset_terminal_scope = lambda token: calls.append(("reset-terminal", token))
     monkeypatch.setitem(sys.modules, "agent", agent)
     monkeypatch.setitem(sys.modules, "agent.secret_scope", agent.secret_scope)
     monkeypatch.setitem(sys.modules, "hermes_cli.env_loader", env_loader)
     monkeypatch.setitem(sys.modules, "tui_gateway.launch_profile_policy", launch_policy)
+    monkeypatch.setitem(sys.modules, "tools.terminal_scope", terminal)
     return calls
 
 
@@ -65,12 +71,15 @@ def test_named_profile_runs_under_its_own_secrets_with_multiplex_semantics(tmp_p
     (named / ".env").write_text("OPENAI_API_KEY=sk-work\n")
     monkeypatch.setattr(home_module, "_PROCESS_HOME", root)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-root-from-startup-dotenv")
+    monkeypatch.setenv("TERMINAL_ENV", "local")
     with home_module.scoped_home(named):
         assert os.environ["HERMES_HOME"] == str(named)
         assert ("scope", {"OPENAI_API_KEY": "sk-work"}) in scope_calls
         assert ("activate", True) in scope_calls
         assert ("hydrate", named) in scope_calls
-    assert scope_calls[-1] == ("reset-scope", "scope-token")
+        # Its terminal policy comes from its own files only, never the launch env.
+        assert scope_calls[-1] == ("terminal", named, None)
+    assert scope_calls[-2:] == [("reset-terminal", "terminal-token"), ("reset-scope", "scope-token")]
 
 
 def test_root_profile_keeps_single_profile_semantics(tmp_path, monkeypatch, scope_calls) -> None:
@@ -78,10 +87,14 @@ def test_root_profile_keeps_single_profile_semantics(tmp_path, monkeypatch, scop
     root.mkdir()
     (root / ".env").write_text("OPENAI_API_KEY=sk-root\n")
     monkeypatch.setattr(home_module, "_PROCESS_HOME", root)
+    monkeypatch.setenv("TERMINAL_ENV", "ssh")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-launch")
     with home_module.scoped_home(root):
         assert ("launch-scope", root) in scope_calls
         assert ("scope", {"OPENAI_API_KEY": "sk-root"}) in scope_calls
-        assert not any(name == "activate" for name, _ in scope_calls)
+        assert not any(call[0] == "activate" for call in scope_calls)
+        # The launch profile's own files sit over its live launch-process terminal policy.
+        assert scope_calls[-1] == ("terminal", root, {"TERMINAL_ENV": "ssh"})
 
 
 def test_named_profile_fails_closed_without_a_secret_scope(tmp_path, monkeypatch) -> None:
@@ -127,7 +140,7 @@ def test_agent_0_21_3_mirrors_the_launch_profile_policy(tmp_path, monkeypatch, s
         with home_module.scoped_home(named):
             assert multiplex == [True]
             assert ("hydrate", named) in scope_calls
-            assert scope_calls[-1] == ("scope", {"OPENAI_API_KEY": "sk-work"})
+            assert scope_calls[-2:] == [("scope", {"OPENAI_API_KEY": "sk-work"}), ("terminal", named, None)]
             raise ValueError("test body")
     assert scope_calls[-1] == ("reset-scope", "scope-token")
 
@@ -143,6 +156,22 @@ def test_agent_0_21_3_mirrors_the_launch_profile_policy(tmp_path, monkeypatch, s
         with home_module.scoped_home(named):
             pytest.fail("missing isolation must not reach the body")
     assert excinfo.value.data["condition"] == "agent_incompatible"
+
+
+def test_named_profile_fails_closed_without_a_terminal_scope(tmp_path, monkeypatch, scope_calls) -> None:
+    root = tmp_path / "root"
+    named = root / "profiles" / "work"
+    named.mkdir(parents=True)
+    monkeypatch.setattr(home_module, "_PROCESS_HOME", root)
+    monkeypatch.setitem(sys.modules, "tools.terminal_scope", None)
+    with pytest.raises(RpcError) as excinfo:
+        with home_module.scoped_home(named):
+            pytest.fail("a named profile must not run on the launch terminal backend")
+    assert excinfo.value.data["condition"] == "agent_incompatible"
+    assert scope_calls[-1] == ("reset-scope", "scope-token")
+    # The root profile still runs (its terminal policy is the process's own).
+    with home_module.scoped_home(root):
+        assert os.environ["HERMES_HOME"] == str(root)
 
 
 @requires_agent
@@ -174,4 +203,40 @@ def test_concurrent_profiles_resolve_only_their_own_credentials_on_the_installed
         "alpha": clean({"OPENAI_API_KEY": "sk-alpha", "ALPHA_ONLY": "alpha", "LAUNCH_ENV_ONLY": None}),
         "beta": clean({"OPENAI_API_KEY": "sk-beta", "ALPHA_ONLY": None, "LAUNCH_ENV_ONLY": None}),
         "default_after_named": launch,
+    }
+
+
+@requires_agent
+def test_concurrent_turns_run_under_their_own_profiles_terminal_backend_on_the_installed_agent(tmp_path) -> None:
+    root = tmp_path / ".hermes"
+    configs = {
+        root: "terminal:\n  backend: ssh\n  ssh_host: root-host\n",
+        root / "profiles" / "alpha": "terminal:\n  backend: docker\n  docker_image: alpha-image\n  container_persistent: true\n",
+        root / "profiles" / "beta": "terminal:\n  backend: ssh\n  ssh_host: beta-host\n",
+        root / "profiles" / "gamma": "terminal:\n  backend: docker\n  docker_image: gamma-image\n  container_persistent: true\n",
+    }
+    for home, config in configs.items():
+        home.mkdir(parents=True, exist_ok=True)
+        (home / "config.yaml").write_text(config)
+        (home / ".env").write_text("")
+    env = {
+        "PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(root), "PYTHONPATH": str(SIDECAR_ROOT),
+        "HERMES_STATE_DB_GUARD_BYPASS": "1",
+        # The host default, plus a launch-only policy key with no file to rebuild it from (systemd, op run).
+        "TERMINAL_ENV": "local", "TERMINAL_SSH_USER": "launch-user",
+    }
+    if os.environ.get("LD_LIBRARY_PATH"):  # relocated actions/setup-python interpreter
+        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    probe = Path(__file__).with_name("terminal_scope_probe.py")
+    run = subprocess.run([AGENT_PYTHON, str(probe), str(AGENT_DIR)], env=env, capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-4000:]
+    default_image = "nikolaik/python-nodejs:python3.11-nodejs20"
+    assert json.loads(run.stdout.strip().splitlines()[-1]) == {
+        # The root profile's config.yaml wins over the host default; its launch env still fills unset keys.
+        "default": {"env_type": "ssh", "docker_image": default_image, "ssh_host": "root-host", "ssh_user": "launch-user", "container": "session:default"},
+        # Named profiles see only their own files, never the launch env or a sibling's backend, and each
+        # persistent Docker profile creates and reuses its own sandbox rather than the shared default one.
+        "alpha": {"env_type": "docker", "docker_image": "alpha-image", "ssh_host": "", "ssh_user": "", "container": "profile:alpha"},
+        "beta": {"env_type": "ssh", "docker_image": default_image, "ssh_host": "beta-host", "ssh_user": "", "container": "session:beta"},
+        "gamma": {"env_type": "docker", "docker_image": "gamma-image", "ssh_host": "", "ssh_user": "", "container": "profile:gamma"},
     }

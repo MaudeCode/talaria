@@ -14,6 +14,11 @@ fall through to another profile's process environment. Agent 0.21.3 has the
 multiplex switch and secret scopes but not the launch-profile policy module, so
 the sidecar mirrors that policy for it. If the installed Agent has no secret
 scope, named-profile calls fail closed instead.
+
+Terminal policy follows the same split. Under a home override the Agent skips its
+config-to-env terminal bridge, so every call also binds the profile's complete
+``TERMINAL_*`` scope from its own ``.env`` and ``config.yaml``; the launch profile layers
+its launch-process ``TERMINAL_*`` under those files.
 """
 
 from __future__ import annotations
@@ -99,6 +104,38 @@ def _secret_scope(home: Path):
         reset_secret_scope(scope_token)
 
 
+@contextlib.contextmanager
+def _terminal_scope(home: Path):
+    """Install ``home``'s terminal policy for the call; a policy file that cannot be read refuses terminal execution."""
+    named = _is_named_profile(home)
+    try:
+        from tools.terminal_scope import install_profile_terminal_scope, reset_terminal_scope
+    except Exception:  # noqa: BLE001 - older Agent without terminal scopes
+        if named:
+            raise RpcError(
+                "profile terminal isolation is unavailable in this Hermes Agent; named-profile calls are refused",
+                condition="agent_incompatible",
+            )
+        yield
+        return
+    if named:
+        token = install_profile_terminal_scope(home)
+    else:
+        try:
+            from agent.secret_scope import is_multiplex_active
+            from tui_gateway.launch_profile_policy import launch_terminal_env
+        except ImportError:  # Agent 0.21.3 cannot layer the launch env, so the launch profile keeps the process env
+            yield
+            return
+        # Like the launch secret scope: the live process env until multiplexing freezes it.
+        launch = launch_terminal_env() if is_multiplex_active() else {k: v for k, v in os.environ.items() if k.startswith("TERMINAL_")}
+        token = install_profile_terminal_scope(home, env_overlay=launch)
+    try:
+        yield
+    finally:
+        reset_terminal_scope(token)
+
+
 def profile_home_param(params: dict, key: str = "profile_home") -> Path:
     raw = params.get(key)
     if not isinstance(raw, str) or not raw.strip():
@@ -117,7 +154,7 @@ def scoped_home(home: Path):
     if set_hermes_home_override is not None:
         token = set_hermes_home_override(home)
         try:
-            with _secret_scope(home):
+            with _secret_scope(home), _terminal_scope(home):
                 yield home
         finally:
             reset_hermes_home_override(token)
@@ -126,7 +163,7 @@ def scoped_home(home: Path):
         previous = os.environ.get("HERMES_HOME")
         os.environ["HERMES_HOME"] = str(home)
         try:
-            with _secret_scope(home):
+            with _secret_scope(home), _terminal_scope(home):
                 yield home
         finally:
             if previous is None:

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Web chats run shell commands on the terminal backend their profile configures, such as Docker or SSH, instead of on the host.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
