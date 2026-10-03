@@ -108,7 +108,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `providers` | `registry`, `auth_status`, `model_ids`, `resolve_runtime`, `credential_pool` | |
 | `models` | `context_length`, `estimate_tokens`, `capabilities`, `reasoning_efforts` | |
 | `aux` | `complete`, `resolve` | `complete`: `token` |
-| `text` | `redact`, `image_mode`, `portal_tags` | |
+| `text` | `image_mode`, `portal_tags` | |
 | `process` | `drain`, `requeue`, `mark_consumed`, `format_notification`, `list` | |
 | `usage` | `account` | |
 | `gateway` | `restart` | `restart`: `progress` |
