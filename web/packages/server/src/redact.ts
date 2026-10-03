@@ -115,7 +115,8 @@ const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENT
  * The Agent's other env names: an all-caps one ending a word in `KEY`, `PASS` or `PW` (`OPENAI_KEY`, `DB_PW`, not
  * `KEYBOARD`), or a lowercase `name_key` / `name_pass` / `name_pw` outside URL text. `isEnvSecretAssignment` gates it.
  */
-const ENV_SUFFIX_RE = /([A-Z0-9_]{0,50}(?:KEY|PASS|PW)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
+// One attempt per identifier, which must hold a keyword: the scan stays linear on long runs (`PWPWPW…`).
+const ENV_SUFFIX_RE = /(?<![A-Z0-9_])(?=[A-Z0-9_]*(?:KEY|PASS|PW))([A-Z0-9_]+)\s*=\s*(['"]?)(\S+)\2/g
 const ENV_SUFFIX_LOWER_RE = /(?<![a-z0-9_])([a-z0-9_]+_(?:key|pass|pw)(?![a-z0-9_]))\s*=\s*(['"]?)(\S+)\2/gi
 /** A keyword at a word edge of an env name (`DB_PW`, `MYSQL_PASS`), never inside a word (`KEYBOARD`, `PASSAGE`). */
 const ENV_SUFFIX_WORD_RE = /(?:^|[^A-Za-z])(?:KEY|PASS|PW)S?(?![A-Za-z])/i
