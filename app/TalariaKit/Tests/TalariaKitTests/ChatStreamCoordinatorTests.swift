@@ -894,6 +894,47 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
     }
 
     @MainActor
+    func testChatHiddenMidRecoveryNeitherRetriesNorReconnectsWhenTheNetworkReturns() async throws {
+        var statusAttempts = 0
+        let networkPath = FakeNetworkPath()
+        let streamClient = CoordinatorSpySSEStreamingClient()
+        let delegate = CoordinatorDelegateSpy()
+        let timing = ChatStreamCoordinatorTiming(
+            checkingInterval: 5,
+            reconnectInterval: 18,
+            runningToolReconnectInterval: 25,
+            statusPollCooldown: 0.2,
+            transportFreshInterval: 12
+        )
+        let coordinator = makeCoordinator(
+            streamClient: streamClient,
+            delegate: delegate,
+            timing: timing,
+            networkPath: networkPath
+        ) { request in
+            statusAttempts += 1
+            return apiTestJSONResponse(#"{"error": "bad gateway"}"#, statusCode: 502, for: request)
+        }
+
+        coordinator.start(streamID: "stream-123")
+        streamClient.emit(.transportError("lost connection"))
+        try await waitUntil { coordinator.recoveryState == .reconnecting }
+
+        // The chat leaves the screen while its retry is pending.
+        coordinator.suspendActiveStreamConnection()
+        networkPath.isSatisfied = false
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(coordinator.recoveryState, .idle)
+        networkPath.isSatisfied = true
+        try await Task.sleep(nanoseconds: 400_000_000)
+
+        XCTAssertEqual(statusAttempts, 1)
+        XCTAssertEqual(streamClient.startedURLs.count, 1)
+        XCTAssertTrue(coordinator.isConnectionSuspended)
+        XCTAssertEqual(coordinator.recoveryState, .idle)
+    }
+
+    @MainActor
     func testGoingOfflineWithoutActiveRunChangesNothing() async throws {
         var statusRequests = 0
         let networkPath = FakeNetworkPath()

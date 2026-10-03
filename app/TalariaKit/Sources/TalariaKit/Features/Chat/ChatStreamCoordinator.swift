@@ -150,6 +150,8 @@ public final class ChatStreamCoordinator {
     // The latest applied load came from a server that predates `transcript_seq`.
     private var loadedTranscriptPredatesCursor = false
     private var sharedReconnect: SharedReconnect?
+    // The cooldown retry after a failed reconnect.
+    @ObservationIgnored private var reconnectRetryTask: Task<Void, Never>?
 
     /// Whether the current run already reached `.done` or finished teardown.
     private var isCurrentRunTerminated: Bool {
@@ -265,8 +267,10 @@ public final class ChatStreamCoordinator {
     }
 
     public func suspendActiveStreamConnection() {
-        // A hidden chat waits for its next foreground reconnect, not for the network.
-        if recoveryState == .waitingForNetwork {
+        // A hidden chat recovers on its next foreground reconnect, not from a retry or the network.
+        cancelSharedReconnect()
+        reconnectRetryTask?.cancel()
+        if recoveryState == .reconnecting || recoveryState == .waitingForNetwork {
             recoveryState = .idle
         }
         guard activeStreamID != nil, !hasCompletedCurrentResponse, !isConnectionSuspended else { return }
@@ -483,8 +487,9 @@ public final class ChatStreamCoordinator {
             guard self.activeStreamID == activeStreamID, isConnectionSuspended else { return }
             recoveryState = .reconnecting
             let retryDelay = UInt64(max(timing.statusPollCooldown, 0.01) * 1_000_000_000)
-            Task { @MainActor [weak self] in
+            reconnectRetryTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: retryDelay)
+                guard !Task.isCancelled else { return }
                 await self?.reconnectIfNeeded(modelContext: modelContext)
             }
         }
@@ -619,7 +624,6 @@ public final class ChatStreamCoordinator {
         if !isNetworkSatisfied {
             // A suspended run only waits when this chat is mid-recovery; a hidden one stays put.
             guard !isConnectionSuspended || sharedReconnect != nil || recoveryState == .reconnecting else { return }
-            cancelSharedReconnect()
             suspendActiveStreamConnection()
             waitForNetwork(modelContext: networkReconnectModelContext)
         } else if recoveryState == .waitingForNetwork {
