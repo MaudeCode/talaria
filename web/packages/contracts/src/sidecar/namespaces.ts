@@ -37,7 +37,8 @@ export const CommandSchema = z.object({
 })
 /**
  * A model-provider plugin installed and enabled in the profile (TAL-288); bundled providers are built-ins. `setup` is the Agent's
- * own verdict without spawning the plugin's CLI: `not_loaded` means this process has not registered the installed plugin yet.
+ * own verdict without spawning the plugin's CLI: `not_loaded` means the installed plugin could not be loaded (import failure, or its
+ * provider id or directory name is taken by another profile's plugin in this process-wide registry).
  */
 export const PluginProviderSchema = z.object({ name: z.string(), display_name: z.string(), auth_type: z.string(), setup: z.enum(['ready', 'missing_cli', 'needs_setup', 'not_loaded', 'unavailable']) })
 export const COMMANDS_METHODS = {

@@ -123,14 +123,16 @@ substitutes an API key provider for it.
 
 - A plugin listed in `plugins.disabled` does not appear.
 - A plugin that is not ready shows why on its provider card and offers no
-  models: its CLI was not found, its setup is unfinished, or it was installed
-  after Talaria Web started (restart Talaria Web to load it).
+  models: its CLI was not found, its setup is unfinished, or it could not be
+  loaded (check it with `hermes plugins doctor`, then restart Talaria Web).
 - Models come from the plugin's own listing, falling back to the catalog the
   plugin ships. A listing is cached for 24 hours unless a provider change or
   `POST /api/models/refresh` clears it; setup state is re-read within 30
   seconds.
 - Plugins belong to the profile whose `$HERMES_HOME` holds them; another
-  profile never sees them.
+  profile never sees them. Talaria Web runs one provider registry for every
+  profile, so a plugin cannot load when another profile's plugin already uses
+  its provider id or directory name.
 
 ## Base URL rules for local model servers
 

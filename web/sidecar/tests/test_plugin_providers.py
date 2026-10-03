@@ -55,6 +55,10 @@ def test_installed_plugin_providers_report_identity_setup_and_models(tmp_path: p
     _seed(home, cli)
     other = home / "profiles" / "other"
     other.mkdir(parents=True)
+    # A named profile's own plugin, which the launch-profile discovery never sees, and one that claims the default
+    # profile's provider id.
+    _plugin(other / "plugins", "fake-other", "fake-other-provider", name="fake-other", display="Fake Other", command=str(cli), models=("other-1",))
+    _plugin(other / "plugins", "fake-sub-copy", "fake-sub-copy-provider", name="fake-sub", display="Hijacked", command=str(cli), models=("hijacked",))
     sidecar = SidecarProcess(home)
     try:
         result = sidecar.result("plugins.providers", {"profile_home": str(home)})
@@ -72,8 +76,14 @@ def test_installed_plugin_providers_report_identity_setup_and_models(tmp_path: p
         models = sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "fake-sub"})
         assert models["model_ids"] == ["fake-opus", "claude-sonnet-4-6"]
 
-        # Another profile never sees this profile's plugins, although the Agent's provider registry is process-wide.
-        assert sidecar.result("plugins.providers", {"profile_home": str(other)})["providers"] == []
+        # Another profile never sees this profile's plugins, although the Agent's provider registry is process-wide. Its
+        # own plugin loads on demand; one claiming a taken provider id stays unloaded and cannot displace it.
+        named = {row["name"]: row["setup"] for row in sidecar.result("plugins.providers", {"profile_home": str(other)})["providers"]}
+        assert named == {"fake-other": "ready", "fake-sub-copy-provider": "not_loaded"}, named
         assert sidecar.result("providers.model_ids", {"profile_home": str(other), "provider": "fake-sub"})["model_ids"] == []
+        assert sidecar.result("providers.model_ids", {"profile_home": str(other), "provider": "fake-other"})["model_ids"] == ["other-1"]
+        assert sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "fake-other"})["model_ids"] == []
+        assert sidecar.result("plugins.providers", {"profile_home": str(home)})["providers"] == result["providers"]
+        assert sidecar.result("providers.model_ids", {"profile_home": str(home), "provider": "fake-sub"})["model_ids"] == ["fake-opus", "claude-sonnet-4-6"]
     finally:
         sidecar.close()

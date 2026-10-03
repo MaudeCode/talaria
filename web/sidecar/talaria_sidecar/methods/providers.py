@@ -12,6 +12,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -70,19 +71,65 @@ def _module_dir(module: Any) -> Path | None:
         return None
 
 
+# The Agent's module-name prefix for provider plugins it imports from a ``$HERMES_HOME`` (``providers._import_plugin_dir``).
+_USER_PLUGIN_MODULE = "_hermes_user_provider_"
+_LOAD_LOCK = threading.Lock()
+_LOAD_ATTEMPTED: set[Path] = set()
+
+
+def _user_plugin_profiles() -> dict[int, tuple[Any, Path]]:
+    """Each registered profile a ``$HERMES_HOME`` provider plugin module holds, with that module's directory."""
+    from providers import list_providers
+    from providers.base import ProviderProfile
+
+    registered = {id(p) for p in list_providers()}
+    out: dict[int, tuple[Any, Path]] = {}
+    for name, module in list(sys.modules.items()):
+        directory = _module_dir(module) if module is not None and name.startswith(_USER_PLUGIN_MODULE) else None
+        if directory is None:
+            continue
+        for value in list(vars(module).values()):
+            if isinstance(value, ProviderProfile) and id(value) in registered:
+                out.setdefault(id(value), (value, directory))
+    return out
+
+
+def _load_plugin(root: Path) -> None:
+    """Load the scoped profile's installed plugin that the process-wide discovery (run under the launch profile) skipped.
+
+    Uses the Agent's own loader, as ``hermes plugins dev`` does, once per directory. A plugin never displaces a provider
+    that is already registered, so one profile's plugin cannot change what another profile's provider id runs.
+    """
+    import providers
+
+    with _LOAD_LOCK:
+        if root in _LOAD_ATTEMPTED:
+            return
+        _LOAD_ATTEMPTED.add(root)
+        before = {p.name: p for p in providers.list_providers()}
+        try:
+            providers._import_plugin_dir(root, "user")
+        except Exception:  # noqa: BLE001 - a broken plugin reads as not loaded
+            log.debug("loading provider plugin %s failed", root, exc_info=True)
+            return
+        after = {p.name: p for p in providers.list_providers()}
+        for name, previous in before.items():
+            if after.get(name) is not previous:
+                providers.register_provider(previous)
+
+
 def installed_plugin_profiles() -> list[tuple[str, Any]]:
     """``(manifest name, profile | None)`` for each enabled model-provider plugin installed in the scoped home.
 
-    Bundled providers are built-ins, not plugins. The Agent discovers providers once per process into one registry, so
-    a profile belongs to this home only when the module that registered it lives in one of this home's plugin
-    directories: another profile's plugin never appears, and an installed plugin this process has not loaded has no
-    profile. ponytail: ownership is read from the plugin module's globals, so a plugin that registers an unbound inline
-    profile reads as not loaded; track registrations in the Agent if one ever does.
+    Bundled providers are built-ins, not plugins. The Agent keeps one provider registry per process, so a profile
+    belongs to this home only when the plugin module that registered it lives in one of this home's plugin
+    directories; a plugin the launch discovery skipped is loaded here. ``None`` means the plugin could not be loaded:
+    it failed to import, its provider id is taken by another plugin, or another profile's plugin has the same directory
+    name. ponytail: ownership is read from the plugin module's globals, so a plugin that registers an unbound inline
+    profile also reads as not loaded; track registrations in the Agent if one ever does.
     """
     try:
         from hermes_cli.plugins_discovery import _get_disabled_plugins, _get_enabled_plugins, collect_directory_manifests, gate_manifest
-        from providers import list_providers
-        from providers.base import ProviderProfile
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"plugin providers unavailable: {exc}", condition="plugins_unavailable") from exc
     disabled, enabled = _get_disabled_plugins(), _get_enabled_plugins()
@@ -93,17 +140,32 @@ def installed_plugin_profiles() -> list[tuple[str, Any]]:
     }
     if not roots:
         return []
-    registered = {id(p): p for p in list_providers()}
-    owned: dict[Path, dict[int, Any]] = {root: {} for root in roots}
-    for module in list(sys.modules.values()):
-        directory = _module_dir(module) if module is not None else None
-        root = next((r for r in roots if directory is not None and (directory == r or r in directory.parents)), None)
-        if root is None:
-            continue
-        for value in list(vars(module).values()):
-            if isinstance(value, ProviderProfile) and id(value) in registered:
-                owned[root][id(value)] = value
-    return [(name, p) for root, name in roots.items() for p in (list(owned[root].values()) or [None])]
+
+    def owned() -> dict[Path, list]:
+        found: dict[Path, list] = {root: [] for root in roots}
+        for profile, directory in _user_plugin_profiles().values():
+            root = next((r for r in roots if directory == r or r in directory.parents), None)
+            if root is not None:
+                found[root].append(profile)
+        return found
+
+    found = owned()
+    missing = [root for root, profiles in found.items() if not profiles]
+    if missing:
+        for root in missing:
+            _load_plugin(root)
+        found = owned()
+    return [(name, p) for root, name in roots.items() for p in (found[root] or [None])]
+
+
+def _other_profile_plugin(provider_id: str) -> bool:
+    """Whether ``provider_id`` is a plugin provider that another profile installed (the registry is process-wide)."""
+    from providers import get_provider_profile
+
+    profile = get_provider_profile(provider_id)
+    if profile is None or id(profile) not in _user_plugin_profiles():
+        return False
+    return not any(p is profile for _name, p in installed_plugin_profiles())
 
 
 def _setup_state(profile: Any) -> str:
@@ -153,6 +215,11 @@ def model_ids(provider_id: str, *, force_refresh: bool) -> list[str]:
         from hermes_cli.models import provider_model_ids
     except Exception as exc:  # noqa: BLE001
         raise RpcError(f"model catalog unavailable: {exc}", condition="providers_unavailable") from exc
+    try:
+        if _other_profile_plugin(provider_id):
+            return []
+    except Exception:  # noqa: BLE001 - no readable provider registry means no plugin to keep apart
+        log.debug("plugin ownership check for %r failed", provider_id, exc_info=True)
     try:
         ids = provider_model_ids(provider_id, force_refresh=force_refresh)
     except TypeError:

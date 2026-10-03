@@ -120,7 +120,7 @@ const PLUGIN_LIST_TIMEOUT_MS = 15_000
 const PLUGIN_SETUP_ERRORS: Record<Exclude<PluginProvider['setup'], 'ready'>, string> = {
   missing_cli: "This provider's CLI was not found on the server. Install it and sign in, then refresh.",
   needs_setup: "This provider is not set up yet. Finish its setup in Hermes, then refresh.",
-  not_loaded: 'This provider is installed but not loaded yet. Restart Talaria Web to load it.',
+  not_loaded: 'This provider is installed but could not be loaded. Check it with hermes plugins doctor, then restart Talaria Web.',
   unavailable: "This provider's setup status is unavailable.",
 }
 const PLUGIN_NO_MODELS = 'This provider listed no models.'
