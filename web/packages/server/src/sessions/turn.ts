@@ -1464,7 +1464,7 @@ export class TurnRunner {
       // The local flag is authoritative (it is re-pushed to the sidecar at every turn start); a running sidecar must
       // still confirm now so parked Agent waiters are released before YOLO is reported as on.
       const failure = await this.withYoloLock(sessionId, async (): Promise<Record<string, unknown> | null> => {
-        if (sidecar) { try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: true, choice: choice as 'once' | 'session' | 'always' | 'deny' }) } catch (error) { return relayFailure(str((error as Error).message)) } }
+        if (sidecar) { try { await sidecar.call('approval.set_yolo', { session_id: sessionId, enabled: true }) } catch (error) { return relayFailure(str((error as Error).message)) } }
         this.deps.service().setYolo(sessionId, true)
         return null
       })
