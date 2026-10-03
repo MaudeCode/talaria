@@ -1,7 +1,8 @@
-"""Run on the Agent interpreter: concurrent ``chat.start`` turns in the root and two named profiles.
+"""Run on the Agent interpreter: concurrent ``chat.start`` turns in the root and three named profiles.
 
-A stand-in Agent reads the terminal tool's resolved backend config mid-turn while every
-profile's turn is live at once. Prints one JSON line with what each turn saw.
+A stand-in Agent reads the terminal tool's resolved backend config and the sandbox key its
+environment would be created or reused under, mid-turn while every profile's turn is live at
+once. Prints one JSON line with what each turn saw.
 """
 
 from __future__ import annotations
@@ -15,10 +16,10 @@ from pathlib import Path
 sys.path.append(sys.argv[1])
 
 from talaria_sidecar.methods import chat  # noqa: E402
-from tools.terminal_tool import _get_env_config  # noqa: E402
+from tools.terminal_tool import _get_env_config, _resolve_container_task_id  # noqa: E402
 
 ROOT = Path(os.environ["HERMES_HOME"])
-HOMES = {"default": ROOT, "alpha": ROOT / "profiles" / "alpha", "beta": ROOT / "profiles" / "beta"}
+HOMES = {"default": ROOT, **{name: ROOT / "profiles" / name for name in ("alpha", "beta", "gamma")}}
 FIELDS = ("env_type", "docker_image", "ssh_host", "ssh_user")
 barrier = threading.Barrier(len(HOMES), timeout=30)
 results: dict = {}
@@ -31,7 +32,7 @@ class ObservingAgent:
     def run_conversation(self, **kwargs):
         barrier.wait()  # every profile's turn is live before anyone reads
         config = _get_env_config()
-        results[self.session_id] = {field: config[field] for field in FIELDS}
+        results[self.session_id] = {**{field: config[field] for field in FIELDS}, "container": _resolve_container_task_id(self.session_id)}
         barrier.wait()  # and stays live until everyone has read
         return {"final_response": "ok", "messages": [{"role": "assistant", "content": "ok"}]}
 

@@ -211,8 +211,9 @@ def test_concurrent_turns_run_under_their_own_profiles_terminal_backend_on_the_i
     root = tmp_path / ".hermes"
     configs = {
         root: "terminal:\n  backend: ssh\n  ssh_host: root-host\n",
-        root / "profiles" / "alpha": "terminal:\n  backend: docker\n  docker_image: alpha-image\n",
+        root / "profiles" / "alpha": "terminal:\n  backend: docker\n  docker_image: alpha-image\n  container_persistent: true\n",
         root / "profiles" / "beta": "terminal:\n  backend: ssh\n  ssh_host: beta-host\n",
+        root / "profiles" / "gamma": "terminal:\n  backend: docker\n  docker_image: gamma-image\n  container_persistent: true\n",
     }
     for home, config in configs.items():
         home.mkdir(parents=True, exist_ok=True)
@@ -232,8 +233,10 @@ def test_concurrent_turns_run_under_their_own_profiles_terminal_backend_on_the_i
     default_image = "nikolaik/python-nodejs:python3.11-nodejs20"
     assert json.loads(run.stdout.strip().splitlines()[-1]) == {
         # The root profile's config.yaml wins over the host default; its launch env still fills unset keys.
-        "default": {"env_type": "ssh", "docker_image": default_image, "ssh_host": "root-host", "ssh_user": "launch-user"},
-        # Named profiles see only their own files, never the launch env or a sibling's backend.
-        "alpha": {"env_type": "docker", "docker_image": "alpha-image", "ssh_host": "", "ssh_user": ""},
-        "beta": {"env_type": "ssh", "docker_image": default_image, "ssh_host": "beta-host", "ssh_user": ""},
+        "default": {"env_type": "ssh", "docker_image": default_image, "ssh_host": "root-host", "ssh_user": "launch-user", "container": "session:default"},
+        # Named profiles see only their own files, never the launch env or a sibling's backend, and each
+        # persistent Docker profile creates and reuses its own sandbox rather than the shared default one.
+        "alpha": {"env_type": "docker", "docker_image": "alpha-image", "ssh_host": "", "ssh_user": "", "container": "profile:alpha"},
+        "beta": {"env_type": "ssh", "docker_image": default_image, "ssh_host": "beta-host", "ssh_user": "", "container": "session:beta"},
+        "gamma": {"env_type": "docker", "docker_image": "gamma-image", "ssh_host": "", "ssh_user": "", "container": "profile:gamma"},
     }
