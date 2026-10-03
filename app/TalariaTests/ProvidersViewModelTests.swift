@@ -5,6 +5,17 @@ import XCTest
 final class ProvidersViewModelTests: APIClientTestCase {
     private static let serverURL = URL(string: "https://example.test")!
 
+    /// Routes only this test's requests to `handler`, so a refresh loop request
+    /// cancelled at the end of one test cannot reach the next test's handler.
+    private func makeScopedClient(
+        handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
+    ) -> APIClient {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.httpAdditionalHeaders = [MockURLProtocol.scopeHeader: MockURLProtocol.register(handler)]
+        return APIClient(baseURL: Self.serverURL, session: URLSession(configuration: configuration))
+    }
+
     @MainActor
     func testLoadQuotasKeepsDuplicateProviderAccountsDistinct() async throws {
         let client = makeClient { request in
@@ -552,7 +563,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
     func testPeriodicQuotaRefreshForcesServerRefreshWhileVisible() async {
         let refreshed = expectation(description: "periodic quota refresh")
         var requestCount = 0
-        let client = makeClient { request in
+        let client = makeScopedClient { request in
             requestCount += 1
             let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
             XCTAssertTrue(components?.queryItems?.contains(URLQueryItem(name: "refresh", value: "1")) == true)
@@ -587,7 +598,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
         var requestedRefreshes: [Bool] = []
-        let client = makeClient { request in
+        let client = makeScopedClient { request in
             let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
             let forced = components?.queryItems?.contains(URLQueryItem(name: "refresh", value: "1")) == true
             requestedRefreshes.append(forced)
@@ -625,7 +636,7 @@ final class ProvidersViewModelTests: APIClientTestCase {
     @MainActor
     func testQuotaRefreshLoopSkipsEntryRefreshWhenRecentlyForced() async throws {
         var requestCount = 0
-        let client = makeClient { request in
+        let client = makeScopedClient { request in
             requestCount += 1
             return apiTestJSONResponse("""
             { "version": 1, "scope_id": "qscope_widget", "profile_id": "default", "sources": [] }
@@ -644,18 +655,16 @@ final class ProvidersViewModelTests: APIClientTestCase {
 
     @MainActor
     func testOlderFullQuotaLoadCannotOverwriteNewerTargetedRefresh() async throws {
-        let initialRequestArrived = expectation(description: "initial quota request arrived")
-        let fullRequestArrived = expectation(description: "full quota request arrived")
-        let targetedRequestArrived = expectation(description: "targeted quota request arrived")
+        let requestsArrived = (1...5).map { expectation(description: "quota request \($0) arrived") }
         let requests = DeferredRequests()
 
         DeferredMockURLProtocol.onRequest = { pendingRequest in
-            switch requests.append(pendingRequest) {
-            case 1: initialRequestArrived.fulfill()
-            case 2: fullRequestArrived.fulfill()
-            case 3: targetedRequestArrived.fulfill()
-            default: XCTFail("unexpected extra quota request")
+            let count = requests.append(pendingRequest)
+            guard count <= requestsArrived.count else {
+                XCTFail("unexpected extra quota request")
+                return
             }
+            requestsArrived[count - 1].fulfill()
         }
         defer { DeferredMockURLProtocol.onRequest = nil }
 
@@ -664,38 +673,56 @@ final class ProvidersViewModelTests: APIClientTestCase {
         let client = APIClient(baseURL: Self.serverURL, session: URLSession(configuration: configuration))
         let model = ProvidersViewModel(server: Self.serverURL, client: client)
 
-        func response(usedPercent: Int, requestedSourceID: String? = nil) -> String {
-            """
+        func response(_ sourceIDs: [String], usedPercent: Int, requestedSourceID: String? = nil) -> String {
+            let sources = sourceIDs.map {
+                """
+                { "source_id": "\($0)", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "\($0)", "status": "available", "supported": true, "windows": [{ "label": "Session", "used_percent": \(usedPercent) }] }
+                """
+            }
+            return """
             {
               "version": 1,
               "scope_id": "qscope_widget",
               "profile_id": "default",
               \(requestedSourceID.map { "\"requested_source_id\": \"\($0)\"," } ?? "")
-              "sources": [
-                { "source_id": "qsrc_a", "provider_id": "openai-codex", "provider_label": "Codex", "account_label": "A", "status": "available", "supported": true, "windows": [{ "label": "Session", "used_percent": \(usedPercent) }] },
-                { "source_id": "qsrc_b", "provider_id": "openrouter", "provider_label": "OpenRouter", "account_label": "B", "status": "available", "supported": true, "windows": [{ "label": "Session", "used_percent": \(usedPercent) }] }
-              ]
+              "sources": [\(sources.joined(separator: ","))]
             }
             """
         }
 
         let initialLoad = Task { await model.loadQuotas() }
-        await fulfillment(of: [initialRequestArrived], timeout: 5)
-        requests.request(at: 0).complete(withJSON: response(usedPercent: 10))
+        await fulfillment(of: [requestsArrived[0]], timeout: 5)
+        requests.request(at: 0).complete(withJSON: response(["qsrc_a", "qsrc_b", "qsrc_c"], usedPercent: 10))
         await initialLoad.value
 
         let periodicLoad = Task { await model.loadQuotas(refresh: true) }
-        await fulfillment(of: [fullRequestArrived], timeout: 5)
-        let targetedRefresh = Task { await model.refreshQuota(sourceID: "qsrc_a") }
-        await fulfillment(of: [targetedRequestArrived], timeout: 5)
-        requests.request(at: 2).complete(withJSON: response(usedPercent: 90, requestedSourceID: "qsrc_a"))
-        await targetedRefresh.value
-        requests.request(at: 1).complete(withJSON: response(usedPercent: 30))
+        await fulfillment(of: [requestsArrived[1]], timeout: 5)
+        let targetedA = Task { await model.refreshQuota(sourceID: "qsrc_a") }
+        await fulfillment(of: [requestsArrived[2]], timeout: 5)
+        requests.request(at: 2).complete(withJSON: response(["qsrc_a"], usedPercent: 90, requestedSourceID: "qsrc_a"))
+        await targetedA.value
+        let targetedB = Task { await model.refreshQuota(sourceID: "qsrc_b") }
+        await fulfillment(of: [requestsArrived[3]], timeout: 5)
+        requests.request(at: 3).complete(withJSON: response(["qsrc_b"], usedPercent: 90, requestedSourceID: "qsrc_b"))
+        await targetedB.value
+        // The older full response still lists qsrc_a and omits qsrc_b.
+        requests.request(at: 1).complete(withJSON: response(["qsrc_a", "qsrc_c"], usedPercent: 30))
         await periodicLoad.value
 
-        XCTAssertEqual(model.quotaSources.map(\.id), ["qsrc_a", "qsrc_b"])
-        XCTAssertEqual(model.quotaSources.first(where: { $0.id == "qsrc_a" })?.windows.first?.usedPercent, 90)
-        XCTAssertEqual(model.quotaSources.first(where: { $0.id == "qsrc_b" })?.windows.first?.usedPercent, 30)
+        func source(_ id: String) -> ProviderQuotaSource? { model.quotaSources.first(where: { $0.id == id }) }
+        XCTAssertEqual(source("qsrc_a")?.windows.first?.usedPercent, 90)
+        XCTAssertEqual(source("qsrc_b")?.windows.first?.usedPercent, 90)
+        XCTAssertEqual(source("qsrc_b")?.status, "available")
+        XCTAssertEqual(source("qsrc_c")?.windows.first?.usedPercent, 30)
+
+        // A later full load supersedes the targeted rows again.
+        let laterLoad = Task { await model.loadQuotas(refresh: true) }
+        await fulfillment(of: [requestsArrived[4]], timeout: 5)
+        requests.request(at: 4).complete(withJSON: response(["qsrc_a", "qsrc_c"], usedPercent: 40))
+        await laterLoad.value
+
+        XCTAssertEqual(source("qsrc_a")?.windows.first?.usedPercent, 40)
+        XCTAssertNil(source("qsrc_b"))
     }
 
     @MainActor
