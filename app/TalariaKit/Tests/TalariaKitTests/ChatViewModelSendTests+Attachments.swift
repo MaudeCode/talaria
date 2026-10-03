@@ -332,8 +332,10 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(viewModel.pendingAttachments.isEmpty)
 
         streamClient.emit(.streamEnd)
-        try await waitUntil { viewModel.messages.contains { $0.attachments?.isEmpty == false } }
+        // The drain appends its optimistic row before its start request goes out, so wait for the request itself.
+        try await waitUntil { startedMessages.count == 2 }
 
         XCTAssertEqual(startedMessages, ["Initial request", "I've uploaded 1 file(s): /tmp/workspace/notes.txt"])
+        XCTAssertTrue(viewModel.messages.contains { $0.attachments?.isEmpty == false })
     }
 }
