@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 
 from conftest import SidecarProcess
@@ -56,15 +57,16 @@ def test_an_agent_that_never_delegated_lists_nothing(handshaken: SidecarProcess,
     assert handshaken.result("process.background_list", {"profile_home": str(hermes_home), "session_ids": ["web-a"]}) == {"delegations": [], "processes": []}
 
 
-def _child_session(home: pathlib.Path, session_id: str, parent: str, goal: str) -> None:
-    """A finished subagent's own state.db session, as the Agent writes it: source subagent, tagged with its parent."""
+def _child_session(home: pathlib.Path, session_id: str, parent: str, goal: str | list) -> None:
+    """A finished subagent's own state.db session, as the Agent writes it: source subagent, tagged with its parent, its
+    first message the goal (a string, or multimodal parts for a task with images)."""
     _agent(home, (
         "from hermes_state import SessionDB\n"
         "db = SessionDB()\n"
         "db.create_session(sys.argv[2], 'subagent', model_config={'_delegate_from': sys.argv[3]})\n"
-        "db.append_message(sys.argv[2], 'user', sys.argv[4])\n"
+        "db.append_message(sys.argv[2], 'user', json.loads(sys.argv[4]))\n"
         "db.append_message(sys.argv[2], 'assistant', 'done')\n"
-    ), session_id, parent, goal)
+    ), session_id, parent, json.dumps(goal))
 
 
 def test_a_finished_units_children_are_linked_by_their_parent_and_goal(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
@@ -78,3 +80,13 @@ def test_a_finished_units_children_are_linked_by_their_parent_and_goal(handshake
     units = {d["delegation_id"]: d.get("children") for d in listed["delegations"]}
     assert units["call-9-1"] == [{"goal": "Write docs", "session_id": "child-docs"}]
     assert units["call-9-2"] == [{"goal": "Write tests", "session_id": "child-tests"}]
+
+
+def test_an_image_tasks_child_is_linked_by_the_goal_inside_its_stored_message(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    """TAL-494: an image task's first message is the goal plus image hints, or multimodal parts; its child still links."""
+    _dispatch(hermes_home, "call-img", "web-a", "Describe the chart;Read the scan")
+    _child_session(hermes_home, "child-hints", "web-a", "Describe the chart\n\n[Image attached at: /tmp/chart.png]\nUse vision_analyze to inspect these images.")
+    _child_session(hermes_home, "child-parts", "web-a", [{"type": "text", "text": "Read the scan"}, {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA"}}])
+    listed = handshaken.result("process.background_list", {"profile_home": str(hermes_home), "session_ids": ["web-a"]})
+    units = {d["delegation_id"]: d.get("children") for d in listed["delegations"]}
+    assert units["call-img"] == [{"goal": "Describe the chart", "session_id": "child-hints"}, {"goal": "Read the scan", "session_id": "child-parts"}]

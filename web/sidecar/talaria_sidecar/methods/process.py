@@ -308,30 +308,54 @@ def _ledger_children(home: Path, owners: list[str]) -> list[dict]:
     out = []
     for sid, model_config, started_at, first in rows:
         owner = _json(model_config).get("_delegate_from")
-        if owner in owners and isinstance(first, str):
-            out.append({"owner": owner, "session_id": sid, "started_at": started_at, "goal": first})
+        goal = _goal_text(first)
+        if owner in owners and goal:
+            out.append({"owner": owner, "session_id": sid, "started_at": started_at, "goal": goal})
     return out
 
 
+_CONTENT_JSON_PREFIX = "\x00json:"
+_IMAGE_HINTS = "\n\n[Image attached"
+
+
+def _goal_text(content) -> str:
+    """The goal a child was sent, from its stored first message: a task with images is stored as multimodal parts
+    (native image input; the goal is the text part) or as the goal followed by image hints (text input)."""
+    if not isinstance(content, str):
+        return ""
+    if content.startswith(_CONTENT_JSON_PREFIX):
+        try:
+            parts = json.loads(content[len(_CONTENT_JSON_PREFIX):])
+        except ValueError:
+            return ""
+        texts = [p.get("text") for p in parts if isinstance(p, dict) and p.get("type") == "text"] if isinstance(parts, list) else []
+        return str(texts[0]) if texts and texts[0] else ""
+    return content.split(_IMAGE_HINTS, 1)[0]
+
+
 def unit_children(unit: dict, owner: str, live: list[dict], finished: list[dict], now: float) -> list[dict]:
-    """The subagent sessions one delegation unit ran, as ``{goal, session_id}``. A live registry record is exact (same
-    owner, the unit's call id, one of its goals); a finished child's session counts only when it is the single session
-    of that owner, started in the unit's window, whose first message is exactly that goal."""
+    """The subagent sessions one delegation unit ran, as ``{goal, session_id}`` per task, in task order. A live registry
+    record is exact (same owner, the unit's call id, the task's goal) and is used once. Without one, finished sessions
+    of that owner whose goal matches, started in the unit's window, count only when there are exactly as many as tasks
+    with that goal; anything else stays unlinked rather than guessed."""
     unit_id, goals = unit["delegation_id"], [g for g in unit["goals"] if g]
-    found: dict[str, str] = {}
-    for r in live:
-        call = r["delegation_id"]
-        if r["owner"] == owner and call and (unit_id == call or unit_id.startswith(f"{call}-")) and r["goal"] in goals:
-            found.setdefault(r["goal"], r["session_id"])
+    pool = [r for r in live if r["owner"] == owner and r["delegation_id"] and (unit_id == r["delegation_id"] or unit_id.startswith(f"{r['delegation_id']}-"))]
+    linked: list[str | None] = []
+    used: set[str] = set()
+    for goal in goals:
+        record = next((r for r in pool if r["goal"] == goal and r["session_id"] not in used), None)
+        if record:
+            used.add(record["session_id"])
+        linked.append(record["session_id"] if record else None)
     start = (unit.get("dispatched_at") or 0) - _CHILD_WINDOW_S
     end = (unit.get("completed_at") or now) + _CHILD_WINDOW_S
-    for goal in goals:
-        if goal in found:
-            continue
-        matches = [c["session_id"] for c in finished if c["owner"] == owner and c["goal"] == goal and start <= (c["started_at"] or 0) <= end]
-        if len(matches) == 1:
-            found[goal] = matches[0]
-    return [{"goal": g, "session_id": found[g]} for g in goals if g in found]
+    for goal in {g for g, sid in zip(goals, linked) if sid is None}:
+        slots = [i for i, (g, sid) in enumerate(zip(goals, linked)) if g == goal and sid is None]
+        matches = sorted((c for c in finished if c["owner"] == owner and c["goal"] == goal and c["session_id"] not in used and start <= (c["started_at"] or 0) <= end), key=lambda c: c["started_at"] or 0)
+        if len(matches) == len(slots):
+            for i, c in zip(slots, matches):
+                linked[i] = c["session_id"]
+    return [{"goal": g, "session_id": sid} for g, sid in zip(goals, linked) if sid]
 
 
 def background_list(home: Path, session_ids: list[str]) -> dict:
