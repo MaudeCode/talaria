@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An open chat that went offline comes back online on its own within 30 seconds of its server returning.",
+      "highlight": false
+    }
+  ]
+}
