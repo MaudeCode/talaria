@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Turning on YOLO approves the waiting commands once, so they ask for approval again after YOLO is turned off.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

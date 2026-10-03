@@ -1122,7 +1122,9 @@ def register(registry) -> None:
         except Exception as exc:  # noqa: BLE001
             raise RpcError(f"approval module unavailable: {exc}", condition="agent_unavailable") from exc
         (enable_session_yolo if enabled else disable_session_yolo)(session_id)
-        released = resolve_gateway_approval(session_id, "session", resolve_all=True) if enabled else 0
+        # Parked approvals are released `once`: a `session` or `always` grant would keep their patterns approved after
+        # YOLO turns off, whatever choice the card that enabled it carried.
+        released = resolve_gateway_approval(session_id, "once", resolve_all=True) if enabled else 0
         return {"yolo_enabled": bool(is_session_yolo_enabled(session_id)), "released": int(released or 0)}
 
     @registry.method("clarify.respond", requires_agent=False)
