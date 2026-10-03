@@ -43,6 +43,9 @@ export const deleteProfile = (name: string) => orpc().profiles.delete({ name })
 export const fetchModels = (freshness?: 'session_visit') => orpc().models.list(freshness ? { freshness } : {})
 /** config.yaml model.default (and provider): `/api/settings` does not persist `default_model`. */
 export const setDefaultModel = (model: string, provider?: string | null) => orpc().models.setDefault({ model, ...(provider ? { provider } : {}) })
+export const fetchAuxiliaryModels = () => orpc().models.auxiliary()
+/** One auxiliary task slot (`__reset__` returns every slot to Auto); answers the refreshed `auxiliary` state. */
+export const setAuxiliaryModel = (task: string, model: string, provider?: string | null) => orpc().models.set({ scope: 'auxiliary', task, model, ...(provider ? { provider } : {}) })
 export const fetchProviders = () => orpc().providers.list()
 export const fetchProviderQuotas = (refresh = false) => orpc().providers.quotas(refresh ? { refresh: '1' } : {}, { signal: timeout(45_000) })
 export const setPersonality = (session_id: SessionId, personality: string | null) => orpc().personalities.set({ session_id, name: personality ?? '' })

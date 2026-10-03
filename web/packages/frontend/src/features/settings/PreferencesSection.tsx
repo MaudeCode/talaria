@@ -8,6 +8,7 @@ import { LoadingState, ErrorState } from '../../ui/States'
 import { NAV_ITEMS, FIXED_TABS } from '../../shell/nav'
 import { useState } from 'react'
 import { Button } from '../../ui/Button'
+import { AuxiliaryModelsSetting } from './AuxiliaryModels'
 
 function Toggle({ label, hint, settingKey, fallback = false }: { label: string; hint?: string; settingKey: string; fallback?: boolean }) {
   const { bool, set } = useSettingField()
@@ -38,6 +39,7 @@ export function PreferencesSection() {
           {!models.data?.groups.some((g) => g.models.some((mm) => mm.id === str('default_model'))) && str('default_model') && <option value={str('default_model')}>{str('default_model')}</option>}
         </Select>
       </FieldRow>
+      <AuxiliaryModelsSetting />
       <FieldRow label={m.settings_label_send_key()} htmlFor="settingsSendKey" inline>
         <Select id="settingsSendKey" value={str('send_key', 'enter')} onValueChange={(v) => set({ send_key: v })}>
           <option value="enter">{m.settings_send_key_enter()}</option>

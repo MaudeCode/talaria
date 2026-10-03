@@ -2241,5 +2241,9 @@
 	"steer_edit": "Edit steering message",
 	"steer_cancel": "Cancel steering message",
 	"steer_already_taken": "The agent already took this steering message.",
-	"steer_stays_pending": "Nothing is running to take it now; it stays pending."
+	"steer_stays_pending": "Nothing is running to take it now; it stays pending.",
+	"settings_auxiliary_models_manage": "Manage",
+	"auxiliary_models_auto": "Auto",
+	"auxiliary_models_not_in_catalog": "Not in catalog",
+	"auxiliary_models_custom_label": "Custom model ID (use @provider:model to pin a provider)"
 }
