@@ -195,6 +195,13 @@ export function deduplicateModelIds(groups: ModelGroup[]): void {
   }
 }
 
+/** Quota sources keep the first row per source id, ordered by provider id, account label, then source id (TAL-272). */
+export function uniqueQuotaSources<T extends { source_id: string; provider_id: string; account_label: string }>(sources: T[]): T[] {
+  const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
+  return sources.filter((q, i) => sources.findIndex((o) => o.source_id === q.source_id) === i)
+    .sort((a, b) => cmp(a.provider_id, b.provider_id) || cmp(a.account_label, b.account_label) || cmp(a.source_id, b.source_id))
+}
+
 interface KeyProbe { hasKey: boolean; keySource: string; authError: string | null; isOauth: boolean }
 
 export class ProviderCatalog {
@@ -707,21 +714,24 @@ export class ProviderCatalog {
     return `qscope_${createHash('sha256').update(`${this.quotaServerScopeId()}\0${profile}`).digest('hex').slice(0, 32)}`
   }
 
-  /** Python `get_provider_quotas`: one source per keyed provider, in the stable-identity envelope the iOS widget persists. */
+  /**
+   * Python `get_provider_quotas`: one source per keyed provider, in the stable-identity envelope the iOS widget persists.
+   * Each source id appears once (two custom providers can share a slug), ordered by provider, account label, then source id.
+   */
   async quotas(profileHome: string, profile: string, opts: { sourceId?: string | null; refresh?: boolean } = {}): Promise<Dict> {
     const status = await this.providers(profileHome)
     const active = status.active_provider
     const scopeId = this.quotaProfileScopeId(profile)
     // Python `_quota_source_id(profile, provider, "provider")`: the single-credential descriptor per provider.
     const sourceId = (pid: string): string => `qsrc_${createHash('sha256').update(`${scopeId}\0${pid}\0provider`).digest('hex').slice(0, 32)}`
-    let descriptors = status.providers.filter((p) => p.has_key || p.is_custom).map((p) => ({ source_id: sourceId(str(p.id)), provider_id: str(p.id), provider_label: str(p.display_name) || str(p.id) }))
+    let descriptors = uniqueQuotaSources(status.providers.filter((p) => p.has_key || p.is_custom).map((p) => ({ source_id: sourceId(str(p.id)), provider_id: str(p.id), provider_label: str(p.display_name) || str(p.id), account_label: str(p.display_name) || str(p.id) })))
     const requested = str(opts.sourceId).trim() || null
     if (requested) descriptors = descriptors.filter((d) => d.source_id === requested)
     const sources = await Promise.all(descriptors.map(async (d) => {
       const q = await this.quota(profileHome, d.provider_id, { refresh: opts.refresh ?? false })
       const limits = dict(q.account_limits)
       return {
-        source_id: d.source_id, provider_id: d.provider_id, provider_label: d.provider_label, account_label: d.provider_label,
+        source_id: d.source_id, provider_id: d.provider_id, provider_label: d.provider_label, account_label: d.account_label,
         is_active_provider: d.provider_id === active, supported: q.supported === true, status: str(limits.status) || str(q.status) || 'unavailable',
         plan: limits.plan ?? null, windows: limits.windows ?? [], quota: q.quota ?? null, balances: q.balances ?? [], details: limits.details ?? [],
         unavailable_reason: limits.unavailable_reason ?? null, retry_after: limits.retry_after ?? null, fetched_at: limits.fetched_at ?? null, message: q.message ?? null,

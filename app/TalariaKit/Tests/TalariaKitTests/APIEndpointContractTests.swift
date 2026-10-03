@@ -207,12 +207,6 @@ final class ContractReadinessTests: APIClientTestCase {
                 path: "/api/provider/quotas",
                 query: ["source": "qsrc_123", "refresh": "1"]
             ),
-            .init(
-                name: "legacy provider quota refresh",
-                endpoint: .providerQuota(refresh: true),
-                path: "/api/provider/quota",
-                query: ["refresh": "1"]
-            ),
             .init(name: "settings", endpoint: .settings, path: "/api/settings"),
             .init(name: "updates check", endpoint: .updatesCheck, path: "/api/updates/check"),
             .init(name: "updates apply", endpoint: .updatesApply, path: "/api/updates/apply"),

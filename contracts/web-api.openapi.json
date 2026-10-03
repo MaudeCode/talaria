@@ -31266,7 +31266,8 @@
                       ]
                     },
                     "missing_source": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "True when `?source=` names a source id this scope no longer has; `sources` is then empty."
                     },
                     "sources": {
                       "type": "array",
@@ -31317,7 +31318,8 @@
                           "source_id"
                         ],
                         "additionalProperties": {}
-                      }
+                      },
+                      "description": "Each live source id exactly once, ordered by `provider_id`, then `account_label`, then `source_id`. Clients render this list as-is; a `?source=` read returns that one row."
                     }
                   },
                   "required": [

@@ -8,7 +8,7 @@ import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { loadEnvFile, writeEnvFile } from '../providers/env-file.js'
-import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel } from '../providers/catalog.js'
+import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel, uniqueQuotaSources } from '../providers/catalog.js'
 import { coerceReasoningEffort, parseProviderQualifiedModel, customProviderSlug } from '../config/agent-config.js'
 import { splitProviderModel } from '../profiles/profiles.js'
 
@@ -383,6 +383,35 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(missing).toMatchObject({ requested_source_id: 'qsrc_unknown', missing_source: true, sources: [] })
     // The scope survives restarts: a second read answers the same id.
     expect((await json(await s.get(`/api/provider/quotas?source=${anthropicId}`))).sources).toHaveLength(1)
+  })
+
+  it('quota sources list each source id once, ordered by provider, account label, then source id (TAL-272)', async () => {
+    const saved = configs.get(s.state)
+    const reset = (config: Json | undefined): void => { configs.set(s.state, config ?? {}); s.deps.agentConfig.invalidate(); s.deps.catalog.invalidate() }
+    // `My LLM` and `my-llm` share the `custom:my-llm` slug, so both entries derive one source id.
+    reset({
+      model: { default: 'claude-sonnet-4-6', provider: 'anthropic' },
+      custom_providers: [{ name: 'Zeta', base_url: 'http://zeta.test/v1' }, { name: 'My LLM', base_url: 'http://a.test/v1' }, { name: 'my-llm', base_url: 'http://b.test/v1' }],
+    })
+    try {
+      sidecar.respond('usage.account', (params) => ({ snapshot: { provider: params.provider, available: true, title: 'Limits', windows: [], details: [] } }))
+      const sources = (await json(await s.get('/api/provider/quotas'))).sources as { source_id: string; provider_id: string; account_label: string }[]
+      const ids = sources.map((q) => q.source_id)
+      expect(ids).toEqual([...new Set(ids)])
+      expect(sources.filter((q) => q.provider_id === 'custom:my-llm')).toHaveLength(1)
+      expect(sources.map((q) => q.provider_id)).toEqual(expect.arrayContaining(['custom:my-llm', 'custom:zeta']))
+      const key = (q: (typeof sources)[number]): string[] => [q.provider_id, q.account_label, q.source_id]
+      const ordered = [...sources].sort((a, b) => { const [x, y] = [key(a), key(b)]; for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i]! < y[i]! ? -1 : 1; return 0 })
+      expect(sources).toEqual(ordered)
+    } finally {
+      reset(saved)
+    }
+  })
+
+  it('uniqueQuotaSources keeps the first row per source id and distinct ids of one provider (TAL-272)', () => {
+    const row = (source_id: string, provider_id: string, account_label: string, n = 0) => ({ source_id, provider_id, account_label, n })
+    expect(uniqueQuotaSources([row('qsrc_c', 'openai-codex', 'Work'), row('qsrc_z', 'anthropic', 'Claude'), row('qsrc_c', 'openai-codex', 'Work', 1), row('qsrc_b', 'openai-codex', 'Personal'), row('qsrc_a', 'openai-codex', 'Work')]))
+      .toEqual([row('qsrc_z', 'anthropic', 'Claude'), row('qsrc_b', 'openai-codex', 'Personal'), row('qsrc_a', 'openai-codex', 'Work'), row('qsrc_c', 'openai-codex', 'Work')])
   })
 
   it('default-model and model/set write config.yaml; auxiliary slots round-trip through /api/model/auxiliary', async () => {

@@ -100,7 +100,6 @@ public enum Endpoint {
     case createProfile
     case providers
     case providerQuotas(sourceID: String? = nil, refresh: Bool = false)
-    case providerQuota(refresh: Bool = false)
     case settings
     case talariaRelayPair
     case updatesCheck
@@ -341,8 +340,6 @@ public enum Endpoint {
             return "/api/providers"
         case .providerQuotas:
             return "/api/provider/quotas"
-        case .providerQuota:
-            return "/api/provider/quota"
         case .settings:
             return "/api/settings"
         case .talariaRelayPair:
@@ -635,8 +632,6 @@ public enum Endpoint {
                 items.append(URLQueryItem(name: "refresh", value: "1"))
             }
             return items
-        case let .providerQuota(refresh):
-            return refresh ? [URLQueryItem(name: "refresh", value: "1")] : []
         case let .insights(days):
             return [URLQueryItem(name: "days", value: "\(days)")]
         case let .skillContent(name, file):

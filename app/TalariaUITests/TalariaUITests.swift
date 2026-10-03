@@ -1045,7 +1045,6 @@ final class QuotaInsightsUITests: QuotaWidgetUITestCase {
         )
 
         let warning = app.buttons["Provider quota warning"]
-        XCTAssertFalse(app.staticTexts["This server supports active-provider quota only. Multi-account sources require the companion server update."].exists)
 
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = "Insights provider quota surface"

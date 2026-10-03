@@ -123,20 +123,6 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
         fetchedAt = container.decodeQuotaStringIfPresent(forKey: .fetchedAt)
         message = container.decodeQuotaStringIfPresent(forKey: .message)
     }
-
-    public func removed() -> ProviderQuotaSource {
-        ProviderQuotaSource(
-            id: id,
-            providerID: providerID,
-            providerLabel: providerLabel,
-            accountLabel: accountLabel,
-            isActiveProvider: false,
-            supported: supported,
-            status: "removed",
-            unavailableReason: String(localized: "This quota account was removed. Refresh or reconfigure it."),
-            fetchedAt: fetchedAt
-        )
-    }
 }
 
 public struct ProviderQuotaWindow: Codable, Equatable, Sendable {
@@ -206,42 +192,6 @@ public struct ProviderQuotaAmount: Codable, Equatable, Sendable {
         usage = container.decodeQuotaDoubleIfPresent(forKey: .usage)
         limit = container.decodeQuotaDoubleIfPresent(forKey: .limit)
     }
-}
-
-/// Compatibility shape for older servers that only expose the active provider.
-public struct LegacyProviderQuotaResponse: Decodable, Equatable, Sendable {
-    public let provider: String?
-    public let displayName: String?
-    public let supported: Bool?
-    public let status: String?
-    public let quota: ProviderQuotaAmount?
-    public let accountLimits: LegacyProviderQuotaLimits?
-    public let message: String?
-}
-
-public struct LegacyProviderQuotaLimits: Decodable, Equatable, Sendable {
-    public let plan: String?
-    public let windows: [ProviderQuotaWindow]?
-    public let details: [String]?
-    let available: Bool?
-    public let unavailableReason: String?
-    public let fetchedAt: String?
-    public let pool: LegacyProviderQuotaPool?
-}
-
-public struct LegacyProviderQuotaPool: Decodable, Equatable, Sendable {
-    public let credentials: [LegacyProviderQuotaCredential]?
-}
-
-public struct LegacyProviderQuotaCredential: Decodable, Equatable, Sendable {
-    public let label: String?
-    public let status: String?
-    public let plan: String?
-    public let windows: [ProviderQuotaWindow]?
-    public let details: [String]?
-    public let unavailableReason: String?
-    public let retryAfter: String?
-    public let fetchedAt: String?
 }
 
 // Kept local so this model can move into a WidgetKit target without pulling in
