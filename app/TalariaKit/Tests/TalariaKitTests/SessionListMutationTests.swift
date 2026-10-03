@@ -140,6 +140,7 @@ final class SessionListMutationTests: XCTestCase {
         var requestedPaths: [String] = []
         let viewModel = try makeViewModel { request in
             requestedPaths.append(request.url?.path ?? "nil")
+            // What the server answers the removed route with; asserting no request reaches it.
             if request.url?.path == "/api/session/import_cli" {
                 return apiTestJSONResponse(#"{"error": "not found"}"#, statusCode: 404, for: request)
             }

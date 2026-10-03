@@ -104,14 +104,14 @@ public final class SessionListViewModel {
     private var projectsGeneration = 0
     private var activeProfileGeneration = 0
     private var openGeneration = 0
-    /// Counts completed import claims. A row is stamped with the value at the
-    /// moment it was claimed — not when its open began — so a load that started
-    /// while the import was still pending is correctly treated as older.
-    private var claimCount = 0
-    /// Rows an import claimed, with the claim they came from, so a
+    /// Counts completed detail loads for opened rows. A row is stamped with the
+    /// value at the moment its detail arrived — not when its open began — so a list
+    /// load that started while the detail was still pending is treated as older.
+    private var detailLoadCount = 0
+    /// Rows refreshed from their detail, with the load they came from, so a
     /// `/api/sessions` response that was already in flight cannot reinstate the
-    /// pre-import metadata it captured.
-    private var importedRows: [String: (session: SessionSummary, claim: Int)] = [:]
+    /// stale metadata it captured.
+    private var detailRows: [String: (session: SessionSummary, load: Int)] = [:]
 
     private let client: APIClient
     private let sessionMutator: SessionMutator
@@ -316,7 +316,7 @@ public final class SessionListViewModel {
     ) async -> Bool {
         loadGeneration += 1
         let generation = loadGeneration
-        let claimCountAtStart = claimCount
+        let detailLoadCountAtStart = detailLoadCount
 
         isLoading = true
         errorMessage = nil
@@ -342,7 +342,7 @@ public final class SessionListViewModel {
                 visibleSessions,
                 archivedCount: response.archivedCount,
                 animation: animation,
-                claimCountAtStart: claimCountAtStart
+                detailLoadCountAtStart: detailLoadCountAtStart
             )
             automatedSessionCounts = response.automatedSessionCounts
             isViewingCachedData = false
@@ -351,7 +351,7 @@ public final class SessionListViewModel {
             if let modelContext {
                 do {
                     // The applied rows, not the raw response: a stale list must not
-                    // put pre-import metadata back into the cache the offline
+                    // put stale metadata back into the cache the offline
                     // fallback reads.
                     try writeCacheIfCurrent { try CacheStore.cacheSessions(sessions, serverURL: server, in: modelContext) }
                 } catch {
@@ -684,7 +684,7 @@ public final class SessionListViewModel {
     /// Keeps the list row in step with what the detail authoritatively reported.
     /// `SessionRowActionPolicy` reads the row's own read-only state, so on a
     /// regular-width layout the still-visible sidebar would otherwise keep offering
-    /// the pre-import actions until the next load. Only an existing row is
+    /// stale actions until the next load. Only an existing row is
     /// replaced — opening a session never adds one to the list.
     private func refreshRow(with session: SessionSummary, modelContext: ModelContext?) {
         guard let sessionId = Self.nonEmpty(session.sessionId),
@@ -692,8 +692,8 @@ public final class SessionListViewModel {
         else { return }
 
         sessions[index] = session
-        claimCount += 1
-        importedRows[sessionId] = (session, claimCount)
+        detailLoadCount += 1
+        detailRows[sessionId] = (session, detailLoadCount)
 
         guard let modelContext, session.shouldAppearInSessionList else { return }
         do {
@@ -1258,11 +1258,11 @@ public final class SessionListViewModel {
         _ newSessions: [SessionSummary],
         archivedCount newArchivedCount: Int?,
         animation: Animation?,
-        claimCountAtStart: Int = Int.max
+        detailLoadCountAtStart: Int = Int.max
     ) {
-        let reconciledSessions = reconcilingImportedRows(
+        let reconciledSessions = reconcilingDetailRows(
             in: newSessions,
-            claimCountAtStart: claimCountAtStart
+            detailLoadCountAtStart: detailLoadCountAtStart
         )
 
         guard let animation else {
@@ -1277,28 +1277,28 @@ public final class SessionListViewModel {
         }
     }
 
-    /// Keeps an import's authoritative row when the response being applied was
-    /// requested before that import claimed it. Only a load that started after the
-    /// claim completed already reflects it, so only then do its rows win and the
-    /// record get dropped.
-    private func reconcilingImportedRows(
+    /// Keeps a detail's authoritative row when the list response being applied was
+    /// requested before that detail arrived. Only a load that started after the
+    /// detail already reflects it, so only then do its rows win and the record get
+    /// dropped.
+    private func reconcilingDetailRows(
         in newSessions: [SessionSummary],
-        claimCountAtStart: Int
+        detailLoadCountAtStart: Int
     ) -> [SessionSummary] {
-        guard !importedRows.isEmpty else { return newSessions }
+        guard !detailRows.isEmpty else { return newSessions }
 
-        for (sessionID, imported) in importedRows where imported.claim <= claimCountAtStart {
-            importedRows.removeValue(forKey: sessionID)
+        for (sessionID, loaded) in detailRows where loaded.load <= detailLoadCountAtStart {
+            detailRows.removeValue(forKey: sessionID)
         }
 
-        guard !importedRows.isEmpty else { return newSessions }
+        guard !detailRows.isEmpty else { return newSessions }
 
         return newSessions.map { session in
             guard let sessionID = session.sessionId,
-                  let imported = importedRows[sessionID]
+                  let loaded = detailRows[sessionID]
             else { return session }
 
-            return imported.session.merging(onto: session)
+            return loaded.session.merging(onto: session)
         }
     }
 
