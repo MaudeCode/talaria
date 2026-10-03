@@ -415,6 +415,27 @@ def _turn_identity(session_id: str, workspace: str):
                 log.debug("per-turn identity reset failed", exc_info=True)
 
 
+#: Older configs named the CLI composite ``hermes``; the Agent registers it split in two (predecessor
+#: ``_LEGACY_CLI_TOOLSET_ALIASES``).
+_LEGACY_TOOLSET_ALIASES = {"hermes": ("hermes-cli", "hermes-api-server")}
+
+
+def _turn_toolsets(toolsets) -> list[str]:
+    """The session's override as sent, else the profile's configured toolsets. ``None`` would hand the Agent every
+    registered toolset."""
+    return toolsets if isinstance(toolsets, list) else _profile_toolsets()
+
+
+def _profile_toolsets() -> list[str]:
+    """The profile's ``platform_toolsets.cli`` through the Agent's own resolver (default-off toolsets stay off), like
+    ``hermes chat``. Runs under the call's ``scoped_home``."""
+    from hermes_cli.config import load_config
+    from hermes_cli.tools_config import _get_platform_tools
+
+    resolved = sorted(_get_platform_tools(load_config() or {}, "cli"))
+    return list(dict.fromkeys(name for raw in resolved for name in _LEGACY_TOOLSET_ALIASES.get(raw, (raw,))))
+
+
 def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, kwargs: dict) -> str:
     """Cache identity of an ``AIAgent``: everything its constructor bound from the resolved runtime, so a rotated key,
     a different API mode, ACP command, or credential pool never reuses an agent built for the old bundle. The key
@@ -487,7 +508,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         history = []
     if not isinstance(history, list):
         raise InvalidParams("conversation_history must be a list")
-    toolsets = params.get("enabled_toolsets")
+    toolsets = _turn_toolsets(params.get("enabled_toolsets"))
     system_message = params.get("system_message")
     run = _Run(stream_id, session_id, ctx)
     with _RUNS_LOCK:
@@ -643,7 +664,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             api_key=runtime.get("api_key"),
             platform="webui",
             quiet_mode=True,
-            enabled_toolsets=toolsets if isinstance(toolsets, list) else None,
+            enabled_toolsets=toolsets,
             session_id=session_id,
             stream_delta_callback=on_token,
             reasoning_callback=on_reasoning,
@@ -861,7 +882,7 @@ def compress(ctx: CallContext, params: dict) -> dict:
     model = str(params.get("model") or "").strip()
     provider = str(params.get("model_provider") or "").strip() or None
     focus_topic = str(params.get("focus_topic") or "").strip()[:500] or None
-    toolsets = params.get("enabled_toolsets")
+    toolsets = _turn_toolsets(params.get("enabled_toolsets"))
     runtime = _resolve_runtime(provider, model)
     if not runtime.get("api_key"):
         raise RpcError("No provider configured -- cannot compress.", condition="credential_missing")
@@ -875,7 +896,7 @@ def compress(ctx: CallContext, params: dict) -> dict:
         api_key=runtime.get("api_key"),
         platform="webui",
         quiet_mode=True,
-        enabled_toolsets=toolsets if isinstance(toolsets, list) else None,
+        enabled_toolsets=toolsets,
         session_id=session_id,
     )
     for name, value in (

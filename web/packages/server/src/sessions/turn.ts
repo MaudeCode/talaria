@@ -57,7 +57,7 @@ export interface TurnRunnerDeps {
   redactEnabled: () => boolean
   /** `webui.session_save_mode`: `deferred` (default) or `eager`. */
   saveMode: () => 'deferred' | 'eager'
-  /** Per-session toolsets override or the profile's configured toolsets (null lets the Agent decide). */
+  /** Per-session toolsets override; null makes the sidecar resolve the profile's configured toolsets. */
   toolsetsFor: (session: Session) => string[] | null
   attachmentDir: (sid: string) => string
   titleGenerationEnabled: () => boolean
