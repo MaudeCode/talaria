@@ -23768,6 +23768,9 @@
                           },
                           "pinned": {
                             "type": "boolean"
+                          },
+                          "dismissible": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -23782,7 +23785,8 @@
                           "child_session_id",
                           "exit_code",
                           "agents",
-                          "pinned"
+                          "pinned",
+                          "dismissible"
                         ]
                       }
                     },
@@ -24013,6 +24017,9 @@
                         },
                         "pinned": {
                           "type": "boolean"
+                        },
+                        "dismissible": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -24027,7 +24034,8 @@
                         "child_session_id",
                         "exit_code",
                         "agents",
-                        "pinned"
+                        "pinned",
+                        "dismissible"
                       ]
                     }
                   },

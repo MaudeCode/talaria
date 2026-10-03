@@ -143,6 +143,7 @@ export function taskView(r: Receipt, opts: { unconfirmed?: boolean } = {}): Back
     result_available: isTerminal(r.status) || r.status === 'attention' ? Boolean(r.result) || r.agent_result : false,
     child_session_id: r.child_session_id, exit_code: r.exit_code, agents: r.agents,
     pinned: LIVE.has(status) || (r.kind === 'background_command' && isTerminal(r.status) && r.dismissed_at === null),
+    dismissible: r.kind === 'background_command' && isTerminal(r.status) && r.dismissed_at === null,
   }
 }
 

@@ -1835,5 +1835,21 @@
 	"steer_edit": "Steuerhinweis bearbeiten",
 	"steer_cancel": "Steuerhinweis abbrechen",
 	"steer_already_taken": "Der Agent hat diesen Steuerhinweis bereits übernommen.",
-	"steer_stays_pending": "Gerade läuft nichts, das ihn übernehmen kann; er bleibt ausstehend."
+	"steer_stays_pending": "Gerade läuft nichts, das ihn übernehmen kann; er bleibt ausstehend.",
+	"bg_card_title": "Hintergrundarbeit",
+	"bg_status_running": "Läuft",
+	"bg_status_attention": "Braucht Aufmerksamkeit",
+	"bg_status_completed": "Fertig",
+	"bg_status_failed": "Fehlgeschlagen",
+	"bg_status_cancelled": "Gestoppt",
+	"bg_status_unknown": "Status unbekannt",
+	"bg_kind_delegation": "Agent",
+	"bg_kind_process": "Befehl",
+	"bg_kind_background_command": "Hintergrundaufgabe",
+	"bg_agents_progress": "{done} von {total} fertig",
+	"bg_agents_failed": "{n} fehlgeschlagen",
+	"bg_show_result": "Ergebnis anzeigen",
+	"bg_hide_result": "Ergebnis ausblenden",
+	"bg_result_unavailable": "Das Ergebnis ist nicht mehr verfügbar.",
+	"bg_usage": "Verwendung: /background <Nachricht>"
 }

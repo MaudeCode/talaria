@@ -25,6 +25,7 @@ import { ThemeSchema } from '../../contracts/persisted'
 import type { Clarify } from '../chat/useClarify'
 import { LiveStatusPill } from '../chat/LiveTurnView'
 import { ComposerTab, type ComposerNotice } from './ComposerTab'
+import { BackgroundWorkCard, useBackgroundTasks } from '../background/BackgroundWork'
 import { beginFirstSend, endFirstSend, failFirstSend, getFirstSend, ownsFirstSend, useFirstSend } from '../chat/firstSend'
 import { REST_MS, onComposerRestRequest, requestScroll } from '../chat/sendMotion'
 import { MOTION_EASE, prefersReducedMotion } from '../../lib/motion'
@@ -359,6 +360,17 @@ export function Composer(props: ComposerProps) {
         const handled = await onLocalCommand(cmd.name, cmd.args)
         if (handled) { setText(''); return }
       }
+      // TAL-372: `/background` runs the prompt in a hidden session; its record and result show in the background card.
+      if (cmd.name === 'background') {
+        if (!cmd.args) { showToast(m.bg_usage(), 2000); return }
+        try {
+          const target = session ?? (await onEnsureSession())
+          await api.startBackground(target.session_id, cmd.args)
+          setText('')
+          void qc.invalidateQueries({ queryKey: keys.background(target.session_id) })
+        } catch (e) { showToast(e instanceof Error ? e.message : String(e), 4000, 'error') }
+        return
+      }
       if (cmd.name === 'queue' && busy) { requestScroll('end'); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
       if (cmd.name === 'steer' && busy && sessionId) { if (!cmd.args) { showToast(m.cmd_steer_no_msg(), 2000); return } requestScroll('end'); if (await trySteer(cmd.args)) setText(''); return }
       if (cmd.name === 'interrupt' && busy && sessionId) { requestScroll('end'); await cancelTurn(sessionId); onQueue(queueEntry(cmd.args)); setText(''); setFiles([]); return }
@@ -507,12 +519,14 @@ export function Composer(props: ComposerProps) {
     animation.onfinish = () => { if (restAnimation.current === animation) restAnimation.current = null }
   }, [resting])
   const showYolo = yolo && !hide('hide_composer_yolo')
+  const backgroundTasks = useBackgroundTasks(sessionId).data?.tasks ?? []
   // The top tab (T3 Code's attached banner): the running turn first, then runtime notices and this message's state.
   const tabNotices: ComposerNotice[] = [
     ...(busy && live ? [{ id: 'live', content: <LiveStatusPill turn={live} background={session?.active_turn_origin === 'background' && session.active_stream_id === live.streamId} /> }] : []),
     ...notices,
     ...(dictating ? [{ id: 'dictation', content: <span className="inline-flex items-center gap-1.5" role="status"><span className="mic-dot" aria-hidden="true" />{m.voice_listening()}</span> }] : []),
     ...(showYolo ? [{ id: 'yolo', tone: 'warning' as const, content: <><span aria-hidden="true">⚡</span><span className="truncate">{m.yolo_tab_active()}</span></>, action: { label: m.yolo_turn_off(), run: onToggleYolo } }] : []),
+    ...(sessionId && backgroundTasks.some((t) => t.pinned) ? [{ id: 'background', content: <BackgroundWorkCard sessionId={sessionId} tasks={backgroundTasks} /> }] : []),
     ...(queued.length > 0 ? [{ id: 'queue', content: <span className="queue-card flex min-w-0 flex-col gap-0.5" role="region" aria-label={m.queued_count({ n: queued.length })} aria-live="polite"><span className="queue-card-title">{m.queued_count({ n: queued.length })}</span><span className="queue-card-list flex flex-col">{queued.map((q, i) => <span key={i} className="truncate">{q.text}{q.attachments.length ? ` (+${q.attachments.length})` : ''}</span>)}</span></span> }] : []),
   ]
   const busyLabel = busyMode === 'queue' ? m.composer_queue() : busyMode === 'interrupt' ? m.composer_interrupt() : m.composer_steer()

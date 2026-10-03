@@ -1986,5 +1986,21 @@
 	"steer_edit": "Изменить подсказку",
 	"steer_cancel": "Отменить подсказку",
 	"steer_already_taken": "Агент уже принял эту подсказку.",
-	"steer_stays_pending": "Сейчас нечему её принять; она остаётся в ожидании."
+	"steer_stays_pending": "Сейчас нечему её принять; она остаётся в ожидании.",
+	"bg_card_title": "Фоновая работа",
+	"bg_status_running": "Выполняется",
+	"bg_status_attention": "Требует внимания",
+	"bg_status_completed": "Готово",
+	"bg_status_failed": "Ошибка",
+	"bg_status_cancelled": "Остановлено",
+	"bg_status_unknown": "Статус неизвестен",
+	"bg_kind_delegation": "Агент",
+	"bg_kind_process": "Команда",
+	"bg_kind_background_command": "Фоновая задача",
+	"bg_agents_progress": "Готово: {done} из {total}",
+	"bg_agents_failed": "Ошибок: {n}",
+	"bg_show_result": "Показать результат",
+	"bg_hide_result": "Скрыть результат",
+	"bg_result_unavailable": "Результат больше недоступен.",
+	"bg_usage": "Использование: /background <сообщение>"
 }

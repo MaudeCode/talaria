@@ -1933,5 +1933,21 @@
 	"steer_edit": "Edytuj wskazówkę",
 	"steer_cancel": "Anuluj wskazówkę",
 	"steer_already_taken": "Agent już przyjął tę wskazówkę.",
-	"steer_stays_pending": "Nic teraz nie działa, by ją przyjąć; pozostaje oczekująca."
+	"steer_stays_pending": "Nic teraz nie działa, by ją przyjąć; pozostaje oczekująca.",
+	"bg_card_title": "Praca w tle",
+	"bg_status_running": "Trwa",
+	"bg_status_attention": "Wymaga uwagi",
+	"bg_status_completed": "Gotowe",
+	"bg_status_failed": "Nie powiodło się",
+	"bg_status_cancelled": "Zatrzymano",
+	"bg_status_unknown": "Stan nieznany",
+	"bg_kind_delegation": "Agent",
+	"bg_kind_process": "Polecenie",
+	"bg_kind_background_command": "Zadanie w tle",
+	"bg_agents_progress": "Gotowe: {done} z {total}",
+	"bg_agents_failed": "Nieudane: {n}",
+	"bg_show_result": "Pokaż wynik",
+	"bg_hide_result": "Ukryj wynik",
+	"bg_result_unavailable": "Wynik nie jest już dostępny.",
+	"bg_usage": "Użycie: /background <wiadomość>"
 }

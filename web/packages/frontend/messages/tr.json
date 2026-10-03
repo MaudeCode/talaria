@@ -1891,5 +1891,21 @@
 	"steer_edit": "Yönlendirmeyi düzenle",
 	"steer_cancel": "Yönlendirmeyi iptal et",
 	"steer_already_taken": "Ajan bu yönlendirmeyi zaten aldı.",
-	"steer_stays_pending": "Şu anda bunu alacak çalışan bir şey yok; beklemede kalıyor."
+	"steer_stays_pending": "Şu anda bunu alacak çalışan bir şey yok; beklemede kalıyor.",
+	"bg_card_title": "Arka plan işleri",
+	"bg_status_running": "Çalışıyor",
+	"bg_status_attention": "İlgi gerekiyor",
+	"bg_status_completed": "Bitti",
+	"bg_status_failed": "Başarısız",
+	"bg_status_cancelled": "Durduruldu",
+	"bg_status_unknown": "Durum bilinmiyor",
+	"bg_kind_delegation": "Ajan",
+	"bg_kind_process": "Komut",
+	"bg_kind_background_command": "Arka plan görevi",
+	"bg_agents_progress": "{total} görevden {done} tanesi bitti",
+	"bg_agents_failed": "{n} başarısız",
+	"bg_show_result": "Sonucu göster",
+	"bg_hide_result": "Sonucu gizle",
+	"bg_result_unavailable": "Sonuç artık mevcut değil.",
+	"bg_usage": "Kullanım: /background <mesaj>"
 }

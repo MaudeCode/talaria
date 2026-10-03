@@ -2245,5 +2245,21 @@
 	"settings_auxiliary_models_manage": "Manage",
 	"auxiliary_models_auto": "Auto",
 	"auxiliary_models_not_in_catalog": "Not in catalog",
-	"auxiliary_models_custom_label": "Custom model ID (use @provider:model to pin a provider)"
+	"auxiliary_models_custom_label": "Custom model ID (use @provider:model to pin a provider)",
+	"bg_card_title": "Background work",
+	"bg_status_running": "Running",
+	"bg_status_attention": "Needs attention",
+	"bg_status_completed": "Done",
+	"bg_status_failed": "Failed",
+	"bg_status_cancelled": "Stopped",
+	"bg_status_unknown": "Status unknown",
+	"bg_kind_delegation": "Agent",
+	"bg_kind_process": "Command",
+	"bg_kind_background_command": "Background task",
+	"bg_agents_progress": "{done} of {total} done",
+	"bg_agents_failed": "{n} failed",
+	"bg_show_result": "Show result",
+	"bg_hide_result": "Hide result",
+	"bg_result_unavailable": "The result is no longer available.",
+	"bg_usage": "Usage: /background <message>"
 }

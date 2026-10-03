@@ -1220,7 +1220,7 @@ describe('chat turns through the sidecar', () => {
     expect(first.agent_available).toBe(true)
     let byId = await tasks()
     expect(Object.keys(byId).sort()).toEqual([String(bg.task_id), 'call-1-1', 'call-1-2', 'd-a', 'd-b', 'proc_1'].sort())
-    expect(byId[String(bg.task_id)]).toMatchObject({ kind: 'background_command', status: 'completed', title: 'summarize repo', result_available: true, pinned: true })
+    expect(byId[String(bg.task_id)]).toMatchObject({ kind: 'background_command', status: 'completed', title: 'summarize repo', result_available: true, pinned: true, dismissible: true })
     expect(byId['d-b']).toMatchObject({ kind: 'delegation', status: 'attention', title: 'Fix CI', pinned: true })
     expect(byId['call-1-2']).toMatchObject({ title: '2 subagents: Write tests; Run tests', agents: { total: 2, completed: 0, failed: 0, running: 2 } })
     expect(byId.proc_1).toMatchObject({ kind: 'process', status: 'running', title: 'make test', pinned: true })
@@ -1243,7 +1243,7 @@ describe('chat turns through the sidecar', () => {
     expect(str((await json(await s.get(`/api/background/result?session_id=${sid}&task_id=d-a`))).text)).toContain('all fine')
 
     // Dismissing is read state: the finished `/background` task leaves the tray and stays in the history.
-    expect((await json(await post(s, '/api/background/dismiss', { session_id: sid, task_id: bg.task_id }))).task).toMatchObject({ status: 'completed', pinned: false })
+    expect((await json(await post(s, '/api/background/dismiss', { session_id: sid, task_id: bg.task_id }))).task).toMatchObject({ status: 'completed', pinned: false, dismissible: false })
     expect((await tasks())[String(bg.task_id)]).toMatchObject({ status: 'completed', pinned: false })
 
     // The Agent cannot be asked: its running work shows unknown, settled records stay as they are.

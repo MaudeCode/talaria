@@ -12,7 +12,7 @@ import type { QueuedTurn } from './Composer'
 import { endFirstSend, getFirstSend } from '../chat/firstSend'
 import { returnToComposer } from './composerReturn'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn() }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn() }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
 import { Composer } from './Composer'
@@ -37,6 +37,7 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
 
 describe('Composer', () => {
   beforeEach(() => {
+    vi.mocked(api.fetchBackgroundTasks).mockReset().mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [] })
     // jsdom has no matchMedia; the composer asks whether it is on a phone-width viewport.
     window.matchMedia = vi.fn(() => ({ matches: false, addEventListener: noop, removeEventListener: noop })) as unknown as typeof window.matchMedia
     globalThis.ResizeObserver = class { observe = noop; unobserve = noop; disconnect = noop }
@@ -55,6 +56,20 @@ describe('Composer', () => {
     dispatch({ type: 'start', sessionId: 's1', streamId: 'run', turnId: 'turn', userMessageId: 'u', userText: 'Inspect', now: 0 })
     return getStreamState().turns.s1!
   }
+
+  it('runs /background through the server and shows its record in the background card, not as a message (TAL-372)', async () => {
+    vi.mocked(api.startBackground).mockResolvedValue({ ok: true, task_id: 'bg1', stream_id: 'bgs', session_id: 'hidden' })
+    renderComposer({ ...writable, is_streaming: false })
+    await waitFor(() => expect(api.fetchBackgroundTasks).toHaveBeenCalled())
+    expect(screen.queryByRole('region', { name: 'Background work' })).not.toBeInTheDocument()
+    // The server records the task once it starts; the refresh after the start shows it.
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [{ task_id: 'bg1', kind: 'background_command', status: 'running', title: 'summarize repo', started_at: 1, updated_at: 1, completed_at: null, result_available: false, child_session_id: null, exit_code: null, agents: null, pinned: true, dismissible: false }] })
+    await userEvent.type(screen.getByRole('textbox'), '/background summarize repo{Enter}')
+    await waitFor(() => expect(api.startBackground).toHaveBeenCalledWith('s1', 'summarize repo'))
+    expect(api.startChat).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox')).toHaveValue('')
+    expect(await screen.findByRole('region', { name: 'Background work' })).toHaveTextContent('summarize repo')
+  })
 
   it('sends a steer with its id and shows it as sending until the server has it (TAL-425)', async () => {
     vi.mocked(api.steerChat).mockResolvedValue({ accepted: true, steer_id: 'ignored' })

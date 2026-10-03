@@ -1770,5 +1770,21 @@
 	"steer_edit": "编辑引导消息",
 	"steer_cancel": "取消引导消息",
 	"steer_already_taken": "代理已收到这条引导消息。",
-	"steer_stays_pending": "当前没有可接收它的运行，它将保持待处理。"
+	"steer_stays_pending": "当前没有可接收它的运行，它将保持待处理。",
+	"bg_card_title": "后台工作",
+	"bg_status_running": "运行中",
+	"bg_status_attention": "需要关注",
+	"bg_status_completed": "完成",
+	"bg_status_failed": "失败",
+	"bg_status_cancelled": "已停止",
+	"bg_status_unknown": "状态未知",
+	"bg_kind_delegation": "代理",
+	"bg_kind_process": "命令",
+	"bg_kind_background_command": "后台任务",
+	"bg_agents_progress": "已完成 {done}/{total}",
+	"bg_agents_failed": "{n} 个失败",
+	"bg_show_result": "显示结果",
+	"bg_hide_result": "隐藏结果",
+	"bg_result_unavailable": "结果已不可用。",
+	"bg_usage": "用法：/background <消息>"
 }

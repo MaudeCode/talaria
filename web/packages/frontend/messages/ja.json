@@ -1826,5 +1826,21 @@
 	"steer_edit": "ステアリングメッセージを編集",
 	"steer_cancel": "ステアリングメッセージを取り消す",
 	"steer_already_taken": "エージェントはこのステアリングメッセージをすでに受け取りました。",
-	"steer_stays_pending": "今受け取れる処理が動いていないため、保留のままです。"
+	"steer_stays_pending": "今受け取れる処理が動いていないため、保留のままです。",
+	"bg_card_title": "バックグラウンド作業",
+	"bg_status_running": "実行中",
+	"bg_status_attention": "要確認",
+	"bg_status_completed": "完了",
+	"bg_status_failed": "失敗",
+	"bg_status_cancelled": "停止",
+	"bg_status_unknown": "状態不明",
+	"bg_kind_delegation": "エージェント",
+	"bg_kind_process": "コマンド",
+	"bg_kind_background_command": "バックグラウンドタスク",
+	"bg_agents_progress": "{total} 件中 {done} 件完了",
+	"bg_agents_failed": "{n} 件失敗",
+	"bg_show_result": "結果を表示",
+	"bg_hide_result": "結果を隠す",
+	"bg_result_unavailable": "結果はもう利用できません。",
+	"bg_usage": "使い方: /background <メッセージ>"
 }

@@ -1700,5 +1700,21 @@
 	"steer_edit": "Editar orientação",
 	"steer_cancel": "Cancelar orientação",
 	"steer_already_taken": "O agente já recebeu esta orientação.",
-	"steer_stays_pending": "Nada está em execução para recebê-la agora; ela continua pendente."
+	"steer_stays_pending": "Nada está em execução para recebê-la agora; ela continua pendente.",
+	"bg_card_title": "Trabalho em segundo plano",
+	"bg_status_running": "Em execução",
+	"bg_status_attention": "Requer atenção",
+	"bg_status_completed": "Concluído",
+	"bg_status_failed": "Falhou",
+	"bg_status_cancelled": "Parado",
+	"bg_status_unknown": "Estado desconhecido",
+	"bg_kind_delegation": "Agente",
+	"bg_kind_process": "Comando",
+	"bg_kind_background_command": "Tarefa em segundo plano",
+	"bg_agents_progress": "{done} de {total} concluídos",
+	"bg_agents_failed": "{n} falharam",
+	"bg_show_result": "Ver resultado",
+	"bg_hide_result": "Ocultar resultado",
+	"bg_result_unavailable": "O resultado não está mais disponível.",
+	"bg_usage": "Uso: /background <mensagem>"
 }
