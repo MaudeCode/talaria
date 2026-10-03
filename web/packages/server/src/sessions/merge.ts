@@ -5,7 +5,7 @@
  */
 import { buildActiveTurnToken } from '../redact.js'
 import { str } from '../util.js'
-import type { Message } from './session.js'
+import { stripAttachedFilesMarker, type Message } from './session.js'
 
 export const WORKSPACE_PREFIX_RE = /^\s*\[Workspace::v1:\s*(?:\\.|[^\]\\])+\]\s*/
 const LEGACY_WORKSPACE_PREFIX_RE = /^\s*\[Workspace:[^\]]+\]\s*/
@@ -63,7 +63,7 @@ export function messageIdentity(msg: unknown): string | null {
   if (!isDict(msg)) return null
   const role = str(msg.role)
   let text = messageText(msg.content)
-  if (role === 'user') text = stripWorkspacePrefix(text, true)
+  if (role === 'user') text = userPromptText(text)
   if (!text && !msg.tool_call_id && !msg.tool_calls) {
     if (msg._partial) return JSON.stringify([role, '', '', `__partial__${str(msg.reasoning).split(/\s+/).join(' ').slice(0, 200)}`])
     return null
@@ -95,14 +95,18 @@ export function isContextCompressionMarker(msg: unknown): boolean {
   return str(msg.role) === 'user' && text.startsWith('[CONTEXT COMPACTION]')
 }
 
-const normalizeUserText = (text: string): string => stripWorkspacePrefix(text, true).split(/\s+/).join(' ').trim()
+/** A user prompt as the user typed it: without the workspace prefix and the attached-files line the server adds. */
+const userPromptText = (text: string): string => stripWorkspacePrefix(stripAttachedFilesMarker(text), true)
+const normalizeUserText = (text: string): string => userPromptText(text).split(/\s+/).join(' ').trim()
 
 export function looksLikeCurrentUserTurn(msg: unknown, msgText: string): boolean {
   // A persisted steer is display-only: it is never the prompt that opened a turn.
   if (!isDict(msg) || str(msg.role) !== 'user' || isDict(msg._steer)) return false
   const candidate = normalizeUserText(messageText(msg.content))
   const target = normalizeUserText(msgText)
-  if (!candidate || !target) return false
+  // An attachment-only prompt (TAL-276) has no text: the Agent's row for it carries none either.
+  if (!target) return !candidate
+  if (!candidate) return false
   return candidate === target || candidate.startsWith(`${target}\n`) || candidate.endsWith(target)
 }
 

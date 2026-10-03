@@ -26,7 +26,7 @@ function paste(page: Page, files: string[], text: string) {
   return page.locator('#msg').evaluate((el, { files, text, png }) => {
     const dt = new DataTransfer()
     const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0))
-    for (const name of files) dt.items.add(new File([bytes], name, { type: 'image/png' }))
+    for (const name of files) dt.items.add(new File([bytes], name, { type: 'image/png', lastModified: 1 }))
     if (text) dt.setData('text/plain', text)
     const event = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })
     el.dispatchEvent(event)
@@ -139,6 +139,25 @@ test('a chip removed while the new chat is created stays removed', async ({ page
   await expect(chips(page).and(page.locator('[data-status="done"]'))).toHaveText(/keep\.png/)
   await expect(chips(page)).toHaveCount(1)
   expect(uploads).toEqual(['removed-new'])
+})
+
+test('the same file pasted twice while the new chat is created attaches once', async ({ page }) => {
+  const uploads = await mockSession(page, 'twice-new')
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
+  await page.route('**/api/session/new', async (route) => { await held; await route.fulfill({ json: { session: { session_id: 'twice-new', title: '', messages: [] } } }) })
+  await page.goto('/')
+  await expect(page.locator('#msg')).toBeVisible()
+  // Pasted twice, the same file (name, size and modified time) is one attachment.
+  await paste(page, ['same.png'], '')
+  await expect(chips(page)).toHaveCount(1)
+  await paste(page, ['same.png'], '')
+  release()
+  await expect(page).toHaveURL(/\/session\/twice-new$/)
+  await expect(chips(page).and(page.locator('[data-status="done"]'))).toHaveCount(1)
+  await expect.poll(() => uploads).toEqual(['twice-new'])
+  await page.waitForTimeout(300)
+  expect(uploads).toEqual(['twice-new'])
 })
 
 test('a failed upload stays as an error chip that can be retried or removed', async ({ page, errors }) => {

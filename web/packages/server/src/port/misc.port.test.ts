@@ -246,22 +246,55 @@ describe('image attachments in user messages (review round 14)', () => {
     expect(String((message[1]!.image_url as Json).url)).toMatch(/^data:image\/png;base64,/)
   })
 
-  it('admits an attachment-only turn as one user row carrying the image, and still refuses an empty turn (TAL-276)', async () => {
-    mode = 'native'
-    writeFileSync(join(ws(), 'only.png'), png)
+  /** One settled turn whose Agent transcript echoes the prompt it was given, as the real Agent persists it. */
+  const echoTurn = async (message: string, attachments: Json[]): Promise<{ sid: string; prompt: unknown; users: Json[] }> => {
+    sent = null
+    sidecar.respond('chat.start', (params) => { sent = params.user_message; return { status: 'completed', messages: [{ role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, result_status: 'completed', tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] } })
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
-    const res = await post(s, '/api/chat/start', { session_id: sid, message: '  ', attachments: [{ path: join(ws(), 'only.png'), mime: 'image/png', name: 'only.png' }] })
+    const res = await post(s, '/api/chat/start', { session_id: sid, message, attachments })
     expect(res.status).toBe(200)
     await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
-    expect((sent as Json[])[1]).toMatchObject({ type: 'image_url' })
     const users = (((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]).filter((m) => m.role === 'user')
+    return { sid, prompt: sent, users }
+  }
+
+  it('admits an image-only turn as one empty user row carrying the image, and still refuses an empty turn (TAL-276)', async () => {
+    mode = 'native'
+    writeFileSync(join(ws(), 'only.png'), png)
+    const { sid, prompt, users } = await echoTurn('  ', [{ path: join(ws(), 'only.png'), mime: 'image/png', name: 'only.png' }])
+    // The image rides natively, so the text part names no attached file.
+    expect((prompt as Json[])[1]).toMatchObject({ type: 'image_url' })
+    expect(String((prompt as Json[])[0]!.text)).not.toContain('[Attached files:')
     expect(users).toHaveLength(1)
+    expect(users[0]!.content).toBe('')
     expect((users[0]!.attachments as Json[]).map((a) => a.name)).toEqual(['only.png'])
     const empty = await post(s, '/api/chat/start', { session_id: sid, message: ' ', attachments: [] })
     expect(empty.status).toBe(400)
     expect(JSON.stringify(await json(empty))).toContain('message is required')
     // An attachment with no file behind it is no content either.
     expect((await post(s, '/api/chat/start', { session_id: sid, message: '', attachments: [{}, 'name-only'] })).status).toBe(400)
+  })
+
+  it('names files the model cannot see as images in its prompt, and shows only the typed text (TAL-276)', async () => {
+    mode = 'native'
+    const doc = join(ws(), 'notes.pdf')
+    const only = await echoTurn('', [{ path: doc, mime: 'application/pdf', name: 'notes.pdf' }])
+    expect(String(only.prompt)).toMatch(/^\[Workspace::v1: [^\]]+\]\n/)
+    expect(String(only.prompt).endsWith(`]\n\n\n[Attached files: ${doc}]`)).toBe(true)
+    expect(only.users).toHaveLength(1)
+    expect(only.users[0]!.content).toBe('')
+    expect((only.users[0]!.attachments as Json[]).map((a) => a.name)).toEqual(['notes.pdf'])
+    const typed = await echoTurn('summarise this', [{ path: doc, mime: 'application/pdf', name: 'notes.pdf' }])
+    expect(String(typed.prompt)).toMatch(/summarise this\n\n\[Attached files: .*notes\.pdf\]$/)
+    expect(typed.users).toHaveLength(1)
+    expect(typed.users[0]!.content).toBe('summarise this')
+    // A text-mode model gets the image's path the same way.
+    mode = 'text'
+    writeFileSync(join(ws(), 'textmode.png'), png)
+    const image = await echoTurn('', [{ path: join(ws(), 'textmode.png'), mime: 'image/png', name: 'textmode.png' }])
+    expect(String(image.prompt)).toContain(`[Attached files: ${join(ws(), 'textmode.png')}]`)
+    expect(image.users[0]!.content).toBe('')
+    mode = 'native'
   })
 
   it('sends plain text when the Agent resolves text mode for the model', async () => {

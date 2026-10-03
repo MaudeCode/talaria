@@ -732,14 +732,19 @@ export class TurnRunner {
   /**
    * Python `_build_user_message`: image attachments are embedded as native `image_url` parts only when the Agent's
    * resolved image mode for this model is `native` (text mode routes them through the Agent's vision tool path), and
-   * only after the bytes are read through an anchored descriptor and sniffed as a real image format.
+   * only after the bytes are read through an anchored descriptor and sniffed as a real image format. Every other
+   * attached file is named by path after the text (TAL-276), so an attachment-only turn still gives the model a request.
    */
   private async buildUserMessage(workspaceCtx: string, msgText: string, attachments: Record<string, unknown>[], workspace: string, sessionId: string, s: Session, opts: StartTurnOptions, signal: AbortSignal): Promise<string | Record<string, unknown>[]> {
     const text = workspaceCtx + msgText
+    const withFiles = (embedded: Record<string, unknown>[] = []): string => {
+      const named = attachments.filter((att) => !embedded.includes(att)).map((att) => str(att.path).trim()).filter(Boolean)
+      return named.length ? `${text}\n\n[Attached files: ${named.join(', ')}]` : text
+    }
     const candidates = attachments.filter((att) => str(att.path).trim() && str(att.mime).trim().startsWith('image/'))
-    if (!candidates.length) return text
+    if (!candidates.length) return withFiles()
     const sidecar = this.deps.sidecar()
-    if (!sidecar) return text
+    if (!sidecar) return withFiles()
     // A cancel that landed before this point is final: never start the lookup or wait on it.
     if (signal.aborted) return text
     try {
@@ -750,14 +755,14 @@ export class TurnRunner {
       // KNOWN to be text-only; an unknown/custom model forwards natively and lets the Agent's retry guard downgrade.
       if (mode.mode !== 'native') {
         const cfg = (await this.deps.profileConfig?.(s.profile ?? null)) ?? {}
-        if (explicitTextSignal(cfg) || mode.supports_vision === false) return text
+        if (explicitTextSignal(cfg) || mode.supports_vision === false) return withFiles()
       }
     } catch (error) {
       if (!signal.aborted) this.deps.log(`[webui] image mode lookup failed for ${sessionId}: ${(error as Error).message}`)
-      return text
+      return withFiles()
     }
-    const parts: Record<string, unknown>[] = [{ type: 'text', text }]
-    let images = 0
+    const parts: Record<string, unknown>[] = []
+    const embedded: Record<string, unknown>[] = []
     const roots = [workspace, this.deps.attachmentDir(sessionId)].map((r) => resolvePathLikePython(r))
     for (const att of candidates) {
       const target = resolvePathLikePython(str(att.path).trim())
@@ -773,10 +778,10 @@ export class TurnRunner {
         const sniffed = sniffImageMime(bytes, str(att.mime))
         if (!sniffed) continue
         parts.push({ type: 'image_url', image_url: { url: `data:${sniffed};base64,${bytes.toString('base64')}` } })
-        images += 1
+        embedded.push(att)
       } catch { /* skip unreadable */ } finally { closeSync(fd) }
     }
-    return images ? parts : text
+    return embedded.length ? [{ type: 'text', text: withFiles(embedded) }, ...parts] : withFiles()
   }
 
   /**

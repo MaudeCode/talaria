@@ -4,13 +4,25 @@
       "category": "Fixed",
       "summary": "Images you pick or paste into the message box show as attachments again, and you can send them without typing any text.",
       "highlight": false,
-      "components": ["web"]
+      "components": [
+        "web"
+      ]
     },
     {
       "category": "Fixed",
       "summary": "Pasting an image together with text keeps the text, and a failed upload can be retried or removed.",
       "highlight": false,
-      "components": ["web"]
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Files you attach, such as PDFs, now reach the assistant even when you send them without typing anything.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
     }
   ]
 }

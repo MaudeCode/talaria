@@ -239,7 +239,8 @@ export function Composer(props: ComposerProps) {
     )
   }, [sessionId])
   const addFiles = useCallback((incoming: FileList | File[]) => {
-    const list = Array.from(incoming)
+    // One chip and one upload per file, however often it is picked, pasted or handed off.
+    const list = Array.from(incoming).filter((file, i, all) => all.findIndex((f) => fileKey(f) === fileKey(file)) === i)
     if (list.length === 0) return
     const pending = list.map((file): PendingFile => ({ key: fileKey(file), file, status: 'uploading' }))
     const add = (rows: PendingFile[]) => setFiles((prev) => [...prev, ...rows.filter((r) => !prev.some((p) => p.key === r.key))])
@@ -250,7 +251,7 @@ export function Composer(props: ComposerProps) {
     if (!sessionId) {
       add(pending)
       // One session per hand-off: files attached while it is created join it.
-      if (handoff) { handoff.files.push(...list); return }
+      if (handoff) { const h = handoff; h.files.push(...list.filter((file) => !h.files.some((f) => fileKey(f) === fileKey(file)))); return }
       handoff = { draft, files: list }
       void onEnsureSession().catch((e: unknown) => {
         const error = e instanceof Error ? e.message : String(e)
