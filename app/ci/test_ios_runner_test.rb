@@ -16,6 +16,15 @@ class TestIOSRunnerTest < Minitest::Test
     assert_includes(script, "-collect-test-diagnostics never")
   end
 
+  def test_hosted_shards_keep_failure_diagnostics
+    # A hosted failure is not reproducible locally, so its result bundle carries the device's logs
+    # (TAL-490): one flake relaunched the app without its fixture, another lost keyboard focus.
+    test = workflow_jobs("app-tests.yml").fetch("app-test")["steps"].find { |step| step["name"] == "Test without building" }
+
+    assert_includes(test["run"], "-collect-test-diagnostics on-failure")
+    refute_includes(test["run"], "-collect-test-diagnostics never")
+  end
+
   def test_single_worker_runs_on_the_leased_simulator_without_cloning
     script = File.read(File.expand_path("../scripts/test-ios", __dir__))
 

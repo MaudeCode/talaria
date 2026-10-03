@@ -324,6 +324,7 @@ jobs:
           echo "Shard ${SHARD} of ${SHARD_COUNT}: $(grep -c -- '-only-testing:' selection.txt) selected, $(grep -c -- '-skip-testing:' selection.txt) skipped entries"
 
       # The memory sampler runs for the whole step; "Report memory" stops it, summarizes it and uploads its log.
+      # A failure keeps the device's diagnostics in the result bundle: hosted flakes rarely reproduce locally (TAL-490).
       - name: Test without building
         env:
           SIMULATOR_ID: ${{ steps.sim.outputs.udid }}
@@ -343,7 +344,7 @@ jobs:
             -testLanguage en \
             -testRegion US \
             -resultBundlePath "${RESULT_BUNDLE_PATH}" \
-            -collect-test-diagnostics never \
+            -collect-test-diagnostics on-failure \
             -parallel-testing-enabled NO \
             "${selection[@]}" 2>&1 | tee "${XCODEBUILD_LOG}"
           duration_seconds=$((SECONDS - start_seconds))
