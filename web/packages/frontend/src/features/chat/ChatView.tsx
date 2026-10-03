@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { MAIN_VIEW } from '../../shell/AppShell'
-import { TerminalSquare } from 'lucide-react'
+import { PanelRight, TerminalSquare } from 'lucide-react'
 
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -276,6 +276,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           </div>
           {/* T3 Code keeps the terminal toggle in the thread header; phones reach it from the composer's overflow menu. */}
           {sessionId && <button type="button" className={cn('icon-btn has-tooltip has-tooltip--left', terminalOpen && 'active')} id="btnTerminalInline" data-tooltip={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => setTerminalOpen((t) => !t)}><TerminalSquare size={16} aria-hidden="true" /></button>}
+          {/* TAL-373: the side panel's edge tab is hidden below 901px; tablets open it here, phones from the titlebar. */}
+          {sessionId && <button type="button" className={cn('icon-btn chat-header-side-panel has-tooltip has-tooltip--left', sidePanelOpen && 'active')} id="btnSidePanelInline" data-tooltip={m.panel_label()} aria-label={m.panel_label()} aria-pressed={sidePanelOpen} onClick={toggleSidePanel}><PanelRight size={16} aria-hidden="true" /></button>}
         </div>
         {/* The first runtime notice, for screen readers: errors interrupt, everything else waits its turn. */}
         <div className="sr-only" role="alert" aria-live="assertive" aria-atomic="true">{runtime.announcement?.assertive ? runtime.announcement.text : ''}</div>

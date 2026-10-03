@@ -24,7 +24,8 @@ const fetchAgents = async (sessionId: string) => {
 export function useHasActiveAgents(sessionId: string): boolean | undefined {
   const query = useQuery({ queryKey: keys.backgroundAgents(sessionId), queryFn: () => fetchAgents(sessionId) })
   if (!query.isFetchedAfterMount && !query.isError) return undefined
-  return (query.data?.tasks ?? []).some((t) => t.status === 'running' || t.status === 'attention')
+  // ponytail: old-server fallback — a server before TAL-373 sends no `agents_working`; it then opens on the last page.
+  return query.data?.agents_working ?? false
 }
 
 export function AgentsPage({ sessionId, active }: { sessionId: string; active: boolean }) {

@@ -24861,6 +24861,9 @@
                     },
                     "agent_available": {
                       "type": "boolean"
+                    },
+                    "agents_working": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
