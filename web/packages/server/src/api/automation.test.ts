@@ -237,6 +237,25 @@ describe('crons, kanban, extensions, terminal', () => {
     for (const bad of ['Jan 2 2026', '2026', '2026-02-30', '2026-13-01', '2026-01-02T24:00', 'garbage', '', 0, null, true]) expect(completedAtSeconds(bad), String(bad)).toBeNull()
   })
 
+  it('context-source HTTP responses are computed for the selected execution store', async () => {
+    const fixture = new FakeSidecar()
+    fixture.respond('profiles.list', ({ base_home }) => ({ profiles: [
+      { name: 'default', path: base_home, is_default: true, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 },
+      { name: 'research', path: join(base_home, 'profiles', 'research'), is_default: false, gateway_running: false, model: null, provider: null, has_env: false, visible: true, skill_count: 0, enabled_skills: 0, total_skills: 0 },
+    ] }))
+    const server = await bootTestServer({ sidecar: fixture })
+    fixture.respond('cron.list', ({ profile_home }) => ({ jobs: (profile_home === server.state ? [
+      { id: 'local', name: 'Local' },
+    ] : [
+      { id: 'editor', name: 'Editor', owner_profile: 'default' }, { id: 'source', name: 'Source', owner_profile: 'default' },
+    ]).map((job) => ({ ...job, profile: null, toast_notifications: true, monitor: '', continuity: false })) }))
+    try {
+      const response = await post(server, '/api/crons/context-sources', { editing_job_id: 'editor', exclude_job_id: 'editor', selected_refs: ['local'] })
+      expect(response.status).toBe(200)
+      expect(await json(response)).toEqual({ profile: 'research', sources: [{ job_id: 'source', label: 'Source', selectable: true }, { job_id: 'local', label: 'Local', selectable: false }] })
+    } finally { await server.close() }
+  })
+
   it('crons/recent reads the request profile\'s cron store and state.db', async () => {
     const defaultHome = s.deps.profileHome('default')
     const workHome = join(defaultHome, 'profiles', 'work')
@@ -255,7 +274,7 @@ describe('crons, kanban, extensions, terminal', () => {
       const cookie = (switched.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
       const calls = sidecar.calls.length
       const body = await json(await s.get('/api/crons/recent', { headers: { cookie } }))
-      expect(sidecar.calls.slice(calls).filter((c) => c.method === 'cron.list').map((c) => c.params)).toEqual([{ profile_home: workHome }])
+      expect(sidecar.calls.slice(calls).filter((c) => c.method === 'cron.list').map((c) => c.params)).toEqual([{ profile_home: workHome }, { profile_home: defaultHome }])
       expect(body.completions).toEqual([{ job_id: 'w', name: 'Work', status: 'ok', outcome: 'succeeded', completed_at: 10, toast_notifications: true, session_id: 'cron_w_1', message_count: 3 }])
       expect(((await json(await s.get('/api/crons/recent'))).completions as Json[]).map((c) => c.job_id)).toEqual(['d'])
     } finally {

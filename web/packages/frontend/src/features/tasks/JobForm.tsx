@@ -10,6 +10,7 @@ import { HubPage } from '../../shell/AppShell'
 import { Button } from '../../ui/Button'
 import { Switch, FieldRow, TextInput } from '../../ui/Field'
 import { Select } from '../../ui/Select'
+import { ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
 import { useModelsQuery, useProfilesQuery } from '../../app/queries'
@@ -34,7 +35,6 @@ export function JobForm({ mode, job, jobs, onCancel, onSaved }: { mode: EditorMo
   const skills = useQuery({ queryKey: keys.skills.all, queryFn: () => api.fetchSkills(), staleTime: 60_000, enabled: !isEdit })
   const [error, setError] = useState<string | null>(null)
   const sourceId = job ? jobId(job) : ''
-  const chainable = jobs.filter((j) => !j.read_only && jobId(j) && jobId(j) !== sourceId)
   const providerOf = (id: string): string | null => { for (const g of models.data?.groups ?? []) if (g.models.some((mm) => mm.id === id)) return g.provider_id ?? g.provider; return null }
   const knownModels = useMemo(() => new Set((models.data?.groups ?? []).flatMap((g) => g.models.map((mm) => mm.id))), [models.data])
   const copyName = (name: string) => {
@@ -179,22 +179,11 @@ export function JobForm({ mode, job, jobs, onCancel, onSaved }: { mode: EditorMo
               <div className={group}>
                 <form.Field name="monitor">{(f) => <FieldRow label={m.cron_monitor_label()} hint={noAgent ? m.cron_monitor_no_agent_hint() : m.cron_monitor_hint()} htmlFor="cronMonitor"><TextInput id="cronMonitor" value={f.state.value} onChange={(e) => f.handleChange(e.target.value)} placeholder={m.cron_monitor_placeholder()} /></FieldRow>}</form.Field>
                 <form.Field name="continuity">{(f) => <FieldRow label={m.cron_continuity_label()} hint={m.cron_continuity_hint()} htmlFor="cronContinuity" inline><Switch id="cronContinuity" checked={f.state.value} onCheckedChange={(checked) => f.handleChange(checked)} disabled={noAgent} /></FieldRow>}</form.Field>
-                <form.Field name="context_from">{(f) => (
-                  <FieldRow label={m.cron_context_from_label()} hint={chainable.length ? m.cron_context_from_hint() : m.cron_context_from_empty_hint()}>
-                    <div className="flex flex-col gap-1" role="group" aria-label={m.cron_context_from_label()}>
-                      {chainable.map((j) => {
-                        const cid = jobId(j)
-                        const checked = f.state.value.includes(cid)
-                        return (
-                          <label key={cid} className="flex items-center gap-2 text-sm text-text">
-                            <input type="checkbox" checked={checked} disabled={noAgent} onChange={() => f.handleChange(checked ? f.state.value.filter((x) => x !== cid) : [...f.state.value, cid])} />
-                            <span className="truncate">{j.name || cid}</span>
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </FieldRow>
-                )}</form.Field>
+                <form.Subscribe selector={(s) => s.values.profile}>{(profile) => (
+                  <form.Field name="context_from">{(f) => (
+                    <ContextSources profile={profile} editingId={isEdit ? sourceId : ''} excludeId={sourceId} selected={f.state.value} disabled={noAgent} onChange={f.handleChange} />
+                  )}</form.Field>
+                )}</form.Subscribe>
                 <form.Field name="reasoning_effort">{(f) => (
                   <FieldRow label={m.cron_reasoning_effort_label()} hint={noAgent ? m.cron_reasoning_effort_no_agent_hint() : m.cron_reasoning_effort_hint()} htmlFor="cronEffort" inline>
                     <Select id="cronEffort" value={f.state.value} onValueChange={(v) => f.handleChange(v)} className="w-56 max-w-full" disabled={noAgent}>
@@ -215,5 +204,30 @@ export function JobForm({ mode, job, jobs, onCancel, onSaved }: { mode: EditorMo
         </div>
       </form>
     </HubPage>
+  )
+}
+
+function ContextSources({ profile, editingId, excludeId, selected, disabled, onChange }: { profile: string; editingId: string; excludeId: string; selected: string[]; disabled: boolean; onChange: (refs: string[]) => void }) {
+  const choices = useQuery({
+    queryKey: keys.crons.contextSources(profile, editingId, excludeId, selected),
+    queryFn: () => api.fetchCronContextSources({ profile, ...(editingId ? { editing_job_id: editingId } : {}), ...(excludeId ? { exclude_job_id: excludeId } : {}), selected_refs: selected }),
+    staleTime: 15_000,
+  })
+  return (
+    <FieldRow label={m.cron_context_from_label()} hint={choices.data?.sources.length ? m.cron_context_from_hint() : m.cron_context_from_empty_hint()}>
+      {choices.isPending ? <LoadingState /> : choices.isError ? <ErrorState error={choices.error} onRetry={() => { void choices.refetch() }} /> : (
+        <div className="flex flex-col gap-1" role="group" aria-label={m.cron_context_from_label()}>
+          {choices.data.sources.map((source) => {
+            const checked = selected.includes(source.job_id)
+            return (
+              <label key={source.job_id} className="flex items-center gap-2 text-sm text-text">
+                <input type="checkbox" checked={checked} disabled={disabled || (!source.selectable && !checked)} onChange={() => onChange(checked ? selected.filter((id) => id !== source.job_id) : [...selected, source.job_id])} />
+                <span className="truncate">{source.label}{!source.selectable && <span className="text-muted"> · {m.not_available()}</span>}</span>
+              </label>
+            )
+          })}
+        </div>
+      )}
+    </FieldRow>
   )
 }

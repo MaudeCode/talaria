@@ -1,6 +1,6 @@
 /** Cron jobs across profiles through the sidecar `cron.*` namespace (Python `api/routes.py` cron section). */
 import { join } from 'node:path'
-import type { CronRecentCompletion } from '@maudecode/talaria-web-contracts'
+import type { CronRecentCompletion, CronContextSources } from '@maudecode/talaria-web-contracts'
 import type { SidecarLike } from '../sidecar/client.js'
 import type { Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
@@ -23,6 +23,7 @@ export interface CronDeps {
 
 const JOB_ID_RE = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$/
 const PASSTHROUGH_FIELDS = ['script', 'no_agent', 'context_from', 'reasoning_effort']
+interface StoredJob { home: string; profile: string; job: Dict; managed: boolean }
 
 /** Python `_cron_job_for_api`. */
 export function jobForApi(job: Dict): Dict {
@@ -122,6 +123,7 @@ export class CronService {
     const seen = new Set<string>()
     const add = (raw: string): void => { const n = raw.trim(); if (n && !seen.has(n.toLowerCase())) { seen.add(n.toLowerCase()); names.push(n) } }
     add(active)
+    if (this.deps.isolatedProfileMode()) return names
     for (const row of await this.deps.profileNames()) if (row.visible || this.deps.profilesMatch(row.name, active)) add(row.name)
     return names
   }
@@ -140,27 +142,97 @@ export class CronService {
     return profile
   }
 
+  private async profileForHome(home: string): Promise<string> {
+    const names = this.deps.isolatedProfileMode() ? (await this.deps.profileNames()).map((row) => row.name) : await this.availableProfileNames()
+    for (const profile of names) if (this.deps.profileHome(profile) === home) return profile
+    throw new HttpFailure(403, 'Unknown cron profile home')
+  }
+
+  /** The physical store owns execution. Additive owner_profile metadata lets the creator manage a new job there. */
+  private async storedJobs(active: string): Promise<StoredJob[]> {
+    // ponytail: scan visible stores per request; add an index only if profile/job counts make this expensive.
+    const rows: StoredJob[] = []
+    const seen = new Set<string>()
+    for (const profile of await this.profileNames(active)) {
+      const home = this.deps.profileHome(profile)
+      if (seen.has(home)) continue
+      seen.add(home)
+      const local = this.deps.profilesMatch(profile, active)
+      let jobs: Dict[]
+      try { jobs = (await this.sidecar().call('cron.list', { profile_home: home })).jobs }
+      catch (error) { if (local) throw error; continue }
+      for (const job of jobs) {
+        const creator = str(job.owner_profile).trim()
+        rows.push({ home, profile, job, managed: local || Boolean(creator && this.deps.profilesMatch(creator, active)) })
+      }
+    }
+    return rows
+  }
+
+  private view(row: StoredJob): Dict {
+    return { ...jobForApi(row.job), profile: str(row.job.profile).trim() || row.profile, owner_profile: row.profile, read_only: !row.managed }
+  }
+
+  private requireExecutionStore(row: StoredJob): void {
+    const profile = str(row.job.profile).trim()
+    if (profile && !this.deps.profilesMatch(profile, row.profile)) throw new HttpFailure(409, 'This legacy task must be recreated in its execution profile before it can run or resume')
+  }
+
+  private async validateContext(home: string, fields: Dict): Promise<void> {
+    const refs = continuityRefs(fields.context_from, false)
+    if (!refs.length) return
+    const ids = new Set((await this.sidecar().call('cron.list', { profile_home: home })).jobs.map((job) => job.id))
+    if (refs.some((ref) => !ids.has(str(ref)))) throw new HttpFailure(400, 'Context jobs must belong to the execution profile')
+  }
+
+  private async resolveStore(home: string, ref: string): Promise<StoredJob> {
+    const active = await this.profileForHome(home)
+    const allRows = await this.storedJobs(active)
+    const rows = allRows.filter((row) => row.managed)
+    const exact = rows.filter((row) => row.job.id === ref)
+    const matches = exact.length ? exact : rows.filter((row) => row.job.name === ref)
+    if (!matches.length) throw new HttpFailure(404, 'Job not found')
+    if (matches.length !== 1) throw new HttpFailure(409, 'Ambiguous cron job reference')
+    const match = matches[0]!
+    if (allRows.filter((row) => row.home === match.home && row.job.id === match.job.id).length !== 1) throw new HttpFailure(409, 'Ambiguous cron job reference')
+    return match
+  }
+
+  async contextSources(home: string, input: { profile?: string | undefined; editing_job_id?: string | undefined; exclude_job_id?: string | undefined; selected_refs?: string[] | undefined }): Promise<CronContextSources> {
+    const active = await this.profileForHome(home)
+    const editing = input.editing_job_id ? await this.resolveStore(home, input.editing_job_id) : null
+    const profile = await this.normalizeProfile(input.profile)
+    if (profile && !(await this.profileNames(active)).some((name) => this.deps.profilesMatch(name, profile))) throw new HttpFailure(403, 'Execution profile is not accessible')
+    const executionHome = profile ? this.deps.profileHome(profile) : editing?.home ?? home
+    const rows = await this.storedJobs(active)
+    const inStore = rows.filter((row) => row.home === executionHome)
+    const excludeId = editing ? str(editing.job.id) : input.exclude_job_id
+    const counts = new Map<string, number>()
+    for (const row of inStore) counts.set(str(row.job.id), (counts.get(str(row.job.id)) ?? 0) + 1)
+    const sources: CronContextSources['sources'] = []
+    const included = new Set<string>()
+    for (const row of inStore) {
+      const id = str(row.job.id).trim()
+      if (!row.managed || !id || id === excludeId || counts.get(id) !== 1) continue
+      sources.push({ job_id: id, label: str(row.job.name).trim() || id, selectable: true })
+      included.add(id)
+    }
+    for (const raw of input.selected_refs ?? []) {
+      const id = raw.trim()
+      if (!id || id.toLowerCase() === 'self' || included.has(id)) continue
+      const owned = rows.find((row) => row.managed && row.job.id === id)
+      sources.push({ job_id: id, label: str(owned?.job.name).trim() || id, selectable: false })
+      included.add(id)
+    }
+    return { profile: profile ?? editing?.profile ?? active, sources }
+  }
+
   /** Python `/api/crons`: the active profile's rows plus foreign rows (hidden unless `all_profiles`). */
   async list(active: string, allProfiles: boolean): Promise<Dict> {
-    const sidecar = this.sidecar()
     const activeJobs: Dict[] = []
     const otherJobs: Dict[] = []
-    const seenHomes = new Set<string>()
-    for (const owner of await this.profileNames(active)) {
-      const home = this.deps.profileHome(owner)
-      if (seenHomes.has(home)) continue
-      seenHomes.add(home)
-      const isActive = this.deps.profilesMatch(owner, active)
-      let jobs: Dict[]
-      try {
-        jobs = (await sidecar.call('cron.list', { profile_home: home })).jobs.map((j) => jobForApi(j))
-      } catch (error) {
-        if (!isActive) continue
-        if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true }
-        throw error
-      }
-      for (const job of jobs) (isActive ? activeJobs : otherJobs).push({ ...job, owner_profile: owner, read_only: !isActive })
-    }
+    try { for (const row of await this.storedJobs(active)) (row.managed ? activeJobs : otherJobs).push(this.view(row)) }
+    catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true }; throw error }
     const all = allProfiles && !this.deps.isolatedProfileMode()
     return { jobs: all ? [...activeJobs, ...otherJobs] : activeJobs, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : otherJobs.length }
   }
@@ -171,15 +243,15 @@ export class CronService {
    */
   async recent(home: string, rawSince: string | undefined): Promise<{ completions: CronRecentCompletion[]; since: number }> {
     const since = parseSince(rawSince)
-    let jobs: Dict[]
+    let rows: StoredJob[]
     try {
-      jobs = (await this.sidecar().call('cron.list', { profile_home: home })).jobs
+      rows = (await this.storedJobs(await this.profileForHome(home))).filter((row) => row.managed)
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { completions: [], since }
       throw error
     }
     const completions: CronRecentCompletion[] = []
-    for (const job of jobs) {
+    for (const { job } of rows) {
       const jobId = str(job.id).trim()
       const completedAt = completedAtSeconds(job.last_run_at)
       if (!jobId || completedAt === null || completedAt <= since) continue
@@ -195,12 +267,16 @@ export class CronService {
       })
     }
     completions.sort((a, b) => b.completed_at - a.completed_at || (a.job_id < b.job_id ? -1 : a.job_id > b.job_id ? 1 : 0))
-    const sessions = latestCronSessionInfo(join(home, 'state.db'), jobs.map((job) => str(job.id)), completions.map((c) => c.job_id))
-    for (const completion of completions) {
-      const info = sessions.get(completion.job_id)
-      if (!info) continue
-      completion.session_id = info.session_id
-      if (info.message_count !== null) completion.message_count = info.message_count
+    for (const storeHome of new Set(rows.map((row) => row.home))) {
+      const ids = rows.filter((row) => row.home === storeHome).map((row) => str(row.job.id))
+      const sessions = latestCronSessionInfo(join(storeHome, 'state.db'), ids, completions.filter((c) => ids.includes(c.job_id)).map((c) => c.job_id))
+      for (const completion of completions) {
+        if (!ids.includes(completion.job_id)) continue
+        const info = sessions.get(completion.job_id)
+        if (!info) continue
+        completion.session_id = info.session_id
+        if (info.message_count !== null) completion.message_count = info.message_count
+      }
     }
     return { completions, since }
   }
@@ -209,13 +285,18 @@ export class CronService {
     if (!('schedule' in body) || body.schedule === null || body.schedule === undefined) throw new HttpFailure(400, 'Missing required field(s): schedule')
     if (!body.prompt && !body.script && !body.skills) throw new HttpFailure(400, 'Missing required field(s): prompt')
     const profile = await this.normalizeProfile(body.profile)
+    const active = await this.profileForHome(home)
+    if (profile && !(await this.profileNames(active)).some((name) => this.deps.profilesMatch(name, profile))) throw new HttpFailure(403, 'Execution profile is not accessible')
+    const executionHome = profile ? this.deps.profileHome(profile) : home
     const job: Dict = { prompt: body.prompt ?? '', schedule: body.schedule, name: body.name ?? null, deliver: body.deliver ?? 'local', skills: body.skills ?? [], model: body.model ?? null, provider: body.provider ?? null, ...jobFieldUpdates(body) }
     if (body.repeat !== null && body.repeat !== undefined) job.repeat = body.repeat
     if (profile !== null) job.profile = profile
     if (body.toast_notifications === false) job.toast_notifications = false
+    job.owner_profile = active
+    await this.validateContext(executionHome, job)
     try {
-      const result = await this.sidecar().call('cron.create', { profile_home: home, job, execution_home: profile ? this.deps.profileHome(profile) : null })
-      return { ok: true, job: jobForApi(result.job) }
+      const result = await this.sidecar().call('cron.create', { profile_home: executionHome, job, execution_home: profile ? executionHome : null })
+      return { ok: true, job: this.view({ home: executionHome, profile: profile ?? active, job: result.job, managed: true }) }
     } catch (error) {
       throw new HttpFailure(400, str((error as Error).message))
     }
@@ -224,22 +305,30 @@ export class CronService {
   async update(home: string, body: Dict): Promise<Dict> {
     const jobId = str(body.job_id)
     if (!jobId) throw new HttpFailure(400, 'Missing required field(s): job_id')
+    const store = await this.resolveStore(home, jobId)
+    const storedId = str(store.job.id)
+    home = store.home
     const updates: Dict = {}
     for (const [k, v] of Object.entries(body)) {
-      if (k === 'job_id') continue
-      if (k === 'profile') updates.profile = await this.normalizeProfile(v)
+      if (k === 'job_id' || k === 'id' || k === 'owner_profile') continue
+      if (k === 'profile') {
+        const profile = await this.normalizeProfile(v)
+        if (profile && !this.deps.profilesMatch(profile, store.profile)) throw new HttpFailure(400, 'To change the execution profile, duplicate the task in that profile and delete the old task')
+        updates.profile = profile
+      }
       else if (k === 'model' || k === 'provider') updates[k] = v ? v : null
       else if (k === 'monitor' || k === 'continuity' || k === 'repeat') continue
       else if (v !== null && v !== undefined) updates[k] = v
     }
     let currentContextFrom: unknown = null
     if ('continuity' in body && !('context_from' in body)) {
-      try { currentContextFrom = (await this.sidecar().call('cron.get', { profile_home: home, job_id: jobId })).job?.context_from ?? null } catch { currentContextFrom = null }
+      try { currentContextFrom = (await this.sidecar().call('cron.get', { profile_home: home, job_id: storedId })).job?.context_from ?? null } catch { currentContextFrom = null }
     }
     Object.assign(updates, jobFieldUpdates(body, currentContextFrom))
+    await this.validateContext(home, updates)
     try {
-      const result = await this.sidecar().call('cron.update', { profile_home: home, job_id: jobId, updates })
-      return { ok: true, job: jobForApi(result.job) }
+      const result = await this.sidecar().call('cron.update', { profile_home: home, job_id: storedId, updates })
+      return { ok: true, job: this.view({ ...store, job: result.job }) }
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'not_found') throw new HttpFailure(404, 'Job not found')
       throw new HttpFailure(400, str((error as Error).message))
@@ -248,10 +337,12 @@ export class CronService {
 
   private async simple(method: 'cron.pause' | 'cron.resume' | 'cron.delete', home: string, jobId: string, extra: Dict = {}): Promise<Dict> {
     if (!jobId) throw new HttpFailure(400, method === 'cron.delete' ? 'Missing required field(s): job_id' : 'job_id required')
+    const store = await this.resolveStore(home, jobId)
+    if (method === 'cron.resume') this.requireExecutionStore(store)
     try {
-      const result = await this.sidecar().call(method, { profile_home: home, job_id: jobId, ...extra })
+      const result = await this.sidecar().call(method, { profile_home: store.home, job_id: str(store.job.id), ...extra })
       // Python returned the raw `pause_job`/`resume_job` record and `{ok, job_id}` for delete.
-      return 'job' in result ? { ok: true, job: result.job } : { ok: true, job_id: jobId }
+      return 'job' in result ? { ok: true, job: this.view({ ...store, job: result.job }) } : { ok: true, job_id: jobId }
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'not_found') throw new HttpFailure(404, 'Job not found')
       // Python had no handler for `resume_job`'s ValueError (expired one-shot): it surfaced as a 500.
@@ -274,6 +365,10 @@ export class CronService {
     running?.set(jobId, Date.now() / 1000)
     try {
       const sidecar = this.sidecar()
+      const store = await this.resolveStore(home, jobId)
+      if (store.job.id !== jobId) throw new HttpFailure(404, 'Job not found')
+      this.requireExecutionStore(store)
+      home = store.home
       let job: Dict | null
       try { job = (await sidecar.call('cron.get', { profile_home: home, job_id: jobId })).job } catch { job = null }
       if (!job) throw new HttpFailure(404, 'Job not found')
@@ -322,6 +417,7 @@ export class CronService {
     const o = pyInt(offset, 0)
     const l = pyInt(limit, 50)
     if (!Number.isFinite(o) || !Number.isFinite(l)) throw new HttpFailure(400, 'offset and limit must be integers')
+    home = (await this.resolveStore(home, jobId)).home
     return this.sidecar().call('cron.history', { profile_home: home, job_id: jobId, offset: Math.max(0, o), limit: Math.max(1, Math.min(500, l)) })
   }
 
@@ -329,6 +425,7 @@ export class CronService {
     if (!jobId || !filename) throw new HttpFailure(400, 'job_id and filename required')
     if (!validJobId(jobId)) throw new HttpFailure(400, 'invalid job_id')
     if (filename.includes('/') || filename.includes('\\') || filename === '..') throw new HttpFailure(400, 'invalid filename')
+    home = (await this.resolveStore(home, jobId)).home
     try {
       return await this.sidecar().call('cron.run_detail', { profile_home: home, job_id: jobId, filename })
     } catch (error) {
@@ -341,6 +438,7 @@ export class CronService {
     if (!jobId) throw new HttpFailure(400, 'job_id required')
     if (!JOB_ID_RE.test(jobId)) throw new HttpFailure(400, 'invalid job_id')
     const l = Number.parseInt(limit ?? '5', 10)
+    home = (await this.resolveStore(home, jobId)).home
     return this.sidecar().call('cron.output', { profile_home: home, job_id: jobId, limit: Number.isFinite(l) ? Math.max(1, Math.min(500, l)) : 5 })
   }
 

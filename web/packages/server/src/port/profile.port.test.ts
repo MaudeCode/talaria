@@ -356,12 +356,13 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     expect(sidecar.calls.filter((c) => c.method === 'cron.create').length).toBe(before)
   })
 
-  it('update clears a profile with an empty value and refuses an unknown one', async () => {
+  it('update clears the stored profile override, reports the execution store profile, and refuses an unknown one', async () => {
     cronJobs.clear()
     const created = (await json(await post(s, '/api/crons/create', { schedule: 'every 1h', prompt: 'hi', profile: 'research' }))).job as Json
     let res = await post(s, '/api/crons/update', { job_id: created.id, profile: '' })
     expect(res.status).toBe(200)
-    expect(((await json(res)).job as Json).profile ?? null).toBeNull()
+    expect(((await json(res)).job as Json).profile).toBe('research')
+    expect(cronJobs.get(join(s.state, 'profiles', 'research'))?.[0]?.profile).toBeNull()
     const before = sidecar.calls.filter((c) => c.method === 'cron.update').length
     res = await post(s, '/api/crons/update', { job_id: created.id, profile: 'ghost' })
     expect(res.status).toBe(400)

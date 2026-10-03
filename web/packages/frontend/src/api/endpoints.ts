@@ -141,6 +141,7 @@ export const fetchSkillsUsage = () => orpc().skills.usage()
 export const fetchMemory = (workspace?: string) => orpc().memory.get(workspace ? { workspace } : {})
 /** `section` names the file: `memory`, `user`, or `soul`. */
 export const writeMemory = (body: { section: 'memory' | 'user' | 'soul'; content: string }) => orpc().memory.write(body)
+export const fetchCronContextSources = (input: { profile?: string; editing_job_id?: string; exclude_job_id?: string; selected_refs?: string[] }) => orpc().crons.contextSources(input)
 export const fetchCrons = (allProfiles = false) => orpc().crons.list(allProfiles ? { all_profiles: '1' } : {})
 export const cronAction = (action: 'create' | 'update' | 'delete' | 'run' | 'pause' | 'resume', body: Record<string, unknown>) => {
   const c = orpc().crons

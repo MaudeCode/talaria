@@ -68,6 +68,7 @@ export async function terminalGate(ctx: RequestContext): Promise<void> {
 
 export const automationRouter = os.router({
   crons: {
+    contextSources: os.crons.contextSources.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.contextSources(home(ctx), input))),
     list: os.crons.list.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.list(activeProfileName(ctx), truthyQuery(input.all_profiles)) as Promise<never>)),
     history: os.crons.history.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.history(home(ctx), str(input.job_id), input.offset, input.limit))),
     output: os.crons.output.handler(({ input, context: { ctx } }) => run(() => ctx.deps.crons.output(home(ctx), str(input.job_id), input.limit))),

@@ -508,6 +508,8 @@ export const CronJobViewSchema = z.looseObject({
 export type CronJob = z.infer<typeof CronJobViewSchema>
 export const CronsSchema = z.looseObject({ jobs: z.array(CronJobViewSchema), active_profile: z.string().optional(), all_profiles: z.boolean().optional(), other_profile_count: z.number().optional(), cron_unavailable: z.boolean().optional() })
 export type Crons = z.infer<typeof CronsSchema>
+export const CronContextSourcesSchema = z.object({ profile: z.string(), sources: z.array(z.object({ job_id: z.string(), label: z.string(), selectable: z.boolean() })) })
+export type CronContextSources = z.infer<typeof CronContextSourcesSchema>
 /** `GET /api/crons/recent` row: one job's latest completion, ordered and classified by the server. */
 export const CronRecentCompletionSchema = z.object({
   job_id: z.string(), name: z.string().nullable(), status: z.string().nullable(), outcome: z.enum(['succeeded', 'failed', 'unknown']), completed_at: z.number(),

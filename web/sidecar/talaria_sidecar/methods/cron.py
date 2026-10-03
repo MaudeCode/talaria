@@ -379,25 +379,33 @@ def register(registry) -> None:
             post["profile"] = str(body["profile"]).strip()
         if body.get("toast_notifications") is False:
             post["toast_notifications"] = False
-        snapshot_home = params.get("execution_home")
-        # The selected profile's provider/model snapshot is resolved before the job exists (predecessor
-        # ``_selected_profile_snapshot_updates`` ran before ``create_job``), so a failure leaves nothing behind.
-        if post.get("profile") and snapshot_home and not (body.get("model") and body.get("provider")) and not body.get("no_agent"):
+        if body.get("owner_profile"):
+            post["owner_profile"] = str(body["owner_profile"]).strip()
+        execution_home = params.get("execution_home")
+        if post.get("profile"):
+            if not execution_home:
+                raise InvalidParams("execution_home is required for a profile job")
+            home = Path(execution_home)
+        model, provider = (value.strip() or None if isinstance(value, str) else None for value in (body.get("model"), body.get("provider")))
+        # The scheduler ignores Talaria's profile field. Pin the execution profile's main model
+        # before creating it in that profile's own store. Scheduled workers bind credentials/config
+        # to the store home; owner_profile only preserves management from the creating Web profile.
+        if post.get("profile") and execution_home and not (model and provider) and not body.get("no_agent"):
             try:
-                from cron.jobs import _compute_provider_model_snapshots
+                from cron.jobs import _main_model_pin
 
-                with _SNAPSHOT_LOCK, scoped_home(Path(snapshot_home)):
-                    provider_snapshot, model_snapshot = _compute_provider_model_snapshots(provider=body.get("provider") or None, model=body.get("model") or None, base_url=None, no_agent=False)
-                if body.get("provider") is None:
-                    post["provider_snapshot"] = provider_snapshot
-                if body.get("model") is None:
-                    post["model_snapshot"] = model_snapshot
+                with _SNAPSHOT_LOCK, scoped_home(Path(execution_home)):
+                    profile_provider, profile_model = _main_model_pin()
+                if not profile_model:
+                    raise ValueError("Profile has no main model configured")
+                provider = provider or profile_provider
+                model = model or profile_model
             except Exception as exc:  # noqa: BLE001
-                raise RpcError(f"Cannot safely resolve cron snapshots for profile {post['profile']!r}", condition="cron_snapshot_failed") from exc
+                raise RpcError(f"Cannot safely resolve cron model for profile {post['profile']!r}", condition="cron_snapshot_failed") from exc
         with _store(home), scoped_home(home):
             try:
                 job = jobs.create_job(prompt=body.get("prompt") or "", schedule=body["schedule"], name=body.get("name") or None, deliver=body.get("deliver") or "local",
-                                      skills=body.get("skills") or [], model=body.get("model") or None, provider=body.get("provider") or None, **kwargs)
+                                      skills=body.get("skills") or [], model=model, provider=provider, **kwargs)
             except Exception as exc:  # noqa: BLE001
                 raise InvalidParams(str(exc)) from exc
             if post:

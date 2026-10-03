@@ -31910,6 +31910,85 @@
         }
       }
     },
+    "/api/crons/context-sources": {
+      "post": {
+        "operationId": "crons.contextSources",
+        "summary": "Read eligible context sources for the editor execution store.",
+        "tags": [
+          "automation"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string"
+                  },
+                  "editing_job_id": {
+                    "type": "string"
+                  },
+                  "exclude_job_id": {
+                    "type": "string"
+                  },
+                  "selected_refs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "profile": {
+                      "type": "string"
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "job_id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "selectable": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "job_id",
+                          "label",
+                          "selectable"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "profile",
+                    "sources"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/crons": {
       "get": {
         "operationId": "crons.list",

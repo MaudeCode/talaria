@@ -4,14 +4,18 @@ a failed profile snapshot leaves no job behind, and pause/resume answer the raw 
 from __future__ import annotations
 
 import pathlib
+import os
+import subprocess
 
-from conftest import SidecarProcess, requires_agent
+import pytest
+
+from conftest import AGENT_DIR, AGENT_PYTHON, SidecarProcess, requires_agent
 
 
 @requires_agent
 def test_create_keeps_monitor_fields_and_update_clears_profile(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
     home = str(hermes_home)
-    created = handshaken.result("cron.create", {"profile_home": home, "job": {"schedule": "every 1h", "prompt": "say hi", "monitor_url": "https://example.com/status", "monitor_script": "", "profile": "research"}})
+    created = handshaken.result("cron.create", {"profile_home": home, "execution_home": home, "job": {"schedule": "every 1h", "prompt": "say hi", "model": "test-model", "provider": "test-provider", "monitor_url": "https://example.com/status", "monitor_script": "", "profile": "research"}})
     job = created["job"]
     assert job["monitor_url"] == "https://example.com/status" and job["monitor"] == "https://example.com/status"
     assert job["profile"] == "research"
@@ -27,17 +31,101 @@ def test_create_keeps_monitor_fields_and_update_clears_profile(handshaken: Sidec
 
 
 @requires_agent
+@pytest.mark.parametrize("overrides, expected_provider, expected_model", [
+    ({}, "openrouter", "profile-model"),
+    ({"model": "caller-model"}, "openrouter", "caller-model"),
+    ({"provider": "caller-provider"}, "caller-provider", "profile-model"),
+    ({"model": "", "provider": ""}, "openrouter", "profile-model"),
+    ({"model": " ", "provider": "\t"}, "openrouter", "profile-model"),
+])
+def test_create_pins_execution_profile_model(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path, overrides: dict, expected_provider: str, expected_model: str) -> None:
+    (hermes_home / "config.yaml").write_text("model:\n  provider: openrouter\n  default: store-model\n", encoding="utf-8")
+    execution_home = tmp_path / "profiles" / "research"
+    execution_home.mkdir(parents=True)
+    (execution_home / "config.yaml").write_text("model:\n  provider: openrouter\n  default: profile-model\n", encoding="utf-8")
+    (execution_home / ".env").write_text("OPENROUTER_API_KEY=synthetic-test-key\n", encoding="utf-8")
+    created = handshaken.result("cron.create", {
+        "profile_home": str(hermes_home), "execution_home": str(execution_home),
+        "job": {"schedule": "every 1h", "prompt": "say hi", "profile": "research", **overrides},
+    })
+    stored = handshaken.result("cron.list", {"profile_home": str(execution_home)})["jobs"]
+    assert len(stored) == 1 and stored[0]["id"] == created["job"]["id"]
+    assert stored[0]["provider"] == expected_provider
+    assert stored[0]["model"] == expected_model
+    assert stored[0]["profile"] == "research"
+    assert not any(key.endswith("_snapshot") for key in stored[0])
+    assert handshaken.result("cron.list", {"profile_home": str(hermes_home)})["jobs"] == []
+
+
+@requires_agent
+def test_explicit_model_and_provider_skip_profile_resolution(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    execution_home = tmp_path / "profiles" / "unconfigured"
+    execution_home.mkdir(parents=True)
+    created = handshaken.result("cron.create", {
+        "profile_home": str(hermes_home), "execution_home": str(execution_home),
+        "job": {"schedule": "every 1h", "prompt": "say hi", "profile": "research", "model": "caller-model", "provider": "caller-provider"},
+    })
+    assert created["job"]["model"] == "caller-model"
+    assert created["job"]["provider"] == "caller-provider"
+
+
+@requires_agent
+def test_scheduled_script_uses_execution_profile_scope(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    execution_home = tmp_path / "profiles" / "research"
+    execution_home.mkdir(parents=True)
+    for home, marker in ((hermes_home, "owner"), (execution_home, "execution")):
+        (home / ".env").write_text(f"OPENROUTER_API_KEY=synthetic-{marker}-key\n", encoding="utf-8")
+        (home / "scripts").mkdir()
+        (home / "scripts" / "scope.py").write_text(
+            "import json, os\nprint(json.dumps({'home': os.environ.get('HERMES_HOME'), 'key': os.environ.get('OPENROUTER_API_KEY')}))\n",
+            encoding="utf-8",
+        )
+    created = handshaken.result("cron.create", {
+        "profile_home": str(hermes_home), "execution_home": str(execution_home),
+        "job": {"schedule": "every 1h", "script": "scope.py", "no_agent": True, "profile": "research", "owner_profile": "default"},
+    })["job"]
+    # Fire through the Agent's real scheduled tick in each store. No manual-run execution_home override.
+    code = """
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from cron.jobs import get_job, update_job
+from cron import scheduler
+from cron.scheduler_tick import tick
+from agent.secret_scope import get_secret
+original_run = scheduler.run_job
+def observe_scope(job, **kwargs):
+    scoped_key = get_secret('OPENROUTER_API_KEY')
+    success, output, response, error = original_run(job, **kwargs)
+    return success, output + '\\n' + json.dumps({'scoped_key': scoped_key}), response, error
+scheduler.run_job = observe_scope
+job = get_job(sys.argv[2])
+if job:
+    update_job(job['id'], {'next_run_at': '2000-01-01T00:00:00+00:00'})
+tick(verbose=False)
+"""
+    for home in (hermes_home, execution_home):
+        env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(home), "HERMES_STATE_DB_GUARD_BYPASS": "1"}
+        if os.environ.get("LD_LIBRARY_PATH"):
+            env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+        subprocess.run([AGENT_PYTHON, "-c", code, str(AGENT_DIR), created["id"]], env=env, check=True, capture_output=True, text=True, timeout=60)
+    outputs = handshaken.result("cron.output", {"profile_home": str(execution_home), "job_id": created["id"]})
+    assert outputs["outputs"], outputs
+    assert "synthetic-execution-key" in outputs["outputs"][0]["content"]
+    assert str(execution_home) in outputs["outputs"][0]["content"]
+    assert created["owner_profile"] == "default"
+    assert not (hermes_home / "cron" / "output" / created["id"]).exists()
+
+
+@requires_agent
 def test_a_failed_profile_snapshot_leaves_no_orphan_job(handshaken: SidecarProcess, hermes_home: pathlib.Path, tmp_path: pathlib.Path) -> None:
     home = str(hermes_home)
     execution_home = tmp_path / "profiles" / "broken"
     execution_home.mkdir(parents=True)
     (execution_home / "config.yaml").write_text("model:\n  provider: custom\n  default: ''\n", encoding="utf-8")
     before = handshaken.result("cron.list", {"profile_home": home})["jobs"]
+    before_execution = handshaken.result("cron.list", {"profile_home": str(execution_home)})["jobs"]
     message, _ = handshaken.call("cron.create", {"profile_home": home, "execution_home": str(execution_home), "job": {"schedule": "every 1h", "prompt": "x", "profile": "broken"}})
-    if "error" in message:
-        assert message["error"]["data"]["condition"] == "cron_snapshot_failed"
-        assert message["error"]["message"] == "Cannot safely resolve cron snapshots for profile 'broken'"
-        assert handshaken.result("cron.list", {"profile_home": home})["jobs"] == before
-    else:
-        # The Agent resolved a snapshot for this config; the ordering guarantee is exercised only on failure.
-        assert message["result"]["job"]["profile"] == "broken"
+    assert "error" in message
+    assert message["error"]["data"]["condition"] == "cron_snapshot_failed"
+    assert handshaken.result("cron.list", {"profile_home": home})["jobs"] == before
+    assert handshaken.result("cron.list", {"profile_home": str(execution_home)})["jobs"] == before_execution

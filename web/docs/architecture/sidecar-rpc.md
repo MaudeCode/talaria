@@ -123,6 +123,33 @@ kanban query parsing and the SSE poll loop, cron cross-profile merging and
 running-state display, provider catalog composition and caches, dashboard
 plugin manifests, `state.db` read-only projections.
 
+For `cron.create` targeting another profile, the sidecar resolves that execution
+profile's main model before writing to that profile's own cron store. It fills
+empty caller model/provider fields with ordinary per-job pins. The Agent
+scheduler binds credentials, configuration, skills and terminal policy to the
+physical store home; it does not interpret Talaria's `profile` field or legacy
+snapshot keys. A profile without a main model returns `cron_snapshot_failed`
+before any job is created. An explicit model and provider, or a script-only
+`no_agent` job, skips model resolution but still uses the execution store.
+
+New Agent records retain the creating Web profile in additive `owner_profile`
+metadata. The server uses it to keep those jobs in the creator's list and route
+edit, pause, resume, delete, manual run, output, history and recent-completion
+lookups to the execution store. The HTTP `owner_profile` field names the
+physical store profile, and `read_only` is computed by the server. Hidden
+inactive profiles and profiles outside an isolated instance are not searched.
+Ambiguous managed IDs are refused rather than routed to an arbitrary store.
+
+Changing a job's profile requires duplicating it in the new profile and deleting
+the old task; editing must not create a profile/store mismatch. Clearing the
+stored profile override keeps the physical execution home, which the server
+reports explicitly. Context references must resolve in that same home. Existing
+records are not migrated automatically. Legacy jobs without creator metadata
+remain available to their store profile; a legacy execution/store mismatch must
+be recreated before Web can manually run or resume it. Pause and delete remain
+available. The Agent's existing scheduled records are unchanged until the user
+recreates them.
+
 Chat turns use the Agent's in-process callback model inside the sidecar:
 `AIAgent` is constructed with signature-gated
 kwargs, callbacks translate to stream frames, `interrupt()` is `chat.interrupt`,
@@ -137,3 +164,10 @@ per-session agent cache lives in the sidecar.
 frames bumps it. The sidecar refuses to start on a mismatch. Both the fake
 sidecar and the real one are tested against the same fixtures, so a drift
 between them is a failing test, not a runtime surprise.
+
+The read-only HTTP `POST /api/crons/context-sources` projects eligible context
+choices from accessible, managed jobs in the editor's execution store. The server
+excludes the edited/source job and marks ineligible selected references
+`selectable: false` so the client can offer removal without offering them again.
+The Web form renders these explicit choices and does not filter its global job
+list to infer eligibility. This is a server projection, with no new sidecar RPC.
