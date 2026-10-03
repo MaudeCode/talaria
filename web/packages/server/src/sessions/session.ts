@@ -487,7 +487,8 @@ export function titleFrom(messages: unknown[], fallback = 'Untitled'): string {
   return fallback
 }
 
-const ATTACHED_FILES_RE = /\n\n\[Attached files: [^\]]+\]$/
+// Paths are escaped like the workspace prefix (`\\` and `\]`), so a `]` in a path stays inside the line.
+const ATTACHED_FILES_RE = /\n\n\[Attached files: (?:\\.|[^\]\\])+\]$/
 export function stripAttachedFilesMarker(text: string): string {
   return text.replace(ATTACHED_FILES_RE, '').trim()
 }

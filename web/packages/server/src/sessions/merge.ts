@@ -63,8 +63,14 @@ export function messageIdentity(msg: unknown): string | null {
   if (!isDict(msg)) return null
   const role = str(msg.role)
   let text = messageText(msg.content)
-  // An attachment-only prompt has no typed text; its attached-files line tells one such turn from the next.
-  if (role === 'user') text = userPromptText(text) || stripWorkspacePrefix(text, true)
+  if (role === 'user') {
+    const typed = userPromptText(text)
+    // An attachment-only prompt has no typed text; its whole attached-files line (never truncated) tells one such turn
+    // from the next.
+    const line = typed ? '' : stripWorkspacePrefix(text, true)
+    if (line) return JSON.stringify([role, line, '', '[]'])
+    text = typed
+  }
   if (!text && !msg.tool_call_id && !msg.tool_calls) {
     if (msg._partial) return JSON.stringify([role, '', '', `__partial__${str(msg.reasoning).split(/\s+/).join(' ').slice(0, 200)}`])
     return null

@@ -29,7 +29,7 @@ import { withSessionWireFlags } from './list.js'
 import { hydrateAnchorActivityScenes, turnTerminalState, withTurnIds } from './anchor.js'
 import { persistentStateChanges, persistentStateSnapshot } from './state-saved.js'
 import { maxIterationsFromConfig, maxTokensFromConfig, processWakeupMaxIterations, reasoningConfigFromConfig, webuiEphemeralSystemPrompt, workspaceSystemMessage } from './turn-context.js'
-import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, toolOutcome, withAttachmentObjects, withBodyExcerpts, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
+import { agentSteerText, assistantReplyAddedAfterCurrentTurn, buildPartialMessage, escapeWorkspacePrefixPath, checkpointTurnStart, extractToolCallsFromMessages, injectMaxIterationSummaryFallback, isContextCompressionMarker, isDict, mergeDisplayMessagesAfterAgentResult, messageIdentity, messageText, pendingUserRow, sanitizeMessagesForApi, sessionLacksFinalAssistantAnswer, splitThinkingFromContent, stoppedTurnContext, stripXmlToolCalls, toolOutcome, withAttachmentObjects, withBodyExcerpts, withToolCallOutcomes, workspaceContextPrefix } from './merge.js'
 import { mayBecomeSilentReply, turnOrigin, withBackgroundUpdates } from './background-updates.js'
 import { fallbackTitleFromExchange, firstExchangeSnippets, isGenericFallbackTitle, latestExchangeSnippets, looksInvalidGeneratedTitle, looksLikeDefaultCliTitle, sanitizeGeneratedTitle, titleLanguageMismatch, titlePrompts } from './titles.js'
 import type { WorkspaceRegistry } from '../workspace/workspaces.js'
@@ -739,7 +739,7 @@ export class TurnRunner {
    */
   private async buildUserMessage(workspaceCtx: string, msgText: string, attachments: Record<string, unknown>[], workspace: string, sessionId: string, s: Session, opts: StartTurnOptions, signal: AbortSignal): Promise<string | Record<string, unknown>[]> {
     const text = workspaceCtx + msgText
-    const named = attachments.map((att) => str(att.path).trim()).filter(Boolean)
+    const named = attachments.map((att) => str(att.path).trim()).filter(Boolean).map(escapeWorkspacePrefixPath)
     const withFiles = (): string => (named.length ? `${text}\n\n[Attached files: ${named.join(', ')}]` : text)
     const candidates = attachments.filter((att) => str(att.path).trim() && str(att.mime).trim().startsWith('image/'))
     if (!candidates.length) return withFiles()

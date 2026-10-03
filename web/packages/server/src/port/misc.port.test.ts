@@ -327,6 +327,29 @@ describe('image attachments in user messages (review round 14)', () => {
     expect(messages.filter((m) => m.role === 'user').map((m) => (m.attachments as Json[]).map((a) => a.name))).toEqual([['c.pdf'], ['d.pdf']])
   })
 
+  it('keeps attachment-only rows exact for bracketed paths and long shared file lists (TAL-276)', async () => {
+    mode = 'native'
+    sidecar.respond('chat.start', (params) => ({ status: 'completed' as const, messages: [...(params.conversation_history as Json[]), { role: 'user', content: params.user_message }, { role: 'assistant', content: 'ok' }], final_response: 'ok', error: null, result_status: 'completed', tool_limit_reached: false, usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'm', provider: 'p', compressed: false, agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [] }))
+    const settle = async (sid: string, attachments: Json[]) => {
+      const res = await post(s, '/api/chat/start', { session_id: sid, message: '', attachments })
+      await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+      return ((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]
+    }
+    const pdf = (path: string) => ({ path, mime: 'application/pdf', name: path.split('/').pop() })
+    // A `]` in a path stays inside the attached-files line: one empty user row, no path in the transcript.
+    const bracket = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const rows = await settle(bracket, [pdf(join(ws(), 'draft]v2.pdf'))])
+    expect(rows.map((m) => m.role)).toEqual(['user', 'assistant'])
+    expect(rows[0]!.content).toBe('')
+    // Two lists sharing a long prefix are two turns, even with identical replies.
+    const long = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const shared = Array.from({ length: 8 }, (_, i) => pdf(join(ws(), `${'nested-folder-name/'.repeat(4)}common-${i}.pdf`)))
+    await settle(long, [...shared, pdf(join(ws(), 'first.pdf'))])
+    const both = await settle(long, [...shared, pdf(join(ws(), 'second.pdf'))])
+    expect(both.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(both.filter((m) => m.role === 'user').map((m) => (m.attachments as Json[]).at(-1)!.name)).toEqual(['first.pdf', 'second.pdf'])
+  })
+
   it('keeps an attachment-only prompt when its turn fails or its stream goes stale (TAL-276)', async () => {
     mode = 'native'
     const doc = { path: join(ws(), 'kept.pdf'), mime: 'application/pdf', name: 'kept.pdf' }
