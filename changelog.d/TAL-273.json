@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Provider quotas in Insights refresh on their own at your chosen interval and catch up when you reopen Insights or return to the app.",
+      "highlight": false
+    }
+  ]
+}

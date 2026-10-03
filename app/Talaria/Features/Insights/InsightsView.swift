@@ -8,6 +8,7 @@ struct InsightsView: View {
     let openProviderSettings: () -> Void
     let quotaViewModel: ProvidersViewModel
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: InsightsViewModel
     @State private var quotaScrollPosition: String?
     @State private var isShowingQuotaNotice = false
@@ -22,6 +23,8 @@ struct InsightsView: View {
         ProviderQuotaPercentageMode.storageKey,
         store: ProviderQuotaWidgetSnapshotStore.appGroupDefaults
     ) private var quotaPercentageModeRawValue = ProviderQuotaPercentageMode.defaultValue.rawValue
+    @AppStorage(ProviderQuotaRefreshInterval.storageKey)
+    private var quotaRefreshIntervalSeconds = ProviderQuotaRefreshInterval.defaultValue.rawValue
 
     init(
         server: URL,
@@ -62,11 +65,19 @@ struct InsightsView: View {
                 await loadInsights()
             }
             .task {
-                if quotaViewModel.quotaSources.isEmpty, !quotaViewModel.isQuotaLoading {
-                    await loadQuotas()
-                }
                 quotaScrollPosition = initialQuotaSourceID
                 await refreshPendingWidgetSourceIfNeeded()
+            }
+            .onChange(of: quotaViewModel.quotaSources.map(\.id)) {
+                pruneSidebarQuotaPins()
+            }
+            // Joins the shared quota schedule while Insights is visible and active:
+            // stale rows reconcile on open and foreground return (TAL-273).
+            .task(id: "\(quotaRefreshIntervalSeconds)|\(scenePhase == .active)") {
+                guard scenePhase == .active else { return }
+                await quotaViewModel.refreshQuotasPeriodically(
+                    every: ProviderQuotaRefreshInterval.storedValue(quotaRefreshIntervalSeconds).duration
+                )
             }
     }
 
@@ -383,6 +394,11 @@ struct InsightsView: View {
 
     private func loadQuotas(refresh: Bool = false) async {
         await quotaViewModel.loadQuotas(refresh: refresh)
+        pruneSidebarQuotaPins()
+    }
+
+    /// Also runs when the shared periodic refresh changes the source list.
+    private func pruneSidebarQuotaPins() {
         guard quotaViewModel.hasStableQuotaSources else { return }
         let currentIDs = Set(quotaViewModel.quotaSources.map(\.id))
         if !firstSidebarQuotaSourceID.isEmpty, !currentIDs.contains(firstSidebarQuotaSourceID) {

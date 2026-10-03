@@ -35,6 +35,14 @@ final class ProvidersViewModel {
     /// `isLoading` while the newer request is still pending (#42 Codex review).
     private var loadGeneration = 0
     private var quotaLoadGeneration = 0
+    /// Orders every quota request by start, so a slow full load cannot replace a
+    /// source that a later targeted refresh already updated.
+    private var quotaRequestSequence = 0
+    private var targetedQuotaRefreshSequences: [String: Int] = [:]
+    /// The shared refresh schedule: every view that keeps quotas fresh reads these,
+    /// so overlapping owners wait for the same due time instead of polling twice.
+    private var lastForcedQuotaRefreshStart: ContinuousClock.Instant?
+    private var lastForcedQuotaRefreshSuccess: ContinuousClock.Instant?
 
     init(
         server: URL,
@@ -97,13 +105,17 @@ final class ProvidersViewModel {
     func loadQuotas(refresh: Bool = false) async {
         quotaLoadGeneration += 1
         let generation = quotaLoadGeneration
+        quotaRequestSequence += 1
+        let sequence = quotaRequestSequence
+        if refresh { lastForcedQuotaRefreshStart = ContinuousClock.now }
         isQuotaLoading = true
         quotaErrorMessage = nil
 
         do {
             let response = try await client.providerQuotas(refresh: refresh)
             guard generation == quotaLoadGeneration else { return }
-            applyQuotaResponse(response)
+            applyQuotaResponse(response, sequence: sequence)
+            if refresh { lastForcedQuotaRefreshSuccess = ContinuousClock.now }
         } catch is CancellationError {
             // The view was dismissed while quota was loading.
         } catch let error as URLError where error.code == .cancelled {
@@ -125,14 +137,25 @@ final class ProvidersViewModel {
         refreshingQuotaSourceIDs.removeAll()
     }
 
+    /// Keeps quotas fresh while the caller's task runs. Joining reconciles at once
+    /// unless a forced refresh succeeded within `interval` or a load is in flight;
+    /// after that, every owner waits for the shared next due time.
     func refreshQuotasPeriodically(
         every interval: Duration = ProviderQuotaRefreshInterval.defaultValue.duration
     ) async {
+        let isStale = lastForcedQuotaRefreshSuccess.map { ContinuousClock.now - $0 >= interval } ?? true
+        if isStale, !isQuotaLoading {
+            await loadQuotas(refresh: true)
+        }
         while !Task.isCancelled {
-            do {
-                try await Task.sleep(for: interval)
-            } catch {
-                return
+            let wait = lastForcedQuotaRefreshStart.map { $0 + interval - ContinuousClock.now } ?? .zero
+            if wait > .zero {
+                do {
+                    try await Task.sleep(for: wait)
+                } catch {
+                    return
+                }
+                continue
             }
             await loadQuotas(refresh: true)
         }
@@ -143,6 +166,8 @@ final class ProvidersViewModel {
         let generation = quotaLoadGeneration
         let profileID = quotaProfileID
         let scopeID = quotaScopeID
+        quotaRequestSequence += 1
+        let sequence = quotaRequestSequence
         refreshingQuotaSourceIDs.insert(sourceID)
         quotaErrorMessage = nil
         defer { refreshingQuotaSourceIDs.remove(sourceID) }
@@ -156,6 +181,7 @@ final class ProvidersViewModel {
             else { return }
             // The server list owns which rows exist: a targeted read replaces its own row
             // or drops it when missing, and never adds a row the full list lacks.
+            targetedQuotaRefreshSequences[sourceID] = sequence
             if response.missingSource {
                 quotaSources.removeAll { $0.id == sourceID }
             } else if let refreshed = response.sources.first(where: { $0.id == sourceID }),
@@ -174,8 +200,18 @@ final class ProvidersViewModel {
     }
 
     /// The server's `sources` is the whole list, unique by source ID and already ordered.
-    private func applyQuotaResponse(_ response: ProviderQuotasResponse) {
-        quotaSources = response.sources
+    /// A targeted refresh that started after this load already holds its source's newer
+    /// state, kept or dropped, even where this older list says otherwise.
+    private func applyQuotaResponse(_ response: ProviderQuotasResponse, sequence: Int) {
+        let sameScope = quotaProfileID == response.profileID && quotaScopeID == response.scopeID
+        let newerIDs = sameScope
+            ? Set(targetedQuotaRefreshSequences.filter { $0.value > sequence }.keys)
+            : []
+        let current = Dictionary(quotaSources.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let incomingIDs = Set(response.sources.map(\.id))
+        quotaSources = response.sources.compactMap { newerIDs.contains($0.id) ? current[$0.id] : $0 }
+            + quotaSources.filter { newerIDs.contains($0.id) && !incomingIDs.contains($0.id) }
+        targetedQuotaRefreshSequences = targetedQuotaRefreshSequences.filter { $0.value > sequence }
         hasStableQuotaSources = true
         quotaProfileID = response.profileID
         quotaScopeID = response.scopeID

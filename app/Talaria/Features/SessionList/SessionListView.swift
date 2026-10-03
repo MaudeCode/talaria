@@ -290,7 +290,6 @@ struct SessionListView: View {
             }
             .task(id: providerQuotaRefreshTaskID) {
                 guard scenePhase == .active else { return }
-                await quotaViewModel.loadQuotas(refresh: true)
                 await quotaViewModel.refreshQuotasPeriodically(
                     every: ProviderQuotaRefreshInterval.storedValue(quotaRefreshIntervalSeconds).duration
                 )
