@@ -23,6 +23,9 @@ export const test = base.extend<{ errors: string[] }>({
     const onConsole = (msg: ConsoleMessage) => {
       if (msg.type() === 'error' && !BENIGN.some((re) => re.test(msg.text()))) errors.push(msg.text())
     }
+    // TAL-372: specs that mock their session in the page have no server record of it, so the composer's background card
+    // gets an empty list by default; a spec that tests background work routes its own (later routes win).
+    await page.route('**/api/background/tasks?**', (route) => route.fulfill({ json: { session_id: new URL(route.request().url()).searchParams.get('session_id') ?? '', agent_available: true, tasks: [] } }))
     page.on('console', onConsole)
     page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`))
     page.on('response', (res) => {
