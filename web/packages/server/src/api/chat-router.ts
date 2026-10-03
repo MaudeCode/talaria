@@ -141,8 +141,8 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>): Pr
   visibleOrRetag(ctx, s, requestedProfile)
   const msg = str(body.message).trim()
   const attachments = normalizeChatAttachments(body.attachments).slice(0, 20)
-  // TAL-276: attachments alone make a turn; a request with neither is refused.
-  if (!msg && !attachments.length) throw new HttpError(400, 'message is required')
+  // TAL-276: an attached file alone makes a turn; one with neither text nor a file path is refused.
+  if (!msg && !attachments.some((att) => str(att.path))) throw new HttpError(400, 'message is required')
   // TAL-460: the user's message never joins a background turn; that turn stops quietly and this one takes its place.
   if (await ctx.deps.turns.yieldBackgroundTurn(sid)) s = ctx.deps.sessionStore.get(sid)
   // Python `compression_recovery_payload_for_session` + `is_generic_continuation_intent`.

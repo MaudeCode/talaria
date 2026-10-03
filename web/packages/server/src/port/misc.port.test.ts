@@ -260,6 +260,8 @@ describe('image attachments in user messages (review round 14)', () => {
     const empty = await post(s, '/api/chat/start', { session_id: sid, message: ' ', attachments: [] })
     expect(empty.status).toBe(400)
     expect(JSON.stringify(await json(empty))).toContain('message is required')
+    // An attachment with no file behind it is no content either.
+    expect((await post(s, '/api/chat/start', { session_id: sid, message: '', attachments: [{}, 'name-only'] })).status).toBe(400)
   })
 
   it('sends plain text when the Agent resolves text mode for the model', async () => {

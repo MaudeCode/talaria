@@ -193,10 +193,13 @@ export function Composer(props: ComposerProps) {
   // Session change resets the draft and tray, unless this session's composer just adopted a hand-off (below); the
   // guard also keeps StrictMode's effect replay from wiping the adopted state.
   const adopted = useRef<string | null>(null)
+  // Each chip's upload in flight; a receipt whose attempt is gone (chip removed, tray reset) is rolled back.
+  const inflight = useRef(new Map<string, object>())
   useEffect(() => {
     if (adopted.current === sessionId) return
     setText(sessionId ? readLocalDraft(sessionId) : '')
     setFiles([])
+    inflight.current.clear()
     setRestRequested(false)
   }, [sessionId])
 
@@ -216,9 +219,20 @@ export function Composer(props: ComposerProps) {
   const maxBytes = bootstrap.max_upload_bytes
   const upload = useCallback((key: string, file: File) => {
     if (!sessionId) return
+    const attempt = {}
+    inflight.current.set(key, attempt)
     void api.uploadFile(sessionId, file).then(
-      (receipt) => setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'done', upload: receipt } : p))),
+      (receipt) => {
+        if (inflight.current.get(key) !== attempt) {
+          if (receipt.rollback_token) void api.rollbackUpload(sessionId, [receipt.rollback_token]).catch(() => undefined)
+          return
+        }
+        inflight.current.delete(key)
+        setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'done', upload: receipt } : p)))
+      },
       (e: unknown) => {
+        if (inflight.current.get(key) !== attempt) return
+        inflight.current.delete(key)
         setFiles((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'error', error: e instanceof Error ? e.message : String(e) } : p)))
         showToast(m.composer_upload_failed({ name: file.name }), 4000, 'error')
       },
@@ -278,6 +292,9 @@ export function Composer(props: ComposerProps) {
   const removeFile = (key: string) => {
     const f = files.find((p) => p.key === key)
     setFiles((prev) => prev.filter((p) => p.key !== key))
+    inflight.current.delete(key)
+    // Removed before the new chat exists: the file must not ride the hand-off into it.
+    if (handoff) handoff.files = handoff.files.filter((file) => fileKey(file) !== key)
     if (f?.upload?.rollback_token && sessionId) void api.rollbackUpload(sessionId, [f.upload.rollback_token]).catch(() => undefined)
   }
   // A failed upload runs again; without a session yet, the file goes back through the hand-off.

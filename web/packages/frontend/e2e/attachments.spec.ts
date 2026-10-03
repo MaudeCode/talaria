@@ -108,6 +108,39 @@ test('a new chat hands a pasted image to the session it creates', async ({ page 
   expect(uploads).toEqual(['pasted-new'])
 })
 
+test('removing a chip while it uploads rolls the late upload back', async ({ page }) => {
+  await mockSession(page, 'inflight')
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
+  await page.route('**/api/upload?**', async (route) => { await held; await route.fulfill({ json: { filename: 'late.png', path: '/tmp/late.png', size: PNG.length, mime: 'image/png', is_image: true, rollback_token: 'tok-late' } }) })
+  const rolledBack: unknown[] = []
+  await page.route('**/api/upload/rollback', async (route) => { rolledBack.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true, rolled_back: 1, failed: 0 } }) })
+  await page.goto('/session/inflight')
+  await page.locator('#fileInput').setInputFiles([image('late.png')])
+  await expect(chips(page).and(page.locator('[data-status="uploading"]'))).toHaveCount(1)
+  await page.getByRole('button', { name: 'Remove late.png' }).click()
+  await expect(chips(page)).toHaveCount(0)
+  release()
+  await expect.poll(() => rolledBack).toEqual([{ session_id: 'inflight', rollback_tokens: ['tok-late'] }])
+  await expect(chips(page)).toHaveCount(0)
+})
+
+test('a chip removed while the new chat is created stays removed', async ({ page }) => {
+  const uploads = await mockSession(page, 'removed-new')
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
+  await page.route('**/api/session/new', async (route) => { await held; await route.fulfill({ json: { session: { session_id: 'removed-new', title: '', messages: [] } } }) })
+  await page.goto('/')
+  await page.locator('#fileInput').setInputFiles([image('keep.png'), image('drop.png')])
+  await expect(chips(page)).toHaveCount(2)
+  await page.getByRole('button', { name: 'Remove drop.png' }).click()
+  release()
+  await expect(page).toHaveURL(/\/session\/removed-new$/)
+  await expect(chips(page).and(page.locator('[data-status="done"]'))).toHaveText(/keep\.png/)
+  await expect(chips(page)).toHaveCount(1)
+  expect(uploads).toEqual(['removed-new'])
+})
+
 test('a failed upload stays as an error chip that can be retried or removed', async ({ page, errors }) => {
   await mockSession(page, 'retry')
   let fail = true
