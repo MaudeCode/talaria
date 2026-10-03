@@ -4,9 +4,10 @@ import { snapshotArgs, toolArgs, toolDisplay, toolName } from './sessions/tool-d
  * Credential redaction and the public session projection (Python
  * `api/helpers.py`). API responses are a hard boundary: transcript-bearing
  * fields are masked with the local pattern set, and private replay aliases
- * are stripped at their schema positions. The Agent's broader redactor is
- * not consulted (it lives in-process in Python); the local patterns mirror
- * its known credential prefixes.
+ * are stripped at their schema positions. The Agent's redactor
+ * (`agent/redact.py`, `redact_sensitive_text(force=True)`) is not consulted
+ * at runtime; its pattern families are ported here and held to parity by
+ * the `Agent redactor parity` tests.
  */
 
 const CRED_RE = new RegExp(
@@ -18,6 +19,7 @@ const CRED_RE = new RegExp(
     '|ghu_[A-Za-z0-9]{10,}' +
     '|ghs_[A-Za-z0-9]{10,}' +
     '|ghr_[A-Za-z0-9]{10,}' +
+    '|xapp-\\d+-[A-Za-z0-9-]{10,}' +
     '|xox[baprs]-[A-Za-z0-9-]{10,}' +
     '|AIza[A-Za-z0-9_-]{30,}' +
     '|pplx-[A-Za-z0-9]{10,}' +
@@ -46,6 +48,14 @@ const CRED_RE = new RegExp(
     '|hsk-[A-Za-z0-9]{10,}' +
     '|mem0_[A-Za-z0-9]{10,}' +
     '|brv_[A-Za-z0-9]{10,}' +
+    '|xai-[A-Za-z0-9]{30,}' +
+    '|ntn_[A-Za-z0-9]{10,}' +
+    '|fw[-_][A-Za-z0-9]{30,}' +
+    '|fpk_[A-Za-z0-9]{30,}' +
+    '|(?:glpat|gloas|gldt|glcbt|glptt|glft|glimt|glagent|glsoat|glffct|glwt)-[A-Za-z0-9_-]{10,}' +
+    '|glrtr?-[A-Za-z0-9_.-]{10,}' +
+    '|GR1348941[A-Za-z0-9_-]{10,}' +
+    '|pk-lf-[A-Za-z0-9-]{8,}' +
     ')(?![A-Za-z0-9_-])',
   'g',
 )
@@ -58,8 +68,8 @@ const AUTH_PARAM = String.raw`[A-Za-z0-9_-]+=(?:\\"(?:[^"\\\r\n]|\\[^"])*\\"|"(?
  * A parameterized credential (`Digest username="bob", response="..."`, `Credential=..., Signature=...`) is masked whole.
  */
 const AUTH_HDR_RE = new RegExp(String.raw`(Authorization:\s*(?:(?!\*+\s)[A-Za-z0-9!#$%&*+.^_|~-]+\s+(?=[^\s,\])]))?)(${AUTH_PARAM}(?:\s*,\s*${AUTH_PARAM})*|[^\s,\])][^\s'",\])]*)`, 'gi')
-/** A JSON Web Token anywhere (`eyJ<header>.<payload>.<signature>`). */
-const JWT_RE = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g
+/** A JSON Web Token anywhere (`eyJ<header>.<payload>.<signature>`), or its header alone or with its payload. */
+const JWT_RE = /\beyJ(?:[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}|[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_=-]{4,}){0,2})/g
 /** A bearer credential in any header or text (`X-Auth: Bearer ...`); `AUTH_HDR_RE` owns the `Authorization:` header. */
 const BEARER_RE = /((?<!Authorization:\s{0,8})\bBearer\s+)([^\s,\])][^\s'",\])]*)/gi
 /** One shell-quoted piece, which may span lines: `'...'`, `"..."` (with backslash escapes), bash `$'...'` / `$"..."`, or JSON escaped inside a shell string (`\"...\"`). */
@@ -101,6 +111,25 @@ const percentDecode = (text: string): string => text.replace(/%([0-9A-Fa-f]{2})/
 const LISTED_FLAG_RE = /(["'])(-{1,2})([A-Za-z0-9_][A-Za-z0-9_.-]*)\1(\s*,\s*)(?:(["'])((?:\\.|(?!\5)[^\\])*)\5|(\[[^[\]]*\]|\{[^{}]*\}|[^\s,\])}'"[{]+))/g
 const EMBEDDED_AWS_RE = /(?:AKIA|ASIA)[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
+/**
+ * The Agent's other env names: an all-caps one ending a word in `KEY`, `PASS` or `PW` (`OPENAI_KEY`, `DB_PW`, not
+ * `KEYBOARD`), or a lowercase `name_key` / `name_pass` / `name_pw` outside URL text. `isEnvSecretAssignment` gates it.
+ */
+const ENV_SUFFIX_RE = /([A-Z0-9_]{0,50}(?:KEY|PASS|PW)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
+const ENV_SUFFIX_LOWER_RE = /(?<![a-z0-9_])([a-z0-9_]+_(?:key|pass|pw)(?![a-z0-9_]))\s*=\s*(['"]?)(\S+)\2/gi
+/** A keyword at a word edge of an env name (`DB_PW`, `MYSQL_PASS`), never inside a word (`KEYBOARD`, `PASSAGE`). */
+const ENV_SUFFIX_WORD_RE = /(?:^|[^A-Za-z])(?:KEY|PASS|PW)S?(?![A-Za-z])/i
+/** Env names whose value is a credential whatever its shape; a bare `KEY` needs an opaque value (`SORT_KEY=name` stays). */
+const ENV_STRONG_NAME_RE = /(?:api|auth|access|refresh|session|id|bearer)[ _.-]?(?:key|token)|key[ _.-]?material|secret|passwd|password|pass|pw|credential|auth|bearer/i
+/** The prefilter's view of `ENV_SUFFIX_RE` and `ENV_SUFFIX_LOWER_RE`. */
+const ENV_SUFFIX_TEST_RES = [new RegExp(ENV_SUFFIX_RE.source), new RegExp(ENV_SUFFIX_LOWER_RE.source, 'i')]
+/** The Agent's `_looks_like_opaque_credential`: a value shaped like a generated secret rather than a word. */
+function looksOpaque(value: string): boolean {
+  if (value === '***' || /^[A-Fa-f0-9]{16,}$/.test(value) || /^[A-Za-z0-9_./+=-]{20,}$/.test(value)) return true
+  return value.length >= 12 && [/[a-z]/, /[A-Z]/, /[0-9]/].filter((re) => re.test(value)).length >= 2
+}
+const isEnvSecretAssignment = (key: string, value: string): boolean =>
+  /[A-Za-z0-9]/.test(value) && !/^(?:os\.(?:getenv|environ)|process\.env|\$ENV\{)/.test(value) && ENV_SUFFIX_WORD_RE.test(key) && (ENV_STRONG_NAME_RE.test(key) || looksOpaque(value))
 /**
  * `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The user
  * and password may be assembled from quoted and escaped shell pieces (`bob:hun'ter2'@`), and every delimiter may be
@@ -170,12 +199,52 @@ const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-[uU][ \t]*|--(?:user|proxy-u(?:s(?:e(
 /** The prefilter's view of `USER_FLAG_RE`. */
 const USER_FLAG_TEST_RE = new RegExp(USER_FLAG_RE.source)
 const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
+/** A Telegram bot token (`bot<id>:<secret>`): the id stays. */
+const TELEGRAM_TOKEN_RE = /(bot)?(\d{8,}):([-A-Za-z0-9_]{30,})/g
+/** An E.164 phone number, masked to its first and last digits; never inside a word or encoded data (`ab+1234567`). */
+const PHONE_RE = /(?<![A-Za-z0-9])\+[1-9]\d{6,14}(?![A-Za-z0-9])/g
+/**
+ * A bare token as URL userinfo (`https://TOKEN@github.com`, `ssh://…@`): no `user:` part, at least 8 characters. Round-trip
+ * URLs carry tokens in the query, so a bare userinfo credential is never one.
+ */
+const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/]{8,})(?=@\S)/gi
+/** Control and zero-width characters that can split a token body (`ghp_abc\x1bdef`, `sk-abc\u200bdef`). */
+const CONTROL_CHAR_RE = /[\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff]/
+const CONTROL_CHARS_RE = new RegExp(CONTROL_CHAR_RE.source, 'g')
+const CRED_TEST_RE = new RegExp(CRED_RE.source)
+const CONTROL_SPLIT_SPAN_RE = /^[A-Za-z0-9_.\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff-]*$/
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 /** A private key whose end marker is missing (a display cap cut it off): masked to the end of the text. */
 const PRIVKEY_OPEN_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*$/
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
 const ENV_KEY_PREFIX_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)/g
 const REDACTED_ENV_VALUE_RE = /(?:\*{3,}|[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,32}\.\.\.[A-Za-z0-9_.:/+-]{1,16})/y
+
+/**
+ * A prefixed credential whose body a control or zero-width character splits, matched on the text without those characters
+ * and masked in place. A span may hold only token and control characters and never runs into a `KEY=`; a span crossing a
+ * line whose own piece already matches is left to the prefix pass, so a complete token never swallows the next line.
+ */
+function maskControlSplitTokens(text: string): string {
+  const stripped = text.replace(CONTROL_CHARS_RE, '')
+  if (stripped.length === text.length || !CRED_TEST_RE.test(stripped)) return text
+  // The original index of each kept character.
+  const kept: number[] = []
+  for (let i = 0; i < text.length; i += 1) if (!CONTROL_CHAR_RE.test(text[i]!)) kept.push(i)
+  let out = ''
+  let last = 0
+  for (const m of stripped.matchAll(CRED_RE)) {
+    const token = m[1]!
+    const start = kept[m.index]!
+    const end = kept[m.index + token.length - 1]! + 1
+    const span = text.slice(start, end)
+    if (/[\r\n]/.test(span) && CRED_TEST_RE.test(span)) continue
+    if (!CONTROL_SPLIT_SPAN_RE.test(span) || text[end] === '=') continue
+    out += text.slice(last, start) + mask(token)
+    last = end
+  }
+  return out + text.slice(last)
+}
 
 function mask(token: string): string {
   // By code point, so a partial mask never splits a surrogate pair into invalid JSON.
@@ -1133,7 +1202,7 @@ export function redactSensitive(text: string): string {
 
 function redactRules(text: string): string {
   if (!text) return text
-  let out = text.replace(CRED_RE, (_, t: string) => mask(t))
+  let out = maskControlSplitTokens(text).replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = redactHeaderCredentials(out, AUTH_HDR_RE)
   out = out.replace(JWT_RE, (t) => mask(t))
@@ -1141,6 +1210,9 @@ function redactRules(text: string): string {
   for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = redactCredentialParams(out)
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
+  const maskEnvSuffix = (whole: string, key: string, quote: string, value: string): string => (isEnvSecretAssignment(key, value) ? `${key}=${quote}${mask(value)}${quote}` : whole)
+  out = out.replace(ENV_SUFFIX_RE, maskEnvSuffix)
+  if (!out.includes('://')) out = out.replace(ENV_SUFFIX_LOWER_RE, maskEnvSuffix)
   out = out.replace(LISTED_FLAG_RE, (whole, q: string, dash: string, key: string, gap: string, vq: string | undefined, quotedValue: string | undefined, bare: string | undefined) => {
     // An unquoted value (a number, `True`, a nested list) is masked whole.
     if (bare !== undefined) return bare !== '***' && (ARGV_USER_FLAG_RE.test(dash + key) || isCredentialKey(key)) ? `${q}${dash}${key}${q}${gap}***` : whole
@@ -1152,6 +1224,9 @@ function redactRules(text: string): string {
   out = out.replace(PERCENT_KEY_RE, (whole, head: string, value: string) => (value && value !== '***' && isCredentialKey(percentDecode(head.slice(0, -1))) ? `${head}***` : whole))
   out = out.replace(BARE_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + (/['"\\]/.test(secret) ? '***' : mask(secret)))
+  out = out.replace(URL_BARE_TOKEN_RE, (_, head: string, token: string) => head + mask(token))
+  out = out.replace(TELEGRAM_TOKEN_RE, (_, bot: string | undefined, id: string) => `${bot ?? ''}${id}:***`)
+  out = out.replace(PHONE_RE, (phone) => { const keep = phone.length <= 8 ? 2 : 4; return `${phone.slice(0, keep)}****${phone.slice(-keep)}` })
   out = redactUserFlags(out)
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
   out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]').replace(PRIVKEY_OPEN_RE, '[REDACTED PRIVATE KEY]')
@@ -1161,16 +1236,17 @@ function redactRules(text: string): string {
 const CASE_MARKERS = [
   'sk-', 'ghp_', 'github_pat_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'AKIA', 'ASIA', 'xoxb-', 'xoxa-', 'xoxp-', 'xoxr-', 'xoxs-', 'AIza', 'pplx-', 'fal_', 'fc-',
   'bb_live_', 'gAAAA', 'sk_live_', 'sk_test_', 'rk_live_', 'SG.', 'hf_', 'r8_', 'npm_', 'pypi-', 'dop_v1_', 'doo_v1_', 'am_', 'sk_', 'tvly-', 'exa_',
-  'gsk_', 'syt_', 'retaindb_', 'hsk-', 'mem0_', 'brv_', 'eyJ', '-----BEGIN',
+  'gsk_', 'syt_', 'retaindb_', 'hsk-', 'mem0_', 'brv_', 'xapp-', 'xai-', 'ntn_', 'fw-', 'fw_', 'fpk_', 'glpat-', 'gloas-', 'gldt-', 'glrt-', 'glrtr-',
+  'glcbt-', 'glptt-', 'glft-', 'glimt-', 'glagent-', 'glsoat-', 'glffct-', 'glwt-', 'GR1348941', 'pk-lf-', 'eyJ', '-----BEGIN',
 ]
 const LOWER_MARKERS = [
   'authorization: bearer ', 'authorization: bot ', 'private key', 'postgres://', 'postgresql://', 'mysql://', 'mongodb://', 'redis://', 'amqp://', '://',
   'access_token', 'refresh_token', 'id_token', 'api_key', 'apikey', 'client_secret', 'auth_token', 'raw_secret', 'secret_input', 'key_material',
   'x-amz-signature', 'token=', 'secret=', 'password=', 'passwd', 'password', 'secret', 'token', 'api-key', 'apikey', 'clientsecret', 'private_key', 'credential', ' -u ', '--user ', 'authorization', 'signature', 'bearer ', 'cookie:', 'authorization=', 'key=', '"token"', '"secret"', '"password"', '"bearer"',
 ]
-const TELEGRAM_RE = /(?:bot)?\d{8,}:[-A-Za-z0-9_]{30,}/
 const DISCORD_RE = /<@!?\d{17,20}>/
-const PHONE_RE = /(?<![A-Za-z0-9])\+[1-9]\d{6,14}(?![A-Za-z0-9])/
+const TELEGRAM_TEST_RE = new RegExp(TELEGRAM_TOKEN_RE.source)
+const PHONE_TEST_RE = new RegExp(PHONE_RE.source)
 
 export function mightContainSensitiveText(text: string): boolean {
   if (!text) return false
@@ -1187,9 +1263,10 @@ export function mightContainSensitiveText(text: string): boolean {
   if (text.includes('@') && new RegExp(BARE_USERINFO_RE.source).test(text)) return true
   if (DYNAMIC_KEY_PIECE_RE.test(text) || /\$[({A-Za-z_0-9@*#?$!'-]|`/.test(text)) return true
   if (USER_FLAG_TEST_RE.test(text)) return true
-  if (text.includes(':') && TELEGRAM_RE.test(text)) return true
+  if (text.includes(':') && TELEGRAM_TEST_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true
-  if (text.includes('+') && PHONE_RE.test(text)) return true
+  if (text.includes('+') && PHONE_TEST_RE.test(text)) return true
+  if (text.includes('=') && ENV_SUFFIX_TEST_RES.some((re) => re.test(text))) return true
   return false
 }
 

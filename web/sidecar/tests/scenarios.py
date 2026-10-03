@@ -86,7 +86,6 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("models.estimate_tokens", {"messages": [{"role": "user", "content": "hello world"}]}),
     ("models.capabilities", {"profile_home": "{home}", "provider": "anthropic", "model": "claude-sonnet-4-5"}),
     ("aux.resolve", {"profile_home": "{home}", "task": "title_generation"}),
-    ("text.redact", {"text": "token sk-abcdef1234567890abcdef1234567890 and AKIAIOSFODNN7EXAMPLE"}),
     ("text.portal_tags", {"profile_home": "{home}"}),
     ("text.image_mode", {"profile_home": "{home}", "provider": "anthropic", "model": "claude-sonnet-4-5"}),
     ("process.drain", {"profile_home": "{home}"}),

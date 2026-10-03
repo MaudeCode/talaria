@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { publicToolFrame, redactSensitive, redactSessionData, redactText } from './redact.js'
+import { mightContainSensitiveText, publicToolFrame, redactSensitive, redactSessionData, redactText } from './redact.js'
+import { sanitizeShareMessage } from './sessions/shares.js'
 
 describe('redactSensitive', () => {
   it('masks the password of a URL with userinfo and keeps the user and host', () => {
@@ -430,7 +431,8 @@ describe('redactSensitive cost', () => {
   it('stays linear on long runs of scheme and identifier characters', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
     // Unquoted runs, and many credential keys inside one long quoted argument.
-    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+    // The Agent's ported families: env names, split tokens, JWT headers, phone numbers and bare URL userinfo.
+    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
@@ -442,6 +444,7 @@ describe('redactSensitive cost', () => {
       Array.from({ length: 5 }, (_, i) => `A=${i}; `).join('') + '$A '.repeat(50_000), `A=${'x'.repeat(10_000)}; ${'B=$A; '.repeat(30_000)}`, `A=x; ${'A=$A$A; '.repeat(25_000)}curl -u bob:$A`,
       `P=hunter2; ${'Q="${P}x"; curl -u bob:$Q '.repeat(8_000)}`, `export ${'"A=1" '.repeat(40_000)}`, `A=1; ${'A+=1; '.repeat(30_000)}$A`, `x # '\n`.repeat(40_000), `A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; ${'$A '.repeat(40_000)}`, `export ${'"A=$(x" '.repeat(30_000)}`, `A=1; A=2; B=1; B=2; C=1; C=2; ${'curl -u bob:$A$B$C '.repeat(12_000)}`, `P=hunter2; ${'curl -u bob:$P '.repeat(15_000)}`, `A=${'x'.repeat(10_000)}; ${'$A'.repeat(50_000)}`]) {
       const started = performance.now()
+      mightContainSensitiveText(text)
       redactSensitive(text)
       expect(performance.now() - started).toBeLessThan(1000)
     }
@@ -558,4 +561,76 @@ describe('redactSessionData', () => {
     const call = ((out.messages as Record<string, unknown>[])[0]!.tool_calls as { function: { arguments: unknown } }[])[0]!
     expect(call.function.arguments).toEqual({ user: 'bob', password: '***' })
   })
+})
+
+/**
+ * Parity with the Agent's `redact_sensitive_text(text, force=True)` (Agent fef0bc56, its test vectors): each input with
+ * the Agent's own output. Session detail and frames go through `redactText`'s prefilter; public shares always redact.
+ */
+/** A synthetic token from its prefix and body, so no token literal sits in the source; masked to its first 6 and last 4. */
+const gitlab = ([prefix, body]: [string, string]): [string, string] => {
+  const token = prefix + body
+  return [token, `${token.slice(0, 6)}...${token.slice(-4)}`]
+}
+const AGENT_PARITY: Record<string, [string, string][]> = {
+  'env names ending in _KEY, _PASS or _PW': [
+    ['OPENAI_KEY=xyzzyplugh1234567890abcd', 'OPENAI_KEY=xyzzyp...abcd'],
+    ['MYSQL_PASS=ghi789', 'MYSQL_PASS=***'],
+    ['DB_PW=jkl012', 'DB_PW=***'],
+    ['openai_key=xyzzyplugh1234567890abcd', 'openai_key=xyzzyp...abcd'],
+    ['db_pass=hunter2', 'db_pass=***'],
+    ['redis_pw=hunter3', 'redis_pw=***'],
+    ['KEYBOARD=notsecret', 'KEYBOARD=notsecret'],
+    ['PASSAGE=notsecret', 'PASSAGE=notsecret'],
+    ['SORT_KEY=name', 'SORT_KEY=name'],
+  ],
+  'Telegram bot tokens and phone numbers': [
+    ['bot123456789:ABCDEfghij-KLMNopqrst_UVWXyz12345', 'bot123456789:***'],
+    ['12345678901:ABCDEfghijKLMNopqrstUVWXyz1234567890', '12345678901:***'],
+    ['call +15551234567 now', 'call +155****4567 now'],
+    ['sms +4479460 ok', 'sms +4****60 ok'],
+  ],
+  'vendor prefixes': [
+    ['key xai-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstu', 'key xai-AB...rstu'],
+    ['ntn_AbCdEfGhIjKlMnOpQrSt012', 'ntn_Ab...t012'],
+    [`fw-${'A'.repeat(40)}`, 'fw-AAA...AAAA'],
+    [`fw_${'B'.repeat(40)}`, 'fw_BBB...BBBB'],
+    [`fpk_${'C'.repeat(40)}`, 'fpk_CC...CCCC'],
+    ['pk-lf-abcdef12-3456', 'pk-lf-...3456'],
+    ['xapp-1-A0123456789-abcdefghijklmnop', 'xapp-1...mnop'],
+    ['fw-tooshort xai-tooshort glpat-short', 'fw-tooshort xai-tooshort glpat-short'],
+  ],
+  'GitLab tokens': ([
+    ['glpat-', 'Zx9AbCdEfGhIjKlMnOpQ'], ['gloas-', 'a'.repeat(64)], ['gldt-', 'AbCdEfGhIjKlMnOpQrSt'], ['glrt-', 't1_AbCdEfGhIjKlMnOpQrSt'],
+    ['glrt-', `${'A'.repeat(27)}.01.${'a'.repeat(9)}`], ['glrtr-', `${'B'.repeat(27)}.01.${'b'.repeat(9)}`], ['glcbt-', 'a1B2_AbCdEfGhIjKlMnOpQ'],
+    ['glptt-', 'c'.repeat(40)], ['glft-', 'AbCdEfGhIjKlMnOp'], ['glimt-', 'AbCdEfGhIjKlMnOpQrStUvWxY'], ['glagent-', 'd'.repeat(50)],
+    ['glsoat-', 'AbCdEfGhIjKlMnOpQrSt'], ['glffct-', 'AbCdEfGhIjKlMnOpQrSt'], ['glwt-', 'AbCdEfGhIjKlMnOpQrSt'], ['GR1348941', 'E'.repeat(20)],
+  ] as [string, string][]).map(gitlab),
+  'bare-token URL userinfo': [
+    ['git remote set-url origin https://MYPASSWORDWASDISLAYEDHERE@github.com/unclehowell/FCUK.git', 'git remote set-url origin https://MYPASS...HERE@github.com/unclehowell/FCUK.git'],
+    ['ssh://longtoken1234567@gitlab.com/project.git', 'ssh://***@gitlab.com/project.git'],
+    ['ftp://ftptoken123456@ftp.example.com/files', 'ftp://***@ftp.example.com/files'],
+    ['https://git@github.com/user/repo.git', 'https://git@github.com/user/repo.git'],
+    ['https://example.com/search?q=user@example.com', 'https://example.com/search?q=user@example.com'],
+  ],
+  'header-only and two-part JWTs': [
+    ['token eyJhbGciOiJIUzI1NiJ9 end', 'token eyJhbG...NiJ9 end'],
+    ['eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0', 'eyJhbG...wIn0'],
+  ],
+  'tokens split by control or zero-width characters': [
+    ['ghp_abcdef\n1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+    ['ghp_abcdef\x1b1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+    ['ghp_abcdef​1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+    [`sk-${'a'.repeat(15)}\x1b${'b'.repeat(25)}`, 'sk-aaa...bbbb'],
+    [`copied ghp_${'F'.repeat(29)}\nbutton [ref=e3]: Copy`, 'copied ghp_FF...FFFF\nbutton [ref=e3]: Copy'],
+  ],
+}
+
+describe('Agent redactor parity', () => {
+  for (const [family, cases] of Object.entries(AGENT_PARITY)) {
+    it.each(cases)(`masks ${family}: %j`, (input, expected) => {
+      expect(redactText(input, true)).toBe(expected)
+      expect(sanitizeShareMessage({ role: 'assistant', content: input }, [], [], '/nonexistent-home')?.content).toBe(expected)
+    })
+  }
 })

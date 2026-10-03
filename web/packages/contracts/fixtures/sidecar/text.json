@@ -1,14 +1,4 @@
 {
-  "text.redact": [
-    {
-      "params": {
-        "text": "token sk-abcdef1234567890abcdef1234567890 and AKIAIOSFODNN7EXAMPLE"
-      },
-      "result": {
-        "text": "token sk-abc...7890 and AKIAIO...MPLE"
-      }
-    }
-  ],
   "text.portal_tags": [
     {
       "params": {
