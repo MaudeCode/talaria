@@ -20,10 +20,10 @@
 @media (min-width:901px){.workspace-panel-edge-toggle{display:inline-flex;opacity:1;pointer-events:auto}}
 @media (min-width:901px){.rightpanel{flex-shrink:1;min-width:180px}}
 @media (max-width:900px){.workspace-panel-edge-toggle{display:none !important}}
-@media (max-width:900px){.rightpanel{display:none}}
-@media (max-width:640px){.rightpanel{display:flex !important;position:fixed;--mobile-rightpanel-width:min(300px, 100vw);right:calc(-1 * var(--mobile-rightpanel-width)) !important;top:0;bottom:0;width:var(--mobile-rightpanel-width) !important;max-width:100vw !important;z-index:200;padding-top:var(--app-titlebar-safe-top);box-sizing:border-box;transition:right .25s ease;box-shadow:none !important}}
-@media (max-width:640px){.rightpanel.mobile-open{right:0 !important;box-shadow:-4px 0 24px rgba(0,0,0,.4) !important}}
-@media (max-width:640px){.rightpanel .resize-handle{display:none}}
+/* TAL-373: below the edge tab's breakpoint the panel is a drawer the titlebar opens. */
+@media (max-width:900px){.rightpanel{display:flex !important;position:fixed;--mobile-rightpanel-width:min(300px, 100vw);right:calc(-1 * var(--mobile-rightpanel-width)) !important;top:0;bottom:0;width:var(--mobile-rightpanel-width) !important;max-width:100vw !important;z-index:200;padding-top:var(--app-titlebar-safe-top);box-sizing:border-box;transition:right .25s ease;box-shadow:none !important}}
+@media (max-width:900px){.rightpanel.mobile-open{right:0 !important;box-shadow:-4px 0 24px rgba(0,0,0,.4) !important}}
+@media (max-width:900px){.rightpanel .resize-handle{display:none}}
 /* z above .composer-wrap (10): the resize handle and edge tab overlap the card's right edge, which the composer wrap spans. */
 @media (min-width:641px){.rightpanel{position:relative;z-index:11}}
 .rightpanel[data-active-tab="artifacts"] .file-tree{display:none !important}

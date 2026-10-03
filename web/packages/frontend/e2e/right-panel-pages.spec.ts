@@ -10,7 +10,6 @@ const agent = (overrides: Record<string, unknown>) => ({
 /** One right panel hosts Files and Agents as tabs; Files keeps its folder and draft across switches (TAL-373). */
 test('the right panel shows Agents and Files as tabs that keep their state', async ({ page }, testInfo) => {
   const sid = 'panel-pages'
-  await page.addInitScript(() => { localStorage.setItem('hermes-webui-workspace-panel', 'open') })
   await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: {
     session_id: sid, title: 'Audit the repo', workspace: '/repo', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, transcript_seq: null,
     messages: [{ role: 'user', id: 1, content: 'Split the audit' }],
@@ -32,6 +31,9 @@ test('the right panel shows Agents and Files as tabs that keep their state', asy
   await page.route('**/api/file?**', (route) => route.fulfill({ json: { path: 'src/notes.txt', content: 'first line\n', size: 11, lines: 1 } }))
 
   await page.goto(`/session/${sid}`)
+  // Wide screens open the panel from its edge tab; narrow ones, which have no edge tab, from the titlebar.
+  if (testInfo.project.name === 'mobile') await page.locator('#btnTitlebarSidePanel').click()
+  else await page.getByRole('button', { name: 'Show workspace panel' }).click()
   const tabs = page.getByRole('tablist', { name: 'Side panel' })
   // Agents are running, so the panel opens on Agents.
   await expect(tabs.getByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true')

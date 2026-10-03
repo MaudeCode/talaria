@@ -24,6 +24,7 @@ import { useClarify } from './useClarify'
 import { useMarkViewed } from './useMarkViewed'
 import { TerminalPanel } from '../terminal/TerminalPanel'
 import { ChatSidePanel } from './ChatSidePanel'
+import { setSidePanelOpen, toggleSidePanel, useShellState } from '../../shell/useShellState'
 import { workspaceLabel } from '../workspaces/label'
 import { useRuntimeNotices } from '../notices/useRuntimeNotices'
 import { showToast } from '../toast/toast'
@@ -44,7 +45,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const clarify = useClarify(sessionId, live)
   useMarkViewed(sessionId, query.isFetchedAfterMount || (query.isSuccess && !query.isStale), live && isTerminal(live.status) ? live.streamId : null)
   const [terminalOpen, setTerminalOpen] = useState(false)
-  const [workspaceOpen, setWorkspaceOpen] = useState(() => readPersisted('hermes-webui-workspace-panel') === 'open')
+  const { sidePanelOpen } = useShellState()
   const [queued, setQueued] = useState<QueuedTurn[]>([])
   const draining = useRef(false)
   const [yolo, setYolo] = useState(false)
@@ -343,7 +344,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <span className="sr-only" aria-live="polite" id="a11yAnnouncer">{live?.status === 'done' ? m.done() : ''}</span>
       </div>
       {/* Always mounted beside main (its queries run only while open) so opening and closing animate and the edge tab is always there. */}
-      {sessionId && <ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} open={workspaceOpen} onToggle={() => setWorkspaceOpen((o) => !o)} onClose={() => setWorkspaceOpen(false)} />}
+      {sessionId && <ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} open={sidePanelOpen} onToggle={toggleSidePanel} onClose={() => setSidePanelOpen(false)} />}
     </>
   )
 }

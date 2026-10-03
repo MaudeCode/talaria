@@ -13,17 +13,24 @@ import { agentsSummary, StatusIcon, statusLabel } from './BackgroundWork'
 
 const LIVE_REFRESH_MS = 10_000
 
-/** Whether the session has agents running or needing attention (the panel's first default page); undefined until known. */
+/** The session's delegations. ponytail: old-server fallback — a server before TAL-373 ignores `kind` and returns every
+ * kind; keep only delegations until every supported server narrows the list itself. */
+const fetchAgents = async (sessionId: string) => {
+  const response = await api.fetchBackgroundTasks(sessionId, 'delegation')
+  return { ...response, tasks: response.tasks.filter((t) => t.kind === 'delegation') }
+}
+/** Whether the session has agents running or needing attention (the panel's first default page); undefined until this
+ * mount has its own answer, so a snapshot cached from an earlier visit never picks the page. */
 export function useHasActiveAgents(sessionId: string): boolean | undefined {
-  const query = useQuery({ queryKey: keys.backgroundAgents(sessionId), queryFn: () => api.fetchBackgroundTasks(sessionId, 'delegation') })
-  if (query.isPending) return undefined
+  const query = useQuery({ queryKey: keys.backgroundAgents(sessionId), queryFn: () => fetchAgents(sessionId) })
+  if (!query.isFetchedAfterMount && !query.isError) return undefined
   return (query.data?.tasks ?? []).some((t) => t.status === 'running' || t.status === 'attention')
 }
 
 export function AgentsPage({ sessionId, active }: { sessionId: string; active: boolean }) {
   const query = useQuery({
     queryKey: keys.backgroundAgents(sessionId),
-    queryFn: () => api.fetchBackgroundTasks(sessionId, 'delegation'),
+    queryFn: () => fetchAgents(sessionId),
     refetchInterval: (q) => (active && q.state.data?.tasks.some((t) => t.active) ? LIVE_REFRESH_MS : false),
   })
   if (query.isPending) return <LoadingState />

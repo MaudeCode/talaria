@@ -53,6 +53,23 @@ describe('chat side panel (TAL-373)', () => {
     expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('aria-selected', 'true')
   })
 
+  it('picks the first page from this visit\'s answer, never from a snapshot cached on an earlier visit', async () => {
+    // An earlier visit cached a running agent; it finished while the chat was closed.
+    qc.setQueryData(['sessions', 'background', 's1', 'agents'], tasks([agent({ task_id: 'd1' })]))
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue(tasks([agent({ task_id: 'd1', status: 'completed', active: false, pinned: false })]))
+    render(<Panel />)
+    await waitFor(() => { expect(api.fetchBackgroundTasks).toHaveBeenCalled() })
+    await waitFor(() => { expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('aria-selected', 'true') })
+  })
+
+  it('lists only agents even when an older server ignores the kind filter', async () => {
+    localStorage.setItem('talaria-right-panel-page', 'agents')
+    vi.mocked(api.fetchBackgroundTasks).mockResolvedValue(tasks([agent({ task_id: 'd1' }), agent({ task_id: 'proc_1', kind: 'process', title: 'make test' }), agent({ task_id: 'bg1', kind: 'background_command', title: 'summarize' })]))
+    render(<Panel />)
+    const list = within(await screen.findByRole('list', { name: 'Agents' }))
+    expect(list.getAllByRole('listitem').map((e) => e.getAttribute('data-task-id'))).toEqual(['d1'])
+  })
+
   it('opens on the last chosen page when no agent is running, and remembers a choice', async () => {
     const { unmount } = render(<Panel />)
     await waitFor(() => { expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('aria-selected', 'true') })

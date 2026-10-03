@@ -1,10 +1,10 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import { NAV_ITEMS, panelForPath } from './nav'
-import { Menu as MenuIcon, Plus, RotateCw } from 'lucide-react'
+import { Menu as MenuIcon, PanelRight, Plus, RotateCw } from 'lucide-react'
 import { m } from '../paraglide/messages.js'
 import { useBootstrap } from '../app/bootstrap'
 import { ProfileMenu } from './ProfileMenu'
-import { toggleMobileSidebar } from './useShellState'
+import { toggleMobileSidebar, toggleSidePanel, useShellState } from './useShellState'
 import { useNewChat } from '../features/sessions/useNewChat'
 import { Brandmark } from './Brandmark'
 import { UpdateNotificationCenterButton } from '../features/notifications/UpdateNotificationCenter'
@@ -17,6 +17,9 @@ export function Titlebar({ title, subtitle }: { title?: string; subtitle?: strin
   const location = useLocation()
   const panel = panelForPath(location.pathname)
   const panelLabel = NAV_ITEMS.find((n) => n.id === panel)?.label() ?? bootstrap.bot_name
+  const { sidePanelOpen } = useShellState()
+  // TAL-373: a chat's right panel (Files, Agents) has no edge tab on narrow screens; this opens it there.
+  const inChat = location.pathname.startsWith('/session/')
   return (
     <header className="app-titlebar relative z-20 flex h-[38px] shrink-0 items-center justify-center bg-(--titlebar-bg) [backdrop-filter:var(--chrome-backdrop)] border-b-0 px-3 pt-(--app-titlebar-safe-top) pl-[max(12px,env(safe-area-inset-left,0))] pr-[max(12px,env(safe-area-inset-right,0))] box-content text-[12px] text-muted select-none [-webkit-app-region:drag] max-[901px]:justify-between max-[769px]:bg-(--titlebar-bg) max-[769px]:border-b max-[769px]:border-b-(--titlebar-border) max-[641px]:h-[52px]" role="banner">
       <div className="app-titlebar-left flex items-center gap-1">
@@ -32,6 +35,11 @@ export function Titlebar({ title, subtitle }: { title?: string; subtitle?: strin
       </div>
       <div className="app-titlebar-spacer hidden size-11 shrink-0 max-[901px]:flex" aria-hidden="true" />
       <UpdateNotificationCenterButton placement="titlebar" />
+      {inChat && (
+        <button className="app-titlebar-side-panel hidden size-11 shrink-0 [-webkit-app-region:no-drag] items-center justify-center bg-transparent border-0 text-muted rounded-[8px] cursor-pointer p-0 max-[901px]:flex" id="btnTitlebarSidePanel" type="button" aria-label={m.panel_label()} title={m.panel_label()} aria-pressed={sidePanelOpen} onClick={toggleSidePanel}>
+          <PanelRight size={18} aria-hidden="true" />
+        </button>
+      )}
       <button className="app-titlebar-new-chat" id="btnTitlebarNewChat" type="button" aria-label={m.new_conversation()} title={m.new_conversation()} onClick={() => { void newChat() }}>
         <Plus size={16} aria-hidden="true" />
       </button>

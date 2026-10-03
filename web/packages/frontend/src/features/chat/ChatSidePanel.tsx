@@ -17,7 +17,6 @@ export function ChatSidePanel({ sessionId, workspace, open, onToggle, onClose }:
   // This session's page, fixed on the panel's first open here; a later status change never moves it.
   const [chosen, setChosen] = useState<string | null>(null)
   const fallback = readPersisted(PAGE_KEY) ?? 'files'
-  useEffect(() => { writePersisted('hermes-webui-workspace-panel', open ? 'open' : 'closed') }, [open])
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the first open picks this session's page once the agents are known
     if (open && chosen === null && hasActiveAgents !== undefined) setChosen(hasActiveAgents ? 'agents' : fallback)
