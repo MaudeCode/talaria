@@ -1046,10 +1046,11 @@ struct SessionListView: View {
         )
     }
 
-    /// Bottom-of-list entry to the Archived screen (issue #17). Hidden while
-    /// searching, offline (cached data cannot fetch archived rows), and when the
-    /// server reports zero archived sessions or omits `archived_count` (older
-    /// server) — so the list is unchanged for users with nothing archived.
+    /// Bottom-of-list entry to the Archived screen (issue #17). Hidden once a
+    /// search query is typed, offline (cached data cannot fetch archived rows),
+    /// and when the server reports zero archived sessions or omits
+    /// `archived_count` (older server) — so the list is unchanged for users
+    /// with nothing archived.
     private var showsArchivedEntry: Bool {
         guard !hasSearchQuery, !viewModel.isViewingCachedData else { return false }
         return (viewModel.archivedCount ?? 0) > 0
