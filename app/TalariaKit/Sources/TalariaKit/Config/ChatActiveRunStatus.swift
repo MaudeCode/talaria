@@ -102,15 +102,6 @@ public struct ChatActiveRunStatusPresentation: Equatable {
 }
 
 public enum ChatActiveRunStatusPolicy {
-    /// The transcript tail's recovery chip. While the syncing pill shows, it stands in for the
-    /// chip so the two never compete (TAL-436).
-    public static func transcriptRecoveryState(
-        _ state: ActiveStreamRecoveryState,
-        statusPresentation: ChatActiveRunStatusPresentation?
-    ) -> ActiveStreamRecoveryState {
-        statusPresentation?.isSyncing == true ? .idle : state
-    }
-
     public static func presentation(
         isStartingChat: Bool,
         hasActiveStream: Bool,
@@ -130,16 +121,17 @@ public enum ChatActiveRunStatusPolicy {
         }
 
         // Syncing has no inline twin at the transcript tail, so it shows at any scroll
-        // position, and it stands in for run progress until the transcript is current.
+        // position, and it stands in for run progress and recovery until the transcript is current.
         if isSyncingTranscript {
             return ChatActiveRunStatusPresentation(kind: .syncing)
         }
 
-        guard !isScrolledNearBottom else { return nil }
-
+        // Stream recovery never shows in the transcript, so it floats at any scroll position (TAL-449).
         if let recovery = ChatActiveRunStatusPresentation(recoveryState: activeStreamRecoveryState) {
             return recovery
         }
+
+        guard !isScrolledNearBottom else { return nil }
 
         guard hasActiveStream else { return nil }
         return ChatActiveRunStatusPresentation(kind: isBackgroundTurn ? .background : .active)

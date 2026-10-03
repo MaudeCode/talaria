@@ -1102,10 +1102,6 @@ struct ChatView: View {
             toolCallAnchorMessageID: viewModel.toolCallAnchorMessageID,
             streamingAssistantMessageID: viewModel.streamingAssistantMessageID,
             liveTokensPerSecond: viewModel.liveTokensPerSecond,
-            activeStreamRecoveryState: ChatActiveRunStatusPolicy.transcriptRecoveryState(
-                viewModel.activeStreamRecoveryState,
-                statusPresentation: activeRunStatusPresentation
-            ),
             showsRunStateCheck: viewModel.showsRunStateCheck,
             clarificationPrompt: viewModel.clarificationPrompt,
             hidesRunStatusAccessibility: activeRunStatusPresentation.map { !$0.isSyncing } ?? false,
