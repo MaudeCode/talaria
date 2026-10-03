@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { BootstrapSchema, AuthStatusSchema, HealthSchema } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, cookieHeader, WEB_ROOT, type TestServer } from './test/harness.js'
@@ -315,5 +316,54 @@ describe('trusted-header auth', () => {
     expect(boot.profile?.name).toBe('work')
     const out = await s.get('/api/auth/logout', { method: 'POST', headers: { cookie: session!, 'X-Remote-User': 'kim', 'X-Remote-Groups': 'ops' } })
     expect(await out.json()).toEqual({ ok: true, trusted_logout_url: 'https://sso.example/logout' })
+  })
+})
+
+describe('trusted-header auth on an isolated profile instance', () => {
+  // Every gated route refuses the mismatched binding; the public bootstrap and auth status report it logged out.
+  const ROUTES = ['/api/sessions', '/api/profiles', '/api/settings', '/api/crons', '/api/memory']
+  let base = ''
+  let home = ''
+  beforeAll(() => {
+    base = mkdtempSync(join(tmpdir(), 'talaria-isolated-auth-'))
+    home = join(base, 'profiles', 'alice')
+    mkdirSync(home, { recursive: true })
+  })
+  afterAll(() => { rmSync(base, { recursive: true, force: true }) })
+  const boot = (env: Record<string, string> = {}) => bootTestServer({ env: { HERMES_WEBUI_ISOLATED_PROFILE: '1', HERMES_HOME: home, HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User', HERMES_WEBUI_TRUSTED_GROUPS_HEADER: 'X-Remote-Groups', ...env } })
+
+  // `/api/crons` answers 503 without a sidecar; admission only means the gate let the request through.
+  it('refuses a session bound to another profile on every API route and admits the pinned profile', async () => {
+    const s = await boot({ HERMES_WEBUI_GROUP_PROFILE_MAP: '{"alice-team":"alice","bob-team":"bob"}' })
+    try {
+      for (const groups of ['bob-team', 'strangers']) {
+        const headers = { 'X-Remote-User': 'mallory', 'X-Remote-Groups': groups }
+        const boot = BootstrapSchema.parse(await (await s.get('/api/bootstrap', { headers })).json())
+        expect(boot, groups).toMatchObject({ csrf_token: '', profile: null, onboarding: null, auth: { logged_in: false } })
+        expect(AuthStatusSchema.parse(await (await s.get('/api/auth/status', { headers })).json()).logged_in, groups).toBe(false)
+      }
+      for (const route of ROUTES) {
+        for (const groups of ['bob-team', 'strangers']) {
+          const res = await s.get(route, { headers: { 'X-Remote-User': 'mallory', 'X-Remote-Groups': groups } })
+          expect(res.status, `${route} as ${groups}`).toBe(403)
+          expect(await res.json()).toEqual({ error: 'Profile access forbidden' })
+        }
+        const ok = await s.get(route, { headers: { 'X-Remote-User': 'alice', 'X-Remote-Groups': 'alice-team' } })
+        expect([401, 403], route).not.toContain(ok.status)
+      }
+      const boot = BootstrapSchema.parse(await (await s.get('/api/bootstrap', { headers: { 'X-Remote-User': 'alice', 'X-Remote-Groups': 'alice-team' } })).json())
+      expect(boot.auth.logged_in && boot.profile?.name).toBe('alice')
+      expect(boot.csrf_token).not.toBe('')
+      expect(s.deps.requestScope.run({ requestProfile: 'bob' }, () => s.deps.activeProfile())).toBe('alice')
+    } finally { await s.close() }
+  })
+
+  it('admits an unbound session on the pinned profile', async () => {
+    const s = await boot()
+    try {
+      for (const route of ROUTES) expect([401, 403], route).not.toContain((await s.get(route, { headers: { 'X-Remote-User': 'alice' } })).status)
+      const res = await s.get('/api/bootstrap', { headers: { 'X-Remote-User': 'alice' } })
+      expect(BootstrapSchema.parse(await res.json()).profile?.name).toBe('alice')
+    } finally { await s.close() }
   })
 })

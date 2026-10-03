@@ -6,7 +6,7 @@
 import { implement, ORPCError } from '@orpc/server'
 import { coreContract, type AuthStatus, type Bootstrap, type Health } from '@maudecode/talaria-web-contracts'
 import type { RequestContext } from '../http/context.js'
-import { authStatusPayload, clearAuthCookieHeader, clearProfileCookieHeader, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
+import { activeProfileName, authStatusPayload, clearAuthCookieHeader, clearProfileCookieHeader, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { OidcAuthError, OidcConfigError } from '../auth/oidc.js'
 import { PasskeyError, PasskeyRateLimitError, rpContext } from '../auth/passkeys.js'
 import { requestBaseUrl } from './auth-raw.js'
@@ -75,7 +75,7 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
   const { deps } = ctx
   const auth = await authStatusPayload(ctx)
   let csrfToken = ''
-  if (await deps.auth.isAuthEnabled()) {
+  if (auth.auth_enabled && auth.logged_in) {
     const cookieVal = ctx.authCookie() ?? ctx.trusted.cookieValue ?? null
     if (cookieVal && deps.auth.verifySession(cookieVal)) csrfToken = deps.auth.csrfTokenForSession(cookieVal) ?? ''
   }
@@ -85,7 +85,7 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
   let onboarding: Bootstrap['onboarding'] = null
   let features: Bootstrap['features'] = { dashboard: false, terminal_remote_backend: false, extensions: false, single_profile_mode: false }
   if (authenticated) {
-    const active = ctx.requestProfile ?? deps.activeProfile()
+    const active = activeProfileName(ctx)
     profile = { name: active, is_default: deps.isRootProfile(active) }
     onboarding = { completed: deps.onboardingCompleted() }
     features = deps.features()
@@ -96,7 +96,7 @@ export async function bootstrapPayload(ctx: RequestContext): Promise<Bootstrap> 
     csrf_token: csrfToken,
     language: authenticated ? shellLanguage(ctx) : '',
     bot_name: displayBotName(authenticated ? settings.bot_name : null),
-    assistant_name: authenticated ? deps.assistantName(ctx.requestProfile ?? deps.activeProfile()) : 'Hermes',
+    assistant_name: authenticated ? deps.assistantName(activeProfileName(ctx)) : 'Hermes',
     auth,
     profile,
     onboarding,

@@ -93,7 +93,7 @@ export function clearAuthCookieHeader(ctx: RequestContext): string {
 // ── profiles ──────────────────────────────────────────────────────────────
 
 export function activeProfileName(ctx: RequestContext): string {
-  return ctx.requestProfile ?? ctx.deps.activeProfile()
+  return ctx.deps.isolatedProfileMode() ? ctx.deps.activeProfile() : ctx.requestProfile ?? ctx.deps.activeProfile()
 }
 
 export function profilesMatch(ctx: RequestContext, rowProfile: string | null | undefined, activeProfile: string | null | undefined): boolean {
@@ -367,6 +367,8 @@ export async function authStatusPayload(ctx: RequestContext): Promise<AuthStatus
   let loggedIn = false
   if (authEnabled) {
     sessionInfo = await ensureTrustedAuthSession(ctx)
+    // A binding the pinned profile refuses is no login here: the public bootstrap must not hand it the profile's payload.
+    if (!trustedSessionAllowsActiveProfile(ctx, sessionInfo)) sessionInfo = null
     loggedIn = Boolean(sessionInfo)
   }
   const passkeyFlag = auth.passkeyFeatureFlagEnabled()
