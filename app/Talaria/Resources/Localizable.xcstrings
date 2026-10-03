@@ -101630,108 +101630,532 @@
         }
       }
     },
-    "Steering hint was not consumed before the response ended, so it was queued for the next turn." : {
+    "Send now" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "لم يُستهلَك تلميح التوجيه قبل انتهاء الرد، لذا وُضع في قائمة الانتظار للدور التالي."
+            "value" : "إرسال الآن"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Der Steuerungshinweis wurde nicht verarbeitet, bevor die Antwort endete, daher wurde er für den nächsten Zug in die Warteschlange gestellt."
+            "value" : "Jetzt senden"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "La sugerencia de dirección no se procesó antes de que terminara la respuesta, por lo que se puso en cola para el siguiente turno."
+            "value" : "Enviar ahora"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "L'indication d'orientation n'a pas été utilisée avant la fin de la réponse ; elle a été mise en attente pour le prochain tour."
+            "value" : "Envoyer maintenant"
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "רמז ההכוונה לא נצרך לפני שהתגובה הסתיימה, ולכן הוכנס לתור עבור התור הבא."
+            "value" : "שליחה עכשיו"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Il suggerimento di guida non è stato recepito prima della fine della risposta, quindi è stato messo in coda per il turno successivo."
+            "value" : "Invia ora"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "応答が終了する前に誘導ヒントが使用されなかったため、次のターンのためにキューに入れられました。"
+            "value" : "今すぐ送信"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "응답이 끝나기 전에 유도 힌트가 사용되지 않아 다음 차례를 위해 대기열에 추가되었어요."
+            "value" : "지금 보내기"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "De bijstuurhint is niet verwerkt voordat het antwoord eindigde, dus is deze in de wachtrij geplaatst voor de volgende beurt."
+            "value" : "Nu versturen"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Wskazówka sterowania nie została wykorzystana przed zakończeniem odpowiedzi i trafiła do kolejki na następną turę."
+            "value" : "Wyślij teraz"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "A dica de direcionamento não foi consumida antes de a resposta terminar, então ela foi colocada na fila para o próximo turno."
+            "value" : "Enviar agora"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Подсказка для направления не была использована до завершения ответа, поэтому она поставлена в очередь на следующий ход."
+            "value" : "Отправить сейчас"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Yönlendirme ipucu yanıt sona ermeden önce işlenmedi, bu yüzden bir sonraki tur için kuyruğa alındı."
+            "value" : "Şimdi gönder"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "جواب ختم ہونے سے پہلے رہنمائی کا اشارہ استعمال نہیں ہوا، اس لیے اسے اگلی باری کے لیے قطار میں ڈال دیا گیا۔"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "引导提示在响应结束前未被采用，因此已排队至下一轮。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "引導提示在回應結束前未被採用，因此已排隊至下一輪。"
+            "value" : "ابھی بھیجیں"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "引導提示在回應結束前未被採用，因此已排隊至下一輪。"
+            "value" : "立即傳送"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "立即发送"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "立即傳送"
+          }
+        }
+      }
+    },
+    "Edit steering message" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تعديل رسالة التوجيه"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Steuerhinweis bearbeiten"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Editar indicación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Modifier l’indication"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "עריכת הודעת ההכוונה"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Modifica indicazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ステアリングメッセージを編集"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "조정 메시지 편집"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stuurbericht bewerken"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Edytuj wskazówkę"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Editar orientação"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Изменить подсказку"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yönlendirmeyi düzenle"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "رہنمائی کا پیغام ترمیم کریں"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "編輯引導訊息"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "编辑引导消息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "編輯引導訊息"
+          }
+        }
+      }
+    },
+    "Cancel steering message" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "إلغاء رسالة التوجيه"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Steuerhinweis abbrechen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cancelar indicación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Annuler l’indication"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ביטול הודעת ההכוונה"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Annulla indicazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ステアリングメッセージを取り消す"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "조정 메시지 취소"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stuurbericht annuleren"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Anuluj wskazówkę"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cancelar orientação"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Отменить подсказку"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yönlendirmeyi iptal et"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "رہنمائی کا پیغام منسوخ کریں"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "取消引導訊息"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "取消引导消息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "取消引導訊息"
+          }
+        }
+      }
+    },
+    "The agent already took this steering message." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "استلم الوكيل رسالة التوجيه هذه بالفعل."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Agent hat diesen Steuerhinweis bereits übernommen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El agente ya tomó esta indicación."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’agent a déjà pris cette indication."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "הסוכן כבר קיבל את הודעת ההכוונה הזו."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’agente ha già preso questa indicazione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "エージェントはこのステアリングメッセージをすでに受け取りました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "에이전트가 이미 이 조정 메시지를 받았습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De agent heeft dit stuurbericht al ontvangen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Agent już przyjął tę wskazówkę."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O agente já recebeu esta orientação."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Агент уже принял эту подсказку."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ajan bu yönlendirmeyi zaten aldı."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ایجنٹ یہ رہنمائی کا پیغام پہلے ہی لے چکا ہے۔"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "代理已收到這則引導訊息。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "代理已收到这条引导消息。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "代理已收到這則引導訊息。"
+          }
+        }
+      }
+    },
+    "Nothing is running to take it now; it stays pending." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "لا شيء قيد التشغيل لاستلامها الآن؛ تبقى معلّقة."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gerade läuft nichts, das ihn übernehmen kann; er bleibt ausstehend."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No hay nada en curso que pueda tomarla ahora; queda pendiente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rien ne tourne pour la prendre maintenant ; elle reste en attente."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "אין כרגע ריצה שתקבל אותה; היא נשארת ממתינה."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Non c’è nulla in esecuzione che possa prenderla ora; resta in attesa."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "今受け取れる処理が動いていないため、保留のままです。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "지금 받을 실행이 없어 대기 상태로 남습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Er draait nu niets dat het kan ontvangen; het blijft in afwachting."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nic teraz nie działa, by ją przyjąć; pozostaje oczekująca."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nada está em execução para recebê-la agora; ela continua pendente."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сейчас нечему её принять; она остаётся в ожидании."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Şu anda bunu alacak çalışan bir şey yok; beklemede kalıyor."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ابھی اسے لینے کے لیے کچھ نہیں چل رہا؛ یہ زیرِ التوا رہے گا۔"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "目前沒有可接收它的執行，它將保持待處理。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "当前没有可接收它的运行，它将保持待处理。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "目前沒有可接收它的執行，它將保持待處理。"
           }
         }
       }

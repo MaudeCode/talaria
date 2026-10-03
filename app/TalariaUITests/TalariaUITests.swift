@@ -415,6 +415,35 @@ final class ChatRecoveryUITests: ChatUITestCase {
     }
 }
 
+/// A steer sent from another device shows as a pending bubble with the server's actions; Send now says when it must
+/// wait, and Edit puts its text back in the composer (TAL-426).
+final class PendingSteerUITests: ChatUITestCase {
+    func testPendingSteerFromAnotherDeviceOffersSendNowEditAndCancel() throws {
+        launchChatFixture(argument: "--ui-test-chat-pending-steers", trace: "start -> token -> steer_pending -> withdraw -> steer_withdrawn")
+        try sendFixtureMessage("Back up the cluster")
+
+        XCTAssertTrue(app.staticTexts["Check the backup logs too"].awaitExistence(timeout: 10), "The pending steer from Web is missing")
+        XCTAssertTrue(element(labelContaining: "Waiting for agent").awaitExistence(timeout: 5))
+        let sendNow = app.buttons["Send now"]
+        XCTAssertTrue(sendNow.awaitExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Edit steering message"].exists)
+        XCTAssertTrue(app.buttons["Cancel steering message"].exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "pending-steer"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        tapCenter(of: sendNow)
+        XCTAssertTrue(element(labelContaining: "it stays pending").awaitExistence(timeout: 5), "Send now gave no notice when nothing could take it")
+
+        tapCenter(of: app.buttons["Edit steering message"])
+        XCTAssertTrue(app.staticTexts["Check the backup logs too"].awaitNonExistence(timeout: 10), "The edited steer is still pending")
+        let input = app.textViews.firstMatch
+        XCTAssertTrue(input.awaitExistence(timeout: 5))
+        XCTAssertEqual(input.value as? String, "Check the backup logs too")
+    }
+}
+
 /// The composer collapses as the transcript scrolls and expands again, starting from a fresh,
 /// unfocused composer with no draft. Its first expansion runs in `ChatNavigationUITests`.
 final class ChatComposerUITests: ChatUITestCase {

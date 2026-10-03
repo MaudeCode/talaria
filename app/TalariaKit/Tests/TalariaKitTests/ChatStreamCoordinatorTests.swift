@@ -1597,7 +1597,8 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
     private(set) var loadMessagesHadModelContext: [Bool] = []
     private(set) var tokens: [String] = []
     private(set) var donePayloads: [DoneStreamEvent] = []
-    private(set) var pendingSteerLeftovers: [String] = []
+    private(set) var pendingSteers: [PendingSteer] = []
+    private(set) var withdrawnSteers: [SteerWithdrawnEvent] = []
     private(set) var consumedSteerIDs: [String] = []
     var latestAssistantMessageID: String? = "assistant-latest"
     var restoredSnapshotEventID: String?
@@ -1725,11 +1726,12 @@ private final class CoordinatorDelegateSpy: ChatStreamCoordinatorDelegate {
         return true
     }
 
-    func streamCoordinatorEnqueuePendingSteerLeftover(_ event: SteeringStreamEvent) -> Bool {
-        let trimmed = event.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        pendingSteerLeftovers.append(trimmed)
-        return true
+    func streamCoordinatorApplyPendingSteer(_ steer: PendingSteer) {
+        pendingSteers.append(steer)
+    }
+
+    func streamCoordinatorWithdrawSteer(_ event: SteerWithdrawnEvent) {
+        withdrawnSteers.append(event)
     }
 }
 

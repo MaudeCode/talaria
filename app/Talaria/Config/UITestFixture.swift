@@ -279,6 +279,8 @@ private enum UITestChatScenario: String, CaseIterable {
     case clarification = "--ui-test-chat-clarification"
     case full = "--ui-test-chat-full"
     case controls = "--ui-test-chat-controls"
+    /// TAL-426: a pending steer from another device, with the server's Send now, Edit and Cancel.
+    case pendingSteers = "--ui-test-chat-pending-steers"
 
     static var current: Self? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -296,6 +298,7 @@ private final class UITestChatFixtureState: @unchecked Sendable {
     private var clarificationAnswered = false
     private var clarificationResponse = ""
     private var steerID: String?
+    private var withdrawnSteerID: String?
     private var cancelled = false
 
     func startChat() {
@@ -340,6 +343,13 @@ private final class UITestChatFixtureState: @unchecked Sendable {
         condition.unlock()
     }
 
+    func withdrawSteer(id: String?) {
+        condition.lock()
+        withdrawnSteerID = id
+        condition.broadcast()
+        condition.unlock()
+    }
+
     func cancel() {
         condition.lock()
         cancelled = true
@@ -369,6 +379,12 @@ private final class UITestChatFixtureState: @unchecked Sendable {
         condition.unlock()
     }
 
+    func steerWithdrawnIDSnapshot() -> String? {
+        condition.lock()
+        defer { condition.unlock() }
+        return withdrawnSteerID
+    }
+
     func wakeWaiters() {
         condition.lock()
         condition.broadcast()
@@ -378,6 +394,7 @@ private final class UITestChatFixtureState: @unchecked Sendable {
     fileprivate var approvalWasAnswered: Bool { approvalAnswered }
     fileprivate var clarificationWasAnswered: Bool { clarificationAnswered }
     fileprivate var acceptedSteerID: String? { steerID }
+    fileprivate var steerWithdrawnID: String? { withdrawnSteerID }
     fileprivate var wasCancelled: Bool { cancelled }
 }
 
@@ -400,6 +417,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         ProcessInfo.processInfo.arguments.contains(UITestFixtureEnvironment.trustedReauthenticationArgument)
     }
     private static let chatStreamID = "ui-fixture-stream"
+    static let pendingSteerID = "steer-ui-fixture-web"
+    static let pendingSteerText = "Check the backup logs too"
     private static let chatState = UITestChatFixtureState.shared
     private let lifecycleLock = NSLock()
     private var stopped = false
@@ -621,6 +640,12 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 "stream_id": chatStreamID,
                 "replay_available": false
             ])
+        case "/api/chat/steer/withdraw":
+            let steerID = requestJSON(request)["steer_id"] as? String
+            chatState.withdrawSteer(id: steerID)
+            return json(["withdrawn": true, "text": Self.pendingSteerText])
+        case "/api/chat/steer/send-now":
+            return json(["redirected": false])
         case "/api/chat/steer":
             let steerID = requestJSON(request)["steer_id"] as? String
             chatState.acceptSteer(id: steerID)
@@ -1182,6 +1207,26 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                 ("done", [:]),
                 ("stream_end", [:])
             ])
+            finish()
+        case .pendingSteers:
+            send(events: [
+                ("token", ["text": "Working on the backup."]),
+                ("steer_pending", [
+                    "steer_id": Self.pendingSteerID,
+                    "text": Self.pendingSteerText,
+                    "submitted_at": 2_000_000_050,
+                    "state": "pending",
+                    "actions": ["edit": true, "cancel": true, "send_now": true]
+                ])
+            ])
+            wait { $0.steerWithdrawnID != nil || $0.wasCancelled }
+            guard !isStopped else { return }
+            if let steerID = Self.chatState.steerWithdrawnIDSnapshot() {
+                send(events: [("steer_withdrawn", ["steer_id": steerID, "reason": "edit", "text": Self.pendingSteerText])])
+            }
+            wait { $0.wasCancelled }
+            guard !isStopped else { return }
+            send(events: [("cancel", [:])])
             finish()
         case .controls:
             send(events: [("token", ["text": "Waiting for control input."])])

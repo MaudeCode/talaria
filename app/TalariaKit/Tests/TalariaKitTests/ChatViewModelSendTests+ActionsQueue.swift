@@ -1150,7 +1150,7 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
-    func testSteerLeftoverBecomesOneNormalNextTurnMessage() async throws {
+    func testSteerTheServerSendsOnIsNeverQueuedAgain() async throws {
         let streamClient = SpySSEStreamingClient()
         var chatStartCount = 0
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
@@ -1169,8 +1169,7 @@ extension ChatViewModelSendTests {
                     for: request
                 )
             default:
-                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
-                throw URLError(.badURL)
+                return apiTestJSONResponse(#"{}"#, for: request)
             }
         }
 
@@ -1178,20 +1177,14 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(didStart)
         _ = await viewModel.submitStreamingMessage("Run the focused test", behavior: .steer)
         let steerID = try XCTUnwrap(viewModel.messages.last(where: \.isLocalSteeringHint)?.messageId)
-        streamClient.emit(.pendingSteerLeftover(SteeringStreamEvent(
-            steerId: steerID,
-            text: "Run the focused test"
-        )))
+        // TAL-424/426: the turn ended without taking it; the server withdraws it and sends it as its own next turn.
+        streamClient.emit(.steerWithdrawn(SteerWithdrawnEvent(steerId: steerID, reason: .followup, text: "Run the focused test")))
 
         XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
-
         streamClient.emit(.streamEnd)
-        try await waitUntil { chatStartCount == 2 }
-        XCTAssertEqual(
-            viewModel.messages.filter { $0.content == "Run the focused test" }.count,
-            1
-        )
-        XCTAssertNil(viewModel.messages.last?.steeringHintState)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(chatStartCount, 1)
+        XCTAssertTrue(viewModel.returnedComposerTexts.isEmpty)
     }
 
     @MainActor
@@ -1236,7 +1229,9 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
-    func testReconnectSnapshotKeepsPendingSteeringHintInOrder() async throws {
+    func testReloadShowsEachServerPendingSteerOnceFromAnyDevice() async throws {
+        final class SteerIDBox: @unchecked Sendable { var value = "" }
+        let mine = SteerIDBox()
         let streamClient = SpySSEStreamingClient()
         let viewModel = try makeViewModel(streamClient: streamClient) { request in
             switch request.url?.path {
@@ -1251,15 +1246,21 @@ extension ChatViewModelSendTests {
                     for: request
                 )
             case "/api/session":
+                // TAL-426: the server lists the run's pending steers, this device's and one sent from Web.
                 return apiTestJSONResponse(
                     """
                     {
                       "session": {
                         "session_id": "session-abc",
                         "active_stream_id": "stream-123",
+                        "is_streaming": true,
                         "messages": [
                           {"role":"user","content":"Initial request","message_id":"user-1"},
                           {"role":"assistant","content":"Before hint. ","message_id":"assistant-server"}
+                        ],
+                        "pending_steers": [
+                          {"steer_id":"\(mine.value)","text":"Keep this after reconnect","submitted_at":3,"state":"pending","actions":{"edit":true,"cancel":true,"send_now":true}},
+                          {"steer_id":"steer-web-1","text":"Sent from Web","submitted_at":4,"state":"pending","actions":{"edit":true,"cancel":true,"send_now":false}}
                         ]
                       }
                     }
@@ -1276,17 +1277,18 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(didStart)
         streamClient.emit(.token("Before hint. "))
         _ = await viewModel.submitStreamingMessage("Keep this after reconnect", behavior: .steer)
+        mine.value = try XCTUnwrap(viewModel.messages.last(where: \.isLocalSteeringHint)?.messageId)
         viewModel.suspendStreamForNavigation()
 
         await viewModel.loadMessages()
+        await viewModel.loadMessages()
 
         XCTAssertEqual(viewModel.activeStreamID, "stream-123")
-        XCTAssertNil(viewModel.streamingAssistantMessageID)
         XCTAssertEqual(
             viewModel.messages.map(\.content),
-            ["Initial request", "Before hint. ", "Keep this after reconnect"]
+            ["Initial request", "Before hint. ", "Keep this after reconnect", "Sent from Web"]
         )
-        XCTAssertEqual(viewModel.messages.last?.steeringHintState, .waiting)
+        XCTAssertEqual(viewModel.messages.suffix(2).map(\.steeringHintState), [.waiting, .waiting])
     }
 
     @MainActor
