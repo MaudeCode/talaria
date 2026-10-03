@@ -191,6 +191,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     now,
     log,
     cacheMax,
+    onDeleted: (sid) => { backgroundStore.evict(sid) },
   })
   const projects = new ProjectStore(resolve(config.stateDir, 'projects.json'), () => store.readIndexEntries(), isRootProfile)
   const shares = new ShareStore(resolve(config.stateDir, 'shares'), now)

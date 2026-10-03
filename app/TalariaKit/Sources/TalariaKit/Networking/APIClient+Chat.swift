@@ -161,6 +161,11 @@ extension APIClient {
         try await send(endpoint: .backgroundTasks(sessionID: sessionID), method: "GET")
     }
 
+    /// ponytail: old-server fallback (TAL-372): a Web without `/api/background/tasks` reports each finished task once here.
+    public func backgroundStatus(sessionID: String) async throws -> BackgroundStatusResponse {
+        try await send(endpoint: .backgroundStatus(sessionID: sessionID), method: "GET")
+    }
+
     public func backgroundResult(sessionID: String, taskID: String) async throws -> BackgroundTaskResult {
         try await send(endpoint: .backgroundResult(sessionID: sessionID, taskID: taskID), method: "GET")
     }

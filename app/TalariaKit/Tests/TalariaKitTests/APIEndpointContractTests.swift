@@ -134,6 +134,12 @@ final class ContractReadinessTests: APIClientTestCase {
                 query: ["session_id": "session-123", "task_id": "task-1"]
             ),
             .init(name: "background dismiss", endpoint: .backgroundDismiss, path: "/api/background/dismiss"),
+            .init(
+                name: "background status (old-server fallback)",
+                endpoint: .backgroundStatus(sessionID: "session-123"),
+                path: "/api/background/status",
+                query: ["session_id": "session-123"]
+            ),
             .init(name: "workspaces", endpoint: .workspaces, path: "/api/workspaces"),
             .init(
                 name: "workspace suggestions",

@@ -52,6 +52,7 @@ const TERMINAL: ReadonlySet<Status> = new Set(['completed', 'failed', 'cancelled
 const LIVE: ReadonlySet<Status> = new Set(['running', 'attention', 'unknown'])
 const CHILD_DONE = new Set(['completed', 'success'])
 const RUNNING_STATES: ReadonlySet<string> = new Set(['running', 'stalling', 'finalizing'])
+const RUNNING_LIKE: ReadonlySet<Status> = new Set(['running', 'attention'])
 const CHILD_CANCELLED = new Set(['interrupted', 'cancelled'])
 
 export function isTerminal(status: Status): boolean { return TERMINAL.has(status) }
@@ -211,6 +212,9 @@ export class BackgroundTaskStore {
     return receipts[index]
   }
 
+  /** The session was deleted: its records go from memory too (the file goes with the session's other files). */
+  evict(sid: string): void { this.cache.delete(sid) }
+
   /** Drop a `/background` task that never started. */
   forget(sid: string, taskId: string): void {
     const receipts = this.list(sid).filter((r) => r.task_id !== taskId)
@@ -307,14 +311,22 @@ export class BackgroundActivity {
       try { agent = await sidecar.call('process.background_list', { profile_home: this.deps.profileHome(profile), session_ids: [sid] }) } catch (error) { this.deps.log(`[webui] WARNING: background tasks for ${sid} unavailable from the Agent: ${(error as Error).message}`) }
     }
     const now = this.deps.now()
-    if (agent) this.deps.store.update(sid, [...agent.delegations.map((r) => delegationReceipt(r, now)), ...agent.processes.map(processReceipt)])
     // A ledger row alone confirms only a settled unit: a running one must still be in the Agent's live registry, else it
     // was lost in an Agent restart.
     const liveDelegations = new Set((agent?.delegations ?? []).filter((r) => r.live_status !== null || !RUNNING_STATES.has(r.state)).map((r) => r.delegation_id))
     const liveProcesses = new Set((agent?.processes ?? []).filter((p) => !p.exited).map((p) => p.process_id))
     const confirmed = (r: Receipt): boolean => r.kind === 'background_command' ? Boolean(r.stream_id) && this.deps.liveStream(r.stream_id!)
       : r.kind === 'delegation' ? liveDelegations.has(r.task_id) : liveProcesses.has(r.task_id)
-    const tasks = this.deps.store.list(sid).map((r) => taskView(r, { unconfirmed: !confirmed(r) }))
+    if (agent) {
+      const reported = [...agent.delegations.map((r) => delegationReceipt(r, now)), ...agent.processes.map(processReceipt)]
+      // The Agent answered: running work it no longer has is lost, and its record (the card and the delegation row alike)
+      // says unknown until the Agent reports it again.
+      const lost = this.deps.store.list(sid).filter((r) => LIVE.has(r.status) && r.status !== 'unknown' && !confirmed(r)).map((r) => ({ task_id: r.task_id, kind: r.kind, status: 'unknown' as const }))
+      const reportedIds = new Set(reported.map((r) => r.task_id))
+      this.deps.store.update(sid, [...reported.map((r) => (confirmed(r as Receipt) || !RUNNING_LIKE.has(r.status ?? 'running') ? r : { ...r, status: 'unknown' as const })), ...lost.filter((r) => !reportedIds.has(r.task_id))])
+    }
+    // While the Agent cannot be asked, its running work only shows unknown; nothing is recorded.
+    const tasks = this.deps.store.list(sid).map((r) => taskView(r, { unconfirmed: !agent && !confirmed(r) }))
     tasks.sort((a, b) => (b.started_at ?? b.updated_at) - (a.started_at ?? a.updated_at))
     return { tasks, agent_available: agent !== null }
   }

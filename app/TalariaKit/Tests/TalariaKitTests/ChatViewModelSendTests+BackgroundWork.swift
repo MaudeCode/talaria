@@ -9,6 +9,8 @@ extension ChatViewModelSendTests {
         var statusReads = 0
         var taskReads = 0
         var dismissed: [String] = []
+        /// A Web from before TAL-372 has no tasks route.
+        var tasksRouteMissing = false
     }
 
     private func backgroundViewModel(_ log: BackgroundLog) throws -> ChatViewModel {
@@ -25,6 +27,7 @@ extension ChatViewModelSendTests {
                 return apiTestJSONResponse(#"{"results":[{"task_id":"task-1","prompt":"audit tests","answer":"All tests pass.","completed_at":1}]}"#, for: request)
             case "/api/background/tasks":
                 log.taskReads += 1
+                if log.tasksRouteMissing { return apiTestJSONResponse(#"{"error":"not found"}"#, statusCode: 404, for: request) }
                 return apiTestJSONResponse(log.tasks, for: request)
             case "/api/background/result":
                 return apiTestJSONResponse(#"{"task_id":"task-1","text":"All tests pass."}"#, for: request)
@@ -49,6 +52,16 @@ extension ChatViewModelSendTests {
         await drainMainActor()
         XCTAssertEqual(viewModel.messages.count, before)
         XCTAssertFalse(viewModel.messages.contains { ($0.content ?? "").contains("All tests pass.") })
+    }
+
+    func testAnOlderWebStillGetsTheFinishedAnswerAsBefore() async throws {
+        let log = BackgroundLog()
+        log.tasksRouteMissing = true
+        let viewModel = try backgroundViewModel(log)
+        _ = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "background")), args: "audit tests")
+        try await waitUntil { viewModel.messages.contains { ($0.content ?? "").contains("All tests pass.") } }
+        XCTAssertEqual(viewModel.messages.filter { ($0.content ?? "").contains("All tests pass.") }.count, 1)
+        XCTAssertTrue(viewModel.pinnedBackgroundTasks.isEmpty)
     }
 
     func testTheCardShowsWhatTheServerPinsWithItsResultAndDismissAsksTheServer() async throws {
