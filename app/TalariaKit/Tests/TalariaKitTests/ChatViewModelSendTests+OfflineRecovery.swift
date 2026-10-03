@@ -42,6 +42,33 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(server.sessionReads.count, 0)
     }
 
+    func testRetryCancelledMidLoadSkipsItsFollowUpWork() async throws {
+        let context = try makeOfflineRecoveryContext()
+        let streamClient = SpySSEStreamingClient()
+        let requestStarted = expectation(description: "retry read started")
+        let releaseResponse = DispatchSemaphore(value: 0)
+        let server = ScriptedSessionServer(reachableFromRead: 2, hasRunningTurn: true) { read in
+            guard read == 2 else { return }
+            requestStarted.fulfill()
+            XCTAssertEqual(releaseResponse.wait(timeout: .now() + .seconds(5)), .success)
+        }
+        let viewModel = try makeViewModel(streamClient: streamClient, handler: server.handle)
+        await viewModel.loadMessages(modelContext: context)
+
+        let ticks = RecordingRetryTicks(allowed: 1)
+        let loop = Task { await viewModel.recoverWhenServerReturns(modelContext: context, sleep: ticks.sleep) }
+        await fulfillment(of: [requestStarted], timeout: 5)
+        loop.cancel()
+        releaseResponse.signal()
+        await loop.value
+
+        XCTAssertFalse(viewModel.isViewingCachedData, "The read in flight still lands")
+        XCTAssertEqual(server.streamStatusReads.count, 0, "A chat that closed meanwhile does not reconnect to its run")
+        XCTAssertTrue(streamClient.startedURLs.isEmpty)
+        XCTAssertEqual(server.backgroundReads.count, 0, "Nor restart its background polling")
+        XCTAssertEqual(ticks.durations.count, 1, "And retries no more")
+    }
+
     func testForegroundReturnRecoversAnOfflineChatImmediately() async throws {
         let context = try makeOfflineRecoveryContext()
         let server = ScriptedSessionServer(reachableFromRead: 2)
@@ -102,11 +129,14 @@ extension ChatViewModelSendTests {
 private final class ScriptedSessionServer: @unchecked Sendable {
     let sessionReads = LockedCounter()
     let backgroundReads = LockedCounter()
+    let streamStatusReads = LockedCounter()
     private let reachableFromRead: Int
+    private let hasRunningTurn: Bool
     private let onSessionRead: (Int) -> Void
 
-    init(reachableFromRead: Int, onSessionRead: @escaping (Int) -> Void = { _ in }) {
+    init(reachableFromRead: Int, hasRunningTurn: Bool = false, onSessionRead: @escaping (Int) -> Void = { _ in }) {
         self.reachableFromRead = reachableFromRead
+        self.hasRunningTurn = hasRunningTurn
         self.onSessionRead = onSessionRead
     }
 
@@ -116,7 +146,10 @@ private final class ScriptedSessionServer: @unchecked Sendable {
             let read = sessionReads.increment()
             onSessionRead(read)
             guard read >= reachableFromRead else { throw URLError(.notConnectedToInternet) }
-            return apiTestJSONResponse(Self.freshTranscript, for: request)
+            return apiTestJSONResponse(hasRunningTurn ? Self.runningTranscript : Self.freshTranscript, for: request)
+        case "/api/chat/stream/status":
+            _ = streamStatusReads.increment()
+            return apiTestJSONResponse(#"{"active": true, "stream_id": "stream-live", "replay_available": true}"#, for: request)
         case "/api/background/tasks":
             _ = backgroundReads.increment()
             return apiTestJSONResponse(#"{"session_id":"session-abc","agent_available":true,"tasks":[]}"#, for: request)
@@ -130,6 +163,12 @@ private final class ScriptedSessionServer: @unchecked Sendable {
     {"session": {"session_id": "session-abc", "title": "Planning", "messages": [
       {"role": "user", "content": "Fresh question", "timestamp": 1770000100, "message_id": "fresh-user"},
       {"role": "assistant", "content": "Fresh answer", "timestamp": 1770000101, "message_id": "fresh-assistant"}
+    ]}}
+    """
+
+    private static let runningTranscript = """
+    {"session": {"session_id": "session-abc", "title": "Planning", "active_stream_id": "stream-live", "messages": [
+      {"role": "user", "content": "Fresh question", "timestamp": 1770000100, "message_id": "fresh-user"}
     ]}}
     """
 }

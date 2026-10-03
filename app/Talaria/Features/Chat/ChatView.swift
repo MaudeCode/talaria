@@ -1569,6 +1569,8 @@ struct ChatView: View {
         } else {
             await viewModel.loadMessages(modelContext: modelContext, isUserRefresh: isUserRefresh)
         }
+        // The chat closed meanwhile; its cleanup already suspended the stream and polling.
+        guard !Task.isCancelled else { return }
         await viewModel.reconnectStreamIfNeeded(modelContext: modelContext)
         await viewModel.refreshBackgroundTasks()
         if appliesInitialFocus {

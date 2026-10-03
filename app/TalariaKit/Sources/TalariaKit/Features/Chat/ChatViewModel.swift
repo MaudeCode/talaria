@@ -4429,6 +4429,9 @@ public final class ChatViewModel {
                 await loadMessages(modelContext: modelContext)
             }
         }
+        // A joined load outlives a caller that was cancelled (its chat closed or its scene went
+        // inactive); that caller leaves the stream as its cleanup left it.
+        guard !Task.isCancelled else { return }
         await reconnectStreamIfNeeded(modelContext: modelContext)
     }
 
@@ -4457,7 +4460,7 @@ public final class ChatViewModel {
         sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         afterAttempt: () -> Void = {}
     ) async {
-        while (try? await sleep(interval)) != nil, !Task.isCancelled {
+        while !Task.isCancelled, (try? await sleep(interval)) != nil {
             guard isViewingCachedData, activeSessionLoadRequestGenerations.isEmpty else { continue }
             await syncWithServer(modelContext: modelContext)
             afterAttempt()
