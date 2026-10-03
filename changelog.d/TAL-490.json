@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Swiping in from the screen's edge on the Chats list opens the sidebar instead of revealing a chat's swipe actions.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
