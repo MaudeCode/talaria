@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { cborDecode } from '../auth/passkeys.js'
-import { canonicalJson, safeNextPath } from '../auth/oidc.js'
+import { canonicalJson, OidcService, safeNextPath } from '../auth/oidc.js'
 import { validatedRequestHost } from './auth-raw.js'
 import { SidecarClient } from '../sidecar/client.js'
 
@@ -458,6 +458,61 @@ describe('OIDC profile binding', () => {
 })
 
 describe('OIDC enablement', () => {
+  const OIDC_ENV = { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins', HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example' }
+  const modes: Record<string, { env: Record<string, string>; setup?: (s: TestServer) => void }> = {
+    password: { env: { HERMES_WEBUI_PASSWORD: 'hunter22' } },
+    passkey: { env: { HERMES_WEBUI_PASSKEY: '1' }, setup: (s) => { s.deps.auth.passkeysEnabled = () => true } },
+    'trusted header': { env: { HERMES_WEBUI_TRUSTED_AUTH_HEADER: 'X-Remote-User' } },
+  }
+  const firstAuth: Record<string, (s: TestServer) => Promise<Json>> = {
+    'auth/status': async (s) => json(await s.get('/api/auth/status')),
+    bootstrap: async (s) => (await json(await s.get('/api/bootstrap'))).auth as Json,
+  }
+  for (const [mode, { env, setup }] of Object.entries(modes)) {
+    for (const [endpoint, read] of Object.entries(firstAuth)) {
+      it(`advertises OIDC alongside ${mode} auth on a cold server's first ${endpoint}`, async () => {
+        const s = await bootTestServer({ env: { ...OIDC_ENV, ...env } })
+        try {
+          setup?.(s)
+          expect(await read(s)).toMatchObject({ auth_enabled: true, oidc_enabled: true, oidc_native_handoff_enabled: true })
+        } finally { await s.close() }
+      })
+    }
+  }
+
+  it('password auth with OIDC still gates the API and starts SSO', async () => {
+    const s = await bootTestServer({ env: { ...OIDC_ENV, HERMES_WEBUI_PASSWORD: 'hunter22' } })
+    try {
+      s.deps.fetch = fakeIdp(() => Date.now() / 1000).fetch
+      expect(await json(await s.get('/api/auth/status'))).toMatchObject({ password_auth_enabled: true, oidc_enabled: true })
+      expect((await s.get('/api/sessions')).status).toBe(401)
+      const start = await s.get('/api/auth/oidc/start?next=%2F')
+      expect(start.status).toBe(302)
+      providerCode(start.headers.get('location') ?? '')
+    } finally { await s.close() }
+  })
+
+  it('concurrent cold probes share one operator config read', async () => {
+    let reads = 0
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((r) => { release = r })
+    const oidc = new OidcService({
+      env: OIDC_ENV, operatorConfig: async () => { reads += 1; await gate; return {} }, profileHome: () => '', fetch: () => fetch,
+      pinned: () => { throw new Error('unused') }, now: () => Date.now() / 1000, log: () => undefined,
+    })
+    const probes = Promise.all(Array.from({ length: 5 }, () => oidc.enabled()))
+    release()
+    expect(await probes).toEqual([true, true, true, true, true])
+    expect(reads).toBe(1)
+  })
+
+  it('password-only auth keeps the OIDC flags false', async () => {
+    const s = await bootTestServer({ env: { HERMES_WEBUI_PASSWORD: 'hunter22' } })
+    try {
+      expect(await json(await s.get('/api/auth/status'))).toMatchObject({ auth_enabled: true, password_auth_enabled: true, oidc_enabled: false, oidc_native_handoff_enabled: false })
+    } finally { await s.close() }
+  })
+
   it('issuer and client id alone do not enable OIDC', async () => {
     const s = await bootTestServer({ env: { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client' } })
     try {
