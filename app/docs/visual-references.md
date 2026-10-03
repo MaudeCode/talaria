@@ -3,7 +3,7 @@
 `TalariaTests/VisualReferences/*.png` are pixel references for a small set of
 core surfaces: the session row, the session-list empty state, the offline
 banner, the transcript loading skeleton, composer attachment variants, the shared
-status chip in each emphasis, a disabled skill row, and the
+status chip in each emphasis, the "Waiting for network" run status, a disabled skill row, and the
 Live Activity Lock Screen plus every Dynamic Island family in the running,
 waiting, stale, completed, failed and cancelled states.
 

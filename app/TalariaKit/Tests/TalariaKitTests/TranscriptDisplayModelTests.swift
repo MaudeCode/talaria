@@ -732,6 +732,9 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
         XCTAssertNil(ChatActiveRunStatusPresentation(recoveryState: .idle))
         XCTAssertEqual(ChatActiveRunStatusPresentation(recoveryState: .checking)?.kind, .checking)
         XCTAssertEqual(ChatActiveRunStatusPresentation(recoveryState: .reconnecting)?.label(agentName: "Hermes"), "Reconnecting stream")
+        let waiting = ChatActiveRunStatusPresentation(recoveryState: .waitingForNetwork)
+        XCTAssertEqual(waiting?.label(agentName: "Hermes"), "Waiting for network")
+        XCTAssertEqual(waiting?.accessibilityLabel(agentName: "Hermes"), "Hermes is waiting for a network connection")
     }
 
     func testSyncingPillHidesTheTranscriptRecoveryChip() {
@@ -767,7 +770,7 @@ final class ChatActiveRunStatusPolicyTests: XCTestCase {
 
     func testSyncingPillFloatsOverTheTranscriptInsteadOfPushingItUp() {
         XCTAssertFalse(ChatActiveRunStatusPresentation(kind: .syncing).reservesTranscriptSpace)
-        for kind: ChatActiveRunStatusKind in [.starting, .active, .checking, .reconnecting, .stopping] {
+        for kind: ChatActiveRunStatusKind in [.starting, .active, .checking, .reconnecting, .waitingForNetwork, .stopping] {
             XCTAssertTrue(ChatActiveRunStatusPresentation(kind: kind).reservesTranscriptSpace, "\(kind)")
         }
     }

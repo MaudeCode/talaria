@@ -7,6 +7,7 @@ public enum ChatActiveRunStatusKind: Equatable {
     case background
     case checking
     case reconnecting
+    case waitingForNetwork
     case stopping
     case syncing
 
@@ -22,6 +23,8 @@ public enum ChatActiveRunStatusKind: Equatable {
             return String(localized: "Checking stream")
         case .reconnecting:
             return String(localized: "Reconnecting stream")
+        case .waitingForNetwork:
+            return String(localized: "Waiting for network")
         case .stopping:
             return String(localized: "Stopping response")
         case .syncing:
@@ -41,6 +44,8 @@ public enum ChatActiveRunStatusKind: Equatable {
             return String(localized: "\(agentName) is checking the response stream")
         case .reconnecting:
             return String(localized: "\(agentName) is reconnecting the response stream")
+        case .waitingForNetwork:
+            return String(localized: "\(agentName) is waiting for a network connection")
         case .stopping:
             return String(localized: "\(agentName) is stopping the response")
         case .syncing:
@@ -65,6 +70,8 @@ public struct ChatActiveRunStatusPresentation: Equatable {
             self.init(kind: .checking)
         case .reconnecting:
             self.init(kind: .reconnecting)
+        case .waitingForNetwork:
+            self.init(kind: .waitingForNetwork)
         }
     }
 

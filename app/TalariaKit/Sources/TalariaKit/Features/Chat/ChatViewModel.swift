@@ -414,7 +414,8 @@ public final class ChatViewModel {
         serverTTSAudioPlayerFactory: (@MainActor (Data) throws -> any ListenAudioPlaying)? = nil,
         draftAttachmentStore: any ChatDraftAttachmentStoring = ChatDraftAttachmentStore.shared,
         userDefaults: UserDefaults = .standard,
-        responseCache: ResponseCache? = nil
+        responseCache: ResponseCache? = nil,
+        networkPath: (any NetworkPathObserving)? = nil
     ) {
         self.responseCache = responseCache
         sessionID = session.sessionId
@@ -437,7 +438,8 @@ public final class ChatViewModel {
             client: resolvedClient,
             streamClient: resolvedStreamClient,
             liveActivityManager: resolvedLiveActivityManager,
-            showsLiveActivityResponseExcerpts: showsLiveActivityResponseExcerpts
+            showsLiveActivityResponseExcerpts: showsLiveActivityResponseExcerpts,
+            networkPath: networkPath
         )
         self.pendingActionCoordinator = ChatPendingActionCoordinator(
             client: resolvedClient,

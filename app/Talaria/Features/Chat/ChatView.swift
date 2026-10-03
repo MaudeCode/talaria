@@ -201,7 +201,8 @@ struct ChatView: View {
                 forKey: AgentRunLiveActivityPrivacy.showsResponseExcerptsKey
             ),
             draftAttachmentStore: resolvedDraftAttachmentStore,
-            responseCache: .app(server: server)
+            responseCache: .app(server: server),
+            networkPath: NetworkPathObserver.shared
         ))
         _gitAvailabilityViewModel = State(initialValue: GitWorkspaceAvailabilityViewModel(
             session: session,

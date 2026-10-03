@@ -100,6 +100,10 @@ public final class ChatStreamCoordinator {
     }
     private let timing: ChatStreamCoordinatorTiming
     private let now: () -> Date
+    // Nil reads as always online.
+    @ObservationIgnored private let networkPath: (any NetworkPathObserving)?
+    // The persistence context of the reconnect deferred until the network returns.
+    @ObservationIgnored private var networkReconnectModelContext: ModelContext?
     private var showsLiveActivityResponseExcerpts: Bool
 
     public private(set) var activeStreamID: String? {
@@ -168,7 +172,8 @@ public final class ChatStreamCoordinator {
         liveActivityManager: any AgentLiveActivityManaging,
         showsLiveActivityResponseExcerpts: Bool,
         timing: ChatStreamCoordinatorTiming = .standard,
-        now: @escaping () -> Date = Date.init
+        now: @escaping () -> Date = Date.init,
+        networkPath: (any NetworkPathObserving)? = nil
     ) {
         self.client = client
         self.streamClient = streamClient
@@ -176,6 +181,8 @@ public final class ChatStreamCoordinator {
         self.showsLiveActivityResponseExcerpts = showsLiveActivityResponseExcerpts
         self.timing = timing
         self.now = now
+        self.networkPath = networkPath
+        observeNetworkPath()
     }
 
     public func attach(delegate: any ChatStreamCoordinatorDelegate) {
@@ -258,6 +265,10 @@ public final class ChatStreamCoordinator {
     }
 
     public func suspendActiveStreamConnection() {
+        // A hidden chat waits for its next foreground reconnect, not for the network.
+        if recoveryState == .waitingForNetwork {
+            recoveryState = .idle
+        }
         guard activeStreamID != nil, !hasCompletedCurrentResponse, !isConnectionSuspended else { return }
 
         lastEventID = streamClient.lastEventID ?? lastEventID
@@ -350,6 +361,10 @@ public final class ChatStreamCoordinator {
 
     public func reconnectIfNeeded(modelContext: ModelContext? = nil) async {
         guard let activeStreamID, isConnectionSuspended else { return }
+        guard isNetworkSatisfied else {
+            waitForNetwork(modelContext: modelContext)
+            return
+        }
         let generation = runGeneration
 
         if let inFlight = sharedReconnect,
@@ -458,8 +473,15 @@ public final class ChatStreamCoordinator {
                 finalizeInactiveStream(streamID: activeStreamID)
                 return
             }
+            guard isNetworkSatisfied else {
+                if self.activeStreamID == activeStreamID, isConnectionSuspended {
+                    waitForNetwork(modelContext: modelContext)
+                }
+                return
+            }
             delegate?.streamCoordinatorDidReceiveRecoveryError(error)
             guard self.activeStreamID == activeStreamID, isConnectionSuspended else { return }
+            recoveryState = .reconnecting
             let retryDelay = UInt64(max(timing.statusPollCooldown, 0.01) * 1_000_000_000)
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: retryDelay)
@@ -509,6 +531,7 @@ public final class ChatStreamCoordinator {
         now: Date = Date(),
         modelContext: ModelContext? = nil
     ) async {
+        guard isNetworkSatisfied else { return }
         guard let activeStreamID,
               !isConnectionSuspended,
               !hasCompletedCurrentResponse
@@ -569,6 +592,47 @@ public final class ChatStreamCoordinator {
             forceReconnect: shouldForceReconnect,
             modelContext: modelContext
         )
+    }
+
+    private var isNetworkSatisfied: Bool {
+        networkPath?.isSatisfied != false
+    }
+
+    /// Re-arms on every change of the network path; Observation reports a change before it lands,
+    /// so the handler reads the new value after a main-actor hop.
+    private func observeNetworkPath() {
+        guard let networkPath else { return }
+        withObservationTracking {
+            _ = networkPath.isSatisfied
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.observeNetworkPath()
+                await self?.networkPathDidChange()
+            }
+        }
+    }
+
+    /// Offline, a live run stops its stream and waits; back online, a waiting run reconnects at once.
+    private func networkPathDidChange() async {
+        guard activeStreamID != nil, !isCurrentRunTerminated else { return }
+
+        if !isNetworkSatisfied {
+            // A suspended run only waits when this chat is mid-recovery; a hidden one stays put.
+            guard !isConnectionSuspended || sharedReconnect != nil || recoveryState == .reconnecting else { return }
+            cancelSharedReconnect()
+            suspendActiveStreamConnection()
+            waitForNetwork(modelContext: networkReconnectModelContext)
+        } else if recoveryState == .waitingForNetwork {
+            let modelContext = networkReconnectModelContext
+            networkReconnectModelContext = nil
+            recoveryState = .reconnecting
+            await reconnectIfNeeded(modelContext: modelContext)
+        }
+    }
+
+    private func waitForNetwork(modelContext: ModelContext?) {
+        recoveryState = .waitingForNetwork
+        networkReconnectModelContext = modelContext ?? networkReconnectModelContext
     }
 
     func markProgress(now: Date = Date()) {
@@ -966,6 +1030,7 @@ public final class ChatStreamCoordinator {
 
     private func resetRecoveryState() {
         recoveryState = .idle
+        networkReconnectModelContext = nil
         lastProgressDate = nil
         lastTransportActivityDate = nil
         lastRecoveryStatusCheckDate = nil
