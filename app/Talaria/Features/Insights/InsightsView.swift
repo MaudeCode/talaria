@@ -283,37 +283,6 @@ struct InsightsView: View {
                     }
                 }
 
-                if !viewModel.topSessions.isEmpty {
-                    Section("Top Sessions") {
-                        ForEach(viewModel.topSessions.prefix(10)) { session in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(session.title ?? String(localized: "Untitled Session"))
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .lineLimit(1)
-
-                                HStack(spacing: 12) {
-                                    let input = session.inputTokens ?? 0
-                                    let output = session.outputTokens ?? 0
-                                    let total = input + output
-
-                                    Text("\(formatTokens(total)) tokens")
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
-                                        .foregroundStyle(.secondary)
-
-                                    if let cost = session.estimatedCost, cost > 0 {
-                                        Text(cost.formattedCost())
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-                }
-
                 Section {
                     Text(viewModel.sourceDescription)
                         .font(.caption)

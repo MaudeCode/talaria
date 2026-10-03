@@ -2,7 +2,6 @@ import Foundation
 import Observation
 
 public protocol InsightsDataClient {
-    func sessions() async throws -> SessionsResponse
     func insights(days: Int) async throws -> InsightsResponse
 }
 
@@ -50,84 +49,17 @@ public enum AnalyticsTimeframe: String, CaseIterable, Identifiable {
             365
         }
     }
-
-    public func contains(_ session: SessionSummary, now: Date = Date(), calendar: Calendar = .current) -> Bool {
-        guard self != .allTime else { return true }
-
-        guard let timestamp = session.analyticsTimestamp else {
-            return false
-        }
-
-        let sessionDate = Date(timeIntervalSince1970: timestamp)
-
-        switch self {
-        case .today:
-            return calendar.isDate(sessionDate, inSameDayAs: now)
-        case .last7Days:
-            return sessionDate >= calendar.date(byAdding: .day, value: -7, to: now) ?? now
-                && sessionDate <= now
-        case .last30Days:
-            return sessionDate >= calendar.date(byAdding: .day, value: -30, to: now) ?? now
-                && sessionDate <= now
-        case .allTime:
-            return true
-        }
-    }
-}
-
-struct SessionUsageAnalytics {
-    let sessions: [SessionSummary]
-
-    var totalInputTokens: Int {
-        sessions.compactMap { $0.inputTokens }.reduce(0, +)
-    }
-
-    var totalOutputTokens: Int {
-        sessions.compactMap { $0.outputTokens }.reduce(0, +)
-    }
-
-    var totalTokens: Int {
-        totalInputTokens + totalOutputTokens
-    }
-
-    var totalMessages: Int {
-        sessions.compactMap { $0.messageCount }.reduce(0, +)
-    }
-
-    var estimatedCost: Double {
-        sessions.compactMap { $0.estimatedCost }.reduce(0, +)
-    }
-
-    var sessionCount: Int {
-        sessions.count
-    }
-
-    var topSessions: [SessionSummary] {
-        sessions.sorted {
-            let leftTotal = ($0.inputTokens ?? 0) + ($0.outputTokens ?? 0)
-            let rightTotal = ($1.inputTokens ?? 0) + ($1.outputTokens ?? 0)
-            return leftTotal > rightTotal
-        }
-    }
-}
-
-enum InsightsDataSource: Equatable {
-    case server
-    case localFallback
-    case local
 }
 
 @MainActor
 @Observable
 public final class InsightsViewModel {
-    public private(set) var sessions: [SessionSummary] = []
     private(set) var serverInsights: InsightsResponse?
     public var selectedTimeframe: AnalyticsTimeframe = .last30Days
     private(set) var loadedTimeframe: AnalyticsTimeframe = .last30Days
     public private(set) var isLoading = false
     public private(set) var errorMessage: String?
     public private(set) var lastError: Error?
-    private(set) var dataSource: InsightsDataSource = .local
     private(set) var fallbackReason: String?
     private var activeLoadID: UUID?
 
@@ -141,7 +73,6 @@ public final class InsightsViewModel {
         if let response = cache.load(timeframe: selectedTimeframe) {
             serverInsights = response
             loadedTimeframe = selectedTimeframe
-            dataSource = .server
         }
     }
 
@@ -156,9 +87,7 @@ public final class InsightsViewModel {
         activeLoadID = loadID
         if let cached = cache?.load(timeframe: timeframe) {
             serverInsights = cached
-            sessions = []
             loadedTimeframe = timeframe
-            dataSource = .server
         }
         isLoading = true
         errorMessage = nil
@@ -176,9 +105,7 @@ public final class InsightsViewModel {
             guard activeLoadID == loadID, !Task.isCancelled else { return }
 
             serverInsights = response
-            sessions = []
             loadedTimeframe = timeframe
-            dataSource = .server
             cache?.save(response, timeframe: timeframe)
         } catch is CancellationError {
             return
@@ -187,61 +114,35 @@ public final class InsightsViewModel {
             lastError = error
             fallbackReason = error.localizedDescription
 
-            do {
-                let response = try await client.sessions()
-                guard activeLoadID == loadID, !Task.isCancelled else { return }
-
-                serverInsights = nil
-                sessions = response.sessions ?? []
-                loadedTimeframe = timeframe
-                dataSource = .localFallback
-            } catch is CancellationError {
-                return
-            } catch {
-                guard activeLoadID == loadID, !Task.isCancelled else { return }
-                lastError = error
-                if hadLoadedAnalytics {
-                    fallbackReason = error.localizedDescription
-                } else {
-                    errorMessage = error.localizedDescription
-                    dataSource = .local
-                }
+            if !hadLoadedAnalytics {
+                errorMessage = error.localizedDescription
             }
         }
     }
 
     // MARK: - Aggregates
 
-    var analytics: SessionUsageAnalytics {
-        SessionUsageAnalytics(sessions: filteredSessions)
-    }
-
-    var filteredSessions: [SessionSummary] {
-        sessions.filter { loadedTimeframe.contains($0) }
-    }
-
     public var totalInputTokens: Int {
-        serverInsights?.totalInputTokens ?? analytics.totalInputTokens
+        serverInsights?.totalInputTokens ?? 0
     }
 
     public var totalOutputTokens: Int {
-        serverInsights?.totalOutputTokens ?? analytics.totalOutputTokens
+        serverInsights?.totalOutputTokens ?? 0
     }
 
     public var totalTokens: Int {
-        serverInsights?.totalTokens ?? analytics.totalTokens
+        serverInsights?.totalTokens ?? 0
     }
 
     public var totalMessages: Int {
-        serverInsights?.totalMessages ?? analytics.totalMessages
+        serverInsights?.totalMessages ?? 0
     }
 
     public var estimatedCost: Double {
-        serverInsights?.totalCost ?? analytics.estimatedCost
+        serverInsights?.totalCost ?? 0
     }
 
-    /// Cache stats only exist in server insights — nil hides the cards on
-    /// the local fallback and on older servers that don't report them (#24).
+    /// Older servers may omit cache statistics; nil hides the corresponding cards.
     public var totalCacheReadTokens: Int? {
         serverInsights?.totalCacheReadTokens
     }
@@ -251,29 +152,22 @@ public final class InsightsViewModel {
     }
 
     public var sessionCount: Int {
-        serverInsights?.totalSessions ?? analytics.sessionCount
+        serverInsights?.totalSessions ?? 0
     }
 
     public var hasLoadedAnalytics: Bool {
-        serverInsights != nil || dataSource == .localFallback
+        serverInsights != nil
     }
 
     public var sourceDescription: String {
-        switch dataSource {
-        case .server:
-            return String(localized: "Source: server insights from the last \(periodDays) days.")
-        case .localFallback:
-            if let fallbackReason, !fallbackReason.isEmpty {
-                return String(localized: "Source: local session metadata fallback. Server insights failed: \(fallbackReason)")
-            }
-            return String(localized: "Source: local session metadata fallback.")
-        case .local:
-            return String(localized: "Source: local session metadata.")
+        if let fallbackReason, serverInsights != nil {
+            return String(localized: "Showing cached server analytics. Refresh failed: \(fallbackReason)")
         }
+        return String(localized: "Source: server insights from the last \(periodDays) days.")
     }
 
     public var periodTitle: String {
-        if dataSource == .server, loadedTimeframe == .allTime {
+        if serverInsights != nil, loadedTimeframe == .allTime {
             return String(localized: "Last \(periodDays) Days")
         }
 
@@ -306,15 +200,6 @@ public final class InsightsViewModel {
 
     public var peakHour: InsightsActivityByHour? {
         activityByHour.max { ($0.sessions ?? 0) < ($1.sessions ?? 0) }
-    }
-
-    // MARK: - Top sessions
-
-    /// All sessions sorted by total tokens (descending), with cost shown when available.
-    /// Falls back to input-only or output-only if one is missing.
-    public var topSessions: [SessionSummary] {
-        guard dataSource != .server else { return [] }
-        return analytics.topSessions
     }
 }
 
@@ -352,11 +237,5 @@ public struct InsightsResponseCache {
     private func payload() -> [String: [String: InsightsResponse]] {
         guard let data = defaults.data(forKey: Self.storageKey) else { return [:] }
         return (try? JSONDecoder().decode([String: [String: InsightsResponse]].self, from: data)) ?? [:]
-    }
-}
-
-private extension SessionSummary {
-    var analyticsTimestamp: Double? {
-        lastMessageAt ?? updatedAt ?? createdAt
     }
 }

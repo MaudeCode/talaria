@@ -61,3 +61,15 @@ packages/contracts/
     generate-openapi.mjs   writes ../../contracts/web-api.openapi.json
     export-fixtures.mjs    writes sidecar/tests/fixtures/*.json
 ```
+
+### Session row read projection
+
+Session list and search reads normalize unambiguous legacy scalar values to
+`SessionRowSchema` types before filtering and counting. Missing titles render as
+empty strings. Rows without a valid session identity are omitted and logged once
+per source file for the lifetime of the store; loading a saved file never invents
+an identity, and a saved identity must match its file name. Unusable optional
+schema fields are omitted. These projections do
+not rewrite the saved session files. The app retains tolerant decoding for older
+servers, and Insights displays server analytics rather than totals computed from
+session rows.

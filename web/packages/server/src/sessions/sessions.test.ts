@@ -34,6 +34,58 @@ function writeMessages(s: TestServer, sid: string, messages: Json[]): void {
   s.deps.sessionStore.save(session)
 }
 
+describe('malformed session rows (TAL-37)', () => {
+  it('normalizes only unambiguous schema scalars and rejects unusable identities', async () => {
+    const { sanitizeSessionRow } = await import('./list.js')
+    const s = await bootTestServer()
+    try {
+      const raw = { session_id: 'row-types', message_count: '2', archived: 'false', pinned: ' true ', workspace: {}, updated_at: 'bad', model: '123', profile: 42, read_only: 'unknown', pre_compression_snapshot: 'false' }
+      const bytes = JSON.stringify(raw)
+      expect(sanitizeSessionRow(raw, s.deps.sessionStore)).toEqual({ session_id: 'row-types', title: '', message_count: 2, archived: false, pinned: true, model: '123', profile: '42', read_only: true, pre_compression_snapshot: false })
+      for (const value of [false, 'false', 0, '0']) expect(sanitizeSessionRow({ session_id: 'row-types', read_only: value }, s.deps.sessionStore)?.read_only).toBe(false)
+      for (const value of [true, 'true', 1, '1', null, {}]) expect(sanitizeSessionRow({ session_id: 'row-types', read_only: value }, s.deps.sessionStore)?.read_only).toBe(true)
+      expect(JSON.stringify(raw)).toBe(bytes)
+      for (const row of [null, [], {}, { session_id: 42 }, { session_id: '   ' }, { session_id: '../bad' }, { session_id: 'different-file' }]) expect(sanitizeSessionRow(row, s.deps.sessionStore, 'invalid.json')).toBeNull()
+      expect(s.logs.filter((line) => line.includes('invalid.json'))).toHaveLength(1)
+    } finally {
+      await s.close()
+    }
+  })
+
+  it('lists and searches usable rows with corrected types, consistent counts and no file writes', async () => {
+    const s = await bootTestServer()
+    try {
+      const dir = s.deps.sessionStore.sessionDir
+      mkdirSync(dir, { recursive: true })
+      const valid = { session_id: 'good-row', title: 'needle good', message_count: 2, last_message_at: 100, updated_at: 100, profile: 'default', archived: false }
+      const drifted = { ...valid, session_id: 'drifted-row', title: undefined, message_count: '12', created_at: '90', pinned: 'false', archived: false }
+      const missing = { ...valid, session_id: undefined, title: 'needle missing' }
+      const files = new Map<string, string>()
+      for (const [name, row] of [['good-row', valid], ['drifted-row', drifted], ['missing-row', missing]] as const) {
+        const path = join(dir, `${name}.json`)
+        const bytes = JSON.stringify({ ...row, messages: [{ role: 'user', content: 'needle' }] })
+        writeFileSync(path, bytes)
+        files.set(path, bytes)
+      }
+      writeFileSync(s.deps.sessionStore.indexFile, JSON.stringify([valid, drifted, missing]))
+      for (const path of ['/api/sessions', '/api/sessions/search?q=', '/api/sessions/search?q=needle']) {
+        const res = await s.get(path)
+        expect(res.status, await res.clone().text()).toBe(200)
+        const body = await json(res)
+        const rows = body.sessions as Json[]
+        expect(rows.map((r) => r.session_id).sort()).toEqual(['drifted-row', 'good-row'])
+        expect(rows.find((r) => r.session_id === 'drifted-row')).toMatchObject({ title: '', message_count: 12, created_at: 90, pinned: false, archived: false })
+        if (path === '/api/sessions') expect(body).toMatchObject({ webui_session_count: 2, cli_session_count: 0, archived_count: 0, other_profile_count: 0 })
+        if (path.endsWith('q=needle')) expect(body.count).toBe(2)
+      }
+      for (const [path, bytes] of files) expect(readFileSync(path, 'utf8')).toBe(bytes)
+      expect(s.logs.filter((line) => line.includes('missing-row.json'))).toHaveLength(1)
+    } finally {
+      await s.close()
+    }
+  })
+})
+
 describe('session lifecycle over HTTP', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
