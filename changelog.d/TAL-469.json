@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Insights provider quota cards now have breathing room below the Resets line.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
