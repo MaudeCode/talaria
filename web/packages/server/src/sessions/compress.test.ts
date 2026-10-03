@@ -253,6 +253,10 @@ describe('manual session compression', () => {
     const gate = new Promise<void>((r) => { release = r })
     let calls = 0
     sidecar.respond('chat.compress', async (params) => { calls += 1; await gate; return compressed(params) })
+    // Finalize stays pending after the context is installed: the job is still running with a two-row context.
+    let finalize!: () => void
+    const finalizeGate = new Promise<void>((r) => { finalize = r })
+    sidecar.respond('chat.compress_finalize', async () => { await finalizeGate; return { finalized: true } })
     const first = await json(await post(s, '/api/session/compress/start', { session_id: sid, focus_topic: 'slow' }))
     expect(first).toMatchObject({ ok: true, status: 'running', session_id: sid, focus_topic: 'slow' })
     // A repeat start, a stale runtime meanwhile, and the iOS route all join the running job instead of starting another.
@@ -261,6 +265,10 @@ describe('manual session compression', () => {
     const sync = post(s, '/api/session/compress', { session_id: sid })
     expect((await json(await s.get(`/api/session/compress/status?session_id=${sid}`))).status).toBe('running')
     release()
+    for (let i = 0; i < 100 && s.deps.sessionStore.get(sid).context_messages.length === 0; i += 1) await new Promise((r) => setTimeout(r, 10))
+    expect(s.deps.sessionStore.get(sid).context_messages).toHaveLength(2)
+    expect(await json(await post(s, '/api/session/compress/start', { session_id: sid }))).toMatchObject({ status: 'running' })
+    finalize()
     expect((await sync).status).toBe(200)
     const done = await waitForTerminal(s, sid)
     expect(done).toMatchObject({ ok: true, status: 'done', summary: { headline: 'Compressed: 4 → 2 messages' }, focus_topic: 'slow' })
@@ -332,7 +340,12 @@ describe('manual session compression', () => {
   it('evicts the cached turn agent once the compressed context is installed', async () => {
     const sid = await seeded()
     const before = sidecar.calls.length
-    expect((await post(s, '/api/session/compress', { session_id: sid })).status).toBe(200)
+    let evicted = false
+    sidecar.respond('chat.evict_agent', async () => { await new Promise((r) => setTimeout(r, 20)); evicted = true; return { evicted: true } })
+    const job = await s.deps.sessions.startCompression(sid, null)
+    await job.done
+    // The job reports done only after the eviction answered, so the next turn cannot reach the old agent first.
+    expect(evicted).toBe(true)
     expect(sidecar.calls.slice(before).map((c) => c.method)).toEqual(['runtime.ensure_current', 'chat.compress', 'chat.evict_agent', 'chat.compress_finalize'])
     // The Agent's context-engine notification is committed only once the session holds the result.
     expect(finalized).toEqual([true])

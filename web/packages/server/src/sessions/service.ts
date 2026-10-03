@@ -831,11 +831,12 @@ export class SessionService {
    * finished job is replaced). The stale-runtime refusal comes before a job exists; a running job is joined without it.
    */
   async startCompression(sid: string, focusRaw: unknown): Promise<CompressionJob> {
-    const { s } = this.compressionTarget(sid)
-    const focusTopic = str(focusRaw).trim().slice(0, 500) || null
     const running = (): CompressionJob | undefined => { const job = this.compressionJobs.get(sid); return job?.status === 'running' ? job : undefined }
+    // A running job is joined first: once it has installed its short context, the guards below would refuse a new one.
     const existing = running()
     if (existing) return existing
+    const { s } = this.compressionTarget(sid)
+    const focusTopic = str(focusRaw).trim().slice(0, 500) || null
     await ensureAgentRuntimeCurrent(this.deps.sidecar?.() ?? null)
     // Another start may have admitted a job while the runtime check awaited.
     const admitted = running()
@@ -949,7 +950,8 @@ export class SessionService {
       })
       committed = true
       // The cached turn agent still carries the uncompressed state; the next turn builds a fresh one (gateway parity).
-      this.deps.runtime.evictAgent(sid)
+      // Awaited, so a turn sent right after the reply cannot reuse the old agent.
+      try { await sidecar.call('chat.evict_agent', { session_id: sid }) } catch (error) { this.deps.log(`[webui] agent eviction after compression of ${sid} failed: ${(error as Error).message}`) }
       return { ok: true, session: this.publicSession(current), summary, focus_topic: focusTopic }
     } finally {
       // Second phase: the Agent's context-engine notification fires only for a result the session now holds.
