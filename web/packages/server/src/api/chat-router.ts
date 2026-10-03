@@ -140,10 +140,11 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>): Pr
   if (requestedProfile && requestedProfile !== 'default' && !PROFILE_ID_RE.test(requestedProfile)) throw new HttpError(400, 'invalid profile')
   visibleOrRetag(ctx, s, requestedProfile)
   const msg = str(body.message).trim()
-  if (!msg) throw new HttpError(400, 'message is required')
+  const attachments = normalizeChatAttachments(body.attachments).slice(0, 20)
+  // TAL-276: attachments alone make a turn; a request with neither is refused.
+  if (!msg && !attachments.length) throw new HttpError(400, 'message is required')
   // TAL-460: the user's message never joins a background turn; that turn stops quietly and this one takes its place.
   if (await ctx.deps.turns.yieldBackgroundTurn(sid)) s = ctx.deps.sessionStore.get(sid)
-  const attachments = normalizeChatAttachments(body.attachments).slice(0, 20)
   // Python `compression_recovery_payload_for_session` + `is_generic_continuation_intent`.
   const recovery = s.compression_recovery
   const recoveryLive = recovery.terminal_state === 'compression_exhausted' && str(recovery.recommended_action || s.recommended_recovery_action) === 'start_focused_continuation'

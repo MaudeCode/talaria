@@ -246,6 +246,22 @@ describe('image attachments in user messages (review round 14)', () => {
     expect(String((message[1]!.image_url as Json).url)).toMatch(/^data:image\/png;base64,/)
   })
 
+  it('admits an attachment-only turn as one user row carrying the image, and still refuses an empty turn (TAL-276)', async () => {
+    mode = 'native'
+    writeFileSync(join(ws(), 'only.png'), png)
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const res = await post(s, '/api/chat/start', { session_id: sid, message: '  ', attachments: [{ path: join(ws(), 'only.png'), mime: 'image/png', name: 'only.png' }] })
+    expect(res.status).toBe(200)
+    await s.sse(`/api/chat/stream?stream_id=${String((await json(res)).stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
+    expect((sent as Json[])[1]).toMatchObject({ type: 'image_url' })
+    const users = (((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages as Json[]).filter((m) => m.role === 'user')
+    expect(users).toHaveLength(1)
+    expect((users[0]!.attachments as Json[]).map((a) => a.name)).toEqual(['only.png'])
+    const empty = await post(s, '/api/chat/start', { session_id: sid, message: ' ', attachments: [] })
+    expect(empty.status).toBe(400)
+    expect(JSON.stringify(await json(empty))).toContain('message is required')
+  })
+
   it('sends plain text when the Agent resolves text mode for the model', async () => {
     mode = 'text'
     writeFileSync(join(ws(), 'shot2.png'), png)
