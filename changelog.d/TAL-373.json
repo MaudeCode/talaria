@@ -1,0 +1,20 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "The chat's right panel now has Files and Agents tabs: Agents lists the subagents working for this chat with their status and progress, and opens first while they run.",
+      "highlight": true,
+      "components": [
+        "web"
+      ]
+    },
+    {
+      "category": "Changed",
+      "summary": "Switching between the panel's tabs keeps the folder, open file and unsaved edits in Files.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

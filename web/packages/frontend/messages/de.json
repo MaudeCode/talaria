@@ -1851,5 +1851,12 @@
 	"bg_show_result": "Ergebnis anzeigen",
 	"bg_hide_result": "Ergebnis ausblenden",
 	"bg_result_unavailable": "Das Ergebnis ist nicht mehr verfügbar.",
-	"bg_usage": "Verwendung: /background <Nachricht>"
+	"bg_usage": "Verwendung: /background <Nachricht>",
+	"panel_label": "Seitenleiste",
+	"panel_agents": "Agenten",
+	"panel_agents_empty": "In diesem Chat hat noch kein Agent gearbeitet.",
+	"panel_agents_unavailable": "Der Agent kann gerade keinen Status melden.",
+	"panel_agents_updated": "Aktualisiert {time}",
+	"panel_agents_transcript": "Verlauf öffnen",
+	"panel_files_unavailable": "Dieser Chat hat keinen Arbeitsbereich."
 }

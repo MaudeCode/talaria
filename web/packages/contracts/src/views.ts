@@ -337,8 +337,12 @@ export const BackgroundTaskSchema = z.object({
   active: z.boolean(),
 })
 export type BackgroundTask = z.infer<typeof BackgroundTaskSchema>
-/** `agent_available: false` when the Agent could not be asked: running work then shows `unknown`. Reading never consumes a result. */
-export const BackgroundTasksResponseSchema = z.object({ session_id: z.string(), tasks: z.array(BackgroundTaskSchema), agent_available: z.boolean() })
+/**
+ * `agent_available: false` when the Agent could not be asked: running work then shows `unknown`. Reading never consumes a
+ * result. `agents_working` (TAL-373): a delegation is running or needs attention, whatever `kind` the list is narrowed to;
+ * the chat's side panel opens on Agents for it. Absent from servers before TAL-373.
+ */
+export const BackgroundTasksResponseSchema = z.object({ session_id: z.string(), tasks: z.array(BackgroundTaskSchema), agent_available: z.boolean(), agents_working: z.boolean().optional() })
 export const BackgroundTaskResultSchema = z.object({ task_id: z.string(), text: z.string() })
 export const BackgroundDismissRequestSchema = z.object({ session_id: SessionIdSchema, task_id: z.string().min(1) })
 export const BackgroundDismissResponseSchema = z.object({ ok: z.literal(true), task: BackgroundTaskSchema })

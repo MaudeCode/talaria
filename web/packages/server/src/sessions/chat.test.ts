@@ -1244,6 +1244,8 @@ describe('chat turns through the sidecar', () => {
     const tasks = async (): Promise<Record<string, Json>> => Object.fromEntries(((await read()).tasks as Json[]).map((t) => [str(t.task_id), t]))
     const first = await read()
     expect(first.agent_available).toBe(true)
+    // TAL-373: the side panel opens on Agents while a delegation runs or needs attention; the server says so.
+    expect(first.agents_working).toBe(true)
     let byId = await tasks()
     expect(Object.keys(byId).sort()).toEqual([String(bg.task_id), 'call-1-1', 'call-1-2', 'd-a', 'd-b', 'd-lost', 'proc_1'].sort())
     expect(byId['d-lost']).toMatchObject({ status: 'unknown', pinned: true, dismissible: true, active: true })
@@ -1252,6 +1254,11 @@ describe('chat turns through the sidecar', () => {
     expect(byId['d-b']).toMatchObject({ kind: 'delegation', status: 'attention', title: 'Fix CI', pinned: true })
     expect(byId['call-1-2']).toMatchObject({ title: '2 subagents: Write tests; Run tests', agents: { total: 2, completed: 0, failed: 0, running: 2 } })
     expect(byId.proc_1).toMatchObject({ kind: 'process', status: 'running', title: 'make test', pinned: true })
+    // TAL-373: the Agents page asks for delegations only; the server narrows the same records, in the same order.
+    const agents = (await json(await s.get(`/api/background/tasks?session_id=${sid}&kind=delegation`))).tasks as Json[]
+    expect(agents.map((t) => t.task_id)).toEqual(((await read()).tasks as Json[]).filter((t) => t.kind === 'delegation').map((t) => t.task_id))
+    expect(new Set(agents.map((t) => t.kind))).toEqual(new Set(['delegation']))
+    expect((await s.get(`/api/background/tasks?session_id=${sid}&kind=nope`)).status).toBe(400)
 
     // Reading never consumes: an old client's status read, then another client, still see the result.
     expect((await json(await s.get(`/api/background/status?session_id=${sid}`))).results).toEqual([expect.objectContaining({ task_id: bg.task_id, answer: 'answer to it' })])
@@ -1278,6 +1285,7 @@ describe('chat turns through the sidecar', () => {
     sidecar.respond('process.background_list', () => { throw new SidecarError('agent down', { condition: 'sidecar_error' }) })
     const offline = await read()
     expect(offline.agent_available).toBe(false)
+    expect(offline.agents_working).toBe(false)
     expect(Object.fromEntries((offline.tasks as Json[]).map((t) => [str(t.task_id), t.status]))).toMatchObject({ 'd-a': 'completed', 'd-b': 'unknown', 'call-1-1': 'unknown', proc_1: 'failed', [String(bg.task_id)]: 'completed' })
     // Unknown work stays active, so clients keep refreshing until the Agent answers again.
     expect((offline.tasks as Json[]).find((t) => t.task_id === 'd-b')).toMatchObject({ active: true, dismissible: true })

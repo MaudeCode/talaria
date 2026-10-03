@@ -2261,5 +2261,12 @@
 	"bg_show_result": "Show result",
 	"bg_hide_result": "Hide result",
 	"bg_result_unavailable": "The result is no longer available.",
-	"bg_usage": "Usage: /background <message>"
+	"bg_usage": "Usage: /background <message>",
+	"panel_label": "Side panel",
+	"panel_agents": "Agents",
+	"panel_agents_empty": "No agents have run in this chat.",
+	"panel_agents_unavailable": "The agent can’t report status right now.",
+	"panel_agents_updated": "Updated {time}",
+	"panel_agents_transcript": "Open transcript",
+	"panel_files_unavailable": "This chat has no workspace."
 }

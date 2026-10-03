@@ -113,7 +113,7 @@ export const rollbackUpload = (session_id: SessionId, rollback_tokens: string[])
 export const goalCommand = (session_id: SessionId, action: string, text?: string) => orpc().goal({ session_id, args: action, ...(text !== undefined ? { text } : {}) })
 // TAL-372: the session's background work, one shared record each; reading never consumes a result.
 export const startBackground = (session_id: SessionId, prompt: string) => orpc().background.start({ session_id, prompt })
-export const fetchBackgroundTasks = (session_id: SessionId) => orpc().background.tasks({ session_id })
+export const fetchBackgroundTasks = (session_id: SessionId, kind?: 'delegation' | 'process' | 'background_command') => orpc().background.tasks({ session_id, ...(kind ? { kind } : {}) })
 export const fetchBackgroundResult = (session_id: SessionId, task_id: string) => orpc().background.result({ session_id, task_id })
 export const dismissBackgroundTask = (session_id: SessionId, task_id: string) => orpc().background.dismiss({ session_id, task_id })
 export const createShare = (session_id: SessionId) => orpc().share.create({ session_id })

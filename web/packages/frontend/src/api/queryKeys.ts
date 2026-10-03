@@ -47,6 +47,8 @@ export const keys = {
   /** Under `sessions`, so a `sessions_changed` for the session refreshes its background work too (TAL-372). */
   background: (sid: string) => ['sessions', 'background', sid] as const,
   backgroundResult: (sid: string, taskId: string) => ['sessions', 'background', sid, 'result', taskId] as const,
+  /** TAL-373: the Agents page's delegations; under `background(sid)`, so the same events refresh it. */
+  backgroundAgents: (sid: string) => ['sessions', 'background', sid, 'agents'] as const,
   share: (token: string) => ['share', token] as const,
   streamStatus: (streamId: string) => ['stream', 'status', streamId] as const,
 }

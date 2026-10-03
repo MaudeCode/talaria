@@ -1907,5 +1907,12 @@
 	"bg_show_result": "Sonucu göster",
 	"bg_hide_result": "Sonucu gizle",
 	"bg_result_unavailable": "Sonuç artık mevcut değil.",
-	"bg_usage": "Kullanım: /background <mesaj>"
+	"bg_usage": "Kullanım: /background <mesaj>",
+	"panel_label": "Yan panel",
+	"panel_agents": "Ajanlar",
+	"panel_agents_empty": "Bu sohbette henüz bir ajan çalışmadı.",
+	"panel_agents_unavailable": "Ajan şu anda durum bildiremiyor.",
+	"panel_agents_updated": "Güncellendi {time}",
+	"panel_agents_transcript": "Dökümü aç",
+	"panel_files_unavailable": "Bu sohbetin çalışma alanı yok."
 }

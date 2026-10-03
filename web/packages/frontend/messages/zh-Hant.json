@@ -1840,5 +1840,12 @@
 	"bg_show_result": "顯示結果",
 	"bg_hide_result": "隱藏結果",
 	"bg_result_unavailable": "結果已無法取得。",
-	"bg_usage": "用法：/background <訊息>"
+	"bg_usage": "用法：/background <訊息>",
+	"panel_label": "側邊面板",
+	"panel_agents": "代理",
+	"panel_agents_empty": "此對話中尚無代理執行。",
+	"panel_agents_unavailable": "代理目前無法回報狀態。",
+	"panel_agents_updated": "更新於 {time}",
+	"panel_agents_transcript": "開啟對話紀錄",
+	"panel_files_unavailable": "此對話沒有工作區。"
 }

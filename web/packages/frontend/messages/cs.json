@@ -1942,5 +1942,12 @@
 	"bg_show_result": "Zobrazit výsledek",
 	"bg_hide_result": "Skrýt výsledek",
 	"bg_result_unavailable": "Výsledek už není k dispozici.",
-	"bg_usage": "Použití: /background <zpráva>"
+	"bg_usage": "Použití: /background <zpráva>",
+	"panel_label": "Postranní panel",
+	"panel_agents": "Agenti",
+	"panel_agents_empty": "V tomto chatu zatím nepracoval žádný agent.",
+	"panel_agents_unavailable": "Agent teď nemůže hlásit stav.",
+	"panel_agents_updated": "Aktualizováno {time}",
+	"panel_agents_transcript": "Otevřít přepis",
+	"panel_files_unavailable": "Tento chat nemá pracovní prostor."
 }

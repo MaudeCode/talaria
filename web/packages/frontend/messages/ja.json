@@ -1842,5 +1842,12 @@
 	"bg_show_result": "結果を表示",
 	"bg_hide_result": "結果を隠す",
 	"bg_result_unavailable": "結果はもう利用できません。",
-	"bg_usage": "使い方: /background <メッセージ>"
+	"bg_usage": "使い方: /background <メッセージ>",
+	"panel_label": "サイドパネル",
+	"panel_agents": "エージェント",
+	"panel_agents_empty": "このチャットで動いたエージェントはありません。",
+	"panel_agents_unavailable": "エージェントは現在状態を報告できません。",
+	"panel_agents_updated": "更新 {time}",
+	"panel_agents_transcript": "トランスクリプトを開く",
+	"panel_files_unavailable": "このチャットにはワークスペースがありません。"
 }

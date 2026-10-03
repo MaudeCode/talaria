@@ -3,8 +3,8 @@ import { useSyncExternalStore, useEffect, useState } from 'react'
 import { readPersisted, writePersisted, readPersistedJson } from '../lib/persisted'
 import { TabIdListSchema } from '../contracts/persisted'
 
-interface ShellState { collapsed: boolean; mobileOpen: boolean; sidebarWidth: number }
-let state: ShellState = { collapsed: readPersisted('hermes-webui-sidebar-collapsed') === '1', mobileOpen: false, sidebarWidth: Number(readPersisted('hermes-webui-sidebar-width')) || 300 }
+interface ShellState { collapsed: boolean; mobileOpen: boolean; sidebarWidth: number; sidePanelOpen: boolean }
+let state: ShellState = { collapsed: readPersisted('hermes-webui-sidebar-collapsed') === '1', mobileOpen: false, sidebarWidth: Number(readPersisted('hermes-webui-sidebar-width')) || 300, sidePanelOpen: readPersisted('hermes-webui-workspace-panel') === 'open' }
 const listeners = new Set<() => void>()
 const set = (patch: Partial<ShellState>) => { state = { ...state, ...patch }; for (const l of listeners) l() }
 
@@ -16,6 +16,12 @@ export function toggleSidebarCollapsed(next?: boolean): void {
   writePersisted('hermes-webui-sidebar-collapsed', collapsed ? '1' : '0')
   set({ collapsed })
 }
+/** TAL-373: the chat's right panel (Files, Agents); the edge tab opens it on wide screens, the titlebar on narrow ones. */
+export function setSidePanelOpen(open: boolean): void {
+  writePersisted('hermes-webui-workspace-panel', open ? 'open' : 'closed')
+  set({ sidePanelOpen: open })
+}
+export function toggleSidePanel(): void { setSidePanelOpen(!state.sidePanelOpen) }
 export function openMobileSidebar(): void { set({ mobileOpen: true }) }
 export function closeMobileSidebar(): void { set({ mobileOpen: false }) }
 export function toggleMobileSidebar(): void { set({ mobileOpen: !state.mobileOpen }) }

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { m } from '../../paraglide/messages.js'
 import { cn } from '../../ui/cn'
 import { MAIN_VIEW } from '../../shell/AppShell'
-import { TerminalSquare } from 'lucide-react'
+import { PanelRight, TerminalSquare } from 'lucide-react'
 
 import * as api from '../../api/endpoints'
 import { keys } from '../../api/queryKeys'
@@ -23,7 +23,8 @@ import { ClarifyCard } from './ClarifyCard'
 import { useClarify } from './useClarify'
 import { useMarkViewed } from './useMarkViewed'
 import { TerminalPanel } from '../terminal/TerminalPanel'
-import { WorkspacePanel } from '../workspace/WorkspacePanel'
+import { ChatSidePanel } from './ChatSidePanel'
+import { setSidePanelOpen, toggleSidePanel, useShellState } from '../../shell/useShellState'
 import { workspaceLabel } from '../workspaces/label'
 import { useRuntimeNotices } from '../notices/useRuntimeNotices'
 import { showToast } from '../toast/toast'
@@ -44,7 +45,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const clarify = useClarify(sessionId, live)
   useMarkViewed(sessionId, query.isFetchedAfterMount || (query.isSuccess && !query.isStale), live && isTerminal(live.status) ? live.streamId : null)
   const [terminalOpen, setTerminalOpen] = useState(false)
-  const [workspaceOpen, setWorkspaceOpen] = useState(() => readPersisted('hermes-webui-workspace-panel') === 'open')
+  const { sidePanelOpen } = useShellState()
   const [queued, setQueued] = useState<QueuedTurn[]>([])
   const draining = useRef(false)
   const [yolo, setYolo] = useState(false)
@@ -275,6 +276,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
           </div>
           {/* T3 Code keeps the terminal toggle in the thread header; phones reach it from the composer's overflow menu. */}
           {sessionId && <button type="button" className={cn('icon-btn has-tooltip has-tooltip--left', terminalOpen && 'active')} id="btnTerminalInline" data-tooltip={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => setTerminalOpen((t) => !t)}><TerminalSquare size={16} aria-hidden="true" /></button>}
+          {/* TAL-373: the side panel's edge tab is hidden below 901px; tablets open it here, phones from the titlebar. */}
+          {sessionId && <button type="button" className={cn('icon-btn chat-header-side-panel has-tooltip has-tooltip--left', sidePanelOpen && 'active')} id="btnSidePanelInline" data-tooltip={m.panel_label()} aria-label={m.panel_label()} aria-pressed={sidePanelOpen} onClick={toggleSidePanel}><PanelRight size={16} aria-hidden="true" /></button>}
         </div>
         {/* The first runtime notice, for screen readers: errors interrupt, everything else waits its turn. */}
         <div className="sr-only" role="alert" aria-live="assertive" aria-atomic="true">{runtime.announcement?.assertive ? runtime.announcement.text : ''}</div>
@@ -343,7 +346,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
         <span className="sr-only" aria-live="polite" id="a11yAnnouncer">{live?.status === 'done' ? m.done() : ''}</span>
       </div>
       {/* Always mounted beside main (its queries run only while open) so opening and closing animate and the edge tab is always there. */}
-      {workspace && sessionId && <WorkspacePanel key={workspace} workspace={workspace} sessionId={sessionId} open={workspaceOpen} onToggle={() => setWorkspaceOpen((o) => !o)} onClose={() => setWorkspaceOpen(false)} />}
+      {sessionId && <ChatSidePanel key={sessionId} sessionId={sessionId} workspace={workspace} open={sidePanelOpen} onToggle={toggleSidePanel} onClose={() => setSidePanelOpen(false)} />}
     </>
   )
 }

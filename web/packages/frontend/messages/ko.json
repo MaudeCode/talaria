@@ -1907,5 +1907,12 @@
 	"bg_show_result": "결과 보기",
 	"bg_hide_result": "결과 숨기기",
 	"bg_result_unavailable": "결과를 더 이상 볼 수 없습니다.",
-	"bg_usage": "사용법: /background <메시지>"
+	"bg_usage": "사용법: /background <메시지>",
+	"panel_label": "사이드 패널",
+	"panel_agents": "에이전트",
+	"panel_agents_empty": "이 채팅에서 실행된 에이전트가 없습니다.",
+	"panel_agents_unavailable": "지금은 에이전트가 상태를 알릴 수 없습니다.",
+	"panel_agents_updated": "업데이트 {time}",
+	"panel_agents_transcript": "대화 기록 열기",
+	"panel_files_unavailable": "이 채팅에는 작업 공간이 없습니다."
 }

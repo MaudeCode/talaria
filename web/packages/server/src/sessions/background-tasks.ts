@@ -305,7 +305,7 @@ export class BackgroundActivity {
   }
 
   /** The session's records, refreshed from the Agent; work it cannot confirm right now shows `unknown`. */
-  async snapshot(sid: string, profile: string | null): Promise<{ tasks: BackgroundTask[]; agent_available: boolean }> {
+  async snapshot(sid: string, profile: string | null): Promise<{ tasks: BackgroundTask[]; agent_available: boolean; agents_working: boolean }> {
     const sidecar = this.deps.sidecar()
     let agent: { delegations: DelegationRow[]; processes: ProcessRow[] } | null = null
     if (sidecar) {
@@ -332,7 +332,7 @@ export class BackgroundActivity {
     }
     const tasks = this.deps.store.list(sid).map((r) => taskView(r, { unconfirmed: !agent && !confirmed(r) }))
     tasks.sort((a, b) => (b.started_at ?? b.updated_at) - (a.started_at ?? a.updated_at))
-    return { tasks, agent_available: agent !== null }
+    return { tasks, agent_available: agent !== null, agents_working: tasks.some((t) => t.kind === 'delegation' && (t.status === 'running' || t.status === 'attention')) }
   }
 
   /** The full result: kept here for `/background` and drained completions, else the Agent's ledger for a delegation. */
