@@ -16,7 +16,7 @@ import { showToast } from '../toast/toast'
 import { AttachmentTray, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
 import { parseCommand, type CommandSuggestion } from './commands'
-import { ContextRing, ContextRow, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
+import { ContextRing, ContextRow, type ContextFigures, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { clearDraft, readLocalDraft, useDraftPersistence } from './useDraft'
 import { createRecognition, dictationSupported, classifyDictationError } from '../voice/dictation'
 import { ProfileMenu } from '../../shell/ProfileMenu'
@@ -464,9 +464,7 @@ export function Composer(props: ComposerProps) {
   // While a clarification owns the box, the message-only controls leave the footer (docs/ui-ux clarify-card).
   const hide = (k: string) => (!!clarify && MESSAGE_ONLY_CONTROLS.has(k)) || !!(settings as Record<string, unknown> | undefined)?.[k]
   const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
-  const compressedEstimate = session?.post_compression_context_tokens_estimate
-  const contextUsed = compressedEstimate && compressedEstimate > 0 ? compressedEstimate : (session?.last_prompt_tokens ?? null)
-  const contextTotal = session?.context_length ?? null
+  const context: ContextFigures = { percent: session?.context_usage_percent, used: session?.context_used_tokens, window: session?.context_window_tokens, thresholdPercent: session?.context_threshold_percent }
   const canSend = (text.trim() !== '' || files.some((f) => f.status === 'done')) && !sending && !locked
   // Phone composer at rest: one prompt row (UIUX guide), and the strip under it folds away too.
   const collapsed = phone && !text && files.length === 0 && !busy && !focusWithin && !configOpen && !dragOver
@@ -571,7 +569,7 @@ export function Composer(props: ComposerProps) {
               )}
               {!hide('hide_composer_mic') && dictationSupported() && <button type="button" className={cn('icon-btn mic-btn has-tooltip', dictating && 'active')} id="btnMic" data-tooltip={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-label={dictating ? m.voice_dictate_active() : m.voice_dictate()} aria-pressed={dictating} onClick={toggleDictation}><Mic size={16} aria-hidden="true" /></button>}
             </div>
-            {!hide('hide_composer_context') && <ContextRing used={contextUsed} total={contextTotal} threshold={session?.threshold_tokens} />}
+            {!hide('hide_composer_context') && <ContextRing {...context} />}
             {clarify && (
               <button type="button" onClick={clarify.send} disabled={!clarify.canSend} className="send-btn has-tooltip has-tooltip--left" id="btnClarifySend" data-tooltip={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()} aria-label={clarify.index < clarify.total - 1 ? m.composer_clarify_next() : m.composer_clarify()}>
                 <ArrowUp size={14} aria-hidden="true" />
@@ -600,7 +598,7 @@ export function Composer(props: ComposerProps) {
             {stage === 'burger' && !hide('hide_composer_reasoning') && reasoningSupported && <ReasoningChip row value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} />}
             {/* The chat header carries the terminal toggle above phone width. */}
             {stage === 'burger' && phone && <button type="button" className={cn('icon-btn', terminalOpen && 'active')} id="btnTerminal" title={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => { setConfigOpen(false); onToggleTerminal() }}><TerminalSquare size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.composer_terminal_toggle()}</span></button>}
-            {stage === 'burger' && !hide('hide_composer_context') && <ContextRow used={contextUsed} total={contextTotal} threshold={session?.threshold_tokens} />}
+            {stage === 'burger' && !hide('hide_composer_context') && <ContextRow {...context} />}
           </div>
         </div>
       </div>

@@ -19,7 +19,7 @@ import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.j
 import type { ClarifyAnswers, PendingSteer, SteerWithdrawn, SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
-import { Session, titleFrom, type Message } from './session.js'
+import { CONTEXT_USAGE_FIELDS, Session, titleFrom, type Message } from './session.js'
 import { buildActiveTurnToken, completedToolIndex, publicToolFrame, redactSessionData, redactString, withToolId } from '../redact.js'
 import { dict, type Config } from '../config/agent-config.js'
 import { ReasoningTitleTracker, reasoningEventPayload } from './reasoning-titles.js'
@@ -664,12 +664,15 @@ export class TurnRunner {
         cache_hit_percent: cacheHit(cacheReadTokens, inputTokens), turn_cache_hit_percent: cacheHit(turnCacheRead, turnInput), duration_seconds: Math.round(duration * 1000) / 1000,
         context_length: s.context_length ?? 0, threshold_tokens: s.threshold_tokens ?? 0, last_prompt_tokens: s.last_prompt_tokens ?? 0,
       }
+      const doneSession = redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled())
+      // TAL-299: the ring's figures match the terminal session's (and a detail reload's).
+      for (const key of CONTEXT_USAGE_FIELDS) doneUsage[key] = doneSession[key]
       if (usage.completion_tokens && duration > 0) doneUsage.tps = Math.round((usage.completion_tokens / duration) * 10) / 10
       if (firstTokenAt !== null) doneUsage.ttft_ms = Math.max(0, Math.round((firstTokenAt - previousStartedAt(s, activeRun)) * 1000))
       const usedModel = str(result.model) || str(opts.model) || str(s.model)
       if (usedModel) doneUsage.used_model = usedModel
       const donePayload: Record<string, unknown> = {
-        session: redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled()),
+        session: doneSession,
         usage: doneUsage,
         terminal_state: turnTerminalState(s.messages, streamId),
       }
@@ -789,7 +792,7 @@ export class TurnRunner {
    * msg_limit=` (renderable rows, limited payload shape, windowed tool calls, todo state) with the full count.
    */
   private terminalSessionPayload(s: Session): Record<string, unknown> {
-    const payload = withSessionWireFlags(s.compact(), this.registry.liveIds)
+    const payload = withSessionWireFlags(s.compact({ contextLengthFor: this.deps.service().deps.contextLengthFor }), this.registry.liveIds)
     payload.assistant_name = this.deps.service().assistantName(s)
     const scened = withBodyExcerpts(hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withTurnIds(withAttachmentObjects(s.messages)), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true }), s.active_stream_id)
     const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)

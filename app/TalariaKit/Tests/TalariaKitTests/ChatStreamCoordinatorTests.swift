@@ -962,9 +962,10 @@ final class ChatStreamCoordinatorTests: APIClientTestCase {
             sessionId: "session-abc"
         )))
         streamClient.emit(.done(DoneStreamEvent(usage: ContextWindowSnapshot(
-            contextLength: nil,
+            contextUsedTokens: nil,
+            contextWindowTokens: nil,
+            contextUsagePercent: nil,
             thresholdTokens: nil,
-            lastPromptTokens: nil,
             inputTokens: nil,
             outputTokens: nil,
             estimatedCost: nil,

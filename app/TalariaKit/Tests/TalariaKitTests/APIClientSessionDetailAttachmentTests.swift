@@ -298,7 +298,7 @@ func testSessionToleratesNumericFieldsOutsideIntRange() async throws {
             "message_count": 1e300,
             "input_tokens": -1e300,
             "output_tokens": "1e300",
-            "context_length": 9223372036854775808,
+            "context_window_tokens": 9223372036854775808,
             "messages": [
               {"role": "assistant", "content": "Still standing"}
             ]
@@ -313,7 +313,7 @@ func testSessionToleratesNumericFieldsOutsideIntRange() async throws {
     XCTAssertNil(session.messageCount)
     XCTAssertNil(session.inputTokens)
     XCTAssertNil(session.outputTokens)
-    XCTAssertNil(session.contextLength)
+    XCTAssertNil(session.contextWindowTokens)
     XCTAssertEqual(session.messages?.first?.content, "Still standing")
 }
 

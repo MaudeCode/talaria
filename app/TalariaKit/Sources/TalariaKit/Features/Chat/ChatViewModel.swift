@@ -1398,14 +1398,7 @@ public final class ChatViewModel {
             isViewingCachedData = false
             lastError = nil
             errorMessage = nil
-            contextWindowSnapshot = ContextWindowSnapshot(
-                contextLength: session?.contextLength,
-                thresholdTokens: session?.thresholdTokens,
-                lastPromptTokens: session?.lastPromptTokens,
-                inputTokens: session?.inputTokens,
-                outputTokens: session?.outputTokens,
-                estimatedCost: session?.estimatedCost
-            )
+            contextWindowSnapshot = session.map(ContextWindowSnapshot.init(session:))
             if let modelContext {
                 do {
                     try cacheMessagesIfCurrent(messages, sessionID: sessionID, in: modelContext)
@@ -1650,14 +1643,7 @@ public final class ChatViewModel {
             responseCompletionNeedsTranscriptRefresh = false
             updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
             isViewingCachedData = false
-            contextWindowSnapshot = ContextWindowSnapshot(
-                contextLength: session.contextLength,
-                thresholdTokens: session.thresholdTokens,
-                lastPromptTokens: session.lastPromptTokens,
-                inputTokens: session.inputTokens,
-                outputTokens: session.outputTokens,
-                estimatedCost: session.estimatedCost
-            )
+            contextWindowSnapshot = ContextWindowSnapshot(session: session)
             if let title = session.title {
                 displayTitle = Self.displayTitle(from: title)
             }
@@ -3462,15 +3448,8 @@ public final class ChatViewModel {
             messages = session.messages ?? []
             updateOlderMessagePagination(from: session, loadedMessageCount: messages.count)
             isViewingCachedData = false
-            let snapshot = ContextWindowSnapshot(
-                contextLength: session.contextLength,
-                thresholdTokens: session.thresholdTokens,
-                lastPromptTokens: session.lastPromptTokens,
-                inputTokens: session.inputTokens,
-                outputTokens: session.outputTokens,
-                estimatedCost: session.estimatedCost
-            )
-            contextWindowSnapshot = snapshot.replacingTokensUsed(response.summary?.compressedTokenEstimate)
+            // The compressed session carries the server's post-compression figures (TAL-299).
+            contextWindowSnapshot = ContextWindowSnapshot(session: session)
             if let title = session.title {
                 displayTitle = Self.displayTitle(from: title)
             }
@@ -4762,14 +4741,7 @@ public final class ChatViewModel {
         currentModelProvider = completedSession.modelProvider ?? currentModelProvider
         currentProfile = completedSession.profile ?? currentProfile
 
-        contextWindowSnapshot = ContextWindowSnapshot(
-            contextLength: completedSession.contextLength,
-            thresholdTokens: completedSession.thresholdTokens,
-            lastPromptTokens: completedSession.lastPromptTokens,
-            inputTokens: completedSession.inputTokens,
-            outputTokens: completedSession.outputTokens,
-            estimatedCost: completedSession.estimatedCost
-        )
+        contextWindowSnapshot = ContextWindowSnapshot(session: completedSession)
         if didApplyCompletedTranscript || completedSession.toolCalls != nil {
             let rebuiltToolCallGroups = ToolCallGroup.groups(
                 messages: messages,

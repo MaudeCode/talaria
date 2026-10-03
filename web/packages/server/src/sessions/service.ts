@@ -284,7 +284,7 @@ export class SessionService {
 
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
   wireRow(s: Session): Record<string, unknown> {
-    return withSessionWireFlags({ ...s.compact(), read_only: this.isReadOnly(s), assistant_name: this.assistantName(s) }, this.deps.runtime.activeStreamIds)
+    return withSessionWireFlags({ ...s.compact({ contextLengthFor: this.deps.contextLengthFor }), read_only: this.isReadOnly(s), assistant_name: this.assistantName(s) }, this.deps.runtime.activeStreamIds)
   }
 
   /** The agent's display name for a session's profile (`assistant_name`). */
@@ -358,7 +358,7 @@ export class SessionService {
     }
     const activeStreamIds = this.deps.runtime.activeStreamIds
     const raw: Record<string, unknown> = {
-      ...s.compact({ includeRuntime: true, activeStreamIds }),
+      ...s.compact({ includeRuntime: true, activeStreamIds, contextLengthFor: this.deps.contextLengthFor }),
       messages: truncated,
       message_count: mergedCount,
       tool_calls: toolCalls,

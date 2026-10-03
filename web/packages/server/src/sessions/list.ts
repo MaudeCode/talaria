@@ -8,7 +8,7 @@
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
 import { redactText } from '../redact.js'
-import { Session, stripSidebarHeavyMetadata } from './session.js'
+import { CONTEXT_USAGE_FIELDS, Session, contextUsage, stripSidebarHeavyMetadata } from './session.js'
 import type { SessionStore } from './store.js'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { isCliSessionRow as isStateDbCliRow, isCliSessionRowVisible, normalizeAgentSessionSource } from './state-db.js'
@@ -199,6 +199,9 @@ export function allSessions(store: SessionStore, opts: AllSessionsOptions = {}):
     for (const r of rows) {
       Reflect.deleteProperty(r, '_show_pre_compression_snapshot')
       if (!r.profile) r.profile = 'default'
+      // An index row written before TAL-299 lacks the ring's figures; its persisted inputs still give them.
+      // ponytail: no model-catalog window fallback here (detail has one); a session gains `context_length` on its first turn.
+      Object.assign(r, contextUsage(r))
       if (opts.sidebarMetadataOnly) stripSidebarHeavyMetadata(r)
     }
     return rows
@@ -339,7 +342,7 @@ function refreshIndexRowsFromSidecarMetadata(store: SessionStore, rows: Row[], i
 export const SIDEBAR_SESSION_RESPONSE_FIELDS = new Set([
   'session_id', 'title', 'display_title', '_state_db_title', 'workspace', 'model', 'model_provider', 'message_count', 'user_message_count', 'created_at', 'updated_at',
   'last_message_at', 'pinned', 'archived', 'project_id', 'profile', 'input_tokens', 'output_tokens', 'estimated_cost', 'cache_read_tokens', 'cache_write_tokens',
-  'cache_hit_percent', 'personality', 'context_length', 'config_context_length', 'window_usage_percent', 'source_tag', 'raw_source', 'session_source', 'source_label',
+  'cache_hit_percent', 'personality', 'context_length', 'config_context_length', ...CONTEXT_USAGE_FIELDS, 'source_tag', 'raw_source', 'session_source', 'source_label',
   'is_cli_session', 'is_messaging_session', 'is_streaming', 'cron_running', 'active_stream_id', 'has_pending_user_message', 'pending_started_at', 'default_hidden',
   'worktree_path', 'worktree_branch', 'parent_session_id', 'parent_title', 'parent_source', 'relationship_type', 'pre_compression_snapshot', '_lineage_root_id',
   '_lineage_tip_id', '_compression_segment_count', '_lineage_collapsed_count', '_parent_lineage_root_id', '_parent_lineage_tip_id', '_cross_surface_child_session',

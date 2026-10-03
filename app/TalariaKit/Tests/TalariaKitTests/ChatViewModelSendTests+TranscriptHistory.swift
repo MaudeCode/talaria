@@ -97,9 +97,10 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(viewModel.liveTokensPerSecond, 18.25)
 
         streamClient.emit(.done(DoneStreamEvent(usage: ContextWindowSnapshot(
-            contextLength: nil,
+            contextUsedTokens: nil,
+            contextWindowTokens: nil,
+            contextUsagePercent: nil,
             thresholdTokens: nil,
-            lastPromptTokens: nil,
             inputTokens: nil,
             outputTokens: nil,
             estimatedCost: nil,
@@ -143,9 +144,10 @@ extension ChatViewModelSendTests {
 
         streamClient.emit(.done(DoneStreamEvent(
             usage: ContextWindowSnapshot(
-                contextLength: nil,
+                contextUsedTokens: nil,
+                contextWindowTokens: nil,
+                contextUsagePercent: nil,
                 thresholdTokens: nil,
-                lastPromptTokens: nil,
                 inputTokens: nil,
                 outputTokens: nil,
                 estimatedCost: nil,
@@ -189,9 +191,10 @@ extension ChatViewModelSendTests {
 
         streamClient.emit(.done(DoneStreamEvent(
             usage: ContextWindowSnapshot(
-                contextLength: nil,
+                contextUsedTokens: nil,
+                contextWindowTokens: nil,
+                contextUsagePercent: nil,
                 thresholdTokens: nil,
-                lastPromptTokens: nil,
                 inputTokens: nil,
                 outputTokens: nil,
                 estimatedCost: nil,
@@ -232,9 +235,10 @@ extension ChatViewModelSendTests {
         """)
         streamClient.emit(.done(DoneStreamEvent(
             usage: ContextWindowSnapshot(
-                contextLength: nil,
+                contextUsedTokens: nil,
+                contextWindowTokens: nil,
+                contextUsagePercent: nil,
                 thresholdTokens: nil,
-                lastPromptTokens: nil,
                 inputTokens: nil,
                 outputTokens: nil,
                 estimatedCost: nil,

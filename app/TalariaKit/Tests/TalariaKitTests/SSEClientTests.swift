@@ -458,9 +458,10 @@ final class SSEClientTests: XCTestCase {
 
         XCTAssertEqual(payload.session?.sessionId, "abc123")
         XCTAssertEqual(payload.usage, ContextWindowSnapshot(
-            contextLength: nil,
+            contextUsedTokens: nil,
+            contextWindowTokens: nil,
+            contextUsagePercent: nil,
             thresholdTokens: nil,
-            lastPromptTokens: nil,
             inputTokens: nil,
             outputTokens: nil,
             estimatedCost: nil
@@ -479,7 +480,11 @@ final class SSEClientTests: XCTestCase {
                 "estimated_cost": 0.0123,
                 "context_length": 128000,
                 "threshold_tokens": 100000,
-                "last_prompt_tokens": 45000
+                "last_prompt_tokens": 45000,
+                "context_used_tokens": 45000,
+                "context_window_tokens": 128000,
+                "context_usage_percent": 35,
+                "context_threshold_percent": 78
               }
             }
             """
@@ -492,9 +497,11 @@ final class SSEClientTests: XCTestCase {
 
         XCTAssertEqual(payload.session?.sessionId, "abc123")
         XCTAssertEqual(payload.usage, ContextWindowSnapshot(
-            contextLength: 128_000,
+            contextUsedTokens: 45_000,
+            contextWindowTokens: 128_000,
+            contextUsagePercent: 35,
+            contextThresholdPercent: 78,
             thresholdTokens: 100_000,
-            lastPromptTokens: 45_000,
             inputTokens: 1_200,
             outputTokens: 300,
             estimatedCost: 0.0123
@@ -651,7 +658,7 @@ final class SSEClientTests: XCTestCase {
     func testMalformedDoneUsageTpsDoesNotDiscardOtherUsageFields() {
         let event = SSEEventDecoder.decode(
             eventType: "done",
-            data: #"{"usage":{"context_length":"32768","input_tokens":1200,"tps":{"unexpected":true}}}"#
+            data: #"{"usage":{"context_window_tokens":"32768","input_tokens":1200,"tps":{"unexpected":true}}}"#
         )
 
         guard case .done(let payload) = event else {
@@ -659,7 +666,7 @@ final class SSEClientTests: XCTestCase {
             return
         }
 
-        XCTAssertEqual(payload.usage?.contextLength, 32_768)
+        XCTAssertEqual(payload.usage?.contextWindowTokens, 32_768)
         XCTAssertEqual(payload.usage?.inputTokens, 1_200)
         XCTAssertNil(payload.usage?.tokensPerSecond)
     }

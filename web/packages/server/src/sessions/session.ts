@@ -150,6 +150,22 @@ export function promptCacheHitPercent(cacheRead: unknown, prompt: unknown): numb
   return Math.min(100, Math.round((read / total) * 100))
 }
 
+export const CONTEXT_USAGE_FIELDS = ['context_used_tokens', 'context_window_tokens', 'context_usage_percent', 'context_threshold_percent'] as const
+export type ContextUsage = Record<(typeof CONTEXT_USAGE_FIELDS)[number], number | null>
+
+/**
+ * TAL-299: the context ring's figures, computed once so every client shows the same value. The used side is the
+ * post-compression estimate, else the last prompt; never the cumulative `input_tokens`. The window is the session's
+ * `context_length`, else `windowFallback()` (the model catalog); there is no guessed default. Unknown stays null.
+ */
+export function contextUsage(fields: { post_compression_context_tokens_estimate?: unknown; last_prompt_tokens?: unknown; context_length?: unknown; threshold_tokens?: unknown }, windowFallback?: () => number | null): ContextUsage {
+  const positive = (v: unknown): number | null => { const n = Math.trunc(Number(v ?? 0)); return Number.isFinite(n) && n > 0 ? n : null }
+  const used = positive(fields.post_compression_context_tokens_estimate) ?? positive(fields.last_prompt_tokens)
+  const window = positive(fields.context_length) ?? positive(windowFallback?.())
+  const percent = (n: number | null): number | null => (n === null || window === null ? null : Math.min(100, Math.round((n / window) * 100)))
+  return { context_used_tokens: used, context_window_tokens: window, context_usage_percent: percent(used), context_threshold_percent: percent(positive(fields.threshold_tokens)) }
+}
+
 export const SIDEBAR_HEAVY_METADATA_FIELDS = ['compression_anchor_summary', 'compression_anchor_details', 'context_engine_state', 'compression_recovery', 'gateway_routing_history', 'composer_draft', 'process_wakeup_pause', 'share_token'] as const
 
 export function stripSidebarHeavyMetadata(row: Record<string, unknown>): Record<string, unknown> {
@@ -391,7 +407,7 @@ export class Session {
   }
 
   /** Sidebar/index row (Python `Session.compact`). */
-  compact(opts: { includeRuntime?: boolean; activeStreamIds?: Set<string>; sidebarMetadataOnly?: boolean } = {}): Record<string, unknown> {
+  compact(opts: { includeRuntime?: boolean; activeStreamIds?: Set<string>; sidebarMetadataOnly?: boolean; contextLengthFor?: (model: string | null, provider: string | null) => number | null } = {}): Record<string, unknown> {
     const activeStreamIds = opts.activeStreamIds ?? new Set<string>()
     const hasPending = this.hasPendingPrompt
     let messageCount = this.metadataMessageCount ?? this.messages.length
@@ -432,6 +448,7 @@ export class Session {
       threshold_tokens: this.threshold_tokens,
       last_prompt_tokens: this.last_prompt_tokens,
       post_compression_context_tokens_estimate: this.post_compression_context_tokens_estimate,
+      ...contextUsage(this, opts.contextLengthFor && (() => opts.contextLengthFor!(this.model, this.model_provider))),
       compression_recovery: this.compression_recovery,
       recommended_recovery_action: this.recommended_recovery_action,
       gateway_routing: this.gateway_routing,

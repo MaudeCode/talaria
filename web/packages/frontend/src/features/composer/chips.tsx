@@ -104,20 +104,18 @@ export function WorkspaceChip({ value, onChange, row }: { value: string | undefi
   )
 }
 
-/** Context window ring: last prompt tokens over the model context length. */
-const DEFAULT_CONTEXT = 128 * 1024
+/** The context ring's server figures (TAL-299): rendered as sent, nothing derived here. */
+export interface ContextFigures { percent: number | null | undefined; used: number | null | undefined; window: number | null | undefined; thresholdPercent?: number | null | undefined }
 
-function contextStats(used: number | null | undefined, total: number | null | undefined, threshold: number | null | undefined) {
-  if (!used) return null
-  const window = total && total > 0 ? total : DEFAULT_CONTEXT
-  const pct = Math.min(100, Math.round((used / window) * 100))
-  const tone = pct >= 90 ? 'high' : pct >= 70 ? 'mid' : 'low'
-  const title = `${m.composer_context_usage()}: ${pct}% (${used.toLocaleString()} / ${window.toLocaleString()})${threshold ? ` · ${threshold.toLocaleString()}` : ''}`
-  return { pct, window, tone, title }
+function contextStats({ percent, used, window, thresholdPercent }: ContextFigures) {
+  if (percent == null || used == null || window == null) return null
+  const tone = percent >= 90 ? 'high' : percent >= 70 ? 'mid' : 'low'
+  const title = `${m.composer_context_usage()}: ${percent}% (${used.toLocaleString()} / ${window.toLocaleString()})${thresholdPercent ? ` · ${m.auto_compress_label()}: ${thresholdPercent}%` : ''}`
+  return { pct: percent, used, window, tone, title }
 }
 
-export function ContextRing({ used, total, threshold }: { used: number | null | undefined; total: number | null | undefined; threshold?: number | null | undefined }) {
-  const st = contextStats(used, total, threshold)
+export function ContextRing(figures: ContextFigures) {
+  const st = contextStats(figures)
   if (!st) return null
   const { pct, tone: t, title } = st
   const r = 9.75
@@ -137,16 +135,16 @@ export function ContextRing({ used, total, threshold }: { used: number | null | 
 }
 
 /** Context readout row for the overflow panel on phones, where the footer ring is hidden. */
-export function ContextRow({ used, total, threshold }: { used: number | null | undefined; total: number | null | undefined; threshold?: number | null | undefined }) {
-  const st = contextStats(used, total, threshold)
+export function ContextRow(figures: ContextFigures) {
+  const st = contextStats(figures)
   if (!st) return null
   return (
     <div className={cn('composer-mobile-config-action composer-mobile-context-action', st.tone === 'mid' && 'ctx-mid', st.tone === 'high' && 'ctx-high')} role="group" aria-label={m.composer_mobile_context()} id="composerMobileContextAction">
       <span className="composer-mobile-config-copy composer-mobile-context-copy">
         <span className="composer-mobile-config-kicker">{m.composer_mobile_context()}</span>
         <span className="composer-mobile-config-value">{m.composer_context_usage()}: {st.pct}%</span>
-        <span className="composer-mobile-context-detail">{(used ?? 0).toLocaleString()} / {st.window.toLocaleString()}</span>
-        {threshold ? <span className="composer-mobile-context-detail">{m.auto_compress_label()}: {threshold.toLocaleString()}</span> : null}
+        <span className="composer-mobile-context-detail">{st.used.toLocaleString()} / {st.window.toLocaleString()}</span>
+        {figures.thresholdPercent ? <span className="composer-mobile-context-detail">{m.auto_compress_label()}: {figures.thresholdPercent}%</span> : null}
       </span>
     </div>
   )

@@ -138,6 +138,16 @@ export const PendingSteerSchema = z.object({
 })
 export type PendingSteer = z.infer<typeof PendingSteerSchema>
 
+/**
+ * TAL-299: the context ring, computed by the server. `context_used_tokens` is the post-compression estimate, else the last
+ * prompt (never the cumulative `input_tokens`); `context_window_tokens` is the model's window. The percents are rounded
+ * and capped at 100. Each is null when unknown, and clients then show no percentage.
+ */
+export const ContextUsageFields = {
+  context_used_tokens: z.number().int().positive().nullable().optional(), context_window_tokens: z.number().int().positive().nullable().optional(),
+  context_usage_percent: z.number().int().min(0).max(100).nullable().optional(), context_threshold_percent: z.number().int().min(0).max(100).nullable().optional(),
+}
+
 // TAL-312: the server validates both flags on every session payload; clients render them and never re-derive them.
 /** TAL-460: who started the running turn; `background` means a background result did, and the user's next message replaces it. */
 const ActiveTurnOriginSchema = z.enum(['user', 'background']).nullable().optional().describe('Who started the running turn; null while idle.')
@@ -161,7 +171,7 @@ export const SessionSchema = z.looseObject({
   personality: NullableString.optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), cache_read_tokens: z.number().optional(), cache_write_tokens: z.number().optional(),
   cache_hit_percent: NullableNumber.optional(), estimated_cost: NullableNumber.optional(), active_stream_id: ActiveStreamIdSchema, is_streaming: IsStreamingSchema, active_turn_origin: ActiveTurnOriginSchema, pending_steers: z.array(PendingSteerSchema).optional().describe('TAL-424: the active stream\'s pending steers, oldest first.'), has_pending_user_message: z.boolean().optional(),
   pending_user_message: NullableString.optional(), pending_attachments: z.array(AttachmentSchema).optional(), pending_started_at: NullableNumber.optional(), pending_user_source: NullableString.optional(),
-  context_length: NullableNumber.optional(), threshold_tokens: NullableNumber.optional(), last_prompt_tokens: NullableNumber.optional(), post_compression_context_tokens_estimate: NullableNumber.optional(),
+  context_length: NullableNumber.optional(), threshold_tokens: NullableNumber.optional(), last_prompt_tokens: NullableNumber.optional(), post_compression_context_tokens_estimate: NullableNumber.optional(), ...ContextUsageFields,
   enabled_toolsets: z.array(z.string()).nullable().optional(), composer_draft: ComposerDraftSchema.optional(), is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, read_only: ReadOnlySchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_duplicate: CanDuplicateSchema, source_tag: NullableString.optional(),
   source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(), worktree_path: NullableString.optional(),
   worktree_branch: NullableString.optional(), worktree_repo_root: NullableString.optional(), share_token: NullableString.optional(), share_created_at: NullableNumber.optional(), manual_title: z.boolean().optional(),
@@ -186,6 +196,7 @@ export const SessionRowSchema = z.looseObject({
   is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, cron_running: z.boolean().optional(), read_only: ReadOnlySchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_duplicate: CanDuplicateSchema, attention: z.looseObject({ kind: z.string().optional(), count: z.number().optional() }).nullable().optional(),
   source_tag: NullableString.optional(), source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(),
   active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.string().optional(), match_preview: NullableString.optional(),
+  ...ContextUsageFields,
 })
 export type SessionRow = z.infer<typeof SessionRowSchema>
 

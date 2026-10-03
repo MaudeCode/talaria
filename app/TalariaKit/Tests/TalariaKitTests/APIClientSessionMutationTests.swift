@@ -127,22 +127,32 @@ final class APIClientSessionMutationTests: APIClientTestCase {
         XCTAssertEqual(response.session?.sessionId, "abc123")
     }
 
-    func testCompressionSummaryExtractsCompressedTokenEstimate() {
-        let arrowSummary = SessionCompressionSummary(
-            headline: "Compressed: 20 -> 10 messages",
-            tokenLine: "Approx request size: ~30,100 \u{2192} ~10,347 tokens",
-            note: nil,
-            referenceMessage: nil
-        )
-        let asciiSummary = SessionCompressionSummary(
-            headline: nil,
-            tokenLine: "Rough transcript estimate: ~1200 -> ~320 tokens",
-            note: nil,
-            referenceMessage: nil
-        )
+    func testCompressResponseRingComesFromTheReturnedSessionNotTheTokenLine() async throws {
+        let client = makeClient { request in
+            apiTestJSONResponse("""
+            {
+              "ok": true,
+              "summary": {"token_line": "Approx request size: ~30,100 \u{2192} ~10,347 tokens"},
+              "session": {
+                "session_id": "abc123",
+                "messages": [],
+                "last_prompt_tokens": 120000,
+                "post_compression_context_tokens_estimate": 12800,
+                "context_length": 128000,
+                "context_used_tokens": 12800,
+                "context_window_tokens": 128000,
+                "context_usage_percent": 10,
+                "context_threshold_percent": 78
+              }
+            }
+            """, for: request)
+        }
 
-        XCTAssertEqual(arrowSummary.compressedTokenEstimate, 10_347)
-        XCTAssertEqual(asciiSummary.compressedTokenEstimate, 320)
+        let response = try await client.compressSession(id: "abc123", focusTopic: nil)
+        let snapshot = ContextWindowSnapshot(session: try XCTUnwrap(response.session))
+
+        XCTAssertEqual(ContextWindowIndicatorPresentation(snapshot: snapshot).percentageLabel, "10")
+        XCTAssertEqual(ContextWindowFormatter.tokensLabel(from: snapshot), "12.8K / 128.0K")
     }
 
     func testUndoSessionBuildsExpectedBodyAndDecodesResponse() async throws {
