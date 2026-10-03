@@ -2009,5 +2009,6 @@
 	"panel_agents_unavailable": "Агент сейчас не может сообщить статус.",
 	"panel_agents_updated": "Обновлено {time}",
 	"panel_agents_transcript": "Открыть запись",
-	"panel_files_unavailable": "У этого чата нет рабочей папки."
+	"panel_files_unavailable": "У этого чата нет рабочей папки.",
+	"panel_agents_transcript_for": "Запись: {goal}"
 }

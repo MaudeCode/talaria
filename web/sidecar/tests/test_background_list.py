@@ -54,3 +54,27 @@ def test_a_units_full_result_is_read_only_by_its_own_session(handshaken: Sidecar
 
 def test_an_agent_that_never_delegated_lists_nothing(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
     assert handshaken.result("process.background_list", {"profile_home": str(hermes_home), "session_ids": ["web-a"]}) == {"delegations": [], "processes": []}
+
+
+def _child_session(home: pathlib.Path, session_id: str, parent: str, goal: str) -> None:
+    """A finished subagent's own state.db session, as the Agent writes it: source subagent, tagged with its parent."""
+    _agent(home, (
+        "from hermes_state import SessionDB\n"
+        "db = SessionDB()\n"
+        "db.create_session(sys.argv[2], 'subagent', model_config={'_delegate_from': sys.argv[3]})\n"
+        "db.append_message(sys.argv[2], 'user', sys.argv[4])\n"
+        "db.append_message(sys.argv[2], 'assistant', 'done')\n"
+    ), session_id, parent, goal)
+
+
+def test_a_finished_units_children_are_linked_by_their_parent_and_goal(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
+    """TAL-494: a finished child's own session, found through state.db, by its parent session and its exact goal."""
+    _dispatch(hermes_home, "call-9-1", "web-a", "Write docs;Write tests", "0")
+    _dispatch(hermes_home, "call-9-2", "web-a", "Write docs;Write tests", "1")
+    _child_session(hermes_home, "child-docs", "web-a", "Write docs")
+    _child_session(hermes_home, "child-tests", "web-a", "Write tests")
+    _child_session(hermes_home, "child-elsewhere", "web-b", "Write docs")
+    listed = handshaken.result("process.background_list", {"profile_home": str(hermes_home), "session_ids": ["web-a"]})
+    units = {d["delegation_id"]: d.get("children") for d in listed["delegations"]}
+    assert units["call-9-1"] == [{"goal": "Write docs", "session_id": "child-docs"}]
+    assert units["call-9-2"] == [{"goal": "Write tests", "session_id": "child-tests"}]

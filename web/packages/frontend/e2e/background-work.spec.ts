@@ -4,7 +4,7 @@ test.use({ serviceWorkers: 'block' })
 
 const task = (overrides: Record<string, unknown>) => ({
   task_id: 't', kind: 'background_command', status: 'running', title: 'x', started_at: 1770000100, updated_at: 1770000101, completed_at: null,
-  result_available: false, child_session_id: null, exit_code: null, agents: null, pinned: true, dismissible: false, active: true, ...overrides,
+  result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true, ...overrides,
 })
 
 /** The session's background work is the server's record: the composer's card and a delegation row show it (TAL-372). */

@@ -4,7 +4,7 @@ test.use({ serviceWorkers: 'block' })
 
 const agent = (overrides: Record<string, unknown>) => ({
   task_id: 'd', kind: 'delegation', status: 'running', title: 'x', started_at: 1770000100, updated_at: Math.floor(Date.now() / 1000) - 120, completed_at: null,
-  result_available: false, child_session_id: null, exit_code: null, agents: null, pinned: true, dismissible: false, active: true, ...overrides,
+  result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true, ...overrides,
 })
 
 /** One right panel hosts Files and Agents as tabs; Files keeps its folder and draft across switches (TAL-373). */
@@ -17,7 +17,7 @@ test('the right panel shows Agents and Files as tabs that keep their state', asy
   await page.route('**/api/background/tasks?**', (route) => {
     const kind = new URL(route.request().url()).searchParams.get('kind')
     const tasks = [
-      agent({ task_id: 'call-1-1', title: 'Write the docs', status: 'completed', active: false, pinned: false }),
+      agent({ task_id: 'call-1-1', title: 'Write the docs', status: 'completed', active: false, pinned: false, child_sessions: [{ goal: 'Write the docs', session_id: 'child-docs' }] }),
       agent({ task_id: 'call-1-2', title: '2 subagents: Write tests; Run tests', agents: { total: 2, completed: 1, failed: 0, running: 1 } }),
       agent({ task_id: 'd-stall', title: 'Fix CI', status: 'attention' }),
     ]
@@ -42,6 +42,8 @@ test('the right panel shows Agents and Files as tabs that keep their state', asy
   await expect(entries.nth(1)).toContainText('2 subagents: Write tests; Run tests')
   await expect(entries.nth(1)).toContainText('1 of 2 done')
   await expect(entries.nth(2)).toContainText('Needs attention')
+  // TAL-494: a finished unit links its subagent's read-only transcript.
+  await expect(entries.nth(0).getByRole('link', { name: 'Open transcript' })).toHaveAttribute('href', /\/session\/child-docs$/)
   // Two short tabs never overflow the panel's header, at either width.
   expect(await tabs.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
   if (process.env.TAL373_SHOTS) await page.screenshot({ path: `${process.env.TAL373_SHOTS}/agents-${testInfo.project.name}.png` })

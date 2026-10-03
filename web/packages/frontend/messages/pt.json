@@ -1723,5 +1723,6 @@
 	"panel_agents_unavailable": "O agente não pode informar o estado agora.",
 	"panel_agents_updated": "Atualizado {time}",
 	"panel_agents_transcript": "Abrir transcrição",
-	"panel_files_unavailable": "Esta conversa não tem espaço de trabalho."
+	"panel_files_unavailable": "Esta conversa não tem espaço de trabalho.",
+	"panel_agents_transcript_for": "Transcrição: {goal}"
 }

@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Each agent in the chat's Agents panel links to the read-only conversation of every subagent it ran.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

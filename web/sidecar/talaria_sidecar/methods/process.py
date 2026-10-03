@@ -8,6 +8,7 @@ import json
 import logging
 import queue
 import sqlite3
+import time
 from contextlib import closing
 from pathlib import Path
 
@@ -269,13 +270,82 @@ def _owned_processes(session_ids: set[str]) -> list[dict]:
     return out
 
 
+_CHILD_WINDOW_S = 5
+
+
+def _live_children() -> list[dict]:
+    """Running subagents from the Agent's in-process registry: the only place a child's session id sits next to its
+    delegation id. An Agent without the registry reports none."""
+    try:
+        from tools.delegate_tool_registry import _active_subagents, _active_subagents_lock
+        with _active_subagents_lock:
+            records = list(_active_subagents.values())
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for r in records:
+        sid = getattr(r.get("agent"), "session_id", None)
+        if isinstance(sid, str) and sid:
+            out.append({"delegation_id": str(r.get("delegation_id") or ""), "goal": str(r.get("goal") or ""), "owner": str(r.get("owner_agent_session_id") or ""), "session_id": sid})
+    return out
+
+
+def _ledger_children(home: Path, owners: list[str]) -> list[dict]:
+    """Finished subagents' own sessions in state.db: ``source = subagent`` rows tagged ``_delegate_from`` with their
+    parent's session, each with its start time and first user message (the child's goal, sent verbatim)."""
+    db_path = home / "state.db"
+    if not db_path.exists() or not owners:
+        return []
+    marks = ",".join("?" * len(owners))
+    with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True, timeout=5)) as conn:
+        try:
+            # Only these chats' children: a long-lived profile keeps every subagent session it ever ran.
+            rows = conn.execute(
+                "SELECT s.id, s.model_config, s.started_at, (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.role = 'user' ORDER BY m.id LIMIT 1)"
+                f" FROM sessions s WHERE s.source = 'subagent' AND json_extract(s.model_config, '$._delegate_from') IN ({marks})", owners).fetchall()
+        except sqlite3.OperationalError:
+            return []
+    out = []
+    for sid, model_config, started_at, first in rows:
+        owner = _json(model_config).get("_delegate_from")
+        if owner in owners and isinstance(first, str):
+            out.append({"owner": owner, "session_id": sid, "started_at": started_at, "goal": first})
+    return out
+
+
+def unit_children(unit: dict, owner: str, live: list[dict], finished: list[dict], now: float) -> list[dict]:
+    """The subagent sessions one delegation unit ran, as ``{goal, session_id}``. A live registry record is exact (same
+    owner, the unit's call id, one of its goals); a finished child's session counts only when it is the single session
+    of that owner, started in the unit's window, whose first message is exactly that goal."""
+    unit_id, goals = unit["delegation_id"], [g for g in unit["goals"] if g]
+    found: dict[str, str] = {}
+    for r in live:
+        call = r["delegation_id"]
+        if r["owner"] == owner and call and (unit_id == call or unit_id.startswith(f"{call}-")) and r["goal"] in goals:
+            found.setdefault(r["goal"], r["session_id"])
+    start = (unit.get("dispatched_at") or 0) - _CHILD_WINDOW_S
+    end = (unit.get("completed_at") or now) + _CHILD_WINDOW_S
+    for goal in goals:
+        if goal in found:
+            continue
+        matches = [c["session_id"] for c in finished if c["owner"] == owner and c["goal"] == goal and start <= (c["started_at"] or 0) <= end]
+        if len(matches) == 1:
+            found[goal] = matches[0]
+    return [{"goal": g, "session_id": found[g]} for g in goals if g in found]
+
+
 def background_list(home: Path, session_ids: list[str]) -> dict:
     """TAL-372: what the Agent knows about the background work of these WebUI sessions: delegations from the durable
-    ledger (with the live registry's status while they run) and notified processes from the process registry."""
+    ledger (with the live registry's status while they run) and notified processes from the process registry.
+    TAL-494: each delegation also names the subagent sessions it ran."""
     live = _live_delegations()
     delegations = _ledger_rows(home, session_ids)
+    live_children = _live_children()
+    finished = _ledger_children(home, session_ids) if delegations else []
+    now = time.time()
     for row in delegations:
         row["live_status"] = live.get(row["delegation_id"], {}).get("status")
+        row["children"] = unit_children(row, row["origin_ui_session_id"], live_children, finished, now)
     return {"delegations": delegations, "processes": _owned_processes(set(session_ids))}
 
 

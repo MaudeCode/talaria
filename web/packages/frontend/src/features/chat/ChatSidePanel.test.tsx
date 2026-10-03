@@ -22,7 +22,7 @@ import { ChatSidePanel } from './ChatSidePanel'
 
 const agent = (overrides: Partial<BackgroundTask>): BackgroundTask => ({
   task_id: 'd', kind: 'delegation', status: 'running', title: 'Fix CI', started_at: 1, updated_at: Date.now() / 1000, completed_at: null,
-  result_available: false, child_session_id: null, exit_code: null, agents: null, pinned: true, dismissible: false, active: true, ...overrides,
+  result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true, ...overrides,
 })
 const tasks = (list: BackgroundTask[], agent_available = true) => ({ session_id: 's1', agent_available, tasks: list, agents_working: list.some((t) => t.status === 'running' || t.status === 'attention') })
 
@@ -91,13 +91,16 @@ describe('chat side panel (TAL-373)', () => {
   it('lists each agent unit apart with its status, progress and transcript link, and says when there are none or the Agent is unreachable', async () => {
     localStorage.setItem('talaria-right-panel-page', 'agents')
     vi.mocked(api.fetchBackgroundTasks).mockResolvedValue(tasks([
-      agent({ task_id: 'call-1-1', title: 'Write docs', status: 'completed', active: false, pinned: false, child_session_id: 'child-1' }),
+      agent({ task_id: 'call-1-1', title: 'Write docs', status: 'completed', active: false, pinned: false, child_sessions: [{ goal: 'Write docs', session_id: 'child-1' }] }),
       agent({ task_id: 'call-1-2', title: '2 subagents: Tests; Run', agents: { total: 2, completed: 1, failed: 0, running: 1 } }),
+      agent({ task_id: 'call-1-3', title: '2 subagents: Lint; Format', child_sessions: [{ goal: 'Lint', session_id: 'child-lint' }, { goal: 'Format', session_id: 'child-format' }] }),
     ]))
     const { unmount } = render(<Panel />)
     const list = within(await screen.findByRole('list', { name: 'Agents' }))
     const entries = list.getAllByRole('listitem')
-    expect(entries.map((e) => e.getAttribute('data-task-id'))).toEqual(['call-1-1', 'call-1-2'])
+    expect(entries.map((e) => e.getAttribute('data-task-id'))).toEqual(['call-1-1', 'call-1-2', 'call-1-3'])
+    // TAL-494: a unit that ran several subagents links each one by its goal.
+    expect(within(entries[2]!).getAllByRole('link').map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['Transcript: Lint', '/session/child-lint'], ['Transcript: Format', '/session/child-format']])
     expect(within(entries[0]!).getByText('Done')).toBeInTheDocument()
     expect(within(entries[0]!).getByRole('link', { name: 'Open transcript' })).toHaveAttribute('href', '/session/child-1')
     expect(within(entries[1]!).getByText('1 of 2 done')).toBeInTheDocument()

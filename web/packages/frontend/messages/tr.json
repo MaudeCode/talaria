@@ -1914,5 +1914,6 @@
 	"panel_agents_unavailable": "Ajan şu anda durum bildiremiyor.",
 	"panel_agents_updated": "Güncellendi {time}",
 	"panel_agents_transcript": "Dökümü aç",
-	"panel_files_unavailable": "Bu sohbetin çalışma alanı yok."
+	"panel_files_unavailable": "Bu sohbetin çalışma alanı yok.",
+	"panel_agents_transcript_for": "Döküm: {goal}"
 }

@@ -82,4 +82,17 @@ describe('background task records (TAL-372)', () => {
     store.update('s', [{ task_id: 'd1', kind: 'delegation', status: 'attention' }, { task_id: 'd1', kind: 'delegation', status: 'running' }])
     expect(store.get('s', 'd1')?.status).toBe('running')
   })
+
+  it('keep the child sessions a delegation ran once seen, through completion and a restart, exposing only safe ids (TAL-494)', () => {
+    const dir = tempDir()
+    const store = new BackgroundTaskStore(dir, () => 1)
+    store.update('s', [{ task_id: 'call-1-2', kind: 'delegation', status: 'running', children: [{ goal: 'Write tests', session_id: 'child-1' }] }])
+    // The Agent forgets a finished child's id: the completion and a later report name none, or only another one.
+    store.update('s', [{ task_id: 'call-1-2', kind: 'delegation', status: 'completed' }])
+    store.update('s', [{ task_id: 'call-1-2', kind: 'delegation', status: 'completed', children: [{ goal: 'Run tests', session_id: 'child-2' }, { goal: 'Write tests', session_id: 'child-1' }] }])
+    const restarted = new BackgroundTaskStore(dir, () => 2)
+    expect(taskView(restarted.get('s', 'call-1-2')!).child_sessions).toEqual([{ goal: 'Write tests', session_id: 'child-1' }, { goal: 'Run tests', session_id: 'child-2' }])
+    restarted.update('s', [{ task_id: 'bad', kind: 'delegation', status: 'running', children: [{ goal: 'x', session_id: '../etc' }] }])
+    expect(taskView(restarted.get('s', 'bad')!).child_sessions).toEqual([])
+  })
 })

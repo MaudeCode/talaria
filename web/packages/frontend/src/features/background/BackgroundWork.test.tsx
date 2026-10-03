@@ -15,7 +15,7 @@ import { ToolCard, type ToolCardData } from '../chat/blocks/ToolCard'
 
 const task = (overrides: Partial<BackgroundTask>): BackgroundTask => ({
   task_id: 't', kind: 'background_command', status: 'running', title: 'summarize repo', started_at: 1, updated_at: 2, completed_at: null,
-  result_available: false, child_session_id: null, exit_code: null, agents: null, pinned: true, dismissible: false, active: true, ...overrides,
+  result_available: false, child_sessions: [], exit_code: null, agents: null, pinned: true, dismissible: false, active: true, ...overrides,
 })
 
 function Card({ sessionId }: { sessionId: string }) {

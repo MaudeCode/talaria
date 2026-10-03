@@ -2268,5 +2268,6 @@
 	"panel_agents_unavailable": "The agent can’t report status right now.",
 	"panel_agents_updated": "Updated {time}",
 	"panel_agents_transcript": "Open transcript",
-	"panel_files_unavailable": "This chat has no workspace."
+	"panel_files_unavailable": "This chat has no workspace.",
+	"panel_agents_transcript_for": "Transcript: {goal}"
 }
