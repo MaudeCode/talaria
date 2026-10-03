@@ -432,7 +432,7 @@ describe('redactSensitive cost', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
     // Unquoted runs, and many credential keys inside one long quoted argument.
     // The Agent's ported families: env names, split tokens, JWT headers, phone numbers and bare URL userinfo.
-    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK='].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
@@ -642,8 +642,16 @@ describe('Agent redactor parity', () => {
   it('masks a whole quoted env value, and a split token whose next line is an assignment', () => {
     expect(redactText('DB_PASS="correct horse battery staple" next', true)).toBe('DB_PASS="***" next')
     expect(redactText(`db_pass='two words' x`, true)).toBe(`db_pass='***' x`)
-    expect(redactText('DB_PW="unterminated pass phrase', true)).toBe('DB_PW="***')
+    expect(redactText('DB_PW="unterminated pass phrase', true)).toBe('DB_PW=***')
     expect(redactText('ghp_abcdef\n1234567890ABCDEF1234567890abcdef\nSECOND=ok', true)).toBe('ghp_ab...cdef\nSECOND=ok')
     expect(redactText('ghp_abcdef\n1234567890ABCDEF1234567890abcdef\nSECOND = ok', true)).toBe('ghp_ab...cdef\nSECOND = ok')
+  })
+
+  it('masks a whole escaped or ANSI-C env value, and a punctuation-only password', () => {
+    expect(redactText('db_pass=correct\\ horse\\ battery next', true)).toBe('db_pass=*** next')
+    expect(redactText(`DB_PW=$'correct horse\\x21' next`, true)).toBe(`DB_PW=$'***' next`)
+    expect(redactText(`db_pass='!@#$%^&*' next`, true)).toBe(`db_pass='***' next`)
+    expect(redactText('MYSQL_PASS=!@#% next', true)).toBe('MYSQL_PASS=*** next')
+    expect(redactText('openai_key=xyzzy\\ plugh1234567890abcd next', true)).toBe('openai_key=*** next')
   })
 })

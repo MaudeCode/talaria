@@ -112,27 +112,23 @@ const LISTED_FLAG_RE = /(["'])(-{1,2})([A-Za-z0-9_][A-Za-z0-9_.-]*)\1(\s*,\s*)(?
 const EMBEDDED_AWS_RE = /(?:AKIA|ASIA)[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
 /**
- * The Agent's other env names: an all-caps one ending a word in `KEY`, `PASS` or `PW` (`OPENAI_KEY`, `DB_PW`, not
- * `KEYBOARD`), or a lowercase `name_key` / `name_pass` / `name_pw`, URL query parameters included (the Agent skips any
- * text with a URL). `isEnvSecretAssignment` gates it.
+ * The Agent's other env names: an all-caps one holding `KEY`, `PASS` or `PW` (`OPENAI_KEY`, `DB_PW`), or a `name_key` /
+ * `name_pass` / `name_pw` in any case, URL query parameters included (the Agent skips any text with a URL). One attempt per
+ * identifier, which must hold a keyword, so the scan stays linear on long runs (`PWPWPW…`). The value is the shell word
+ * after `=`, read by `shellWordEnd` (quotes, escapes, `$'…'`).
  */
-// One attempt per identifier, which must hold a keyword: the scan stays linear on long runs (`PWPWPW…`).
-// A quoted value runs to its closing quote, spaces included, or to the line end when unclosed.
-const ENV_SUFFIX_RE = /(?<![A-Z0-9_])(?=[A-Z0-9_]*(?:KEY|PASS|PW))([A-Z0-9_]+)\s*=\s*("[^"\n]*"?\S*|'[^'\n]*'?\S*|\S+)/g
-const ENV_SUFFIX_LOWER_RE = /(?<![a-z0-9_])([a-z0-9_]+_(?:key|pass|pw)(?![a-z0-9_]))\s*=\s*("[^"\n]*"?\S*|'[^'\n]*'?\S*|\S+)/gi
+const ENV_SUFFIX_RE = /(?<![A-Za-z0-9_])((?=[A-Z0-9_]*(?:KEY|PASS|PW))[A-Z0-9_]+|[A-Za-z0-9_]+_(?:[Kk][Ee][Yy]|[Pp][Aa][Ss][Ss]|[Pp][Ww])(?![A-Za-z0-9_]))[ \t]*=[ \t]*/g
+/** The prefilter's view of `ENV_SUFFIX_RE`. */
+const ENV_SUFFIX_TEST_RE = new RegExp(ENV_SUFFIX_RE.source)
 /** A keyword at a word edge of an env name (`DB_PW`, `MYSQL_PASS`), never inside a word (`KEYBOARD`, `PASSAGE`). */
 const ENV_SUFFIX_WORD_RE = /(?:^|[^A-Za-z])(?:KEY|PASS|PW)S?(?![A-Za-z])/i
 /** Env names whose value is a credential whatever its shape; a bare `KEY` needs an opaque value (`SORT_KEY=name` stays). */
 const ENV_STRONG_NAME_RE = /(?:api|auth|access|refresh|session|id|bearer)[ _.-]?(?:key|token)|key[ _.-]?material|secret|passwd|password|pass|pw|credential|auth|bearer/i
-/** The prefilter's view of `ENV_SUFFIX_RE` and `ENV_SUFFIX_LOWER_RE`. */
-const ENV_SUFFIX_TEST_RES = [new RegExp(ENV_SUFFIX_RE.source), new RegExp(ENV_SUFFIX_LOWER_RE.source, 'i')]
 /** The Agent's `_looks_like_opaque_credential`: a value shaped like a generated secret rather than a word. */
 function looksOpaque(value: string): boolean {
   if (value === '***' || /^[A-Fa-f0-9]{16,}$/.test(value) || /^[A-Za-z0-9_./+=-]{20,}$/.test(value)) return true
   return value.length >= 12 && [/[a-z]/, /[A-Z]/, /[0-9]/].filter((re) => re.test(value)).length >= 2
 }
-const isEnvSecretAssignment = (key: string, value: string): boolean =>
-  /[A-Za-z0-9]/.test(value) && !/^(?:os\.(?:getenv|environ)|process\.env|\$ENV\{)/.test(value) && ENV_SUFFIX_WORD_RE.test(key) && (ENV_STRONG_NAME_RE.test(key) || looksOpaque(value))
 /**
  * `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The user
  * and password may be assembled from quoted and escaped shell pieces (`bob:hun'ter2'@`), and every delimiter may be
@@ -454,6 +450,37 @@ function maskShellWord(value: string): string {
 
 /** A shell word's content, for the "nothing to mask" checks: the inside of a single quoted piece, else the word. */
 const shellWordInner = (value: string): string => splitQuoted(value)?.inner ?? value
+
+/**
+ * `ENV_SUFFIX_RE` assignments whose name is a credential (`DB_PASS=`, `openai_key=`). A password-class name masks any value,
+ * punctuation-only included; a bare `KEY` masks an opaque one. A plain value keeps the Agent's partial mask; a quoted,
+ * escaped or composed one is masked whole. Env lookups (`os.getenv(…)`) and masked values stay.
+ */
+function redactEnvSuffixes(text: string): string {
+  let out = ''
+  let last = 0
+  const quoteAt = quoteTracker(text)
+  const closeOf = enclosingClose(text)
+  // A skipped value does not move the scan past its word: a later match inside that word reuses its end, and a value is
+  // judged by its head, so many assignments inside one long word (`a_key=x\ a_key=x\ …`) still scan it once.
+  let wordEnd = -1
+  ENV_SUFFIX_RE.lastIndex = 0
+  for (let m = ENV_SUFFIX_RE.exec(text); m; m = ENV_SUFFIX_RE.exec(text)) {
+    const key = m[1]!
+    const valueStart = m.index + m[0].length
+    const valueEnd = valueStart < wordEnd ? wordEnd : shellWordEnd(text, valueStart, quoteAt(valueStart), closeOf)
+    wordEnd = valueEnd
+    const value = text.slice(valueStart, valueEnd)
+    const head = value.slice(0, 512)
+    const inner = shellWordInner(head)
+    if (!inner.trim() || inner === '***' || /^(?:os\.(?:getenv|environ)|process\.env|\$ENV\{)/.test(inner) || !ENV_SUFFIX_WORD_RE.test(key)) continue
+    if (!ENV_STRONG_NAME_RE.test(key) && !looksOpaque(shellDequote(head))) continue
+    out += text.slice(last, valueStart) + (/^[^\s'"\\$`]+$/.test(value) ? mask(value) : maskShellWord(value))
+    last = valueEnd
+    ENV_SUFFIX_RE.lastIndex = Math.max(valueEnd, ENV_SUFFIX_RE.lastIndex)
+  }
+  return out + text.slice(last)
+}
 
 /** Credential parameters (`CRED_PARAM_RE`) with their whole shell-word value fully masked. */
 function redactCredentialParams(text: string): string {
@@ -1222,16 +1249,7 @@ function redactRules(text: string): string {
   for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = redactCredentialParams(out)
   out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
-  const maskEnvSuffix = (whole: string, key: string, value: string): string => {
-    // A value quoted whole keeps its quotes; anything else (unclosed, or a quoted piece glued to more) is masked whole.
-    const quote = /^["']/.exec(value)?.[0] ?? ''
-    const closed = quote !== '' && value.length > 1 && value.endsWith(quote) && !value.slice(1, -1).includes(quote)
-    const inner = closed ? value.slice(1, -1) : quote ? value.slice(1) : value
-    if (!isEnvSecretAssignment(key, inner)) return whole
-    return closed ? `${key}=${quote}${mask(inner)}${quote}` : quote ? `${key}=${quote}***` : `${key}=${mask(inner)}`
-  }
-  out = out.replace(ENV_SUFFIX_RE, maskEnvSuffix)
-  out = out.replace(ENV_SUFFIX_LOWER_RE, maskEnvSuffix)
+  out = redactEnvSuffixes(out)
   out = out.replace(LISTED_FLAG_RE, (whole, q: string, dash: string, key: string, gap: string, vq: string | undefined, quotedValue: string | undefined, bare: string | undefined) => {
     // An unquoted value (a number, `True`, a nested list) is masked whole.
     if (bare !== undefined) return bare !== '***' && (ARGV_USER_FLAG_RE.test(dash + key) || isCredentialKey(key)) ? `${q}${dash}${key}${q}${gap}***` : whole
@@ -1287,7 +1305,7 @@ export function mightContainSensitiveText(text: string): boolean {
   if (text.includes(':') && TELEGRAM_TEST_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true
   if (text.includes('+') && PHONE_TEST_RE.test(text)) return true
-  if (text.includes('=') && ENV_SUFFIX_TEST_RES.some((re) => re.test(text))) return true
+  if (text.includes('=') && ENV_SUFFIX_TEST_RE.test(text)) return true
   return false
 }
 
