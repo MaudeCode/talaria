@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema } from '../views.js'
+import { SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, SessionSchema } from '../views.js'
 
 /** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
 
@@ -25,8 +25,22 @@ export const SessionDetailQuerySchema = z.object({ session_id: z.string(), messa
 
 
 const tags = ['sessions']
-/** Manual compression job state: `running` while the worker runs, `done` with the (possibly rotated) session, `error`, or `idle` when no job exists. */
-export const CompressionStatusSchema = z.looseObject({ status: z.enum(['running', 'done', 'error', 'idle']), session_id: z.string().nullable().optional(), session: SessionRowSchema.optional(), error: z.string().optional(), started_at: z.number().optional(), updated_at: z.number().optional() })
+/** The Agent's manual-compression feedback (`summarize_manual_compression`) plus the reference line stored as the anchor summary. */
+export const CompressionSummarySchema = z.looseObject({ headline: z.string().optional(), token_line: z.string().optional(), note: z.string().nullable().optional(), reference_message: z.string().nullable().optional() })
+const CompressInputSchema = z.object({ session_id: z.string().optional(), focus_topic: z.string().nullable().optional(), topic: z.string().nullable().optional() })
+/** `POST /api/session/compress`: the compressed session (with its display `messages`), the summary, and the focus topic used. */
+export const CompressResultSchema = z.looseObject({ ok: z.literal(true), session: SessionSchema, summary: CompressionSummarySchema, focus_topic: z.string().nullable() })
+/**
+ * Manual compression job state: `running` while the worker runs, `done` with the compress result's fields, `error` with
+ * the status the synchronous route would have answered (`error_status`, plus `type`/`retryable` for a stale Agent runtime),
+ * or `idle` when no job exists. Finished jobs stay readable for ten minutes so every open tab sees the same result.
+ */
+export const CompressionStatusSchema = z.looseObject({
+  ok: z.boolean().optional(), status: z.enum(['running', 'done', 'error', 'idle']), session_id: z.string().nullable().optional(), focus_topic: z.string().nullable().optional(),
+  session: SessionSchema.optional(), summary: CompressionSummarySchema.optional(), error: z.string().optional(), error_status: z.number().int().optional(),
+  type: z.string().optional(), retryable: z.boolean().optional(), restart_scheduled: z.boolean().optional(), agent_update_state: z.unknown().optional(),
+  started_at: z.number().optional(), updated_at: z.number().optional(),
+})
 
 export const sessionsContract = {
   sessions: {
@@ -57,7 +71,8 @@ export const sessionsContract = {
     yoloSet: oc.route({ method: 'POST', path: '/api/session/yolo', tags }).input(z.object({ session_id: z.string(), enabled: Json.optional() })).output(z.object({ ok: z.literal(true), yolo_enabled: z.boolean(), stale_cleared: z.boolean().optional() })),
     import: oc.route({ method: 'POST', path: '/api/session/import', tags }).input(z.object({ messages: Json.optional(), tool_calls: Json.optional(), title: z.string().optional(), workspace: z.string().optional(), model: z.string().optional(), pinned: z.boolean().optional() }).catchall(Json)).output(OkSchema.extend({ session: SessionRowSchema })),
     regenerateTitle: oc.route({ method: 'POST', path: '/api/session/title/regenerate', tags, summary: 'Generate a title from the first (or latest) complete exchange through the auxiliary model and persist it.' }).input(SessionBody.extend({ prefer_latest: z.boolean().optional() })).output(z.looseObject({ session: SessionRowSchema, title: z.string(), status: z.string(), raw_preview: z.string() })),
-    compressStart: oc.route({ method: 'POST', path: '/api/session/compress/start', tags, summary: 'Manual compression is not available in this release (501 `manual_compression_unavailable`).' }).input(SessionBody.extend({ focus_topic: z.string().optional(), topic: z.string().optional() })).output(CompressionStatusSchema),
+    compress: oc.route({ method: 'POST', path: '/api/session/compress', tags, summary: 'Compress the session\'s model context now (iOS `/compress`). `focus_topic` (alias `topic`) is capped at 500 characters.' }).input(CompressInputSchema).output(CompressResultSchema),
+    compressStart: oc.route({ method: 'POST', path: '/api/session/compress/start', tags, summary: 'Start (or join) the session\'s manual compression job; poll `compress/status`.' }).input(CompressInputSchema).output(CompressionStatusSchema),
     compressStatus: oc.route({ method: 'GET', path: '/api/session/compress/status', tags }).input(SessionQuery).output(CompressionStatusSchema),
     draftGet: oc.route({ method: 'GET', path: '/api/session/draft', tags }).input(SessionQuery).output(z.object({ draft: DraftSchema, draft_version: z.string().nullable() })),
     draftSave: oc.route({ method: 'POST', path: '/api/session/draft', tags }).input(z.object({ session_id: z.string(), text: Json.optional(), files: Json.optional(), draft_version: Json.optional() })).output(DraftResponseSchema),

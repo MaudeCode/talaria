@@ -219,9 +219,23 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     contextInflight.set(key, run)
     return run
   }
-  /** Detached sidecar work per profile (memory commits) that deletion has to wait out like a live run. */
+  /** Detached sidecar work per profile (memory commits, manual compression) that deletion has to wait out like a live run. */
   const profileOps = new Map<string, number>()
+  const profileActivity = (profile: string | null): (() => void) => {
+    const key = profile ?? 'default'
+    profileOps.set(key, (profileOps.get(key) ?? 0) + 1)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const n = (profileOps.get(key) ?? 1) - 1
+      if (n > 0) profileOps.set(key, n); else profileOps.delete(key)
+    }
+  }
   const sessions = new SessionService({
+    sidecar: () => sidecar,
+    profileActivity,
+    profileDeleting: (profile) => profiles.isDeleting(profile),
     backgroundReceipts: (sid) => background.receipts(sid),
     journal,
     clearRelayCompletions: (sid, profile) => { relay.clearDeleted(sid, profile) },
@@ -234,11 +248,10 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       if (!sidecar) return
       let profile: string | null = null
       try { profile = store.get(sid, { metadataOnly: true }).profile ?? null } catch { profile = null }
-      const key = profile ?? 'default'
-      profileOps.set(key, (profileOps.get(key) ?? 0) + 1)
+      const release = profileActivity(profile)
       void sidecar.call('chat.commit_memory', { session_id: sid })
         .catch((error: unknown) => { log(`[webui] memory commit for ${sid} failed: ${(error as Error).message}`) })
-        .finally(() => { const n = (profileOps.get(key) ?? 1) - 1; if (n > 0) profileOps.set(key, n); else profileOps.delete(key) })
+        .finally(release)
     },
     drafts,
     events,

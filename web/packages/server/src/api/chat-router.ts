@@ -1,13 +1,12 @@
 /** Chat turn admission, control, approvals, clarify, goals, background tasks, and side questions. */
 import { GATEWAY_APPROVAL_RELAY_UNAVAILABLE, isGenericContinuationIntent } from '../sessions/turn.js'
-import { SidecarError } from '../sidecar/client.js'
 import { implement } from '@orpc/server'
 import { chatContract } from '@maudecode/talaria-web-contracts'
 import { randomUUID } from 'node:crypto'
 import { HttpError, type ApiContext } from './router.js'
 import { requestSessionIdGuard, streamVisibleToRequest } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
-import { HttpFailure } from '../sessions/service.js'
+import { ensureAgentRuntimeCurrent, HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import type { Session } from '../sessions/session.js'
 import { isSafeSessionId } from '../sessions/session.js'
@@ -117,16 +116,7 @@ async function startChat(ctx: RequestContext, body: Record<string, unknown>): Pr
   const sid = str(body.session_id)
   // Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before any
   // session state is materialised, claimed, or mutated.
-  const sidecarNow = ctx.deps.sidecar()
-  if (sidecarNow) {
-    try {
-      await sidecarNow.call('runtime.ensure_current', {})
-    } catch (error) {
-      if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') {
-        throw new HttpError(409, error.message, { type: 'agent_runtime_stale', retryable: true, restart_scheduled: false, ...(error.data.agent_update_state !== undefined ? { agent_update_state: error.data.agent_update_state } : {}) })
-      }
-    }
-  }
+  await ensureAgentRuntimeCurrent(ctx.deps.sidecar())
   let s: Session
   try {
     s = ctx.deps.sessionStore.get(sid)

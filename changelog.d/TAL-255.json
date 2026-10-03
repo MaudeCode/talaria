@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The /compress command shrinks a long chat's context again on iPhone and in the browser.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

@@ -798,6 +798,131 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 _RUNS_BY_SESSION.pop(session_id, None)
 
 
+def _checkpoint_required() -> bool:
+    """``compression.checkpoint_required`` needs the memory provider loaded to write the pre-compression checkpoint."""
+    try:
+        from hermes_cli.config import load_config
+
+        return ((load_config() or {}).get("compression") or {}).get("checkpoint_required") is True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+#: Compressed results awaiting the server's write: ``commit_token -> (agent, profile home, expiry timer)``.
+_PENDING_COMPRESSIONS: dict[str, tuple[Any, Any, threading.Timer]] = {}
+_PENDING_COMPRESSIONS_LOCK = threading.Lock()
+#: A server that never answers (restart, crash) gets its compression discarded after this long.
+_PENDING_COMPRESSION_TTL = 600.0
+
+
+def _release_compression(agent, committed: bool) -> None:
+    """Emit (committed) or discard the Agent's deferred context-engine notification, then close the throwaway agent."""
+    from agent.conversation_compression import finalize_context_engine_compression_notification
+
+    try:
+        finalize_context_engine_compression_notification(agent, committed=committed)
+    finally:
+        with contextlib.suppress(Exception):
+            agent._end_session_on_close = False
+        close = getattr(agent, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:  # noqa: BLE001
+                log.debug("compression agent close failed", exc_info=True)
+
+
+def finalize_compression(token: str, committed: bool) -> bool:
+    """``chat.compress_finalize``: the server reports whether it installed the result; unknown tokens are a no-op."""
+    with _PENDING_COMPRESSIONS_LOCK:
+        entry = _PENDING_COMPRESSIONS.pop(token, None)
+    if entry is None:
+        return False
+    agent, home, expiry = entry
+    expiry.cancel()  # a no-op when the timer itself is finalizing
+    with scoped_home(home):
+        _release_compression(agent, committed=committed)
+    return True
+
+
+def compress(ctx: CallContext, params: dict) -> dict:
+    """Manual ``/compress`` of ``conversation_history`` through the Agent's shared core (``compress_now``) on a throwaway
+    agent, like the gateway's ``_run_manual_compression``. The server owns the transcript: it re-checks the session and
+    installs ``messages`` itself, so nothing here touches history or the cached turn agent. The agent has no session
+    store, so the Agent neither rotates nor writes state.db; its one deferred effect, the context-engine notification,
+    waits for ``chat.compress_finalize`` with the returned ``commit_token`` (two-phase, like the gateway's commit)."""
+    home = profile_home_param(params)
+    session_id = str(params.get("session_id") or "").strip()
+    if not session_id:
+        raise InvalidParams("session_id is required")
+    history = params.get("conversation_history")
+    if not isinstance(history, list):
+        raise InvalidParams("conversation_history must be a list")
+    model = str(params.get("model") or "").strip()
+    provider = str(params.get("model_provider") or "").strip() or None
+    focus_topic = str(params.get("focus_topic") or "").strip()[:500] or None
+    toolsets = params.get("enabled_toolsets")
+    runtime = _resolve_runtime(provider, model)
+    if not runtime.get("api_key"):
+        raise RpcError("No provider configured -- cannot compress.", condition="credential_missing")
+    from agent.conversation_compression_manual import CompressRequest, compress_now
+
+    AIAgent = _agent_class()
+    kwargs: dict = dict(
+        model=model or str(runtime.get("model") or ""),
+        provider=provider or runtime.get("provider"),
+        base_url=runtime.get("base_url"),
+        api_key=runtime.get("api_key"),
+        platform="webui",
+        quiet_mode=True,
+        enabled_toolsets=toolsets if isinstance(toolsets, list) else None,
+        session_id=session_id,
+    )
+    for name, value in (
+        ("api_mode", runtime.get("api_mode")),
+        ("acp_command", runtime.get("acp_command")),
+        ("acp_args", runtime.get("acp_args")),
+        ("credential_pool", runtime.get("credential_pool")),
+        ("gateway_session_key", session_id),
+        ("skip_memory", not _checkpoint_required()),
+    ):
+        if _supported(AIAgent, name) and value is not None:
+            kwargs[name] = value
+    agent = AIAgent(**kwargs)
+    held = False
+    try:
+        result = compress_now(agent, history, CompressRequest(focus_topic=focus_topic), task_id=session_id)
+        message = None
+        if result.status != "compressed":
+            from agent.conversation_compression_manual import render_compress_result
+
+            message = "\n".join(render_compress_result(result)) or None
+        payload = {
+            "status": result.status,
+            "messages": json.loads(json.dumps([m for m in result.after_messages if isinstance(m, dict)], default=str)),
+            "before_tokens": int(result.before_tokens or 0),
+            "after_tokens": int(result.after_tokens or 0),
+            "summary": json.loads(json.dumps(result.summary, default=str)) if isinstance(result.summary, dict) else None,
+            "message": message,
+            "agent_session_id": str(getattr(agent, "session_id", None) or session_id),
+            "commit_token": None,
+        }
+        if result.status == "compressed":
+            token = uuid.uuid4().hex
+            # A server that never answers (restart, failed RPC) gets the compression discarded on its own.
+            expiry = threading.Timer(_PENDING_COMPRESSION_TTL, finalize_compression, args=(token, False))
+            expiry.daemon = True
+            with _PENDING_COMPRESSIONS_LOCK:
+                _PENDING_COMPRESSIONS[token] = (agent, home, expiry)
+            expiry.start()
+            held = True
+            payload["commit_token"] = token
+        return payload
+    finally:
+        if not held:
+            _release_compression(agent, committed=False)
+
+
 def _run_for(params: dict) -> _Run | None:
     stream_id = str(params.get("stream_id") or "").strip()
     session_id = str(params.get("session_id") or "").strip()
@@ -820,6 +945,18 @@ def register(registry) -> None:
         with scoped_home(profile_home_param(params)):
             with _turn_identity(session_id, workspace):
                 return start(ctx, params)
+
+    @registry.method("chat.compress")
+    def compress_(ctx: CallContext, params: dict) -> dict:
+        with scoped_home(profile_home_param(params)):
+            return compress(ctx, params)
+
+    @registry.method("chat.compress_finalize", requires_agent=False)
+    def compress_finalize_(ctx: CallContext, params: dict) -> dict:
+        token = str(params.get("commit_token") or "").strip()
+        if not token:
+            raise InvalidParams("commit_token is required")
+        return {"finalized": finalize_compression(token, params.get("committed") is True)}
 
     @registry.method("chat.interrupt", requires_agent=False)
     def interrupt_(ctx: CallContext, params: dict) -> dict:

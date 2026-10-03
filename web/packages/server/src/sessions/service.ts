@@ -18,7 +18,9 @@ import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
-import { attachmentObjects, mergeSessionMessagesAppendOnly, pendingUserRow, withAttachmentObjects, withBodyExcerpts, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
+import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
+import { SidecarError, type SidecarLike } from '../sidecar/client.js'
+import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, withAttachmentObjects, withBodyExcerpts, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -36,7 +38,30 @@ export class HttpFailure extends Error {
   }
 }
 
+/**
+ * Python `_agent_runtime_barrier_response`: a stale local Agent checkout is refused with a typed 409 before the caller
+ * mutates anything. Any other failure of the check is not a verdict and lets the caller proceed.
+ */
+export async function ensureAgentRuntimeCurrent(sidecar: SidecarLike | null): Promise<void> {
+  if (!sidecar) return
+  try {
+    await sidecar.call('runtime.ensure_current', {})
+  } catch (error) {
+    if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') throw staleRuntimeFailure(error)
+  }
+}
+
+function staleRuntimeFailure(error: SidecarError): HttpFailure {
+  return new HttpFailure(409, error.message, { type: 'agent_runtime_stale', retryable: true, restart_scheduled: false, ...(error.data.agent_update_state !== undefined ? { agent_update_state: error.data.agent_update_state } : {}) })
+}
+
 export interface SessionServiceDeps {
+  /** TAL-255: the Agent sidecar for manual compression (`chat.compress`); null while it is down. */
+  sidecar?: () => SidecarLike | null
+  /** Detached sidecar work for a profile: deletion waits for the returned release, so the home outlives the work. */
+  profileActivity?: (profile: string | null) => () => void
+  /** A profile whose deletion has started takes no new detached work. */
+  profileDeleting?: (profile: string | null) => boolean
   /** TAL-372: the session's background work receipts, for the delegation rows that started them. */
   backgroundReceipts?: (sid: string) => Receipt[]
   store: SessionStore
@@ -93,7 +118,12 @@ export interface SessionServiceDeps {
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
 export class SessionService {
-  constructor(readonly deps: SessionServiceDeps) {}
+  /** TAL-255: one manual compression worker per session, shared by every compress route. */
+  private readonly compressionJobs: CompressionJobs
+
+  constructor(readonly deps: SessionServiceDeps) {
+    this.compressionJobs = new CompressionJobs()
+  }
 
   private get store(): SessionStore { return this.deps.store }
 
@@ -193,10 +223,19 @@ export class SessionService {
    * rows (a WebUI conversation continued from the CLI shows the CLI turns). This is the coordinate space `GET
    * /api/session` exposes, so branching and the next model history slice/extend the same list.
    */
-  mergedTranscript(s: Session, local: Message[] = s.messages): Message[] {
-    const stateRows = this.stateDbRows(s)
+  mergedTranscript(s: Session, local: Message[] = s.messages, stateRows: Message[] = this.stateDbRows(s)): Message[] {
     if (!stateRows.length) return local
     return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark })
+  }
+
+  /**
+   * Python `reconciled_state_db_messages_for_session(prefer_context=True)`: the model history is the owner context
+   * extended append-only with the Agent's state.db rows (a CLI continuation of this session reaches the model), except
+   * for a compressed context whose anchor cannot be verified — that stays context-only.
+   */
+  modelContext(s: Session, stateRows?: Message[]): Message[] {
+    const local: Message[] = s.context_messages.length ? s.context_messages : s.messages.filter((m) => !m._error && !m._partial)
+    return local.some((m) => isContextCompressionMarker(m)) ? local : this.mergedTranscript(s, local, stateRows ?? this.stateDbRows(s))
   }
 
   /** Python `_lookup_cli_session_metadata`: the sidebar row for a state.db session in the active profile. */
@@ -785,6 +824,143 @@ export class SessionService {
     return { ok: true, session: this.publicSession(s) }
   }
 
+  // ── manual compression (TAL-255) ────────────────────────────────────────
+
+  /**
+   * Python `_handle_session_compress_start`: validate, then join the session's running job or start a fresh one (a
+   * finished job is replaced). The stale-runtime refusal comes before a job exists; a running job is joined without it.
+   */
+  async startCompression(sid: string, focusRaw: unknown): Promise<CompressionJob> {
+    const running = (): CompressionJob | undefined => { const job = this.compressionJobs.get(sid); return job?.status === 'running' ? job : undefined }
+    // A running job is joined first: once it has installed its short context, the guards below would refuse a new one.
+    const existing = running()
+    if (existing) return existing
+    const { s } = this.compressionTarget(sid)
+    const focusTopic = str(focusRaw).trim().slice(0, 500) || null
+    await ensureAgentRuntimeCurrent(this.deps.sidecar?.() ?? null)
+    // Another start may have admitted a job while the runtime check awaited.
+    const admitted = running()
+    if (admitted) return admitted
+    // The detached job (and its finalize) is the profile's activity until it settles; checked and taken in one step.
+    const profile = s.profile ?? null
+    if (this.deps.profileDeleting?.(profile)) throw new HttpFailure(409, `Profile '${str(profile)}' is being deleted.`)
+    const release = this.deps.profileActivity?.(profile)
+    const now = this.deps.now()
+    const job: CompressionJob = { session_id: sid, focus_topic: focusTopic, status: 'running', started_at: now, updated_at: now, done: Promise.resolve() }
+    job.done = this.compressSession(sid, focusTopic).finally(() => { release?.(); this.compressionJobs.expireLater(job) }).then(
+      (result) => { Object.assign(job, { status: 'done', result, updated_at: this.deps.now() }) },
+      (error: unknown) => {
+        const known = error instanceof HttpFailure
+        if (!known) this.deps.log(`[webui] Manual compression worker failed for session ${sid}: ${(error as Error).message}`)
+        Object.assign(job, { status: 'error', error: known ? error.message : `Compression failed: ${sanitizePaths(error)}`, error_status: known ? error.status : 500, error_extra: known ? error.extra : {}, updated_at: this.deps.now() })
+      },
+    )
+    this.compressionJobs.set(job)
+    return job
+  }
+
+  /** The session a compression may run on now, and the model history it compresses: the context a turn would send, so a
+   * repeat compression builds on the previous summary instead of re-reading the whole display transcript. */
+  private compressionTarget(sid: string): { s: Session; history: Message[] } {
+    this.rejectSubagent(sid, 'compressed')
+    const s = this.mutationTarget(sid, 'compressed')
+    if (s.active_stream_id) throw new HttpFailure(409, 'Session is still streaming; wait for the current turn to finish.')
+    const history = sanitizeMessagesForApi(this.modelContext(s))
+    if (history.length < 4) throw new HttpFailure(400, 'Not enough conversation to compress (need at least 4 messages).')
+    return { s, history }
+  }
+
+  /** The session's compression job; a deleted session's finished result is dropped rather than served. */
+  compressionJob(sid: string): CompressionJob | undefined {
+    try { this.store.get(sid, { metadataOnly: true }) } catch { this.compressionJobs.delete(sid); throw new HttpFailure(404, 'Session not found') }
+    return this.compressionJobs.get(sid)
+  }
+
+  /**
+   * Python `_handle_session_compress`: compress the sanitized transcript in the sidecar outside the lock, then under the
+   * session lock refuse a result the session moved past (stream state or transcript changed) and install it as the
+   * model context with the manual anchor and the #4836 boundary that keeps state.db from replaying compressed rows.
+   * The guards run again first: a stream may have started while the caller awaited the runtime check.
+   */
+  private async compressSession(sid: string, focusTopic: string | null): Promise<Record<string, unknown>> {
+    const { s, history } = this.compressionTarget(sid)
+    // The display transcript and the model context must both be where the compression found them; the key starts from
+    // the exact history sent, so a state.db row that lands after this read fails the commit instead of being dropped.
+    const transcriptKey = (x: Session, context: Message[]): string => JSON.stringify([sanitizeMessagesForApi(x.messages), context])
+    const historyKey = transcriptKey(s, history)
+    const streamState = (x: Session): string => JSON.stringify([x.active_stream_id ?? null, x.pending_user_message ?? null, x.pending_attachments ?? null, x.pending_started_at ?? null])
+    const streamBefore = streamState(s)
+    const sidecar = this.deps.sidecar?.()
+    if (!sidecar) throw new HttpFailure(400, 'Compression failed: the Agent sidecar is not running')
+    const [model, provider] = this.deps.modelStateFromRequest(s.model, s.model_provider, s.model_provider)
+    let result
+    try {
+      result = await sidecar.call('chat.compress', {
+        profile_home: this.deps.profileHome(s.profile ?? this.deps.activeProfile()), session_id: sid, model: model ?? '', model_provider: provider,
+        conversation_history: history, focus_topic: focusTopic, enabled_toolsets: s.enabled_toolsets,
+      }, { timeoutMs: 0 })
+    } catch (error) {
+      if (error instanceof SidecarError && error.condition === 'agent_runtime_stale') throw staleRuntimeFailure(error)
+      if (error instanceof SidecarError && error.condition === 'credential_missing') throw new HttpFailure(400, 'No provider configured -- cannot compress.')
+      throw new HttpFailure(400, `Compression failed: ${sanitizePaths(error)}`)
+    }
+    // A held compression lock is a conflict to retry; `nothing_to_do` is the Agent's verdict on this transcript.
+    if (result.status !== 'compressed') throw new HttpFailure(result.status === 'lock_skipped' ? 409 : 400, result.message ?? 'Nothing to compress yet.')
+    const summary = result.summary ?? {}
+    let committed = false
+    try {
+      const current = await this.store.withLock(sid, () => {
+        let live: Session
+        try { live = this.store.get(sid) } catch { throw new HttpFailure(404, 'Session not found') }
+        if (streamState(live) !== streamBefore) throw new HttpFailure(409, 'Session stream state changed during compression; please retry.')
+        // One state.db read serves the check, the kept display rows, and the boundary.
+        const stateRows = this.stateDbRows(live)
+        if (transcriptKey(live, sanitizeMessagesForApi(this.modelContext(live, stateRows))) !== historyKey) throw new HttpFailure(409, 'Session was modified during compression; please retry.')
+        // Rows the sidecar returns without a timestamp take the newest one this compression saw, never the clock: the
+        // boundary then hides no state.db row the append-only merge would still show (it already drops rows at or
+        // before the newest local row), so a CLI row committed after the read follows the compressed context.
+        const seen = [...live.messages, ...live.context_messages, ...stateRows].map((m) => Number(m.timestamp)).filter(Number.isFinite)
+        const stamp = seen.length ? Math.max(...seen) : this.deps.now()
+        const compressed = copyJson(result.messages) as Message[]
+        for (const m of compressed) m.timestamp ??= stamp
+        live.context_messages = compressed
+        live.active_stream_id = null
+        live.pending_user_message = null
+        live.pending_attachments = []
+        live.pending_started_at = null
+        live.pending_user_source = null
+        // The compressed history included any state.db-only continuation; the new boundary would hide those rows from
+        // the display, so the transcript keeps them before it is applied (and the anchor counts them).
+        const display = this.mergedTranscript(live, live.messages, stateRows)
+        if (display.length > live.messages.length) live.messages = copyJson(display)
+        const visible = visibleMessagesForAnchor(live.messages)
+        live.compression_anchor_visible_idx = visible.length ? visible.length - 1 : null
+        live.compression_anchor_message_key = anchorMessageKey(visible.at(-1))
+        live.compression_anchor_summary = anchorSummary(summary, compressed)
+        live.compression_anchor_mode = 'manual'
+        // #4836: an intentional-shrink boundary, so append-only state.db reconciliation does not replay compressed rows.
+        live.truncation_watermark = truncationWatermarkFor(compressed)
+        live.truncation_boundary = live.truncation_watermark
+        live.last_prompt_tokens = result.after_tokens
+        live.post_compression_context_tokens_estimate = result.after_tokens
+        this.store.save(live)
+        // A backup from before the compression would restore the uncompressed context.
+        try { rmSync(`${this.store.pathFor(sid)}.bak`, { force: true }) } catch { /* ignore */ }
+        return live
+      })
+      committed = true
+      // The cached turn agent still carries the uncompressed state; the next turn builds a fresh one (gateway parity).
+      // Awaited, so a turn sent right after the reply cannot reuse the old agent.
+      try { await sidecar.call('chat.evict_agent', { session_id: sid }) } catch (error) { this.deps.log(`[webui] agent eviction after compression of ${sid} failed: ${(error as Error).message}`) }
+      return { ok: true, session: this.publicSession(current), summary, focus_topic: focusTopic }
+    } finally {
+      // Second phase: the Agent's context-engine notification fires only for a result the session now holds.
+      if (result.commit_token) {
+        try { await sidecar.call('chat.compress_finalize', { commit_token: result.commit_token, committed }) } catch (error) { this.deps.log(`[webui] compression finalize for ${sid} failed: ${(error as Error).message}`) }
+      }
+    }
+  }
+
   async clear(sid: string): Promise<Record<string, unknown>> {
     this.rejectSubagent(sid, 'modified')
     const s = this.mutationTarget(sid, 'modified')
@@ -1238,6 +1414,11 @@ export function markSessionTitleGenerated(session: Session): void {
 function findLastUserIndex(history: unknown[]): number | null {
   for (let i = history.length - 1; i >= 0; i -= 1) if (isDict(history[i]) && (history[i] as Message).role === 'user') return i
   return null
+}
+
+/** Python `_sanitize_error`: absolute paths in an error message never reach the client. */
+export function sanitizePaths(error: unknown): string {
+  return str((error as Error)?.message ?? error).replace(/(?:(?:\/[a-zA-Z0-9_.-]+)+|(?:[A-Z]:\\[^\s]+))/g, '<path>')
 }
 
 function truncationWatermarkFor(messages: unknown[]): number {

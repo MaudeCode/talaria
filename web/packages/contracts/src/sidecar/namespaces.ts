@@ -282,6 +282,25 @@ export const CHAT_METHODS = {
     params: z.object({ stream_id: z.string().optional(), session_id: z.string().optional(), pending: z.array(z.string().min(1)).min(1), index: z.number().int().nonnegative() }),
     result: z.object({ redirected: z.boolean(), withdrawn: z.boolean(), delivery: z.enum(['redirect', 'steer']).optional(), requeued: z.enum(['kept', 'last']).optional() }),
   },
+  /**
+   * TAL-255: manual `/compress` of `conversation_history` through the Agent's `compress_now` on a throwaway agent. Nothing is
+   * persisted: the server installs `messages` as the session's model context. `message` is the Agent's text for a result
+   * that did not compress; `agent_session_id` is the state.db id after a possible rotation. A compressed result holds its
+   * Agent's context-engine notification until `chat.compress_finalize` reports whether the server installed it.
+   */
+  'chat.compress': {
+    params: ProfileHomeParams.extend({
+      session_id: z.string().min(1), model: z.string(), model_provider: z.string().nullable().optional(), conversation_history: z.array(Loose),
+      focus_topic: z.string().nullable().optional(), enabled_toolsets: z.array(z.string()).nullable().optional(),
+    }),
+    result: z.object({
+      status: z.enum(['compressed', 'lock_skipped', 'nothing_to_do']), messages: z.array(Loose), before_tokens: z.number().int(), after_tokens: z.number().int(),
+      summary: z.looseObject({ headline: z.string().optional(), token_line: z.string().optional(), note: z.string().nullable().optional() }).nullable(), message: z.string().nullable(), agent_session_id: z.string(),
+      commit_token: z.string().nullable(),
+    }),
+  },
+  /** TAL-255: second phase of `chat.compress`; `finalized: false` when the token is unknown or already expired. */
+  'chat.compress_finalize': { params: z.object({ commit_token: z.string().min(1), committed: z.boolean() }), result: z.object({ finalized: z.boolean() }) },
   'chat.evict_agent': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ evicted: z.boolean() }) },
   'chat.commit_memory': { params: z.object({ session_id: z.string().min(1) }), result: z.object({ committed: z.boolean() }) },
   'approval.respond': { params: ProfileHomeParams.extend({ session_id: z.string().min(1), choice: z.enum(['once', 'session', 'always', 'deny']), request_id: z.string().nullable().optional() }), result: z.object({ ok: z.boolean(), resolved: z.number().int(), choice: z.string() }) },
