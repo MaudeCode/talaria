@@ -174,7 +174,6 @@ export const AUX_METHODS = {
   'aux.resolve': { params: ProfileHomeParams.extend({ task: z.string().min(1), main_runtime: Loose.nullable().optional() }), result: z.object({ configured: z.boolean(), model: z.string().nullable(), error: z.string().optional() }) },
 } as const
 export const TEXT_METHODS = {
-  'text.redact': { params: z.object({ text: z.string(), force: z.boolean().optional() }), result: z.object({ text: z.string() }) },
   'text.image_mode': { params: ProfileHomeParams.extend({ provider: z.string(), model: z.string(), cfg: Loose.nullable().optional(), requested_provider: z.string().optional() }), result: z.object({ mode: z.enum(['native', 'text']), reason: z.string(), supports_vision: z.boolean().nullable() }) },
   'text.portal_tags': { params: ProfileHomeParams, result: z.object({ client_tag: z.string().nullable(), conversation_tag: z.string().nullable(), tags: z.union([z.array(z.string()), Loose]) }) },
 } as const

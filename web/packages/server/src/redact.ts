@@ -4,9 +4,10 @@ import { snapshotArgs, toolArgs, toolDisplay, toolName } from './sessions/tool-d
  * Credential redaction and the public session projection (Python
  * `api/helpers.py`). API responses are a hard boundary: transcript-bearing
  * fields are masked with the local pattern set, and private replay aliases
- * are stripped at their schema positions. The Agent's broader redactor is
- * not consulted (it lives in-process in Python); the local patterns mirror
- * its known credential prefixes.
+ * are stripped at their schema positions. The Agent's redactor
+ * (`agent/redact.py`, `redact_sensitive_text(force=True)`) is not consulted
+ * at runtime; its pattern families are ported here and held to parity by
+ * the `Agent redactor parity` tests.
  */
 
 const CRED_RE = new RegExp(
@@ -18,6 +19,7 @@ const CRED_RE = new RegExp(
     '|ghu_[A-Za-z0-9]{10,}' +
     '|ghs_[A-Za-z0-9]{10,}' +
     '|ghr_[A-Za-z0-9]{10,}' +
+    '|xapp-\\d+-[A-Za-z0-9-]{10,}' +
     '|xox[baprs]-[A-Za-z0-9-]{10,}' +
     '|AIza[A-Za-z0-9_-]{30,}' +
     '|pplx-[A-Za-z0-9]{10,}' +
@@ -46,6 +48,14 @@ const CRED_RE = new RegExp(
     '|hsk-[A-Za-z0-9]{10,}' +
     '|mem0_[A-Za-z0-9]{10,}' +
     '|brv_[A-Za-z0-9]{10,}' +
+    '|xai-[A-Za-z0-9]{30,}' +
+    '|ntn_[A-Za-z0-9]{10,}' +
+    '|fw[-_][A-Za-z0-9]{30,}' +
+    '|fpk_[A-Za-z0-9]{30,}' +
+    '|(?:glpat|gloas|gldt|glcbt|glptt|glft|glimt|glagent|glsoat|glffct|glwt)-[A-Za-z0-9_-]{10,}' +
+    '|glrtr?-[A-Za-z0-9_.-]{10,}' +
+    '|GR1348941[A-Za-z0-9_-]{10,}' +
+    '|pk-lf-[A-Za-z0-9-]{8,}' +
     ')(?![A-Za-z0-9_-])',
   'g',
 )
@@ -58,8 +68,8 @@ const AUTH_PARAM = String.raw`[A-Za-z0-9_-]+=(?:\\"(?:[^"\\\r\n]|\\[^"])*\\"|"(?
  * A parameterized credential (`Digest username="bob", response="..."`, `Credential=..., Signature=...`) is masked whole.
  */
 const AUTH_HDR_RE = new RegExp(String.raw`(Authorization:\s*(?:(?!\*+\s)[A-Za-z0-9!#$%&*+.^_|~-]+\s+(?=[^\s,\])]))?)(${AUTH_PARAM}(?:\s*,\s*${AUTH_PARAM})*|[^\s,\])][^\s'",\])]*)`, 'gi')
-/** A JSON Web Token anywhere (`eyJ<header>.<payload>.<signature>`). */
-const JWT_RE = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g
+/** A JSON Web Token anywhere (`eyJ<header>.<payload>.<signature>`), or its header alone or with its payload. */
+const JWT_RE = /\beyJ(?:[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}|[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_=-]{4,}){0,2})/g
 /** A bearer credential in any header or text (`X-Auth: Bearer ...`); `AUTH_HDR_RE` owns the `Authorization:` header. */
 const BEARER_RE = /((?<!Authorization:\s{0,8})\bBearer\s+)([^\s,\])][^\s'",\])]*)/gi
 /** One shell-quoted piece, which may span lines: `'...'`, `"..."` (with backslash escapes), bash `$'...'` / `$"..."`, or JSON escaped inside a shell string (`\"...\"`). */
@@ -101,6 +111,36 @@ const percentDecode = (text: string): string => text.replace(/%([0-9A-Fa-f]{2})/
 const LISTED_FLAG_RE = /(["'])(-{1,2})([A-Za-z0-9_][A-Za-z0-9_.-]*)\1(\s*,\s*)(?:(["'])((?:\\.|(?!\5)[^\\])*)\5|(\[[^[\]]*\]|\{[^{}]*\}|[^\s,\])}'"[{]+))/g
 const EMBEDDED_AWS_RE = /(?:AKIA|ASIA)[A-Z0-9]{16}/g
 const ENV_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50})\s*=\s*(['"]?)(\S+)\2/g
+/**
+ * The Agent's other env names: an all-caps one holding `KEY`, `PASS` or `PW` (`OPENAI_KEY`, `DB_PW`), or a `name_key` /
+ * `name_pass` / `name_pw` in any case, URL query parameters included (the Agent skips any text with a URL). One attempt per
+ * identifier, which must hold a keyword, so the scan stays linear on long runs (`PWPWPW…`). The value is the shell word
+ * after `=`, read by `shellWordEnd` (quotes, escapes, `$'…'`).
+ */
+const ENV_SUFFIX_RE = /(?<![A-Za-z0-9_])((?=[A-Z0-9_]*(?:KEY|PASS|PW))[A-Z0-9_]+|[A-Za-z0-9_]+_(?:[Kk][Ee][Yy]|[Pp][Aa][Ss][Ss]|[Pp][Ww])(?![A-Za-z0-9_]))[ \t]*=[ \t]*/g
+/** The prefilter's view of `ENV_SUFFIX_RE`. */
+const ENV_SUFFIX_TEST_RE = new RegExp(ENV_SUFFIX_RE.source)
+/**
+ * The Agent's env-name keywords, as whole name words (`DB_PW`, `GITHUB_TOKEN`), never inside a word (`KEYBOARD`, `PASSAGE`,
+ * `TOKENIZER`, `AUTHOR_KEY`'s `AUTH`).
+ */
+const ENV_KEYWORD_RE = /(?:^|[^A-Za-z])(?:(?:api|auth|access|refresh|session|secret)[ _.-]?(?:key|token)|token|secret|passwd|password|pass|pw|credential|auth|key)s?(?![A-Za-z])/i
+/**
+ * Env names whose value is a credential whatever its shape, as whole name words (`DB_PASS`, not `COMPASS_KEY` or
+ * `AUTHOR_KEY`); a bare `KEY` needs an opaque value (`SORT_KEY=name` stays).
+ */
+const ENV_STRONG_NAME_RE = /(?:^|[^A-Za-z])(?:(?:api|auth|access|refresh|session|id|bearer)[ _.-]?(?:key|token)|key[ _.-]?material|secret|passwd|password|pass|pw|credentials?|auth|bearer)s?(?![A-Za-z])/i
+/**
+ * The Agent's env-assignment gate: a name holding a whole keyword whose value is a credential, because the name is strong
+ * or the value opaque (`GITHUB_TOKEN=abc` and `MAX_TOKENS=100` stay). Env lookups (`os.getenv(…)`) name a variable.
+ */
+const isEnvCredential = (key: string, value: string): boolean =>
+  !/^(?:os\.(?:getenv|environ)|process\.env|\$ENV\{)/.test(value) && ENV_KEYWORD_RE.test(key) && (ENV_STRONG_NAME_RE.test(key) || looksOpaque(value))
+/** The Agent's `_looks_like_opaque_credential`: a value shaped like a generated secret rather than a word. */
+function looksOpaque(value: string): boolean {
+  if (value === '***' || /^[A-Fa-f0-9]{16,}$/.test(value) || /^[A-Za-z0-9_./+=-]{20,}$/.test(value)) return true
+  return value.length >= 12 && [/[a-z]/, /[A-Z]/, /[0-9]/].filter((re) => re.test(value)).length >= 2
+}
 /**
  * `scheme://user:secret@host` (database and basic-auth URLs): the password is masked, the user and host stay. The user
  * and password may be assembled from quoted and escaped shell pieces (`bob:hun'ter2'@`), and every delimiter may be
@@ -170,12 +210,92 @@ const USER_FLAG_RE = /(?<![A-Za-z0-9-])(?:-[uU][ \t]*|--(?:user|proxy-u(?:s(?:e(
 /** The prefilter's view of `USER_FLAG_RE`. */
 const USER_FLAG_TEST_RE = new RegExp(USER_FLAG_RE.source)
 const QUERY_KEY_RE = /([?&]key=)([^\s"'&#]+)/gi
+/** A Telegram bot token (`bot<id>:<secret>`): the id stays. */
+const TELEGRAM_TOKEN_RE = /(bot)?(\d{8,}):([-A-Za-z0-9_]{30,})/g
+/** An E.164 phone number, masked to its first and last digits; never inside a word or encoded data (`ab+1234567`). */
+const PHONE_RE = /(?<![A-Za-z0-9])\+[1-9]\d{6,14}(?![A-Za-z0-9])/g
+/**
+ * A bare token as URL userinfo (`https://TOKEN@github.com`, `ssh://…@`): no `user:` part, at least 8 characters. Round-trip
+ * URLs carry tokens in the query, so a bare userinfo credential is never one.
+ */
+const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/?#]{8,})(?=@\S)/gi
+/** Control and zero-width characters that can split a token body (`ghp_abc\x1bdef`, `sk-abc\u200bdef`). */
+const CONTROL_CHAR_RE = /[\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff]/
+const CONTROL_CHARS_RE = new RegExp(CONTROL_CHAR_RE.source, 'g')
+const CRED_TEST_RE = new RegExp(CRED_RE.source)
+/** `CRED_RE`'s prefix and body from a position, without its boundaries (a split token checks the original ones). */
+const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
+const SPLIT_TOKEN_CAP = 1024
+/** Where a `CRED_RE` prefix and body start at a boundary, however they end. */
+const CRED_START_RE = new RegExp(CRED_RE.source.replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'g')
+const CRED_WHOLE_RE = new RegExp(`^${CRED_RE.source}$`)
+/** A URL query parameter's value, up to the next `&` or `#`. */
+const QUERY_VALUE_RE = /[^&#]*/y
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 /** A private key whose end marker is missing (a display cap cut it off): masked to the end of the text. */
 const PRIVKEY_OPEN_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*$/
 const CODE_ENV_KEY_LITERAL_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)(["'][)\]:,]+|[)\]:,]+)/y
 const ENV_KEY_PREFIX_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)[A-Z0-9_]{0,50}=)/g
 const REDACTED_ENV_VALUE_RE = /(?:\*{3,}|[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,32}\.\.\.[A-Za-z0-9_.:/+-]{1,16})/y
+
+/**
+ * Where a credential split by control or zero-width characters (`ghp_abc\x1bdef`, `ghp_abc\ndef…`) starting at `i` of the
+ * stripped text ends there, or -1. The run of its prefix and body is read once (capped), then the longest candidate is
+ * taken that ends at a piece boundary of the original, is a whole credential, is not the name of a `KEY=` that follows,
+ * and never reaches a line holding a whole token itself (that line is the prefix pass's and joins nothing).
+ */
+function splitTokenEnd(text: string, stripped: string, kept: number[], i: number): number {
+  CRED_RUN_RE.lastIndex = 0
+  // ponytail: a split credential longer than SPLIT_TOKEN_CAP is cut at the cap; raise it if longer tokens appear.
+  const run = CRED_RUN_RE.exec(stripped.slice(i, i + SPLIT_TOKEN_CAP))?.[0]
+  if (!run) return -1
+  const start = kept[i]!
+  let limit = kept[i + run.length - 1]! + 1
+  for (let lineStart = start; lineStart < limit; ) {
+    const lineEnd = text.slice(lineStart, limit).search(/[\r\n]/)
+    const end = lineEnd === -1 ? limit : lineStart + lineEnd
+    if (CRED_TEST_RE.test(text.slice(lineStart, end))) {
+      limit = lineStart === start ? end : lineStart
+      break
+    }
+    if (lineEnd === -1) break
+    lineStart = end + 1
+  }
+  for (let e = i + run.length; e > i; e -= 1) {
+    const atBoundary = e === stripped.length || kept[e]! - kept[e - 1]! > 1 || (e === i + run.length && !/[A-Za-z0-9_-]/.test(stripped[e]!))
+    const originalEnd = kept[e - 1]! + 1
+    if (!atBoundary || originalEnd > limit || !CRED_WHOLE_RE.test(stripped.slice(i, e)) || /^[ \t]*=/.test(text.slice(originalEnd, originalEnd + 64))) continue
+    return e
+  }
+  return -1
+}
+
+/**
+ * Prefixed credentials whose body a control or zero-width character splits, matched on the text without those characters
+ * and masked in place. A token starts at a boundary of the stripped text, or where a stripped control hid the original
+ * one (`note\nghp_…`); one starting inside a token already masked is part of it.
+ */
+function maskControlSplitTokens(text: string): string {
+  const stripped = text.replace(CONTROL_CHARS_RE, '')
+  if (stripped.length === text.length) return text
+  // The original index of each kept character.
+  const kept: number[] = []
+  for (let i = 0; i < text.length; i += 1) if (!CONTROL_CHAR_RE.test(text[i]!)) kept.push(i)
+  const starts = [...stripped.matchAll(CRED_START_RE)].map((m) => m.index)
+  for (let i = 1; i < kept.length; i += 1) if (kept[i]! - kept[i - 1]! > 1 && /[A-Za-z0-9_-]/.test(stripped[i - 1]!)) starts.push(i)
+  let out = ''
+  let last = 0
+  let scanned = 0
+  for (const i of starts.sort((a, b) => a - b)) {
+    if (i < scanned) continue
+    const e = splitTokenEnd(text, stripped, kept, i)
+    if (e === -1) continue
+    out += text.slice(last, kept[i]) + mask(stripped.slice(i, e))
+    last = kept[e - 1]! + 1
+    scanned = e
+  }
+  return out + text.slice(last)
+}
 
 function mask(token: string): string {
   // By code point, so a partial mask never splits a surrogate pair into invalid JSON.
@@ -373,6 +493,38 @@ function maskShellWord(value: string): string {
 
 /** A shell word's content, for the "nothing to mask" checks: the inside of a single quoted piece, else the word. */
 const shellWordInner = (value: string): string => splitQuoted(value)?.inner ?? value
+
+/**
+ * `ENV_SUFFIX_RE` assignments whose name is a credential (`DB_PASS=`, `openai_key=`). A password-class name masks any value,
+ * punctuation-only included; a bare `KEY` masks an opaque one. A plain value keeps the Agent's partial mask; a quoted,
+ * escaped or composed one is masked whole. Env lookups (`os.getenv(…)`) and masked values stay.
+ */
+function redactEnvSuffixes(text: string): string {
+  let out = ''
+  let last = 0
+  const quoteAt = quoteTracker(text)
+  const closeOf = enclosingClose(text)
+  // A skipped value does not move the scan past its word: a later match inside that word reuses its end, and a value is
+  // judged by its head, so many assignments inside one long word (`a_key=x\ a_key=x\ …`) still scan it once.
+  let wordEnd = -1
+  ENV_SUFFIX_RE.lastIndex = 0
+  for (let m = ENV_SUFFIX_RE.exec(text); m; m = ENV_SUFFIX_RE.exec(text)) {
+    const key = m[1]!
+    const valueStart = m.index + m[0].length
+    wordEnd = valueStart < wordEnd ? wordEnd : shellWordEnd(text, valueStart, quoteAt(valueStart), closeOf)
+    // A URL query parameter's value ends at the next `&` or `#`, as in `redactCredentialParams`.
+    QUERY_VALUE_RE.lastIndex = valueStart
+    const valueEnd = /[?&]/.test(text[m.index - 1] ?? '') ? Math.min(wordEnd, valueStart + QUERY_VALUE_RE.exec(text)![0].length) : wordEnd
+    const value = text.slice(valueStart, valueEnd)
+    const head = value.slice(0, 128)
+    const inner = shellWordInner(head)
+    if (!inner.trim() || inner === '***' || !isEnvCredential(key, shellDequote(head))) continue
+    out += text.slice(last, valueStart) + (/^[^\s'"\\$`]+$/.test(value) ? mask(value) : maskShellWord(value))
+    last = valueEnd
+    ENV_SUFFIX_RE.lastIndex = Math.max(valueEnd, ENV_SUFFIX_RE.lastIndex)
+  }
+  return out + text.slice(last)
+}
 
 /** Credential parameters (`CRED_PARAM_RE`) with their whole shell-word value fully masked. */
 function redactCredentialParams(text: string): string {
@@ -1133,14 +1285,15 @@ export function redactSensitive(text: string): string {
 
 function redactRules(text: string): string {
   if (!text) return text
-  let out = text.replace(CRED_RE, (_, t: string) => mask(t))
+  let out = maskControlSplitTokens(text).replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = redactHeaderCredentials(out, AUTH_HDR_RE)
   out = out.replace(JWT_RE, (t) => mask(t))
   out = redactHeaderCredentials(out, BEARER_RE)
   for (const re of [COOKIE_ANSI_RE, COOKIE_SQ_RE, COOKIE_DQ_RE, COOKIE_BARE_RE]) out = out.replace(re, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${head}***` : whole))
   out = redactCredentialParams(out)
-  out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
+  out = out.replace(ENV_RE, (whole, key: string, quote: string, value: string) => (/[A-Za-z0-9]/.test(value) && isEnvCredential(key, value) ? `${key}=${quote}${mask(value)}${quote}` : whole))
+  out = redactEnvSuffixes(out)
   out = out.replace(LISTED_FLAG_RE, (whole, q: string, dash: string, key: string, gap: string, vq: string | undefined, quotedValue: string | undefined, bare: string | undefined) => {
     // An unquoted value (a number, `True`, a nested list) is masked whole.
     if (bare !== undefined) return bare !== '***' && (ARGV_USER_FLAG_RE.test(dash + key) || isCredentialKey(key)) ? `${q}${dash}${key}${q}${gap}***` : whole
@@ -1152,6 +1305,9 @@ function redactRules(text: string): string {
   out = out.replace(PERCENT_KEY_RE, (whole, head: string, value: string) => (value && value !== '***' && isCredentialKey(percentDecode(head.slice(0, -1))) ? `${head}***` : whole))
   out = out.replace(BARE_USERINFO_RE, (_, head: string, secret: string) => head + mask(secret))
   out = out.replace(URL_USERINFO_RE, (_, head: string, secret: string) => head + (/['"\\]/.test(secret) ? '***' : mask(secret)))
+  out = out.replace(URL_BARE_TOKEN_RE, (_, head: string, token: string) => head + mask(token))
+  out = out.replace(TELEGRAM_TOKEN_RE, (_, bot: string | undefined, id: string) => `${bot ?? ''}${id}:***`)
+  out = out.replace(PHONE_RE, (phone) => { const keep = phone.length <= 8 ? 2 : 4; return `${phone.slice(0, keep)}****${phone.slice(-keep)}` })
   out = redactUserFlags(out)
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
   out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]').replace(PRIVKEY_OPEN_RE, '[REDACTED PRIVATE KEY]')
@@ -1161,20 +1317,23 @@ function redactRules(text: string): string {
 const CASE_MARKERS = [
   'sk-', 'ghp_', 'github_pat_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'AKIA', 'ASIA', 'xoxb-', 'xoxa-', 'xoxp-', 'xoxr-', 'xoxs-', 'AIza', 'pplx-', 'fal_', 'fc-',
   'bb_live_', 'gAAAA', 'sk_live_', 'sk_test_', 'rk_live_', 'SG.', 'hf_', 'r8_', 'npm_', 'pypi-', 'dop_v1_', 'doo_v1_', 'am_', 'sk_', 'tvly-', 'exa_',
-  'gsk_', 'syt_', 'retaindb_', 'hsk-', 'mem0_', 'brv_', 'eyJ', '-----BEGIN',
+  'gsk_', 'syt_', 'retaindb_', 'hsk-', 'mem0_', 'brv_', 'xapp-', 'xai-', 'ntn_', 'fw-', 'fw_', 'fpk_', 'glpat-', 'gloas-', 'gldt-', 'glrt-', 'glrtr-',
+  'glcbt-', 'glptt-', 'glft-', 'glimt-', 'glagent-', 'glsoat-', 'glffct-', 'glwt-', 'GR1348941', 'pk-lf-', 'eyJ', '-----BEGIN',
 ]
 const LOWER_MARKERS = [
   'authorization: bearer ', 'authorization: bot ', 'private key', 'postgres://', 'postgresql://', 'mysql://', 'mongodb://', 'redis://', 'amqp://', '://',
   'access_token', 'refresh_token', 'id_token', 'api_key', 'apikey', 'client_secret', 'auth_token', 'raw_secret', 'secret_input', 'key_material',
   'x-amz-signature', 'token=', 'secret=', 'password=', 'passwd', 'password', 'secret', 'token', 'api-key', 'apikey', 'clientsecret', 'private_key', 'credential', ' -u ', '--user ', 'authorization', 'signature', 'bearer ', 'cookie:', 'authorization=', 'key=', '"token"', '"secret"', '"password"', '"bearer"',
 ]
-const TELEGRAM_RE = /(?:bot)?\d{8,}:[-A-Za-z0-9_]{30,}/
 const DISCORD_RE = /<@!?\d{17,20}>/
-const PHONE_RE = /(?<![A-Za-z0-9])\+[1-9]\d{6,14}(?![A-Za-z0-9])/
+const TELEGRAM_TEST_RE = new RegExp(TELEGRAM_TOKEN_RE.source)
+const PHONE_TEST_RE = new RegExp(PHONE_RE.source)
 
 export function mightContainSensitiveText(text: string): boolean {
   if (!text) return false
-  if (CASE_MARKERS.some((m) => text.includes(m))) return true
+  // A control or zero-width character inside a prefix (`x\u200bai-…`) does not hide it: the redactor joins split tokens.
+  const joined = text.replace(CONTROL_CHARS_RE, '')
+  if (CASE_MARKERS.some((m) => joined.includes(m))) return true
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
   if (CRED_KEY_NAME_RE.test(text)) return true
@@ -1187,9 +1346,10 @@ export function mightContainSensitiveText(text: string): boolean {
   if (text.includes('@') && new RegExp(BARE_USERINFO_RE.source).test(text)) return true
   if (DYNAMIC_KEY_PIECE_RE.test(text) || /\$[({A-Za-z_0-9@*#?$!'-]|`/.test(text)) return true
   if (USER_FLAG_TEST_RE.test(text)) return true
-  if (text.includes(':') && TELEGRAM_RE.test(text)) return true
+  if (text.includes(':') && TELEGRAM_TEST_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true
-  if (text.includes('+') && PHONE_RE.test(text)) return true
+  if (text.includes('+') && PHONE_TEST_RE.test(text)) return true
+  if (text.includes('=') && ENV_SUFFIX_TEST_RE.test(text)) return true
   return false
 }
 

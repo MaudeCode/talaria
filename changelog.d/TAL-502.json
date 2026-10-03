@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Chats, tool output, exports, and public share links mask more credentials again, including GitLab, xAI, Notion, Fireworks, and Slack app tokens, Telegram bot tokens, phone numbers, passwords in environment variables, and tokens embedded in git URLs.",
+      "highlight": false
+    }
+  ]
+}

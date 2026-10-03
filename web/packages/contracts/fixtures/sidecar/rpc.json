@@ -110,7 +110,6 @@
           "stt.transcribe",
           "text.image_mode",
           "text.portal_tags",
-          "text.redact",
           "usage.account",
           "worktree.create"
         ]

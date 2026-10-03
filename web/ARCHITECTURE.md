@@ -85,7 +85,7 @@ report `manual_update`.
 `<agent venv python> -m talaria_sidecar` with `PYTHONPATH` pointing at the sidecar package and the Agent
 appended to `sys.path`. Namespaces: `runtime`, `chat` (AIAgent turns with streamed callbacks, interrupt,
 steer), `approval`, `goals`, `profiles`, `cron`, `kanban`, `skills`, `commands`, `plugins`, `providers`,
-`models`, `aux` (auxiliary LLM calls), `text` (redaction, portal tags), `stt`, `mcp`, `process`
+`models`, `aux` (auxiliary LLM calls), `text` (image input routing, portal tags), `stt`, `mcp`, `process`
 (background completions), `state_db`, `gateway`, `worktree`, `config`. Each method has a Zod schema in
 the contract package and a recorded fixture under `packages/contracts/fixtures/sidecar/` used by both
 the pytest suite and the Vitest fake. `sidecar/scripts/replay_sidecar.py` replays those fixtures and stages

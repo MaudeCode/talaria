@@ -1,26 +1,14 @@
 """``text.*``: pure helpers from the Agent that the server must match exactly
-(redaction patterns, image input routing, portal tags)."""
+(image input routing, portal tags)."""
 
 from __future__ import annotations
 
 import logging
 
-from ..errors import InvalidParams
 from ..home import profile_home_param, scoped_home
 from ..rpc import CallContext
 
 log = logging.getLogger("talaria_sidecar.text")
-
-
-def redact(text: str, *, force: bool = True) -> str:
-    try:
-        from agent.redact import redact_sensitive_text
-    except Exception:  # noqa: BLE001
-        return text
-    try:
-        return redact_sensitive_text(text, force=force)
-    except TypeError:
-        return redact_sensitive_text(text)
 
 
 def image_mode(*, provider: str, model: str, cfg: dict | None, requested_provider: str) -> dict:
@@ -66,13 +54,6 @@ def portal_tags() -> dict:
 
 
 def register(registry) -> None:
-    @registry.method("text.redact")
-    def redact_(ctx: CallContext, params: dict) -> dict:
-        text = params.get("text")
-        if not isinstance(text, str):
-            raise InvalidParams("text must be a string")
-        return {"text": redact(text, force=bool(params.get("force", True)))}
-
     @registry.method("text.image_mode")
     def image_mode_(ctx: CallContext, params: dict) -> dict:
         cfg = params.get("cfg") if isinstance(params.get("cfg"), dict) else None

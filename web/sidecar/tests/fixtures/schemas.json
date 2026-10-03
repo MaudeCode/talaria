@@ -3159,19 +3159,6 @@
     ],
     "additionalProperties": false
   },
-  "text.redact": {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "type": "object",
-    "properties": {
-      "text": {
-        "type": "string"
-      }
-    },
-    "required": [
-      "text"
-    ],
-    "additionalProperties": false
-  },
   "text.image_mode": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
