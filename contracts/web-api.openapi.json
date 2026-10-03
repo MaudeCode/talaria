@@ -22385,6 +22385,41 @@
                     "stream_id": {
                       "type": "string"
                     },
+                    "withdrawn_steers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "steer_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reason": {
+                            "enum": [
+                              "edit",
+                              "cancel",
+                              "stopped",
+                              "followup"
+                            ],
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "steer_id",
+                          "reason",
+                          "text"
+                        ]
+                      }
+                    },
                     "error": {
                       "type": "string"
                     }

@@ -135,7 +135,7 @@ struct MessageBubbleView: View {
     private var pendingSteerButtons: some View {
         if let actions = pendingSteerActions, let id = message.messageId {
             let busy = pendingSteerControls.inFlight.contains(id)
-            HStack(spacing: 2) {
+            HStack(spacing: 0) {
                 if actions.sendNow { pendingSteerButton(String(localized: "Send now"), systemImage: "arrow.up", id: id, action: .sendNow) }
                 if actions.edit { pendingSteerButton(String(localized: "Edit steering message"), systemImage: "pencil", id: id, action: .edit) }
                 if actions.cancel { pendingSteerButton(String(localized: "Cancel steering message"), systemImage: "xmark", id: id, action: .cancel) }
@@ -150,7 +150,7 @@ struct MessageBubbleView: View {
         } label: {
             Image(systemName: systemImage)
                 .font(.footnote.weight(.semibold))
-                .frame(width: 32, height: 32)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -528,9 +528,6 @@ struct MessageBubbleView: View {
     }
 }
 
-/// The session workspace that `./` and `../` Markdown image destinations
-/// resolve against before they load through `/api/media` (TAL-168). Nil leaves
-/// those images to the Markdown renderer.
 /// Long-press actions only on a pending steer: every other user bubble keeps the transcript's own message menu.
 private struct PendingSteerMenuModifier<Menu: View>: ViewModifier {
     let isEnabled: Bool
@@ -563,6 +560,9 @@ extension EnvironmentValues {
     }
 }
 
+/// The session workspace that `./` and `../` Markdown image destinations
+/// resolve against before they load through `/api/media` (TAL-168). Nil leaves
+/// those images to the Markdown renderer.
 struct TranscriptMediaWorkspaceRootKey: EnvironmentKey {
     static let defaultValue: String? = nil
 }

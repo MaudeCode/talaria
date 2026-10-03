@@ -109,7 +109,7 @@ extension APIClient {
     }
 
     /// TAL-426: take a pending steer back (`edit`, `cancel`); `withdrawn: false` when the Agent already took it.
-    public func withdrawSteer(sessionID: String, steerID: String, reason: String) async throws -> SteerWithdrawResponse {
+    public func withdrawSteer(sessionID: String, steerID: String, reason: PendingSteerWithdrawReason) async throws -> SteerWithdrawResponse {
         try await send(endpoint: .chatSteerWithdraw, method: "POST", body: SteerWithdrawRequest(sessionId: sessionID, steerId: steerID, reason: reason))
     }
 
@@ -175,7 +175,7 @@ private struct ChatStartRequest: Encodable {
 private struct SteerWithdrawRequest: Encodable {
     let sessionId: String
     let steerId: String
-    let reason: String
+    let reason: PendingSteerWithdrawReason
 }
 
 private struct SteerSendNowRequest: Encodable {

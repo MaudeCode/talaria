@@ -191,8 +191,8 @@ export const chatRouter = os.router({
       const streamId = str(input.stream_id)
       if (!streamId) throw new HttpError(400, 'stream_id required')
       if (!streamVisibleToRequest(ctx, streamId)) throw new HttpError(404, 'Session not found')
-      const cancelled = await ctx.deps.turns.cancel(streamId)
-      return { ok: true, cancelled, stream_id: streamId }
+      const { cancelled, withdrawn } = await ctx.deps.turns.cancel(streamId)
+      return { ok: true, cancelled, stream_id: streamId, withdrawn_steers: withdrawn }
     })),
     streamStatus: os.chat.streamStatus.handler(({ input, context: { ctx } }) => run(() => {
       const streamId = str(input.stream_id)

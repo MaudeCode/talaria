@@ -1217,6 +1217,14 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                     "submitted_at": 2_000_000_050,
                     "state": "pending",
                     "actions": ["edit": true, "cancel": true, "send_now": true]
+                ]),
+                // The server offers no Send now for this one, so the App shows none.
+                ("steer_pending", [
+                    "steer_id": "steer-ui-fixture-web-2",
+                    "text": "Skip the cache",
+                    "submitted_at": 2_000_000_051,
+                    "state": "pending",
+                    "actions": ["edit": true, "cancel": true, "send_now": false]
                 ])
             ])
             wait { $0.steerWithdrawnID != nil || $0.wasCancelled }

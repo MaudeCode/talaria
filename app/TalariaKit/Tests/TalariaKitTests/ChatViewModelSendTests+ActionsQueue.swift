@@ -1182,7 +1182,7 @@ extension ChatViewModelSendTests {
 
         XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
         streamClient.emit(.streamEnd)
-        try await Task.sleep(nanoseconds: 50_000_000)
+        try await waitUntil { viewModel.activeStreamID == nil }
         XCTAssertEqual(chatStartCount, 1)
         XCTAssertTrue(viewModel.returnedComposerTexts.isEmpty)
     }

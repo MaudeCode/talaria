@@ -54,6 +54,11 @@ public final class ChatViewModel {
     public private(set) var returnedComposerTexts: [String] = []
     /// Steers taken or withdrawn: a replayed frame or an older session load never brings one back.
     private var closedSteerIDs = Set<String>()
+    /// This device's steers whose POST has not answered yet: the server cannot list them, so a reload keeps their rows.
+    private var steerRequestsInFlight = Set<String>()
+    /// The last session load listed `pending_steers`, so a snapshot merge adds no pending row of its own.
+    private var serverListsPendingSteers = false
+    private var ownSteers: OwnSteerStore { OwnSteerStore(defaults: userDefaults) }
     /// The stream the server last reported a background result started (`active_turn_origin`, TAL-460).
     private var backgroundTurnStreamID: String?
     /// The running turn was started by a background result, not by the user.
@@ -1352,6 +1357,7 @@ public final class ChatViewModel {
                     previousMessagesOffset: currentMessagesOffset
                 )
                 restoreActiveStreamSnapshotIfAvailable(streamID: currentActiveStreamID)
+                applyServerPendingSteers(session?.pendingSteers)
                 isViewingCachedData = false
                 lastError = nil
                 errorMessage = nil
@@ -2896,7 +2902,9 @@ public final class ChatViewModel {
         }
 
         let steeringHint = appendSteeringHint(message)
-        OwnSteerStore.remember(steeringHint.messageID)
+        ownSteers.remember(steeringHint.messageID)
+        steerRequestsInFlight.insert(steeringHint.messageID)
+        defer { steerRequestsInFlight.remove(steeringHint.messageID) }
         do {
             let response = try await client.steerChat(
                 sessionID: sessionID,
@@ -2922,7 +2930,7 @@ public final class ChatViewModel {
         }
 
         removeSteeringHint(id: steeringHint.messageID)
-        OwnSteerStore.forget(steeringHint.messageID)
+        ownSteers.forget(steeringHint.messageID)
         _ = enqueueQueuedSlashMessage(message, attachments: attachmentCoordinator.consumePendingAttachments())
         await cancelActiveStream()
         return .executed(message: String(localized: "Steer was unavailable, so the message was queued and the current response was stopped."))
@@ -3756,6 +3764,7 @@ public final class ChatViewModel {
     private func settleAcceptedSteeringHints() {
         for index in messages.indices where messages[index].steeringHintState == .waiting {
             messages[index] = Self.steeringHintMessage(messages[index], state: .consumed)
+            if let id = messages[index].messageId { pendingSteerActions.removeValue(forKey: id) }
         }
     }
 
@@ -3763,7 +3772,7 @@ public final class ChatViewModel {
     private func consumeSteeringHint(id: String?, text: String) -> Bool {
         if let id {
             closeSteer(id)
-            OwnSteerStore.forget(id)
+            ownSteers.forget(id)
         }
         if let id,
            let index = messages.firstIndex(where: { $0.messageId == id && $0.isLocalSteeringHint }) {
@@ -3773,6 +3782,7 @@ public final class ChatViewModel {
         guard let index = messages.firstIndex(where: {
             $0.isLocalSteeringHint && $0.content == text && $0.steeringHintState == .waiting
         }) else { return false }
+        if let rowID = messages[index].messageId { closeSteer(rowID) }
         messages[index] = Self.steeringHintMessage(messages[index], state: .consumed)
         return true
     }
@@ -3787,9 +3797,11 @@ public final class ChatViewModel {
     private func applyPendingSteer(_ steer: PendingSteer) {
         guard !closedSteerIDs.contains(steer.steerId) else { return }
         let state: SteeringHintState = steer.state == .pending ? .waiting : .sending
+        let index = messages.firstIndex(where: { $0.messageId == steer.steerId })
+        // Already taken here: no actions, and the row stays as the Agent saw it.
+        if let index, messages[index].steeringHintState == .consumed { return }
         pendingSteerActions[steer.steerId] = steer.state == .pending ? steer.actions : PendingSteer.Actions.none
-        if let index = messages.firstIndex(where: { $0.messageId == steer.steerId }) {
-            guard messages[index].steeringHintState != .consumed else { return }
+        if let index {
             messages[index] = Self.steeringHintMessage(messages[index], state: state)
             return
         }
@@ -3806,9 +3818,10 @@ public final class ChatViewModel {
     /// TAL-426: after a load the server's `pending_steers` are the pending rows: one per steer, in its order, and none it
     /// no longer holds. A Web older than TAL-424 lists none, so this device's own rows stay as they were.
     private func applyServerPendingSteers(_ steers: [PendingSteer]?) {
+        serverListsPendingSteers = steers != nil
         // ponytail: old-server fallback; delete once every supported Web ships `pending_steers`.
         guard let steers else { return }
-        let listed = Set(steers.map(\.steerId))
+        let listed = Set(steers.map(\.steerId)).union(steerRequestsInFlight)
         var seen = Set<String>()
         messages.removeAll { message in
             guard message.isLocalSteeringHint, message.steeringHintState != .consumed, let id = message.messageId else { return false }
@@ -3818,18 +3831,29 @@ public final class ChatViewModel {
         for steer in steers { applyPendingSteer(steer) }
     }
 
+    /// A snapshot merge never brings back a closed steer or shows one twice; once the server lists pending steers, the
+    /// pending rows are the ones already shown (its list, its events, this device's request in flight).
+    private func withoutRestoredPendingSteers(_ merged: [ChatMessage], shownBefore: [ChatMessage]) -> [ChatMessage] {
+        let shown = Set(shownBefore.filter(\.isLocalSteeringHint).compactMap(\.messageId))
+        var seen = Set<String>()
+        return merged.filter { message in
+            guard message.isLocalSteeringHint, message.steeringHintState != .consumed, let id = message.messageId else { return true }
+            return !closedSteerIDs.contains(id) && (!serverListsPendingSteers || shown.contains(id)) && seen.insert(id).inserted
+        }
+    }
+
     /// The steer is taken or withdrawn: its actions go, and nothing brings its pending row back.
     private func closeSteer(_ id: String) {
         closedSteerIDs.insert(id)
         pendingSteerActions.removeValue(forKey: id)
     }
 
-    private func withdrawnSteer(_ event: SteerWithdrawnEvent) {
+    private func applyWithdrawnSteer(_ event: SteerWithdrawnEvent) {
         guard let id = event.steerId else { return }
         closeSteer(id)
         // Never taken: whatever state the row reached, it is not a steer the Agent saw.
         messages.removeAll { $0.messageId == id && $0.isLocalSteeringHint }
-        if OwnSteerStore.forget(id), event.reason == .stopped { returnedComposerTexts.append(event.text) }
+        if ownSteers.forget(id), event.reason == .stopped { returnedComposerTexts.append(event.text) }
     }
 
     /// The view took the returned text into its composer.
@@ -3844,13 +3868,14 @@ public final class ChatViewModel {
         guard let sessionID, steerActionsInFlight.insert(id).inserted else { return }
         defer { steerActionsInFlight.remove(id) }
         do {
-            let response = try await client.withdrawSteer(sessionID: sessionID, steerID: id, reason: reason.rawValue)
+            let response = try await client.withdrawSteer(sessionID: sessionID, steerID: id, reason: reason)
             guard response.withdrawn else {
-                pinLocalNoticeMessage(String(localized: "The agent already took this steering message."))
+                pinLocalNoticeMessage(String(localized: "This steering message can no longer be changed."))
                 return
             }
-            withdrawnSteer(SteerWithdrawnEvent(steerId: id, reason: reason == .edit ? .edit : .cancel, text: ""))
-            if reason == .edit, let text = response.text { returnedComposerTexts.append(text) }
+            let shownText = messages.first { $0.messageId == id && $0.isLocalSteeringHint }?.content
+            applyWithdrawnSteer(SteerWithdrawnEvent(steerId: id, reason: reason == .edit ? .edit : .cancel, text: ""))
+            if reason == .edit, let text = response.text ?? shownText { returnedComposerTexts.append(text) }
         } catch {
             lastError = error
             sendErrorMessage = error.localizedDescription
@@ -4201,6 +4226,8 @@ public final class ChatViewModel {
                 return false
             }
 
+            // TAL-426: the stream stops reading here, so the Stop's answer is what returns this device's steers.
+            for steer in response.withdrawnSteers ?? [] { applyWithdrawnSteer(steer) }
             removeUnresolvedSteeringHints()
             // The server settled the turn before answering; its scene, not the stopped live view, is what stays.
             await loadMessages()
@@ -4442,7 +4469,7 @@ public final class ChatViewModel {
         else { return nil }
 
         let merge = Self.mergingLoadedMessages(messages, withActiveStreamSnapshot: snapshot)
-        messages = merge.messages
+        messages = withoutRestoredPendingSteers(merge.messages, shownBefore: messages)
         if merge.usedSnapshotMessagesOffset {
             messagesOffset = snapshot.messagesOffset
             hasOlderMessages = snapshot.messagesOffset > 0
@@ -5727,6 +5754,6 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
     }
 
     public func streamCoordinatorWithdrawSteer(_ event: SteerWithdrawnEvent) {
-        withdrawnSteer(event)
+        applyWithdrawnSteer(event)
     }
 }

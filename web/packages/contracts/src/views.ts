@@ -226,13 +226,18 @@ export const ChatStartResponseSchema = z.looseObject({
 export type ChatStartResponse = z.infer<typeof ChatStartResponseSchema>
 export const StreamStatusSchema = z.looseObject({ active: z.boolean(), stream_id: z.string(), replay_available: z.boolean().optional(), journal: Json.optional() })
 export type StreamStatus = z.infer<typeof StreamStatusSchema>
-export const CancelResponseSchema = z.looseObject({ ok: z.boolean(), cancelled: z.boolean(), stream_id: z.string().optional(), error: z.string().optional() })
 /**
  * TAL-424: a pending steer is no longer pending without the Agent taking it: Edit and Cancel by the user, `stopped` by a
  * Stop (`text` goes back to the composer), or `followup` when the server sends it as the next turn. `steer_id` is null
  * for text another surface queued with the Agent.
  */
 export const SteerWithdrawnSchema = z.object({ steer_id: z.string().nullable(), reason: z.enum(['edit', 'cancel', 'stopped', 'followup']), text: z.string() })
+export type SteerWithdrawn = z.infer<typeof SteerWithdrawnSchema>
+/**
+ * `withdrawn_steers` (TAL-426): the steers this Stop withdrew, the same `steer_withdrawn` (stopped) the stream carries, so
+ * a client that stops reading the stream once the Stop answers still gives its own text back.
+ */
+export const CancelResponseSchema = z.looseObject({ ok: z.boolean(), cancelled: z.boolean(), stream_id: z.string().optional(), withdrawn_steers: z.array(SteerWithdrawnSchema).optional(), error: z.string().optional() })
 export const SteerWithdrawRequestSchema = z.object({ session_id: SessionIdSchema, steer_id: z.string().min(1), reason: z.enum(['edit', 'cancel']) })
 export type SteerWithdrawRequest = z.infer<typeof SteerWithdrawRequestSchema>
 /** `withdrawn: false` when the steer is unknown, already taken by the Agent (it then settles as consumed), or being sent. */

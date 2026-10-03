@@ -4,19 +4,26 @@
       "category": "Added",
       "summary": "On iPhone, a steer the agent has not taken yet shows the same on every device, also after a reconnect or relaunch, with Send now, Edit and Cancel.",
       "highlight": true,
-      "components": ["app"]
+      "components": [
+        "app"
+      ]
     },
     {
       "category": "Fixed",
       "summary": "On iPhone, a pending steer no longer shows twice after reopening a chat, and one the agent never got to is no longer sent twice.",
       "highlight": false,
-      "components": ["app"]
+      "components": [
+        "app"
+      ]
     },
     {
       "category": "Changed",
       "summary": "Stopping a reply on iPhone puts your pending steer back in the composer instead of sending it next.",
       "highlight": false,
-      "components": ["app"]
+      "components": [
+        "app",
+        "web"
+      ]
     }
   ]
 }

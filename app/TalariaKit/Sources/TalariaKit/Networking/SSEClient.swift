@@ -438,9 +438,13 @@ struct SSEEventDecoder {
         case "steer_withdrawn":
             guard let payload = decodePayload(SteerWithdrawnEvent.self, eventType: eventType, from: eventData, decoder: snakeCaseDecoder) else { return .ignored }
             return .steerWithdrawn(payload)
-        // The server sends a leftover steer as its own follow-up turn (TAL-424); it is never the App's to queue.
+        // ponytail: old-server fallback; a Web older than TAL-424 sends no `steer_withdrawn`, so its leftover is a stopped
+        // withdraw (this device's text returns to the composer). Delete once every supported Web ships `steer_withdrawn`.
         case "pending_steer_leftover":
-            return .ignored
+            guard let payload = decodePayload(SteeringStreamEvent.self, eventType: eventType, from: eventData, decoder: decoder),
+                  let steerID = payload.steerId
+            else { return .ignored }
+            return .steerWithdrawn(SteerWithdrawnEvent(steerId: steerID, reason: .stopped, text: payload.text))
         case "stream_end":
             return .streamEnd
         case "cancel":

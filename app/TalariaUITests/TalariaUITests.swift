@@ -423,11 +423,14 @@ final class PendingSteerUITests: ChatUITestCase {
         try sendFixtureMessage("Back up the cluster")
 
         XCTAssertTrue(app.staticTexts["Check the backup logs too"].awaitExistence(timeout: 10), "The pending steer from Web is missing")
+        XCTAssertTrue(app.staticTexts["Skip the cache"].awaitExistence(timeout: 5), "The second pending steer is missing")
         XCTAssertTrue(element(labelContaining: "Waiting for agent").awaitExistence(timeout: 5))
         let sendNow = app.buttons["Send now"]
         XCTAssertTrue(sendNow.awaitExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["Edit steering message"].exists)
-        XCTAssertTrue(app.buttons["Cancel steering message"].exists)
+        // Only the actions the server allows: the second steer offers no Send now.
+        XCTAssertEqual(app.buttons.matching(identifier: "Send now").count, 1)
+        XCTAssertEqual(app.buttons.matching(identifier: "Edit steering message").count, 2)
+        XCTAssertEqual(app.buttons.matching(identifier: "Cancel steering message").count, 2)
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "pending-steer"
         screenshot.lifetime = .keepAlways
@@ -436,11 +439,18 @@ final class PendingSteerUITests: ChatUITestCase {
         tapCenter(of: sendNow)
         XCTAssertTrue(element(labelContaining: "it stays pending").awaitExistence(timeout: 5), "Send now gave no notice when nothing could take it")
 
-        tapCenter(of: app.buttons["Edit steering message"])
-        XCTAssertTrue(app.staticTexts["Check the backup logs too"].awaitNonExistence(timeout: 10), "The edited steer is still pending")
+        // Edit appends the steer after the draft, a blank line between.
         let input = app.textViews.firstMatch
-        XCTAssertTrue(input.awaitExistence(timeout: 5))
-        XCTAssertEqual(input.value as? String, "Check the backup logs too")
+        if !input.awaitExistence(timeout: 2) {
+            try XCTUnwrap(waitForComposer(timeout: 5)).tap()
+            XCTAssertTrue(input.awaitExistence(timeout: 5))
+        }
+        // Let the keyboard land before typing, as `sendFixtureMessage` does.
+        Thread.sleep(forTimeInterval: 1)
+        input.typeText("Draft")
+        tapCenter(of: app.buttons.matching(identifier: "Edit steering message").firstMatch)
+        XCTAssertTrue(app.staticTexts["Check the backup logs too"].awaitNonExistence(timeout: 10), "The edited steer is still pending")
+        XCTAssertEqual(input.value as? String, "Draft\n\nCheck the backup logs too")
     }
 }
 

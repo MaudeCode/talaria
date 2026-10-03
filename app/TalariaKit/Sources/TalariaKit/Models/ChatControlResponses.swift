@@ -33,6 +33,8 @@ public struct ChatCancelResponse: Decodable, Equatable {
     public let ok: Bool?
     let cancelled: Bool?
     let streamId: String?
+    /// TAL-426: the steers this Stop withdrew; nil from a Web older than the field.
+    let withdrawnSteers: [SteerWithdrawnEvent]?
     public let error: String?
 }
 

@@ -876,7 +876,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         isStreaming = container.decodeLossyBoolIfPresent(forKey: .isStreaming)
         activeTurnOrigin = container.decodeLossyStringIfPresent(forKey: .activeTurnOrigin)
         // One malformed entry never hides the others.
-        pendingSteers = (try? container.decodeIfPresent([LossyPendingSteer].self, forKey: .pendingSteers))?.compactMap(\.steer)
+        pendingSteers = container.decodeLossyArrayIfPresent(PendingSteer.self, forKey: .pendingSteers)
         pendingUserMessage = container.decodeLossyStringIfPresent(forKey: .pendingUserMessage)
         pendingAttachments = try? container.decodeIfPresent([JSONValue].self, forKey: .pendingAttachments)
         pendingStartedAt = container.decodeLossyDoubleIfPresent(forKey: .pendingStartedAt)
@@ -996,13 +996,5 @@ public struct CompressionAnchorMessageKey: Decodable, Equatable {
         ts = container.decodeLossyDoubleIfPresent(forKey: .ts)
         text = container.decodeLossyStringIfPresent(forKey: .text)
         attachments = container.decodeLossyIntIfPresent(forKey: .attachments)
-    }
-}
-
-private struct LossyPendingSteer: Decodable {
-    let steer: PendingSteer?
-
-    init(from decoder: Decoder) throws {
-        steer = try? PendingSteer(from: decoder)
     }
 }

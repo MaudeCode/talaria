@@ -105,29 +105,30 @@ public struct SteerSendNowResponse: Decodable, Equatable {
     public let redirected: Bool
 }
 
-public enum PendingSteerWithdrawReason: String {
+public enum PendingSteerWithdrawReason: String, Encodable {
     case edit, cancel
 }
 
 /// The steers this device sent, so a Stop that withdraws one gives its text back here only. Kept across relaunches.
-enum OwnSteerStore {
+struct OwnSteerStore {
     private static let key = "talaria.ownSteerIDs"
     private static let limit = 100
+    let defaults: UserDefaults
 
-    static func remember(_ id: String) {
-        var ids = UserDefaults.standard.stringArray(forKey: key) ?? []
+    func remember(_ id: String) {
+        var ids = defaults.stringArray(forKey: Self.key) ?? []
         ids.removeAll { $0 == id }
         ids.append(id)
-        UserDefaults.standard.set(Array(ids.suffix(limit)), forKey: key)
+        defaults.set(Array(ids.suffix(Self.limit)), forKey: Self.key)
     }
 
     /// True when this device sent it; it is forgotten either way.
     @discardableResult
-    static func forget(_ id: String) -> Bool {
-        var ids = UserDefaults.standard.stringArray(forKey: key) ?? []
+    func forget(_ id: String) -> Bool {
+        var ids = defaults.stringArray(forKey: Self.key) ?? []
         guard let index = ids.firstIndex(of: id) else { return false }
         ids.remove(at: index)
-        UserDefaults.standard.set(ids, forKey: key)
+        defaults.set(ids, forKey: Self.key)
         return true
     }
 }

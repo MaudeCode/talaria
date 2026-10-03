@@ -101948,108 +101948,108 @@
         }
       }
     },
-    "The agent already took this steering message." : {
+    "This steering message can no longer be changed." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "استلم الوكيل رسالة التوجيه هذه بالفعل."
+            "value" : "لم يعد من الممكن تغيير رسالة التوجيه هذه."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Der Agent hat diesen Steuerhinweis bereits übernommen."
+            "value" : "Dieser Steuerhinweis kann nicht mehr geändert werden."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "El agente ya tomó esta indicación."
+            "value" : "Esta indicación ya no se puede cambiar."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "L’agent a déjà pris cette indication."
+            "value" : "Cette indication ne peut plus être modifiée."
           }
         },
         "he" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "הסוכן כבר קיבל את הודעת ההכוונה הזו."
+            "value" : "כבר אי אפשר לשנות את הודעת ההכוונה הזו."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "L’agente ha già preso questa indicazione."
+            "value" : "Questa indicazione non può più essere modificata."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "エージェントはこのステアリングメッセージをすでに受け取りました。"
+            "value" : "このステアリングメッセージはもう変更できません。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "에이전트가 이미 이 조정 메시지를 받았습니다."
+            "value" : "이 조정 메시지는 더 이상 변경할 수 없습니다."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "De agent heeft dit stuurbericht al ontvangen."
+            "value" : "Dit stuurbericht kan niet meer worden gewijzigd."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Agent już przyjął tę wskazówkę."
+            "value" : "Tej wskazówki nie można już zmienić."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "O agente já recebeu esta orientação."
+            "value" : "Esta orientação não pode mais ser alterada."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Агент уже принял эту подсказку."
+            "value" : "Эту подсказку больше нельзя изменить."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Ajan bu yönlendirmeyi zaten aldı."
+            "value" : "Bu yönlendirme artık değiştirilemez."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "ایجنٹ یہ رہنمائی کا پیغام پہلے ہی لے چکا ہے۔"
+            "value" : "یہ رہنمائی کا پیغام اب تبدیل نہیں ہو سکتا۔"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "代理已收到這則引導訊息。"
+            "value" : "這則引導訊息已無法更改。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "代理已收到这条引导消息。"
+            "value" : "这条引导消息已无法更改。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "代理已收到這則引導訊息。"
+            "value" : "這則引導訊息已無法更改。"
           }
         }
       }
