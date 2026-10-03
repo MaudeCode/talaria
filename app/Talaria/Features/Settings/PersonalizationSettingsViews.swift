@@ -79,6 +79,10 @@ struct NotificationsHapticsSettingsView: View {
 
                 SettingsDivider()
 
+                NotificationPermissionToggle(kind: .approval)
+
+                SettingsDivider()
+
                 NotificationPermissionToggle(kind: .providerQuota)
 
                 SettingsDivider()
@@ -93,11 +97,13 @@ struct NotificationPermissionToggle: View {
     enum Kind {
         case responseCompletion
         case providerQuota
+        case approval
 
         var title: String {
             switch self {
             case .responseCompletion: String(localized: "Response Complete Alerts")
             case .providerQuota: String(localized: "Quota Pace Alerts")
+            case .approval: String(localized: "Approval Alerts")
             }
         }
 
@@ -105,6 +111,7 @@ struct NotificationPermissionToggle: View {
             switch self {
             case .responseCompletion: "bell"
             case .providerQuota: "bell.badge"
+            case .approval: "checkmark.shield"
             }
         }
     }
@@ -115,6 +122,7 @@ struct NotificationPermissionToggle: View {
     @State private var statusMessage: String?
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var responseCompletionEnabled = false
     @AppStorage(ResponseCompletionNotifications.hasRequestedPermissionKey) private var hasRequestedPermission = false
+    @AppStorage(ApprovalNotifications.isEnabledKey) private var approvalEnabled = false
     @AppStorage(ProviderQuotaAlertSettings.isEnabledKey) private var providerQuotaEnabled = false
 
     var body: some View {
@@ -140,6 +148,7 @@ struct NotificationPermissionToggle: View {
                 switch kind {
                 case .responseCompletion: responseCompletionEnabled
                 case .providerQuota: providerQuotaEnabled
+                case .approval: approvalEnabled
                 }
             },
             set: { enabled in
@@ -164,6 +173,9 @@ struct NotificationPermissionToggle: View {
                 await refreshPermissionStatus()
                 try? await TalariaAggregateLiveActivityManager.shared.refresh()
             }
+        case .approval:
+            approvalEnabled = false
+            Task { await refreshPermissionStatus() }
         case .providerQuota:
             providerQuotaEnabled = false
             UserDefaults.standard.removeObject(forKey: ProviderQuotaAlertSettings.stateKey)
@@ -181,6 +193,8 @@ struct NotificationPermissionToggle: View {
                 UIApplication.shared.registerForRemoteNotifications()
             }
             try? await TalariaAggregateLiveActivityManager.shared.refresh()
+        case .approval:
+            approvalEnabled = enabled
         case .providerQuota:
             providerQuotaEnabled = enabled
             if enabled {
@@ -196,6 +210,7 @@ struct NotificationPermissionToggle: View {
         if !status.allowsSettingsToggleOn {
             responseCompletionEnabled = false
             providerQuotaEnabled = false
+            approvalEnabled = false
         }
         statusMessage = nil
     }

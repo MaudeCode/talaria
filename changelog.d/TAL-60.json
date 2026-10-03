@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Enable Approval Alerts to get notified when a run needs your approval while Talaria is in the background.",
+      "highlight": true
+    },
+    {
+      "category": "Changed",
+      "summary": "Live Activities show Input when an agent is waiting for an answer.",
+      "highlight": false
+    },
+    {
+      "category": "Changed",
+      "summary": "Tap the approval bypass status chip to confirm turning bypass off for the session.",
+      "highlight": false
+    }
+  ]
+}

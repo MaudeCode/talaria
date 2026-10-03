@@ -46,7 +46,7 @@ struct ChatView: View {
     private let transcriptBlockSpacing: CGFloat = 6
     private let composerAccessoryVerticalSpacing: CGFloat = 8
     private let activeRunStatusSpacerHeight: CGFloat = 36
-    private let approvalBypassStatusSpacerHeight: CGFloat = 38
+    private let approvalBypassStatusSpacerHeight: CGFloat = 44
 
     @State private var completionAcknowledgementTask: Task<Void, Never>?
     @State private var completionAcknowledgementGeneration = 0
@@ -120,6 +120,7 @@ struct ChatView: View {
     @State private var editDraft = ""
     @State private var showEditSheet = false
     @State private var showEditDiscardConfirmation = false
+    @State private var showApprovalBypassOffConfirmation = false
     @State private var regenerateContext: MessageActionContext?
     @State private var showRegenerateDiscardConfirmation = false
     @State private var selectableResponseText: SelectableTextPresentation?
@@ -1029,13 +1030,27 @@ struct ChatView: View {
                 }
 
                 if showsApprovalBypassStatus {
-                    StatusChip(
-                        label: String(localized: "Approval bypass active"),
-                        icon: .symbol("bolt.slash.fill"),
-                        emphasis: .warning
-                    )
-                        .allowsHitTesting(false)
-                        .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
+                    Button {
+                        showApprovalBypassOffConfirmation = true
+                    } label: {
+                        StatusChip(
+                            label: String(localized: "Approval bypass active"),
+                            icon: .symbol("bolt.slash.fill"),
+                            emphasis: .warning
+                        )
+                        .frame(minHeight: 44)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(viewModel.isRespondingToApproval)
+                    .accessibilityHint(String(localized: "Turn off approval bypass"))
+                    .alert(String(localized: "Turn off approval bypass"), isPresented: $showApprovalBypassOffConfirmation) {
+                        Button(String(localized: "Turn off approval bypass"), role: .destructive) {
+                            Task { await viewModel.disableApprovalBypassForCurrentSession() }
+                        }
+                        Button(String(localized: "Cancel"), role: .cancel) {}
+                    }
+                    .transition(ChatMotion.bottomOverlayTransition(reduceMotion: reduceMotion))
                 }
             }
             .padding(.horizontal)

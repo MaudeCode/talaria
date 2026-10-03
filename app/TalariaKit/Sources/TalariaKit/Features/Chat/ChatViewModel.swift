@@ -473,6 +473,9 @@ public final class ChatViewModel {
         displayTitle = Self.displayTitle(from: session.title)
         self.streamCoordinator.attach(delegate: self)
         self.pendingActionCoordinator.delegate = self
+        self.pendingActionCoordinator.approvalHeadDidBecomeVisible = { prompt in
+            ApprovalNotificationService.shared.observe(prompt, server: server)
+        }
         self.attachmentCoordinator.delegate = self
     }
 
@@ -4537,6 +4540,11 @@ public final class ChatViewModel {
     @discardableResult
     public func skipApprovalsForCurrentSession() async -> Bool {
         await pendingActionCoordinator.skipApprovalsForCurrentSession()
+    }
+
+    @discardableResult
+    public func disableApprovalBypassForCurrentSession() async -> Bool {
+        await pendingActionCoordinator.disableApprovalBypassForCurrentSession()
     }
 
     func applyApprovalUpdate(_ update: ApprovalPendingResponse, sessionID: String) {

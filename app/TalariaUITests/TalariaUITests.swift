@@ -114,6 +114,43 @@ final class LongBodyTranscriptUITests: ChatUITestCase {
 /// expands for typing, and long-press isolation between a message's links and its own actions
 /// (TAL-49).
 final class ChatNavigationUITests: ChatUITestCase {
+    func testApprovalBypassChipTurnsBypassOffForTheSession() throws {
+        launchFixture(additionalArguments: ["--ui-test-approval-bypass"])
+        let session = fixtureSessionButton
+        XCTAssertTrue(session.awaitExistence(timeout: 15))
+        tapFixtureSession(session)
+        XCTAssertNotNil(waitForComposer(timeout: 30))
+        let status = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "Approval bypass active")).firstMatch
+        XCTAssertTrue(status.awaitExistence(timeout: 5), "The fixture must first show active bypass.")
+        let chip = app.buttons["Approval bypass active"]
+        XCTAssertTrue(chip.awaitExistence(timeout: 5), "The bypass status must be an actionable button.")
+        _ = chip.settledFrame
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Approval bypass can be turned off from its chip"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        let frame = chip.settledFrame
+        XCTAssertTrue(app.frame.contains(frame), "The chip must be inside the visible screen.")
+        XCTAssertGreaterThanOrEqual(frame.height, 44)
+        tapCenter(of: chip)
+        let confirmation = app.alerts["Turn off approval bypass"]
+        XCTAssertTrue(confirmation.awaitExistence(timeout: 5), "Tapping the chip must ask before changing bypass.")
+        let promptScreenshot = XCTAttachment(screenshot: app.screenshot())
+        promptScreenshot.name = "Confirm before turning approval bypass off"
+        promptScreenshot.lifetime = .keepAlways
+        add(promptScreenshot)
+        XCTAssertTrue(chip.exists, "Bypass stays active until confirmation.")
+        confirmation.buttons["Cancel"].tap()
+        XCTAssertTrue(confirmation.awaitNonExistence(timeout: 5))
+        XCTAssertTrue(chip.exists, "Cancel must leave bypass active.")
+        tapCenter(of: chip)
+        XCTAssertTrue(confirmation.awaitExistence(timeout: 5))
+        confirmation.buttons["Turn off approval bypass"].tap()
+        XCTAssertTrue(chip.awaitNonExistence(timeout: 5), "A server-confirmed disabled bypass must remove the chip.")
+        XCTAssertNotNil(waitForComposer(timeout: 5))
+    }
+
     func testChatSessionOpensFromListWithItsComposerAndMessageActions() throws {
         launchFixture()
         let session = fixtureSessionButton
@@ -545,6 +582,19 @@ class SettingsUITestCase: TalariaUITestCase {}
 /// Chats and Providers screens with the grouped controls around them, in one launch. Their failed
 /// loads run in `ReadFailureUITests`.
 final class SettingsStructureUITests: SettingsUITestCase {
+    func testApprovalAlertPreferenceSharesNotificationSettings() throws {
+        launchFixture()
+        openSettings()
+        tapSettingsCategory(id: "notificationsAndHaptics", title: "Notifications & Haptics")
+        XCTAssertTrue(app.switches["Response Complete Alerts"].exists)
+        XCTAssertTrue(app.switches["Approval Alerts"].exists)
+        XCTAssertTrue(app.switches["Quota Pace Alerts"].exists)
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Approval Alerts in notification settings"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testSettingsRootCategoriesRoutesAndServerContent() throws {
         launchFixture()
         openSettings()
