@@ -432,7 +432,7 @@ describe('redactSensitive cost', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
     // Unquoted runs, and many credential keys inside one long quoted argument.
     // The Agent's ported families: env names, split tokens, JWT headers, phone numbers and bare URL userinfo.
-    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
@@ -661,5 +661,12 @@ describe('Agent redactor parity', () => {
     expect(redactText('xghp_abcdef\n1234567890ABCDEF1234567890abcdef', true)).toBe('xghp_abcdef\n1234567890ABCDEF1234567890abcdef')
     for (const url of ['https://example.com?q=user@example.com', 'https://example.com#contact=someone@example.com'])
       expect(redactText(url, true)).toBe(url)
+  })
+
+  it('masks a split token after a whole one, and stops a URL query value at its fragment', () => {
+    expect(redactText('sk-aaaaaaaaaa\nsk-bbbbb\nbbbbbbbbbb', true)).toBe('***\nsk-bbb...bbbb')
+    expect(redactText(`ghp_${'a'.repeat(36)}\nghp_abcdef\n1234567890ABCDEF1234567890abcdef`, true)).toBe('ghp_aa...aaaa\nghp_ab...cdef')
+    expect(redactText('https://x.test/?db_pass=hunter2#long-fragment-name', true)).toBe('https://x.test/?db_pass=***#long-fragment-name')
+    expect(redactText('https://x.test/?a=1&db_pass=hunter2&b=2', true)).toBe('https://x.test/?a=1&db_pass=***&b=2')
   })
 })

@@ -214,6 +214,10 @@ const CRED_TEST_RE = new RegExp(CRED_RE.source)
 /** `CRED_RE` from a given position, without its leading boundary (a split token checks the original one instead). */
 const CRED_STICKY_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, ''), 'y')
 const CRED_WHOLE_RE = new RegExp(`^${CRED_RE.source}$`)
+/** A URL query parameter's value, up to the next `&` or `#`. */
+const QUERY_VALUE_RE = /[^&#]*/y
+/** One line with its break. */
+const LINE_RE = /[^\r\n]*(?:\r\n|[\r\n]|$)/g
 const CONTROL_SPLIT_SPAN_RE = /^[A-Za-z0-9_.\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff-]*$/
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 /** A private key whose end marker is missing (a display cap cut it off): masked to the end of the text. */
@@ -271,8 +275,29 @@ function maskControlSplitTokens(text: string): string {
       end = cut
     }
     const span = text.slice(start, end)
-    if (/[\r\n]/.test(span) && CRED_TEST_RE.test(span)) continue
     if (!CONTROL_SPLIT_SPAN_RE.test(span)) continue
+    if (/[\r\n]/.test(span) && CRED_TEST_RE.test(span)) {
+      // A line holding a whole token is the prefix pass's, and never joins the next. The lines between such lines may
+      // still join into a split token of their own: each run of them is redacted alone (`sk-aaa…\nsk-bb\nbbb…`).
+      let runStart = -1
+      const flush = (runEnd: number): void => {
+        if (runStart < 0) return
+        const run = span.slice(runStart, runEnd)
+        const redacted = maskControlSplitTokens(run)
+        if (redacted !== run) {
+          out += text.slice(last, start + runStart) + redacted
+          last = start + runEnd
+        }
+        runStart = -1
+      }
+      for (const line of span.matchAll(LINE_RE)) {
+        if (!line[0]) break
+        if (CRED_TEST_RE.test(line[0])) flush(line.index)
+        else if (runStart < 0) runStart = line.index
+      }
+      flush(span.length)
+      continue
+    }
     out += text.slice(last, start) + mask(token)
     last = end
   }
@@ -493,8 +518,10 @@ function redactEnvSuffixes(text: string): string {
   for (let m = ENV_SUFFIX_RE.exec(text); m; m = ENV_SUFFIX_RE.exec(text)) {
     const key = m[1]!
     const valueStart = m.index + m[0].length
-    const valueEnd = valueStart < wordEnd ? wordEnd : shellWordEnd(text, valueStart, quoteAt(valueStart), closeOf)
-    wordEnd = valueEnd
+    wordEnd = valueStart < wordEnd ? wordEnd : shellWordEnd(text, valueStart, quoteAt(valueStart), closeOf)
+    // A URL query parameter's value ends at the next `&` or `#`, as in `redactCredentialParams`.
+    QUERY_VALUE_RE.lastIndex = valueStart
+    const valueEnd = /[?&]/.test(text[m.index - 1] ?? '') && m[0].endsWith('=') ? Math.min(wordEnd, valueStart + QUERY_VALUE_RE.exec(text)![0].length) : wordEnd
     const value = text.slice(valueStart, valueEnd)
     const head = value.slice(0, 512)
     const inner = shellWordInner(head)
