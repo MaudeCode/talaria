@@ -108,6 +108,68 @@ final class ChatNavigationUITests: ChatUITestCase {
     }
 }
 
+/// TAL-461: New Chat sits on the bottom row beside Search instead of floating above it.
+final class SessionListBottomBarUITests: ChatUITestCase {
+    func testNewChatSharesTheSearchRowHidesWhileSearchingAndOpensTheComposer() throws {
+        guard #available(iOS 26.0, *) else {
+            throw XCTSkip("Search minimizes into the bottom bar from iOS 26; earlier versions keep the floating button")
+        }
+        // Regular width keeps New Chat in its own bottom bar without Search (TAL-482).
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "The Search row is the compact-width layout")
+        launchFixture()
+        XCTAssertTrue(fixtureSessionButton.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        let search = try XCTUnwrap(waitForSessionSearchControl(timeout: 15), "Missing the session search control")
+        // The closed sidebar keeps its New Chat row on screen behind the list, and the
+        // full-screen toolbar container leaves every button not hittable, so exclude it by frame.
+        let newChat = app.buttons.matching(NSPredicate(format: "label == %@", "New Chat"))
+        let sidebarNewChat = app.descendants(matching: .any)["app-sidebar"].buttons["New Chat"]
+        func visibleNewChat() -> XCUIElement? {
+            let sidebarFrame = sidebarNewChat.exists ? sidebarNewChat.frame : .null
+            return newChat.allElementsBoundByIndex.first { $0.exists && $0.frame != sidebarFrame }
+        }
+        XCTAssertTrue(poll(timeout: 5) { visibleNewChat() != nil }, "Missing the New Chat button")
+        let newChatFrame = try XCTUnwrap(visibleNewChat()).settledFrame
+        let searchFrame = search.settledFrame
+        XCTAssertEqual(newChatFrame.midY, searchFrame.midY, accuracy: 2, "New Chat \(newChatFrame) is off the Search row \(searchFrame)")
+        XCTAssertGreaterThan(newChatFrame.minX, searchFrame.maxX, "New Chat should trail Search")
+
+        search.tap()
+        XCTAssertTrue(sessionSearchField.awaitExistence(timeout: 5))
+        XCTAssertTrue(poll(timeout: 5) { visibleNewChat() == nil }, "New Chat should hide while searching")
+        let closeSearch = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "close")).firstMatch
+        XCTAssertTrue(closeSearch.awaitExistence(timeout: 3))
+        closeSearch.tap()
+        XCTAssertTrue(poll(timeout: 5) { visibleNewChat() != nil }, "New Chat should return when search closes")
+
+        tap(at: try XCTUnwrap(visibleNewChat()).settledFrame.center)
+        XCTAssertTrue(app.navigationBars["New Fixture Chat"].awaitExistence(timeout: 15))
+        XCTAssertNotNil(waitForComposer(timeout: 15), "New Chat did not open the composer")
+    }
+
+    func testOpeningAndClosingSearchKeepsTheListInPlace() throws {
+        guard #available(iOS 26.0, *) else {
+            throw XCTSkip("Search minimizes into the bottom bar from iOS 26")
+        }
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "The Search row is the compact-width layout")
+        launchFixture()
+        let row = fixtureSessionButton
+        XCTAssertTrue(row.awaitExistence(timeout: 15), "Missing deterministic session fixture")
+        let search = try XCTUnwrap(waitForSessionSearchControl(timeout: 15), "Missing the session search control")
+        let resting = row.settledFrame
+
+        search.tap()
+        XCTAssertTrue(sessionSearchField.awaitExistence(timeout: 5))
+        XCTAssertEqual(row.settledFrame.minY, resting.minY, accuracy: 1, "Opening search moved the list")
+        XCTAssertTrue(app.staticTexts["Sessions"].exists, "Opening an empty search removed the Sessions header")
+
+        let closeSearch = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "close")).firstMatch
+        XCTAssertTrue(closeSearch.awaitExistence(timeout: 3))
+        closeSearch.tap()
+        XCTAssertTrue(sessionSearchField.awaitNonExistence(timeout: 5))
+        XCTAssertEqual(row.settledFrame.minY, resting.minY, accuracy: 1, "Closing search moved the list")
+    }
+}
+
 /// TAL-437: a relaunch shows the chats the app saw last time before `/api/sessions` answers.
 final class ColdLaunchCacheUITests: ChatUITestCase {
     func testRelaunchShowsTheLastChatsBeforeTheServerAnswers() throws {

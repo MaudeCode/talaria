@@ -478,7 +478,7 @@ struct SessionListView: View {
 
             content
 
-            if !isSearchingSessions && horizontalSizeClass != .regular {
+            if showsFloatingNewChatButton {
                 newSessionButton
                     .padding(.trailing, 24)
                     .padding(.bottom, 22)
@@ -518,11 +518,33 @@ struct SessionListView: View {
                     } label: {
                         Image(systemName: "square.and.pencil")
                     }
-                    .disabled(viewModel.isViewingCachedData || navigationState.isCreatingNewChat)
+                    .disabled(isNewChatDisabled)
                     .accessibilityLabel("New Chat")
                 }
             }
+
+            // iOS 26 minimizes search into the bottom bar, so New Chat joins that row instead
+            // of floating above the list (TAL-461).
+            if #available(iOS 26, *) {
+                if horizontalSizeClass != .regular {
+                    DefaultToolbarItem(kind: .search, placement: .bottomBar)
+                    ToolbarSpacer(.flexible, placement: .bottomBar)
+
+                    ToolbarItem(placement: .bottomBar) {
+                        newChatToolbarButton
+                    }
+                }
+            }
         }
+    }
+
+    private var isNewChatDisabled: Bool {
+        viewModel.isViewingCachedData || navigationState.isCreatingNewChat
+    }
+
+    private var showsFloatingNewChatButton: Bool {
+        if #available(iOS 26, *) { return false }
+        return !isSearchingSessions && horizontalSizeClass != .regular
     }
 
     @ViewBuilder
@@ -661,7 +683,7 @@ struct SessionListView: View {
                     .sessionsScreenListRow()
             }
 
-            if !isSearchingSessions {
+            if !hasSearchQuery {
                 SessionFilterControls(
                     viewModel: viewModel,
                     showsProfile: showsActiveProfileSection,
@@ -678,7 +700,7 @@ struct SessionListView: View {
                 )
             }
 
-            if scheduledSessionGroups.showsDisclosure(isSearchActive: isSearchingSessions) {
+            if scheduledSessionGroups.showsDisclosure(isSearchActive: hasSearchQuery) {
                 GroupedSessionsDisclosure(
                     title: String(localized: "Scheduled sessions"),
                     assetImage: "LucideCalendarClock",
@@ -689,7 +711,7 @@ struct SessionListView: View {
                     sessions: scheduledSessionGroups.scheduled,
                     totalCount: scheduledSessionGroups.totalScheduledCount,
                     countIsPartial: scheduledSessionGroups.scheduledCountIsPartial,
-                    isSearchActive: isSearchingSessions,
+                    isSearchActive: hasSearchQuery,
                     searchText: searchText,
                     showsMessageCount: showsSessionMessageCount,
                     showsWorkspace: showsSessionWorkspace,
@@ -702,7 +724,7 @@ struct SessionListView: View {
                 )
             }
 
-            if scheduledSessionGroups.showsWebhookDisclosure(isSearchActive: isSearchingSessions) {
+            if scheduledSessionGroups.showsWebhookDisclosure(isSearchActive: hasSearchQuery) {
                 GroupedSessionsDisclosure(
                     title: String(localized: "Webhook sessions"),
                     assetImage: nil,
@@ -713,7 +735,7 @@ struct SessionListView: View {
                     sessions: scheduledSessionGroups.webhook,
                     totalCount: scheduledSessionGroups.totalWebhookCount,
                     countIsPartial: scheduledSessionGroups.webhookCountIsPartial,
-                    isSearchActive: isSearchingSessions,
+                    isSearchActive: hasSearchQuery,
                     searchText: searchText,
                     showsMessageCount: showsSessionMessageCount,
                     showsWorkspace: showsSessionWorkspace,
@@ -731,7 +753,7 @@ struct SessionListView: View {
                 sessions: scheduledSessionGroups.ordinary,
                 emptyTitle: emptySessionsTitle,
                 emptyDescription: emptySessionsDescription,
-                isSearchActive: isSearchingSessions,
+                isSearchActive: hasSearchQuery,
                 searchText: searchText,
                 showsMessageCount: showsSessionMessageCount,
                 showsWorkspace: showsSessionWorkspace,
@@ -978,7 +1000,22 @@ struct SessionListView: View {
                 )
         }
         .buttonStyle(SessionListFloatingChatButtonStyle())
-        .disabled(viewModel.isViewingCachedData || navigationState.isCreatingNewChat)
+        .disabled(isNewChatDisabled)
+        .opacity(viewModel.isViewingCachedData ? 0.45 : 1)
+        .accessibilityLabel("New Chat")
+    }
+
+    @available(iOS 26, *)
+    private var newChatToolbarButton: some View {
+        HapticButton(feedbackStyle: .medium) {
+            openNewChat()
+        } label: {
+            Image(systemName: "square.and.pencil")
+                .foregroundStyle(newSessionButtonForegroundColor)
+        }
+        .buttonStyle(.glassProminent)
+        .tint(newSessionButtonGlassTint)
+        .disabled(isNewChatDisabled)
         .opacity(viewModel.isViewingCachedData ? 0.45 : 1)
         .accessibilityLabel("New Chat")
     }
@@ -1009,12 +1046,13 @@ struct SessionListView: View {
         )
     }
 
-    /// Bottom-of-list entry to the Archived screen (issue #17). Hidden while
-    /// searching, offline (cached data cannot fetch archived rows), and when the
-    /// server reports zero archived sessions or omits `archived_count` (older
-    /// server) — so the list is unchanged for users with nothing archived.
+    /// Bottom-of-list entry to the Archived screen (issue #17). Hidden once a
+    /// search query is typed, offline (cached data cannot fetch archived rows),
+    /// and when the server reports zero archived sessions or omits
+    /// `archived_count` (older server) — so the list is unchanged for users
+    /// with nothing archived.
     private var showsArchivedEntry: Bool {
-        guard !isSearchingSessions, !viewModel.isViewingCachedData else { return false }
+        guard !hasSearchQuery, !viewModel.isViewingCachedData else { return false }
         return (viewModel.archivedCount ?? 0) > 0
     }
 
@@ -1154,7 +1192,13 @@ struct SessionListView: View {
     }
 
     private var isSearchingSessions: Bool {
-        isSearchPresented || !normalizedSearchText.isEmpty
+        isSearchPresented || hasSearchQuery
+    }
+
+    /// The list reshapes for results only once there is a query, so opening an
+    /// empty search leaves it in place (TAL-461).
+    private var hasSearchQuery: Bool {
+        !normalizedSearchText.isEmpty
     }
 
     private var remoteSearchTaskID: SessionSearchTaskID {
@@ -1575,7 +1619,9 @@ private extension View {
     @ViewBuilder
     func minimizingSearchToolbar() -> some View {
         if #available(iOS 26, *) {
+            // Keeping the navigation bar up stops the list jumping under the search field.
             searchToolbarBehavior(.minimize)
+                .searchPresentationToolbarBehavior(.avoidHidingContent)
         } else {
             self
         }
