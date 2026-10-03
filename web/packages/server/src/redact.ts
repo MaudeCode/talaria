@@ -122,8 +122,11 @@ const ENV_SUFFIX_RE = /(?<![A-Za-z0-9_])((?=[A-Z0-9_]*(?:KEY|PASS|PW))[A-Z0-9_]+
 const ENV_SUFFIX_TEST_RE = new RegExp(ENV_SUFFIX_RE.source)
 /** A keyword at a word edge of an env name (`DB_PW`, `MYSQL_PASS`), never inside a word (`KEYBOARD`, `PASSAGE`). */
 const ENV_SUFFIX_WORD_RE = /(?:^|[^A-Za-z])(?:KEY|PASS|PW)S?(?![A-Za-z])/i
-/** Env names whose value is a credential whatever its shape; a bare `KEY` needs an opaque value (`SORT_KEY=name` stays). */
-const ENV_STRONG_NAME_RE = /(?:api|auth|access|refresh|session|id|bearer)[ _.-]?(?:key|token)|key[ _.-]?material|secret|passwd|password|pass|pw|credential|auth|bearer/i
+/**
+ * Env names whose value is a credential whatever its shape, as whole name words (`DB_PASS`, not `COMPASS_KEY` or
+ * `AUTHOR_KEY`); a bare `KEY` needs an opaque value (`SORT_KEY=name` stays).
+ */
+const ENV_STRONG_NAME_RE = /(?:^|[^A-Za-z])(?:(?:api|auth|access|refresh|session|id|bearer)[ _.-]?(?:key|token)|key[ _.-]?material|secret|passwd|password|pass|pw|credentials?|auth|bearer)s?(?![A-Za-z])/i
 /** The Agent's `_looks_like_opaque_credential`: a value shaped like a generated secret rather than a word. */
 function looksOpaque(value: string): boolean {
   if (value === '***' || /^[A-Fa-f0-9]{16,}$/.test(value) || /^[A-Za-z0-9_./+=-]{20,}$/.test(value)) return true
@@ -211,14 +214,14 @@ const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/?#]{
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff]/
 const CONTROL_CHARS_RE = new RegExp(CONTROL_CHAR_RE.source, 'g')
 const CRED_TEST_RE = new RegExp(CRED_RE.source)
-/** `CRED_RE` from a given position, without its leading boundary (a split token checks the original one instead). */
-const CRED_STICKY_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, ''), 'y')
+/** `CRED_RE`'s prefix and body from a position, without its boundaries (a split token checks the original ones). */
+const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
+const SPLIT_TOKEN_CAP = 1024
+/** Where a `CRED_RE` prefix and body start at a boundary, however they end. */
+const CRED_START_RE = new RegExp(CRED_RE.source.replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'g')
 const CRED_WHOLE_RE = new RegExp(`^${CRED_RE.source}$`)
 /** A URL query parameter's value, up to the next `&` or `#`. */
 const QUERY_VALUE_RE = /[^&#]*/y
-/** One line with its break. */
-const LINE_RE = /[^\r\n]*(?:\r\n|[\r\n]|$)/g
-const CONTROL_SPLIT_SPAN_RE = /^[A-Za-z0-9_.\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff-]*$/
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
 /** A private key whose end marker is missing (a display cap cut it off): masked to the end of the text. */
 const PRIVKEY_OPEN_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*$/
@@ -227,9 +230,41 @@ const ENV_KEY_PREFIX_RE = /([A-Z0-9_]{0,50}(?:API_?KEY|TOKEN|SECRET|PASSWORD|PAS
 const REDACTED_ENV_VALUE_RE = /(?:\*{3,}|[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,32}\.\.\.[A-Za-z0-9_.:/+-]{1,16})/y
 
 /**
- * A prefixed credential whose body a control or zero-width character splits, matched on the text without those characters
- * and masked in place. A span may hold only token and control characters and stops before a `KEY=` it runs into; a span crossing a
- * line whose own piece already matches is left to the prefix pass, so a complete token never swallows the next line.
+ * Where a credential split by control or zero-width characters (`ghp_abc\x1bdef`, `ghp_abc\ndef…`) starting at `i` of the
+ * stripped text ends there, or -1. The run of its prefix and body is read once (capped), then the longest candidate is
+ * taken that ends at a piece boundary of the original, is a whole credential, is not the name of a `KEY=` that follows,
+ * and never reaches a line holding a whole token itself (that line is the prefix pass's and joins nothing).
+ */
+function splitTokenEnd(text: string, stripped: string, kept: number[], i: number): number {
+  CRED_RUN_RE.lastIndex = 0
+  // ponytail: a split credential longer than SPLIT_TOKEN_CAP is cut at the cap; raise it if longer tokens appear.
+  const run = CRED_RUN_RE.exec(stripped.slice(i, i + SPLIT_TOKEN_CAP))?.[0]
+  if (!run) return -1
+  const start = kept[i]!
+  let limit = kept[i + run.length - 1]! + 1
+  for (let lineStart = start; lineStart < limit; ) {
+    const lineEnd = text.slice(lineStart, limit).search(/[\r\n]/)
+    const end = lineEnd === -1 ? limit : lineStart + lineEnd
+    if (CRED_TEST_RE.test(text.slice(lineStart, end))) {
+      limit = lineStart === start ? end : lineStart
+      break
+    }
+    if (lineEnd === -1) break
+    lineStart = end + 1
+  }
+  for (let e = i + run.length; e > i; e -= 1) {
+    const atBoundary = e === stripped.length || kept[e]! - kept[e - 1]! > 1 || (e === i + run.length && !/[A-Za-z0-9_.-]/.test(stripped[e]!))
+    const originalEnd = kept[e - 1]! + 1
+    if (!atBoundary || originalEnd > limit || !CRED_WHOLE_RE.test(stripped.slice(i, e)) || /^[ \t]*=/.test(text.slice(originalEnd, originalEnd + 64))) continue
+    return e
+  }
+  return -1
+}
+
+/**
+ * Prefixed credentials whose body a control or zero-width character splits, matched on the text without those characters
+ * and masked in place. A token starts at a boundary of the stripped text, or where a stripped control hid the original
+ * one (`note\nghp_…`); one starting inside a token already masked is part of it.
  */
 function maskControlSplitTokens(text: string): string {
   const stripped = text.replace(CONTROL_CHARS_RE, '')
@@ -237,69 +272,18 @@ function maskControlSplitTokens(text: string): string {
   // The original index of each kept character.
   const kept: number[] = []
   for (let i = 0; i < text.length; i += 1) if (!CONTROL_CHAR_RE.test(text[i]!)) kept.push(i)
-  // Candidates start at a boundary of the stripped text, or where a stripped control hid the original one (`note\nghp_…`).
-  // The second kind is matched lazily: one inside an earlier candidate's span was decided with it, so each character is
-  // scanned once.
-  const bounded = [...stripped.matchAll(CRED_RE)].map((m): [number, string] => [m.index, m[1]!])
-  const hidden: number[] = []
-  for (let i = 1; i < kept.length; i += 1) if (kept[i]! - kept[i - 1]! > 1 && /[A-Za-z0-9_-]/.test(stripped[i - 1]!)) hidden.push(i)
-  if (!bounded.length && !hidden.length) return text
+  const starts = [...stripped.matchAll(CRED_START_RE)].map((m) => m.index)
+  for (let i = 1; i < kept.length; i += 1) if (kept[i]! - kept[i - 1]! > 1 && /[A-Za-z0-9_-]/.test(stripped[i - 1]!)) starts.push(i)
   let out = ''
   let last = 0
   let scanned = 0
-  let b = 0
-  let h = 0
-  while (b < bounded.length || h < hidden.length) {
-    let index: number
-    let found: string
-    if (h >= hidden.length || (b < bounded.length && bounded[b]![0] <= hidden[h]!)) [index, found] = bounded[b++]!
-    else {
-      index = hidden[h++]!
-      if (index < scanned) continue
-      CRED_STICKY_RE.lastIndex = index
-      const m = CRED_STICKY_RE.exec(stripped)
-      if (!m) continue
-      found = m[1]!
-    }
-    if (index < scanned) continue
-    scanned = index + found.length
-    let token = found
-    const start = kept[index]!
-    let end = kept[index + token.length - 1]! + 1
-    if (/^[ \t]*=/.test(text.slice(end, end + 64))) {
-      // The join ran into the next piece's `KEY=`: the credential is what precedes that piece, when it is whole.
-      let cut = end - 1
-      while (cut > start && !CONTROL_CHAR_RE.test(text[cut]!)) cut -= 1
-      token = text.slice(start, cut).replace(CONTROL_CHARS_RE, '')
-      if (cut <= start || !CRED_WHOLE_RE.test(token)) continue
-      end = cut
-    }
-    const span = text.slice(start, end)
-    if (!CONTROL_SPLIT_SPAN_RE.test(span)) continue
-    if (/[\r\n]/.test(span) && CRED_TEST_RE.test(span)) {
-      // A line holding a whole token is the prefix pass's, and never joins the next. The lines between such lines may
-      // still join into a split token of their own: each run of them is redacted alone (`sk-aaa…\nsk-bb\nbbb…`).
-      let runStart = -1
-      const flush = (runEnd: number): void => {
-        if (runStart < 0) return
-        const run = span.slice(runStart, runEnd)
-        const redacted = maskControlSplitTokens(run)
-        if (redacted !== run) {
-          out += text.slice(last, start + runStart) + redacted
-          last = start + runEnd
-        }
-        runStart = -1
-      }
-      for (const line of span.matchAll(LINE_RE)) {
-        if (!line[0]) break
-        if (CRED_TEST_RE.test(line[0])) flush(line.index)
-        else if (runStart < 0) runStart = line.index
-      }
-      flush(span.length)
-      continue
-    }
-    out += text.slice(last, start) + mask(token)
-    last = end
+  for (const i of starts.sort((a, b) => a - b)) {
+    if (i < scanned) continue
+    const e = splitTokenEnd(text, stripped, kept, i)
+    if (e === -1) continue
+    out += text.slice(last, kept[i]) + mask(stripped.slice(i, e))
+    last = kept[e - 1]! + 1
+    scanned = e
   }
   return out + text.slice(last)
 }

@@ -669,4 +669,11 @@ describe('Agent redactor parity', () => {
     expect(redactText('https://x.test/?db_pass=hunter2#long-fragment-name', true)).toBe('https://x.test/?db_pass=***#long-fragment-name')
     expect(redactText('https://x.test/?a=1&db_pass=hunter2&b=2', true)).toBe('https://x.test/?a=1&db_pass=***&b=2')
   })
+
+  it('masks a split token before a line it cannot join, and keeps env names that only contain a strong word', () => {
+    expect(redactText('ghp_abcdef\n1234567890ABCDEF1234567890abcdef\nfoo-bar', true)).toBe('ghp_ab...cdef\nfoo-bar')
+    expect(redactText('ghp_abcdef\x1b1234567890ABCDEF1234567890abcdef\x1b-x', true)).toBe('ghp_ab...cdef\x1b-x')
+    for (const text of ['author_key=name', 'COMPASS_KEY=north', 'PASSAGE_KEY=title', 'compass_key=north']) expect(redactText(text, true)).toBe(text)
+    expect(redactText('DB_PASS=north', true)).toBe('DB_PASS=***')
+  })
 })
