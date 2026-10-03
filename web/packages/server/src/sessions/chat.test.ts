@@ -1608,9 +1608,12 @@ describe('chat turns through the sidecar', () => {
   it('YOLO toggles reach the sidecar both ways and the local flag follows its acknowledgement', async () => {
     const sid = await newSession(s)
     const pushes: boolean[] = []
-    sidecar.respond('approval.set_yolo', (params) => { pushes.push(params.enabled); return { yolo_enabled: params.enabled, released: 0 } })
+    const choices: unknown[] = []
+    sidecar.respond('approval.set_yolo', (params) => { pushes.push(params.enabled); choices.push(params.choice); return { yolo_enabled: params.enabled, released: 0 } })
     expect(await json(await post(s, '/api/session/yolo', { session_id: sid, enabled: true }))).toEqual({ ok: true, yolo_enabled: true })
     expect(pushes).toEqual([true])
+    // Parked approvals are released `once`, never `session`, so their patterns do not outlive YOLO (TAL-500).
+    expect(choices).toEqual(['once'])
     // A sidecar that cannot drop its state keeps the UI honest: the flag stays on and the toggle reports 503.
     sidecar.respond('approval.set_yolo', () => { throw new SidecarError('sidecar busy', { condition: 'sidecar_unavailable' }) })
     const failed = await post(s, '/api/session/yolo', { session_id: sid, enabled: false })

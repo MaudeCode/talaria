@@ -1096,12 +1096,16 @@ def register(registry) -> None:
     def set_yolo_(ctx: CallContext, params: dict) -> dict:
         session_id = str(params.get("session_id") or "").strip()
         enabled = bool(params.get("enabled"))
+        # Parked approvals are released with the caller's choice: `session` would persist their patterns past YOLO.
+        choice = str(params.get("choice") or "once")
+        if choice not in ("once", "session", "always", "deny"):
+            raise InvalidParams(f"invalid choice: {choice}")
         try:
             from tools.approval import disable_session_yolo, enable_session_yolo, is_session_yolo_enabled, resolve_gateway_approval
         except Exception as exc:  # noqa: BLE001
             raise RpcError(f"approval module unavailable: {exc}", condition="agent_unavailable") from exc
         (enable_session_yolo if enabled else disable_session_yolo)(session_id)
-        released = resolve_gateway_approval(session_id, "session", resolve_all=True) if enabled else 0
+        released = resolve_gateway_approval(session_id, choice, resolve_all=True) if enabled else 0
         return {"yolo_enabled": bool(is_session_yolo_enabled(session_id)), "released": int(released or 0)}
 
     @registry.method("clarify.respond", requires_agent=False)
