@@ -86,7 +86,15 @@ public struct AssistantTurnLayout: Equatable {
         archivedRows: [AssistantActivityRow],
         earlierSceneRows: [AssistantActivitySceneRow] = []
     ) {
-        if !liveRows.isEmpty {
+        if message.activityScene?.terminalState == "running",
+           let scene = AssistantActivityTimeline.authoritativeScene(message: message, earlierRows: earlierSceneRows) {
+            // A run with no journal to replay (TAL-374): the server's running scene is the persisted prefix, and the rows
+            // streamed after attach (archived once the stream ends) continue it. Nothing folds until the settled scene
+            // replaces both.
+            rows = scene.rows + (liveRows.isEmpty ? archivedRows : liveRows)
+            foldsWork = false
+            isLive = !liveRows.isEmpty || archivedRows.isEmpty
+        } else if !liveRows.isEmpty {
             // Live rows win while the turn streams.
             rows = liveRows
             foldsWork = false

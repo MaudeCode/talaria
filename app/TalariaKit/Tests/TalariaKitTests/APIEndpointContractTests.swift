@@ -466,6 +466,58 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(journaled.messages?.last?.role, "user")
     }
 
+    func testSharedWebSessionShowsARunningTurnWithoutAJournalOpenAndLetsLiveRowsContinueIt() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-374 has no such example.
+        guard let example = object["running_scene_session"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        var rawMessages = try XCTUnwrap(example["messages"] as? [[String: Any]])
+        func running() throws -> ChatMessage {
+            try decoder.decode(ChatMessage.self, from: JSONSerialization.data(withJSONObject: try XCTUnwrap(rawMessages.last)))
+        }
+        let message = try running()
+        XCTAssertEqual(message.activityScene?.terminalState, "running")
+
+        // Every persisted row shows, open: no "Worked" fold, no outcome, no final answer, and the last row is active.
+        let opened = AssistantTurnLayout(message: message, liveRows: [], archivedRows: [])
+        XCTAssertEqual(opened.rows.map(\.kind), ["reasoning", "prose", "tools", "prose"])
+        XCTAssertEqual(opened.rows.compactMap(\.text), ["Plan the read.", "Reading a.txt.", "Now b.txt."])
+        XCTAssertFalse(opened.foldsWork)
+        XCTAssertTrue(opened.isLive)
+        XCTAssertNil(AssistantTurnOutcome.label(for: message.activityScene?.terminalState))
+        XCTAssertEqual(CompletedAssistantTurn(rows: opened.rows)?.finalAnswer, "")
+
+        // Live frames streamed after attach continue the persisted rows instead of replacing them.
+        let live = [
+            AssistantActivityRow(id: "live:prose", content: .prose("Reading b.txt.")),
+            AssistantActivityRow(id: "live:reasoning", content: .reasoning(.init(text: "Compare them.")))
+        ]
+        let streaming = AssistantTurnLayout(message: message, liveRows: live, archivedRows: [])
+        XCTAssertEqual(streaming.rows.map(\.id), opened.rows.map(\.id) + ["live:prose", "live:reasoning"])
+        XCTAssertFalse(streaming.foldsWork)
+        XCTAssertTrue(streaming.isLive)
+        // Once the stream ends, its archived rows still follow the persisted ones until the settled scene arrives.
+        let ended = AssistantTurnLayout(message: message, liveRows: [], archivedRows: live)
+        XCTAssertEqual(ended.rows.map(\.id), streaming.rows.map(\.id))
+        XCTAssertFalse(ended.foldsWork)
+        XCTAssertFalse(ended.isLive)
+
+        // The settled scene replaces both, once: its rows and its answer, folded under "Worked".
+        var settledMessage = try XCTUnwrap(rawMessages.last)
+        var scene = try XCTUnwrap(settledMessage["_anchor_activity_scene"] as? [String: Any])
+        scene["terminal_state"] = "completed"
+        scene["final_answer"] = "Both read."
+        scene["expanded_by_default"] = false
+        settledMessage["_anchor_activity_scene"] = scene
+        rawMessages[rawMessages.count - 1] = settledMessage
+        let settled = AssistantTurnLayout(message: try running(), liveRows: [], archivedRows: live)
+        XCTAssertEqual(settled.rows.map(\.id), opened.rows.map(\.id) + ["scene:final"])
+        XCTAssertEqual(CompletedAssistantTurn(rows: settled.rows)?.finalAnswer, "Both read.")
+        XCTAssertTrue(settled.foldsWork)
+        XCTAssertFalse(settled.isLive)
+    }
+
     func testSharedWebSessionCollapsesOnlyItsLongBodies() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-456 has no such example.
