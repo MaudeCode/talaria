@@ -1376,3 +1376,52 @@ describe('session detail resolves each tool call\'s outcome (TAL-313)', () => {
     }
   })
 })
+
+describe('server-resolved workspace display names (TAL-303)', () => {
+  it('ships the registered name, else the basename, on detail, list and search rows, from each session profile\'s registry', async () => {
+    const s = await bootTestServer()
+    try {
+      const root = realpathSync(s.state)
+      const [registered, unregistered, home, unnamed] = ['src/talaria-main', 'src/scratch', 'home-ws', 'src/unnamed'].map((p) => join(root, p))
+      for (const dir of [registered!, unregistered!, home!, unnamed!]) mkdirSync(dir, { recursive: true })
+      const registry = [{ path: registered, name: 'Talaria' }, { path: home, name: 'default' }, { path: unnamed, name: '' }]
+      writeFileSync(join(s.state, 'workspaces.json'), JSON.stringify(registry))
+      // The `work` profile names the same folder differently; its rows follow its own registry.
+      const workState = join(s.state, 'profiles', 'work', 'webui_state')
+      mkdirSync(workState, { recursive: true })
+      writeFileSync(join(workState, 'workspaces.json'), JSON.stringify([{ path: registered, name: 'Work Talaria' }]))
+      const dir = s.deps.sessionStore.sessionDir
+      mkdirSync(dir, { recursive: true })
+      const base = { title: 'needle', message_count: 1, last_message_at: 100, updated_at: 100, archived: false }
+      const rows = [
+        { ...base, session_id: 'ws-registered', workspace: registered, profile: 'default' },
+        { ...base, session_id: 'ws-unregistered', workspace: unregistered, profile: 'default' },
+        { ...base, session_id: 'ws-home', workspace: home, profile: 'default' },
+        { ...base, session_id: 'ws-unnamed', workspace: unnamed, profile: 'default' },
+        { ...base, session_id: 'ws-work', workspace: registered, profile: 'work' },
+        { ...base, session_id: 'ws-ghost', workspace: registered, profile: 'ghost' },
+      ]
+      for (const row of rows) writeFileSync(join(dir, `${row.session_id}.json`), JSON.stringify({ ...row, messages: [{ role: 'user', content: 'needle' }] }))
+      writeFileSync(s.deps.sessionStore.indexFile, JSON.stringify(rows))
+      const want = { 'ws-registered': 'Talaria', 'ws-unregistered': 'scratch', 'ws-home': 'Home', 'ws-unnamed': 'unnamed', 'ws-work': 'Work Talaria', 'ws-ghost': 'talaria-main' }
+      for (const path of ['/api/sessions?all_profiles=1', '/api/sessions/search?q=needle&all_profiles=1', '/api/sessions/search?q=&all_profiles=1']) {
+        const listed = (await json(await s.get(path))).sessions as Json[]
+        expect(Object.fromEntries(listed.map((r) => [r.session_id, r.workspace_name])), path).toEqual(want)
+      }
+      // Naming reads a registry; it never creates a profile's state for a row that names one without any.
+      expect(existsSync(join(s.state, 'profiles', 'ghost'))).toBe(false)
+      for (const sid of ['ws-registered', 'ws-unregistered', 'ws-home', 'ws-unnamed']) {
+        const detail = (await json(await s.get(`/api/session?session_id=${sid}`))).session as Json
+        expect(detail.workspace_name, sid).toBe(want[sid as keyof typeof want])
+      }
+      // Pickers read the same names: no registry entry is ever nameless.
+      const listedWorkspaces = (await json(await s.get('/api/workspaces'))).workspaces as Json[]
+      expect(listedWorkspaces.map((w) => [w.path, w.name])).toEqual([[registered, 'Talaria'], [home, 'Home'], [unnamed, 'unnamed']])
+      // A rename shows on the next read.
+      expect((await post(s, '/api/workspaces/rename', { path: registered, name: 'Renamed' })).status).toBe(200)
+      expect(((await json(await s.get('/api/session?session_id=ws-registered'))).session as Json).workspace_name).toBe('Renamed')
+    } finally {
+      await s.close()
+    }
+  })
+})

@@ -90,6 +90,8 @@ describe('chat turns through the sidecar', () => {
     const done = frames.find((f) => f.event === 'done')?.data as Json
     const doneSession = done.session as Json
     expect((doneSession.messages as Json[]).map((m) => [m.role, m.content])).toEqual([['user', 'hello there'], ['assistant', ''], ['tool', 'contents'], ['assistant', 'Hi back']])
+    // TAL-303: the settled session names its workspace like the list and detail do (the default workspace is Home).
+    expect(doneSession.workspace_name).toBe('Home')
     // Every row the turn wrote carries its stream id as the turn identity, matching the start response.
     expect(start.turn_id).toBe(streamId)
     expect((doneSession.messages as Json[]).map((m) => m._turn_id)).toEqual([streamId, streamId, streamId, streamId])

@@ -105,6 +105,12 @@ export function isBlockedWorkspacePath(candidate: string, rawPath?: string | nul
   return false
 }
 
+/** TAL-303: the label every client shows for a workspace: its registered name, else its folder name (the path itself at `/`). */
+export function workspaceDisplayName(path: string, entries: readonly WorkspaceEntry[]): string | null {
+  if (!path) return null
+  return entries.find((w) => w.path === path)?.name || basename(path) || path
+}
+
 export class WorkspaceRegistry {
   readonly home: string
   constructor(readonly deps: WorkspaceDeps) {
@@ -118,25 +124,15 @@ export class WorkspaceRegistry {
     return resolvePathLikePython(this.deps.profileHome(raw))
   }
 
-  /** Per-profile `webui_state/` dir; the literal default profile uses the global state dir. */
+  /** Per-profile `webui_state/` dir; the literal default profile uses the global state dir. Writers create it. */
   stateDir(profile: string | null): string {
     if (profile !== null) {
       if (profile.trim() === 'default') return this.deps.stateDir
       const home = this.profileHomeParam(profile)
-      if (!this.deps.isRootProfileHome(home)) {
-        const d = resolve(home, 'webui_state')
-        mkdirSync(d, { recursive: true })
-        return d
-      }
-      return this.deps.stateDir
+      return this.deps.isRootProfileHome(home) ? this.deps.stateDir : resolve(home, 'webui_state')
     }
     const name = this.deps.activeProfile()
-    if (name && name !== 'default') {
-      const d = resolve(this.deps.profileHome(name), 'webui_state')
-      mkdirSync(d, { recursive: true })
-      return d
-    }
-    return this.deps.stateDir
+    return name && name !== 'default' ? resolve(this.deps.profileHome(name), 'webui_state') : this.deps.stateDir
   }
 
   private workspacesFile(profile: string | null): string | null {
@@ -274,18 +270,29 @@ export class WorkspaceRegistry {
         }
       }
       if (name.toLowerCase() === 'default') name = 'Home'
+      // TAL-303: every entry carries a label, so no client names a workspace from its path.
+      if (!name.trim()) name = basename(p) || p
       result.push({ path: p, name })
     }
     return result
   }
 
   load(profile: string | null = null): WorkspaceEntry[] {
+    return this.read(profile, true)
+  }
+
+  /** TAL-303: `load` without rewriting a cleaned file, for display names that every session read resolves. */
+  entries(profile: string | null = null): WorkspaceEntry[] {
+    return this.read(profile, false)
+  }
+
+  private read(profile: string | null, persist: boolean): WorkspaceEntry[] {
     const file = this.workspacesFile(profile)
     if (file !== null && existsSync(file)) {
       try {
         const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown
         const cleaned = this.cleanWorkspaceList(raw, profile)
-        if (Array.isArray(raw) && cleaned.length !== raw.length) {
+        if (persist && Array.isArray(raw) && cleaned.length !== raw.length) {
           try { writeFileSync(file, JSON.stringify(cleaned, null, 2), 'utf8') } catch { /* best effort */ }
         }
         return cleaned.length ? cleaned : [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
@@ -300,18 +307,18 @@ export class WorkspaceRegistry {
       isDefault = true
     }
     if (isDefault) {
-      const migrated = this.migrateGlobalWorkspaces()
+      const migrated = this.migrateGlobalWorkspaces(persist)
       if (migrated.length) return migrated
     }
     return [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
   }
 
-  private migrateGlobalWorkspaces(): WorkspaceEntry[] {
+  private migrateGlobalWorkspaces(persist: boolean): WorkspaceEntry[] {
     if (!existsSync(this.globalWorkspacesFile)) return []
     try {
       const raw = JSON.parse(readFileSync(this.globalWorkspacesFile, 'utf8')) as unknown
       const cleaned = this.cleanWorkspaceList(raw, null)
-      if (Array.isArray(raw) && cleaned.length !== raw.length) writeFileSync(this.globalWorkspacesFile, JSON.stringify(cleaned, null, 2), 'utf8')
+      if (persist && Array.isArray(raw) && cleaned.length !== raw.length) writeFileSync(this.globalWorkspacesFile, JSON.stringify(cleaned, null, 2), 'utf8')
       return cleaned
     } catch {
       return []
