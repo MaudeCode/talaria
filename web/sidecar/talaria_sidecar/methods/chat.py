@@ -11,6 +11,7 @@ through ``approval.respond`` / ``clarify.respond``; ``rpc.cancel`` or
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import hashlib
 import inspect
 import json
@@ -440,16 +441,31 @@ def _profile_toolsets() -> list[str]:
     return list(dict.fromkeys(name for raw in resolved for name in _LEGACY_TOOLSET_ALIASES.get(raw, (raw,))))
 
 
-def _discover_mcp_tools() -> None:
+def _discover_mcp_tools(run: _Run) -> None:
     """Connect the profile's MCP servers before the turn's agent snapshots its tools, like the predecessor's turn start.
     The Agent keys connections by profile scope and skips live ones, so later turns are cheap. Runs under the call's
-    ``scoped_home``; a failure leaves the turn without MCP tools rather than failing it."""
-    try:
-        from tools.mcp_tool_discovery import discover_mcp_tools
+    ``scoped_home``; a failure leaves the turn without MCP tools rather than failing it. A Stop does not wait for a slow
+    server: the turn moves on to its cancelled end while the connect finishes in the background."""
+    from .commands import retire_unscoped_launch_mcp_servers
 
-        discover_mcp_tools()
-    except Exception:  # noqa: BLE001
-        log.warning("MCP discovery failed", exc_info=True)
+    done = threading.Event()
+
+    def discover() -> None:
+        try:
+            from tools.mcp_tool_discovery import discover_mcp_tools
+
+            retire_unscoped_launch_mcp_servers()
+            discover_mcp_tools()
+        except Exception:  # noqa: BLE001
+            log.warning("MCP discovery failed", exc_info=True)
+        finally:
+            done.set()
+
+    # The copied context carries the turn's home override and secret scope into the worker.
+    threading.Thread(target=contextvars.copy_context().run, args=(discover,), daemon=True, name=f"chat-mcp-{run.stream_id[:8]}").start()
+    while not done.wait(0.25):
+        if run.cancel.is_set() or run.ctx.cancelled:
+            return
 
 
 def _profile_fallback_chain() -> list[dict] | None:
@@ -558,7 +574,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 raw_emit("steer_pending", {"text": pending})
         raw_emit(event, data)
     try:
-        _discover_mcp_tools()
+        _discover_mcp_tools(run)
         runtime = _resolve_runtime(provider, model)
         resolved_model = model or str(runtime.get("model") or "")
         resolved_provider = provider or runtime.get("provider")

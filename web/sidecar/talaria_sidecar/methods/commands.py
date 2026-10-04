@@ -7,7 +7,7 @@ import threading
 from typing import Any
 
 from ..errors import InvalidParams, RpcError
-from ..home import profile_home_param, scoped_home
+from ..home import _is_named_profile, profile_home_param, scoped_home
 from ..rpc import CallContext
 from .providers import plugin_providers
 
@@ -61,6 +61,27 @@ def list_commands() -> list[dict[str, Any]]:
     return out
 
 
+def retire_unscoped_launch_mcp_servers() -> set[str]:
+    """Close the launch profile's connections opened before multiplexing started; returns their server names.
+
+    Until the first named-profile call, the launch profile's connections and tools are unscoped (process-wide). Once
+    multiplexing is active, a scoped shutdown never selects them and scoped discovery opens duplicates beside them, so
+    the launch profile's own calls close them first and its scope reconnects them from the current config."""
+    from agent.secret_scope import is_multiplex_active
+    from hermes_constants import get_hermes_home
+    from tools.mcp_tool import _lock, _servers
+    from tools.mcp_tool_lifecycle import shutdown_mcp_servers
+    from tools.mcp_tool_scope import _key_name, _key_scope
+
+    if not is_multiplex_active() or _is_named_profile(get_hermes_home()):
+        return set()
+    with _lock:
+        names = {_key_name(key) for key in _servers if _key_scope(key) is None}
+    if names:
+        shutdown_mcp_servers(scope=None, names=names)
+    return names
+
+
 def _reload_mcp() -> str:
     with _RELOAD_MCP_LOCK:
         try:
@@ -81,7 +102,7 @@ def _reload_mcp() -> str:
                 return {_key_name(key) for key in _servers if _server_visible_in_scope(key, scope)}
 
         try:
-            old = server_names()
+            old = server_names() | retire_unscoped_launch_mcp_servers()
             shutdown_mcp_servers(scope=scope)
             tools = discover_mcp_tools() or []
             connected = server_names()

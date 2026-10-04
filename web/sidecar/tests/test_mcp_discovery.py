@@ -63,10 +63,56 @@ assert result["status"] == "completed", result
 print(json.dumps(seen))
 """
 
+# A Stop that arrives while discovery is still connecting a server that never answers.
+STOP_PROBE = """
+import json, os, sys, time
+from pathlib import Path
+sys.path.append(sys.argv[1])
+import tools.mcp_tool_discovery as discovery
+from talaria_sidecar.home import scoped_home
+from talaria_sidecar.methods import chat
+
+discovery.discover_mcp_tools = lambda *args, **kwargs: time.sleep(60)
+
+class FakeAgent:
+    def __init__(self, **kwargs):
+        pass
+
+    def interrupt(self, *args, **kwargs):
+        pass
+
+    def run_conversation(self, **kwargs):
+        return {"final_response": "", "messages": []}
+
+class Ctx:
+    cancelled = True
+
+    def emit(self, event, data=None):
+        pass
+
+chat._agent_class = lambda: FakeAgent
+chat._resolve_runtime = lambda provider, model: {"model": "m", "provider": "p"}
+home = Path(os.environ["HERMES_HOME"])
+params = {"profile_home": str(home), "session_id": "s", "stream_id": "st", "user_message": "hi", "model": "m", "model_provider": "p"}
+started = time.monotonic()
+with scoped_home(home):
+    result = chat.start(Ctx(), params)
+print(json.dumps({"status": result["status"], "elapsed": time.monotonic() - started}))
+"""
+
 
 def _configure_stub(home: pathlib.Path, name: str, script: pathlib.Path) -> None:
     home.mkdir(parents=True, exist_ok=True)
     (home / "config.yaml").write_text(f"mcp_servers:\n  {name}:\n    command: {json.dumps(AGENT_PYTHON)}\n    args: [{json.dumps(str(script))}, {name}]\n")
+
+
+def _probe(tmp_path: pathlib.Path, root: pathlib.Path, script: str):
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(root), "PYTHONPATH": str(SIDECAR_ROOT), "HERMES_STATE_DB_GUARD_BYPASS": "1"}
+    if os.environ.get("LD_LIBRARY_PATH"):  # relocated actions/setup-python interpreter
+        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    run = subprocess.run([AGENT_PYTHON, "-c", script, str(AGENT_DIR)], env=env, capture_output=True, text=True, timeout=180)
+    assert run.returncode == 0, run.stderr[-4000:]
+    return json.loads(run.stdout.strip().splitlines()[-1])
 
 
 def _stub_script(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -79,13 +125,17 @@ def _stub_script(tmp_path: pathlib.Path) -> pathlib.Path:
 def test_first_turn_after_a_restart_exposes_the_profiles_mcp_tools(tmp_path) -> None:
     root = tmp_path / ".hermes"
     _configure_stub(root, "stub_a", _stub_script(tmp_path))
-    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(root), "PYTHONPATH": str(SIDECAR_ROOT), "HERMES_STATE_DB_GUARD_BYPASS": "1"}
-    if os.environ.get("LD_LIBRARY_PATH"):  # relocated actions/setup-python interpreter
-        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
-    run = subprocess.run([AGENT_PYTHON, "-c", FIRST_TURN_PROBE, str(AGENT_DIR)], env=env, capture_output=True, text=True, timeout=180)
-    assert run.returncode == 0, run.stderr[-4000:]
-    (tools,) = json.loads(run.stdout.strip().splitlines()[-1])
+    (tools,) = _probe(tmp_path, root, FIRST_TURN_PROBE)
     assert "mcp__stub_a__ping" in tools, tools
+
+
+@requires_agent
+def test_stop_during_turn_start_discovery_ends_the_turn_without_waiting_for_it(tmp_path) -> None:
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    outcome = _probe(tmp_path, root, STOP_PROBE)
+    assert outcome["status"] == "cancelled", outcome
+    assert outcome["elapsed"] < 10, outcome
 
 
 def _status(sidecar: SidecarProcess, home: pathlib.Path) -> dict:
@@ -114,5 +164,33 @@ def test_reload_mcp_in_one_profile_leaves_another_profiles_servers_connected(tmp
         # Each reload reports only its own profile's servers.
         assert "Added: stub_b" in b_reply["result"]["output"], b_reply
         assert "Added: stub_a" in a_reply["result"]["output"] and "stub_b" not in a_reply["result"]["output"], a_reply
+    finally:
+        sidecar.close()
+
+
+@requires_agent
+def test_launch_reload_after_multiplexing_starts_replaces_its_earlier_unscoped_connections(tmp_path) -> None:
+    script = _stub_script(tmp_path)
+    launch = tmp_path / "home" / ".hermes"
+    named = launch / "profiles" / "b"
+    _configure_stub(launch, "stub_a", script)
+    _configure_stub(named, "stub_b", script)
+    sidecar = SidecarProcess(launch)
+    try:
+        def reload(home: pathlib.Path) -> str:
+            return sidecar.result("commands.exec", {"command": "/reload-mcp", "profile_home": str(home)}, timeout=120)["output"]
+
+        def registry_servers(home: pathlib.Path) -> set[str]:
+            return {tool["server"] for tool in sidecar.result("mcp.registry_tools", {"profile_home": str(home)})["tools"]}
+
+        reload(launch)  # before any named profile: an unscoped connection
+        reload(named)  # the first named profile starts multiplexing
+        output = reload(launch)
+        # The unscoped connection is closed, so its tools leave every profile's registry view, and it comes back under
+        # the launch profile's own scope.
+        assert registry_servers(named) == {"stub_b"}
+        assert "Reconnected: stub_a" in output, output
+        assert _status(sidecar, launch) == {"stub_a": "connected"}
+        assert _status(sidecar, named) == {"stub_b": "connected"}
     finally:
         sidecar.close()
