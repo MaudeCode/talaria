@@ -1136,6 +1136,8 @@ export class SessionService {
     try {
       await this.store.withLock(sid, () => {
         if (blocking()) throw new HttpFailure(409, 'Session has an active run; stop it before deleting')
+        // A public share outlives its session file, and revokeShare needs the session, so revoke it first.
+        try { this.deps.shares.revoke(this.store.get(sid, { metadataOnly: true })) } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
         if (!this.store.deleteFiles(sid)) throw new HttpFailure(500, 'Failed to delete session data')
       }, { timeoutMs: 5000 })
     } catch (error) {
@@ -1165,6 +1167,8 @@ export class SessionService {
     for (const s of this.store.scanAll()) {
       const shouldDelete = zeroOnly ? s.messages.length === 0 : s.title === 'Untitled' && s.messages.length === 0
       if (!shouldDelete) continue
+      // A cleared session keeps its share; keep the session (and its revoke route) if the share cannot be revoked.
+      try { this.deps.shares.revoke(s) } catch { continue }
       this.store.sessions.delete(s.session_id)
       rmSync(this.store.pathFor(s.session_id), { force: true })
       cleaned += 1

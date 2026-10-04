@@ -477,6 +477,28 @@ describe('session lifecycle over HTTP', () => {
     expect((await s.get('/api/share/../etc')).status).toBe(404)
   })
 
+  it('revokes a session share when the session is deleted', async () => {
+    const a = await newSession(s)
+    const sid = String(a.session_id)
+    writeMessages(s, sid, [{ role: 'user', content: 'share me' }, { role: 'assistant', content: 'ok' }])
+    const token = String(((await json(await post(s, '/api/share/create', { session_id: sid }))).share as Json).token)
+    expect((await s.get(`/api/share/${token}`)).status).toBe(200)
+    expect((await post(s, '/api/session/delete', { session_id: sid })).status).toBe(200)
+    expect((await s.get(`/api/share/${token}`)).status).toBe(404)
+  })
+
+  it('revokes a cleared session share when zero-message cleanup removes it', async () => {
+    const a = await newSession(s)
+    const sid = String(a.session_id)
+    writeMessages(s, sid, [{ role: 'user', content: 'share me' }, { role: 'assistant', content: 'ok' }])
+    const token = String(((await json(await post(s, '/api/share/create', { session_id: sid }))).share as Json).token)
+    expect((await post(s, '/api/session/clear', { session_id: sid })).status).toBe(200)
+    expect((await s.get(`/api/share/${token}`)).status).toBe(200)
+    expect((await post(s, '/api/sessions/cleanup_zero_message', {})).status).toBe(200)
+    expect((await s.get(`/api/session?session_id=${sid}`)).status).toBe(404)
+    expect((await s.get(`/api/share/${token}`)).status).toBe(404)
+  })
+
   it('cleans up zero-message sessions and toggles yolo', async () => {
     const a = await newSession(s)
     writeMessages(s, String(a.session_id), [])
