@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "When a steering message can't be delivered, the running response keeps going and the message sends after it finishes.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

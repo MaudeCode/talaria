@@ -2936,9 +2936,9 @@ public final class ChatViewModel {
 
         removeSteeringHint(id: steeringHint.messageID)
         ownSteers.forget(steeringHint.messageID)
+        // TAL-441: the run may still be alive, so the message waits for it rather than stopping it.
         _ = enqueueQueuedSlashMessage(message, attachments: attachmentCoordinator.consumePendingAttachments())
-        await cancelActiveStream()
-        return .executed(message: String(localized: "Steer was unavailable, so the message was queued and the current response was stopped."))
+        return .executed(message: String(localized: "Steer was unavailable, so the message was queued for after this response."))
     }
 
     private func interruptResponseFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {

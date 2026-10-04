@@ -1230,6 +1230,68 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
+    func testRefusedSteerQueuesBehindTheRunningResponseWithoutStoppingIt() async throws {
+        try await assertUnavailableSteerQueuesWithoutStopping(steerStatus: 200, steerBody: #"{"accepted":false,"fallback":"no_cached_agent"}"#)
+    }
+
+    @MainActor
+    func testFailedSteerQueuesBehindTheRunningResponseWithoutStoppingIt() async throws {
+        try await assertUnavailableSteerQueuesWithoutStopping(steerStatus: 500, steerBody: #"{"error":"steer_error"}"#)
+    }
+
+    // TAL-441: an unavailable steer waits for the running turn instead of stopping it.
+    private func assertUnavailableSteerQueuesWithoutStopping(steerStatus: Int, steerBody: String) async throws {
+        let streamClient = SpySSEStreamingClient()
+        var startedTexts: [String] = []
+        var cancelRequests = 0
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            switch request.url?.path {
+            case "/api/chat/start":
+                startedTexts.append(try apiTestJSONBody(from: request)["message"] as? String ?? "")
+                return apiTestJSONResponse(
+                    """
+                    {"session_id":"session-abc","stream_id":"stream-\(startedTexts.count)"}
+                    """,
+                    for: request
+                )
+            case "/api/chat/steer":
+                let response = HTTPURLResponse(
+                    url: try XCTUnwrap(request.url),
+                    statusCode: steerStatus,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+                return (response, Data(steerBody.utf8))
+            case "/api/chat/cancel":
+                cancelRequests += 1
+                return apiTestJSONResponse(#"{"ok":true}"#, for: request)
+            default:
+                return apiTestJSONResponse(#"{}"#, for: request)
+            }
+        }
+
+        let didStart = await viewModel.sendMessage("Initial request")
+        XCTAssertTrue(didStart)
+        let result = await viewModel.submitStreamingMessage("Use the focused test", behavior: .steer)
+
+        XCTAssertEqual(result, .executed(message: "Steer was unavailable, so the message was queued for after this response."))
+        XCTAssertEqual(cancelRequests, 0)
+        XCTAssertEqual(viewModel.activeStreamID, "stream-1")
+        XCTAssertFalse(viewModel.messages.contains(where: \.isLocalSteeringHint))
+        let status = await viewModel.executeSlashCommand(try XCTUnwrap(SlashCommandCatalog.command(named: "status")))
+        guard case let .executed(statusText?) = status else {
+            return XCTFail("Expected /status to return an executed message, got \(status).")
+        }
+        XCTAssertTrue(statusText.contains("Queued messages: 1"), statusText)
+
+        streamClient.emit(.done(DoneStreamEvent(session: nil)))
+        streamClient.emit(.streamEnd)
+        try await waitUntil { startedTexts.count == 2 }
+        XCTAssertEqual(startedTexts, ["Initial request", "Use the focused test"])
+        XCTAssertEqual(cancelRequests, 0)
+    }
+
+    @MainActor
     func testReloadShowsEachServerPendingSteerOnceFromAnyDevice() async throws {
         final class SteerIDBox: @unchecked Sendable { var value = "" }
         let mine = SteerIDBox()
