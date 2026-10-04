@@ -19,46 +19,38 @@ struct ProviderQuotaForecastSummary {
     let outcome: ProviderQuotaForecastOutcome
 
     init(state: ProviderQuotaPresentationState) {
-        guard let pace = state.pace else {
+        guard let pace = state.pace, let forecast = state.forecast else {
             burnRateLabel = "—"
             budgetTitle = String(localized: "Budget / hr")
             budgetLabel = "—"
-            forecastLabel = String(localized: "Forecast unavailable")
-            systemImage = "questionmark.circle"
+            forecastLabel = state.paceNeedsRefresh
+                ? String(localized: "Refresh needed")
+                : String(localized: "Forecast unavailable")
+            systemImage = state.paceNeedsRefresh ? "arrow.clockwise.circle" : "questionmark.circle"
             outcome = .unavailable
             return
         }
 
         burnRateLabel = "\(pace.burnRate.formatted(.number.precision(.fractionLength(2))))×"
-        let usesDailyBudget = pace.minutesToReset >= 24 * 60
-        budgetTitle = usesDailyBudget
+        budgetTitle = forecast.budgetUnit == .day
             ? String(localized: "Budget / day")
             : String(localized: "Budget / hr")
-        if let remaining = state.remainingPercent, pace.minutesToReset > 0 {
-            let divisor = usesDailyBudget
-                ? pace.minutesToReset / (24 * 60)
-                : pace.minutesToReset / 60
-            budgetLabel = (remaining / divisor)
-                .formatted(.percent.scale(1).precision(.fractionLength(0...1)))
-        } else {
-            budgetLabel = "—"
-        }
+        budgetLabel = forecast.budgetPercent?
+            .formatted(.percent.scale(1).precision(.fractionLength(0...1))) ?? "—"
 
-        guard let projected = pace.projectedMinutesToEmpty else {
+        switch (forecast.outcome, forecast.depletionMarginMinutes) {
+        case (.warning, let margin):
+            forecastLabel = String(localized: "Empty \(Self.durationLabel(abs(margin ?? 0))) early")
+            systemImage = "exclamationmark.triangle"
+            outcome = .warning
+        case (.safe, nil):
             forecastLabel = String(localized: "No depletion projected")
             systemImage = "checkmark.circle"
             outcome = .safe
-            return
-        }
-        let margin = projected - pace.minutesToReset
-        if margin >= 0 {
+        case (.safe, _):
             forecastLabel = String(localized: "Lasts through reset")
             systemImage = "checkmark.circle"
             outcome = .safe
-        } else {
-            forecastLabel = String(localized: "Empty \(Self.durationLabel(abs(margin))) early")
-            systemImage = "exclamationmark.triangle"
-            outcome = .warning
         }
     }
 
@@ -72,98 +64,53 @@ struct ProviderQuotaForecastSummary {
     }
 }
 
-
-
-
 enum ProviderQuotaUrgencyCalculator {
+    /// The server names the pace, session, and weekly windows; `automatic` otherwise shows the first window.
     static func displayWindow(
-        from windows: [ProviderQuotaWindow],
+        for source: ProviderQuotaWidgetSource,
         basis: ProviderQuotaWidgetColorBasis,
         selection: ProviderQuotaWidgetWindowSelection = .automatic
     ) -> ProviderQuotaWindow? {
-        switch selection {
-        case .session:
-            return windows.first(where: { $0.label.localizedCaseInsensitiveContains("session") })
-                ?? windows.first(where: { $0.label.localizedCaseInsensitiveContains("5h") })
-        case .weekly:
-            return windows.first(where: { $0.label.localizedCaseInsensitiveContains("week") })
-        case .automatic:
-            if basis == .pace {
-                return windows.first(where: { $0.label.localizedCaseInsensitiveContains("week") })
-                    ?? windows.first(where: { isKnownPaceWindow($0) })
-            }
-            return windows.first
+        let index: Int? = switch selection {
+        case .session: source.sessionWindowIndex
+        case .weekly: source.weeklyWindowIndex
+        case .automatic: basis == .pace ? source.paceWindowIndex ?? 0 : 0
         }
-    }
-
-    static func pace(
-        for window: ProviderQuotaWindow?,
-        referenceDate: Date,
-        minimumElapsedHours: Int
-    ) -> ProviderQuotaPace? {
-        guard let window,
-              let resetAt = ProviderQuotaDateParser.date(from: window.resetAt),
-              resetAt > referenceDate,
-              let used = ProviderQuotaPresentation.usedPercent(window),
-              let remaining = ProviderQuotaPresentation.percent(window, mode: .remaining)
-        else { return nil }
-
-        let minutesToReset = max(0, (resetAt.timeIntervalSince(referenceDate) / 60).rounded())
-        guard let windowMinutes = windowMinutes(for: window, minutesToReset: minutesToReset) else {
-            return nil
-        }
-        let elapsedMinutes = max(0, Double(windowMinutes) - minutesToReset)
-        let expectedRemaining = rounded(
-            min(max(minutesToReset / Double(windowMinutes) * 100, 0), 100),
-            digits: 1
-        )
-        let paceDelta = rounded(remaining - expectedRemaining, digits: 1)
-        let expectedUsed = rounded(100 - expectedRemaining, digits: 1)
-        let burnRate = expectedUsed > 0 ? rounded(used / expectedUsed, digits: 2) : 0
-        let usagePerMinute = elapsedMinutes > 0 ? used / elapsedMinutes : 0
-        let projectedMinutesToEmpty = usagePerMinute > 0 ? (remaining / usagePerMinute).rounded() : nil
-        let projectionEligible = elapsedMinutes >= Double(max(0, minimumElapsedHours) * 60)
-            && used >= 5
-            && minutesToReset > 20
-            && (projectedMinutesToEmpty ?? .infinity) < minutesToReset
-        return ProviderQuotaPace(
-            expectedRemainingPercent: expectedRemaining,
-            paceDeltaPercent: paceDelta,
-            burnRate: burnRate,
-            minutesToReset: minutesToReset,
-            projectedMinutesToEmpty: projectedMinutesToEmpty,
-            projectionEligible: projectionEligible
-        )
+        guard let index, source.windows.indices.contains(index) else { return nil }
+        return source.windows[index]
     }
 
     static func urgency(
-        windows: [ProviderQuotaWindow],
+        window: ProviderQuotaWindow?,
+        pace: ProviderQuotaWindowPace?,
         status: String,
         isStale: Bool,
-        referenceDate: Date = Date(),
         basis: ProviderQuotaWidgetColorBasis,
         warningRemainingPercent: Int,
         criticalRemainingPercent: Int,
         paceTolerancePercent: Int,
         paceWarningBurnRatePercent: Int,
         paceCriticalBurnRatePercent: Int,
-        paceMinimumElapsedHours: Int,
-        windowSelection: ProviderQuotaWidgetWindowSelection = .automatic
+        paceMinimumElapsedHours: Int
     ) -> ProviderQuotaUrgency {
         if isStale { return .stale }
         guard status == "available",
-              let window = displayWindow(from: windows, basis: basis, selection: windowSelection),
+              let window,
               let remaining = ProviderQuotaPresentation.percent(window, mode: .remaining)
         else {
             return status == "available" ? .healthy : .unavailable
         }
 
-        if basis == .pace,
-           let pace = pace(for: window, referenceDate: referenceDate, minimumElapsedHours: paceMinimumElapsedHours) {
-            if pace.projectionEligible && pace.burnRate >= Double(max(0, paceCriticalBurnRatePercent)) / 100 {
+        if basis == .pace, let pace {
+            let projectionEligible = projectionEligible(
+                pace,
+                usedPercent: 100 - remaining,
+                minimumElapsedHours: paceMinimumElapsedHours
+            )
+            if projectionEligible && pace.burnRate >= Double(max(0, paceCriticalBurnRatePercent)) / 100 {
                 return .critical
             }
-            if pace.projectionEligible && pace.burnRate >= Double(max(0, paceWarningBurnRatePercent)) / 100 {
+            if projectionEligible && pace.burnRate >= Double(max(0, paceWarningBurnRatePercent)) / 100 {
                 return .warning
             }
             return pace.paceDeltaPercent <= -Double(max(0, paceTolerancePercent)) ? .warning : .healthy
@@ -174,30 +121,15 @@ enum ProviderQuotaUrgencyCalculator {
         return .healthy
     }
 
-    private static func rounded(_ value: Double, digits: Int) -> Double {
-        let scale = pow(10, Double(digits))
-        return (value * scale).rounded() / scale
-    }
-
-    private static func isKnownPaceWindow(_ window: ProviderQuotaWindow) -> Bool {
-        window.windowSeconds == 18_000
-            || window.windowSeconds == 604_800
-            || window.label.localizedCaseInsensitiveContains("week")
-            || window.label.localizedCaseInsensitiveContains("session")
-            || window.label.localizedCaseInsensitiveContains("5h")
-    }
-
-    private static func windowMinutes(for window: ProviderQuotaWindow, minutesToReset: Double) -> Int? {
-        if let seconds = window.windowSeconds {
-            if seconds == 18_000 { return 5 * 60 }
-            if seconds == 604_800 { return 7 * 24 * 60 }
-            return nil
-        }
-        if window.label.localizedCaseInsensitiveContains("week") { return 7 * 24 * 60 }
-        if window.label.localizedCaseInsensitiveContains("5h") { return 5 * 60 }
-        if window.label.localizedCaseInsensitiveContains("session") {
-            return minutesToReset > 5 * 60 ? 7 * 24 * 60 : 5 * 60
-        }
-        return nil
+    // TAL-411 moves this threshold and the urgency above to the server.
+    private static func projectionEligible(
+        _ pace: ProviderQuotaWindowPace,
+        usedPercent: Double,
+        minimumElapsedHours: Int
+    ) -> Bool {
+        pace.elapsedMinutes >= Double(max(0, minimumElapsedHours) * 60)
+            && usedPercent >= 5
+            && pace.minutesToReset > 20
+            && (pace.projectedMinutesToEmpty ?? .infinity) < pace.minutesToReset
     }
 }

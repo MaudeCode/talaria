@@ -338,7 +338,10 @@ private struct ProviderQuotaWidgetDebugFixtureView: View {
                 ProviderQuotaWindow(label: "Weekly", usedPercent: min(used + 12, 100), remainingPercent: max(88 - used, 0)),
             ],
             retryAfter: nil,
-            fetchedAt: ISO8601DateFormatter().string(from: Date())
+            fetchedAt: ISO8601DateFormatter().string(from: Date()),
+            paceWindowIndex: 1,
+            sessionWindowIndex: 0,
+            weeklyWindowIndex: 1
         )
     }
 }

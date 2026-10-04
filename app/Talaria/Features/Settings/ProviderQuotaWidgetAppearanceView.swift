@@ -654,6 +654,14 @@ struct ProviderQuotaWidgetAppearanceView: View {
         case .critical: 90
         case .unavailable: 0
         }
+        // Server-shaped sample pace for the weekly window at each preview state.
+        let sample: (paceDelta: Double, burnRate: Double, budget: Double, outcome: ProviderQuotaWindowForecast.Outcome) =
+            switch previewState {
+            case .healthy, .stale: (-1.1, 1.09, 14.1, .safe)
+            case .warning: (-28.1, 3.36, 9.7, .warning)
+            case .critical: (-78.1, 7.56, 1.6, .warning)
+            case .unavailable: (11.9, 0, 16.2, .safe)
+            }
         let now = Date()
         let windows = [
             ProviderQuotaWindow(
@@ -672,6 +680,22 @@ struct ProviderQuotaWidgetAppearanceView: View {
                 remainingPercent: 100 - usedPercent,
                 resetAt: ISO8601DateFormatter().string(
                     from: now.addingTimeInterval((6 * 24 + 4) * 60 * 60)
+                ),
+                pace: ProviderQuotaWindowPace(
+                    expectedRemainingPercent: 88.1,
+                    paceDeltaPercent: sample.paceDelta,
+                    burnRate: sample.burnRate,
+                    minutesToReset: 8_880,
+                    elapsedMinutes: 1_200,
+                    validUntil: ISO8601DateFormatter().string(
+                        from: now.addingTimeInterval((6 * 24 + 4) * 60 * 60)
+                    )
+                ),
+                forecast: ProviderQuotaWindowForecast(
+                    outcome: sample.outcome,
+                    budgetUnit: .day,
+                    budgetPercent: sample.budget,
+                    depletionMarginMinutes: sample.outcome == .warning ? -2_880 : nil
                 )
             ),
             ProviderQuotaWindow(
@@ -696,7 +720,10 @@ struct ProviderQuotaWidgetAppearanceView: View {
             plan: "Pro",
             windows: previewState == .unavailable ? [] : Array(windows.prefix(windowCount)),
             retryAfter: nil,
-            fetchedAt: nil
+            fetchedAt: nil,
+            paceWindowIndex: windowCount > 1 ? 1 : 0,
+            sessionWindowIndex: 0,
+            weeklyWindowIndex: windowCount > 1 ? 1 : nil
         )
     }
 

@@ -19,6 +19,11 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
     public let quota: ProviderQuotaAmount?
     public let retryAfter: String?
     public let fetchedAt: String?
+    // Optional so a v1 snapshot written before TAL-409 still decodes.
+    public let paceWindowIndex: Int?
+    public let sessionWindowIndex: Int?
+    public let weeklyWindowIndex: Int?
+    public let computedAt: String?
 
     public init(
         sourceID: String,
@@ -34,7 +39,11 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
         windows: [ProviderQuotaWindow],
         quota: ProviderQuotaAmount? = nil,
         retryAfter: String?,
-        fetchedAt: String?
+        fetchedAt: String?,
+        paceWindowIndex: Int? = nil,
+        sessionWindowIndex: Int? = nil,
+        weeklyWindowIndex: Int? = nil,
+        computedAt: String? = nil
     ) {
         self.sourceID = sourceID
         self.scopeID = scopeID
@@ -50,6 +59,10 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
         self.quota = quota
         self.retryAfter = retryAfter
         self.fetchedAt = fetchedAt
+        self.paceWindowIndex = paceWindowIndex
+        self.sessionWindowIndex = sessionWindowIndex
+        self.weeklyWindowIndex = weeklyWindowIndex
+        self.computedAt = computedAt
     }
 
     public init(_ source: ProviderQuotaSource, scopeID: String, scopeLabel: String) {
@@ -66,7 +79,11 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
             windows: source.windows,
             quota: source.quota,
             retryAfter: source.retryAfter,
-            fetchedAt: source.fetchedAt
+            fetchedAt: source.fetchedAt,
+            paceWindowIndex: source.paceWindowIndex,
+            sessionWindowIndex: source.sessionWindowIndex,
+            weeklyWindowIndex: source.weeklyWindowIndex,
+            computedAt: source.computedAt
         )
     }
 
@@ -85,7 +102,11 @@ public struct ProviderQuotaWidgetSource: Codable, Equatable, Identifiable, Senda
             windows: windows,
             quota: quota,
             retryAfter: retryAfter,
-            fetchedAt: fetchedAt
+            fetchedAt: fetchedAt,
+            paceWindowIndex: paceWindowIndex,
+            sessionWindowIndex: sessionWindowIndex,
+            weeklyWindowIndex: weeklyWindowIndex,
+            computedAt: computedAt
         )
     }
 }

@@ -12,9 +12,12 @@ public struct ProviderQuotasResponse: Codable, Equatable, Sendable {
     let requestedSourceID: String?
     public let missingSource: Bool
     public let sources: [ProviderQuotaSource]
+    /// Server reference time of every window's `pace`; each source carries it too.
+    public let computedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case version
+        case computedAt
         case scopeID = "scopeId"
         case profileID = "profileId"
         case activeProvider
@@ -31,8 +34,15 @@ public struct ProviderQuotasResponse: Codable, Equatable, Sendable {
         activeProvider = container.decodeQuotaStringIfPresent(forKey: .activeProvider)
         requestedSourceID = container.decodeQuotaStringIfPresent(forKey: .requestedSourceID)
         missingSource = container.decodeQuotaBoolIfPresent(forKey: .missingSource) ?? false
+        let computedAt = container.decodeQuotaStringIfPresent(forKey: .computedAt)
+        self.computedAt = computedAt
         sources = ((try? container.decodeIfPresent([ProviderQuotaSource].self, forKey: .sources)) ?? [])
             .filter { !$0.id.isEmpty }
+            .map { source in
+                var source = source
+                source.computedAt = source.computedAt ?? computedAt
+                return source
+            }
     }
 }
 
@@ -52,6 +62,12 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
     public let retryAfter: String?
     public let fetchedAt: String?
     public let message: String?
+    /// Windows the server selected for pace, session, and weekly displays.
+    public let paceWindowIndex: Int?
+    public let sessionWindowIndex: Int?
+    public let weeklyWindowIndex: Int?
+    /// The response's `computed_at`, kept per source because targeted refreshes merge sources.
+    public internal(set) var computedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id = "sourceId"
@@ -69,6 +85,10 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
         case retryAfter
         case fetchedAt
         case message
+        case paceWindowIndex
+        case sessionWindowIndex
+        case weeklyWindowIndex
+        case computedAt
     }
 
     public init(
@@ -86,7 +106,11 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
         unavailableReason: String? = nil,
         retryAfter: String? = nil,
         fetchedAt: String? = nil,
-        message: String? = nil
+        message: String? = nil,
+        paceWindowIndex: Int? = nil,
+        sessionWindowIndex: Int? = nil,
+        weeklyWindowIndex: Int? = nil,
+        computedAt: String? = nil
     ) {
         self.id = id
         self.providerID = providerID
@@ -103,6 +127,10 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
         self.retryAfter = retryAfter
         self.fetchedAt = fetchedAt
         self.message = message
+        self.paceWindowIndex = paceWindowIndex
+        self.sessionWindowIndex = sessionWindowIndex
+        self.weeklyWindowIndex = weeklyWindowIndex
+        self.computedAt = computedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -122,6 +150,10 @@ public struct ProviderQuotaSource: Codable, Equatable, Identifiable, Sendable {
         retryAfter = container.decodeQuotaStringIfPresent(forKey: .retryAfter)
         fetchedAt = container.decodeQuotaStringIfPresent(forKey: .fetchedAt)
         message = container.decodeQuotaStringIfPresent(forKey: .message)
+        paceWindowIndex = container.decodeQuotaIntIfPresent(forKey: .paceWindowIndex)
+        sessionWindowIndex = container.decodeQuotaIntIfPresent(forKey: .sessionWindowIndex)
+        weeklyWindowIndex = container.decodeQuotaIntIfPresent(forKey: .weeklyWindowIndex)
+        computedAt = container.decodeQuotaStringIfPresent(forKey: .computedAt)
     }
 }
 
@@ -132,6 +164,8 @@ public struct ProviderQuotaWindow: Codable, Equatable, Sendable {
     public let remainingPercent: Double?
     public let resetAt: String?
     public let detail: String?
+    public let pace: ProviderQuotaWindowPace?
+    public let forecast: ProviderQuotaWindowForecast?
 
     enum CodingKeys: String, CodingKey {
         case label
@@ -140,6 +174,8 @@ public struct ProviderQuotaWindow: Codable, Equatable, Sendable {
         case remainingPercent
         case resetAt
         case detail
+        case pace
+        case forecast
     }
 
     public init(
@@ -148,7 +184,9 @@ public struct ProviderQuotaWindow: Codable, Equatable, Sendable {
         usedPercent: Double? = nil,
         remainingPercent: Double? = nil,
         resetAt: String? = nil,
-        detail: String? = nil
+        detail: String? = nil,
+        pace: ProviderQuotaWindowPace? = nil,
+        forecast: ProviderQuotaWindowForecast? = nil
     ) {
         self.label = label
         self.windowSeconds = windowSeconds
@@ -156,6 +194,8 @@ public struct ProviderQuotaWindow: Codable, Equatable, Sendable {
         self.remainingPercent = remainingPercent
         self.resetAt = resetAt
         self.detail = detail
+        self.pace = pace
+        self.forecast = forecast
     }
 
     public init(from decoder: Decoder) throws {
@@ -166,6 +206,69 @@ public struct ProviderQuotaWindow: Codable, Equatable, Sendable {
         remainingPercent = container.decodeQuotaDoubleIfPresent(forKey: .remainingPercent)
         resetAt = container.decodeQuotaStringIfPresent(forKey: .resetAt)
         detail = container.decodeQuotaStringIfPresent(forKey: .detail)
+        pace = try? container.decodeIfPresent(ProviderQuotaWindowPace.self, forKey: .pace)
+        forecast = try? container.decodeIfPresent(ProviderQuotaWindowForecast.self, forKey: .forecast)
+    }
+}
+
+/// Server-computed pace of one window, as of the source's `computedAt`.
+public struct ProviderQuotaWindowPace: Codable, Equatable, Sendable {
+    public let expectedRemainingPercent: Double
+    public let paceDeltaPercent: Double
+    public let burnRate: Double
+    public let minutesToReset: Double
+    public let projectedMinutesToEmpty: Double?
+    public let elapsedMinutes: Double
+    /// The window's reset; a cached pace past it describes the previous window.
+    public let validUntil: String?
+
+    public init(
+        expectedRemainingPercent: Double,
+        paceDeltaPercent: Double,
+        burnRate: Double,
+        minutesToReset: Double,
+        projectedMinutesToEmpty: Double? = nil,
+        elapsedMinutes: Double,
+        validUntil: String? = nil
+    ) {
+        self.expectedRemainingPercent = expectedRemainingPercent
+        self.paceDeltaPercent = paceDeltaPercent
+        self.burnRate = burnRate
+        self.minutesToReset = minutesToReset
+        self.projectedMinutesToEmpty = projectedMinutesToEmpty
+        self.elapsedMinutes = elapsedMinutes
+        self.validUntil = validUntil
+    }
+
+    public func isValid(at date: Date) -> Bool {
+        guard let validUntil = ProviderQuotaDateParser.date(from: validUntil) else { return false }
+        return date < validUntil
+    }
+}
+
+/// Server-computed forecast of one window: the budget until reset and whether it lasts.
+public struct ProviderQuotaWindowForecast: Codable, Equatable, Sendable {
+    public enum Outcome: String, Codable, Sendable {
+        case safe
+        case warning
+    }
+
+    public enum BudgetUnit: String, Codable, Sendable {
+        case hour
+        case day
+    }
+
+    public let outcome: Outcome
+    public let budgetUnit: BudgetUnit
+    public let budgetPercent: Double?
+    /// Projected empty minus reset; negative empties early, nil when no depletion is projected.
+    public let depletionMarginMinutes: Double?
+
+    public init(outcome: Outcome, budgetUnit: BudgetUnit, budgetPercent: Double? = nil, depletionMarginMinutes: Double? = nil) {
+        self.outcome = outcome
+        self.budgetUnit = budgetUnit
+        self.budgetPercent = budgetPercent
+        self.depletionMarginMinutes = depletionMarginMinutes
     }
 }
 

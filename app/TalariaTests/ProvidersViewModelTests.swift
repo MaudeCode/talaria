@@ -521,6 +521,64 @@ final class ProvidersViewModelTests: APIClientTestCase {
     }
 
     @MainActor
+    func testFailedQuotaRefreshKeepsCachedServerPaceAndAFreshModelSeedsIt() async throws {
+        let suite = "ProvidersViewModelPaceCache.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
+        var serverUp = true
+        let client = makeScopedClient { request in
+            guard serverUp else {
+                return (HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)!, Data())
+            }
+            return apiTestJSONResponse("""
+            {
+              "version": 1,
+              "computed_at": "2026-09-28T08:00:00Z",
+              "scope_id": "qscope_pace",
+              "profile_id": "default",
+              "sources": [{
+                "source_id": "qsrc_pace",
+                "provider_id": "anthropic",
+                "provider_label": "Claude",
+                "account_label": "Claude",
+                "status": "available",
+                "supported": true,
+                "pace_window_index": 0,
+                "session_window_index": null,
+                "weekly_window_index": 0,
+                "windows": [{
+                  "label": "Weekly", "used_percent": 32, "remaining_percent": 68, "reset_at": "2026-10-03T08:00:00Z",
+                  "window_seconds": 604800, "detail": null,
+                  "pace": { "expected_remaining_percent": 71.4, "pace_delta_percent": -3.4, "burn_rate": 1.12, "minutes_to_reset": 7200,
+                            "projected_minutes_to_empty": 6120, "elapsed_minutes": 2880, "valid_until": "2026-10-03T08:00:00Z" },
+                  "forecast": { "outcome": "warning", "budget_unit": "day", "budget_percent": 13.6, "depletion_margin_minutes": -1080 }
+                }]
+              }]
+            }
+            """, for: request)
+        }
+        let model = ProvidersViewModel(server: Self.serverURL, client: client, quotaSnapshotStore: store, reloadQuotaWidgets: {})
+
+        await model.loadQuotas()
+        let loaded = try XCTUnwrap(model.quotaSources.first)
+        XCTAssertEqual(loaded.windows.first?.pace?.burnRate, 1.12)
+        let saved = try XCTUnwrap(store.load())
+
+        serverUp = false
+        await model.loadQuotas(refresh: true)
+
+        XCTAssertEqual(model.quotaSources, [loaded], "a failed refresh keeps the cached server pace")
+        XCTAssertEqual(store.load(), saved, "a failed refresh never rewrites the snapshot")
+
+        let relaunched = ProvidersViewModel(server: Self.serverURL, client: client, quotaSnapshotStore: store, reloadQuotaWidgets: {})
+        let seeded = try XCTUnwrap(relaunched.quotaSources.first)
+        XCTAssertEqual(seeded.windows, loaded.windows)
+        XCTAssertEqual(seeded.paceWindowIndex, 0)
+        XCTAssertEqual(seeded.computedAt, "2026-09-28T08:00:00Z")
+    }
+
+    @MainActor
     func testCancelledQuotaLoadCannotRestoreClearedWidgetSnapshot() async throws {
         let requestArrived = expectation(description: "quota request arrived")
         let requests = DeferredRequests()

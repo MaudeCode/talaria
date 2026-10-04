@@ -29,7 +29,7 @@ enum ProviderQuotaPresentation {
         windowOverride: ProviderQuotaWindow? = nil
     ) -> ProviderQuotaPresentationState {
         let window = windowOverride ?? ProviderQuotaUrgencyCalculator.displayWindow(
-            from: source.windows,
+            for: source,
             basis: settings.colorBasis,
             selection: settings.windowSelection
         )
@@ -44,25 +44,21 @@ enum ProviderQuotaPresentation {
             ?? usedFromQuota.map { settings.percentageMode == .used ? $0 : 100 - $0 }
         let remaining = window.flatMap { percent($0, mode: .remaining) }
             ?? usedFromQuota.map { 100 - $0 }
-        let pace = ProviderQuotaUrgencyCalculator.pace(
-            for: window,
-            referenceDate: referenceDate,
-            minimumElapsedHours: settings.paceMinimumElapsedHours
-        )
+        // A cached pace past its window's reset describes the previous window.
+        let pace = window?.pace.flatMap { $0.isValid(at: referenceDate) ? $0 : nil }
         let isStale = referenceDate.timeIntervalSince(source.freshnessDate) > ProviderQuotaWidgetSnapshot.staleAfter
         let urgency = ProviderQuotaUrgencyCalculator.urgency(
-            windows: windowOverride.map { [$0] } ?? source.windows,
+            window: window,
+            pace: pace,
             status: source.status,
             isStale: isStale,
-            referenceDate: referenceDate,
             basis: settings.colorBasis,
             warningRemainingPercent: settings.warningRemainingPercent,
             criticalRemainingPercent: settings.criticalRemainingPercent,
             paceTolerancePercent: settings.paceTolerancePercent,
             paceWarningBurnRatePercent: settings.paceWarningBurnRatePercent,
             paceCriticalBurnRatePercent: settings.paceCriticalBurnRatePercent,
-            paceMinimumElapsedHours: settings.paceMinimumElapsedHours,
-            windowSelection: windowOverride == nil ? settings.windowSelection : .automatic
+            paceMinimumElapsedHours: settings.paceMinimumElapsedHours
         )
         return ProviderQuotaPresentationState(
             window: window,
@@ -74,7 +70,10 @@ enum ProviderQuotaPresentation {
             isStale: isStale,
             pace: pace,
             urgency: urgency,
-            settings: settings
+            settings: settings,
+            forecast: pace == nil ? nil : window?.forecast,
+            paceNeedsRefresh: window?.pace != nil && pace == nil,
+            computedAt: ProviderQuotaDateParser.date(from: source.computedAt)
         )
     }
 

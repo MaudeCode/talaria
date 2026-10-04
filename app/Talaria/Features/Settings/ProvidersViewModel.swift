@@ -276,7 +276,11 @@ final class ProvidersViewModel {
             windows: source.windows,
             quota: source.quota,
             retryAfter: source.retryAfter,
-            fetchedAt: source.fetchedAt
+            fetchedAt: source.fetchedAt,
+            paceWindowIndex: source.paceWindowIndex,
+            sessionWindowIndex: source.sessionWindowIndex,
+            weeklyWindowIndex: source.weeklyWindowIndex,
+            computedAt: source.computedAt
         )
     }
 

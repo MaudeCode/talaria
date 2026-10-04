@@ -1,6 +1,7 @@
 {
   "body": {
     "active_provider": null,
+    "computed_at": "2026-09-28T08:00:00Z",
     "missing_source": false,
     "profile_id": "default",
     "requested_source_id": null,

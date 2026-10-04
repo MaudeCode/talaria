@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
-import type { SidecarResult } from '@maudecode/talaria-web-contracts'
+import { ProviderQuotaSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { loadEnvFile, writeEnvFile } from '../providers/env-file.js'
 import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel, uniqueQuotaSources } from '../providers/catalog.js'
@@ -868,6 +868,64 @@ async function csrfFor(s: TestServer, cookie: string): Promise<string> {
   const token = ((await res.json()) as Json).csrf_token
   return typeof token === 'string' ? token : ''
 }
+
+describe('provider quota windows carry server-computed pace (TAL-409)', () => {
+  const NOW = Date.parse('2026-09-28T08:00:00Z') / 1000
+  const FIXTURE = join(import.meta.dirname, '../../../../../contracts/fixtures/provider-quotas.json')
+  let s: TestServer
+  beforeAll(async () => {
+    const sidecar = new FakeSidecar()
+    s = await bootTestServer({ sidecar, now: () => NOW })
+    const configs = fakeConfigStore(sidecar)
+    writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
+    configs.set(s.state, { model: { default: 'claude-sonnet-4-6', provider: 'anthropic' }, providers: { anthropic: { api_key: 'sk-ant-api03-synthetic-quota-test-key' } } })
+    writeFileSync(join(s.state, '.quota_scope_id'), `${'0'.repeat(31)}1\n`)
+    sidecar.respond('providers.model_ids', (params) => ({ provider: params.provider, model_ids: [] }))
+    sidecar.respond('providers.auth_status', (params) => ({ status: { logged_in: false, provider: params.provider ?? '', error: 'not logged in' } }))
+    // The pre-TAL-409 sidecar's `str(datetime)` form, a blank-label window, a 5h session, a weekly and a monthly window.
+    sidecar.respond('usage.account', (params) => ({ snapshot: { provider: params.provider, available: true, title: 'Claude limits', plan: 'max', fetched_at: '2026-09-28 07:59:30+00:00', details: [], windows: [
+      { label: '  ', used_percent: 50, reset_at: '2026-09-28 09:00:00+00:00' },
+      { label: ' Session ', used_percent: 10, reset_at: '2026-09-28 12:00:00+00:00', detail: null },
+      { label: 'Weekly', used_percent: 32, reset_at: '2026-10-03 08:00:00+00:00' },
+      { label: 'Monthly', used_percent: 5, reset_at: '2026-10-15T00:00:00Z' },
+    ] } }))
+  })
+  afterAll(() => s.close())
+
+  const session = {
+    label: 'Session', used_percent: 10, remaining_percent: 90, reset_at: '2026-09-28T12:00:00Z', detail: null, window_seconds: 18_000,
+    pace: { expected_remaining_percent: 80, pace_delta_percent: 10, burn_rate: 0.5, minutes_to_reset: 240, projected_minutes_to_empty: 540, elapsed_minutes: 60, valid_until: '2026-09-28T12:00:00Z' },
+    forecast: { outcome: 'safe', budget_unit: 'hour', budget_percent: 22.5, depletion_margin_minutes: 300 },
+  }
+  const weekly = {
+    label: 'Weekly', used_percent: 32, remaining_percent: 68, reset_at: '2026-10-03T08:00:00Z', detail: null, window_seconds: 604_800,
+    pace: { expected_remaining_percent: 71.4, pace_delta_percent: -3.4, burn_rate: 1.12, minutes_to_reset: 7200, projected_minutes_to_empty: 6120, elapsed_minutes: 2880, valid_until: '2026-10-03T08:00:00Z' },
+    forecast: { outcome: 'warning', budget_unit: 'day', budget_percent: 13.6, depletion_margin_minutes: -1080 },
+  }
+  const monthly = { label: 'Monthly', used_percent: 5, remaining_percent: 95, reset_at: '2026-10-15T00:00:00Z', detail: null, window_seconds: null, pace: null, forecast: null }
+
+  it('both quota endpoints normalise windows and ship pace, forecast, window indexes and computed_at', async () => {
+    const quotas = await json(await s.get('/api/provider/quotas'))
+    const anthropic = (quotas.sources as Json[]).find((q) => q.provider_id === 'anthropic')
+    expect(anthropic?.windows).toEqual([session, weekly, monthly])
+    expect(anthropic).toMatchObject({ pace_window_index: 1, session_window_index: 0, weekly_window_index: 1, fetched_at: '2026-09-28T07:59:30Z' })
+    expect(quotas.computed_at).toBe('2026-09-28T08:00:00Z')
+
+    const quota = await json(await s.get('/api/provider/quota?provider=anthropic'))
+    expect(quota.computed_at).toBe('2026-09-28T08:00:00Z')
+    expect(quota.account_limits).toMatchObject({ windows: [session, weekly, monthly], pace_window_index: 1, session_window_index: 0, weekly_window_index: 1 })
+    // Every branch of the singular route answers its contract: account usage, a keyless OpenRouter, an unsupported provider.
+    for (const provider of ['anthropic', 'openrouter', 'zai']) {
+      const res = await s.get(`/api/provider/quota?provider=${provider}`)
+      expect(res.status).toBe(200)
+      expect(ProviderQuotaSchema.safeParse(await res.json()).success).toBe(true)
+    }
+
+    // The shared fixture the App and Web decode is this exact response (`RECORD_TAL409=1` rewrites it).
+    if (process.env.RECORD_TAL409) writeFileSync(FIXTURE, `${JSON.stringify(quotas, null, 2)}\n`)
+    expect(quotas).toEqual(JSON.parse(readFileSync(FIXTURE, 'utf8')))
+  })
+})
 
 describe('env file writer', () => {
   it('preserves comments and order, removes keys, appends new ones, and refuses newlines', () => {

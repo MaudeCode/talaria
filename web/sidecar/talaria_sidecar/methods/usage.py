@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from datetime import date, datetime, timezone
 from typing import Any
 
 from ..errors import InvalidParams, RpcError
@@ -22,6 +23,10 @@ def _plain(value: Any) -> Any:
         return [_plain(v) for v in value]
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    if isinstance(value, date):
+        return value.isoformat()
     if hasattr(value, "__dict__"):
         return {k: _plain(v) for k, v in vars(value).items() if not k.startswith("_")}
     return str(value)

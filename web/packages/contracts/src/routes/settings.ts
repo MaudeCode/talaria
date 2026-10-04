@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { SettingsSchema, ReasoningStatusSchema, PersonalitiesSchema, ModelsSchema, ProvidersSchema, ProfileSchema, ProfilesSchema, ActiveProfileSchema, ProfileSwitchSchema, AuxiliaryModelsSchema, ProviderQuotasSchema, OnboardingStatusSchema, OnboardingProbeSchema, OnboardingOAuthSchema } from '../views.js'
+import { SettingsSchema, ReasoningStatusSchema, PersonalitiesSchema, ModelsSchema, ProvidersSchema, ProfileSchema, ProfilesSchema, ActiveProfileSchema, ProfileSwitchSchema, AuxiliaryModelsSchema, ProviderQuotaSchema, ProviderQuotasSchema, OnboardingStatusSchema, OnboardingProbeSchema, OnboardingOAuthSchema } from '../views.js'
 
 /** Settings, profiles, models, providers, reasoning, personalities, and onboarding. */
 
@@ -38,7 +38,7 @@ export const settingsContract = {
     setKey: oc.route({ method: 'POST', path: '/api/providers', tags, summary: 'Write (or clear when api_key is empty) a provider API key in the profile .env.' }).input(z.object({ provider: z.string().optional(), api_key: z.string().nullable().optional() })).output(z.object({ ok: z.literal(true), provider: z.string(), display_name: z.string(), action: z.string() })),
     delete: oc.route({ method: 'POST', path: '/api/providers/delete', tags }).input(z.object({ provider: z.string().optional() })).output(z.object({ ok: z.literal(true), provider: z.string(), display_name: z.string(), action: z.string() })),
     selfHosted: oc.route({ method: 'POST', path: '/api/providers/self-hosted', tags }).input(Loose).output(Loose),
-    quota: oc.route({ method: 'GET', path: '/api/provider/quota', tags }).input(z.object({ provider: z.string().optional(), refresh: z.string().optional() })).output(Loose),
+    quota: oc.route({ method: 'GET', path: '/api/provider/quota', tags }).input(z.object({ provider: z.string().optional(), refresh: z.string().optional() })).output(ProviderQuotaSchema),
     quotas: oc.route({ method: 'GET', path: '/api/provider/quotas', tags }).input(z.object({ source: z.string().optional(), refresh: z.string().optional() })).output(ProviderQuotasSchema),
     costHistory: oc.route({ method: 'GET', path: '/api/provider/cost-history', tags }).input(z.object({ provider: z.string().optional(), days: z.string().optional() })).output(z.looseObject({ history: z.array(Json).optional(), days: z.array(Json).optional() })),
   },
