@@ -157,7 +157,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   }
   const sidecar = opts.sidecar ?? null
   const agentConfig = new AgentConfig({ sidecar: () => sidecar, env })
-  /** A profile's config.yaml `model` as [bare model, provider]; '' / null when unset or not yet read. */
+  /** A profile's config.yaml `model` as [model, provider] as written; '' / null when unset or not yet read. */
   const profileDefaultModel = (profile: string | null): [string, string | null] => {
     const cfg = agentConfig.peek(profileHome(profile ?? activeProfile()))
     if (typeof cfg?.model === 'string') return [cfg.model.trim(), null]
@@ -193,7 +193,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     events,
     // Python `_profile_default_model_state`: the profile's own config.yaml model, else the global default.
     defaults: (profile) => {
-      const [model, modelProvider] = profileDefaultModel(profile)
+      const [configured, configuredProvider] = profileDefaultModel(profile)
+      const [model, modelProvider] = parseProviderQualifiedModel(configured) ?? [configured, configuredProvider]
       const s = settings.load()
       return { workspace: workspaces.lastWorkspace(profile), model: model || (typeof s.default_model === 'string' && s.default_model ? s.default_model : null), modelProvider }
     },

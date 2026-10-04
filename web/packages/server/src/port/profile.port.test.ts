@@ -876,6 +876,21 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     }
   })
 
+  it('an explicit profile other than the cookie starts on its own config default, even uncached', async () => {
+    const researchHome = join(s.state, 'profiles', 'research')
+    configs.set(researchHome, { model: '@anthropic:research-model' })
+    writeFileSync(join(researchHome, 'config.yaml'), '# research qualified model\n')
+    try {
+      const res = await post(s, '/api/session/new', { profile: 'research' }, asWork())
+      expect(res.status, await res.clone().text()).toBe(200)
+      const sid = String(((await json(res)).session as Json).session_id)
+      expect(s.deps.sessionStore.get(sid)).toMatchObject({ profile: 'research', model: 'research-model', model_provider: 'anthropic' })
+    } finally {
+      configs.delete(researchHome)
+      writeFileSync(join(researchHome, 'config.yaml'), '# seed\n')
+    }
+  })
+
   it('an explicit provider argument beats the parsed hint', () => {
     expect(splitProviderModel('@ollama:qwen3.8:27b-mtp-q8_0', 'anthropic')).toEqual(['qwen3.8:27b-mtp-q8_0', 'anthropic'])
   })
