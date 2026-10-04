@@ -688,6 +688,22 @@ extension SessionSummary {
     }
 }
 
+public extension Array where Element == SessionSummary {
+    /// The rows in display order. A server that ships `sort_ts` sends its canonical order, which
+    /// the list keeps (TAL-306). An older server's order is not pinned-first, so its rows keep the
+    /// previous pinned-first, newest-first sort; delete this fallback once every supported server
+    /// ships `sort_ts`.
+    var inDisplayOrder: [SessionSummary] {
+        guard !contains(where: { $0.sortTs != nil }) else { return self }
+        return sorted { left, right in
+            if (left.pinned == true) != (right.pinned == true) {
+                return left.pinned == true
+            }
+            return (left.sortTimestamp ?? 0) > (right.sortTimestamp ?? 0)
+        }
+    }
+}
+
 /// Which non-standard session kinds the session list should show. Webhooks,
 /// cron jobs, CLI imports, Claude Code imports, and delegated subagents are
 /// controlled independently. A row with unknown/missing source data remains visible.

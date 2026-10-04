@@ -84,8 +84,7 @@ struct ArchivedSessionsView: View {
                         .padding(.horizontal, 24)
                 } else {
                     VStack(spacing: 2) {
-                        // The server's canonical order (TAL-306); the client never re-sorts it.
-                        ForEach(viewModel.sessions) { session in
+                        ForEach(viewModel.sessions.inDisplayOrder) { session in
                             archivedSessionRow(for: session)
                         }
                     }

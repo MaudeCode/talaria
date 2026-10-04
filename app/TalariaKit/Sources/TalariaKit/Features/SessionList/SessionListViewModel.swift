@@ -167,16 +167,16 @@ public final class SessionListViewModel {
             guard let selectedProjectID else { return true }
             return session.projectId == selectedProjectID
         }
-        // The server's order is canonical (TAL-306); the list never re-sorts it.
+        // The server's order is canonical (TAL-306); `inDisplayOrder` re-sorts only an older server's rows.
         guard !query.isEmpty else {
-            return projectFilteredSessions
+            return projectFilteredSessions.inDisplayOrder
         }
 
         let titleMatches: (SessionSummary) -> Bool = { $0.title?.lowercased().contains(query) == true }
         guard activeRemoteSearch == RemoteSearchScope(query: query, projectID: selectedProjectID),
               let remoteSearchResults
         else {
-            return projectFilteredSessions.filter(titleMatches)
+            return projectFilteredSessions.filter(titleMatches).inDisplayOrder
         }
 
         guard remoteSearchIsFiltered else {
@@ -184,7 +184,7 @@ public final class SessionListViewModel {
             let remoteIDs = Set(remoteSearchResults.compactMap(\.sessionId))
             return projectFilteredSessions.filter { session in
                 titleMatches(session) || (session.archived != true && session.sessionId.map(remoteIDs.contains) == true)
-            }
+            }.inDisplayOrder
         }
 
         // The server's set and order (TAL-308), showing the loaded copy of a row so local edits stay current.

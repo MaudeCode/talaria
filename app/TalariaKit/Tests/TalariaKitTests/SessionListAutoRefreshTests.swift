@@ -234,6 +234,18 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertEqual(shown.map(\.sortTimestamp), rows.map { $0["sort_ts"] as? Double })
     }
 
+    /// An older server ships no `sort_ts` and may list a running chat above pinned ones, so its rows keep
+    /// the previous pinned-first, newest-first order.
+    func testListFromAnOlderServerStaysPinnedFirst() async throws {
+        let body = #"{"sessions":[{"session_id":"running","title":"Running","is_streaming":true,"last_message_at":30},{"session_id":"old","title":"Old","last_message_at":10},{"session_id":"pinned","title":"Pinned","pinned":true,"last_message_at":20}]}"#
+        let viewModel = try makeViewModel(responses: SessionListResponses(bodies: [body]))
+        defer { MockURLProtocol.requestHandler = nil }
+
+        await viewModel.load()
+
+        XCTAssertEqual(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).compactMap(\.sessionId), ["pinned", "running", "old"])
+    }
+
     func testSortTimestampFallsBackToTheFieldChainOnAnOlderServer() {
         XCTAssertEqual(SessionSummary(lastMessageAt: 10, sortTs: 40).sortTimestamp, 40)
         XCTAssertEqual(SessionSummary(createdAt: 30, updatedAt: 20).sortTimestamp, 20)
