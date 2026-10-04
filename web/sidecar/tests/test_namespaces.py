@@ -178,6 +178,35 @@ def test_config_set_writes_through_a_symlinked_config(handshaken: SidecarProcess
     assert handshaken.result("config.get", {"profile_home": home, "config_path": str(link)})["config"]["max_tokens"] == 9
 
 
+def test_profile_reads_fail_closed_without_a_yaml_parser(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing parser is an error, never a profile that looks visible with every skill enabled."""
+    from talaria_sidecar.errors import RpcError
+    from talaria_sidecar.methods import profiles
+
+    monkeypatch.setitem(sys.modules, "hermes_yaml", None)
+    monkeypatch.setitem(sys.modules, "yaml", None)
+    assert profiles.disabled_skill_names(tmp_path) == set()  # absent files need no parser
+    (tmp_path / "config.yaml").write_text("skills:\n  disabled: [alpha]\nterminal:\n  cwd: /work\n", encoding="utf-8")
+    (tmp_path / "profile.yaml").write_text("visible: false\n", encoding="utf-8")
+    for read in (profiles.disabled_skill_names, profiles._visible, lambda home: profiles.runtime_env(home, set())):
+        with pytest.raises(RpcError) as error:
+            read(tmp_path)
+        assert error.value.data["condition"] == "yaml_unavailable"
+
+
+def test_yaml_parser_prefers_the_agent_module_and_falls_back_to_pyyaml(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from talaria_sidecar.methods.config import yaml_parser
+
+    agent_yaml, pyyaml = SimpleNamespace(name="hermes_yaml"), SimpleNamespace(name="yaml")
+    monkeypatch.setitem(sys.modules, "hermes_yaml", agent_yaml)
+    monkeypatch.setitem(sys.modules, "yaml", pyyaml)
+    assert yaml_parser() is agent_yaml
+    monkeypatch.setitem(sys.modules, "hermes_yaml", None)
+    assert yaml_parser() is pyyaml
+
+
 @requires_agent
 def test_stdout_is_reserved_for_rpc_frames(handshaken: SidecarProcess, hermes_home: pathlib.Path) -> None:
     """Agent code prints (profile deletion confirms on stdout); the channel must survive it."""

@@ -18,6 +18,7 @@ from pathlib import Path
 from ..errors import InvalidParams, RpcError
 from ..home import profile_home_param
 from ..rpc import CallContext
+from .config import yaml_parser
 
 log = logging.getLogger("talaria_sidecar.profiles")
 _PROFILE_ID_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
@@ -34,12 +35,12 @@ _TERMINAL_ENV = {
 
 
 def _yaml_load(path: Path):
-    try:
-        import yaml
-    except Exception:  # noqa: BLE001
+    """A YAML mapping, or None when the file is absent or malformed; a missing parser raises ``yaml_unavailable``."""
+    if not path.exists():
         return None
+    parser = yaml_parser()
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else None
+        data = parser.safe_load(path.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         return None
     return data if isinstance(data, dict) else None
