@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { BootstrapSchema, AuthStatusSchema, HealthSchema } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, cookieHeader, WEB_ROOT, type TestServer } from './test/harness.js'
 import { FakeSidecar } from './sidecar/fake.js'
@@ -292,6 +292,38 @@ describe('password auth', () => {
     expect(blocked.status).toBe(429)
     expect(await blocked.json()).toEqual({ error: 'Too many attempts. Try again in a minute.' })
     s.deps.auth.clearLoginAttempts('127.0.0.1')
+  })
+
+  it('counts concurrent failed logins before the password check finishes', async () => {
+    s.deps.auth.clearLoginAttempts('127.0.0.1')
+    const verify = vi.spyOn(s.deps.auth, 'verifyPassword')
+    const login = (password: string) => s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password }) })
+    try {
+      const statuses = (await Promise.all(Array.from({ length: 20 }, () => login('nope')))).map((res) => res.status)
+      expect(verify).toHaveBeenCalledTimes(5)
+      expect(statuses.filter((status) => status === 401)).toHaveLength(5)
+      expect(statuses.filter((status) => status === 429)).toHaveLength(15)
+      // A correct login clears its own reservation, so it leaves all five attempts for later.
+      s.deps.auth.clearLoginAttempts('127.0.0.1')
+      expect((await login(PASSWORD)).status).toBe(200)
+      for (let i = 0; i < 5; i += 1) expect((await login('nope')).status).toBe(401)
+    } finally {
+      verify.mockRestore()
+      s.deps.auth.clearLoginAttempts('127.0.0.1')
+    }
+  })
+
+  it('a correct login releases only its own reservation, not concurrent failures', async () => {
+    s.deps.auth.clearLoginAttempts('127.0.0.1')
+    const login = (password: string) => s.get('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password }) })
+    try {
+      const statuses = (await Promise.all([login(PASSWORD), ...Array.from({ length: 4 }, () => login('nope'))])).map((res) => res.status)
+      expect(statuses.toSorted()).toEqual([200, 401, 401, 401, 401])
+      expect((await login('nope')).status).toBe(401)
+      expect((await login('nope')).status).toBe(429)
+    } finally {
+      s.deps.auth.clearLoginAttempts('127.0.0.1')
+    }
   })
 })
 

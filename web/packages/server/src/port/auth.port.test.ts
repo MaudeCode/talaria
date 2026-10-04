@@ -90,7 +90,8 @@ describe('auth persistence off the request path', () => {
       expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).logged_in).toBe(true)
       expect((await s.get('/health')).status).toBe(200)
       const sessionsFile = join(s.state, '.sessions.json')
-      expect(held).toEqual([sessionsFile])
+      // The login reserves a rate-limit attempt before hashing and releases it on success (TAL-523).
+      expect(held.toSorted()).toEqual([join(s.state, '.login_attempts.json'), sessionsFile])
       expect(existsSync(sessionsFile)).toBe(false)
       open()
       await s.deps.auth.flushPersistence()

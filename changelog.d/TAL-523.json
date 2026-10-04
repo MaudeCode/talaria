@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Talaria Web now enforces its limit of five failed sign-in attempts per minute even when many password guesses arrive at once.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
