@@ -3,14 +3,40 @@
  * `ctl.sh`): the checkout `.env` applies unconditionally unless
  * `HERMES_WEBUI_PRESERVE_ENV` keeps values already in the environment; the
  * Hermes home `.env` is a fallback for keys the environment lacks (provider
- * credentials referenced as `${VAR}` in config.yaml). `HERMES_WEBUI_NO_DOTENV=1`
- * skips both.
+ * credentials referenced as `${VAR}` in config.yaml), limited to
+ * `homeEnvKeyAllowed`. `HERMES_WEBUI_NO_DOTENV=1` skips both.
  */
 import { join, resolve } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 
 const READONLY = new Set(['UID', 'GID', 'EUID', 'EGID', 'PPID'])
 const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/**
+ * What the agent-writable Hermes home `.env` may set in the Web server's environment: credentials, the default model,
+ * and Web tuning knobs. Everything else (auth, isolation, listener, home and state paths, launch and loader hooks) stays
+ * the operator's, so a contained user cannot change it for the next start (#4589). The Agent reads the whole file
+ * into the sidecar itself, so its own settings still apply there.
+ */
+const HOME_ENV_KEYS: ReadonlySet<string> = new Set([
+  'HERMES_MODEL',
+  'HERMES_WEBUI_BOT_NAME',
+  'HERMES_WEBUI_DEFAULT_MODEL',
+  'HERMES_WEBUI_PORT',
+  'HERMES_WEBUI_MAX_UPLOAD_MB',
+  'HERMES_WEBUI_MAX_SSE_CLIENTS',
+  'HERMES_WEBUI_FOLDER_ZIP_MAX_FILES',
+  'HERMES_WEBUI_FOLDER_ZIP_MAX_MB',
+  'HERMES_WEBUI_LOG_MAX_BYTES',
+  'HERMES_WEBUI_PROCESS_WAKEUP_MAX_TURNS',
+  'HERMES_WEBUI_SESSIONS_MAX',
+  'HERMES_WEBUI_SESSION_SAVE_MODE',
+  'HERMES_WEBUI_RUN_JOURNAL_FSYNC',
+  'HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT',
+  'HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS',
+])
+const CREDENTIAL_KEY_RE = /_(?:KEY|TOKEN|SECRET)$/
+const homeEnvKeyAllowed = (key: string): boolean => HOME_ENV_KEYS.has(key) || (!key.startsWith('HERMES_WEBUI_') && CREDENTIAL_KEY_RE.test(key))
 
 function unescapeDouble(raw: string): string {
   let out = ''
@@ -52,7 +78,7 @@ export interface DotenvOptions {
   env: Record<string, string | undefined>
   /** The checkout `.env` (a git checkout of `web/`); absent for npm installs. */
   repoEnvFile?: string | null
-  /** `$HERMES_HOME/.env`, applied only for keys the environment lacks. */
+  /** `$HERMES_HOME/.env`, applied only for keys the environment lacks and `homeEnvKeyAllowed` accepts. */
   hermesEnvFile?: string | null
   log?: (line: string) => void
 }
@@ -70,7 +96,16 @@ export function loadLauncherDotenv(opts: DotenvOptions): string[] {
   const repo = read(opts.repoEnvFile)
   if (repo) for (const [k, v] of Object.entries(repo)) { if (preserve && env[k] !== undefined) continue; env[k] = v; applied.push(k) }
   const hermes = read(opts.hermesEnvFile)
-  if (hermes) for (const [k, v] of Object.entries(hermes)) { if (env[k] !== undefined) continue; env[k] = v; applied.push(k) }
+  if (hermes) {
+    const ignored: string[] = []
+    for (const [k, v] of Object.entries(hermes)) {
+      if (!homeEnvKeyAllowed(k)) { ignored.push(k); continue }
+      if (env[k] !== undefined) continue
+      env[k] = v
+      applied.push(k)
+    }
+    if (ignored.length) opts.log?.(`[bootstrap] Warning: ${String(opts.hermesEnvFile)} only supplies credentials and tuning to the Web server; ignoring ${ignored.join(', ')} (set them in the deployment environment instead)`)
+  }
   return applied
 }
 
