@@ -248,10 +248,11 @@ function transportRows(scene: Record<string, unknown>): SceneRow[] {
 }
 
 /** Tail-only transport preview of a durable scene. */
-export function anchorActivitySceneTransportPreview(scene: Record<string, unknown>, sceneRef = ''): Record<string, unknown> {
+export function anchorActivitySceneTransportPreview(stored: Record<string, unknown>, sceneRef = ''): Record<string, unknown> {
+  // A stored or client-posted answer leaves in the row's display shape too; its excerpt is cut from it afterwards.
+  const scene = 'final_answer' in stored ? { ...stored, final_answer: splitDisplayText(str(stored.final_answer))[0] } : stored
   const preview: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(scene)) if (k !== 'activity_rows') preview[k] = structuredClone(v)
-  if ('final_answer' in scene) preview.final_answer = str(scene.final_answer)
+  for (const [k, v] of Object.entries(scene)) if (k !== 'activity_rows' && k !== 'final_answer_excerpt') preview[k] = structuredClone(v)
   if ('turn_duration' in scene) preview.turn_duration = finite(Number(scene.turn_duration ?? NaN))
   const rows = transportRows(scene)
   const total = rows.length

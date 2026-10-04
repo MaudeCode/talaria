@@ -516,8 +516,8 @@ export function stripToolCallXml(text: string): string {
 const THINK_OPEN = /<think(?:ing)?(?:\s[^>]*)?>|<\|channel\|>thought|<\|turn\|>thinking/gi
 
 function thinkClose(open: string): RegExp {
-  if (open.startsWith('<|channel|>')) return /<channel\|>/g
-  if (open.startsWith('<|turn|>')) return /<turn\|>/g
+  if (open.toLowerCase().startsWith('<|channel|>')) return /<channel\|>/gi
+  if (open.toLowerCase().startsWith('<|turn|>')) return /<turn\|>/gi
   return /<\/think(?:ing)?\s*>/gi
 }
 

@@ -165,6 +165,8 @@ describe('assistant display text (TAL-302)', () => {
     // Any case and attributes, as providers emit them.
     expect(splitDisplayText('<think type="analysis">plan</think>Answer')).toEqual(['Answer', 'plan'])
     expect(splitDisplayText('<THINK>plan</THINK>Answer')).toEqual(['Answer', 'plan'])
+    expect(splitDisplayText('<|CHANNEL|>thought\nhmm<channel|>Yes')).toEqual(['Yes', 'hmm'])
+    expect(splitDisplayText('<|turn|>thinking\nplan<TURN|>Done')).toEqual(['Done', 'plan'])
     expect(splitDisplayText('<think-tank>is prose')).toEqual(['<think-tank>is prose', ''])
     // A tag written as Markdown code is prose, inline or fenced, even unterminated.
     expect(splitDisplayText('Use `<think>` and `<function_calls>` tags.')).toEqual(['Use `<think>` and `<function_calls>` tags.', ''])
