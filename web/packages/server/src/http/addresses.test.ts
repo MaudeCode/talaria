@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isNonGlobalAddress } from './addresses.js'
+import { isNonGlobalAddress, isPrivateLan } from './addresses.js'
 
 describe('isNonGlobalAddress', () => {
   it.each(['0.0.0.0', '10.1.2.3', '100.64.0.1', '127.0.0.1', '169.254.169.254', '172.16.0.1', '192.0.0.8', '192.0.2.1', '192.88.99.1', '192.168.1.10', '198.18.0.1', '198.51.100.7', '203.0.113.9', '224.0.0.1', '240.0.0.1', '255.255.255.255',
@@ -8,5 +8,14 @@ describe('isNonGlobalAddress', () => {
   })
   it.each(['8.8.8.8', '93.184.216.34', '104.18.7.192', '192.0.1.1', '198.20.0.1', '::ffff:8.8.8.8', '2606:4700::1111', '2a00:1450:4001::1', '64:ff9b::808:808', '64:ff9b::8.8.8.8', '::ffff:5db8:d822', '2400:cb00::1', '3ffe::1', '3fff:1000::1', '4000::1'])('allows %s', (ip) => {
     expect(isNonGlobalAddress(ip)).toBe(false)
+  })
+})
+
+describe('isPrivateLan', () => {
+  it.each(['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.254', '192.168.1.10', '169.254.1.1', '::1', 'fd12::1', 'fc00::1', 'fe80::1', '[::1]', '::ffff:192.168.0.1', '::ffff:c0a8:1', '0:0:0:0:0:ffff:7f00:1'])('local %s', (ip) => {
+    expect(isPrivateLan(ip)).toBe(true)
+  })
+  it.each(['100.64.0.1', '100.100.100.100', '100.127.255.254', '::ffff:100.64.1.2', 'fd7a:115c:a1e0::1', 'fd7a:115c:a1e0:ab12:4843:cd96:6258:b240', '64:ff9b::c0a8:1', '8.8.8.8', '172.32.0.1', '203.0.113.9', '0.0.0.0', '::', '2606:4700::1111', 'not-an-ip', ''])('remote %s', (ip) => {
+    expect(isPrivateLan(ip)).toBe(false)
   })
 })

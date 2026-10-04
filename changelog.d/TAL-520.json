@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "With sign-in turned off, Talaria Web no longer opens the terminal or setup screens to Tailscale peers or carrier-NAT neighbors; only devices on your home network can use them.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
