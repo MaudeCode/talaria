@@ -219,23 +219,6 @@
 			}
 		}
 	],
-	"session_attention_generic": [
-		{
-			"declarations": [
-				"input n",
-				"local nPlural = n: plural"
-			],
-			"selectors": [
-				"nPlural"
-			],
-			"match": {
-				"nPlural=one": "Upozornění",
-				"nPlural=few": "{n} položky",
-				"nPlural=many": "{n} položek",
-				"nPlural=other": "{n} položek"
-			}
-		}
-	],
 	"session_attention_approval_title": "Čekání na rozhodnutí o povolení",
 	"session_attention_clarify_title": "Čekání na vaši odpověď",
 	"session_attention_generic_title": "Čekání na akci uživatele",

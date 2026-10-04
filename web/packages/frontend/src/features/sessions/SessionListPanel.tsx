@@ -87,6 +87,9 @@ const GROUP_LABEL: Record<ReturnType<typeof groupLabel>, () => string> = {
   older: () => m.session_time_bucket_older(),
 }
 
+/** Spoken status for a row that needs the user; the server names the kind. */
+const attentionLabel = (kind: string | undefined) => kind === 'approval' ? m.session_attention_approval_title() : kind === 'clarify' ? m.session_attention_clarify_title() : m.session_attention_generic_title()
+
 export function useProjectsQuery() {
   return useQuery({ queryKey: keys.projects, queryFn: () => api.fetchProjects(), staleTime: 60_000 })
 }
@@ -236,12 +239,12 @@ export function SessionListPanel() {
                         <div className="session-title-row">
                           <span className="session-title" title={row.title || m.untitled()}>{row.title || m.untitled()}</span>
                           {proj && <span className="session-project-dot" style={{ background: proj.color ?? 'var(--blue)' }} title={proj.name} />}
-                          <span className={cn('session-time', (row.is_streaming || row.attention) && 'is-hidden')}>{row.is_streaming || row.attention ? '' : relativeTime(row.last_message_at ?? row.updated_at)}</span>
+                          <span className="session-time">{relativeTime(row.last_message_at ?? row.updated_at)}</span>
                         </div>
                         {previews.get(row.session_id) && <div className="session-search-preview truncate text-[11px] text-muted" title={m.session_search_content_matches()}>{previews.get(row.session_id)}</div>}
                       </div>
-                      {row.is_streaming && <span className="session-state-indicator streaming" aria-label={m.status_streaming()} />}
-                      {row.attention && !row.is_streaming && <span className="session-state-indicator attention" aria-label={m.session_attention_generic({ n: row.attention.count ?? 1 })} />}
+                      {/* The rail shows status by color; this says it in words (TAL-365). */}
+                      {row.is_streaming ? <span className="sr-only">{m.status_streaming()}</span> : row.attention && <span className="sr-only">{attentionLabel(row.attention.kind)}</span>}
                       <div className="session-actions">
                         <button type="button" className="session-archive-toggle" title={row.archived ? m.session_restore() : m.session_batch_archive()} aria-label={row.archived ? m.session_restore() : m.session_batch_archive()} onClick={(e) => { e.preventDefault(); e.stopPropagation(); archive.mutate({ id: row.session_id, archived: !row.archived }) }}>
                           {row.archived ? <ArchiveRestore size={14} aria-hidden="true" /> : <Archive size={14} aria-hidden="true" />}

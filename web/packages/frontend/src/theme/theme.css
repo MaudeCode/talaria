@@ -23,12 +23,10 @@
   [data-skin-traits~="card-sessions"] .session-item.active { padding: 10px 12px 10px 18px; gap: 8px; }
   [data-skin-traits~="card-sessions"] .session-item.active .session-text { min-width: 0; width: 100%; }
   [data-skin-traits~="card-sessions"] .session-item.active .session-time { padding-left: 4px; }
-  [data-skin-traits~="card-sessions"] .session-item.active.streaming,
-  [data-skin-traits~="card-sessions"] .session-item.active.needs-attention { padding-right: 40px; }
   [data-skin-traits~="card-sessions"] .session-item.active:focus-within { padding-right: 64px; }
   @media (hover: hover) {
     [data-skin-traits~="card-sessions"] .session-item.active:hover { padding-right: 64px; }
   }
-  [data-skin-traits~="card-sessions"] .session-item.active:hover .session-time:not(.is-hidden),
-  [data-skin-traits~="card-sessions"] .session-item.active:focus-within .session-time:not(.is-hidden) { display: inline-flex; visibility: hidden; }
+  [data-skin-traits~="card-sessions"] .session-item.active:hover .session-time,
+  [data-skin-traits~="card-sessions"] .session-item.active:focus-within .session-time { display: inline-flex; visibility: hidden; }
 }
