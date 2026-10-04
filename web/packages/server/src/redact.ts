@@ -221,11 +221,13 @@ const PHONE_RE = /(?<![A-Za-z0-9])\+[1-9]\d{6,14}(?![A-Za-z0-9])/g
 const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/?#]{8,})(?=@\S)/gi
 /** Control and zero-width characters that can split a token body (`ghp_abc\x1bdef`, `sk-abc\u200bdef`). */
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff]/
+const CONTROL_CHARS_RE = new RegExp(CONTROL_CHAR_RE.source, 'g')
 /**
- * What splits a token body: a complete ANSI escape sequence (CSI `ESC [ … final byte`, OSC `ESC ] … BEL/ST`) or one
- * control or zero-width character.
+ * A complete ANSI escape sequence (CSI `ESC [ … final byte`, OSC `ESC ] … BEL/ST`) or one control or zero-width
+ * character. An OSC payload can hold a token itself (a terminal title), so this view is matched besides the control-only
+ * one.
  */
-const SPLIT_GAP_RE = new RegExp(String.raw`\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|` + CONTROL_CHAR_RE.source, 'g')
+const ANSI_GAPS_RE = new RegExp(String.raw`\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|` + CONTROL_CHAR_RE.source, 'g')
 const CRED_TEST_RE = new RegExp(CRED_RE.source)
 /** `CRED_RE`'s prefix and body from a position, without its boundaries (a split token checks the original ones). */
 const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
@@ -275,17 +277,17 @@ function splitTokenEnd(text: string, stripped: string, kept: number[], i: number
 }
 
 /**
- * Prefixed credentials whose body a control or zero-width character splits, matched on the text without those characters
- * and masked in place. A token starts at a boundary of the stripped text, or where a stripped control hid the original
+ * Prefixed credentials whose body a gap (`CONTROL_CHARS_RE` or `ANSI_GAPS_RE`) splits, matched on the text without those
+ * gaps and masked in place. A token starts at a boundary of the stripped text, or where a stripped control hid the original
  * one (`note\nghp_…`); one starting inside a token already masked is part of it.
  */
-function maskControlSplitTokens(text: string): string {
-  const stripped = text.replace(SPLIT_GAP_RE, '')
+function maskSplitTokens(text: string, gaps: RegExp): string {
+  const stripped = text.replace(gaps, '')
   if (stripped.length === text.length) return text
   // The original index of each kept character.
   const kept: number[] = []
   let at = 0
-  for (const m of text.matchAll(SPLIT_GAP_RE)) {
+  for (const m of text.matchAll(gaps)) {
     while (at < m.index) kept.push(at++)
     at += m[0].length
   }
@@ -1458,7 +1460,7 @@ export function redactSensitive(text: string): string {
 
 function redactRules(text: string): string {
   if (!text) return text
-  let out = maskControlSplitTokens(text).replace(CRED_RE, (_, t: string) => mask(t))
+  let out = maskSplitTokens(maskSplitTokens(text, CONTROL_CHARS_RE), ANSI_GAPS_RE).replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = redactHeaderCredentials(out, AUTH_HDR_RE)
   out = out.replace(JWT_RE, (t) => mask(t))
@@ -1507,8 +1509,9 @@ export function mightContainSensitiveText(text: string): boolean {
   if (!text) return false
   // A control or zero-width character or an ANSI escape sequence inside a prefix (`x\u200bai-…`) does not hide it: the
   // redactor joins split tokens.
-  const joined = text.replace(SPLIT_GAP_RE, '')
-  if (CASE_MARKERS.some((m) => joined.includes(m))) return true
+  const joined = text.replace(CONTROL_CHARS_RE, '')
+  const plain = text.replace(ANSI_GAPS_RE, '')
+  if (CASE_MARKERS.some((m) => joined.includes(m) || plain.includes(m))) return true
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
   if (CRED_KEY_NAME_RE.test(text)) return true

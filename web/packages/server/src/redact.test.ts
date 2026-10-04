@@ -793,6 +793,9 @@ describe('Agent redactor parity', () => {
       ['gh\x1b[1mp_abcdef1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       ['ghp_abcdef1234567890ABCDEF1234567890abcdef\x1b[0m\nnext', 'ghp_ab...cdef\x1b[0m\nnext'],
       ['\x1b[32mghp_abcdef1234567890ABCDEF1234567890abcdef\x1b[0m', '\x1b[32mghp_ab...cdef\x1b[0m'],
+      // A token inside an OSC payload (a terminal title) is masked there, whole or split by a control character.
+      ['\x1b]0;ghp_abcdef1234567890ABCDEF1234567890abcdef\x07', '\x1b]0;ghp_ab...cdef\x07'],
+      ['\x1b]0;ghp_abcdef\x011234567890ABCDEF1234567890abcdef\x07', '\x1b]0;ghp_ab...cdef\x07'],
     ]) {
       expect(redactText(input, true)).toBe(expected)
       expect(sanitizeShareMessage({ role: 'assistant', content: input }, [], [], '/nonexistent-home')?.content).toBe(expected)
