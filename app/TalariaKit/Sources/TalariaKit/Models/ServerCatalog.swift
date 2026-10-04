@@ -5,6 +5,21 @@ public struct ModelsResponse: Decodable, Equatable {
     let models: [JSONValue]?
     public let defaultModel: String?
     public let activeProvider: String?
+    /// The server's split of `defaultModel` (TAL-301).
+    public let defaultProviderID: String?
+    public let defaultBareID: String?
+    /// The catalog entry the server says the default selects.
+    public let defaultOptionID: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case groups
+        case models
+        case defaultModel
+        case activeProvider
+        case defaultProviderID = "defaultProviderId"
+        case defaultBareID = "defaultBareId"
+        case defaultOptionID = "defaultOptionId"
+    }
 }
 
 public struct CommandsResponse: Decodable, Equatable {

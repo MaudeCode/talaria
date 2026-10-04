@@ -133,6 +133,7 @@ extension ChatViewModelSendTests {
         title: String = "Planning",
         model: String? = "gpt-5.4",
         modelProvider: String? = nil,
+        modelOptionID: String? = nil,
         profile: String? = nil,
         readOnly: Bool = false
     ) throws -> SessionSummary {
@@ -140,6 +141,7 @@ extension ChatViewModelSendTests {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let modelJSON = model.map { ",\n              \"model\": \"\($0)\"" } ?? ""
         let modelProviderJSON = modelProvider.map { ",\n              \"model_provider\": \"\($0)\"" } ?? ""
+        let optionJSON = modelOptionID.map { ",\n              \"model_option_id\": \"\($0)\"" } ?? ""
         let profileJSON = profile.map { ",\n              \"profile\": \"\($0)\"" } ?? ""
         let readOnlyJSON = readOnly ? ",\n              \"read_only\": true" : ""
         return try decoder.decode(
@@ -148,7 +150,7 @@ extension ChatViewModelSendTests {
             {
               "session_id": "session-abc",
               "title": "\(title)",
-              "workspace": "/tmp/workspace"\(modelJSON)\(modelProviderJSON)\(profileJSON)\(readOnlyJSON)
+              "workspace": "/tmp/workspace"\(modelJSON)\(modelProviderJSON)\(optionJSON)\(profileJSON)\(readOnlyJSON)
             }
             """.utf8)
         )

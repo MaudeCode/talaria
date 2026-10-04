@@ -307,6 +307,8 @@ public final class ChatViewModel {
     private var serverWorkspaceName: String?
     private var currentModel: String?
     private var currentModelProvider: String?
+    /// TAL-301: the catalog entry the server says `currentModel` selects.
+    private var currentModelOptionID: String?
     private var currentProfile: String?
     private let isCLISession: Bool
     /// Server-owned view-only state (TAL-152). Seeded from the list row and
@@ -439,6 +441,7 @@ public final class ChatViewModel {
         serverWorkspaceName = session.workspaceName
         currentModel = session.model
         currentModelProvider = session.modelProvider
+        currentModelOptionID = session.modelOptionID
         currentProfile = session.profile
         isCLISession = session.isCliSession == true
         isSessionReadOnly = session.isSessionReadOnly
@@ -554,6 +557,22 @@ public final class ChatViewModel {
         currentModelProvider
     }
 
+    public var selectedModelOptionID: String? {
+        currentModelOptionID
+    }
+
+    /// The catalog entry a draft picked. A draft saved before drafts kept the
+    /// entry id (TAL-301) holds only the server's bare pair, which the stamped
+    /// entry carries as `bareID`/`providerID`.
+    private func draftModelOption(_ settings: ChatDraftSettings, modelID: String) -> ModelCatalogOption? {
+        let options = modelCatalogGroups.flatMap(\.slashAutocompleteModels)
+        guard settings.modelOptionID == nil else {
+            return options.firstSelected(optionID: settings.modelOptionID, modelID: modelID, providerID: settings.modelProviderID)
+        }
+        return options.first { $0.bareID == modelID && $0.providerID == settings.modelProviderID }
+            ?? options.firstSelected(optionID: nil, modelID: modelID, providerID: settings.modelProviderID)
+    }
+
     public var selectedWorkspacePath: String? {
         currentWorkspace
     }
@@ -595,7 +614,7 @@ public final class ChatViewModel {
 
         let catalogName = modelCatalogGroups
             .flatMap(\.models)
-            .firstMatchingSelection(modelID: currentModel, providerID: currentModelProvider)?
+            .firstSelected(optionID: currentModelOptionID, modelID: currentModel, providerID: currentModelProvider)?
             .displayName
 
         return catalogName ?? Self.compactModelTitle(currentModel)
@@ -787,6 +806,7 @@ public final class ChatViewModel {
             currentWorkspace: currentWorkspace,
             currentModel: currentModel,
             currentModelProvider: currentModelProvider,
+            currentModelOptionID: currentModelOptionID,
             currentProfile: currentProfile,
             selectedProfileName: selectedProfileName,
             selectedReasoningEffort: selectedReasoningEffort,
@@ -805,6 +825,7 @@ public final class ChatViewModel {
         currentWorkspace = state.currentWorkspace
         currentModel = state.currentModel
         currentModelProvider = state.currentModelProvider
+        currentModelOptionID = state.currentModelOptionID
         currentProfile = state.currentProfile
         selectedProfileName = state.selectedProfileName
         selectedReasoningEffort = state.selectedReasoningEffort
@@ -830,7 +851,7 @@ public final class ChatViewModel {
         if recordsInteraction {
             composerConfigurationInteractionGeneration &+= 1
         }
-        guard !option.matchesSelection(modelID: currentModel, providerID: currentModelProvider) else {
+        guard !option.isSelected(optionID: currentModelOptionID, modelID: currentModel, providerID: currentModelProvider) else {
             return false
         }
 
@@ -862,6 +883,7 @@ public final class ChatViewModel {
                 modelProvider: option.providerID
             )
 
+            currentModelOptionID = response.session?.model != nil ? response.session?.modelOptionID : option.id
             currentModel = response.session?.model ?? option.id
             currentModelProvider = response.session?.modelProvider ?? option.providerID
             applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
@@ -1028,6 +1050,7 @@ public final class ChatViewModel {
 
             currentWorkspace = workspace
             applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
+            if let session = response.session, session.model != nil { currentModelOptionID = session.modelOptionID }
             currentModel = response.session?.model ?? currentModel
             currentModelProvider = response.session?.modelProvider ?? currentModelProvider
             return true
@@ -1085,6 +1108,7 @@ public final class ChatViewModel {
             if let defaultModel = response.defaultModel, !defaultModel.isEmpty {
                 currentModel = defaultModel
                 currentModelProvider = Self.nonEmpty(profile.provider)
+                currentModelOptionID = nil
             }
             pendingExplicitModelPick = false
 
@@ -1187,10 +1211,8 @@ public final class ChatViewModel {
 
         guard canContinueDraftSettingsRestore(expectedInteractionGeneration) else { return }
         if let modelID = settings.modelID,
-           let option = modelCatalogGroups
-               .flatMap(\.slashAutocompleteModels)
-               .firstMatchingSelection(modelID: modelID, providerID: settings.modelProviderID),
-           !option.matchesSelection(modelID: currentModel, providerID: currentModelProvider) {
+           let option = draftModelOption(settings, modelID: modelID),
+           !option.isSelected(optionID: currentModelOptionID, modelID: currentModel, providerID: currentModelProvider) {
             _ = await selectComposerModel(option, recordsInteraction: false)
             guard canContinueDraftSettingsRestore(expectedInteractionGeneration) else { return }
         }
@@ -1688,6 +1710,7 @@ public final class ChatViewModel {
                 displayTitle = Self.displayTitle(from: title)
             }
             applyServerWorkspace(session.workspace, name: session.workspaceName)
+            if session.model != nil { currentModelOptionID = session.modelOptionID }
             currentModel = session.model ?? currentModel
             currentModelProvider = session.modelProvider ?? currentModelProvider
             currentProfile = session.profile ?? currentProfile
@@ -3147,6 +3170,7 @@ public final class ChatViewModel {
                 modelProvider: match?.providerID
             )
 
+            currentModelOptionID = response.session?.model != nil ? response.session?.modelOptionID : match?.id
             currentModel = response.session?.model ?? match?.id ?? requestedModel
             currentModelProvider = response.session?.modelProvider ?? match?.providerID ?? currentModelProvider
             applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
@@ -3192,6 +3216,7 @@ public final class ChatViewModel {
 
             currentWorkspace = workspace
             applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
+            if let session = response.session, session.model != nil { currentModelOptionID = session.modelOptionID }
             currentModel = response.session?.model ?? currentModel
             currentModelProvider = response.session?.modelProvider ?? currentModelProvider
             workspaceSuggestions = workspaceRoots.compactMap(\.path)
@@ -3507,6 +3532,7 @@ public final class ChatViewModel {
                 displayTitle = Self.displayTitle(from: title)
             }
             applyServerWorkspace(session.workspace, name: session.workspaceName)
+            if session.model != nil { currentModelOptionID = session.modelOptionID }
             currentModel = session.model ?? currentModel
             currentModelProvider = session.modelProvider ?? currentModelProvider
             currentProfile = session.profile ?? currentProfile
@@ -4892,6 +4918,7 @@ public final class ChatViewModel {
         }
 
         applyServerWorkspace(completedSession.workspace, name: completedSession.workspaceName)
+        if completedSession.model != nil { currentModelOptionID = completedSession.modelOptionID }
         currentModel = completedSession.model ?? currentModel
         currentModelProvider = completedSession.modelProvider ?? currentModelProvider
         currentProfile = completedSession.profile ?? currentProfile
@@ -5582,8 +5609,7 @@ public final class ChatViewModel {
     }
 
     private static func compactModelTitle(_ modelID: String) -> String {
-        let raw = modelID.split(separator: ":").last.map(String.init) ?? modelID
-        let suffix = raw.split(separator: "/").last.map(String.init) ?? raw
+        let suffix = modelID.split(separator: "/").last.map(String.init) ?? modelID
         return suffix.replacingOccurrences(of: "gpt-", with: "GPT-", options: [.caseInsensitive])
     }
 

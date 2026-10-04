@@ -105,6 +105,10 @@ export interface SessionServiceDeps {
   syncTitle: (session: Session) => Promise<void>
   /** Context length lookup for a model (checkpoint 7 wires the catalog). */
   contextLengthFor: (model: string | null, provider: string | null) => number | null
+  /** TAL-301: the catalog entry id a stored `(model, provider)` pair selects (null when none or not yet known). */
+  modelOptionFor?: (model: string | null, provider: string | null) => string | null
+  /** Builds the catalog `modelOptionFor` reads, so a first detail load already carries `model_option_id`. */
+  warmModelOptions?: () => Promise<void>
   /** Authoritative lookup through the sidecar (`models.context_length`), cached; used where the caller can await. */
   resolveContextLength?: (model: string | null, provider: string | null, profile: string | null) => Promise<number | null>
   /** `(model, provider)` normalisation from a request (checkpoint 7 wires provider-qualified ids). */
@@ -373,7 +377,7 @@ export class SessionService {
 
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
   wireRow(s: Session): Record<string, unknown> {
-    return withSessionWireFlags({ ...s.compact({ contextLengthFor: this.deps.contextLengthFor }), read_only: this.isReadOnly(s), assistant_name: this.assistantName(s), workspace_name: this.workspaceNames()(s) }, this.deps.runtime.activeStreamIds)
+    return withSessionWireFlags({ ...s.compact({ contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }), read_only: this.isReadOnly(s), assistant_name: this.assistantName(s), workspace_name: this.workspaceNames()(s) }, this.deps.runtime.activeStreamIds)
   }
 
   /**
@@ -466,7 +470,7 @@ export class SessionService {
     }
     const activeStreamIds = this.deps.runtime.activeStreamIds
     const raw: Record<string, unknown> = {
-      ...s.compact({ includeRuntime: true, activeStreamIds, contextLengthFor: this.deps.contextLengthFor }),
+      ...s.compact({ includeRuntime: true, activeStreamIds, contextLengthFor: this.deps.contextLengthFor, modelOptionFor: this.deps.modelOptionFor }),
       messages: truncated,
       message_count: mergedCount,
       tool_calls: toolCalls,

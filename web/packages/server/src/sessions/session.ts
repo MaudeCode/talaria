@@ -413,7 +413,7 @@ export class Session {
   }
 
   /** Sidebar/index row (Python `Session.compact`). */
-  compact(opts: { includeRuntime?: boolean; activeStreamIds?: Set<string>; sidebarMetadataOnly?: boolean; contextLengthFor?: (model: string | null, provider: string | null) => number | null } = {}): Record<string, unknown> {
+  compact(opts: { includeRuntime?: boolean; activeStreamIds?: Set<string>; sidebarMetadataOnly?: boolean; contextLengthFor?: (model: string | null, provider: string | null) => number | null; modelOptionFor?: ((model: string | null, provider: string | null) => string | null) | undefined } = {}): Record<string, unknown> {
     const activeStreamIds = opts.activeStreamIds ?? new Set<string>()
     const hasPending = this.hasPendingPrompt
     let messageCount = this.metadataMessageCount ?? this.messages.length
@@ -426,6 +426,8 @@ export class Session {
       workspace: this.workspace,
       model: this.model,
       model_provider: this.model_provider,
+      // TAL-301: the catalog entry the stored pair selects, on the payloads a model picker renders.
+      ...(opts.modelOptionFor ? { model_option_id: opts.modelOptionFor(this.model, this.model_provider) } : {}),
       message_count: messageCount,
       created_at: this.created_at,
       updated_at: this.updated_at,

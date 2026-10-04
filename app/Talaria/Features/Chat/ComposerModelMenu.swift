@@ -6,6 +6,7 @@ struct ComposerModelMenu: View {
     let modelGroups: [ModelCatalogGroup]
     let selectedModelID: String?
     let selectedModelProviderID: String?
+    let selectedModelOptionID: String?
     let selectedModelTitle: String
     let isLoadingModels: Bool
     let favoriteModelKeys: [ModelFavoriteKey]
@@ -134,27 +135,23 @@ struct ComposerModelMenu: View {
     private func selectedModelOption(in options: [ModelCatalogOption]) -> ModelCatalogOption? {
         guard let selectedModelID, !selectedModelID.isEmpty else { return nil }
 
-        if let selectedModelProviderID {
-            return options.firstMatchingSelection(
-                modelID: selectedModelID,
-                providerID: selectedModelProviderID
-            )
+        return options.firstSelected(
+            optionID: selectedModelOptionID,
+            modelID: selectedModelID,
+            providerID: selectedModelProviderID
+        )
             ?? ModelCatalogOption(
                 id: selectedModelID,
                 displayName: selectedModelID,
                 providerID: selectedModelProviderID
-            )
-        }
-
-        return options.firstMatchingSelection(modelID: selectedModelID, providerID: nil)
-            ?? ModelCatalogOption(
-                id: selectedModelID,
-                displayName: selectedModelID,
-                providerID: nil
             )
     }
 
     private func isSelected(_ option: ModelCatalogOption) -> Bool {
-        option.matchesSelection(modelID: selectedModelID, providerID: selectedModelProviderID)
+        option.isSelected(
+            optionID: selectedModelOptionID,
+            modelID: selectedModelID,
+            providerID: selectedModelProviderID
+        )
     }
 }

@@ -26,21 +26,36 @@ import {
   isOpenAiFamilyProvider, mainModelSupportsServiceTier, modelSection, parseProviderQualifiedModel, providerIdentity, resolveProviderAlias, type AgentConfig, type Config, type Dict,
 } from '../config/agent-config.js'
 
-export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean }
+export interface ModelEntry { id: string; label: string; supports_fast_tier?: boolean; provider_id?: string; bare_id?: string }
 type PluginProvider = SidecarResult<'plugins.providers'>['providers'][number]
 export interface ModelGroup { provider: string; provider_id: string; models: ModelEntry[]; extra_models?: ModelEntry[] }
 
-/** Python `_model_matches_picker_selection`: same bare id, and the routing hints agree when both name one. */
+/** Python `_model_matches_picker_selection`: same bare id, and the routing hints agree when the selection names one. */
 function modelMatchesPickerSelection(modelId: string, selected: string, providerId: string): boolean {
   const candidate = modelId.trim()
   const sel = selected.trim()
   if (!sel || !candidate) return false
   if (candidate === sel) return true
-  const bare = (v: string): string => (v.startsWith('@') && v.includes(':') ? v.slice(v.indexOf(':') + 1) : v)
-  if (bare(sel) !== bare(candidate)) return false
-  const selProvider = sel.startsWith('@') && sel.includes(':') ? sel.slice(1, sel.indexOf(':')).toLowerCase() : ''
-  const candProvider = candidate.startsWith('@') && candidate.includes(':') ? candidate.slice(1, candidate.indexOf(':')).toLowerCase() : providerId.trim().toLowerCase()
-  return !selProvider || !candProvider || selProvider === candProvider
+  const [candBare, candProvider] = parseProviderQualifiedModel(candidate) ?? [candidate, providerId.trim()]
+  const [selBare, selProvider] = parseProviderQualifiedModel(sel) ?? [sel, '']
+  return selBare === candBare && (!selProvider || selProvider.toLowerCase() === candProvider.toLowerCase())
+}
+
+/** TAL-301: every entry names its routing provider and bare id, split once by `parseProviderQualifiedModel`. */
+function stampModelEntries(models: ModelEntry[], providerId: string): ModelEntry[] {
+  return models.map((m) => {
+    const [bare, provider] = parseProviderQualifiedModel(m.id) ?? [m.id, providerId]
+    return { ...m, bare_id: bare, provider_id: provider }
+  })
+}
+
+/** TAL-301: the catalog entry a stored `(model, provider)` pair selects, so clients render the pairing instead of computing it. */
+export function catalogOptionId(catalog: ModelsCatalog, model: string | null, provider: string | null): string | null {
+  const bare = str(model).trim()
+  const pid = str(provider).trim().toLowerCase()
+  if (!bare || !pid) return null
+  for (const g of catalog.groups) for (const e of [...g.models, ...(g.extra_models ?? [])]) if (e.bare_id === bare && str(e.provider_id).toLowerCase() === pid) return e.id
+  return null
 }
 
 /** Python `_split_picker_overflow_models`: past 25 rows the picker shows 15, keeping the selected model visible. */
@@ -53,7 +68,7 @@ export function splitPickerOverflow(models: ModelEntry[], selected: string, prov
   if (idx >= 0) { const displaced = visible[visible.length - 1]!; visible[visible.length - 1] = extras[idx]!; extras[idx] = displaced }
   return [visible, extras]
 }
-export interface ModelsCatalog { active_provider: string | null; default_model: string; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }> }
+export interface ModelsCatalog { active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }> }
 
 /**
  * TAL-388: stamp each auxiliary slot with its display value and the catalog entry whose provider/model pair equals the
@@ -103,10 +118,7 @@ export interface CatalogDeps {
 /** Python `_BESPOKE_CATALOG_PROVIDERS`: cards whose catalog is resolved by their own rule, never the generic live probe. */
 const BESPOKE_CATALOG_PROVIDERS = new Set(['openai-codex', 'nous', 'xai-oauth', 'lmstudio', 'opencode-go'])
 /** Python `_unqualified_model_id`: strip a picker routing hint (`@provider:`). */
-function unqualifiedModelId(id: string): string {
-  const raw = id.trim()
-  return raw.startsWith('@') && raw.includes(':') ? raw.slice(raw.indexOf(':') + 1) : raw
-}
+const unqualifiedModelId = (id: string): string => parseProviderQualifiedModel(id)?.[0] ?? id.trim()
 /** Python `_MODEL_PICKER_OVERFLOW_THRESHOLD` / `_MODEL_PICKER_VISIBLE_TARGET`. */
 const MODEL_PICKER_OVERFLOW_THRESHOLD = 25
 const MODEL_PICKER_VISIBLE_TARGET = 15
@@ -145,8 +157,7 @@ export function formatOllamaLabel(mid: string): string {
 
 /** Python `_get_label_for_model`: reuse a known label, else prettify the bare id. */
 export function labelForModel(modelId: string, groups: ModelGroup[]): string {
-  let lookup = modelId
-  if (lookup.startsWith('@') && lookup.includes(':')) lookup = lookup.slice(lookup.indexOf(':') + 1)
+  const lookup = unqualifiedModelId(modelId)
   const hasScheme = (s: string): boolean => s.includes('://')
   const norm = (s: string): string => (s.includes('/') && !hasScheme(s) ? s.slice(s.indexOf('/') + 1) : s).replaceAll('-', '.').toLowerCase()
   const target = norm(lookup)
@@ -220,6 +231,8 @@ export class ProviderCatalog {
   private readonly liveIds = new Map<string, { at: number; ids: string[] }>()
   private readonly liveInflight = new Map<string, Promise<string[]>>()
   private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null } }>()
+  /** TAL-301: the last catalog served per profile home, for the sync session payloads' `model_option_id`. */
+  private readonly lastModels = new Map<string, ModelsCatalog>()
 
   constructor(private readonly deps: CatalogDeps) {}
 
@@ -238,6 +251,22 @@ export class ProviderCatalog {
       this.liveIds.delete(key)
     }
     this.providersCache.clear()
+    // The picker catalog changed: option ids rebuild on the next read rather than pairing against the old one.
+    if (profileHome) this.lastModels.delete(profileHome)
+    else this.lastModels.clear()
+  }
+
+  /** TAL-301: the entry id a stored `(model, provider)` pair selects in the last catalog built for this home; a cold home starts building one. */
+  modelOptionFor(profileHome: string, model: string | null, provider: string | null): string | null {
+    const catalog = this.lastModels.get(profileHome)
+    if (!catalog) { void this.warmModelOptions(profileHome); return null }
+    return catalogOptionId(catalog, model, provider)
+  }
+
+  /** Builds the catalog `modelOptionFor` reads once per home; an unavailable catalog leaves every option id null. */
+  async warmModelOptions(profileHome: string): Promise<void> {
+    if (this.lastModels.has(profileHome)) return
+    try { await this.models(profileHome) } catch { /* fail closed: no option ids */ }
   }
 
   /**
@@ -445,6 +474,7 @@ export class ProviderCatalog {
     // Python `_provider_sort_key`: active first, then `custom:*`, then keyed providers, then the rest (alphabetical within).
     const rank = (p: Dict): number => (str(p.id) === active ? 0 : str(p.id).startsWith('custom:') ? 1 : p.has_key ? 2 : 3)
     rows.sort((a, b) => rank(a) - rank(b) || (str(a.id) < str(b.id) ? -1 : str(a.id) > str(b.id) ? 1 : 0))
+    for (const row of rows) row.models = stampModelEntries(row.models as ModelEntry[], str(row.id))
     const payload = { providers: rows, active_provider: active }
     this.providersCache.set(profileHome, { at: this.deps.now(), key: cacheKey, payload })
     return structuredClone(payload)
@@ -573,10 +603,21 @@ export class ProviderCatalog {
     const aliases: Record<string, string> = {}
     const rawAliases = model.aliases
     if (isDict(rawAliases)) for (const [k, v] of Object.entries(rawAliases)) if (k && v) aliases[k.trim()] = str(v).trim()
+    const [defaultBare, defaultProvider] = parseProviderQualifiedModel(defaultModel) ?? [defaultModel, active]
+    const defaults = { active_provider: active, default_model: defaultModel, default_provider_id: defaultProvider, default_bare_id: defaultBare }
     if (!kept.length && defaultModel) {
-      return { active_provider: active, default_model: defaultModel, groups: [{ provider: 'Default', provider_id: active ?? 'default', models: [{ id: defaultModel, label: labelForModel(defaultModel, []) }] }], aliases: {}, configured_model_badges: {} }
+      const providerId = active ?? 'default'
+      return this.remember(profileHome, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
     }
-    return { active_provider: active, default_model: defaultModel, groups: kept, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) }
+    const stamped = kept.map((g) => ({ ...g, models: stampModelEntries(g.models, g.provider_id), ...(g.extra_models ? { extra_models: stampModelEntries(g.extra_models, g.provider_id) } : {}) }))
+    return this.remember(profileHome, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
+  }
+
+  /** Stamps the default's entry id and keeps the catalog for `modelOptionFor`. */
+  private remember(profileHome: string, catalog: ModelsCatalog): ModelsCatalog {
+    catalog.default_option_id = catalogOptionId(catalog, catalog.default_bare_id ?? null, catalog.default_provider_id ?? null)
+    this.lastModels.set(profileHome, catalog)
+    return structuredClone(catalog)
   }
 
   /** Python `_configured_model_badges_from_static_catalog`: which picker rows are the main/fallback selections. */
@@ -626,7 +667,7 @@ export class ProviderCatalog {
     // OpenAI-family rows with `supports_fast_tier`; the answer carries `count`.
     if (provider !== 'nous' && ids.length > MODEL_PICKER_OVERFLOW_THRESHOLD) ids = ids.slice(0, MODEL_PICKER_VISIBLE_TARGET)
     const annotateFastTier = isOpenAiFamilyProvider(provider)
-    const models = ids.filter(Boolean).map((id) => ({ id, label: labelForModel(id, []), ...(annotateFastTier ? { supports_fast_tier: mainModelSupportsServiceTier(id, provider) } : {}) }))
+    const models = stampModelEntries(ids.filter(Boolean).map((id) => ({ id, label: labelForModel(id, []), ...(annotateFastTier ? { supports_fast_tier: mainModelSupportsServiceTier(id, provider) } : {}) })), provider)
     return { provider, source, models, count: models.length }
   }
 
@@ -639,7 +680,7 @@ export class ProviderCatalog {
     const config = await this.deps.config.read(profileHome)
     const section = modelSection(config)
     const pid = canonicaliseProviderId(provider ?? section.provider) || null
-    const bare = model.replace(/^@[^:]+:/, '')
+    const bare = unqualifiedModelId(model)
     const positive = (v: unknown): number | null => { const n = Math.trunc(Number(v)); return Number.isFinite(n) && n > 0 ? n : null }
     const fromModels = (models: unknown): number | null => {
       if (isDict(models)) { for (const key of [model, bare]) { const e = models[key]; const n = positive(isDict(e) ? e.context_length : e); if (n !== null) return n } }
@@ -649,7 +690,7 @@ export class ProviderCatalog {
     let baseUrl = ''
     let configContextLength: number | null = null
     const sectionModel = str(section.default || (typeof config.model === 'string' ? config.model : '')).trim()
-    if (sectionModel && [model, bare].includes(sectionModel.replace(/^@[^:]+:/, ''))) configContextLength = positive(section.context_length)
+    if (sectionModel && [model, bare].includes(unqualifiedModelId(sectionModel))) configContextLength = positive(section.context_length)
     if (!pid || canonicaliseProviderId(section.provider) === pid) baseUrl = str(section.base_url).trim()
     if (pid) {
       const providersCfg = dict(config.providers)

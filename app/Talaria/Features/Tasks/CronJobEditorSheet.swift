@@ -161,6 +161,7 @@ struct CronJobEditorSheet: View {
                     modelGroups: catalogs.modelGroups,
                     selectedModelID: draft.trimmedModel,
                     selectedModelProviderID: draft.trimmedProvider,
+                    selectedModelOptionID: draft.modelOptionID,
                     favoriteModelKeys: [],
                     recentModelKeys: [],
                     onSelect: { option in

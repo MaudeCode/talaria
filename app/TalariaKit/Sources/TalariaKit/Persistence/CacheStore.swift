@@ -300,6 +300,8 @@ private extension SessionSummary {
         workspaceName = cachedSession.workspaceName
         model = cachedSession.model
         modelProvider = cachedSession.modelProvider
+        // Pairs with the live catalog only; the cached row has none (TAL-301).
+        modelOptionID = nil
         messageCount = cachedSession.messageCount
         createdAt = cachedSession.createdAt
         updatedAt = cachedSession.updatedAt

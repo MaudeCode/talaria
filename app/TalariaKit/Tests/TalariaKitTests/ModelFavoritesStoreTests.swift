@@ -194,16 +194,16 @@ final class ModelFavoritesStoreTests: XCTestCase {
         XCTAssertEqual(recentOptions, [custom])
     }
 
-    func testFirstMatchingSelectionRequiresExactProviderWhenProviderIsExplicit() {
+    func testFirstSelectedRequiresExactProviderWhenProviderIsExplicit() {
         let openAI = ModelCatalogOption(id: "shared/model", displayName: "OpenAI Shared", providerID: "openai")
         let anthropic = ModelCatalogOption(id: "shared/model", displayName: "Anthropic Shared", providerID: "anthropic")
         let options = [openAI, anthropic]
 
         XCTAssertEqual(
-            options.firstMatchingSelection(modelID: "shared/model", providerID: "anthropic"),
+            options.firstSelected(optionID: nil, modelID: "shared/model", providerID: "anthropic"),
             anthropic
         )
-        XCTAssertNil(options.firstMatchingSelection(modelID: "shared/model", providerID: "openrouter"))
-        XCTAssertEqual(options.firstMatchingSelection(modelID: "shared/model", providerID: nil), openAI)
+        XCTAssertNil(options.firstSelected(optionID: nil, modelID: "shared/model", providerID: "openrouter"))
+        XCTAssertEqual(options.firstSelected(optionID: nil, modelID: "shared/model", providerID: nil), openAI)
     }
 }

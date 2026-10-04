@@ -98,6 +98,32 @@ describe('crons, kanban, extensions, terminal', () => {
   })
   afterAll(() => s.close())
 
+  it('cron create/update split a picked `@provider:model` id exactly as a chat request does (TAL-301)', async () => {
+    const jobs = new Map<string, Json>()
+    sidecar.respond('cron.list', () => ({ jobs: [...jobs.values()] as never[] }))
+    sidecar.respond('cron.create', (params) => { const job = { id: `m${String(jobs.size + 1)}`, name: null, profile: null, toast_notifications: true, monitor: '', continuity: false, ...(params.job as Json), context_from: [] }; jobs.set(job.id, job); return { job: job } })
+    sidecar.respond('cron.get', (params) => ({ job: (jobs.get(params.job_id) ?? null) as never }))
+    sidecar.respond('cron.update', (params) => { const job = jobs.get(params.job_id); if (!job) throw new SidecarError('Job not found', { condition: 'not_found' }); Object.assign(job, params.updates); return { job: job as never } })
+    const chat = (id: string): [string | null, string | null] => s.deps.sessions.deps.modelStateFromRequest(id, undefined, null)
+    for (const id of ['@ollama:llama3:8b', '@custom:localhost:8080:m', '@gemini:gemini-2.5-flash']) {
+      const created = (await json(await post(s, '/api/crons/create', { schedule: 'every 1h', prompt: 'hi', model: id, provider: 'stale' }))).job as Json
+      const [model, provider] = chat(id)
+      expect(jobs.get(String(created.id))).toMatchObject({ model, provider })
+      expect(created).toMatchObject({ model, provider })
+    }
+    expect(jobs.get('m1')).toMatchObject({ model: 'llama3:8b', provider: 'ollama' })
+    expect(jobs.get('m2')).toMatchObject({ model: 'm', provider: 'custom:localhost:8080' })
+    // A bare id keeps its explicit provider.
+    await post(s, '/api/crons/update', { job_id: 'm1', model: 'gemini-2.5-flash', provider: 'google' })
+    expect(jobs.get('m1')).toMatchObject({ model: 'gemini-2.5-flash', provider: 'google' })
+    await post(s, '/api/crons/update', { job_id: 'm1', model: '@ollama:llama3:8b' })
+    expect(jobs.get('m1')).toMatchObject({ model: 'llama3:8b', provider: 'ollama' })
+    // A job an older client stored with a qualified id reads back as a bare model and its provider.
+    jobs.set('legacy', { id: 'legacy', name: 'legacy', profile: null, schedule: 'every 1h', prompt: 'x', toast_notifications: true, monitor: '', continuity: false, context_from: [], model: '@custom:localhost:8080:m', provider: 'custom' })
+    const listed = ((await json(await s.get('/api/crons'))).jobs as Json[]).find((j) => j.id === 'legacy')
+    expect(listed).toMatchObject({ model: 'm', provider: 'custom:localhost:8080' })
+  })
+
   it('crons list merges profiles, create/update translate the form fields, and run-now answers on started', async () => {
     const jobs = new Map<string, Json>()
     sidecar.respond('cron.list', () => ({ jobs: [...jobs.values()] as never[] }))

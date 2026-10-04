@@ -39,7 +39,7 @@ export interface ComposerProps {
   sessionId: string | null
   session: Session | null
   /** Choices made on the unsaved chat, shown by the chips until the session exists. */
-  pendingChoices?: { model?: string; workspace?: string; enabled_toolsets?: string[] | null } | undefined
+  pendingChoices?: { model?: string; model_provider?: string | null; workspace?: string; enabled_toolsets?: string[] | null } | undefined
   live: LiveTurn | null
   settings: Settings | undefined
   /** Creates the unsaved chat's session; `onCreated` hears its id before the route changes to it. */
@@ -496,6 +496,7 @@ export function Composer(props: ComposerProps) {
 
   // While a clarification owns the box, the message-only controls leave the footer (docs/ui-ux clarify-card).
   const hide = (k: string) => (!!clarify && MESSAGE_ONLY_CONTROLS.has(k)) || !!(settings as Record<string, unknown> | undefined)?.[k]
+  const modelChoice = session?.model ? { model: session.model, optionId: session.model_option_id ?? null } : { model: pendingChoices?.model ?? null, optionId: pendingChoices?.model ?? null }
   const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
   const context: ContextFigures = { percent: session?.context_usage_percent, used: session?.context_used_tokens, window: session?.context_window_tokens, thresholdPercent: session?.context_threshold_percent }
   const canSend = (text.trim() !== '' || files.some((f) => f.status === 'done')) && !sending && !locked
@@ -590,7 +591,7 @@ export function Composer(props: ComposerProps) {
         />
         <div ref={footer} className={cn('composer-footer', stage !== 'full' && 'cf-icons', stage === 'burger' && 'cf-burger', collapsed && 'cf-collapsed')}>
           <div className="composer-left flex items-center gap-1 min-w-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] max-[641px]:flex-[1_1_auto] max-[641px]:w-auto max-[641px]:flex-nowrap max-[641px]:items-center max-[641px]:gap-x-2.5 max-[641px]:gap-y-0 max-[641px]:max-h-none max-[641px]:[-webkit-overflow-scrolling:touch] max-[341px]:gap-x-0.5">
-            {!hide('hide_composer_model') && <div className="composer-model-wrap"><ModelChip value={session?.model ?? pendingChoices?.model ?? null} defaultModel={settings?.default_model} onChange={onModelChange} /></div>}
+            {!hide('hide_composer_model') && <div className="composer-model-wrap"><ModelChip {...modelChoice} onChange={onModelChange} /></div>}
             {!hide('hide_composer_reasoning') && reasoningSupported && <div className="composer-reasoning-wrap"><ReasoningChip value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} /></div>}
             <button className="icon-btn composer-mobile-config-btn has-tooltip" id="composerMobileConfigBtn" type="button" data-tooltip={m.composer_config_title()} aria-label={m.composer_config_title()} aria-expanded={configOpen} aria-controls="composerMobileConfigPanel" onClick={() => setConfigOpen((o) => !o)}>
               <SlidersHorizontal size={16} aria-hidden="true" />
@@ -631,7 +632,7 @@ export function Composer(props: ComposerProps) {
             )}
           </div>
           <div className={cn('composer-mobile-config-panel', configOpen && 'open')} id="composerMobileConfigPanel" role="group" aria-label={m.composer_config_title()}>
-            {stage === 'burger' && !hide('hide_composer_model') && <ModelChip row value={session?.model ?? pendingChoices?.model ?? null} defaultModel={settings?.default_model} onChange={onModelChange} />}
+            {stage === 'burger' && !hide('hide_composer_model') && <ModelChip row {...modelChoice} onChange={onModelChange} />}
             {stage === 'burger' && !hide('hide_composer_reasoning') && reasoningSupported && <ReasoningChip row value={reasoning} levels={reasoningLevels} onChange={onReasoningChange} />}
             {/* The chat header carries the terminal toggle above phone width. */}
             {stage === 'burger' && phone && <button type="button" className={cn('icon-btn', terminalOpen && 'active')} id="btnTerminal" title={m.composer_terminal_toggle()} aria-label={m.composer_terminal_toggle()} aria-pressed={terminalOpen} onClick={() => { setConfigOpen(false); onToggleTerminal() }}><TerminalSquare size={16} aria-hidden="true" /><span className="composer-mobile-config-value">{m.composer_terminal_toggle()}</span></button>}

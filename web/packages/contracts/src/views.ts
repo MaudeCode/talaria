@@ -227,6 +227,7 @@ const WorkspaceNameSchema = NullableString.optional()
 /** Full session record from `GET /api/session` and mutations returning `session`. */
 export const SessionSchema = z.looseObject({
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), created_workspace: z.string().nullable().optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
+  model_option_id: NullableString.optional().describe('TAL-301: the catalog entry id the stored model/provider selects; null when none.'),
   messages: z.array(MessageSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(), created_at: UnixSeconds.optional(), updated_at: UnixSeconds.optional(), last_message_at: NullableNumber.optional(),
   message_count: z.number().optional(), user_message_count: z.number().optional(), pinned: z.boolean().optional(), archived: z.boolean().optional(), project_id: NullableString.optional(), profile: NullableString.optional(),
   personality: NullableString.optional(), input_tokens: z.number().optional(), output_tokens: z.number().optional(), cache_read_tokens: z.number().optional(), cache_write_tokens: z.number().optional(),
@@ -437,9 +438,10 @@ export const ProfileSwitchSchema = ProfilesSchema.extend({ is_default: z.boolean
 /** `/api/reasoning`: config.yaml agent.reasoning_effort / display.show_reasoning, resolved for a model. */
 export const ReasoningStatusSchema = z.looseObject({ show_reasoning: z.boolean().optional(), reasoning_effort: z.string().nullable().optional(), supported_efforts: z.array(z.string()).optional(), supports_reasoning_effort: z.boolean().optional(), supports_thinking_toggle: z.boolean().optional() })
 export type ReasoningStatus = z.infer<typeof ReasoningStatusSchema>
-export const ModelEntrySchema = z.looseObject({ id: z.string(), label: z.string().optional(), provider: z.string().optional(), supports_fast_tier: z.boolean().optional() })
+/** TAL-301: `provider_id`/`bare_id` are the server's split of `id`; clients match a stored `(model, provider)` against them and send `id` back. */
+export const ModelEntrySchema = z.looseObject({ id: z.string(), label: z.string().optional(), provider: z.string().optional(), provider_id: z.string().optional(), bare_id: z.string().optional(), supports_fast_tier: z.boolean().optional() })
 export const ModelGroupSchema = z.looseObject({ provider: z.string(), provider_id: z.string().optional(), models: z.array(ModelEntrySchema), extra_models: z.array(ModelEntrySchema).optional() })
-export const ModelsSchema = z.looseObject({ active_provider: NullableString.optional(), default_model: z.string().optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional() })
+export const ModelsSchema = z.looseObject({ active_provider: NullableString.optional(), default_model: z.string().optional(), default_provider_id: NullableString.optional(), default_bare_id: z.string().optional(), default_option_id: NullableString.optional(), groups: z.array(ModelGroupSchema), aliases: z.record(z.string(), Json).optional(), configured_model_badges: z.record(z.string(), Json).optional() })
 export type Models = z.infer<typeof ModelsSchema>
 export const ProviderSchema = z.looseObject({
   id: z.string(), display_name: z.string().optional(), has_key: z.boolean().optional(), configurable: z.boolean().optional(), is_oauth: z.boolean().optional(), is_plugin_provider: z.boolean().optional(), is_self_hosted: z.boolean().optional(),
@@ -644,7 +646,7 @@ export const CronJobViewSchema = z.looseObject({
   /** Server-filled (TAL-298): `schedule_display` is the schedule text clients show; `schedule_input` is the editor prefill the scheduler accepts back. */
   schedule_display: z.string(), schedule_input: z.string(), enabled: z.boolean().optional(), paused: z.boolean().optional(), paused_reason: NullableString.optional(), state: NullableString.optional(), last_status: NullableString.optional(), last_error: NullableString.optional(),
   last_delivery_error: NullableString.optional(), next_run_at: z.union([z.string(), z.number(), z.null()]).optional(), last_run_at: z.union([z.string(), z.number(), z.null()]).optional(), repeat: z.union([CronRepeatSchema, z.number(), z.null()]).optional(),
-  status: z.string().optional(), last_run: Json.optional(), next_run: Json.optional(), profile: NullableString.optional(), session_id: NullableString.optional(), model: NullableString.optional(), provider: NullableString.optional(), workspace: NullableString.optional(),
+  status: z.string().optional(), last_run: Json.optional(), next_run: Json.optional(), profile: NullableString.optional(), session_id: NullableString.optional(), model: NullableString.optional(), provider: NullableString.optional(), model_option_id: NullableString.optional(), workspace: NullableString.optional(),
   workdir: NullableString.optional(), deliver: NullableString.optional(), skills: z.array(z.string()).optional(), no_agent: z.boolean().optional(), script: NullableString.optional(), monitor: NullableString.optional(), continuity: z.boolean().optional(),
   context_from: z.union([z.array(z.string()), z.string(), z.null()]).optional(), reasoning_effort: NullableString.optional(), toast_notifications: z.boolean().optional(), running: z.boolean().optional(),
   /** Server-derived (TAL-296): the job's status, whether it needs attention, and whether its primary action is Resume. Live runs overlay it. */

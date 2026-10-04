@@ -802,7 +802,7 @@ export class TurnRunner {
    * msg_limit=` (renderable rows, limited payload shape, windowed tool calls, todo state) with the full count.
    */
   private terminalSessionPayload(s: Session): Record<string, unknown> {
-    const payload = withSessionWireFlags(s.compact({ contextLengthFor: this.deps.service().deps.contextLengthFor }), this.registry.liveIds)
+    const payload = withSessionWireFlags(s.compact({ contextLengthFor: this.deps.service().deps.contextLengthFor, modelOptionFor: this.deps.service().deps.modelOptionFor }), this.registry.liveIds)
     payload.assistant_name = this.deps.service().assistantName(s)
     payload.workspace_name = this.deps.service().workspaceNames()(s)
     const service = this.deps.service()

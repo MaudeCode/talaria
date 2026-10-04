@@ -5,6 +5,7 @@ struct ComposerModelPickerSheet: View {
     let modelGroups: [ModelCatalogGroup]
     let selectedModelID: String?
     let selectedModelProviderID: String?
+    let selectedModelOptionID: String?
     let favoriteModelKeys: [ModelFavoriteKey]
     let recentModelKeys: [ModelFavoriteKey]
     let onSelect: (ModelCatalogOption) -> Void
@@ -306,7 +307,11 @@ struct ComposerModelPickerSheet: View {
     }
 
     private func isSelected(_ option: ModelCatalogOption) -> Bool {
-        option.matchesSelection(modelID: selectedModelID, providerID: selectedModelProviderID)
+        option.isSelected(
+            optionID: selectedModelOptionID,
+            modelID: selectedModelID,
+            providerID: selectedModelProviderID
+        )
     }
 
     private var filteredModelGroups: [ModelCatalogGroup] {
@@ -403,7 +408,8 @@ struct ComposerModelPickerSheet: View {
     private var selectedCustomOption: ModelCatalogOption? {
         guard let selectedModelID, !selectedModelID.isEmpty else { return nil }
         let catalogOptions = modelGroups.flatMap(\.models)
-        if catalogOptions.firstMatchingSelection(
+        if catalogOptions.firstSelected(
+            optionID: selectedModelOptionID,
             modelID: selectedModelID,
             providerID: selectedModelProviderID
         ) != nil {
