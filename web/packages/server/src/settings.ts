@@ -12,7 +12,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { atomicWriteText } from './fs/atomic.js'
 import { resolveDefaultWorkspace, type Env } from './config.js'
-import { normalizeTrustedLinkHosts } from '@maudecode/talaria-web-contracts'
+import { normalizeTrustedLinkHosts } from './links.js'
 
 export type Settings = Record<string, unknown>
 

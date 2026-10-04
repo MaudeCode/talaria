@@ -1,8 +1,8 @@
 /**
- * External-link confirmation (TAL-279). The server stores `trusted_link_hosts`
- * through `normalizeTrustedLinkHosts`; the chat Markdown adapter asks
- * `externalLinkOpensDirectly` on each click. The list only gates that click
- * warning: it never changes URL sanitization or server outbound trust.
+ * External-link confirmation (TAL-279). The settings store keeps `trusted_link_hosts`
+ * through `normalizeTrustedLinkHosts`; `POST /api/settings/link-check` answers
+ * `externalLinkOpensDirectly` for each chat link click. The list only gates that
+ * click warning: it never changes URL sanitization or server outbound trust.
  */
 
 export const TRUSTED_LINK_HOSTS_MAX = 100
@@ -38,6 +38,11 @@ export function normalizeTrustedLinkHosts(value: unknown): string[] {
 export interface LinkPreferences {
   confirm: boolean
   trustedHosts: readonly string[]
+}
+
+/** The saved preferences as the link check reads them: anything but an explicit `false` keeps the confirmation. */
+export function linkPreferences(settings: Record<string, unknown>): LinkPreferences {
+  return { confirm: settings.confirm_external_links !== false, trustedHosts: normalizeTrustedLinkHosts(settings.trusted_link_hosts) }
 }
 
 /** Whether a clicked link skips the confirmation: only absolute HTTP(S) URLs, when confirmation is off or the exact hostname is trusted. */

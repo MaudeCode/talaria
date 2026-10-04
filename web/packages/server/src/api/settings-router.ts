@@ -21,6 +21,7 @@ import { displayName, providerEnvVar, stampAuxiliarySelections } from '../provid
 import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
 import { displayBotName, SETTINGS_SPEECH_KEYS, pyBool } from '../settings.js'
 import { str } from '../util.js'
+import { externalLinkOpensDirectly, linkPreferences } from '../links.js'
 
 const os = implement(settingsContract).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -218,6 +219,7 @@ export const settingsRouter = os.router({
   settings: {
     get: os.settings.get.handler(({ context: { ctx } }) => run(() => settingsPayload(ctx))),
     save: os.settings.save.handler(({ input, context: { ctx } }) => run(() => saveSettings(ctx, input))),
+    linkCheck: os.settings.linkCheck.handler(({ input, context: { ctx } }) => ({ opens_directly: externalLinkOpensDirectly(input.url, linkPreferences(ctx.deps.settings.load())) })),
   },
   profiles: {
     list: os.profiles.list.handler(({ context: { ctx } }) => run(async () => ({ profiles: await ctx.deps.profiles.list(activeProfileName(ctx)) as never[], active: activeProfileName(ctx), single_profile_mode: ctx.deps.isolatedProfileMode() }))),

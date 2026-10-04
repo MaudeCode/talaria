@@ -29405,6 +29405,54 @@
         }
       }
     },
+    "/api/settings/link-check": {
+      "post": {
+        "operationId": "settings.linkCheck",
+        "summary": "Whether a clicked chat link opens without the confirmation dialog: only absolute HTTP(S) URLs, when `confirm_external_links` is off or the exact hostname is in `trusted_link_hosts`.",
+        "tags": [
+          "settings"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "maxLength": 16384
+                  }
+                },
+                "required": [
+                  "url"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "opens_directly": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "opens_directly"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/profiles": {
       "get": {
         "operationId": "profiles.list",

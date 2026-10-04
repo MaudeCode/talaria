@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { externalLinkOpensDirectly, normalizeTrustedLinkHost, normalizeTrustedLinkHosts, TRUSTED_LINK_HOSTS_MAX } from './links.js'
+import { externalLinkOpensDirectly, linkPreferences, normalizeTrustedLinkHost, normalizeTrustedLinkHosts, TRUSTED_LINK_HOSTS_MAX } from './links.js'
 
 describe('normalizeTrustedLinkHost (TAL-279)', () => {
   it('keeps bare hostnames in browser-normalized form', () => {
@@ -39,6 +39,12 @@ describe('externalLinkOpensDirectly (TAL-279)', () => {
         expect(externalLinkOpensDirectly(href, prefs), href).toBe(false)
       }
     }
+  })
+
+  it('reads saved settings fail-closed', () => {
+    expect(linkPreferences({})).toEqual({ confirm: true, trustedHosts: [] })
+    expect(linkPreferences({ confirm_external_links: 'no', trusted_link_hosts: ['A.test', 'bad host'] })).toEqual({ confirm: true, trustedHosts: ['a.test'] })
+    expect(linkPreferences({ confirm_external_links: false })).toEqual({ confirm: false, trustedHosts: [] })
   })
 
   it('opens any external HTTP(S) link directly when confirmation is off', () => {

@@ -16,6 +16,7 @@ export const settingsContract = {
   settings: {
     get: oc.route({ method: 'GET', path: '/api/settings', tags, summary: 'Server settings plus auth-state, max_tokens, and version badges.' }).output(SettingsSchema),
     save: oc.route({ method: 'POST', path: '/api/settings', tags, summary: 'Save settings; `_set_password`, `_clear_password`, `_passwordless`, `_current_password`, and `max_tokens` are handled specially.' }).input(Loose).output(SettingsSchema),
+    linkCheck: oc.route({ method: 'POST', path: '/api/settings/link-check', tags, summary: 'Whether a clicked chat link opens without the confirmation dialog: only absolute HTTP(S) URLs, when `confirm_external_links` is off or the exact hostname is in `trusted_link_hosts`.' }).input(z.object({ url: z.string().max(16384) })).output(z.object({ opens_directly: z.boolean() })),
   },
   profiles: {
     list: oc.route({ method: 'GET', path: '/api/profiles', tags }).output(ProfilesSchema),

@@ -6,7 +6,6 @@
  */
 import { createContext, memo, use, useMemo } from 'react'
 import { Streamdown, type LinkSafetyConfig, type LinkSafetyModalProps } from 'streamdown'
-import { externalLinkOpensDirectly, type LinkPreferences } from '@maudecode/talaria-web-contracts'
 import { code } from '@streamdown/code'
 import { math } from '@streamdown/math'
 import { mermaid } from '@streamdown/mermaid'
@@ -20,8 +19,16 @@ import { m } from '../../../paraglide/messages.js'
 const PLUGINS = { code, math, mermaid, cjk }
 const SHIKI_THEMES: [string, string] = ['github-light', 'github-dark']
 
-/** The signed-in user's link settings; shared transcripts sit outside any provider and keep this default warning. */
-export const LinkPreferencesContext = createContext<LinkPreferences>({ confirm: true, trustedHosts: [] })
+/** Asks the server whether a clicked link skips the warning; shared transcripts sit outside any provider and always warn. */
+export const LinkCheckContext = createContext<((url: string) => Promise<boolean>) | null>(null)
+
+// ponytail: fixed budget so a direct open stays inside the click's user activation (popup blockers); slower answers warn.
+const LINK_CHECK_TIMEOUT_MS = 700
+
+function askServer(check: (url: string) => Promise<boolean>, url: string): Promise<boolean> {
+  const timeout = new Promise<boolean>((resolve) => { setTimeout(() => { resolve(false) }, LINK_CHECK_TIMEOUT_MS) })
+  return Promise.race([check(url).catch(() => false), timeout])
+}
 
 function hostOf(url: string): string {
   try { return new URL(url).hostname || url } catch { return url }
@@ -49,9 +56,9 @@ export interface MarkdownProps {
 }
 
 export const Markdown = memo(function Markdown({ text, streaming = false, className, dir = 'auto' }: MarkdownProps) {
-  const prefs = use(LinkPreferencesContext)
-  // Streamdown re-renders blocks when this object's identity changes, so it follows the preferences only.
-  const linkSafety = useMemo<LinkSafetyConfig>(() => ({ enabled: true, onLinkCheck: (url) => externalLinkOpensDirectly(url, prefs), renderModal: (props) => <LinkSafetyDialog {...props} /> }), [prefs])
+  const check = use(LinkCheckContext)
+  // Streamdown re-renders blocks when this object's identity changes, so it follows the checker only.
+  const linkSafety = useMemo<LinkSafetyConfig>(() => ({ enabled: true, onLinkCheck: (url) => (check ? askServer(check, url) : false), renderModal: (props) => <LinkSafetyDialog {...props} /> }), [check])
   return (
     <Streamdown
       mode={streaming ? 'streaming' : 'static'}
