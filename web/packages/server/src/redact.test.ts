@@ -523,10 +523,10 @@ describe('redactSensitive cost', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
     // Unquoted runs, and many credential keys inside one long quoted argument.
     // The Agent's ported families: env names, split tokens, JWT headers, phone numbers and bare URL userinfo.
-    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_a\x1b[1m', 'ghp_a\x1b]8;;a', '\x1b[1', 'ghp_a\x9b1m', '\x9d8;;a', 'ghp_a\x1bPa', '\x1b( ', '\x90a\x9d', '\x1b\x00\x00', 'ghp_a\x1b[\x07', '\x1b(\x00', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
-      `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
+      `--${'aB'.repeat(100_000)}Password=x`, `ghp_a\x1b${'\x00'.repeat(200_000)}`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
       // Shell-composed identifiers: unclosed and alternating quote and escape pieces.
       ...[`a'`, `a"b'c\\d`, `a'b'`, `pass$'`, `a$(b`, 'a`b ', `a\${b`, `a$b`, `x://b:c'd`, `a$(b$(`, `?token=a&`, `Bearer a'`, `a{b,`, `a{b`, `a{,}`, `a$'\\`, `--$'\\x`, `a'='`, `a'b `, `x:'@'`, `%41`, `a%4`, `a:b`, `'--a', '`, `"-u", "x`].map((seg) => `--${seg.repeat(Math.ceil(200_000 / seg.length))}`),
       // Inline assignments: long chains, prefix chains, many substitutions, and a secret substituted many times.
@@ -783,6 +783,53 @@ describe('Agent redactor parity', () => {
     expect(redactText('ghp_abcdef\x1b1234567890ABCDEF1234567890abcdef\x1b-x', true)).toBe('ghp_ab...cdef\x1b-x')
     for (const text of ['author_key=name', 'COMPASS_KEY=north', 'PASSAGE_KEY=title', 'compass_key=north']) expect(redactText(text, true)).toBe(text)
     expect(redactText('DB_PASS=north', true)).toBe('DB_PASS=***')
+  })
+
+  it('masks a token split by an ANSI escape sequence, and keeps the sequences around a whole one', () => {
+    for (const [input, expected] of [
+      ['ghp_abcdef\x1b[31m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      // The single-code-point C1 forms of CSI and OSC.
+      ['ghp_abcdef\x9b31m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x9d8;;https://x.test\x9c1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      // The other ECMA-48 families: character-set selection, single-character escapes, and DCS, SOS, PM and APC strings.
+      ['gh\x1b(Bp_abcdef1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x1b7123456\x1b=7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x1bP1;2|x\x1b\\123456\x1b_app\x1b\\7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x1bXsos\x1b\\123456\x1b^pm\x1b\\7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x90dcs\x9c123456\x9fapc\x9c7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['gh\x85p_abcdef1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      // Only OSC ends at BEL; the other strings run to ST.
+      ['ghp_ab\x1bPx\x07.\x1b\\cdef1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      // A C0 control inside a sequence runs without ending it; CAN or SUB cancels it, and ESC or a C1 control interrupts it.
+      ['ghp_abcdef\x1b[31\x07m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      // A parameter after an intermediate makes a terminal ignore the CSI through its final byte.
+      ['ghp_abcdef\x1b[1 2m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x1b\x07(B123456\x1b(\nB7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x1b[31\x18123456\x1b]0;t\x1a7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x1b[31\x1b[0m123456\x1b]0;t\x9b1m7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x84123456\x8f7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      // The piece before the sequence is a whole token by itself.
+      ['ghp_abcdefghij\x1b[31m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x1b[1;38;5;196m1234567890ABCDEF1234567890abcdef\x1b[0m done', 'ghp_ab...cdef\x1b[0m done'],
+      ['ghp_abcdef\x1b]8;;https://x.test\x07123456\x1b]8;;\x1b\\7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['gh\x1b[1mp_abcdef1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef1234567890ABCDEF1234567890abcdef\x1b[0m\nnext', 'ghp_ab...cdef\x1b[0m\nnext'],
+      ['\x1b[32mghp_abcdef1234567890ABCDEF1234567890abcdef\x1b[0m', '\x1b[32mghp_ab...cdef\x1b[0m'],
+      // A token inside an OSC payload (a terminal title) is masked there, whole or split by a control character.
+      ['\x1b]0;ghp_abcdef1234567890ABCDEF1234567890abcdef\x07', '\x1b]0;ghp_ab...cdef\x07'],
+      ['\x1b]0;ghp_abcdef\x011234567890ABCDEF1234567890abcdef\x07', '\x1b]0;ghp_ab...cdef\x07'],
+      // A payload token split by another sequence or string, and a token whose rest is a hidden payload.
+      ['\x1b]0;ghp_abcdef\x1b[31m1234567890ABCDEF1234567890abcdef\x07', '\x1b]0;ghp_ab...cdef\x07'],
+      ['\x1b]0;ghp_abcdef\x1b]0;junk\x071234567890ABCDEF1234567890abcdef\x07', '\x1b]0;ghp_ab...cdef\x07'],
+      ['\x1b]0;ghp_abcdef\x1b]0;junk_name\x071234567890ABCDEF1234567890abcdef\x07', '\x1b]0;ghp_ab...cdef\x07'],
+      // A prefix-like name in a hyperlink is no hidden token: an OSC's command number is not its payload.
+      ['\x1b]8;;file:///tmp/ghp_tools\x1b\\ghp_tools\x1b]8;;\x1b\\', '\x1b]8;;file:///tmp/ghp_tools\x1b\\ghp_tools\x1b]8;;\x1b\\'],
+      ['\x1b]0;ghp_abc\x07\x1b]0;junk\x07\x1b_def1234567890ABCDEF1234567890abcdef\x1b\\', '\x1b]0;ghp_ab...cdef\x1b\\'],
+      ['ghp_abcdefghij\x1b_1234567890ABCDEF1234567890abcdef\x1b\\', 'ghp_ab...cdef\x1b\\'],
+    ]) {
+      expect(redactText(input, true)).toBe(expected)
+      expect(sanitizeShareMessage({ role: 'assistant', content: input }, [], [], '/nonexistent-home')?.content).toBe(expected)
+    }
   })
 
   it('masks a split token before a sentence period, and a spaced URL query value up to its fragment', () => {

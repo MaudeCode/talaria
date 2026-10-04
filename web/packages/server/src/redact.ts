@@ -219,9 +219,47 @@ const PHONE_RE = /(?<![A-Za-z0-9])\+[1-9]\d{6,14}(?![A-Za-z0-9])/g
  * URLs carry tokens in the query, so a bare userinfo credential is never one.
  */
 const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/?#]{8,})(?=@\S)/gi
-/** Control and zero-width characters that can split a token body (`ghp_abc\x1bdef`, `sk-abc\u200bdef`). */
-const CONTROL_CHAR_RE = /[\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff]/
+/** C0, DEL, C1 and zero-width characters that can split a token body (`ghp_abc\x1bdef`, `sk-abc\u200bdef`). */
+const CONTROL_CHAR_RE = /[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202f\u2060\ufeff]/
 const CONTROL_CHARS_RE = new RegExp(CONTROL_CHAR_RE.source, 'g')
+/** C0 controls a terminal runs inside an escape sequence without ending it (all but CAN, SUB and ESC), and DEL. */
+const SEQ_C0 = String.raw`\x00-\x17\x19\x1c-\x1f\x7f`
+/** Where a sequence ends early: CAN or SUB cancels it, and ESC, a C1 control or the end of the text interrupts it. */
+const SEQ_CUT = String.raw`(?:[\x18\x1a]|(?=[\x1b\x80-\x9f]|$))`
+const SEQ_ESC = String.raw`\x1b[${SEQ_C0}]*`
+/** Parameters and intermediates in any order: a parameter after an intermediate makes a terminal ignore the CSI. */
+const SEQ_CSI = String.raw`(?:${SEQ_ESC}\[|\x9b)[ -?${SEQ_C0}]*(?:[@-~]|${SEQ_CUT})`
+const SEQ_NF = String.raw`${SEQ_ESC}[ -/][ -/${SEQ_C0}]*(?:[0-~]|${SEQ_CUT})`
+const SEQ_SINGLE = String.raw`${SEQ_ESC}[0-OQ-WYZ\\\x60-~]`
+/**
+ * An ECMA-48 escape sequence as a terminal parses it, or one control or zero-width character. The sequences, 7-bit
+ * `ESC …` or the C1 code point: CSI (`ESC [` … final byte), the strings OSC (… BEL or ST) and DCS, SOS, PM and APC
+ * (… ST), a character-set selection (`ESC ( B`), and a single-character escape (`ESC 7`); each also ends at `SEQ_CUT`.
+ * No part of a sequence can start the part after it, which keeps the scan linear.
+ */
+const ANSI_GAPS_RE = new RegExp(
+  [
+    SEQ_CSI,
+    String.raw`(?:${SEQ_ESC}\]|\x9d)[^\x07\x18\x1a\x1b\x80-\x9f]*(?:\x07|\x1b\\|\x9c|${SEQ_CUT})`,
+    String.raw`(?:${SEQ_ESC}[PX^_]|[\x90\x98\x9e\x9f])[^\x18\x1a\x1b\x80-\x9f]*(?:\x1b\\|\x9c|${SEQ_CUT})`,
+    SEQ_NF,
+    SEQ_SINGLE,
+    CONTROL_CHAR_RE.source,
+  ].join('|'),
+  'g',
+)
+/** `ANSI_GAPS_RE` with a string's payload kept: only its opener and terminator are gaps. */
+const ANSI_PAYLOAD_GAPS_RE = new RegExp([SEQ_CSI, String.raw`${SEQ_ESC}[\]PX^_]`, SEQ_NF, SEQ_SINGLE, CONTROL_CHAR_RE.source].join('|'), 'g')
+/**
+ * The views a split token is matched on: without whole escape sequences, without them but keeping string payloads (a
+ * terminal title can hold a token), and without control characters only (an escape's final byte can be a token's).
+ */
+const SPLIT_VIEWS = [ANSI_GAPS_RE, ANSI_PAYLOAD_GAPS_RE, CONTROL_CHARS_RE]
+const ANSI_GAP_AT_RE = new RegExp(ANSI_GAPS_RE.source, 'y')
+const TOKEN_CHAR_RE = /[A-Za-z0-9_-]/
+/** A string sequence's opener, with an OSC's command number (`8;`), which is no payload. */
+const STRING_OPENER_RE = new RegExp(String.raw`^(?:(?:${SEQ_ESC}\]|\x9d)(?:\d*;)?|${SEQ_ESC}[PX^_]|[\x90\x98\x9e\x9f])`)
+const PAYLOAD_RUN_CAP = 65_536
 const CRED_TEST_RE = new RegExp(CRED_RE.source)
 /** `CRED_RE`'s prefix and body from a position, without its boundaries (a split token checks the original ones). */
 const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
@@ -229,6 +267,9 @@ const SPLIT_TOKEN_CAP = 1024
 /** Where a `CRED_RE` prefix and body start at a boundary, however they end. */
 const CRED_START_RE = new RegExp(CRED_RE.source.replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'g')
 const CRED_WHOLE_RE = new RegExp(`^${CRED_RE.source}$`)
+/** `CRED_START_RE` and `CRED_RUN_RE` without their body: a credential's prefix, however little of its body follows. */
+const CRED_PREFIX_RE = new RegExp(CRED_START_RE.source.replace(/\{\d+,?\}/g, '{0}'), 'g')
+const CRED_PREFIX_RUN_RE = new RegExp(CRED_RUN_RE.source.replace(/\{\d+,?\}/g, '{0}'), 'y')
 /** A URL query parameter's value, up to the next `&` or `#`. */
 const QUERY_VALUE_RE = /[^&#]*/y
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
@@ -271,28 +312,96 @@ function splitTokenEnd(text: string, stripped: string, kept: number[], i: number
 }
 
 /**
- * Prefixed credentials whose body a control or zero-width character splits, matched on the text without those characters
- * and masked in place. A token starts at a boundary of the stripped text, or where a stripped control hid the original
- * one (`note\nghp_…`); one starting inside a token already masked is part of it.
+ * The original spans, and the joined text, of prefixed credentials whose body a gap of one of `SPLIT_VIEWS` splits,
+ * matched on the text without those gaps, plus `payloadRunSpan`'s from each prefix. A token starts at a boundary of the
+ * stripped text, or where a stripped gap hid the original one (`note\nghp_…`); one starting inside a token already
+ * masked is part of it.
  */
-function maskControlSplitTokens(text: string): string {
-  const stripped = text.replace(CONTROL_CHARS_RE, '')
-  if (stripped.length === text.length) return text
+function splitTokenSpans(text: string, gaps: RegExp): [number, number, string][] {
+  const stripped = text.replace(gaps, '')
+  if (stripped.length === text.length) return []
   // The original index of each kept character.
   const kept: number[] = []
-  for (let i = 0; i < text.length; i += 1) if (!CONTROL_CHAR_RE.test(text[i]!)) kept.push(i)
+  let at = 0
+  for (const m of text.matchAll(gaps)) {
+    while (at < m.index) kept.push(at++)
+    at += m[0].length
+  }
+  while (at < text.length) kept.push(at++)
   const starts = [...stripped.matchAll(CRED_START_RE)].map((m) => m.index)
-  for (let i = 1; i < kept.length; i += 1) if (kept[i]! - kept[i - 1]! > 1 && /[A-Za-z0-9_-]/.test(stripped[i - 1]!)) starts.push(i)
-  let out = ''
-  let last = 0
+  const prefixStarts = [...stripped.matchAll(CRED_PREFIX_RE)].map((m) => m.index)
+  for (let i = 1; i < kept.length; i += 1) {
+    if (kept[i]! - kept[i - 1]! <= 1 || !TOKEN_CHAR_RE.test(stripped[i - 1]!)) continue
+    starts.push(i)
+    CRED_PREFIX_RUN_RE.lastIndex = i
+    if (CRED_PREFIX_RUN_RE.test(stripped)) prefixStarts.push(i)
+  }
+  const spans: [number, number, string][] = []
   let scanned = 0
   for (const i of starts.sort((a, b) => a - b)) {
     if (i < scanned) continue
     const e = splitTokenEnd(text, stripped, kept, i)
     if (e === -1) continue
-    out += text.slice(last, kept[i]) + mask(stripped.slice(i, e))
-    last = kept[e - 1]! + 1
+    spans.push([kept[i]!, kept[e - 1]! + 1, stripped.slice(i, e)])
     scanned = e
+  }
+  let walked = 0
+  for (const i of prefixStarts.sort((a, b) => a - b)) {
+    if (kept[i]! < walked) continue
+    const [span, reached] = payloadRunSpan(text, kept[i]!)
+    if (span) spans.push(span)
+    walked = reached
+  }
+  return spans
+}
+
+/**
+ * Fail-closed for a token split across string payloads: from a credential prefix at `start`, the span through the run of
+ * token characters and whole escape sequences after it, when a string payload in the run holds token characters, and
+ * where the run stopped. Any subset of payloads can hold a token's pieces and the rest junk
+ * (`\x1b]0;ghp_ab\x1b]0;x_y\x07cd…`), so the run is masked whole rather than rebuilt.
+ */
+function payloadRunSpan(text: string, start: number): [[number, number, string] | null, number] {
+  let token = ''
+  let end = start
+  let hidden = false
+  let k = start
+  // ponytail: a run longer than PAYLOAD_RUN_CAP is masked in pieces; raise it if longer hidden tokens appear.
+  while (k < text.length && k - start < PAYLOAD_RUN_CAP) {
+    ANSI_GAP_AT_RE.lastIndex = k
+    const gap = ANSI_GAP_AT_RE.exec(text)?.[0]
+    if (gap) {
+      const from = STRING_OPENER_RE.exec(gap)?.[0].length ?? gap.length
+      for (let j = from; j < gap.length; j += 1) {
+        if (!TOKEN_CHAR_RE.test(gap[j]!)) continue
+        token += gap[j]!
+        end = k + j + 1
+        hidden = true
+      }
+      k += gap.length
+    } else if (TOKEN_CHAR_RE.test(text[k]!)) {
+      token += text[k]!
+      end = k += 1
+    } else break
+  }
+  return [hidden ? [start, end, token] : null, k]
+}
+
+/** Masks each union of the split-token spans every view finds, so no view masks a piece of a token another one joins. */
+function maskSplitTokens(text: string): string {
+  const spans = SPLIT_VIEWS.flatMap((gaps) => splitTokenSpans(text, gaps)).sort((a, b) => a[0] - b[0])
+  let out = ''
+  let last = 0
+  for (let k = 0; k < spans.length; ) {
+    const start = spans[k]![0]
+    let [, end, token] = spans[k]!
+    for (k += 1; k < spans.length && spans[k]![0] < end; k += 1) {
+      const [, nextEnd, nextToken] = spans[k]!
+      end = Math.max(end, nextEnd)
+      if (nextToken.length > token.length) token = nextToken
+    }
+    out += text.slice(last, start) + mask(token)
+    last = end
   }
   return out + text.slice(last)
 }
@@ -1449,7 +1558,7 @@ export function redactSensitive(text: string): string {
 
 function redactRules(text: string): string {
   if (!text) return text
-  let out = maskControlSplitTokens(text).replace(CRED_RE, (_, t: string) => mask(t))
+  let out = maskSplitTokens(text).replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = redactHeaderCredentials(out, AUTH_HDR_RE)
   out = out.replace(JWT_RE, (t) => mask(t))
@@ -1496,9 +1605,10 @@ const PHONE_TEST_RE = new RegExp(PHONE_RE.source)
 
 export function mightContainSensitiveText(text: string): boolean {
   if (!text) return false
-  // A control or zero-width character inside a prefix (`x\u200bai-…`) does not hide it: the redactor joins split tokens.
-  const joined = text.replace(CONTROL_CHARS_RE, '')
-  if (CASE_MARKERS.some((m) => joined.includes(m))) return true
+  // A control or zero-width character or an ANSI escape sequence inside a prefix (`x\u200bai-…`) does not hide it: the
+  // redactor joins split tokens.
+  const views = SPLIT_VIEWS.map((gaps) => text.replace(gaps, ''))
+  if (CASE_MARKERS.some((m) => views.some((view) => view.includes(m)))) return true
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
   if (CRED_KEY_NAME_RE.test(text)) return true
