@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import subprocess
 import sys
+import threading
 import types
 from pathlib import Path
 
@@ -150,6 +152,17 @@ def test_agent_0_21_3_mirrors_the_launch_profile_policy(tmp_path, monkeypatch, s
         assert scope_calls[-1] == ("scope", {"OPENAI_API_KEY": "sk-launch", "ROOT_FILE": "root"})
     assert multiplex == [True]
 
+    # A Settings edit reaches the frozen launch environment.
+    from talaria_sidecar.methods import runtime as runtime_methods
+
+    registry = types.SimpleNamespace(runtime=None, methods={})
+    registry.method = lambda name, **_: lambda func: registry.methods.setdefault(name, func)
+    runtime_methods.register(registry)
+    monkeypatch.setenv("FRESH_KEY", "restored-after-the-test")
+    registry.methods["runtime.env"](None, {"unset": ["OPENAI_API_KEY"], "set": {"FRESH_KEY": "sk-fresh"}})
+    with home_module.scoped_home(root):
+        assert scope_calls[-1] == ("scope", {"FRESH_KEY": "sk-fresh", "ROOT_FILE": "root"})
+
     # A partial implementation is not permission to leak the launch profile's credentials.
     monkeypatch.delattr(scope, "set_multiplex_active")
     with pytest.raises(RpcError) as excinfo:
@@ -203,6 +216,7 @@ def test_concurrent_profiles_resolve_only_their_own_credentials_on_the_installed
         "alpha": clean({"OPENAI_API_KEY": "sk-alpha", "ALPHA_ONLY": "alpha", "LAUNCH_ENV_ONLY": None}),
         "beta": clean({"OPENAI_API_KEY": "sk-beta", "ALPHA_ONLY": None, "LAUNCH_ENV_ONLY": None}),
         "default_after_named": launch,
+        "default_after_env_edit": {"OPENAI_API_KEY": None, "ALPHA_ONLY": None, "LAUNCH_ENV_ONLY": "rotated"},
     }
 
 
@@ -240,3 +254,41 @@ def test_concurrent_turns_run_under_their_own_profiles_terminal_backend_on_the_i
         "beta": {"env_type": "ssh", "docker_image": default_image, "ssh_host": "beta-host", "ssh_user": "", "container": "session:beta"},
         "gamma": {"env_type": "docker", "docker_image": "gamma-image", "ssh_host": "", "ssh_user": "", "container": "profile:gamma"},
     }
+
+
+def test_runtime_env_waits_for_a_launch_policy_import_in_flight(tmp_path, monkeypatch) -> None:
+    """A Settings edit racing the Agent's first import of the policy module edits its snapshot once the import finishes."""
+    package = tmp_path / "tui_gateway"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "launch_profile_policy.py").write_text(
+        "import threading\nimport _tal525_gate\n_tal525_gate.started.set()\n_tal525_gate.release.wait(10)\n"
+        "_lock = threading.Lock()\n_snapshot = {'OPENAI_API_KEY': 'sk-launch', 'KEPT': 'kept'}\n"
+    )
+    gate = types.ModuleType("_tal525_gate")
+    gate.started, gate.release = threading.Event(), threading.Event()
+    monkeypatch.setitem(sys.modules, "_tal525_gate", gate)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    for name in ("tui_gateway", "tui_gateway.launch_profile_policy"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    monkeypatch.setattr(home_module, "_LAUNCH_ENV", None)
+
+    importer = threading.Thread(target=importlib.import_module, args=("tui_gateway.launch_profile_policy",))
+    importer.start()
+    assert gate.started.wait(10)
+    errors = []
+    editor = threading.Thread(target=lambda: _record(errors, lambda: home_module.edit_launch_env({}, ["OPENAI_API_KEY"])))
+    editor.start()
+    editor.join(0.2)
+    gate.release.set()
+    importer.join(10)
+    editor.join(10)
+    assert errors == []
+    assert sys.modules["tui_gateway.launch_profile_policy"]._snapshot == {"KEPT": "kept"}
+
+
+def _record(errors: list, body) -> None:
+    try:
+        body()
+    except Exception as exc:  # noqa: BLE001 - reported to the test
+        errors.append(repr(exc))

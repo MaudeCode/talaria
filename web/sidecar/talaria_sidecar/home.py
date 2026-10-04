@@ -24,7 +24,9 @@ its launch-process ``TERMINAL_*`` under those files.
 from __future__ import annotations
 
 import contextlib
+import importlib
 import os
+import sys
 import threading
 from pathlib import Path
 
@@ -50,6 +52,24 @@ def _frozen_launch_env() -> dict[str, str]:
         if _LAUNCH_ENV is None:
             _LAUNCH_ENV = dict(os.environ)
         return dict(_LAUNCH_ENV)
+
+
+def edit_launch_env(to_set: dict[str, str], to_unset: list[str]) -> None:
+    """Carry a Web-owned ``.env`` edit into the frozen launch environments, so a removed credential stops resolving for the launch profile."""
+
+    def edit(snapshot: dict[str, str] | None) -> None:
+        if snapshot is not None:
+            for name in to_unset:
+                snapshot.pop(name, None)
+            snapshot.update(to_set)
+
+    with _LAUNCH_ENV_LOCK:
+        edit(_LAUNCH_ENV)
+    # Only an imported policy module can hold a frozen snapshot; importing it waits out a first import still running elsewhere.
+    if sys.modules.get("tui_gateway.launch_profile_policy") is not None:
+        policy = importlib.import_module("tui_gateway.launch_profile_policy")
+        with policy._lock:
+            edit(policy._snapshot)
 
 
 def _activate_multi_profile_hosting() -> None:
