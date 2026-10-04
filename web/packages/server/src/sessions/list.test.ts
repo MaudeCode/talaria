@@ -8,7 +8,7 @@ const fixture = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../.
 function listed(stored: Row[], liveStreamIds: string[]): Row[] {
   const payload = { sessions: stored, sidebar_reference_sessions: [], archived_limit: null } as unknown as ListPayload
   const overlay: RuntimeOverlay = { activeStreamIds: new Set(liveStreamIds), runningCronJobs: new Map(), live: () => undefined, attention: () => null }
-  return sessionListResponse(payload, overlay, false, 0).body.sessions
+  return sessionListResponse(payload, overlay, false, 0, () => null).body.sessions
 }
 
 describe('canonical session-list order (TAL-306)', () => {

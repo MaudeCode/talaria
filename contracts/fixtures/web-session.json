@@ -3191,7 +3191,8 @@
         "sort_ts": 1789100000,
         "source_kind": "webui",
         "title": "Pinned chat with a pending prompt",
-        "updated_at": 1789100000
+        "updated_at": 1789100000,
+        "workspace_name": null
       },
       {
         "active_stream_id": null,
@@ -3212,7 +3213,8 @@
         "sort_ts": 1789300000,
         "source_kind": "webui",
         "title": "Pinned chat",
-        "updated_at": 1789300000
+        "updated_at": 1789300000,
+        "workspace_name": null
       },
       {
         "active_stream_id": "tal306-run",
@@ -3233,7 +3235,8 @@
         "sort_ts": 1789400000,
         "source_kind": "webui",
         "title": "Streaming chat",
-        "updated_at": 1789400000
+        "updated_at": 1789400000,
+        "workspace_name": null
       },
       {
         "active_stream_id": null,
@@ -3254,7 +3257,8 @@
         "sort_ts": 1789420000,
         "source_kind": "webui",
         "title": "Newest idle chat",
-        "updated_at": 1789420000
+        "updated_at": 1789420000,
+        "workspace_name": null
       },
       {
         "active_stream_id": null,
@@ -3272,7 +3276,8 @@
         "session_id": "tal306-created-only",
         "sort_ts": 1789350000,
         "source_kind": "webui",
-        "title": "Chat with only a creation time"
+        "title": "Chat with only a creation time",
+        "workspace_name": null
       },
       {
         "active_stream_id": null,
@@ -3293,7 +3298,8 @@
         "sort_ts": 1789350000,
         "source_kind": "webui",
         "title": "Tie with the created-only chat",
-        "updated_at": 1789350000
+        "updated_at": 1789350000,
+        "workspace_name": null
       },
       {
         "active_stream_id": null,
@@ -3314,7 +3320,8 @@
         "sort_ts": 1789250000,
         "source_kind": "webui",
         "title": "Chat with no message time",
-        "updated_at": 1789250000
+        "updated_at": 1789250000,
+        "workspace_name": null
       },
       {
         "active_stream_id": null,
@@ -3335,7 +3342,8 @@
         "sort_ts": 1789000000,
         "source_kind": "webui",
         "title": "Oldest chat",
-        "updated_at": 1789000000
+        "updated_at": 1789000000,
+        "workspace_name": null
       }
     ]
   }
