@@ -1243,6 +1243,51 @@
             "type": "function"
           }
         ],
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "tool-live-calls:prose",
+              "order_index": 0,
+              "role": "prose",
+              "created_at": 2031,
+              "text": "Building."
+            },
+            {
+              "row_id": "tool:call-build",
+              "order_index": 1,
+              "role": "tool",
+              "created_at": 2031,
+              "tool": {
+                "id": "call-build",
+                "name": "terminal",
+                "kind": "shell",
+                "target": "make",
+                "args": {
+                  "command": "make"
+                },
+                "preview": null,
+                "result": null,
+                "result_view": null,
+                "done": false,
+                "is_error": false,
+                "duration": null,
+                "cost_usd": null
+              }
+            }
+          ],
+          "final_answer": "",
+          "turn_duration": null,
+          "terminal_state": "running",
+          "expanded_by_default": true,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 2,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "36332fda38ec5646428dd5e35a70de2cc90dc9b8291acc0273037ff8343f23ab"
+        },
         "_turn_id": "tool-run-live"
       }
     ],
@@ -3344,6 +3389,206 @@
         "title": "Oldest chat",
         "updated_at": 1789000000,
         "workspace_name": null
+      }
+    ]
+  },
+  "running_scene_session": {
+    "session_id": "contract-running-scene",
+    "active_stream_id": "contract-run-r",
+    "is_streaming": true,
+    "transcript_seq": null,
+    "stored": [
+      {
+        "role": "user",
+        "content": "Earlier question",
+        "message_id": "contract-user-r0",
+        "timestamp": 1000
+      },
+      {
+        "role": "assistant",
+        "content": "Earlier answer.",
+        "message_id": "contract-run-r0-1",
+        "timestamp": 1001
+      },
+      {
+        "role": "user",
+        "content": "Read both files",
+        "message_id": "contract-user-r",
+        "timestamp": 1002,
+        "_turn_id": "contract-run-r"
+      },
+      {
+        "role": "assistant",
+        "content": "Reading a.txt.",
+        "reasoning": "Plan the read.",
+        "tool_calls": [
+          {
+            "id": "contract-read",
+            "type": "function",
+            "function": {
+              "name": "read_file",
+              "arguments": "{\"path\":\"a.txt\"}"
+            }
+          }
+        ],
+        "message_id": "contract-run-r-1",
+        "timestamp": 1003,
+        "_turn_id": "contract-run-r"
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "contract-read",
+        "content": "A",
+        "timestamp": 1004,
+        "_turn_id": "contract-run-r"
+      },
+      {
+        "role": "assistant",
+        "content": "Now b.txt.",
+        "message_id": "contract-run-r-2",
+        "timestamp": 1005,
+        "_turn_id": "contract-run-r"
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Earlier question",
+        "message_id": "contract-user-r0",
+        "timestamp": 1000,
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "assistant",
+        "content": "Earlier answer.",
+        "message_id": "contract-run-r0-1",
+        "timestamp": 1001,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Earlier answer.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "a8aa29b2fd9e93af93f9e8acc30be5fa89e09c95278b2d61997dd4cc4390b1a3"
+        },
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "user",
+        "content": "Read both files",
+        "message_id": "contract-user-r",
+        "timestamp": 1002,
+        "_turn_id": "contract-run-r"
+      },
+      {
+        "role": "assistant",
+        "content": "Reading a.txt.",
+        "message_id": "contract-run-r-1",
+        "timestamp": 1003,
+        "tool_calls": [
+          {
+            "kind": "read",
+            "target": "a.txt",
+            "function": {
+              "name": "read_file",
+              "arguments": "{\"path\":\"a.txt\"}"
+            },
+            "id": "contract-read",
+            "done": true,
+            "is_error": false,
+            "result": "A",
+            "result_view": {
+              "text": "A"
+            },
+            "duration": null,
+            "type": "function"
+          }
+        ],
+        "reasoning": "Plan the read.",
+        "_turn_id": "contract-run-r"
+      },
+      {
+        "role": "tool",
+        "content": "A",
+        "timestamp": 1004,
+        "tool_call_id": "contract-read",
+        "_turn_id": "contract-run-r"
+      },
+      {
+        "role": "assistant",
+        "content": "Now b.txt.",
+        "message_id": "contract-run-r-2",
+        "timestamp": 1005,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "contract-run-r-1:reasoning",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 1003,
+              "text": "Plan the read.",
+              "titles": []
+            },
+            {
+              "row_id": "contract-run-r-1:prose",
+              "order_index": 1,
+              "role": "prose",
+              "created_at": 1003,
+              "text": "Reading a.txt."
+            },
+            {
+              "row_id": "tool:contract-read",
+              "order_index": 2,
+              "role": "tool",
+              "created_at": 1003,
+              "tool": {
+                "id": "contract-read",
+                "name": "read_file",
+                "kind": "read",
+                "target": "a.txt",
+                "args": {
+                  "path": "a.txt"
+                },
+                "preview": null,
+                "result": "A",
+                "result_view": {
+                  "text": "A"
+                },
+                "done": true,
+                "is_error": false,
+                "duration": null,
+                "cost_usd": null
+              }
+            },
+            {
+              "row_id": "contract-run-r-2:prose",
+              "order_index": 3,
+              "role": "prose",
+              "created_at": 1005,
+              "text": "Now b.txt."
+            }
+          ],
+          "final_answer": "",
+          "turn_duration": null,
+          "terminal_state": "running",
+          "expanded_by_default": true,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 4,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "b0cea88295f24ceabb949c4de61b263ce24512304832d2bcf46064d3f1e790d6"
+        },
+        "_turn_id": "contract-run-r"
       }
     ]
   }

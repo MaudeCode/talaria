@@ -1,8 +1,9 @@
 /** Anchor activity scenes: one normalized row shape for both clients, identical in the detail preview and the paged rows. */
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { anchorActivitySceneTransportPreview, buildTurnScene, normalizeSceneRows, withTurnIds } from './anchor.js'
+import { anchorActivitySceneTransportPreview, buildTurnScene, hydrateAnchorActivityScenes, normalizeSceneRows, withTurnIds } from './anchor.js'
 import { withSceneToolDisplay } from '../redact.js'
 
 type Json = Record<string, unknown>
@@ -264,10 +265,56 @@ describe('buildTurnScene', () => {
   })
 })
 
+describe('running turn scenes (TAL-374)', () => {
+  const rows = (scene: unknown): unknown[][] => ((scene as Json).activity_rows as Json[]).map((r) => [r.role, r.text ?? (r.tool as Json).name])
+  const transcript = withTurnIds<Json>([
+    { role: 'user', content: 'Earlier' }, { role: 'assistant', content: 'Earlier answer.' },
+    { role: 'user', content: 'Read it', _turn_id: 'run-1' },
+    { role: 'assistant', content: 'Reading.', reasoning: 'Plan the read.', tool_calls: [{ id: 't1', name: 'read_file' }], _turn_id: 'run-1' },
+    { role: 'tool', tool_call_id: 't1', content: 'A', _turn_id: 'run-1' },
+    { role: 'assistant', content: 'Halfway there.', _turn_id: 'run-1' },
+  ])
+
+  it('keeps every persisted row of the running turn in order, with no answer and an open, outcome-free scene', () => {
+    const scene = buildTurnScene(turnOf(transcript.slice(2)), { running: true })
+    expect(rows(scene)).toEqual([['reasoning', 'Plan the read.'], ['prose', 'Reading.'], ['tool', 'read_file'], ['prose', 'Halfway there.']])
+    expect(scene).toMatchObject({ final_answer: '', terminal_state: 'running', expanded_by_default: true })
+  })
+
+  it('gives the running turn a scene only when its run has no journal to replay it, and leaves settled turns alone', () => {
+    const scenes = (opts: { runningScene?: boolean }) => (hydrateAnchorActivityScenes(transcript, {}, { activeTurnId: 'run-1', ...opts }) as Json[]).map((m) => m._anchor_activity_scene as Json | undefined)
+    const unjournaled = scenes({ runningScene: true })
+    expect(unjournaled[5]).toMatchObject({ terminal_state: 'running', final_answer: '', expanded_by_default: true, activity_rows_total: 4 })
+    expect(rows(unjournaled[5])).toEqual([['reasoning', 'Plan the read.'], ['prose', 'Reading.'], ['tool', 'read_file'], ['prose', 'Halfway there.']])
+    expect(unjournaled[3]).toBeUndefined()
+    const journaled = scenes({})
+    expect(journaled.slice(2).every((scene) => scene === undefined)).toBe(true)
+    expect(unjournaled[1]).toEqual(journaled[1])
+    expect(journaled[1]).toMatchObject({ final_answer: 'Earlier answer.', terminal_state: 'completed' })
+  })
+})
+
 describe('anchor scenes over HTTP', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })
   afterAll(() => s.close())
+
+  it('serves the shared running-scene example exactly: a run with no journal ships its persisted rows open (TAL-374)', async () => {
+    const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).running_scene_session as Json
+    const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = fixture.stored as Json[]
+    session.active_stream_id = String(fixture.active_stream_id)
+    s.deps.sessionStore.save(session)
+    s.deps.registry.liveIds.add(session.active_stream_id)
+    try {
+      const detail = (await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json
+      expect(detail).toMatchObject({ active_stream_id: fixture.active_stream_id, is_streaming: true, transcript_seq: null })
+      expect(detail.messages).toEqual(fixture.messages)
+    } finally {
+      s.deps.registry.liveIds.delete(session.active_stream_id)
+    }
+  })
 
   it('serves the same normalized rows in the detail preview and the paged rows, and never rewrites the stored scene', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
@@ -324,7 +371,7 @@ describe('anchor scenes over HTTP', () => {
     expect(await ids('&msg_limit=4&msg_before=9')).toMatchObject({ 'A2': 'legacy:6', 'A2 again': 'legacy:6' })
   })
 
-  it('builds scenes for completed turns only, identically in every window, and pages them', async () => {
+  it('builds settled turns\' scenes identically in every window, and pages them', async () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const session = s.deps.sessionStore.get(sid)
     const work = Array.from({ length: 45 }, (_, i) => [
@@ -347,7 +394,8 @@ describe('anchor scenes over HTTP', () => {
     const scene = full[doneIndex]?._anchor_activity_scene as Json
     expect(scene).toMatchObject({ final_answer: 'All done.', activity_rows_total: 90, activity_rows_offset: 10, activity_rows_complete: false })
     expect(full[1]?._anchor_activity_scene).toMatchObject({ final_answer: 'Old answer', activity_rows: [] })
-    expect(full.at(-1)?._anchor_activity_scene).toBeUndefined()
+    // The running turn has no journal to replay it, so its persisted rows ship as an open running scene (TAL-374).
+    expect(full.at(-1)?._anchor_activity_scene).toMatchObject({ terminal_state: 'running', final_answer: '', expanded_by_default: true, activity_rows: [{ role: 'prose', text: 'Streaming…' }] })
     const windowed = await load('&msg_limit=3')
     expect(windowed.find((m) => m.content === 'All done.')?._anchor_activity_scene).toEqual(scene)
     const page = await json(await s.get(`/api/session/anchor-scene?session_id=${sid}&message_ref=${String(scene.activity_scene_ref)}&message_index=${String(doneIndex)}&before=10`))

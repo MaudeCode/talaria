@@ -1135,10 +1135,11 @@ describe('session detail transcript cursor (TAL-316)', () => {
     await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'token' && (f.data as Json).text === 'Done')
     // The Agent has already written the prompt, the first prose segment and the tool round to state.db.
     const db = new DatabaseSync(join(s.state, 'state.db'))
-    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT)')
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT, reasoning TEXT)')
     db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
-    const rows: [string, string, number][] = [['user', 'earlier', 1000], ['assistant', 'earlier reply', 1001], ['user', 'read it', startedAt + 0.5], ['assistant', 'Reading.', startedAt + 1], ['tool', 'A', startedAt + 2]]
-    for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+    const call = JSON.stringify([{ id: 't1', type: 'function', function: { name: 'read_file', arguments: '{}' } }])
+    const rows: [string, string, number, string | null, string | null, string | null][] = [['user', 'earlier', 1000, null, null, null], ['assistant', 'earlier reply', 1001, null, null, null], ['user', 'read it', startedAt + 0.5, null, null, null], ['assistant', 'Reading.', startedAt + 1, call, null, 'Plan the read.'], ['tool', 'A', startedAt + 2, null, 't1', null]]
+    for (const [role, content, ts, toolCalls, toolCallId, reasoning] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp, tool_calls, tool_call_id, reasoning) VALUES (?, ?, ?, ?, ?, ?, ?)').run(sid, role, content, ts, toolCalls, toolCallId, reasoning)
     db.close()
     return { sid, streamId, release }
   }
@@ -1148,6 +1149,8 @@ describe('session detail transcript cursor (TAL-316)', () => {
     const session = await detail(sid)
     expect(contents(session)).toEqual(['earlier', 'earlier reply', 'read it'])
     expect(session.transcript_seq).toEqual({ stream_id: streamId, seq: 0 })
+    // Its output is replayed, so no row carries a scene for it (TAL-374).
+    expect((session.messages as Json[]).map((m) => (m._anchor_activity_scene as Json | undefined)?.terminal_state)).toEqual([undefined, 'completed', undefined])
     expect(session.message_count).toBe(3)
     // Every window agrees: the omission applies before windowing.
     const window = await detail(sid, '&msg_limit=2')
@@ -1178,6 +1181,26 @@ describe('session detail transcript cursor (TAL-316)', () => {
       const session = await detail(sid)
       expect(session.transcript_seq).toBeNull()
       expect(contents(session)).toEqual(['earlier', 'earlier reply', 'read it', 'Reading.', 'A'])
+    } finally {
+      findRunSummary.mockRestore()
+      release()
+    }
+  })
+
+  it('ships a running turn without a journal as an open running scene of its persisted rows, in every window (TAL-374)', async () => {
+    const { sid, release } = await runningTurn()
+    const findRunSummary = vi.spyOn(s.deps.journal, 'findRunSummary').mockReturnValue(null)
+    try {
+      for (const query of ['', '&msg_limit=50']) {
+        const session = await detail(sid, query)
+        expect(session.transcript_seq).toBeNull()
+        const scenes = (session.messages as Json[]).flatMap((m): [unknown, Json][] => (m._anchor_activity_scene ? [[m.content, m._anchor_activity_scene as Json]] : []))
+        expect(scenes.map(([content, scene]) => [content, scene.terminal_state])).toEqual([['earlier reply', 'completed'], ['Reading.', 'running']])
+        const running = scenes[1]![1]
+        expect(running).toMatchObject({ final_answer: '', expanded_by_default: true, activity_rows_complete: true })
+        expect((running.activity_rows as Json[]).map((r) => [r.role, r.text ?? (r.tool as Json).name])).toEqual([['reasoning', 'Plan the read.'], ['prose', 'Reading.'], ['tool', 'read_file']])
+        expect(((running.activity_rows as Json[])[2]?.tool as Json).result).toBe('A')
+      }
     } finally {
       findRunSummary.mockRestore()
       release()
