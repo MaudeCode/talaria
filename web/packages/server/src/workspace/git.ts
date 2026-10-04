@@ -347,6 +347,8 @@ export class GitRunner {
     const current = new Promise<void>((r) => { release = r })
     const chained = previous.then(() => current)
     this.locks.set(key, chained)
+    // Drop the entry once this link settles and nothing queued behind it, whether it ran or timed out waiting.
+    void chained.then(() => { if (this.locks.get(key) === chained) this.locks.delete(key) })
     let timer: NodeJS.Timeout | undefined
     const acquired = await Promise.race([previous.then(() => true), new Promise<boolean>((r) => { timer = setTimeout(() => { r(false) }, this.deps.mutationLockTimeoutMs ?? GIT_REMOTE_TIMEOUT_MS) })])
     clearTimeout(timer)
@@ -359,7 +361,6 @@ export class GitRunner {
     } finally {
       this.invalidateStatusCache(ctx.repoRoot)
       release()
-      if (this.locks.get(key) === chained) this.locks.delete(key)
     }
   }
 
@@ -1081,10 +1082,11 @@ export class GitRunner {
     const msg = str(message).trim()
     if (!msg) throw new GitWorkspaceError('Commit message is required')
     const ctx = await this.requireContext(workspace)
-    await this.withMutationLock(ctx, async () => {
+    // The SHA is read under the lock so a later mutation's HEAD cannot be reported as this commit.
+    const sha = await this.withMutationLock(ctx, async () => {
       await this.run(ctx, ['commit', '-m', msg], { timeoutMs: 10_000, check: true, destructive: true, disableFilterAttributes: true })
+      return (await this.run(ctx, ['rev-parse', '--short', 'HEAD'], { check: true })).stdout.trim()
     })
-    const sha = (await this.run(ctx, ['rev-parse', '--short', 'HEAD'], { check: true })).stdout.trim()
     return { ok: true, commit: sha, status: await this.status(workspace) }
   }
 
@@ -1092,7 +1094,7 @@ export class GitRunner {
     const msg = str(message).trim()
     if (!msg) throw new GitWorkspaceError('Commit message is required')
     const ctx = await this.requireContext(workspace)
-    const workspacePaths = await this.withMutationLock(ctx, async () => {
+    const [workspacePaths, sha] = await this.withMutationLock(ctx, async () => {
       const [specs, wsPaths] = await this.selectedFiles(ctx, paths)
       const [env, dir] = await this.selectedTempIndexEnv(ctx, specs)
       try {
@@ -1103,9 +1105,8 @@ export class GitRunner {
       } finally {
         rmSync(dir, { recursive: true, force: true })
       }
-      return wsPaths
+      return [wsPaths, (await this.run(ctx, ['rev-parse', '--short', 'HEAD'], { check: true })).stdout.trim()] as const
     })
-    const sha = (await this.run(ctx, ['rev-parse', '--short', 'HEAD'], { check: true })).stdout.trim()
     return { ok: true, commit: sha, paths: workspacePaths, status: await this.status(workspace) }
   }
 

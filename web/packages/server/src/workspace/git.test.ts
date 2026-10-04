@@ -254,6 +254,8 @@ describe('slow git off the event loop', () => {
     expect(await json(second)).toMatchObject({ error: 'Another Git operation is still running', code: 'operation_in_progress' })
     expect(settled()).toBe(false)
     expect((await push).status).toBe(200)
+    // The timed-out waiter's chain does not stay behind in the lock map.
+    expect((s.deps.git as unknown as { locks: Map<string, unknown> }).locks.size).toBe(0)
   })
 })
 

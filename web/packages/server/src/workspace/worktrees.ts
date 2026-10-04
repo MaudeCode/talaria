@@ -126,6 +126,9 @@ export async function removeWorktreeForSession(session: Session, locks: Worktree
   }
   const repoRoot = session.worktree_repo_root
   if (!repoRoot) throw new Error('Session missing worktree_repo_root')
+  // A stream or terminal may have started while the Git probes above were awaited.
+  if (locks.lockedByStream(session)) throw new Error('Worktree is locked by an active streaming session')
+  if (locks.lockedByTerminal(session.session_id, worktreePath)) throw new Error('Worktree is locked by an active terminal session')
   await git(['worktree', 'unlock', worktreePath], repoRoot, 5_000)
   const args = ['worktree', 'remove']
   if (force) args.push('--force')
