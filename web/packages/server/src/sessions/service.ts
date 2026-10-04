@@ -1028,13 +1028,15 @@ export class SessionService {
     const session = this.store.load(sid)
     if (!session) throw new HttpFailure(404, 'Session not found')
     const now = this.deps.now()
+    // A truncation cut names deleted state.db rows of the source; the copy's own state.db rows are all genuine (TAL-504).
+    const watermark = session.truncation_watermark_compressed ? { truncation_watermark: session.truncation_watermark, truncation_boundary: session.truncation_boundary, truncation_watermark_compressed: true } : {}
     const copied = new Session(
       {
         title: `${session.title || 'Untitled'} (copy)`, workspace: session.workspace, model: session.model, model_provider: session.model_provider,
         messages: copyJson(session.messages), tool_calls: copyJson(session.tool_calls), pinned: false, archived: false, project_id: session.project_id, profile: session.profile,
         input_tokens: session.input_tokens, output_tokens: session.output_tokens, estimated_cost: session.estimated_cost, cache_read_tokens: session.cache_read_tokens, cache_write_tokens: session.cache_write_tokens,
         personality: session.personality, enabled_toolsets: session.enabled_toolsets, context_length: session.context_length, threshold_tokens: session.threshold_tokens,
-        truncation_watermark: session.truncation_watermark, truncation_boundary: session.truncation_boundary, truncation_watermark_compressed: session.truncation_watermark_compressed, context_messages: copyJson(session.context_messages),
+        ...watermark, context_messages: copyJson(session.context_messages),
         gateway_routing: copyJson(session.gateway_routing), gateway_routing_history: copyJson(session.gateway_routing_history), llm_title_generated: session.llm_title_generated,
         manual_title: session.manual_title, composer_draft: copyJson(session.composer_draft), context_engine: session.context_engine, context_engine_state: copyJson(session.context_engine_state),
         created_at: now, updated_at: now,
