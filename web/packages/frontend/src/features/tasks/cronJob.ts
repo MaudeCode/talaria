@@ -78,28 +78,6 @@ export function usageStrip(usage: z.infer<typeof CronRunUsageSchema> | undefined
   return parts.join(' · ')
 }
 
-/** Model ids from /api/models are `@provider:model` outside the default group; the store keeps the pair split. */
-export function modelOptionValue(model: string | null | undefined, provider: string | null | undefined): string {
-  if (!model) return ''
-  return provider && !model.startsWith('@') ? `@${provider}:${model}` : model
-}
-
-/** The picker entry for a stored pair: exact id, else the bare id (default-group models carry no prefix), else the raw value. */
-export function modelOptionFor(value: string, known: ReadonlySet<string>): string {
-  if (!value || known.has(value)) return value
-  const bare = /^@[^:]+:(.+)$/.exec(value)?.[1]
-  return bare && known.has(bare) ? bare : value
-}
-
-export function splitModelOption(value: string, providerOf: (id: string) => string | null): { model: string | null; provider: string | null } {
-  if (!value) return { model: null, provider: null }
-  const provider = providerOf(value)
-  if (provider && value.startsWith(`@${provider}:`)) return { model: value.slice(provider.length + 2), provider }
-  const prefixed = /^@([^:]+):(.+)$/.exec(value)
-  if (prefixed) return { model: prefixed[2] ?? null, provider: prefixed[1] ?? null }
-  return { model: value, provider }
-}
-
 /** The agent's reply from a run file: everything after the `## Response` heading, else the whole text. */
 export function runResponse(content: string): string {
   const idx = content.search(/^#{1,2} Response\s*$/m)

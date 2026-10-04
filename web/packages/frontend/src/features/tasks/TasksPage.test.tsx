@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { CronJob } from '../../contracts'
@@ -68,7 +68,7 @@ describe('TasksPage', () => {
     vi.mocked(api.fetchCronDeliveryOptions).mockResolvedValue({ platforms: [{ value: 'local', label: 'Local' }, { value: 'telegram', label: 'Telegram' }] })
     vi.mocked(api.fetchSkills).mockResolvedValue({ skills: [{ name: 'inbox' }] })
     vi.mocked(api.fetchProfiles).mockResolvedValue({ profiles: [{ name: 'work' }, { name: 'personal' }], active: 'work' })
-    vi.mocked(api.fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-5.6-sol' }, { id: '@openai-codex:gpt-6-astra' }] }] })
+    vi.mocked(api.fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-5.6-sol', provider_id: 'openai-codex', bare_id: 'gpt-5.6-sol' }, { id: '@openai-codex:gpt-6-astra', provider_id: 'openai-codex', bare_id: 'gpt-6-astra' }] }] })
   })
 
   it('keeps the script path explanation behind the section help button', async () => {
@@ -124,6 +124,34 @@ describe('TasksPage', () => {
       deliver: 'telegram', profile: 'work', toast_notifications: false, monitor: 'https://example.com/status', continuity: true,
       context_from: ['feed0000feed'], reasoning_effort: 'high', model: 'gpt-5.6-sol', provider: 'openai-codex',
     })
+  })
+
+  it('ticks each stored pair and saves a picked colon-bearing id with its own provider (TAL-301)', async () => {
+    const entry = (id: string, label: string, provider_id: string, bare_id: string) => ({ id, label, provider_id, bare_id })
+    vi.mocked(api.fetchModels).mockResolvedValue({
+      default_model: '@custom:localhost:8080:m', default_provider_id: 'custom:localhost:8080', default_bare_id: 'm',
+      groups: [
+        { provider: 'Anthropic', provider_id: 'anthropic', models: [entry('claude-opus-4.7', 'Claude Opus 4.7', 'anthropic', 'claude-opus-4.7'), entry('@custom:localhost:8080:m', 'Local M', 'custom:localhost:8080', 'm')] },
+        { provider: 'Gemini', provider_id: 'gemini', models: [entry('@gemini:gemini-2.5-flash', 'Flash via Gemini', 'gemini', 'gemini-2.5-flash')] },
+        { provider: 'Google', provider_id: 'google', models: [entry('@google:gemini-2.5-flash', 'Flash via Google', 'google', 'gemini-2.5-flash')] },
+        { provider: 'Ollama', provider_id: 'ollama', models: [entry('@ollama:llama3:8b', 'Llama3 8B', 'ollama', 'llama3:8b')] },
+      ],
+    })
+    const cases: [string, string, string][] = [['m', 'custom:localhost:8080', 'Local M'], ['gemini-2.5-flash', 'gemini', 'Flash via Gemini'], ['gemini-2.5-flash', 'google', 'Flash via Google'], ['llama3:8b', 'ollama', 'Llama3 8B']]
+    let form: HTMLElement | null = null
+    for (const [model, provider, label] of cases) {
+      cleanup()
+      const detail = await openJob('Digest', [{ ...full, model, provider }, feed])
+      await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
+      form = await screen.findByRole('form', { name: /edit job/i })
+      await waitFor(() => expect(within(form!).getByRole('combobox', { name: /model override/i })).toHaveTextContent(label))
+    }
+    const dialog = within(form!)
+    await userEvent.click(dialog.getByRole('combobox', { name: /model override/i }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Local M' }))
+    await userEvent.click(dialog.getByRole('button', { name: /^save$/i }))
+    await waitFor(() => expect(api.cronAction).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.cronAction).mock.calls[0]![1]).toMatchObject({ model: '@custom:localhost:8080:m', provider: 'custom:localhost:8080' })
   })
 
   it('blocks a script-only save until the monitor is cleared, then sends the cleared name and monitor', async () => {

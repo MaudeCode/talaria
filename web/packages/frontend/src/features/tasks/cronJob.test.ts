@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CronJobSchema, type CronJob } from '../../contracts'
-import { cronDiagnostics, cronState, modelOptionFor, runResponse, splitModelOption, usageStrip } from './cronJob'
+import { cronDiagnostics, cronState, runResponse, usageStrip } from './cronJob'
 
 // Persisted shape from cron.jobs.create_job with the WebUI projections applied.
 const recurring: CronJob = {
@@ -35,22 +35,6 @@ describe('usageStrip', () => {
     expect(usageStrip({ input_tokens: 1_240, output_tokens: 830, estimated_cost_usd: 0.0042, model: 'gpt-5.4' })).toBe('1.2k in · 830 out · $0.0042 · gpt-5.4')
     expect(usageStrip({ total_tokens: 2_000_000 })).toBe('2M tokens')
     expect(usageStrip(undefined)).toBe('')
-  })
-})
-
-describe('model option mapping', () => {
-  const known = new Set(['gpt-oss:20b', '@openai-codex:gpt-5.6-sol'])
-  const providerOf = (id: string) => (id === 'gpt-oss:20b' ? 'custom' : id === '@openai-codex:gpt-5.6-sol' ? 'openai-codex' : null)
-  it('resolves a stored pair to the picker entry in either id form', () => {
-    expect(modelOptionFor('@openai-codex:gpt-5.6-sol', known)).toBe('@openai-codex:gpt-5.6-sol')
-    expect(modelOptionFor('@custom:gpt-oss:20b', known)).toBe('gpt-oss:20b')
-    expect(modelOptionFor('@gone:model', known)).toBe('@gone:model')
-  })
-  it('splits a picker value back into the stored bare model and provider', () => {
-    expect(splitModelOption('@openai-codex:gpt-5.6-sol', providerOf)).toEqual({ model: 'gpt-5.6-sol', provider: 'openai-codex' })
-    expect(splitModelOption('gpt-oss:20b', providerOf)).toEqual({ model: 'gpt-oss:20b', provider: 'custom' })
-    expect(splitModelOption('@gone:model', providerOf)).toEqual({ model: 'model', provider: 'gone' })
-    expect(splitModelOption('', providerOf)).toEqual({ model: null, provider: null })
   })
 })
 

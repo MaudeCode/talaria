@@ -1,5 +1,5 @@
 /** Create / edit / duplicate form for one cron job, rendered in the main view. */
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useForm } from '@tanstack/react-form'
 import { m } from '../../paraglide/messages.js'
@@ -14,7 +14,8 @@ import { ErrorState, LoadingState } from '../../ui/States'
 import { showToast } from '../toast/toast'
 import { cn } from '../../ui/cn'
 import { useModelsQuery, useProfilesQuery } from '../../app/queries'
-import { contextFromList, jobId, modelOptionFor, modelOptionValue, scheduleText, splitModelOption } from './cronJob'
+import { contextFromList, jobId, scheduleText } from './cronJob'
+import { catalogEntryById, catalogEntryFor } from '../../lib/modelEntry'
 
 export type EditorMode = 'create' | 'edit' | 'duplicate'
 
@@ -24,7 +25,7 @@ const FORM_ID = 'cronJobForm'
 
 interface FormValues {
   name: string; schedule: string; prompt: string; script: string; no_agent: boolean; deliver: string; repeat: string; profile: string
-  model: string; toast_notifications: boolean; skills: string; monitor: string; continuity: boolean; context_from: string[]; reasoning_effort: string
+  model: string; model_provider: string | null; toast_notifications: boolean; skills: string; monitor: string; continuity: boolean; context_from: string[]; reasoning_effort: string
 }
 
 export function JobForm({ mode, job, jobs, onCancel, onSaved }: { mode: EditorMode; job: CronJob | null; jobs: CronJob[]; onCancel: () => void; onSaved: (id?: string) => void }) {
@@ -35,8 +36,6 @@ export function JobForm({ mode, job, jobs, onCancel, onSaved }: { mode: EditorMo
   const skills = useQuery({ queryKey: keys.skills.all, queryFn: () => api.fetchSkills(), staleTime: 60_000, enabled: !isEdit })
   const [error, setError] = useState<string | null>(null)
   const sourceId = job ? jobId(job) : ''
-  const providerOf = (id: string): string | null => { for (const g of models.data?.groups ?? []) if (g.models.some((mm) => mm.id === id)) return g.provider_id ?? g.provider; return null }
-  const knownModels = useMemo(() => new Set((models.data?.groups ?? []).flatMap((g) => g.models.map((mm) => mm.id))), [models.data])
   const copyName = (name: string) => {
     const taken = new Set(jobs.map((j) => j.name))
     let candidate = `${name} ${m.cron_copy_suffix()}`
@@ -54,7 +53,9 @@ export function JobForm({ mode, job, jobs, onCancel, onSaved }: { mode: EditorMo
       deliver: job?.deliver ?? 'local',
       repeat: mode === 'duplicate' && repeatTimes != null ? String(repeatTimes) : '',
       profile: job?.profile ?? '',
-      model: modelOptionValue(job?.model, job?.provider),
+      // The stored pair until a pick replaces it with the picked id and its provider; the server splits either the same way.
+      model: job?.model ?? '',
+      model_provider: job?.provider ?? null,
       toast_notifications: job?.toast_notifications !== false,
       skills: job?.skills?.join(', ') ?? '',
       monitor: job?.monitor ?? '',
@@ -73,7 +74,8 @@ export function JobForm({ mode, job, jobs, onCancel, onSaved }: { mode: EditorMo
       // docs/scheduled-jobs.md: the save is blocked, never one of the two silently dropped; the monitor stays editable so it can be cleared.
       if (v.no_agent && v.monitor) { setError(m.cron_monitor_no_agent_conflict()); return }
       if (v.repeat && !(/^\d+$/.test(v.repeat) && Number(v.repeat) >= 1)) { setError(m.cron_repeat_invalid()); return }
-      const { model, provider } = splitModelOption(v.model, providerOf)
+      const model = v.model || null
+      const provider = model ? v.model_provider : null
       try {
         let res
         if (isEdit && job) {
@@ -159,19 +161,23 @@ export function JobForm({ mode, job, jobs, onCancel, onSaved }: { mode: EditorMo
                   </Select>
                 </FieldRow>
               )}</form.Field>
-              <form.Field name="model">{(f) => (
+              <form.Field name="model">{(f) => {
+                const selectedModel = catalogEntryFor(models.data, f.state.value, form.getFieldValue('model_provider'))
+                const listed = !!selectedModel && (models.data?.groups ?? []).some((g) => g.models.includes(selectedModel))
+                return (
                 <FieldRow label={m.cron_model_label()} hint={noAgent ? m.cron_model_no_agent_hint() : m.cron_model_hint()} htmlFor="cronModel" inline>
-                  <Select id="cronModel" value={modelOptionFor(f.state.value, knownModels)} onValueChange={(v) => f.handleChange(v)} className="w-56 max-w-full" disabled={noAgent}>
+                  <Select id="cronModel" value={selectedModel?.id ?? f.state.value} onValueChange={(v) => { form.setFieldValue('model_provider', catalogEntryById(models.data, v)?.provider_id ?? (v && v === job?.model ? job.provider ?? null : null)); f.handleChange(v) }} className="w-56 max-w-full" disabled={noAgent}>
                     <option value="">{m.cron_model_use_default()}</option>
                     {(models.data?.groups ?? []).map((g) => (
                       <optgroup key={g.provider} label={g.provider}>
                         {g.models.map((mm) => <option key={mm.id} value={mm.id}>{mm.label ?? mm.id}</option>)}
                       </optgroup>
                     ))}
-                    {f.state.value && !knownModels.has(modelOptionFor(f.state.value, knownModels)) && <option value={f.state.value}>{f.state.value}</option>}
+                    {f.state.value && !listed && <option value={selectedModel?.id ?? f.state.value}>{selectedModel?.label ?? f.state.value}</option>}
                   </Select>
                 </FieldRow>
-              )}</form.Field>
+              )
+              }}</form.Field>
               <form.Field name="toast_notifications">{(f) => <FieldRow label={m.cron_toast_notifications_label()} hint={m.cron_toast_notifications_hint()} htmlFor="cronToast" inline><Switch id="cronToast" checked={f.state.value} onCheckedChange={(checked) => f.handleChange(checked)} /></FieldRow>}</form.Field>
             </div>
             <details className="mt-6" open={!!(job && (job.monitor || job.continuity || job.reasoning_effort || contextFromList(job).length))}>

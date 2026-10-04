@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { Button } from '../../ui/Button'
 import { AuxiliaryModelsSetting } from './AuxiliaryModels'
 import { useBootstrap } from '../../app/bootstrap'
+import { catalogEntryById, catalogEntryFor } from '../../lib/modelEntry'
 
 function Toggle({ label, hint, settingKey, fallback = false, disabled }: { label: string; hint?: string; settingKey: string; fallback?: boolean; disabled?: boolean }) {
   const { bool, set } = useSettingField()
@@ -29,18 +30,20 @@ export function PreferencesSection() {
   const [trustedHosts, setTrustedHosts] = useState<string | null>(null)
   // Link safety applies to every user of the server; only an owner may change it.
   const canManage = useBootstrap().auth.can_manage_server
+  const defaultEntry = catalogEntryFor(models.data, models.data?.default_bare_id, models.data?.default_provider_id)
+  const defaultListed = !!defaultEntry && (models.data?.groups ?? []).some((g) => g.models.includes(defaultEntry))
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
     <div className="flex flex-col divide-y divide-border-subtle" data-section="preferences">
       <FieldRow label={m.settings_label_model()} hint={m.settings_default_model_hint()} htmlFor="settingsModel" inline>
-        <Select id="settingsModel" value={str('default_model')} onValueChange={(v) => { const group = models.data?.groups.find((g) => g.models.some((mm) => mm.id === v)); setDefault.mutate({ model: v, provider: group?.provider_id ?? group?.provider ?? null }, { onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') }) }}>
+        <Select id="settingsModel" value={defaultEntry?.id ?? str('default_model')} onValueChange={(v) => { setDefault.mutate({ model: v, provider: catalogEntryById(models.data, v)?.provider_id ?? null }, { onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') }) }}>
           {(models.data?.groups ?? []).map((g) => (
             <optgroup key={g.provider} label={g.provider}>
               {g.models.map((mm) => <option key={mm.id} value={mm.id}>{mm.label ?? mm.id}</option>)}
             </optgroup>
           ))}
-          {!models.data?.groups.some((g) => g.models.some((mm) => mm.id === str('default_model'))) && str('default_model') && <option value={str('default_model')}>{str('default_model')}</option>}
+          {!defaultListed && str('default_model') && <option value={defaultEntry?.id ?? str('default_model')}>{defaultEntry?.label ?? str('default_model')}</option>}
         </Select>
       </FieldRow>
       <AuxiliaryModelsSetting />
