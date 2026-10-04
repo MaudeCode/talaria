@@ -21,6 +21,7 @@ final class ChatViewModelRunningSceneTests: APIClientTestCase {
         await viewModel.loadMessages()
 
         XCTAssertEqual(viewModel.streamCoordinatorServerTerminalState(turnID: "legacy:0"), "completed")
-        XCTAssertNotEqual(viewModel.streamCoordinatorServerTerminalState(turnID: "run-r"), "running")
+        // No outcome yet, even though the turn has persisted replies: never the old-server "completed" fallback.
+        XCTAssertNil(viewModel.streamCoordinatorServerTerminalState(turnID: "run-r"))
     }
 }
