@@ -39,6 +39,10 @@ public final class AuthManager {
     nonisolated static let oidcOnlyMessage =
         String(localized: "This server signs in with single sign-on, which Talaria doesn't support yet.")
 
+    /// The server withholds single sign-on until it can read its SSO settings.
+    nonisolated static let oidcUnavailableMessage =
+        String(localized: "Single sign-on is temporarily unavailable. Try again in a moment.")
+
     /// Trusted-header mode where the proxy did *not* authenticate this request,
     /// so the server reports the mode but not a session.
     nonisolated static let trustedAuthNotSignedInMessage =
@@ -61,6 +65,7 @@ public final class AuthManager {
         if status.oidcEnabled == true {
             return status.oidcNativeHandoffEnabled == true ? nil : oidcOnlyMessage
         }
+        if status.oidcUnavailable == true { return oidcUnavailableMessage }
         if status.trustedAuthEnabled == true { return trustedAuthNotSignedInMessage }
         return passkeyOnlyMessage
     }

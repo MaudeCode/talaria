@@ -334,6 +334,21 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertFalse(OnboardingViewModel.canSignInWithOIDC(status: browserOnly))
     }
 
+    func testUnresolvedOIDCConfigExplainsTemporaryUnavailability() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let unresolved = try decoder.decode(AuthStatusResponse.self, from: Data("""
+        {"auth_enabled": true, "logged_in": false, "password_auth_enabled": false, "oidc_enabled": false,
+         "oidc_native_handoff_enabled": false, "oidc_unavailable": true}
+        """.utf8))
+
+        XCTAssertEqual(
+            AuthManager.unsupportedSignInMessage(for: unresolved),
+            "Single sign-on is temporarily unavailable. Try again in a moment."
+        )
+        XCTAssertFalse(OnboardingViewModel.canSignInWithOIDC(status: unresolved))
+    }
+
     func testNativeOIDCFlowCreatesS256PKCEAndValidatesExactCallback() throws {
         let template = try NativeOIDCFlow.make(callbackScheme: "talaria-branch")
         var flow = template
