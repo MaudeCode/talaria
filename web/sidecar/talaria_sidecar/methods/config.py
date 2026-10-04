@@ -2,12 +2,13 @@
 Agent's per-model reasoning capability.
 
 The TypeScript server owns every config.yaml *policy* (which keys mean what);
-the sidecar only parses and serialises YAML with the Agent's PyYAML so the Node
-side needs no YAML dependency. Writes are atomic and keep the file's mode.
+the sidecar only parses and serialises YAML with the Agent's own parser so the
+Node side needs no YAML dependency. Writes are atomic and keep the file's mode.
 """
 
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 import tempfile
@@ -20,12 +21,15 @@ from ..rpc import CallContext
 log = logging.getLogger("talaria_sidecar.config")
 
 
-def _yaml():
-    try:
-        import yaml
-    except Exception as exc:  # noqa: BLE001
-        raise RpcError(f"PyYAML unavailable: {exc}", condition="yaml_unavailable") from exc
-    return yaml
+def yaml_parser():
+    """The Agent's YAML module: ``hermes_yaml`` on Agents that ship it, PyYAML on released Agents."""
+    failures = []
+    for name in ("hermes_yaml", "yaml"):
+        try:
+            return importlib.import_module(name)
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"{name}: {exc}")
+    raise RpcError(f"No YAML parser available ({'; '.join(failures)})", condition="yaml_unavailable")
 
 
 def config_path_param(params: dict) -> Path:
@@ -45,7 +49,7 @@ def read_config(path: Path) -> dict:
     if not path.exists():
         return {"path": str(path), "exists": False, "config": {}}
     try:
-        data = _yaml().safe_load(path.read_text(encoding="utf-8"))
+        data = yaml_parser().safe_load(path.read_text(encoding="utf-8"))
     except RpcError:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -70,7 +74,7 @@ def write_config(path: Path, config: dict) -> dict:
         raise InvalidParams("config must be an object")
     target = _write_target(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    text = _yaml().safe_dump(config, sort_keys=False, allow_unicode=True)
+    text = yaml_parser().safe_dump(config, sort_keys=False, allow_unicode=True)
     mode = None
     try:
         mode = target.stat().st_mode & 0o777
