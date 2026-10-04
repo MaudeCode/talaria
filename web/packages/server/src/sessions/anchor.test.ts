@@ -70,6 +70,25 @@ describe('anchorActivitySceneTransportPreview', () => {
     expect(preview.has_consumed_steering).toBe(true)
     expect(anchorActivitySceneTransportPreview({ version: 'activity_scene_v1', activity_rows: work }).has_consumed_steering).toBe(false)
   })
+
+  it('ships a stored answer without inline thinking or tool-call XML, and drops a stored excerpt (TAL-302)', () => {
+    const stored = { version: 'activity_scene_v1', final_answer: '<think>plan</think>Done. <tool_call>{}</tool_call>', final_answer_excerpt: '<think>plan', activity_rows: [{ row_id: 'p', order_index: 0, role: 'prose', text: 'Done.' }] }
+    const preview = anchorActivitySceneTransportPreview(stored)
+    expect(preview.final_answer).toBe('Done.')
+    expect(preview).not.toHaveProperty('final_answer_excerpt')
+    // The answer's own prose row still renders only below "Worked".
+    expect(preview.activity_rows).toEqual([])
+    expect(stored.final_answer).toBe('<think>plan</think>Done. <tool_call>{}</tool_call>')
+  })
+
+  it('reads a completed scene whose stored answer was only markup as one that did not reply (TAL-302)', () => {
+    const work = { row_id: 'r', order_index: 0, role: 'reasoning', text: 'step' }
+    const emptied = anchorActivitySceneTransportPreview({ version: 'activity_scene_v1', final_answer: '<think>plan</think>', terminal_state: 'completed', expanded_by_default: false, activity_rows: [work] })
+    expect(emptied).toMatchObject({ final_answer: '', terminal_state: 'no_response', expanded_by_default: true })
+    // An explicit outcome, and an answer that keeps its prose, stay as stored.
+    expect(anchorActivitySceneTransportPreview({ version: 'activity_scene_v1', final_answer: '<think>plan</think>', terminal_state: 'error', activity_rows: [work] }).terminal_state).toBe('error')
+    expect(anchorActivitySceneTransportPreview({ version: 'activity_scene_v1', final_answer: '<think>plan</think>Done.', terminal_state: 'completed', expanded_by_default: false, activity_rows: [work] })).toMatchObject({ terminal_state: 'completed', expanded_by_default: false })
+  })
 })
 
 describe('withTurnIds', () => {

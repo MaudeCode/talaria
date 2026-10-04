@@ -156,7 +156,7 @@ func testSessionDecodesPersistedAssistantReasoning() async throws {
     XCTAssertEqual(message.reasoningTitles, ["Inspecting the Swift file"])
 }
 
-func testSessionPrefersPersistedReasoningContentOverSummary() async throws {
+func testSessionDecodesOnlyTheServerReasoningString() async throws {
     let client = makeClient { request in
         XCTAssertEqual(request.url?.path, "/api/session")
         XCTAssertEqual(request.httpMethod, "GET")
@@ -183,10 +183,8 @@ func testSessionPrefersPersistedReasoningContentOverSummary() async throws {
     let response = try await client.session(id: "abc123")
     let message = try XCTUnwrap(response.session?.messages?.first)
 
-    XCTAssertEqual(
-        message.reasoning,
-        "The writing guidance is unchanged. I’ll now check the live workspace and repository independently."
-    )
+    // The server sends every row's reasoning as one `reasoning` string (TAL-302); a stray field is not read.
+    XCTAssertEqual(message.reasoning, "Planning current directory and date usage")
     XCTAssertEqual(message.turnDuration, 532)
 }
 

@@ -6,7 +6,7 @@
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { agentSteerText, isContextCompressionMarker, isReasoningBlock, messageText, reasoningBlockText, splitThinkingFromContent } from './merge.js'
+import { agentSteerText, isContextCompressionMarker, isReasoningBlock, messageText, normalizeAssistantDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { toolArgs } from './tool-display.js'
@@ -212,14 +212,14 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
     const createdAt = finite(row.created_at)
     const base = createdAt === null ? { row_id: rowId } : { row_id: rowId, created_at: createdAt }
     if (row.role === 'prose') {
-      const [content, reasoning] = splitThinkingFromContent(str(row.text))
+      const [content, reasoning] = splitDisplayText(str(row.text))
       if (reasoning) put({ ...base, row_id: `${rowId}:thinking`, role: 'reasoning', text: reasoning, titles: [] })
       if (content.trim()) put({ ...base, role: 'prose', text: content })
     } else if (row.role === 'reasoning' || row.role === 'thinking') {
       const thinking = isDict(row.thinking) ? row.thinking : {}
       const rawTitles = Array.isArray(thinking.titles) ? thinking.titles : row.titles
       const titles = Array.isArray(rawTitles) ? rawTitles.filter((t): t is string => typeof t === 'string' && Boolean(t.trim())) : []
-      const text = str(thinking.text) || str(row.text)
+      const text = stripToolCallXml(str(thinking.text) || str(row.text))
       if (text.trim() || titles.length) put({ ...base, role: 'reasoning', text, titles })
     } else if (row.role === 'steering' && str(row.text).trim()) {
       // Already-normalized rows (built or re-read scenes) keep their fields: normalizing is idempotent.
@@ -248,10 +248,11 @@ function transportRows(scene: Record<string, unknown>): SceneRow[] {
 }
 
 /** Tail-only transport preview of a durable scene. */
-export function anchorActivitySceneTransportPreview(scene: Record<string, unknown>, sceneRef = ''): Record<string, unknown> {
+export function anchorActivitySceneTransportPreview(stored: Record<string, unknown>, sceneRef = ''): Record<string, unknown> {
+  // A stored or client-posted answer leaves in the row's display shape too; its excerpt is cut from it afterwards.
+  const scene = 'final_answer' in stored ? { ...stored, final_answer: splitDisplayText(str(stored.final_answer))[0] } : stored
   const preview: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(scene)) if (k !== 'activity_rows') preview[k] = structuredClone(v)
-  if ('final_answer' in scene) preview.final_answer = str(scene.final_answer)
+  for (const [k, v] of Object.entries(scene)) if (k !== 'activity_rows' && k !== 'final_answer_excerpt') preview[k] = structuredClone(v)
   if ('turn_duration' in scene) preview.turn_duration = finite(Number(scene.turn_duration ?? NaN))
   const rows = transportRows(scene)
   const total = rows.length
@@ -263,6 +264,11 @@ export function anchorActivitySceneTransportPreview(scene: Record<string, unknow
   preview.activity_rows_omitted = offset
   // Over every row, not just the preview: a client settling its local steer hints must see a steer paged out of it.
   preview.has_consumed_steering = rows.some((row) => row.role === 'steering' && row.steering?.consumed === true)
+  // An answer that was only thinking or tool-call markup is no answer: the turn reads as one that did not reply.
+  if (preview.terminal_state === 'completed' && str(stored.final_answer).trim() && !str(scene.final_answer)) {
+    preview.terminal_state = 'no_response'
+    preview.expanded_by_default = EXPANDED_OUTCOMES.has('no_response') && total > 0
+  }
   if (sceneRef) preview.activity_scene_ref = sceneRef
   return preview
 }
@@ -293,7 +299,7 @@ function hasToolUseBlocks(message: Record<string, unknown>): boolean {
 function finalAnswerOf(last: Record<string, unknown>): string {
   if ((Array.isArray(last.tool_calls) && last.tool_calls.length > 0) || hasToolUseBlocks(last) || last._interim === true || last._partial === true) return ''
   if (last._error === true && (last._terminal_state === 'cancelled' || last.provider_details_label === 'Cancellation details')) return ''
-  return splitThinkingFromContent(messageText(last.content))[0]
+  return splitDisplayText(messageText(last.content))[0]
 }
 
 /** The turn's outcome: an explicit terminal state, else its error row's kind, else whether it answered. */
@@ -345,12 +351,12 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
     const commentary = codexCommentary(m)
     // Structured content with tool_use or reasoning blocks is walked in order below, so its reasoning keeps its place.
     const walked = hasToolUseBlocks(m) || (Array.isArray(m.content) && m.content.some((part) => isDict(part) && isReasoningBlock(part)))
-    let reasoning = [str(m.reasoning_content), typeof m.reasoning === 'string' ? m.reasoning : '', str(m.thinking)].filter(Boolean).join('\n')
+    let reasoning = reasoningFieldsText(m)
     for (const part of commentary) reasoning = reasoning.replace(part, '')
     reasoning = reasoning.replace(/\n{3,}/g, '\n\n').trim()
     const titles = Array.isArray(m.reasoning_titles) ? m.reasoning_titles.filter((t): t is string => typeof t === 'string' && Boolean(t.trim())) : []
     if (reasoning || titles.length) push({ row_id: `${ref}:reasoning`, role: 'reasoning', text: reasoning, titles, ...at })
-    const [prose, inlineThinking] = splitThinkingFromContent(messageText(m.content))
+    const [prose, inlineThinking] = splitDisplayText(messageText(m.content))
     if (inlineThinking) push({ row_id: `${ref}:thinking`, role: 'reasoning', text: inlineThinking, titles: [], ...at })
     const pushTool = (raw: unknown, i: number) => {
       const call = isDict(raw) ? raw : {}
@@ -373,14 +379,14 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       let chunk: unknown[] = []
       const flush = () => {
         if (answering) { chunk = []; return }
-        const text = splitThinkingFromContent(messageText(chunk))[0]
+        const text = splitDisplayText(messageText(chunk))[0]
         if (text.trim()) push({ row_id: rows.some((r) => r.row_id === `${ref}:prose`) ? `${ref}:prose:${String(rows.length)}` : `${ref}:prose`, role: 'prose', text, ...at })
         chunk = []
       }
       for (const [i, part] of (m.content as unknown[]).entries()) {
         if (isDict(part) && isReasoningBlock(part)) {
           flush()
-          const text = reasoningBlockText(part).trim()
+          const text = stripToolCallXml(reasoningBlockText(part)).trim()
           if (text) push({ row_id: `${ref}:reasoning:${String(i)}`, role: 'reasoning', text, titles: [], ...at })
           continue
         }
@@ -482,6 +488,8 @@ function sceneLookup(messages: unknown[], records: Record<string, unknown>) {
  * Attach every completed turn's scene preview to its last assistant row, over the full `_turn_id`-stamped transcript
  * (before any window, so every window agrees). A stored scene wins and is completed with the turn's outcome fields; a
  * turn without one gets a built scene. The running turn (`activeTurnId`) gets none: the live stream renders it.
+ * Every path that ships messages comes through here, so each assistant row also leaves in its one display shape
+ * (`normalizeAssistantDisplay`), after its scene is built from the stored row.
  */
 export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null; clipToolResults?: boolean } = {}): unknown[] {
   if (!messages.length) return messages
@@ -507,7 +515,7 @@ export function hydrateAnchorActivityScenes(messages: unknown[], records: Record
     }
     out[index] = next
   }
-  return out
+  return out.map(normalizeAssistantDisplay)
 }
 
 /** Persist a settled scene onto a session (the POST body semantics). Returns the placement. */

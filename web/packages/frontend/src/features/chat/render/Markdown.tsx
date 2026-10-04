@@ -12,7 +12,6 @@ import { mermaid } from '@streamdown/mermaid'
 import { cjk } from '@streamdown/cjk'
 import 'streamdown/styles.css'
 import 'katex/dist/katex.min.css'
-import { stripToolCallXml } from './text'
 
 const PLUGINS = { code, math, mermaid, cjk }
 const SHIKI_THEMES: [string, string] = ['github-light', 'github-dark']
@@ -38,7 +37,7 @@ export const Markdown = memo(function Markdown({ text, streaming = false, classN
       controls={{ code: { copy: true, download: true }, table: { copy: true, download: true }, mermaid: { copy: true, download: true, fullscreen: true, panZoom: true } }}
       linkSafety={{ enabled: true }}
     >
-      {stripToolCallXml(text)}
+      {text}
     </Streamdown>
   )
 })

@@ -2772,49 +2772,7 @@
                                 }
                               },
                               "reasoning": {
-                                "anyOf": [
-                                  {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "array",
-                                        "items": {
-                                          "anyOf": [
-                                            {},
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        }
-                                      }
-                                    ]
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "reasoning_content": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "thinking": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
+                                "type": "string"
                               },
                               "tool_call_id": {
                                 "type": "string"
@@ -4535,49 +4493,7 @@
                                 }
                               },
                               "reasoning": {
-                                "anyOf": [
-                                  {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "array",
-                                        "items": {
-                                          "anyOf": [
-                                            {},
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        }
-                                      }
-                                    ]
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "reasoning_content": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "thinking": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
+                                "type": "string"
                               },
                               "tool_call_id": {
                                 "type": "string"
@@ -6044,49 +5960,7 @@
                                 }
                               },
                               "reasoning": {
-                                "anyOf": [
-                                  {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "array",
-                                        "items": {
-                                          "anyOf": [
-                                            {},
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        }
-                                      }
-                                    ]
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "reasoning_content": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "thinking": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
+                                "type": "string"
                               },
                               "tool_call_id": {
                                 "type": "string"
@@ -8646,49 +8520,7 @@
                                 }
                               },
                               "reasoning": {
-                                "anyOf": [
-                                  {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "array",
-                                        "items": {
-                                          "anyOf": [
-                                            {},
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        }
-                                      }
-                                    ]
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "reasoning_content": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "thinking": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
+                                "type": "string"
                               },
                               "tool_call_id": {
                                 "type": "string"
@@ -11117,49 +10949,7 @@
                                 }
                               },
                               "reasoning": {
-                                "anyOf": [
-                                  {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "array",
-                                        "items": {
-                                          "anyOf": [
-                                            {},
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        }
-                                      }
-                                    ]
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "reasoning_content": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "thinking": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
+                                "type": "string"
                               },
                               "tool_call_id": {
                                 "type": "string"
@@ -13515,49 +13305,7 @@
                                 }
                               },
                               "reasoning": {
-                                "anyOf": [
-                                  {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "array",
-                                        "items": {
-                                          "anyOf": [
-                                            {},
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        }
-                                      }
-                                    ]
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "reasoning_content": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "thinking": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
+                                "type": "string"
                               },
                               "tool_call_id": {
                                 "type": "string"
@@ -15111,49 +14859,7 @@
                                 }
                               },
                               "reasoning": {
-                                "anyOf": [
-                                  {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "array",
-                                        "items": {
-                                          "anyOf": [
-                                            {},
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        }
-                                      }
-                                    ]
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "reasoning_content": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "thinking": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
+                                "type": "string"
                               },
                               "tool_call_id": {
                                 "type": "string"
@@ -16694,49 +16400,7 @@
                                 }
                               },
                               "reasoning": {
-                                "anyOf": [
-                                  {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "array",
-                                        "items": {
-                                          "anyOf": [
-                                            {},
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        }
-                                      }
-                                    ]
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "reasoning_content": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "thinking": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
+                                "type": "string"
                               },
                               "tool_call_id": {
                                 "type": "string"
@@ -24978,49 +24642,7 @@
                                 }
                               },
                               "reasoning": {
-                                "anyOf": [
-                                  {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "array",
-                                        "items": {
-                                          "anyOf": [
-                                            {},
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
-                                        }
-                                      }
-                                    ]
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "reasoning_content": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "thinking": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
+                                "type": "string"
                               },
                               "tool_call_id": {
                                 "type": "string"
@@ -26570,49 +26192,7 @@
                                     }
                                   },
                                   "reasoning": {
-                                    "anyOf": [
-                                      {
-                                        "anyOf": [
-                                          {
-                                            "type": "string"
-                                          },
-                                          {
-                                            "type": "array",
-                                            "items": {
-                                              "anyOf": [
-                                                {},
-                                                {
-                                                  "type": "null"
-                                                }
-                                              ]
-                                            }
-                                          }
-                                        ]
-                                      },
-                                      {
-                                        "type": "null"
-                                      }
-                                    ]
-                                  },
-                                  "reasoning_content": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "null"
-                                      }
-                                    ]
-                                  },
-                                  "thinking": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "null"
-                                      }
-                                    ]
+                                    "type": "string"
                                   },
                                   "tool_call_id": {
                                     "type": "string"

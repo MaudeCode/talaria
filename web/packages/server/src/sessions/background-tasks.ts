@@ -11,7 +11,7 @@ import type { BackgroundLink, BackgroundTask } from '@maudecode/talaria-web-cont
 import { atomicWriteText } from '../fs/atomic.js'
 import type { SidecarLike } from '../sidecar/client.js'
 import { str } from '../util.js'
-import { isDict } from './merge.js'
+import { isDict, stripToolCallXml } from './merge.js'
 import { isSafeSessionId } from './session.js'
 
 type Dict = Record<string, unknown>
@@ -346,14 +346,17 @@ export class BackgroundActivity {
     return { tasks, agent_available: agent !== null, agents_working: tasks.some((t) => t.kind === 'delegation' && (t.status === 'running' || t.status === 'attention')) }
   }
 
-  /** The full result: kept here for `/background` and drained completions, else the Agent's ledger for a delegation. */
+  /**
+   * The full result: kept here for `/background` and drained completions, else the Agent's ledger for a delegation.
+   * Leaked tool-call XML is removed, as from a transcript reply (TAL-302).
+   */
   async result(sid: string, profile: string | null, taskId: string): Promise<string | null> {
     const receipt = this.deps.store.get(sid, taskId)
     if (!receipt) return null
-    if (receipt.result) return receipt.result
+    if (receipt.result) return stripToolCallXml(receipt.result)
     const sidecar = this.deps.sidecar()
     if (receipt.kind !== 'delegation' || !receipt.agent_result || !sidecar) return null
-    try { return (await sidecar.call('process.delegation_result', { profile_home: this.deps.profileHome(profile), session_id: sid, delegation_id: taskId })).text || null } catch { return null }
+    try { return stripToolCallXml((await sidecar.call('process.delegation_result', { profile_home: this.deps.profileHome(profile), session_id: sid, delegation_id: taskId })).text) || null } catch { return null }
   }
 
   /** Dismissal is read state, separate from the task: the record stays in the history and leaves the tray. */

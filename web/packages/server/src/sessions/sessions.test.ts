@@ -802,6 +802,68 @@ describe('session detail marks background wakeups as updates (TAL-371)', () => {
   })
 })
 
+describe('assistant display normalization on every read (TAL-302)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  /** Each stored assistant shape, keyed by timestamp, with the content and reasoning every read must ship for it. */
+  const shapes: [number, unknown, Json, unknown, string | undefined][] = [
+    [1001, '<think>plan A</think>Answer A', {}, 'Answer A', 'plan A'],
+    [1003, 'Intro <thinking>mid</thinking>Answer B', {}, 'Intro Answer B', 'mid'],
+    [1005, 'Answer C <|channel|>thought\nunfinished', {}, 'Answer C', 'unfinished'],
+    [1007, '<|turn|>thinking\nturn plan<turn|>Answer D', {}, 'Answer D', 'turn plan'],
+    [1009, 'Answer E <function_calls><invoke name="x"/></function_calls>', {}, 'Answer E', undefined],
+    [1011, 'Answer F\n<｜DSML｜function_calls><｜DSML｜invoke name="x">', {}, 'Answer F', undefined],
+    [1013, [{ type: 'thinking', thinking: 'typed plan' }, { type: 'text', text: 'Answer G' }], {}, [{ type: 'text', text: 'Answer G' }], 'typed plan'],
+    [1015, 'Answer H', { reasoning_content: 'shared', reasoning: 'shared', thinking: 'extra <tool_call>{"name":"x"}</tool_call>' }, 'Answer H', 'shared\n\nextra'],
+  ]
+  const stored = shapes.flatMap(([ts, content, fields]) => [{ role: 'user', content: `ask ${String(ts)}`, timestamp: ts - 1 }, { role: 'assistant', content, timestamp: ts, ...fields }])
+
+  it('ships clean content and one reasoning string in full detail, every window and a state.db row, without rewriting the file', async () => {
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, stored)
+    s.deps.sessionStore.sessions.delete(sid)
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'webui', 1000)
+    db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'user', 'from cli', 3000)
+    db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, 'assistant', '<thinking>cli plan</thinking>CLI answer <tool_call>{"name":"x"}</tool_call>', 3001)
+    db.close()
+    const want = new Map<number, [unknown, string | undefined]>([...shapes.map(([ts, , , content, reasoning]): [number, [unknown, string | undefined]] => [ts, [content, reasoning]]), [3001, ['CLI answer', 'cli plan']]])
+    const path = join(s.state, 'sessions', `${sid}.json`)
+    const before = readFileSync(path)
+    for (const query of ['', '&msg_limit=120', '&msg_limit=4', '&msg_limit=6&msg_before=8']) {
+      const messages = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json).messages as Json[]
+      const assistants = messages.filter((m) => m.role === 'assistant')
+      expect(assistants.length).toBeGreaterThan(0)
+      for (const m of assistants) {
+        const [content, reasoning] = want.get(Number(m.timestamp))!
+        expect({ content: m.content, reasoning: m.reasoning, reasoning_content: m.reasoning_content, thinking: m.thinking }, `${String(m.timestamp)}${query}`).toEqual({ content, reasoning, reasoning_content: undefined, thinking: undefined })
+        // The turn's scene agrees with the row: the same answer and the same reasoning.
+        const scene = m._anchor_activity_scene as Json
+        expect(scene.final_answer, `${String(m.timestamp)}${query}`).toBe(typeof content === 'string' ? content : 'Answer G')
+        expect((scene.activity_rows as Json[]).filter((row) => row.role === 'reasoning').map((row) => row.text).join('\n\n') || undefined).toBe(reasoning)
+      }
+    }
+    expect(readFileSync(path)).toEqual(before)
+  })
+
+  it('serves the shared inline-thinking example exactly as the contract fixture records it', async () => {
+    const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
+    const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).inline_thinking_session as Json
+    const sid = String((await newSession(s)).session_id)
+    writeMessages(s, sid, fixture.stored as Json[])
+    const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages as Json[]
+    expect(served).toEqual(fixture.messages)
+    // The rows say what every client shows: the row's prose and reasoning, and the scene's answer, as the example expects.
+    for (const [id, want] of Object.entries(fixture.expected as Record<string, { prose: string; reasoning: string }>)) {
+      const row = served.find((m) => m.message_id === id)!
+      expect([row.content, row.reasoning ?? '', (row._anchor_activity_scene as Json).final_answer], id).toEqual([id === 'typed-parts' ? [{ type: 'text', text: want.prose }] : want.prose, want.reasoning, want.prose])
+    }
+  })
+})
+
 describe('session detail collapses very long message bodies (TAL-456)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

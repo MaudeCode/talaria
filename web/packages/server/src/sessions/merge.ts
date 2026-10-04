@@ -483,16 +483,116 @@ export function buildPartialMessage(contentText: string, reasoningText: string, 
   return msg
 }
 
-export function stripXmlToolCalls(text: string): string {
-  return text.replace(/<function_calls>[\s\S]*?<\/function_calls>/gi, '').replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '').trimEnd()
+const DSML = '(?:\\s*｜\\s*DSML\\s*[｜|]\\s*)?'
+
+/** Markdown code (fenced blocks, an unclosed one running to the end, and inline spans): markup written there is literal. */
+function codeRanges(text: string): [number, number][] {
+  const code = /^ {0,3}(`{3,}|~{3,})[^\n]*(?:\n[\s\S]*?(?:\n {0,3}\1[^\n]*(?=\n|$)|(?![\s\S]))|(?![\s\S]))|(`+)(?!`)(?:[^\n]|\n(?!\n))*?(?<!`)\2(?!`)/gm
+  return [...text.matchAll(code)].map((m) => [m.index, m.index + m[0].length])
 }
 
-/** Split inline `<think>` blocks out of assistant content (Python `_split_thinking_from_content`, reduced). */
-export function splitThinkingFromContent(content: string, existingReasoning = ''): [string, string] {
-  const parts: string[] = []
-  const cleaned = content.replace(/<think(?:ing)?\b[^>]*>([\s\S]*?)<\/think(?:ing)?>/gi, (_m, inner: string) => { parts.push(inner.trim()); return '' })
-  const reasoning = [existingReasoning.trim(), ...parts].filter(Boolean).join('\n\n')
-  return [cleaned.replace(/^\s+/, '').trimEnd(), reasoning]
+const inCode = (code: [number, number][], at: number) => code.some(([from, to]) => at >= from && at < to)
+
+/** `re` matches removed, except the ones that start inside Markdown code. */
+function removeOutsideCode(text: string, re: RegExp): string {
+  const code = codeRanges(text)
+  return text.replace(re, (match: string, ...rest: unknown[]) => (inCode(code, rest.find((x): x is number => typeof x === 'number') ?? 0) ? match : ''))
+}
+
+/** Remove provider tool-call XML (`<function_calls>…`, DSML variants, `<tool_call>`), closed or cut off, that leaks into text. */
+export function stripToolCallXml(text: string): string {
+  const lo = text.toLowerCase()
+  if (!lo.includes('function_calls') && !lo.includes('dsml') && !lo.includes('<tool_call')) return text
+  return [
+    new RegExp(`<${DSML}function_calls>[\\s\\S]*?<\\/${DSML}function_calls>`, 'gi'),
+    new RegExp(`<${DSML}function_calls(?:>|$)[\\s\\S]*$`, 'i'),
+    /<tool_call>[\s\S]*?<\/tool_call>/gi,
+    /<tool_call>[\s\S]*$/i,
+    /<\s*｜\s*DSML\s*[｜|]\s*/gi,
+  ].reduce(removeOutsideCode, text).replace(/^\s+/, '').trimEnd()
+}
+
+/** Inline thinking openers: `<think>`/`<thinking>` in any case and with attributes (as the Agent's own split), and the channel forms. */
+const THINK_OPEN = /<think(?:ing)?(?:\s[^>]*)?>|<\|channel\|>thought|<\|turn\|>thinking/gi
+
+function thinkClose(open: string): RegExp {
+  if (open.toLowerCase().startsWith('<|channel|>')) return /<channel\|>/gi
+  if (open.toLowerCase().startsWith('<|turn|>')) return /<turn\|>/gi
+  return /<\/think(?:ing)?\s*>/gi
+}
+
+/**
+ * Split assistant text into its visible prose and its inline thinking: every `<think>`, `<thinking>`,
+ * `<|channel|>thought` and `<|turn|>thinking` block anywhere in the text, an unterminated one running to the end.
+ * A tag written inside Markdown code is prose. Tool-call XML leaves both halves; both come back trimmed.
+ */
+export function splitDisplayText(text: string): [string, string] {
+  const code = codeRanges(text)
+  let content = ''
+  const reasoning: string[] = []
+  let cursor = 0
+  while (cursor < text.length) {
+    THINK_OPEN.lastIndex = cursor
+    let open = THINK_OPEN.exec(text)
+    while (open && inCode(code, open.index)) open = THINK_OPEN.exec(text)
+    if (!open) { content += text.slice(cursor); break }
+    content += text.slice(cursor, open.index)
+    const body = open.index + open[0].length
+    const closer = thinkClose(open[0])
+    closer.lastIndex = body
+    const close = closer.exec(text)
+    reasoning.push(text.slice(body, close?.index))
+    if (!close) break
+    cursor = close.index + close[0].length
+  }
+  return [stripToolCallXml(content).replace(/^\s+/, '').trimEnd(), joinReasoning(reasoning)]
+}
+
+/**
+ * Reasoning parts as one display string: tool-call XML removed, blank-line joined, each part once. A part that is
+ * whole paragraphs of another (a settled row's `reasoning` that already took in its `reasoning_content`) is dropped.
+ */
+export function joinReasoning(parts: string[]): string {
+  const clean = parts.map((part) => stripToolCallXml(part).trim()).filter(Boolean)
+  const within = (outer: string, inner: string) => `\n\n${outer}\n\n`.includes(`\n\n${inner}\n\n`)
+  return clean.filter((p, i) => !clean.some((q, j) => j !== i && (q === p ? j < i : within(q, p)))).join('\n\n')
+}
+
+/** A message's reasoning fields as one string: `reasoning_content`, `reasoning` (text or a list of text parts), `thinking`. */
+export function reasoningFieldsText(m: Record<string, unknown>): string {
+  const listed = Array.isArray(m.reasoning) ? m.reasoning.map((part) => (isDict(part) ? reasoningBlockText(part) : str(part))) : [str(m.reasoning)]
+  return joinReasoning([str(m.reasoning_content), ...listed, str(m.thinking)])
+}
+
+/**
+ * The one display shape of an assistant row: `content` without inline thinking or tool-call XML (typed `thinking` /
+ * `reasoning` parts leave a list), and every piece of reasoning in one `reasoning` string. `reasoning_content` and
+ * `thinking` are not sent. Idempotent; other rows pass through. A copy: stored rows and model history are untouched.
+ */
+export function normalizeAssistantDisplay<T>(message: T): T {
+  if (!isDict(message) || message.role !== 'assistant') return message
+  const m: Record<string, unknown> = { ...message }
+  delete m.reasoning_content
+  delete m.thinking
+  delete m.reasoning
+  const parts = [reasoningFieldsText(message)]
+  if (typeof m.content === 'string') {
+    const [content, inline] = splitDisplayText(m.content)
+    // Only text something was taken out of is rewritten: plain prose keeps its exact whitespace (an indented code block).
+    if (content !== m.content.trim()) m.content = content
+    parts.push(inline)
+  } else if (Array.isArray(m.content)) {
+    m.content = m.content.flatMap((part: unknown) => {
+      if (!isDict(part)) return [part]
+      if (isReasoningBlock(part)) { parts.push(reasoningBlockText(part)); return [] }
+      if (typeof part.text !== 'string') return [part]
+      const [text, inline] = splitDisplayText(part.text)
+      parts.push(inline)
+      return text === part.text.trim() ? [part] : text ? [{ ...part, text }] : []
+    })
+  }
+  const reasoning = joinReasoning(parts)
+  return (reasoning ? { ...m, reasoning } : m) as T
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BODY_EXCERPT_LIMIT, extractToolCallsFromMessages, mergeSessionMessagesAppendOnly, toolOutcome, withBodyExcerpts, withToolCallOutcomes } from './merge.js'
+import { BODY_EXCERPT_LIMIT, extractToolCallsFromMessages, mergeSessionMessagesAppendOnly, normalizeAssistantDisplay, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withToolCallOutcomes } from './merge.js'
 
 describe('toolOutcome (TAL-313)', () => {
   it('fails a result that reports an error, a non-zero exit code, or success false, in any persisted shape', () => {
@@ -139,5 +139,64 @@ describe('mergeSessionMessagesAppendOnly truncation watermark (TAL-504)', () => 
 
   it('keeps state rows newer than a compression watermark, which marks compressed rows rather than a cut', () => {
     expect(contents(mergeSessionMessagesAppendOnly(state.slice(0, 2), state, { truncationWatermark: 101, compressedWatermark: true }))).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
+  })
+})
+
+describe('assistant display text (TAL-302)', () => {
+  it('removes complete and cut-off tool-call XML, DSML variants included, and leaves ordinary text untouched', () => {
+    expect(stripToolCallXml('Hi <function_calls><invoke name="x"/></function_calls> there')).toBe('Hi  there')
+    expect(stripToolCallXml('Prose\n<function_calls><invoke')).toBe('Prose')
+    expect(stripToolCallXml('<tool_call>{"a":1}</tool_call>after')).toBe('after')
+    expect(stripToolCallXml('Prose <｜DSML｜function_calls><｜DSML｜invoke name="x"></｜DSML｜function_calls>')).toBe('Prose')
+    expect(stripToolCallXml('plain **md** <b>x</b>\n')).toBe('plain **md** <b>x</b>\n')
+    // Markup an answer writes as Markdown code is literal.
+    expect(stripToolCallXml('Use `<function_calls>` and `<tool_call>` tags.')).toBe('Use `<function_calls>` and `<tool_call>` tags.')
+    expect(stripToolCallXml('Example:\n```xml\n<function_calls><invoke/></function_calls>\n```\nDone <tool_call>{}</tool_call>')).toBe('Example:\n```xml\n<function_calls><invoke/></function_calls>\n```\nDone')
+  })
+
+  it('splits every inline thinking form out of the text, anywhere and unterminated', () => {
+    expect(splitDisplayText('<think>plan</think>Answer')).toEqual(['Answer', 'plan'])
+    expect(splitDisplayText('Intro <thinking>mid</thinking>end')).toEqual(['Intro end', 'mid'])
+    expect(splitDisplayText('<|channel|>thought\nhmm<channel|>Yes')).toEqual(['Yes', 'hmm'])
+    expect(splitDisplayText('<|turn|>thinking\nplan<turn|>Done')).toEqual(['Done', 'plan'])
+    expect(splitDisplayText('Answer <think>still')).toEqual(['Answer', 'still'])
+    expect(splitDisplayText('<think>a</think>One <think>b</think>Two')).toEqual(['One Two', 'a\n\nb'])
+    expect(splitDisplayText('no tags\n')).toEqual(['no tags', ''])
+    // Any case and attributes, as providers emit them.
+    expect(splitDisplayText('<think type="analysis">plan</think>Answer')).toEqual(['Answer', 'plan'])
+    expect(splitDisplayText('<THINK>plan</THINK>Answer')).toEqual(['Answer', 'plan'])
+    expect(splitDisplayText('<|CHANNEL|>thought\nhmm<channel|>Yes')).toEqual(['Yes', 'hmm'])
+    expect(splitDisplayText('<|turn|>thinking\nplan<TURN|>Done')).toEqual(['Done', 'plan'])
+    expect(splitDisplayText('<think-tank>is prose')).toEqual(['<think-tank>is prose', ''])
+    // A tag written as Markdown code is prose, inline or fenced, even unterminated.
+    expect(splitDisplayText('Use `<think>` and `<function_calls>` tags.')).toEqual(['Use `<think>` and `<function_calls>` tags.', ''])
+    expect(splitDisplayText('<think>real</think>See:\n```\n<think>\n```')).toEqual(['See:\n```\n<think>\n```', 'real'])
+    expect(splitDisplayText('Open fence:\n```\n<thinking>')).toEqual(['Open fence:\n```\n<thinking>', ''])
+    expect(splitDisplayText('Open fence:\n```\nline\n<thinking>')).toEqual(['Open fence:\n```\nline\n<thinking>', ''])
+    // A stray backtick pairs with nothing across a paragraph break.
+    expect(splitDisplayText('A ` tick.\n\n<think>plan</think>Answer `x`')).toEqual(['A ` tick.\n\nAnswer `x`', 'plan'])
+  })
+
+  it('ships clean content and one reasoning string, idempotently, and leaves other rows and the input alone', () => {
+    const raw = { role: 'assistant', content: '<think>inline</think>Answer <tool_call>{}</tool_call>', reasoning_content: 'shared', reasoning: 'shared', thinking: 'extra' }
+    const once = normalizeAssistantDisplay(raw)
+    expect(once).toEqual({ role: 'assistant', content: 'Answer', reasoning: 'shared\n\nextra\n\ninline' })
+    expect(normalizeAssistantDisplay(once)).toEqual(once)
+    expect(raw.reasoning_content).toBe('shared')
+    const user = { role: 'user', content: '<think>x</think>' }
+    expect(normalizeAssistantDisplay(user)).toBe(user)
+    expect(normalizeAssistantDisplay({ role: 'assistant', content: 'plain' })).toEqual({ role: 'assistant', content: 'plain' })
+    // Text nothing was taken out of keeps its exact whitespace, in a string and in a text part.
+    expect(normalizeAssistantDisplay({ role: 'assistant', content: '    indented code\n' }).content).toBe('    indented code\n')
+    expect(normalizeAssistantDisplay({ role: 'assistant', content: [{ type: 'text', text: ' plain ' }] }).content).toEqual([{ type: 'text', text: ' plain ' }])
+  })
+
+  it('moves typed thinking parts and a listed reasoning field into reasoning', () => {
+    expect(normalizeAssistantDisplay({ role: 'assistant', content: [{ type: 'thinking', thinking: 'typed' }, { type: 'text', text: '<think>part</think>Answer' }, { type: 'image_url', image_url: { url: 'x' } }], reasoning: [{ type: 'text', text: 'listed' }] }))
+      .toEqual({ role: 'assistant', content: [{ type: 'text', text: 'Answer' }, { type: 'image_url', image_url: { url: 'x' } }], reasoning: 'listed\n\ntyped\n\npart' })
+    // A reasoning part already contained in a longer one (a settled row merged its inline thinking) shows once.
+    expect(normalizeAssistantDisplay({ role: 'assistant', content: 'A', reasoning_content: 'plan', reasoning: 'plan\n\ninline' })).toEqual({ role: 'assistant', content: 'A', reasoning: 'plan\n\ninline' })
+    // Text that merely occurs inside another part is still its own reasoning.
+    expect(normalizeAssistantDisplay({ role: 'assistant', content: 'A', reasoning_content: 'Yes', reasoning: 'Yes, it exists.' })).toEqual({ role: 'assistant', content: 'A', reasoning: 'Yes\n\nYes, it exists.' })
   })
 })

@@ -1007,67 +1007,9 @@ extension ChatViewModel {
         order += 1
     }
 
+    /// The server ships one `reasoning` string per row (TAL-302); its content carries no thinking to extract.
     nonisolated private static func reasoningTexts(from message: ChatMessage) -> [String] {
-        if let partsText = reasoningText(fromContentParts: message.contentParts) {
-            return [partsText]
-        }
-
-        if let reasoning = nonEmptyReasoningText(message.reasoning) {
-            return [reasoning]
-        }
-
-        if let contentReasoning = reasoningText(fromContent: message.content) {
-            return [contentReasoning]
-        }
-
-        return []
-    }
-
-    nonisolated private static func reasoningText(fromContentParts parts: [JSONValue]?) -> String? {
-        guard let parts else { return nil }
-
-        let text = parts.compactMap { part -> String? in
-            guard case .object(let object) = part,
-                  let type = jsonStringValue(object["type"]),
-                  type == "thinking" || type == "reasoning"
-            else {
-                return nil
-            }
-
-            return jsonStringValue(object["thinking"])
-                ?? jsonStringValue(object["reasoning"])
-                ?? jsonStringValue(object["text"])
-                ?? jsonStringValue(object["content"])
-        }
-        .joined(separator: "\n")
-
-        return nonEmptyReasoningText(text)
-    }
-
-    nonisolated private static func reasoningText(fromContent content: String?) -> String? {
-        guard let content = nonEmptyReasoningText(content) else { return nil }
-
-        if let text = leadingDelimitedText(in: content, open: "<think>", close: "</think>") {
-            return text
-        }
-
-        if let text = leadingDelimitedText(in: content, open: "<|channel|>thought", close: "<channel|>") {
-            return text
-        }
-
-        return leadingDelimitedText(in: content, open: "<|turn|>thinking\n", close: "<turn|>")
-    }
-
-    nonisolated private static func leadingDelimitedText(in content: String, open: String, close: String) -> String? {
-        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix(open),
-              let closeRange = trimmed.range(of: close, range: trimmed.index(trimmed.startIndex, offsetBy: open.count)..<trimmed.endIndex)
-        else {
-            return nil
-        }
-
-        let text = String(trimmed[trimmed.index(trimmed.startIndex, offsetBy: open.count)..<closeRange.lowerBound])
-        return nonEmptyReasoningText(text)
+        nonEmptyReasoningText(message.reasoning).map { [$0] } ?? []
     }
 
     nonisolated private static func strippedVisibleAssistantEcho(
@@ -1097,19 +1039,6 @@ extension ChatViewModel {
     nonisolated private static func nonEmptyReasoningText(_ text: String?) -> String? {
         let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed?.isEmpty == false ? trimmed : nil
-    }
-
-    nonisolated private static func jsonStringValue(_ value: JSONValue?) -> String? {
-        switch value {
-        case .string(let value):
-            return value
-        case .number(let value):
-            return value.formatted()
-        case .bool(let value):
-            return value ? "true" : "false"
-        case .object, .array, .null, nil:
-            return nil
-        }
     }
 }
 

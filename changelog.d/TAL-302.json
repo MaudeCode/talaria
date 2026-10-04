@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Replies show the same answer and the same reasoning on iPhone and on the web, with inline thinking and stray tool-call markup kept out of the answer.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

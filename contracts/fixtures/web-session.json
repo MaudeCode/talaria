@@ -1690,5 +1690,935 @@
       "context_usage_percent": null,
       "context_threshold_percent": null
     }
+  },
+  "inline_thinking_session": {
+    "stored": [
+      {
+        "role": "user",
+        "content": "Show think-start",
+        "message_id": "think-start-ask",
+        "timestamp": 2000
+      },
+      {
+        "role": "assistant",
+        "content": "<think>\nPlan think.</think>Answer think.",
+        "message_id": "think-start",
+        "timestamp": 2001
+      },
+      {
+        "role": "user",
+        "content": "Show think-middle",
+        "message_id": "think-middle-ask",
+        "timestamp": 2002
+      },
+      {
+        "role": "assistant",
+        "content": "Lead think. <think>\nPlan think.</think>Answer think.",
+        "message_id": "think-middle",
+        "timestamp": 2003
+      },
+      {
+        "role": "user",
+        "content": "Show think-unterminated",
+        "message_id": "think-unterminated-ask",
+        "timestamp": 2004
+      },
+      {
+        "role": "assistant",
+        "content": "Answer think. <think>\nPlan think.",
+        "message_id": "think-unterminated",
+        "timestamp": 2005
+      },
+      {
+        "role": "user",
+        "content": "Show thinking-start",
+        "message_id": "thinking-start-ask",
+        "timestamp": 2006
+      },
+      {
+        "role": "assistant",
+        "content": "<thinking>\nPlan thinking.</thinking>Answer thinking.",
+        "message_id": "thinking-start",
+        "timestamp": 2007
+      },
+      {
+        "role": "user",
+        "content": "Show thinking-middle",
+        "message_id": "thinking-middle-ask",
+        "timestamp": 2008
+      },
+      {
+        "role": "assistant",
+        "content": "Lead thinking. <thinking>\nPlan thinking.</thinking>Answer thinking.",
+        "message_id": "thinking-middle",
+        "timestamp": 2009
+      },
+      {
+        "role": "user",
+        "content": "Show thinking-unterminated",
+        "message_id": "thinking-unterminated-ask",
+        "timestamp": 2010
+      },
+      {
+        "role": "assistant",
+        "content": "Answer thinking. <thinking>\nPlan thinking.",
+        "message_id": "thinking-unterminated",
+        "timestamp": 2011
+      },
+      {
+        "role": "user",
+        "content": "Show channel-start",
+        "message_id": "channel-start-ask",
+        "timestamp": 2012
+      },
+      {
+        "role": "assistant",
+        "content": "<|channel|>thought\nPlan channel.<channel|>Answer channel.",
+        "message_id": "channel-start",
+        "timestamp": 2013
+      },
+      {
+        "role": "user",
+        "content": "Show channel-middle",
+        "message_id": "channel-middle-ask",
+        "timestamp": 2014
+      },
+      {
+        "role": "assistant",
+        "content": "Lead channel. <|channel|>thought\nPlan channel.<channel|>Answer channel.",
+        "message_id": "channel-middle",
+        "timestamp": 2015
+      },
+      {
+        "role": "user",
+        "content": "Show channel-unterminated",
+        "message_id": "channel-unterminated-ask",
+        "timestamp": 2016
+      },
+      {
+        "role": "assistant",
+        "content": "Answer channel. <|channel|>thought\nPlan channel.",
+        "message_id": "channel-unterminated",
+        "timestamp": 2017
+      },
+      {
+        "role": "user",
+        "content": "Show turn-start",
+        "message_id": "turn-start-ask",
+        "timestamp": 2018
+      },
+      {
+        "role": "assistant",
+        "content": "<|turn|>thinking\nPlan turn.<turn|>Answer turn.",
+        "message_id": "turn-start",
+        "timestamp": 2019
+      },
+      {
+        "role": "user",
+        "content": "Show turn-middle",
+        "message_id": "turn-middle-ask",
+        "timestamp": 2020
+      },
+      {
+        "role": "assistant",
+        "content": "Lead turn. <|turn|>thinking\nPlan turn.<turn|>Answer turn.",
+        "message_id": "turn-middle",
+        "timestamp": 2021
+      },
+      {
+        "role": "user",
+        "content": "Show turn-unterminated",
+        "message_id": "turn-unterminated-ask",
+        "timestamp": 2022
+      },
+      {
+        "role": "assistant",
+        "content": "Answer turn. <|turn|>thinking\nPlan turn.",
+        "message_id": "turn-unterminated",
+        "timestamp": 2023
+      },
+      {
+        "role": "user",
+        "content": "Show xml-closed",
+        "message_id": "xml-closed-ask",
+        "timestamp": 2024
+      },
+      {
+        "role": "assistant",
+        "content": "Answer xml. <function_calls><invoke name=\"read_file\"/></function_calls>",
+        "message_id": "xml-closed",
+        "timestamp": 2025
+      },
+      {
+        "role": "user",
+        "content": "Show xml-unterminated",
+        "message_id": "xml-unterminated-ask",
+        "timestamp": 2026
+      },
+      {
+        "role": "assistant",
+        "content": "Answer cut. <tool_call>{\"name\": \"read_file\"",
+        "message_id": "xml-unterminated",
+        "timestamp": 2027
+      },
+      {
+        "role": "user",
+        "content": "Show xml-dsml",
+        "message_id": "xml-dsml-ask",
+        "timestamp": 2028
+      },
+      {
+        "role": "assistant",
+        "content": "Answer dsml.\n<｜DSML｜function_calls><｜DSML｜invoke name=\"read_file\">",
+        "message_id": "xml-dsml",
+        "timestamp": 2029
+      },
+      {
+        "role": "user",
+        "content": "Show typed-parts",
+        "message_id": "typed-parts-ask",
+        "timestamp": 2030
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "Plan typed."
+          },
+          {
+            "type": "text",
+            "text": "Answer typed."
+          }
+        ],
+        "message_id": "typed-parts",
+        "timestamp": 2031
+      },
+      {
+        "role": "user",
+        "content": "Show reasoning-fields",
+        "message_id": "reasoning-fields-ask",
+        "timestamp": 2032
+      },
+      {
+        "role": "assistant",
+        "content": "Answer fields.",
+        "message_id": "reasoning-fields",
+        "timestamp": 2033,
+        "reasoning_content": "Plan shared.",
+        "reasoning": "Plan shared.",
+        "thinking": "Plan extra."
+      }
+    ],
+    "expected": {
+      "think-start": {
+        "prose": "Answer think.",
+        "reasoning": "Plan think."
+      },
+      "think-middle": {
+        "prose": "Lead think. Answer think.",
+        "reasoning": "Plan think."
+      },
+      "think-unterminated": {
+        "prose": "Answer think.",
+        "reasoning": "Plan think."
+      },
+      "thinking-start": {
+        "prose": "Answer thinking.",
+        "reasoning": "Plan thinking."
+      },
+      "thinking-middle": {
+        "prose": "Lead thinking. Answer thinking.",
+        "reasoning": "Plan thinking."
+      },
+      "thinking-unterminated": {
+        "prose": "Answer thinking.",
+        "reasoning": "Plan thinking."
+      },
+      "channel-start": {
+        "prose": "Answer channel.",
+        "reasoning": "Plan channel."
+      },
+      "channel-middle": {
+        "prose": "Lead channel. Answer channel.",
+        "reasoning": "Plan channel."
+      },
+      "channel-unterminated": {
+        "prose": "Answer channel.",
+        "reasoning": "Plan channel."
+      },
+      "turn-start": {
+        "prose": "Answer turn.",
+        "reasoning": "Plan turn."
+      },
+      "turn-middle": {
+        "prose": "Lead turn. Answer turn.",
+        "reasoning": "Plan turn."
+      },
+      "turn-unterminated": {
+        "prose": "Answer turn.",
+        "reasoning": "Plan turn."
+      },
+      "xml-closed": {
+        "prose": "Answer xml.",
+        "reasoning": ""
+      },
+      "xml-unterminated": {
+        "prose": "Answer cut.",
+        "reasoning": ""
+      },
+      "xml-dsml": {
+        "prose": "Answer dsml.",
+        "reasoning": ""
+      },
+      "typed-parts": {
+        "prose": "Answer typed.",
+        "reasoning": "Plan typed."
+      },
+      "reasoning-fields": {
+        "prose": "Answer fields.",
+        "reasoning": "Plan shared.\n\nPlan extra."
+      }
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "Show think-start",
+        "message_id": "think-start-ask",
+        "timestamp": 2000,
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer think.",
+        "message_id": "think-start",
+        "timestamp": 2001,
+        "reasoning": "Plan think.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "think-start:thinking",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2001,
+              "text": "Plan think.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Answer think.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "c82a3c21523c81fbd5e75c36d2701eaf2d95bd25d681aea833ff83ad7daa385d"
+        },
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "user",
+        "content": "Show think-middle",
+        "message_id": "think-middle-ask",
+        "timestamp": 2002,
+        "_turn_id": "legacy:2"
+      },
+      {
+        "role": "assistant",
+        "content": "Lead think. Answer think.",
+        "message_id": "think-middle",
+        "timestamp": 2003,
+        "reasoning": "Plan think.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "think-middle:thinking",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2003,
+              "text": "Plan think.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Lead think. Answer think.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "a69ba2650a040b382eafd702c38fa7c53b097c2da4b431f55c68aaaad2c5cf2b"
+        },
+        "_turn_id": "legacy:2"
+      },
+      {
+        "role": "user",
+        "content": "Show think-unterminated",
+        "message_id": "think-unterminated-ask",
+        "timestamp": 2004,
+        "_turn_id": "legacy:4"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer think.",
+        "message_id": "think-unterminated",
+        "timestamp": 2005,
+        "reasoning": "Plan think.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "think-unterminated:thinking",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2005,
+              "text": "Plan think.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Answer think.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "89bb03801f7ab8ca2abfb1d02c62c6e7cafe85a33730aadd5948a07254152919"
+        },
+        "_turn_id": "legacy:4"
+      },
+      {
+        "role": "user",
+        "content": "Show thinking-start",
+        "message_id": "thinking-start-ask",
+        "timestamp": 2006,
+        "_turn_id": "legacy:6"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer thinking.",
+        "message_id": "thinking-start",
+        "timestamp": 2007,
+        "reasoning": "Plan thinking.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "thinking-start:thinking",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2007,
+              "text": "Plan thinking.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Answer thinking.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "b4cceb63793578d97a2453254294932f93cf0111a9c4a4bba1ed50a2498b5d6a"
+        },
+        "_turn_id": "legacy:6"
+      },
+      {
+        "role": "user",
+        "content": "Show thinking-middle",
+        "message_id": "thinking-middle-ask",
+        "timestamp": 2008,
+        "_turn_id": "legacy:8"
+      },
+      {
+        "role": "assistant",
+        "content": "Lead thinking. Answer thinking.",
+        "message_id": "thinking-middle",
+        "timestamp": 2009,
+        "reasoning": "Plan thinking.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "thinking-middle:thinking",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2009,
+              "text": "Plan thinking.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Lead thinking. Answer thinking.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "f63dd22df8e632e15a1b03898006eba550912e9f29aa0ba93052c1b477d90562"
+        },
+        "_turn_id": "legacy:8"
+      },
+      {
+        "role": "user",
+        "content": "Show thinking-unterminated",
+        "message_id": "thinking-unterminated-ask",
+        "timestamp": 2010,
+        "_turn_id": "legacy:10"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer thinking.",
+        "message_id": "thinking-unterminated",
+        "timestamp": 2011,
+        "reasoning": "Plan thinking.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "thinking-unterminated:thinking",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2011,
+              "text": "Plan thinking.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Answer thinking.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "dc30d34853a7818f0a3b0a5dce20868f324e994c36be7735f765af1c54f2e058"
+        },
+        "_turn_id": "legacy:10"
+      },
+      {
+        "role": "user",
+        "content": "Show channel-start",
+        "message_id": "channel-start-ask",
+        "timestamp": 2012,
+        "_turn_id": "legacy:12"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer channel.",
+        "message_id": "channel-start",
+        "timestamp": 2013,
+        "reasoning": "Plan channel.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "channel-start:thinking",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2013,
+              "text": "Plan channel.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Answer channel.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "862ab91624a1d62da0f03b0b123f3c7526a4557c3cf620fd4a0b7cac92054dfd"
+        },
+        "_turn_id": "legacy:12"
+      },
+      {
+        "role": "user",
+        "content": "Show channel-middle",
+        "message_id": "channel-middle-ask",
+        "timestamp": 2014,
+        "_turn_id": "legacy:14"
+      },
+      {
+        "role": "assistant",
+        "content": "Lead channel. Answer channel.",
+        "message_id": "channel-middle",
+        "timestamp": 2015,
+        "reasoning": "Plan channel.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "channel-middle:thinking",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2015,
+              "text": "Plan channel.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Lead channel. Answer channel.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "c9ba90eab5c8e80e2dcf24c08d1f21f728a4ae3414c7198e5b93583ccc8b9a04"
+        },
+        "_turn_id": "legacy:14"
+      },
+      {
+        "role": "user",
+        "content": "Show channel-unterminated",
+        "message_id": "channel-unterminated-ask",
+        "timestamp": 2016,
+        "_turn_id": "legacy:16"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer channel.",
+        "message_id": "channel-unterminated",
+        "timestamp": 2017,
+        "reasoning": "Plan channel.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "channel-unterminated:thinking",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2017,
+              "text": "Plan channel.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Answer channel.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "8d1d3a5bcfed6aab95f581aa7d97ab9e23bc0cb454856d4cc00f20b5ed802da6"
+        },
+        "_turn_id": "legacy:16"
+      },
+      {
+        "role": "user",
+        "content": "Show turn-start",
+        "message_id": "turn-start-ask",
+        "timestamp": 2018,
+        "_turn_id": "legacy:18"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer turn.",
+        "message_id": "turn-start",
+        "timestamp": 2019,
+        "reasoning": "Plan turn.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "turn-start:thinking",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2019,
+              "text": "Plan turn.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Answer turn.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "9da46706066c5c68165eb9b2ad5511f42b574c1d5fdff5bf7ae693ee20a5b7ad"
+        },
+        "_turn_id": "legacy:18"
+      },
+      {
+        "role": "user",
+        "content": "Show turn-middle",
+        "message_id": "turn-middle-ask",
+        "timestamp": 2020,
+        "_turn_id": "legacy:20"
+      },
+      {
+        "role": "assistant",
+        "content": "Lead turn. Answer turn.",
+        "message_id": "turn-middle",
+        "timestamp": 2021,
+        "reasoning": "Plan turn.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "turn-middle:thinking",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2021,
+              "text": "Plan turn.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Lead turn. Answer turn.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "ee7b733cd793d1b0a26a86369400899626b22eb3c1db359c76f74a9aa3e3b47c"
+        },
+        "_turn_id": "legacy:20"
+      },
+      {
+        "role": "user",
+        "content": "Show turn-unterminated",
+        "message_id": "turn-unterminated-ask",
+        "timestamp": 2022,
+        "_turn_id": "legacy:22"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer turn.",
+        "message_id": "turn-unterminated",
+        "timestamp": 2023,
+        "reasoning": "Plan turn.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "turn-unterminated:thinking",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2023,
+              "text": "Plan turn.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Answer turn.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "df9087368ad93530dd835479db28af3299ccc17ffd4ee3671010444ae5b57895"
+        },
+        "_turn_id": "legacy:22"
+      },
+      {
+        "role": "user",
+        "content": "Show xml-closed",
+        "message_id": "xml-closed-ask",
+        "timestamp": 2024,
+        "_turn_id": "legacy:24"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer xml.",
+        "message_id": "xml-closed",
+        "timestamp": 2025,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Answer xml.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "2303399cd47bcae15ff06f33df0c1bdf23f85a7cd59f016b38d0b254d46f9760"
+        },
+        "_turn_id": "legacy:24"
+      },
+      {
+        "role": "user",
+        "content": "Show xml-unterminated",
+        "message_id": "xml-unterminated-ask",
+        "timestamp": 2026,
+        "_turn_id": "legacy:26"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer cut.",
+        "message_id": "xml-unterminated",
+        "timestamp": 2027,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Answer cut.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "1375df68369408819ffa8e67e8c9273164ed7b6e381cf06b712e09bb21bb8c56"
+        },
+        "_turn_id": "legacy:26"
+      },
+      {
+        "role": "user",
+        "content": "Show xml-dsml",
+        "message_id": "xml-dsml-ask",
+        "timestamp": 2028,
+        "_turn_id": "legacy:28"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer dsml.",
+        "message_id": "xml-dsml",
+        "timestamp": 2029,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Answer dsml.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "8797e1b9d7f1bf88439e579c9652cb7866e2952bfae5130d92d54c62206b9ef1"
+        },
+        "_turn_id": "legacy:28"
+      },
+      {
+        "role": "user",
+        "content": "Show typed-parts",
+        "message_id": "typed-parts-ask",
+        "timestamp": 2030,
+        "_turn_id": "legacy:30"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Answer typed."
+          }
+        ],
+        "message_id": "typed-parts",
+        "timestamp": 2031,
+        "reasoning": "Plan typed.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "typed-parts:reasoning:0",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2031,
+              "text": "Plan typed.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Answer typed.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "57bb1e547902436777a4a1271126bb7b8fc38c5de824fed3e5da8312e6200ad0"
+        },
+        "_turn_id": "legacy:30"
+      },
+      {
+        "role": "user",
+        "content": "Show reasoning-fields",
+        "message_id": "reasoning-fields-ask",
+        "timestamp": 2032,
+        "_turn_id": "legacy:32"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer fields.",
+        "message_id": "reasoning-fields",
+        "timestamp": 2033,
+        "reasoning": "Plan shared.\n\nPlan extra.",
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [
+            {
+              "row_id": "reasoning-fields:reasoning",
+              "order_index": 0,
+              "role": "reasoning",
+              "created_at": 2033,
+              "text": "Plan shared.\n\nPlan extra.",
+              "titles": []
+            }
+          ],
+          "final_answer": "Answer fields.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 1,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "40d6fc4e80a96243a2da667dc50632247811db14a866947640728060b6e2fe97"
+        },
+        "_turn_id": "legacy:32"
+      }
+    ]
   }
 }

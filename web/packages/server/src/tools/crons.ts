@@ -6,6 +6,7 @@ import type { Dict } from '../config/agent-config.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import { latestCronSessionInfo } from '../sessions/state-db.js'
+import { stripToolCallXml } from '../sessions/merge.js'
 import { str } from '../util.js'
 
 export interface CronDeps {
@@ -457,7 +458,9 @@ export class CronService {
     if (filename.includes('/') || filename.includes('\\') || filename === '..') throw new HttpFailure(400, 'invalid filename')
     home = (await this.resolveStore(home, jobId)).home
     try {
-      return await this.sidecar().call('cron.run_detail', { profile_home: home, job_id: jobId, filename })
+      const detail = await this.sidecar().call('cron.run_detail', { profile_home: home, job_id: jobId, filename })
+      // Leaked tool-call XML is removed from the run's text, as from a transcript reply (TAL-302).
+      return { ...detail, content: stripToolCallXml(detail.content), snippet: stripToolCallXml(detail.snippet) }
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'not_found') throw new HttpFailure(404, 'run not found')
       throw error

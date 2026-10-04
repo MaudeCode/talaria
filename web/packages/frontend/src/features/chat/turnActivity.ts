@@ -3,7 +3,7 @@ import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import type { ToolCardData } from './blocks/ToolCard'
 import { BackgroundLinkSchema, ToolKindSchema, type ToolKind } from '@maudecode/talaria-web-contracts'
-import { extractInlineThinking, messageText } from './render/text'
+import { extractInlineThinking, messageText, stripToolCallXml } from './render/text'
 import type { VisibleMessage } from './useTranscript'
 
 export type ActivityItem =
@@ -59,10 +59,12 @@ export function groupAssistantTurns(rows: VisibleMessage[]): VisibleMessage[] {
   return out
 }
 
+/** Live tokens only, before the server has a value: settled rows arrive with their prose and reasoning already split. */
 function appendProse(items: ActivityItem[], key: string, raw: string) {
   const split = extractInlineThinking(raw)
-  if (split.reasoning) items.push({ key: `${key}:thinking`, kind: 'reasoning', text: split.reasoning })
-  if (split.content.trim()) items.push({ key, kind: 'text', text: split.content })
+  if (split.reasoning) items.push({ key: `${key}:thinking`, kind: 'reasoning', text: stripToolCallXml(split.reasoning) })
+  const content = stripToolCallXml(split.content)
+  if (content.trim()) items.push({ key, kind: 'text', text: content })
 }
 
 /** Server-normalized scene rows map one-to-one onto activity items; the server owns order, roles, and states. */
@@ -108,7 +110,7 @@ export function liveActivity(turn: LiveTurn): TurnActivity {
   const seen = new Set<string>()
   turn.segments.forEach((segment, i) => {
     if (segment.kind === 'text') appendProse(items, `text:${i}`, segment.text)
-    else if (segment.kind === 'reasoning') items.push({ key: `reasoning:${i}`, ...segment })
+    else if (segment.kind === 'reasoning') items.push({ key: `reasoning:${i}`, ...segment, text: stripToolCallXml(segment.text) })
     else if (segment.kind === 'steering') items.push({ key: `steering:${segment.steerId}`, kind: 'steering', text: segment.text, consumed: true })
     else if (!seen.has(segment.toolId)) {
       seen.add(segment.toolId)

@@ -388,6 +388,33 @@ describe('chat turns through the sidecar', () => {
     }
   })
 
+  it('settles inline thinking and leaked tool-call XML into one display shape on the done frame and every reload (TAL-302)', async () => {
+    const sid = await newSession(s)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'user', content: 'earlier', timestamp: 1000 }, { role: 'assistant', content: '<thinking>old plan</thinking>Old answer', timestamp: 1001 }]
+    s.deps.sessionStore.save(session)
+    const raw = '<|channel|>thought\nplan<channel|>Answer <｜DSML｜function_calls><｜DSML｜invoke name="x">'
+    sidecar.respond('chat.start', (params) => completed([
+      { role: 'user', content: 'earlier' }, { role: 'assistant', content: '<thinking>old plan</thinking>Old answer' },
+      { role: 'user', content: str(params.user_message) }, { role: 'assistant', content: raw, reasoning_content: 'rc', reasoning: 'rc' },
+    ]))
+    sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Thinking"', usage: null }))
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'think' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}`, (f) => f.event === 'stream_end')
+    const done = ((frames.find((f) => f.event === 'done')?.data as Json).session as Json).messages as Json[]
+    const shape = (messages: Json[]) => messages.filter((m) => m.role === 'assistant').map((m) => ({ content: m.content, reasoning: m.reasoning, rc: m.reasoning_content, answer: (m._anchor_activity_scene as Json).final_answer }))
+    const expected = [{ content: 'Old answer', reasoning: 'old plan', rc: undefined, answer: 'Old answer' }, { content: 'Answer', reasoning: 'rc\n\nplan', rc: undefined, answer: 'Answer' }]
+    expect(shape(done)).toEqual(expected)
+    for (const query of ['', '&msg_limit=120', '&msg_limit=1']) {
+      const detail = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json).messages as Json[]
+      expect(shape(detail)).toEqual(expected.slice(-shape(detail).length))
+    }
+    // Only the settling turn's prose is rewritten in the file; its own fields and the model history stay as the Agent wrote them.
+    const stored = s.deps.sessionStore.get(sid)
+    expect(stored.messages.filter((m) => m.role === 'assistant').map((m) => [m.content, m.reasoning, m.reasoning_content])).toEqual([['<thinking>old plan</thinking>Old answer', undefined, undefined], ['Answer', 'rc\n\nplan', 'rc']])
+    expect(stored.context_messages.at(-1)).toMatchObject({ content: raw, reasoning_content: 'rc' })
+  })
+
   it('persists the tool-limit outcome so the settled scene matches the live done frame after reload', async () => {
     const sid = await newSession(s)
     sidecar.respond('chat.start', (params) => completed([
