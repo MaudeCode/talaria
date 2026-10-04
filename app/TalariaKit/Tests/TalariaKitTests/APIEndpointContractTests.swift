@@ -559,6 +559,32 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(try label("unknown_window"), "–")
     }
 
+    func testSharedWebSessionShowsEachInlineThinkingExampleAsTheServerSplitIt() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-302 has no such example.
+        guard let example = object["inline_thinking_session"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode(
+            [ChatMessage].self,
+            from: JSONSerialization.data(withJSONObject: try XCTUnwrap(example["messages"]))
+        )
+        let expected = try XCTUnwrap(example["expected"] as? [String: [String: String]])
+        XCTAssertFalse(expected.isEmpty)
+        for (id, want) in expected {
+            let message = try XCTUnwrap(messages.first { $0.messageId == id }, id)
+            let rows = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: message), id).rows
+            // The same prose and reasoning Web shows, from the server's fields alone.
+            XCTAssertEqual(rows.filter(\.isFinalAnswer).compactMap(\.text), [want["prose"]].compactMap { $0 }, id)
+            XCTAssertEqual(
+                rows.filter { $0.kind == "reasoning" }.compactMap(\.text).joined(separator: "\n\n"),
+                want["reasoning"],
+                id
+            )
+            XCTAssertEqual(message.reasoning ?? "", want["reasoning"], id)
+        }
+    }
+
     func testSharedWebSessionResolvesEveryToolCallOutcome() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-313 has no such example.

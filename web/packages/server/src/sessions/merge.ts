@@ -483,16 +483,96 @@ export function buildPartialMessage(contentText: string, reasoningText: string, 
   return msg
 }
 
-export function stripXmlToolCalls(text: string): string {
-  return text.replace(/<function_calls>[\s\S]*?<\/function_calls>/gi, '').replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '').trimEnd()
+const DSML = '(?:\\s*｜\\s*DSML\\s*[｜|]\\s*)?'
+
+/** Remove provider tool-call XML (`<function_calls>…`, DSML variants, `<tool_call>`), closed or cut off, that leaks into text. */
+export function stripToolCallXml(text: string): string {
+  const lo = text.toLowerCase()
+  if (!lo.includes('function_calls') && !lo.includes('dsml') && !lo.includes('<tool_call')) return text
+  return text
+    .replace(new RegExp(`<${DSML}function_calls>[\\s\\S]*?<\\/${DSML}function_calls>`, 'gi'), '')
+    .replace(new RegExp(`<${DSML}function_calls(?:>|$)[\\s\\S]*$`, 'i'), '')
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+    .replace(/<tool_call>[\s\S]*$/i, '')
+    .replace(/<\s*｜\s*DSML\s*[｜|]\s*/gi, '')
+    .replace(/^\s+/, '').trimEnd()
 }
 
-/** Split inline `<think>` blocks out of assistant content (Python `_split_thinking_from_content`, reduced). */
-export function splitThinkingFromContent(content: string, existingReasoning = ''): [string, string] {
-  const parts: string[] = []
-  const cleaned = content.replace(/<think(?:ing)?\b[^>]*>([\s\S]*?)<\/think(?:ing)?>/gi, (_m, inner: string) => { parts.push(inner.trim()); return '' })
-  const reasoning = [existingReasoning.trim(), ...parts].filter(Boolean).join('\n\n')
-  return [cleaned.replace(/^\s+/, '').trimEnd(), reasoning]
+const THINK_PAIRS = [['<think>', '</think>'], ['<thinking>', '</thinking>'], ['<|channel|>thought', '<channel|>'], ['<|turn|>thinking', '<turn|>']] as const
+
+/**
+ * Split assistant text into its visible prose and its inline thinking: every `<think>`, `<thinking>`,
+ * `<|channel|>thought` and `<|turn|>thinking` block anywhere in the text, an unterminated one running to the end.
+ * Tool-call XML leaves both halves; both come back trimmed.
+ */
+export function splitDisplayText(text: string): [string, string] {
+  if (!THINK_PAIRS.some(([open]) => text.includes(open))) return [stripToolCallXml(text).replace(/^\s+/, '').trimEnd(), '']
+  let content = ''
+  const reasoning: string[] = []
+  let cursor = 0
+  while (cursor < text.length) {
+    let at = -1
+    let pair: (typeof THINK_PAIRS)[number] | null = null
+    for (const p of THINK_PAIRS) {
+      const i = text.indexOf(p[0], cursor)
+      if (i !== -1 && (at === -1 || i < at)) { at = i; pair = p }
+    }
+    if (!pair) { content += text.slice(cursor); break }
+    content += text.slice(cursor, at)
+    const body = at + pair[0].length
+    const close = text.indexOf(pair[1], body)
+    reasoning.push(text.slice(body, close === -1 ? undefined : close))
+    if (close === -1) break
+    cursor = close + pair[1].length
+  }
+  return [stripToolCallXml(content).replace(/^\s+/, '').trimEnd(), joinReasoning(reasoning)]
+}
+
+/**
+ * Reasoning parts as one display string: tool-call XML removed, blank-line joined, each part once. A part that is
+ * whole paragraphs of another (a settled row's `reasoning` that already took in its `reasoning_content`) is dropped.
+ */
+export function joinReasoning(parts: string[]): string {
+  const clean = parts.map((part) => stripToolCallXml(part).trim()).filter(Boolean)
+  const within = (outer: string, inner: string) => `\n\n${outer}\n\n`.includes(`\n\n${inner}\n\n`)
+  return clean.filter((p, i) => !clean.some((q, j) => j !== i && (q === p ? j < i : within(q, p)))).join('\n\n')
+}
+
+/** A message's reasoning fields as one string: `reasoning_content`, `reasoning` (text or a list of text parts), `thinking`. */
+export function reasoningFieldsText(m: Record<string, unknown>): string {
+  const listed = Array.isArray(m.reasoning) ? m.reasoning.map((part) => (isDict(part) ? reasoningBlockText(part) : str(part))) : [str(m.reasoning)]
+  return joinReasoning([str(m.reasoning_content), ...listed, str(m.thinking)])
+}
+
+/**
+ * The one display shape of an assistant row: `content` without inline thinking or tool-call XML (typed `thinking` /
+ * `reasoning` parts leave a list), and every piece of reasoning in one `reasoning` string. `reasoning_content` and
+ * `thinking` are not sent. Idempotent; other rows pass through. A copy: stored rows and model history are untouched.
+ */
+export function normalizeAssistantDisplay<T>(message: T): T {
+  if (!isDict(message) || message.role !== 'assistant') return message
+  const m: Record<string, unknown> = { ...message }
+  delete m.reasoning_content
+  delete m.thinking
+  delete m.reasoning
+  const parts = [reasoningFieldsText(message)]
+  if (typeof m.content === 'string') {
+    const [content, inline] = splitDisplayText(m.content)
+    // Only text something was taken out of is rewritten: plain prose keeps its exact whitespace (an indented code block).
+    if (content !== m.content.trim()) m.content = content
+    parts.push(inline)
+  } else if (Array.isArray(m.content)) {
+    m.content = m.content.flatMap((part: unknown) => {
+      if (!isDict(part)) return [part]
+      if (isReasoningBlock(part)) { parts.push(reasoningBlockText(part)); return [] }
+      if (typeof part.text !== 'string') return [part]
+      const [text, inline] = splitDisplayText(part.text)
+      parts.push(inline)
+      return text === part.text.trim() ? [part] : text ? [{ ...part, text }] : []
+    })
+  }
+  const reasoning = joinReasoning(parts)
+  return (reasoning ? { ...m, reasoning } : m) as T
 }
 
 /**

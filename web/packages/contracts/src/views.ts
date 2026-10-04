@@ -102,8 +102,14 @@ export type BackgroundLine = z.infer<typeof BackgroundLineSchema>
 
 export const MessageSchema = z.looseObject({
   role: z.string(), content: MessageContentSchema.optional(), id: MessageIdSchema.optional(), message_id: MessageIdSchema.optional(), timestamp: z.number().nullable().optional(),
-  attachments: z.array(AttachmentSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(), reasoning: z.union([z.string(), z.array(Json)]).nullable().optional(), reasoning_content: z.string().nullable().optional(),
-  thinking: z.string().nullable().optional(), tool_call_id: z.string().optional(), tool_use_id: z.string().optional(), name: z.string().optional(), badge: z.string().optional(), label: z.string().optional(),
+  attachments: z.array(AttachmentSchema).optional(), tool_calls: z.array(ToolCallSchema).optional(),
+  /**
+   * TAL-302: an assistant row's whole reasoning as one string (its reasoning fields, typed thinking parts and inline
+   * thinking blocks). Its `content` carries none of them and no leaked tool-call XML; `reasoning_content` and
+   * `thinking` are not sent. Clients render both as shipped.
+   */
+  reasoning: z.string().optional(),
+  tool_call_id: z.string().optional(), tool_use_id: z.string().optional(), name: z.string().optional(), badge: z.string().optional(), label: z.string().optional(),
   provider_details: Json.optional(), provider_details_label: z.string().optional(), recovery_control: Json.optional(), _anchor_activity_scene: ActivitySceneSchema.optional(),
   /** The turn this row belongs to; the server stamps every row it sends, so clients group turns by equality alone. */
   _turn_id: z.string().optional(),

@@ -33,7 +33,7 @@ function isRenderable(msg: Message): boolean {
   if (source === 'process_wakeup') return !!(messageText(msg.content) || msg.attachments?.length)
   if ((msg as { _statusCard?: unknown })._statusCard) return true
   const hasTools = Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0
-  const hasReasoning = !!(msg.reasoning || msg.reasoning_content || msg.thinking)
+  const hasReasoning = !!msg.reasoning
   const text = messageText(msg.content)
   if (msg.role === 'assistant') return !!(text.trim() || hasTools || hasReasoning || msg.attachments?.length || msg._anchor_activity_scene)
   return !!(text || msg.attachments?.length)

@@ -14,6 +14,7 @@ import { redactSensitive } from '../redact.js'
 import { expandHome, isWithin, resolvePathLikePython } from '../workspace/paths.js'
 import { openAnchoredFd } from '../workspace/fs.js'
 import type { Session } from './session.js'
+import { normalizeAssistantDisplay } from './merge.js'
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 const SHARE_TOKEN_RE = /^[A-Za-z0-9_-]{8,64}$/
@@ -112,7 +113,8 @@ export function sanitizeShareMessage(message: unknown, redactPaths: string[], al
   if (!isDict(message)) return null
   const role = str(message.role).trim().toLowerCase()
   if (role !== 'user' && role !== 'assistant') return null
-  let text = shareMessageText(message)
+  // Only the reply's prose is published: inline thinking and leaked tool-call XML never reach a snapshot.
+  let text = shareMessageText(normalizeAssistantDisplay({ ...message, role }))
   if (!text) return null
   text = redactSensitive(text)
   text = embedShareMedia(text, allowedRoots, home)
@@ -182,7 +184,13 @@ export class ShareStore {
     let payload: unknown
     try { payload = JSON.parse(readFileSync(path, 'utf8')) } catch { return null }
     if (!isDict(payload) || payload.revoked_at) return null
-    const messages = Array.isArray(payload.messages) ? payload.messages : []
+    // A snapshot taken before TAL-302 may still carry inline thinking; it leaves as prose only, like a new one.
+    const messages = (Array.isArray(payload.messages) ? payload.messages : []).map((m: unknown) => {
+      if (!isDict(m) || m.role !== 'assistant') return m
+      const prose = normalizeAssistantDisplay(m)
+      delete prose.reasoning
+      return prose
+    })
     const pub: Record<string, unknown> = { title: str(payload.title) || 'Untitled', messages, message_count: Math.trunc(Number(payload.message_count)) || messages.length }
     if (typeof payload.created_at === 'number') pub.created_at = payload.created_at
     if (typeof payload.updated_at === 'number') pub.updated_at = payload.updated_at

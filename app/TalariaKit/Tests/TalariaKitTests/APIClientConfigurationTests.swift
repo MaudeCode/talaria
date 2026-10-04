@@ -3,7 +3,7 @@ import os
 @testable import TalariaKit
 
 final class APIClientConfigurationTests: APIClientTestCase {
-    func testReasoningDisplayPrefersStructuredThinkingAndStripsVisibleAnswerEcho() {
+    func testReasoningDisplayReadsTheServerReasoningAndStripsVisibleAnswerEcho() {
         let finalAnswer = """
         **Terminal:** `/Users/hermes` directory listed.
 
@@ -23,10 +23,6 @@ final class APIClientConfigurationTests: APIClientTestCase {
                 messageId: "assistant-tools",
                 contentParts: [
                     .object([
-                        "type": .string("thinking"),
-                        "text": .string("The user wants me to use terminal and search_files. I should run a quick command.")
-                    ]),
-                    .object([
                         "type": .string("tool_use"),
                         "id": .string("toolu-terminal"),
                         "name": .string("terminal"),
@@ -39,7 +35,8 @@ final class APIClientConfigurationTests: APIClientTestCase {
                         "input": .object(["pattern": .string("config.yaml")])
                     ])
                 ],
-                reasoning: "Terminal works. Now run search_files to show that works too."
+                // The server moves typed thinking parts into the row's one reasoning string (TAL-302).
+                reasoning: "The user wants me to use terminal and search_files. I should run a quick command."
             ),
             ChatMessage(
                 role: "user",
@@ -94,6 +91,26 @@ final class APIClientConfigurationTests: APIClientTestCase {
         XCTAssertTrue(reasoningGroups[2].text.contains("Both tools worked. I should give a concise summary."))
         XCTAssertFalse(reasoningGroups[2].text.contains("**Terminal:**"))
         XCTAssertFalse(transcriptMessages.contains { $0.message.id == "tool-results" })
+    }
+
+    func testReasoningDisplayNeverParsesThinkingOutOfContent() {
+        // The server splits inline thinking out of every row it sends (TAL-302); the App shows content as shipped.
+        let messages = [
+            ChatMessage(role: "user", content: "Explain", timestamp: 1, messageId: "user"),
+            ChatMessage(
+                role: "assistant",
+                content: "<think>Not reasoning.</think>Use the `<think>` tag.",
+                timestamp: 2,
+                messageId: "assistant",
+                contentParts: [.object(["type": .string("thinking"), "text": .string("Not reasoning either.")])]
+            )
+        ]
+
+        XCTAssertEqual(ChatViewModel.reasoningDisplayGroups(messages: messages, archivedGroups: []), [])
+        XCTAssertEqual(
+            ChatViewModel.transcriptMessages(from: messages).last?.message.content,
+            "<think>Not reasoning.</think>Use the `<think>` tag."
+        )
     }
 
     func testSaveDefaultModelBuildsExpectedBodyAndDecodesResponse() async throws {

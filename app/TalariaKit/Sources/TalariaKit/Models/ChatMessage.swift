@@ -99,7 +99,6 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         case toolUseId
         case toolCalls
         case reasoning
-        case reasoningContent
         case reasoningTitles
         case activityScene = "_anchorActivityScene"
         case attachments
@@ -127,8 +126,7 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         toolUseId = container.decodeLossyStringIfPresent(forKey: .toolUseId)
         toolCalls = try? container.decodeIfPresent([JSONValue].self, forKey: .toolCalls)
         contentParts = decodedContent.parts
-        reasoning = container.decodeLossyStringIfPresent(forKey: .reasoningContent)
-            ?? container.decodeLossyStringIfPresent(forKey: .reasoning)
+        reasoning = container.decodeLossyStringIfPresent(forKey: .reasoning)
         reasoningTitles = (try? container.decodeIfPresent([String].self, forKey: .reasoningTitles))
             .map(ReasoningTitleMetadata.normalize)
         activityScene = try? container.decodeIfPresent(AssistantActivityScene.self, forKey: .activityScene)

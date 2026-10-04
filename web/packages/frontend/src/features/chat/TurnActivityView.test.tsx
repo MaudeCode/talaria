@@ -89,6 +89,24 @@ describe('turn worklog presentation', () => {
     expect(remount.container.querySelector('.tool-worklog-summary')).toHaveAttribute('aria-expanded', 'false')
   })
 
+  it('hides inline thinking and tool-call XML in live tokens, and renders a settled turn\'s fields as shipped (TAL-302)', () => {
+    const run = liveRun()
+    run.emit({ event: 'token', data: { text: '<think>Still planning' } })
+    let view = render(<View activity={liveActivity(run.turn)} />)
+    expect(view.container.querySelector('.msg-body')).toBeNull()
+    expect(view.container.textContent).not.toContain('<think>')
+    run.emit({ event: 'token', data: { text: '</think>Answer <function_calls><invoke' } })
+    view.rerender(<View activity={liveActivity(run.turn)} />)
+    expect(view.container.querySelector('.msg-body')).toHaveTextContent(/^Answer$/)
+    view.unmount()
+    // A settled answer that talks about these tags keeps them: the server already split the row.
+    view = render(<View activity={settled({ final_answer: 'Use `<think>` and `<function_calls>` tags.', activity_rows: rows({ row_id: 'r', role: 'reasoning', text: 'About <tool_call> tags' }) })} />)
+    expect(view.container.querySelector('[data-final-answer]')).toHaveTextContent('Use <think> and <function_calls> tags.')
+    fireEvent.click(view.container.querySelector('.tool-worklog-summary')!)
+    fireEvent.click(view.container.querySelector('.thinking-card-header')!)
+    expect(view.container.querySelector('.thinking-card-body')).toHaveTextContent('About <tool_call> tags')
+  })
+
   it('groups consecutive live reasoning and tools until prose while leaving a singleton inline', () => {
     const run = liveRun()
     run.emit({ event: 'token', data: { text: 'Before tools' } })

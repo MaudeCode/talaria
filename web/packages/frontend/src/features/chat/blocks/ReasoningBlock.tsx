@@ -2,12 +2,11 @@ import { useState } from 'react'
 import { ChevronRight, Lightbulb } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { m } from '../../../paraglide/messages.js'
-import { stripToolCallXml } from '../render/text'
 
 /** Reasoning / thinking on the legacy `.thinking-card` markup. Collapsed by default; a live block shows the latest title. */
 export function ReasoningBlock({ text, titles, live = false, defaultOpen = false }: { text: string; titles?: string[] | undefined; live?: boolean; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen)
-  const clean = stripToolCallXml(text).trim()
+  const clean = text.trim()
   const latest = titles?.[titles.length - 1]
   if (!clean && !live && !latest) return null
   return (

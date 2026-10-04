@@ -37,6 +37,17 @@ describe('shared monorepo contracts', () => {
     expect(view('contract-run-g')).toMatchObject({ kinds: ['text', 'tool', 'steering', 'text', 'tool', 'steering'], final: 'Both files read.' })
   })
 
+  it('shows each inline-thinking example\'s prose and reasoning exactly as the server split them (TAL-302)', () => {
+    const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Record<string, { messages: unknown; expected: Record<string, { prose: string; reasoning: string }> }>
+    const example = fixture.inline_thinking_session!
+    const turns = groupAssistantTurns(projectMessages(MessageSchema.array().parse(example.messages))).filter((row) => row.message.role === 'assistant')
+    const shown = Object.fromEntries(turns.map((row) => {
+      const activity = persistedActivity(row)
+      return [String(row.message.message_id), { prose: activity.finalAnswer, reasoning: activity.items.flatMap((item) => (item.kind === 'reasoning' ? [item.text] : [])).join('\n\n') }]
+    }))
+    expect(shown).toEqual(example.expected)
+  })
+
   it('states where a running session\'s transcript ends in its run journal', () => {
     const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { session: unknown; journaled_session: unknown }
     expect(SessionSchema.parse(fixture.session).transcript_seq).toBeNull()
