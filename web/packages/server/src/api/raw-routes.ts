@@ -5,7 +5,7 @@
  */
 import { closeSync, createReadStream, existsSync, readdirSync, statSync, realpathSync } from 'node:fs'
 import { Readable } from 'node:stream'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, join, relative } from 'node:path'
 import type { RequestContext } from '../http/context.js'
 import { HttpError } from './router.js'
 import { fileOpsSession } from './sessions-router.js'
@@ -13,7 +13,7 @@ import { HttpFailure } from '../sessions/service.js'
 import { SessionNotFound } from '../sessions/store.js'
 import { openAnchoredFd, safeResolve } from '../workspace/fs.js'
 import { isWithin, resolvePathLikePython } from '../workspace/paths.js'
-import { AUDIO_VIDEO_PDF_TYPES, contentDispositionValue, INLINE_IMAGE_TYPES, isValidDigest, mediaDenyReason, mimeFor, safeLegacyTmpRoot, safePlatformTempRoot, serveFileBytes, serveInlineHtmlPreview, SESSION_MEDIA_TOKEN_TYPES, sessionMediaTokenAllowsPath, snapshotPathForDigest, snapshotServableForPath } from '../workspace/media.js'
+import { AUDIO_VIDEO_PDF_TYPES, contentDispositionValue, INLINE_IMAGE_TYPES, isValidDigest, mediaAnchorRoot, mediaTarget, mimeFor, serveFileBytes, serveInlineHtmlPreview, snapshotPathForDigest, snapshotServableForPath } from '../workspace/media.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
 import { ZipWriter } from '../workspace/zip.js'
 import { parseMultipart, UploadConflict, UploadRejected } from '../workspace/upload.js'
@@ -124,46 +124,12 @@ function handleMedia(ctx: RequestContext): void {
   }
   let target: string
   try {
-    // Python `Path(raw).resolve()`: no `~` expansion (a leading tilde is a plain relative segment) and no NUL bytes.
-    if (rawPath.includes('\0')) throw new Error('embedded null byte')
-    target = resolvePathLikePython(rawPath.startsWith('~') ? resolve(process.cwd(), rawPath) : rawPath)
-    try { target = realpathSync(target) } catch { /* keep the lexical resolution for missing paths */ }
+    target = mediaTarget(rawPath)
   } catch {
     throw new HttpError(400, 'Invalid path')
   }
-  const home = deps.config.homeDir
-  const hermesHome = deps.config.hermesHome
-  const baseHermes = join(home, '.hermes')
-  const allowedRoots: string[] = [hermesHome, baseHermes]
-  const legacyTmp = safeLegacyTmpRoot([home, hermesHome, baseHermes])
-  if (legacyTmp) allowedRoots.push(legacyTmp)
-  const platformTemp = safePlatformTempRoot([home, hermesHome, baseHermes])
-  if (platformTemp) allowedRoots.push(platformTemp)
-  const activeWorkspace = deps.mediaActiveWorkspace()
-  if (activeWorkspace) allowedRoots.push(activeWorkspace)
-  const extraRoots = (deps.config.env.MEDIA_ALLOWED_ROOTS ?? '').trim()
-  if (extraRoots) {
-    for (const root of extraRoots.split(process.platform === 'win32' ? ';' : ':')) {
-      const r = root.trim()
-      if (!r) continue
-      try {
-        const rp = realpathSync(r)
-        if (statSync(rp).isDirectory()) allowedRoots.push(rp)
-      } catch { /* skip */ }
-    }
-  }
-  // The root that authorises the path also anchors the open: a component replaced by a symlink after these checks
-  // fails the descriptor walk instead of being followed. A session-token grant anchors at the file's own directory.
-  let authorizedRoot: string | null = null
-  for (const root of allowedRoots) {
-    let resolvedRoot = root
-    try { resolvedRoot = realpathSync(root) } catch { continue }
-    if (target === resolvedRoot || isWithin(target, resolvedRoot)) { authorizedRoot = resolvedRoot; break }
-  }
-  const sessionMediaAllowed = sessionMediaTokenAllowsPath(mediaSession, target, SESSION_MEDIA_TOKEN_TYPES)
-  if (mediaDenyReason(target, deps.mediaPolicy)) throw new HttpError(403, 'Path not in allowed location')
-  if (!authorizedRoot && !sessionMediaAllowed) throw new HttpError(403, 'Path not in allowed location')
-  const anchorRoot = authorizedRoot ?? dirname(target)
+  const anchorRoot = mediaAnchorRoot(target, mediaSession, deps.mediaAccess)
+  if (!anchorRoot) throw new HttpError(403, 'Path not in allowed location')
   const mime = mimeFor(target)
   const inlinePreview = ctx.query.get('inline') === '1'
   const htmlInlineOk = inlinePreview && mime === 'text/html'

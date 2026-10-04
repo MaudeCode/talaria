@@ -975,6 +975,28 @@ describe('session detail collapses very long message bodies (TAL-456)', () => {
   })
 })
 
+describe('session detail rewrites media references for display (TAL-186)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('serves the shared media example exactly as the contract fixture records it', async () => {
+    const fixturePath = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json')
+    const fixture = (JSON.parse(readFileSync(fixturePath, 'utf8')) as Json).media_session as Json
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    // Synthetic paths that exist nowhere: the reply's own MEDIA: token grants the chart, so the URLs are the same on every host.
+    session.workspace = String(fixture.workspace)
+    session.messages = fixture.stored as Json[]
+    s.deps.sessionStore.save(session)
+    for (const query of ['', '&msg_limit=50']) {
+      const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json).messages
+      const shared = JSON.parse(JSON.stringify(served).replaceAll(sid, String(fixture.session_id))) as Json[]
+      expect(shared, query).toEqual(fixture.messages)
+    }
+  })
+})
+
 describe('session detail with legacy string attachments (TAL-277)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

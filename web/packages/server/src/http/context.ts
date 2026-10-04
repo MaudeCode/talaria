@@ -24,7 +24,7 @@ import type { WorkspaceRegistry } from '../workspace/workspaces.js'
 import type { GitRunner } from '../workspace/git.js'
 import type { RollbackStore } from '../workspace/rollback.js'
 import type { UploadInbox } from '../workspace/upload.js'
-import type { MediaPolicyDeps } from '../workspace/media.js'
+import type { MediaAccessDeps, MediaPolicyDeps } from '../workspace/media.js'
 import type { WorktreeLocks } from '../workspace/worktrees.js'
 import type { Session } from '../sessions/session.js'
 import type { SidecarLike } from '../sidecar/client.js'
@@ -106,8 +106,8 @@ export interface AppDeps {
   rollback: RollbackStore
   uploads: UploadInbox
   mediaPolicy: MediaPolicyDeps
-  /** The active workspace for `/api/media` allow-listing when local IO is supported, else null. */
-  mediaActiveWorkspace: () => string | null
+  /** The `/api/media` allow-list, shared with the transcript media projection (TAL-186). */
+  mediaAccess: MediaAccessDeps
   worktreeLocks: WorktreeLocks
   /** Commit-message generation (sidecar `aux.complete`); rejects with `GitWorkspaceError` when no model is available. */
   commitMessage: (session: Session, systemPrompt: string, userPrompt: string) => Promise<string>

@@ -20,13 +20,15 @@ import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withMarkerKinds, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
+import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
 import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
 import { buildShareSnapshot, type ShareStore } from './shares.js'
+import { mediaAnchorRoot, mediaRefPath, mediaTarget, type MediaAccessDeps } from '../workspace/media.js'
+import { projectMediaRefs, type MediaProjection } from '../workspace/media-refs.js'
 import type { ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
 import { join } from 'node:path'
@@ -114,6 +116,8 @@ export interface SessionServiceDeps {
   profileHome: (profile: string) => string
   /** Python `commit_session_memory` (fire-and-forget): the cached Agent flushes memory for a session the user left. */
   commitSessionMemory?: (sid: string) => void
+  /** TAL-186: the `/api/media` allow-list the transcript media projection rewrites against; without it nothing local is rewritten. */
+  media?: { access: MediaAccessDeps; localIo: (profile: string | null) => boolean }
 }
 
 const isDict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
@@ -127,6 +131,28 @@ export class SessionService {
   }
 
   private get store(): SessionStore { return this.deps.store }
+
+  /**
+   * TAL-186: rewrites a session's media references to their URLs. A local path is rewritten only when `/api/media`
+   * serves it for this session, under the same resolution, so every rewritten reference loads.
+   */
+  mediaProjector(s: Session): (text: string) => MediaProjection | null {
+    const media = this.deps.media
+    const served = new Map<string, string | null>()
+    const localUrl = (path: string): string | null => {
+      if (!media?.localIo(s.profile)) return null
+      if (served.has(path)) return served.get(path) ?? null
+      let url: string | null = null
+      try {
+        const target = mediaTarget(mediaRefPath(path))
+        if (mediaAnchorRoot(target, s, media.access)) url = `./api/media?${new URLSearchParams({ path: target, session_id: s.session_id }).toString()}`
+      } catch { /* an invalid path stays text */ }
+      served.set(path, url)
+      return url
+    }
+    const workspace = s.workspace.trim() || null
+    return (text) => projectMediaRefs(text, { workspace, localUrl })
+  }
 
   publish(reason: string, profile?: string | null, sessionId?: string | null): void {
     this.deps.events.publish(reason, { profile: profile ?? null, sessionId: sessionId ?? null })
@@ -403,7 +429,7 @@ export class SessionService {
     if (pending) transcript = withPendingUserTurn(transcript, pending)
     if (journaled)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids, tool outcomes and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages ? withBodyExcerpts(this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(transcript))), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null })), s.active_stream_id) : []
+    const all: unknown[] = loadMessages ? withBodyExcerpts(withDisplayMedia(this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(transcript))), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null })), this.mediaProjector(s)), s.active_stream_id) : []
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null
@@ -1356,6 +1382,7 @@ export class SessionService {
     if (!sid || (!messageRef && messageIndex === null)) throw new HttpFailure(400, 'session_id and message_ref or message_index are required')
     let session: Session
     let transcript: Message[]
+    let stored = true
     try {
       session = this.store.get(sid)
       if (session.loadedMetadataOnly) session = this.store.load(sid) ?? session
@@ -1366,13 +1393,16 @@ export class SessionService {
       // A state.db-only session pages the same synthesized transcript its detail was built from.
       session = this.foreignSession(sid).synth
       transcript = session.messages
+      stored = false
     }
     const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) }, withToolCallOutcomes(withTurnIds(transcript), session.tool_calls, session.active_stream_id))
     if (!result) throw new HttpFailure(404, 'Anchor activity scene not found')
     // Paged rows come from the raw transcript, so they take the same credential redaction as the detail's preview.
     const enabled = this.deps.redactEnabled()
     const redacted = redactValue(result, enabled) as typeof result
-    return { ...redacted, rows: withSceneToolDisplay(result.rows, redacted.rows as unknown[], enabled) }
+    const rows = withSceneToolDisplay(result.rows, redacted.rows as unknown[], enabled)
+    // `/api/media` serves stored sessions only, so a state.db-only session's rows stay as written, as its detail does.
+    return { ...redacted, rows: stored ? withSceneRowMedia(rows, this.mediaProjector(session)) : rows }
   }
 
   // ── shares ───────────────────────────────────────────────────────────────

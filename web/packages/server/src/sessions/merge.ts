@@ -6,6 +6,7 @@
 import { buildActiveTurnToken } from '../redact.js'
 import { str } from '../util.js'
 import { stripAttachedFilesMarker, type Message } from './session.js'
+import type { MediaProjection } from '../workspace/media-refs.js'
 
 export const WORKSPACE_PREFIX_RE = /^\s*\[Workspace::v1:\s*(?:\\.|[^\]\\])+\]\s*/
 const LEGACY_WORKSPACE_PREFIX_RE = /^\s*\[Workspace:[^\]]+\]\s*/
@@ -698,6 +699,43 @@ export function withAttachmentObjects<T>(messages: T[]): T[] {
   return messages.map((m) => (isDict(m) && Array.isArray(m.attachments) && m.attachments.some((a) => typeof a === 'string') ? { ...m, attachments: attachmentObjects(m.attachments) } : m))
 }
 
+/** A scene's prose rows with `display_text` and `media` where `project` rewrites their text; the same array when none does. */
+export function withSceneRowMedia(rows: unknown, project: (text: string) => MediaProjection | null): unknown {
+  if (!Array.isArray(rows)) return rows
+  let changed = false
+  const out = (rows as unknown[]).map((row) => {
+    if (!isDict(row) || row.role !== 'prose' || typeof row.text !== 'string') return row
+    const projected = project(row.text)
+    if (!projected) return row
+    changed = true
+    return { ...row, display_text: projected.text, media: projected.media }
+  })
+  return changed ? out : rows
+}
+
+/**
+ * TAL-186: assistant rows with `_display_content` and `_media`, and their scenes with `final_answer_display` /
+ * `final_answer_media` and prose rows' `display_text` / `media`, wherever `project` rewrites media references in the
+ * text. Runs after scene hydration and before body excerpts, which are cut from the display text. Returns copies.
+ */
+export function withDisplayMedia<T>(messages: T[], project: (text: string) => MediaProjection | null): T[] {
+  return messages.map((m) => {
+    if (!isDict(m) || m.role !== 'assistant') return m
+    let out: Record<string, unknown> = m
+    const projected = project(messageText(m.content))
+    if (projected) out = { ...out, _display_content: projected.text, _media: projected.media }
+    const scene = m._anchor_activity_scene
+    if (isDict(scene)) {
+      const final = typeof scene.final_answer === 'string' ? project(scene.final_answer) : null
+      const rows = withSceneRowMedia(scene.activity_rows, project)
+      if (final || rows !== scene.activity_rows) {
+        out = { ...out, _anchor_activity_scene: { ...scene, activity_rows: rows, ...(final ? { final_answer_display: final.text, final_answer_media: final.media } : {}) } }
+      }
+    }
+    return out as T
+  })
+}
+
 /** TAL-456: a settled user or assistant body longer than this ships a collapsed excerpt for clients to render. */
 export const BODY_EXCERPT_LIMIT = 3000
 
@@ -719,7 +757,7 @@ function bodyExcerpt(text: string): string {
 }
 
 /**
- * TAL-456: stamps `_display_excerpt` and `_display_truncated` on settled user and assistant rows whose text is longer than
+ * TAL-456: stamps `_display_excerpt` and `_display_truncated` on settled user and assistant rows whose display text is longer than
  * `BODY_EXCERPT_LIMIT`, and `final_answer_excerpt` on a settled scene whose final answer is, so clients render a bounded
  * excerpt instead of laying out the whole body. Full text stays for copy and edit; the running turn's rows are left alone.
  * Runs after scene hydration. Returns copies; stored rows are untouched.
@@ -729,11 +767,12 @@ export function withBodyExcerpts<T>(messages: T[], activeTurnId: string | null):
     if (!isDict(m) || (m.role !== 'user' && m.role !== 'assistant')) return m
     if (activeTurnId && m._turn_id === activeTurnId) return m
     let out: Record<string, unknown> = m
-    const text = messageText(m.content)
+    const text = typeof m._display_content === 'string' ? m._display_content : messageText(m.content)
     if (text.length > BODY_EXCERPT_LIMIT) out = { ...out, _display_excerpt: bodyExcerpt(text), _display_truncated: true }
     const scene = m._anchor_activity_scene
-    if (isDict(scene) && typeof scene.final_answer === 'string' && scene.final_answer.length > BODY_EXCERPT_LIMIT) {
-      out = { ...out, _anchor_activity_scene: { ...scene, final_answer_excerpt: bodyExcerpt(scene.final_answer) } }
+    const finalAnswer = isDict(scene) ? (typeof scene.final_answer_display === 'string' ? scene.final_answer_display : scene.final_answer) : null
+    if (isDict(scene) && typeof finalAnswer === 'string' && finalAnswer.length > BODY_EXCERPT_LIMIT) {
+      out = { ...out, _anchor_activity_scene: { ...scene, final_answer_excerpt: bodyExcerpt(finalAnswer) } }
     }
     return out as T
   })

@@ -14,6 +14,7 @@ import type { ActivityItem, TurnActivity } from './turnActivity'
 import type { PendingSteerRow } from '../../stream/reducer'
 import { prefersReducedMotion } from '../../lib/motion'
 import { CollapsedBody } from './CollapsedBody'
+import { MediaTiles } from './blocks/MediaTiles'
 
 // The live turn's last rendered height, so the settled row that replaces it can fold from that height.
 let lastLiveTurn: { key: string; height: number } | null = null
@@ -98,7 +99,7 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
   const outcome = terminalOutcomeLabel(status)
   const render = (item: ActivityItem, last: boolean): ReactNode => {
     switch (item.kind) {
-      case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.text} streaming={running && last} /></div>
+      case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} streaming={running && last} /><MediaTiles media={item.media} /></div>
       case 'reasoning': return <ReasoningBlock key={item.key} text={item.text} titles={item.titles} live={running && last} />
       case 'steering': return <SteerMessage key={item.key} text={item.text} />
       case 'tool': return <ToolCard key={item.key} call={item.call} />
@@ -146,7 +147,7 @@ function ActivityBody({ activity, mode, earlier }: { activity: TurnActivity; mod
       {mode === 'hide_all_activity' && items.filter((item) => item.kind === 'steering').map((item) => render(item, false))}
       {!running && <SettleSpacer turnKey={activity.key} />}
       {outcome && <div role="status" className="text-muted">{outcome}</div>}
-      {finalAnswer.trim() && <CollapsedBody excerpt={activity.finalAnswerExcerpt}>{(excerpt) => <div className="msg-body" data-final-answer="1"><Markdown text={excerpt ?? finalAnswer} /></div>}</CollapsedBody>}
+      {finalAnswer.trim() && <CollapsedBody excerpt={activity.finalAnswerExcerpt}>{(excerpt) => <div className="msg-body" data-final-answer="1"><Markdown text={excerpt ?? activity.finalAnswerDisplay?.display ?? finalAnswer} /><MediaTiles media={activity.finalAnswerDisplay?.media} /></div>}</CollapsedBody>}
     </DisclosureTurnContext>
   )
 }

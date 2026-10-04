@@ -146,3 +146,29 @@ describe('compaction markers (TAL-305)', () => {
     expect(rows.map((row) => [row.message._marker_kind ?? row.message.role, (row.assistantRows ?? []).length])).toEqual([['user', 0], ['assistant', 1], ['context_compaction', 0], ['assistant', 1]])
   })
 })
+
+describe('server media references (TAL-186)', () => {
+  const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { media_session: { messages: Message[] } }
+
+  it('renders the shared media example as one document: images inline where they were, other media as tiles, code literal', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const rows = groupAssistantTurns(projectMessages(fixture.media_session.messages))
+    const row = rows.find((r) => r.message.role === 'assistant')!
+    const view = render(<AssistantMessageRow row={row} name="Assistant" mode="compact_worklog" actions={{}} tts={false} isLast />)
+    const answer = view.container.querySelector('[data-final-answer="1"]')!
+    const chart = './api/media?path=%2Ftalaria-contract%2Fout%2Fchart.png&session_id=contract-media-session'
+    const images = await screen.findAllByRole('img', { name: /chart/i })
+    expect(images.map((img) => img.getAttribute('src'))).toEqual([new URL(chart, document.baseURI).href, new URL(chart, document.baseURI).href])
+    // The emphasis and the list survive around the image: nothing of the Markdown is left as stray text.
+    const strong = screen.getByRole('img', { name: 'Chart' }).closest('[data-streamdown="strong"]')
+    expect(strong?.textContent).toMatch(/^Before .* after$/)
+    expect(answer.querySelectorAll('[data-streamdown="list-item"]')).toHaveLength(3)
+    expect(answer.textContent).not.toContain('**')
+    expect(answer.textContent).not.toContain('MEDIA:/talaria-contract/out/chart.png')
+    expect(answer.querySelector('pre, code')?.textContent).toContain('MEDIA:/talaria-contract/out/secret.png')
+    expect(screen.getByLabelText('narration.mp3').getAttribute('src')).toBe(new URL('./api/media?path=%2Ftalaria-contract%2Fout%2Fnarration.mp3&session_id=contract-media-session', document.baseURI).href)
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+    expect(writeText).toHaveBeenCalledWith(row.message.content)
+  })
+})
