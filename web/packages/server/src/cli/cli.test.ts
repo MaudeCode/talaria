@@ -25,18 +25,18 @@ describe('.env loading', () => {
   })
   it('applies the checkout file unconditionally (unless preserved) and the Hermes file only as a fallback', () => {
     const dir = scratch()
-    writeFileSync(join(dir, 'repo.env'), 'HERMES_WEBUI_PORT=9999\nONLY_REPO=r\n')
-    writeFileSync(join(dir, 'hermes.env'), 'HERMES_WEBUI_PORT=1\nONLY_HERMES=h\nONLY_REPO=h\n')
+    writeFileSync(join(dir, 'repo.env'), 'HERMES_WEBUI_PORT=9999\nONLY_REPO_KEY=r\n')
+    writeFileSync(join(dir, 'hermes.env'), 'HERMES_WEBUI_PORT=1\nONLY_HERMES_KEY=h\nONLY_REPO_KEY=h\n')
     const env: Record<string, string | undefined> = { HERMES_WEBUI_PORT: '8787' }
-    expect(loadLauncherDotenv({ env, repoEnvFile: join(dir, 'repo.env'), hermesEnvFile: join(dir, 'hermes.env') }).sort()).toEqual(['HERMES_WEBUI_PORT', 'ONLY_HERMES', 'ONLY_REPO'])
-    expect(env).toEqual({ HERMES_WEBUI_PORT: '9999', ONLY_REPO: 'r', ONLY_HERMES: 'h' })
+    expect(loadLauncherDotenv({ env, repoEnvFile: join(dir, 'repo.env'), hermesEnvFile: join(dir, 'hermes.env') }).sort()).toEqual(['HERMES_WEBUI_PORT', 'ONLY_HERMES_KEY', 'ONLY_REPO_KEY'])
+    expect(env).toEqual({ HERMES_WEBUI_PORT: '9999', ONLY_REPO_KEY: 'r', ONLY_HERMES_KEY: 'h' })
     const preserved: Record<string, string | undefined> = { HERMES_WEBUI_PORT: '8787', HERMES_WEBUI_PRESERVE_ENV: '1' }
     loadLauncherDotenv({ env: preserved, repoEnvFile: join(dir, 'repo.env'), hermesEnvFile: null })
     expect(preserved.HERMES_WEBUI_PORT).toBe('8787')
     const off: Record<string, string | undefined> = { HERMES_WEBUI_NO_DOTENV: '1' }
     expect(loadLauncherDotenv({ env: off, repoEnvFile: join(dir, 'repo.env'), hermesEnvFile: null })).toEqual([])
   })
-  it('ignores operator auth and isolation keys in the Hermes home .env with a warning', () => {
+  it('takes only credentials, the model, and Web tuning keys from the Hermes home .env, warning about the rest', () => {
     const dir = scratch()
     const protectedKeys = [
       'HERMES_WEBUI_ISOLATED_PROFILE', 'HERMES_WEBUI_PASSWORD', 'HERMES_WEBUI_PASSKEY', 'HERMES_WEBUI_COOKIE_NAME', 'HERMES_WEBUI_SECURE',
@@ -57,12 +57,15 @@ describe('.env loading', () => {
       // Web key not on the tuning allowlist (here one the server does not read yet) fails closed.
       'HERMES_WEBUI_HOST', 'HERMES_WEBUI_STATE_DIR', 'HERMES_WEBUI_TLS_CERT', 'HERMES_WEBUI_TALARIA_RELAY_URL', 'HERMES_WEBUI_HOME_DOTENV_KEYS',
       'HERMES_WEBUI_SOME_FUTURE_KEY', 'HERMES_HOME', 'HERMES_BASE_HOME', 'HERMES_CONFIG_PATH', 'TALARIA_WEB_ROOT',
+      // Anything else the server reads (the terminal shell, extra media roots, endpoints) or may read later.
+      'SHELL', 'MEDIA_ALLOWED_ROOTS', 'TERMINAL_CWD', 'OPENAI_BASE_URL', 'SOME_AGENT_SETTING',
     ]
-    writeFileSync(join(dir, 'hermes.env'), `${protectedKeys.map((k) => `${k}=from-profile`).join('\n')}\nOPENAI_API_KEY=sk-profile\nHERMES_WEBUI_MAX_UPLOAD_MB=50\n`)
+    const allowed = { OPENAI_API_KEY: 'sk-profile', TELEGRAM_BOT_TOKEN: 't', AWS_SECRET: 's', HERMES_MODEL: 'm', HERMES_WEBUI_MAX_UPLOAD_MB: '50' }
+    writeFileSync(join(dir, 'hermes.env'), [...protectedKeys.map((k) => `${k}=from-profile`), ...Object.entries(allowed).map(([k, v]) => `${k}=${v}`)].join('\n'))
     const env: Record<string, string | undefined> = { HERMES_WEBUI_ISOLATED_PROFILE: '1' }
     const logs: string[] = []
-    expect(loadLauncherDotenv({ env, repoEnvFile: null, hermesEnvFile: join(dir, 'hermes.env'), log: (line) => logs.push(line) })).toEqual(['OPENAI_API_KEY', 'HERMES_WEBUI_MAX_UPLOAD_MB'])
-    expect(env).toEqual({ HERMES_WEBUI_ISOLATED_PROFILE: '1', OPENAI_API_KEY: 'sk-profile', HERMES_WEBUI_MAX_UPLOAD_MB: '50' })
+    expect(loadLauncherDotenv({ env, repoEnvFile: null, hermesEnvFile: join(dir, 'hermes.env'), log: (line) => logs.push(line) })).toEqual(Object.keys(allowed))
+    expect(env).toEqual({ HERMES_WEBUI_ISOLATED_PROFILE: '1', ...allowed })
     for (const key of protectedKeys) expect(logs.some((line) => line.includes(key))).toBe(true)
     // The checkout .env is deployment config, so it may still set them.
     writeFileSync(join(dir, 'repo.env'), 'HERMES_WEBUI_PASSWORD=operator\n')
@@ -78,15 +81,15 @@ describe('startup environment order', () => {
     mkdirSync(join(dir, 'web'))
     mkdirSync(join(dir, 'h'))
     writeFileSync(join(dir, 'web', '.env'), `HERMES_HOME=${join(dir, 'h')}\nFROM_REPO=r\n`)
-    writeFileSync(join(dir, 'h', '.env'), 'FROM_HERMES=h\nFROM_REPO=ignored\n')
+    writeFileSync(join(dir, 'h', '.env'), 'FROM_HERMES_TOKEN=h\nFROM_REPO=ignored\n')
     const env: Record<string, string | undefined> = {}
     expect(loadStartupEnv({ env, webRoot: join(dir, 'web'), home: dir })).toEqual({ hermesHome: join(dir, 'h') })
-    expect(env).toEqual({ HERMES_HOME: join(dir, 'h'), FROM_REPO: 'r', FROM_HERMES: 'h', HERMES_WEBUI_HOME_DOTENV_KEYS: 'FROM_HERMES' })
+    expect(env).toEqual({ HERMES_HOME: join(dir, 'h'), FROM_REPO: 'r', FROM_HERMES_TOKEN: 'h', HERMES_WEBUI_HOME_DOTENV_KEYS: 'FROM_HERMES_TOKEN' })
     // Only the Hermes home's own keys are recorded as the default profile's; the checkout .env is deployment config.
-    expect([...homeDotenvKeys(env)]).toEqual(['FROM_HERMES'])
+    expect([...homeDotenvKeys(env)]).toEqual(['FROM_HERMES_TOKEN'])
     // The supervisor worker inherits the values and loads again: nothing is new to apply, but the marker must survive.
     loadStartupEnv({ env, webRoot: join(dir, 'web'), home: dir })
-    expect([...homeDotenvKeys(env)]).toEqual(['FROM_HERMES'])
+    expect([...homeDotenvKeys(env)]).toEqual(['FROM_HERMES_TOKEN'])
   })
 })
 

@@ -3,8 +3,8 @@
  * `ctl.sh`): the checkout `.env` applies unconditionally unless
  * `HERMES_WEBUI_PRESERVE_ENV` keeps values already in the environment; the
  * Hermes home `.env` is a fallback for keys the environment lacks (provider
- * credentials referenced as `${VAR}` in config.yaml) and never sets
- * deployment posture (see `isProtectedEnvKey`). `HERMES_WEBUI_NO_DOTENV=1` skips both.
+ * credentials referenced as `${VAR}` in config.yaml), limited to
+ * `homeEnvKeyAllowed`. `HERMES_WEBUI_NO_DOTENV=1` skips both.
  */
 import { join, resolve } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
@@ -13,11 +13,13 @@ const READONLY = new Set(['UID', 'GID', 'EUID', 'EGID', 'PPID'])
 const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /**
- * The agent-writable Hermes home `.env` may not set deployment posture: otherwise a contained user could disable
- * isolation, swap the auth configuration, move the home or state, or choose the code that runs on the next start
- * (#4589). Every `HERMES_WEBUI_*` key is the operator's except these tuning knobs.
+ * What the agent-writable Hermes home `.env` may set in the Web server's environment: credentials, the default model,
+ * and Web tuning knobs. Everything else (auth, isolation, listener, home and state paths, launch and loader hooks) stays
+ * the operator's, so a contained user cannot change it for the next start (#4589). The Agent reads the whole file
+ * into the sidecar itself, so its own settings still apply there.
  */
-const HOME_ENV_WEBUI_KEYS: ReadonlySet<string> = new Set([
+const HOME_ENV_KEYS: ReadonlySet<string> = new Set([
+  'HERMES_MODEL',
   'HERMES_WEBUI_BOT_NAME',
   'HERMES_WEBUI_DEFAULT_MODEL',
   'HERMES_WEBUI_PORT',
@@ -33,30 +35,8 @@ const HOME_ENV_WEBUI_KEYS: ReadonlySet<string> = new Set([
   'HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT',
   'HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS',
 ])
-/** Outside that namespace: the home, config, and Web root selectors, internal markers, and interpreter/loader hooks. */
-const PROTECTED_ENV_KEYS: ReadonlySet<string> = new Set([
-  'HERMES_HOME',
-  'HERMES_BASE_HOME',
-  'HERMES_CONFIG_PATH',
-  'HERMES_API_URL',
-  'HERMES_GATEWAY_HEALTH_URL',
-  'TALARIA_WEB_ROOT',
-  'TALARIA_WEB_WORKER',
-  'NODE_OPTIONS',
-  'NODE_PATH',
-  'PYTHONPATH',
-  'PYTHONHOME',
-  'PYTHONSTARTUP',
-  'BASH_ENV',
-  'GIT_SSH_COMMAND',
-  'GIT_SSH',
-  'GIT_EXEC_PATH',
-  'GIT_ASKPASS',
-])
-// ponytail: loader hooks are a known list; switch non-Web keys to an allowlist too if new ones keep appearing.
-const PROTECTED_ENV_PREFIXES = ['LD_', 'DYLD_', 'GIT_CONFIG_']
-const isProtectedEnvKey = (key: string): boolean =>
-  key.startsWith('HERMES_WEBUI_') ? !HOME_ENV_WEBUI_KEYS.has(key) : PROTECTED_ENV_KEYS.has(key) || PROTECTED_ENV_PREFIXES.some((p) => key.startsWith(p))
+const CREDENTIAL_KEY_RE = /_(?:KEY|TOKEN|SECRET)$/
+const homeEnvKeyAllowed = (key: string): boolean => HOME_ENV_KEYS.has(key) || (!key.startsWith('HERMES_WEBUI_') && CREDENTIAL_KEY_RE.test(key))
 
 function unescapeDouble(raw: string): string {
   let out = ''
@@ -98,7 +78,7 @@ export interface DotenvOptions {
   env: Record<string, string | undefined>
   /** The checkout `.env` (a git checkout of `web/`); absent for npm installs. */
   repoEnvFile?: string | null
-  /** `$HERMES_HOME/.env`, applied only for keys the environment lacks and never for protected keys. */
+  /** `$HERMES_HOME/.env`, applied only for keys the environment lacks and `homeEnvKeyAllowed` accepts. */
   hermesEnvFile?: string | null
   log?: (line: string) => void
 }
@@ -117,12 +97,14 @@ export function loadLauncherDotenv(opts: DotenvOptions): string[] {
   if (repo) for (const [k, v] of Object.entries(repo)) { if (preserve && env[k] !== undefined) continue; env[k] = v; applied.push(k) }
   const hermes = read(opts.hermesEnvFile)
   if (hermes) {
+    const ignored: string[] = []
     for (const [k, v] of Object.entries(hermes)) {
-      if (isProtectedEnvKey(k)) { opts.log?.(`[bootstrap] Warning: ignoring protected key ${k} in ${String(opts.hermesEnvFile)}; set it in the deployment environment instead`); continue }
+      if (!homeEnvKeyAllowed(k)) { ignored.push(k); continue }
       if (env[k] !== undefined) continue
       env[k] = v
       applied.push(k)
     }
+    if (ignored.length) opts.log?.(`[bootstrap] Warning: ${String(opts.hermesEnvFile)} only supplies credentials and tuning to the Web server; ignoring ${ignored.join(', ')} (set them in the deployment environment instead)`)
   }
   return applied
 }
