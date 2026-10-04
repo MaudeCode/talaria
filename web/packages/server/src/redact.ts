@@ -223,11 +223,18 @@ const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/?#]{
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff]/
 const CONTROL_CHARS_RE = new RegExp(CONTROL_CHAR_RE.source, 'g')
 /**
- * A complete ANSI escape sequence (CSI `ESC [` or `\x9b` … final byte, OSC `ESC ]` or `\x9d` … BEL/ST) or one control
- * or zero-width character. An OSC payload can hold a token itself (a terminal title), so this view is matched besides the
- * control-only one.
+ * A complete ECMA-48 escape sequence or one control or zero-width character. The sequences, 7-bit `ESC …` or the C1
+ * code point: CSI (`ESC [` … final byte), the strings OSC, DCS, SOS, PM and APC (… BEL or ST), a character-set
+ * selection (`ESC ( B`), and a single-character escape (`ESC 7`). A string's payload can hold a token itself (a
+ * terminal title), so this view is matched besides the control-only one. A string body stops at the next opener, which
+ * keeps the scan linear.
  */
-const ANSI_GAPS_RE = new RegExp(String.raw`(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|(?:\x1b\]|\x9d)[^\x07\x1b\x9c\x9d]*(?:\x07|\x1b\\|\x9c)|` + CONTROL_CHAR_RE.source, 'g')
+const ANSI_GAPS_RE = new RegExp(
+  String.raw`(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|(?:\x1b[\]PX^_]|[\x90\x98\x9d-\x9f])[^\x07\x1b\x90\x98\x9c-\x9f]*(?:\x07|\x1b\\|\x9c)|` +
+    String.raw`\x1b[ -/]+[0-~]|\x1b[0-OQ-WYZ\\\x60-~]|` +
+    CONTROL_CHAR_RE.source,
+  'g',
+)
 const CRED_TEST_RE = new RegExp(CRED_RE.source)
 /** `CRED_RE`'s prefix and body from a position, without its boundaries (a split token checks the original ones). */
 const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
