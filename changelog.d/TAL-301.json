@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Model pickers check the right model when its name contains a colon, such as Ollama tags or local custom endpoints, and scheduled tasks run on the same provider a chat would use.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}
