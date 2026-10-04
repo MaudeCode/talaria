@@ -264,6 +264,11 @@ export function anchorActivitySceneTransportPreview(stored: Record<string, unkno
   preview.activity_rows_omitted = offset
   // Over every row, not just the preview: a client settling its local steer hints must see a steer paged out of it.
   preview.has_consumed_steering = rows.some((row) => row.role === 'steering' && row.steering?.consumed === true)
+  // An answer that was only thinking or tool-call markup is no answer: the turn reads as one that did not reply.
+  if (preview.terminal_state === 'completed' && str(stored.final_answer).trim() && !str(scene.final_answer)) {
+    preview.terminal_state = 'no_response'
+    preview.expanded_by_default = EXPANDED_OUTCOMES.has('no_response') && total > 0
+  }
   if (sceneRef) preview.activity_scene_ref = sceneRef
   return preview
 }

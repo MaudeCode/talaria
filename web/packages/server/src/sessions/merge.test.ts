@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {  BODY_EXCERPT_LIMIT, extractToolCallsFromMessages, mergeSessionMessagesAppendOnly, normalizeAssistantDisplay, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withToolCallOutcomes  } from './merge.js'
+import { BODY_EXCERPT_LIMIT, extractToolCallsFromMessages, mergeSessionMessagesAppendOnly, normalizeAssistantDisplay, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withToolCallOutcomes } from './merge.js'
 
 describe('toolOutcome (TAL-313)', () => {
   it('fails a result that reports an error, a non-zero exit code, or success false, in any persisted shape', () => {
