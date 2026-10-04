@@ -4518,7 +4518,9 @@ public final class ChatViewModel {
     private func saveActiveStreamSnapshotIfNeeded() {
         guard let sessionID,
               let activeStreamID,
-              !hasCompletedCurrentResponse
+              !hasCompletedCurrentResponse,
+              // A chat closing after its server's reset cannot put the snapshot back (TAL-183).
+              ownsCurrentCache
         else { return }
 
         ActiveChatStreamSnapshotStore.shared.save(

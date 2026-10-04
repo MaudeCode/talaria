@@ -1236,7 +1236,9 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
                 [ChatDraftAttachment(id: UUID(), name: "\(tag).png", mime: "image/png", size: 1, isImage: true, file: "\(tag).png")],
                 for: .newChat(server: server)
             )
+            ActiveChatStreamSnapshotStore.shared.save(.synthetic, server: server, sessionID: "\(tag)-session", streamID: "stream-1")
         }
+        addTeardownBlock { ChatViewModel.resetActiveStreamSnapshotsForTesting() }
         try await draftStore.flush()
         let keychain = InMemoryKeychainStore()
         let registry = ServerRegistry.inMemory(keychain: keychain)
@@ -1277,6 +1279,11 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         )
         let removedDraft = await draftStore.draft(for: .newChat(server: signedOut))
         XCTAssertNil(removedDraft)
+        XCTAssertNil(ActiveChatStreamSnapshotStore.shared.snapshot(server: signedOut, sessionID: "removed-session", streamID: "stream-1"))
+        XCTAssertEqual(
+            ActiveChatStreamSnapshotStore.shared.snapshot(server: kept, sessionID: "kept-session", streamID: "stream-1"),
+            .synthetic
+        )
         // The other server's state is untouched, including the flushed draft document.
         XCTAssertEqual(try CacheStore.cachedSessions(serverURL: kept, in: context).count, 1)
         XCTAssertEqual(try CacheStore.cachedMessages(serverURL: kept, sessionID: "kept-session", in: context).count, 1)

@@ -59,6 +59,13 @@ final class ActiveChatStreamSnapshotStore {
         snapshots.removeAll()
     }
 
+    /// Drops every snapshot saved for one server; `serverScopedStateReset` calls it (TAL-183).
+    func removeAll(for server: URL) {
+        lock.lock()
+        defer { lock.unlock() }
+        snapshots = snapshots.filter { $0.key.server != server.absoluteString }
+    }
+
     private func key(server: URL, sessionID: String, streamID: String) -> ActiveChatStreamSnapshotKey {
         ActiveChatStreamSnapshotKey(
             server: server.absoluteString,
