@@ -518,6 +518,48 @@ final class SharedContractTests: XCTestCase {
         XCTAssertFalse(settled.isLive)
     }
 
+    func testARunningScenesToolTakesItsLiveCompletionInPlace() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-374 has no such example.
+        guard let example = object["running_scene_session"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        // The tool's call persisted before its result: the scene shows it still running.
+        var raw = try XCTUnwrap((example["messages"] as? [[String: Any]])?.last)
+        var scene = try XCTUnwrap(raw["_anchor_activity_scene"] as? [String: Any])
+        scene["activity_rows"] = try XCTUnwrap(scene["activity_rows"] as? [[String: Any]]).map { row in
+            guard var tool = row["tool"] as? [String: Any] else { return row }
+            tool["done"] = false
+            tool["result"] = NSNull()
+            var running = row
+            running["tool"] = tool
+            return running
+        }
+        raw["_anchor_activity_scene"] = scene
+        let message = try decoder.decode(ChatMessage.self, from: JSONSerialization.data(withJSONObject: raw))
+        XCTAssertEqual(
+            AssistantTurnLayout(message: message, liveRows: [], archivedRows: []).rows.flatMap(\.toolCalls).map(\.isCompleted),
+            [false]
+        )
+
+        // The stream's completion for that call updates the scene's card instead of adding a second one.
+        let completion = ToolCall(id: "contract-read", name: "read_file", preview: "A", args: nil, duration: 0.5, isError: false, isCompleted: true)
+        let live = [
+            AssistantActivityRow(id: "live:tools", content: .tools([completion])),
+            AssistantActivityRow(id: "live:prose", content: .prose("Reading b.txt."))
+        ]
+        let layout = AssistantTurnLayout(message: message, liveRows: live, archivedRows: [])
+        XCTAssertEqual(
+            layout.rows.map(\.id),
+            ["contract-run-r-1:reasoning", "contract-run-r-1:prose", "tool:contract-read", "contract-run-r-2:prose", "live:prose"]
+        )
+        let calls = layout.rows.flatMap(\.toolCalls)
+        XCTAssertEqual(calls.map(\.id), ["contract-read"])
+        XCTAssertEqual(calls.first?.isCompleted, true)
+        XCTAssertEqual(calls.first?.duration, 0.5)
+        XCTAssertEqual(calls.first?.args?["path"], .string("a.txt"))
+    }
+
     func testSharedWebSessionCollapsesOnlyItsLongBodies() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-456 has no such example.
