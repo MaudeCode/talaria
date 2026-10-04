@@ -15,11 +15,18 @@ vi.mock('../../api/endpoints', () => ({
 vi.mock('../toast/toast', () => ({ showToast: vi.fn() }))
 import { PreferencesSection } from './PreferencesSection'
 import { saveSettings } from '../../api/endpoints'
+import { BootstrapContext } from '../../app/bootstrap'
+import { DEFAULT_BOOTSTRAP } from '../../contracts/adapters/memory'
+
+const renderSection = (canManage = true) => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const bootstrap = { ...DEFAULT_BOOTSTRAP, auth: { ...DEFAULT_BOOTSTRAP.auth, can_manage_server: canManage } }
+  return render(<QueryClientProvider client={qc}><BootstrapContext.Provider value={bootstrap}><PreferencesSection /></BootstrapContext.Provider></QueryClientProvider>)
+}
 
 describe('PreferencesSection', () => {
   it('opens the server auxiliary task list beside the default model (TAL-388)', async () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={qc}><PreferencesSection /></QueryClientProvider>)
+    renderSection()
     await screen.findByText('Default Model')
     await userEvent.click(screen.getByRole('button', { name: 'Manage' }))
     const list = within(await screen.findByRole('list', { name: 'Auxiliary Models' }))
@@ -27,8 +34,7 @@ describe('PreferencesSection', () => {
   })
 
   it('edits the external-link confirmation and trusted hosts through settings (TAL-279)', async () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={qc}><PreferencesSection /></QueryClientProvider>)
+    renderSection()
     const confirm = await screen.findByRole('switch', { name: 'Confirm before opening external links' })
     expect(confirm).toBeChecked()
     await userEvent.click(confirm)
@@ -38,5 +44,11 @@ describe('PreferencesSection', () => {
     await userEvent.type(hosts, '\nAPI.Example.com')
     await userEvent.click(within(hosts.closest('form')!).getByRole('button', { name: 'Save' }))
     expect(saveSettings).toHaveBeenLastCalledWith({ trusted_link_hosts: ['docs.example.com', 'API.Example.com'] })
+  })
+
+  it('lets only a server owner change link safety (TAL-279)', async () => {
+    renderSection(false)
+    expect(await screen.findByRole('switch', { name: 'Confirm before opening external links' })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByLabelText('Trusted link hosts')).toBeDisabled()
   })
 })

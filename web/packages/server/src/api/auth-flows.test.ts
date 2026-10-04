@@ -90,7 +90,8 @@ describe('OIDC browser login', () => {
     const status = await json(await s.get('/api/auth/status', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } }))
     expect(status).toMatchObject({ logged_in: true, auth_type: 'oidc', user: 'kim@example.com', bound_profile: null, can_manage_server: false })
     expect((await s.get('/api/sessions', { headers: { cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } })).status).toBe(200)
-    for (const patch of [{ auto_apply_updates: true }, { update_channel: 'experimental' }, { agent_update_channel: 'experimental' }, { check_for_updates: false }]) {
+    // TAL-279: link-safety settings apply to every user, so only an owner may change them.
+    for (const patch of [{ auto_apply_updates: true }, { update_channel: 'experimental' }, { agent_update_channel: 'experimental' }, { check_for_updates: false }, { confirm_external_links: false }, { trusted_link_hosts: ['attacker.test'] }]) {
       expect((await s.get('/api/settings', { method: 'POST', body: JSON.stringify(patch), headers: { 'content-type': 'application/json', cookie: `${s.deps.auth.cookieName()}=${cookie ?? ''}` } })).status).toBe(403)
     }
   })
@@ -102,6 +103,9 @@ describe('OIDC browser login', () => {
     const cb = await s.get(`/api/auth/oidc/callback?state=${state}&code=${code}`)
     const cookie = `${s.deps.auth.cookieName()}=${cookieOf(cb, s.deps.auth.cookieName()) ?? ''}`
     expect((await json(await s.get('/api/auth/status', { headers: { cookie } }))).can_manage_server).toBe(true)
+    const saved = await s.get('/api/settings', { method: 'POST', body: JSON.stringify({ trusted_link_hosts: ['docs.example.com'] }), headers: { 'content-type': 'application/json', cookie } })
+    expect(saved.status).toBe(200)
+    expect((await json(saved)).trusted_link_hosts).toEqual(['docs.example.com'])
     // A policy change invalidates the stored binding on the next request.
     s.deps.config.env.HERMES_WEBUI_OIDC_OWNER_VALUES = 'someone-else'
     await new Promise((r) => setTimeout(r, 5100))
