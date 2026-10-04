@@ -46,7 +46,7 @@ struct ProviderQuotaForecastView: View {
                 Image(systemName: state.isStale ? "clock.badge.exclamationmark" : "clock")
                 Group {
                     if let computedAt = state.computedAt {
-                        Text("As of \(computedAt, style: .time)")
+                        Text("As of \(computedAt.formatted(.dateTime.weekday(.abbreviated).hour().minute()))")
                     } else {
                         Text("Updated \(state.freshnessDate, style: .relative)")
                     }
