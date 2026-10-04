@@ -1806,6 +1806,55 @@ describe('chat turns through the sidecar', () => {
     expect(messages.some((m) => m._error)).toBe(true)
   })
 
+  it('a failed /btw is an error, never the parent\'s previous answer, and leaves no clone behind (TAL-512)', async () => {
+    const sid = await newSession(s)
+    const seeded = s.deps.sessionStore.get(sid)
+    seeded.messages = [{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }]
+    seeded.context_messages = [{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }]
+    s.deps.sessionStore.save(seeded)
+    const leftovers = (): string[] => [...s.deps.sessionStore.persistedIds()].filter((id) => { try { return str(s.deps.sessionStore.get(id, { metadataOnly: true }).title).startsWith('btw: ') } catch { return false } })
+    // A provider error: the Agent's failed result replays history plus the unanswered question, and the sidecar says `completed`.
+    sidecar.respond('chat.start', (params) => ({
+      ...completed([{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }, { role: 'user', content: str(params.user_message), timestamp: 200 }]),
+      final_response: '', error: '401 invalid api key', failed: true, token_sent: false,
+    }))
+    const failed = await json(await post(s, '/api/btw', { session_id: sid, question: 'side question' }))
+    const frames = await s.sse(`/api/chat/stream?stream_id=${String(failed.stream_id)}&replay=1`, (f) => f.event === 'apperror' || f.event === 'done')
+    expect(frames.find((f) => f.event === 'done')?.data).toBeUndefined()
+    expect(str((frames.find((f) => f.event === 'apperror')?.data as Json | undefined)?.message)).toContain('401 invalid api key')
+    await new Promise((r) => setTimeout(r, 50))
+    expect(leftovers()).toEqual([])
+    // Text streamed but the result added no reply: the replayed history is still the parent's, not this answer.
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'token', data: { text: 'half an' } })
+      return completed([{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }, { role: 'user', content: str(params.user_message), timestamp: 200 }])
+    })
+    const streamed = await json(await post(s, '/api/btw', { session_id: sid, question: 'side question' }))
+    const streamedFrames = await s.sse(`/api/chat/stream?stream_id=${String(streamed.stream_id)}&replay=1`, (f) => f.event === 'apperror' || f.event === 'done')
+    expect(streamedFrames.find((f) => f.event === 'done')?.data).toBeUndefined()
+    expect(streamedFrames.some((f) => f.event === 'apperror')).toBe(true)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(leftovers()).toEqual([])
+    // A sidecar that throws mid-turn.
+    sidecar.respond('chat.start', () => { throw new SidecarError('provider exploded', { condition: 'sidecar_error' }) })
+    const thrown = await json(await post(s, '/api/btw', { session_id: sid, question: 'side question' }))
+    await s.sse(`/api/chat/stream?stream_id=${String(thrown.stream_id)}&replay=1`, (f) => f.event === 'apperror')
+    await new Promise((r) => setTimeout(r, 50))
+    expect(leftovers()).toEqual([])
+    // Admission refused.
+    const turns = s.deps.turns as unknown as { deps: { profileDeleting: ((profile: string | null) => boolean) | undefined } }
+    const original = turns.deps.profileDeleting
+    turns.deps.profileDeleting = () => true
+    try {
+      expect((await post(s, '/api/btw', { session_id: sid, question: 'side question' })).status).toBe(409)
+    } finally {
+      turns.deps.profileDeleting = original
+    }
+    expect(leftovers()).toEqual([])
+    // The parent is untouched.
+    expect(s.deps.sessionStore.get(sid).messages).toHaveLength(2)
+  })
+
   it('keeps the closing explanation when the Agent exhausts its tool budget', async () => {
     const sid = await newSession(s)
     // The budget ran out mid tool-run: the graceful summary exists only in `final_response`.
