@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Editing a message now puts its text back in the composer, ready to change and send again, instead of leaving the composer empty.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

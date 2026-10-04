@@ -335,3 +335,39 @@ test('a draft typed with an IME just before a reload comes back (TAL-278)', asyn
   await page.reload()
   await expect(msg).toHaveValue('Draft 日本')
 })
+
+test('editing a message puts its text in the composer and Send resubmits it (TAL-516)', async ({ page }) => {
+  let truncated = false
+  let body: Record<string, unknown> | null = null
+  const messages = [{ role: 'user', id: 1, content: 'Plan the release' }, { role: 'assistant', id: 2, content: 'Here is the plan.' }]
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'edit', title: 'Edit', messages: truncated ? [] : messages } } }))
+  await page.route('**/api/session/truncate', (route) => { truncated = true; return route.fulfill({ json: { ok: true, session: { session_id: 'edit', title: 'Edit' } } }) })
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.route('**/api/chat/start', async (route) => { body = route.request().postDataJSON() as Record<string, unknown>; await route.fulfill({ json: { status: 'suppressed' } }) })
+  await page.goto('/session/edit')
+  const row = page.locator('#messages .msg-row[data-role="user"]')
+  await row.hover()
+  await row.getByRole('button', { name: 'Edit message' }).click()
+  await expect.poll(() => truncated).toBe(true)
+  await expect(page.locator('#msg')).toHaveValue('Plan the release')
+  await expect(page.locator('#msg')).toBeFocused()
+  await page.locator('#btnSend').click()
+  await expect.poll(() => body?.message).toBe('Plan the release')
+})
+
+test('a second Edit click while the first is pending returns the text once (TAL-516)', async ({ page }) => {
+  const truncate = hold()
+  let truncates = 0
+  let truncated = false
+  const messages = [{ role: 'user', id: 1, content: 'Plan the release' }, { role: 'assistant', id: 2, content: 'Here is the plan.' }]
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'edit-twice', title: 'Edit', messages: truncated ? [] : messages } } }))
+  await page.route('**/api/session/truncate', async (route) => { truncates++; await truncate.gate; truncated = true; await route.fulfill({ json: { ok: true, session: { session_id: 'edit-twice', title: 'Edit' } } }) })
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.goto('/session/edit-twice')
+  const edit = page.locator('#messages .msg-row[data-role="user"]').getByRole('button', { name: 'Edit message' })
+  await edit.click({ force: true })
+  await edit.click({ force: true })
+  truncate.release()
+  await expect(page.locator('#msg')).toHaveValue('Plan the release')
+  expect(truncates).toBe(1)
+})
