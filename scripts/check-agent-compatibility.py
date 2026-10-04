@@ -60,7 +60,8 @@ def main():
         actual = subprocess.check_output(["git", "-C", str(agent), "rev-parse", "HEAD"], env=env, text=True).strip()
         if actual != sha:
             raise RuntimeError("Agent release tag does not match the compatibility pin")
-        subprocess.run(["uv", "sync", "--frozen", "--no-dev", "--python", python], cwd=agent, env=env, check=True)
+        # The mcp extra (shipped in the image via [all]) lets the sidecar suite drive a real stub MCP server.
+        subprocess.run(["uv", "sync", "--frozen", "--no-dev", "--extra", "mcp", "--python", python], cwd=agent, env=env, check=True)
         agent_python = agent / ".venv/bin/python"
         env.update(HERMES_WEBUI_AGENT_DIR=str(agent), HERMES_WEBUI_PYTHON=str(agent_python), HERMES_WEBUI_TEST_PYTHON=python)
         subprocess.run([str(agent_python), str(ROOT / "releases/agent_probe.py"), version], cwd=agent, env={**env, "PYTHONPATH": str(ROOT / "web/sidecar")}, check=True)

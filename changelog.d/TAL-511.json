@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web chats can use your MCP server tools again right after the server starts, without running /reload-mcp first.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "Running /reload-mcp in one Web profile no longer disconnects the MCP servers of your other profiles.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

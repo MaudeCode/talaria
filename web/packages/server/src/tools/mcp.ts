@@ -168,7 +168,11 @@ export class McpService {
       const sidecar = this.deps.sidecar()
       if (sidecar) {
         try {
-          tools = (await sidecar.call('mcp.registry_tools', { profile_home: profileHome })).tools.map((t) => toolSummary(t.name, { name: t.name, ...t.schema }, summaries.get(t.server) ?? { name: t.server, enabled: true, active: false, status: 'configured' }))
+          // The registry view also holds the launch profile's unscoped registrations; list only servers in this profile's
+          // effective config: config.yaml, plus portable-plugin servers that only the runtime status reports.
+          tools = (await sidecar.call('mcp.registry_tools', { profile_home: profileHome })).tools
+            .filter((t) => summaries.has(t.server) || runtime.has(t.server))
+            .map((t) => toolSummary(t.name, { name: t.name, ...t.schema }, summaries.get(t.server) ?? { name: t.server, enabled: true, active: false, status: 'configured' }))
         } catch { tools = [] }
       }
       source = tools.length ? 'tool_registry' : 'none'
