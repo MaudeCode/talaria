@@ -48,6 +48,11 @@ describe('.env loading', () => {
       // With auth disabled, ONBOARDING_OPEN opens remote onboarding, the terminal, and first-password setup.
       'HERMES_WEBUI_ONBOARDING_OPEN', 'HERMES_WEBUI_ALLOWED_ORIGINS', 'HERMES_WEBUI_TRUST_FORWARDED_FOR', 'HERMES_WEBUI_TRUST_FORWARDED_HOST',
       'HERMES_WEBUI_TRUST_FORWARDED_PROTO', 'HERMES_WEBUI_TRUSTED_GROUPS_PIPE_SEPARATOR',
+      // Keys that pick or load the code the server, the sidecar, the terminal, git, or the browser runs.
+      'HERMES_WEBUI_SIDECAR_COMMAND', 'HERMES_WEBUI_PYTHON', 'HERMES_WEBUI_AGENT_DIR', 'HERMES_WEBUI_SERVER_CWD', 'HERMES_WEBUI_EXTENSION_DIR',
+      'HERMES_WEBUI_EXTENSION_MANIFEST', 'HERMES_WEBUI_EXTENSION_SCRIPT_URLS', 'HERMES_WEBUI_EXTENSION_STYLESHEET_URLS', 'HERMES_WEBUI_CSP_CONNECT_EXTRA',
+      'HERMES_WEBUI_CSP_FRAME_EXTRA', 'NODE_OPTIONS', 'NODE_PATH', 'PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP', 'BASH_ENV', 'LD_PRELOAD', 'LD_AUDIT',
+      'DYLD_INSERT_LIBRARIES', 'GIT_SSH_COMMAND', 'GIT_SSH', 'GIT_EXEC_PATH', 'GIT_ASKPASS', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
     ]
     writeFileSync(join(dir, 'hermes.env'), `${protectedKeys.map((k) => `${k}=from-profile`).join('\n')}\nOPENAI_API_KEY=sk-profile\n`)
     const env: Record<string, string | undefined> = { HERMES_WEBUI_ISOLATED_PROFILE: '1' }

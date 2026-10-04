@@ -4,7 +4,7 @@
  * `HERMES_WEBUI_PRESERVE_ENV` keeps values already in the environment; the
  * Hermes home `.env` is a fallback for keys the environment lacks (provider
  * credentials referenced as `${VAR}` in config.yaml) and never sets the
- * operator auth or isolation keys. `HERMES_WEBUI_NO_DOTENV=1` skips both.
+ * operator auth, isolation, or code-launch keys. `HERMES_WEBUI_NO_DOTENV=1` skips both.
  */
 import { join, resolve } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
@@ -14,7 +14,7 @@ const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /**
  * Deployment posture the agent-writable Hermes home `.env` may not set: otherwise a contained user could disable
- * isolation or swap the auth configuration on the next start (#4589).
+ * isolation, swap the auth configuration, or choose the code that runs on the next start (#4589).
  */
 const PROTECTED_ENV_KEYS: ReadonlySet<string> = new Set([
   'HERMES_WEBUI_ISOLATED_PROFILE',
@@ -49,7 +49,32 @@ const PROTECTED_ENV_KEYS: ReadonlySet<string> = new Set([
   'HERMES_WEBUI_TRUST_FORWARDED_HOST',
   'HERMES_WEBUI_TRUST_FORWARDED_PROTO',
   'HERMES_WEBUI_TRUSTED_GROUPS_PIPE_SEPARATOR',
+  // The code the server, sidecar, terminal, git, and browser run: launch selectors, extension and CSP sources, and the
+  // interpreter/loader hooks (`LD_*`, `DYLD_*`, and `GIT_CONFIG_*` match by prefix below).
+  'HERMES_WEBUI_SIDECAR_COMMAND',
+  'HERMES_WEBUI_PYTHON',
+  'HERMES_WEBUI_AGENT_DIR',
+  'HERMES_WEBUI_SERVER_CWD',
+  'HERMES_WEBUI_EXTENSION_DIR',
+  'HERMES_WEBUI_EXTENSION_MANIFEST',
+  'HERMES_WEBUI_EXTENSION_SCRIPT_URLS',
+  'HERMES_WEBUI_EXTENSION_STYLESHEET_URLS',
+  'HERMES_WEBUI_CSP_CONNECT_EXTRA',
+  'HERMES_WEBUI_CSP_FRAME_EXTRA',
+  'NODE_OPTIONS',
+  'NODE_PATH',
+  'PYTHONPATH',
+  'PYTHONHOME',
+  'PYTHONSTARTUP',
+  'BASH_ENV',
+  'GIT_SSH_COMMAND',
+  'GIT_SSH',
+  'GIT_EXEC_PATH',
+  'GIT_ASKPASS',
 ])
+// ponytail: denylist of known hooks; switch the home .env to an allowlist if new launch/loader variables keep appearing.
+const PROTECTED_ENV_PREFIXES = ['LD_', 'DYLD_', 'GIT_CONFIG_']
+const isProtectedEnvKey = (key: string): boolean => PROTECTED_ENV_KEYS.has(key) || PROTECTED_ENV_PREFIXES.some((p) => key.startsWith(p))
 
 function unescapeDouble(raw: string): string {
   let out = ''
@@ -91,7 +116,7 @@ export interface DotenvOptions {
   env: Record<string, string | undefined>
   /** The checkout `.env` (a git checkout of `web/`); absent for npm installs. */
   repoEnvFile?: string | null
-  /** `$HERMES_HOME/.env`, applied only for keys the environment lacks and never for `PROTECTED_ENV_KEYS`. */
+  /** `$HERMES_HOME/.env`, applied only for keys the environment lacks and never for protected keys. */
   hermesEnvFile?: string | null
   log?: (line: string) => void
 }
@@ -111,7 +136,7 @@ export function loadLauncherDotenv(opts: DotenvOptions): string[] {
   const hermes = read(opts.hermesEnvFile)
   if (hermes) {
     for (const [k, v] of Object.entries(hermes)) {
-      if (PROTECTED_ENV_KEYS.has(k)) { opts.log?.(`[bootstrap] Warning: ignoring protected key ${k} in ${String(opts.hermesEnvFile)}; set it in the deployment environment instead`); continue }
+      if (isProtectedEnvKey(k)) { opts.log?.(`[bootstrap] Warning: ignoring protected key ${k} in ${String(opts.hermesEnvFile)}; set it in the deployment environment instead`); continue }
       if (env[k] !== undefined) continue
       env[k] = v
       applied.push(k)
