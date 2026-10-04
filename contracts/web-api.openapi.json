@@ -3227,6 +3227,16 @@
                                   "lines"
                                 ]
                               },
+                              "_marker_kind": {
+                                "enum": [
+                                  "context_compaction",
+                                  "preserved_task_list"
+                                ],
+                                "type": "string"
+                              },
+                              "_marker_body": {
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -4948,6 +4958,16 @@
                                   "lines"
                                 ]
                               },
+                              "_marker_kind": {
+                                "enum": [
+                                  "context_compaction",
+                                  "preserved_task_list"
+                                ],
+                                "type": "string"
+                              },
+                              "_marker_body": {
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -6414,6 +6434,16 @@
                                   "summary",
                                   "lines"
                                 ]
+                              },
+                              "_marker_kind": {
+                                "enum": [
+                                  "context_compaction",
+                                  "preserved_task_list"
+                                ],
+                                "type": "string"
+                              },
+                              "_marker_body": {
+                                "type": "string"
                               },
                               "_background_reply": {
                                 "type": "boolean"
@@ -8975,6 +9005,16 @@
                                   "lines"
                                 ]
                               },
+                              "_marker_kind": {
+                                "enum": [
+                                  "context_compaction",
+                                  "preserved_task_list"
+                                ],
+                                "type": "string"
+                              },
+                              "_marker_body": {
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -11404,6 +11444,16 @@
                                   "lines"
                                 ]
                               },
+                              "_marker_kind": {
+                                "enum": [
+                                  "context_compaction",
+                                  "preserved_task_list"
+                                ],
+                                "type": "string"
+                              },
+                              "_marker_body": {
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -13760,6 +13810,16 @@
                                   "lines"
                                 ]
                               },
+                              "_marker_kind": {
+                                "enum": [
+                                  "context_compaction",
+                                  "preserved_task_list"
+                                ],
+                                "type": "string"
+                              },
+                              "_marker_body": {
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -15314,6 +15374,16 @@
                                   "lines"
                                 ]
                               },
+                              "_marker_kind": {
+                                "enum": [
+                                  "context_compaction",
+                                  "preserved_task_list"
+                                ],
+                                "type": "string"
+                              },
+                              "_marker_body": {
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -16854,6 +16924,16 @@
                                   "summary",
                                   "lines"
                                 ]
+                              },
+                              "_marker_kind": {
+                                "enum": [
+                                  "context_compaction",
+                                  "preserved_task_list"
+                                ],
+                                "type": "string"
+                              },
+                              "_marker_body": {
+                                "type": "string"
                               },
                               "_background_reply": {
                                 "type": "boolean"
@@ -25097,6 +25177,16 @@
                                   "lines"
                                 ]
                               },
+                              "_marker_kind": {
+                                "enum": [
+                                  "context_compaction",
+                                  "preserved_task_list"
+                                ],
+                                "type": "string"
+                              },
+                              "_marker_body": {
+                                "type": "string"
+                              },
                               "_background_reply": {
                                 "type": "boolean"
                               },
@@ -26629,6 +26719,16 @@
                                       "summary",
                                       "lines"
                                     ]
+                                  },
+                                  "_marker_kind": {
+                                    "enum": [
+                                      "context_compaction",
+                                      "preserved_task_list"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "_marker_body": {
+                                    "type": "string"
                                   },
                                   "_background_reply": {
                                     "type": "boolean"

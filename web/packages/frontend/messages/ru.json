@@ -1981,6 +1981,8 @@
 	"background_line_command_failed": "Фоновая команда {command} завершилась с ошибкой",
 	"background_line_command_failed_exit": "Фоновая команда {command} завершилась с ошибкой (код {code})",
 	"background_update_details": "Показать полный фоновый результат",
+	"marker_context_compaction": "Уплотнение контекста",
+	"marker_preserved_task_list": "Сохранённый список задач",
 	"live_background": "Обрабатывает фоновые результаты",
 	"steer_send_now": "Отправить сейчас",
 	"steer_edit": "Изменить подсказку",

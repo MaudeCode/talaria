@@ -37,11 +37,11 @@ struct ChatTranscriptMessageRow: View {
     @State private var linkRegions = ChatMessageLinkRegionStore()
 
     var body: some View {
-        // Compaction marker messages render as collapsible cards (matching the
-        // web UI), never as user bubbles — and without bubble actions, which
-        // don't apply to system-emitted markers.
-        if let markerKind = ChatMarkerMessageClassifier.classify(message) {
-            MarkerMessageCardView(kind: markerKind, content: message.content)
+        // Rows the server marked as compaction markers render as collapsible
+        // cards (as on Web), never as user bubbles — and without bubble actions,
+        // which don't apply to system-emitted markers.
+        if let markerKind = message.markerKind {
+            MarkerMessageCardView(kind: markerKind, content: message.markerBody ?? message.content)
         } else if let actionContext {
             // The actions hang off the transcript's long press rather than a
             // bubble `contextMenu`: a press over a link opens the link's own

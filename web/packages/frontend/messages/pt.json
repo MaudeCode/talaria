@@ -1695,6 +1695,8 @@
 	"background_line_command_failed": "Comando em segundo plano {command} falhou",
 	"background_line_command_failed_exit": "Comando em segundo plano {command} falhou (saída {code})",
 	"background_update_details": "Mostrar o resultado completo em segundo plano",
+	"marker_context_compaction": "Compactação de contexto",
+	"marker_preserved_task_list": "Lista de tarefas preservada",
 	"live_background": "Processando resultados em segundo plano",
 	"steer_send_now": "Enviar agora",
 	"steer_edit": "Editar orientação",

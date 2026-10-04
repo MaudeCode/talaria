@@ -55,6 +55,17 @@ describe('assistant turn projection', () => {
     expect(grouped[1]!.assistantRows?.map((row) => row.message.id)).toEqual(['b', 'c'])
   })
 
+  it('shows a marker card only where the server stamped one (TAL-305)', async () => {
+    const { groupAssistantTurns } = await import('./turnActivity')
+    const rows = groupAssistantTurns(projectMessages(SessionSchema.parse({ ...persisted, messages: [
+      { role: 'user', id: 1, content: '[CONTEXT COMPACTION] summary', _turn_id: 'legacy:start', _marker_kind: 'context_compaction' },
+      { role: 'user', id: 2, content: '[Your active task list was preserved across context compression]', _turn_id: 'legacy:start', _marker_kind: 'preserved_task_list', _marker_body: '' },
+      // The client reads the stamp, never the text: an unstamped row stays the message it is.
+      { role: 'user', id: 3, content: '[CONTEXT COMPACTION] typed by hand', _turn_id: 'legacy:2' },
+    ] }).messages!))
+    expect(rows.map((row) => [row.message.id, row.message._marker_kind ?? null])).toEqual([[1, 'context_compaction'], [2, 'preserved_task_list'], [3, null]])
+  })
+
   it('uses recovered scene order and stable tool ids without duplicating its final answer', async () => {
     const { groupAssistantTurns, persistedActivity } = await import('./turnActivity')
     const rows = groupAssistantTurns(projectMessages([{ role: 'assistant', id: 4, content: 'Answer', _anchor_stream_id: 'run', _anchor_activity_scene: {

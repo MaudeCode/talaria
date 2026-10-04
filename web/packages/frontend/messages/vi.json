@@ -1819,6 +1819,8 @@
 	"background_line_command_failed": "Lệnh nền {command} thất bại",
 	"background_line_command_failed_exit": "Lệnh nền {command} thất bại (mã thoát {code})",
 	"background_update_details": "Hiện toàn bộ kết quả nền",
+	"marker_context_compaction": "Nén ngữ cảnh",
+	"marker_preserved_task_list": "Danh sách nhiệm vụ đã giữ lại",
 	"live_background": "Đang xử lý kết quả nền",
 	"steer_send_now": "Gửi ngay",
 	"steer_edit": "Sửa gợi ý điều hướng",

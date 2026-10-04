@@ -1,9 +1,9 @@
 import SwiftUI
 import TalariaKit
 
-/// Collapsible card for context-compaction marker messages, replacing the user
-/// bubble they would otherwise render as. Mirrors the web UI's collapsed cards
-/// and follows the `ReasoningBlockView` disclosure pattern.
+/// Collapsible card for the rows the server marks as compaction markers, in place
+/// of a message bubble. Mirrors Web's marker card and follows the
+/// `ReasoningBlockView` disclosure pattern.
 struct MarkerMessageCardView: View {
     let kind: ChatMarkerMessageKind
     let content: String?
@@ -14,7 +14,7 @@ struct MarkerMessageCardView: View {
     @State private var isExpanded = false
 
     var body: some View {
-        let cardBody = ChatMarkerMessageClassifier.cardBody(for: kind, content: content)
+        let cardBody = (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let summary = summary(for: cardBody)
 
         VStack(alignment: .leading, spacing: isExpanded ? 8 : 0) {

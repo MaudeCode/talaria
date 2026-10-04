@@ -929,7 +929,8 @@ extension ChatViewModel {
                 messageOffset: messageOffset
             )
 
-            if message.role == "assistant" {
+            // A compaction marker is a card of its own, never part of an assistant turn (TAL-305).
+            if message.role == "assistant", message.markerKind == nil {
                 // The server stamps each row with its turn; a new turn id starts a new assistant turn.
                 if let previous = assistantSegments.last, previous.segment.message.turnId != message.turnId {
                     appendAssistantTurn()

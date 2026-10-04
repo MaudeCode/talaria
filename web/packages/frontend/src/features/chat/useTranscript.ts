@@ -29,6 +29,8 @@ function isRenderable(msg: Message): boolean {
   if (!msg.role || msg.role === 'tool' || msg._steer) return false
   // TAL-460: a background reply that is only a silence marker shows nothing; its completion lines stay.
   if (msg._background_silent) return false
+  // TAL-305: a server-marked compaction marker always shows as its card, even without a body.
+  if (msg._marker_kind) return true
   const source = (msg as { _source?: string })._source
   if (source === 'process_wakeup') return !!(messageText(msg.content) || msg.attachments?.length)
   if ((msg as { _statusCard?: unknown })._statusCard) return true

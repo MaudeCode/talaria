@@ -1886,6 +1886,8 @@
 	"background_line_command_failed": "Arka plan komutu {command} başarısız oldu",
 	"background_line_command_failed_exit": "Arka plan komutu {command} başarısız oldu (çıkış {code})",
 	"background_update_details": "Arka plan sonucunun tamamını göster",
+	"marker_context_compaction": "Bağlam sıkıştırma",
+	"marker_preserved_task_list": "Korunmuş görev listesi",
 	"live_background": "Arka plan sonuçları işleniyor",
 	"steer_send_now": "Şimdi gönder",
 	"steer_edit": "Yönlendirmeyi düzenle",

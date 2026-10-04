@@ -1921,6 +1921,8 @@
 	"background_line_command_failed": "Příkaz na pozadí {command} selhal",
 	"background_line_command_failed_exit": "Příkaz na pozadí {command} selhal (kód {code})",
 	"background_update_details": "Zobrazit celý výsledek na pozadí",
+	"marker_context_compaction": "Komprimace kontextu",
+	"marker_preserved_task_list": "Zachovaný seznam úkolů",
 	"live_background": "Zpracovává výsledky na pozadí",
 	"steer_send_now": "Odeslat hned",
 	"steer_edit": "Upravit pokyn",

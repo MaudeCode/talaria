@@ -27,6 +27,8 @@ public final class CachedMessage {
     var displayExcerpt: String?
     var backgroundUpdateData: Data?
     var backgroundSilent: Bool?
+    var markerKind: String?
+    var markerBody: String?
     var cachedAt: Date
     var expiresAt: Date
 
@@ -90,6 +92,8 @@ public final class CachedMessage {
         displayExcerpt = message.displayExcerpt
         backgroundUpdateData = message.backgroundUpdate.flatMap { try? JSONEncoder().encode($0) }
         backgroundSilent = message.backgroundSilent ? true : nil
+        markerKind = message.markerKind?.wireValue
+        markerBody = message.markerBody
         if let attachments = message.attachments, !attachments.isEmpty {
             attachmentsData = try? JSONEncoder().encode(attachments)
         } else {

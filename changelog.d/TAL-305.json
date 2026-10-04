@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Context compaction summaries and preserved task lists now show as collapsible cards in the web chat instead of messages you seem to have sent.",
+      "highlight": false,
+      "components": ["web"]
+    },
+    {
+      "category": "Fixed",
+      "summary": "A reply that starts with the words \"Context compaction\" now shows as a normal reply instead of a compaction card.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

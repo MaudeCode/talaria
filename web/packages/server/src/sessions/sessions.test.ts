@@ -864,6 +864,54 @@ describe('assistant display normalization on every read (TAL-302)', () => {
   })
 })
 
+describe('session detail stamps compaction markers (TAL-305)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('marks state.db compaction and task-list rows in full detail and every window, without rewriting the file', async () => {
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = [{ role: 'user', content: 'start', timestamp: 1000 }, { role: 'assistant', content: 'Started.', timestamp: 1001 }]
+    s.deps.sessionStore.save(session)
+    s.deps.sessionStore.sessions.delete(sid)
+    const db = new DatabaseSync(join(s.state, 'state.db'))
+    db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL); CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, timestamp REAL)')
+    db.prepare('INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)').run(sid, 'cli', 1000)
+    const rows: [string, string, number][] = [
+      ['user', 'start', 1000], ['assistant', 'Started.', 1001],
+      ['user', '[CONTEXT COMPACTION] Earlier turns were summarised.', 1002],
+      ['user', '[Your active task list was preserved across context compression]\n- [ ] ship it', 1003],
+      ['user', 'What is context compaction?', 1004],
+      ['assistant', 'Context compaction is how the Agent shortens history.', 1005],
+    ]
+    for (const [role, content, ts] of rows) db.prepare('INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)').run(sid, role, content, ts)
+    db.close()
+    const path = join(s.state, 'sessions', `${sid}.json`)
+    const before = readFileSync(path)
+    for (const query of ['', '&msg_limit=120', '&msg_limit=3', '&msg_limit=2&msg_before=4']) {
+      const messages = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1${query}`))).session as Json).messages as Json[]
+      const byTs = new Map(messages.map((m) => [m.timestamp, m]))
+      if (byTs.has(1002)) expect(byTs.get(1002)?._marker_kind, query).toBe('context_compaction')
+      if (byTs.has(1003)) expect([byTs.get(1003)?._marker_kind, byTs.get(1003)?._marker_body], query).toEqual(['preserved_task_list', '- [ ] ship it'])
+      for (const ts of [1000, 1001, 1004, 1005]) if (byTs.has(ts)) expect(byTs.get(ts), `${query} ${String(ts)}`).not.toHaveProperty('_marker_kind')
+      expect(messages.some((m) => m._marker_kind), query).toBe(true)
+    }
+    expect(readFileSync(path).equals(before)).toBe(true)
+  })
+
+  it('serves the shared marker example exactly as the contract fixture records it', async () => {
+    const fixture = (JSON.parse(readFileSync(join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8')) as Json).marker_session as Json
+    const sid = String((await newSession(s)).session_id)
+    const session = s.deps.sessionStore.get(sid)
+    session.messages = (fixture.messages as Json[]).map(({ role, content, timestamp, message_id }) => ({ role, content, timestamp, message_id }))
+    s.deps.sessionStore.save(session)
+    const served = ((await json(await s.get(`/api/session?session_id=${sid}&messages=1&msg_limit=50`))).session as Json).messages
+    if (process.env.RECORD_TAL305) { const path = join(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'); const all = JSON.parse(readFileSync(path, 'utf8')) as Json; (all.marker_session as Json).messages = served; writeFileSync(path, `${JSON.stringify(all, null, 2)}\n`) }
+    expect(served).toEqual(fixture.messages)
+  })
+})
+
 describe('session detail collapses very long message bodies (TAL-456)', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

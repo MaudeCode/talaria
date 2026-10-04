@@ -2244,6 +2244,8 @@
 	"background_line_command_failed": "Background command {command} failed",
 	"background_line_command_failed_exit": "Background command {command} failed (exit {code})",
 	"background_update_details": "Show the full background result",
+	"marker_context_compaction": "Context compaction",
+	"marker_preserved_task_list": "Preserved task list",
 	"live_background": "Working on background results",
 	"steer_send_now": "Send now",
 	"steer_edit": "Edit steering message",

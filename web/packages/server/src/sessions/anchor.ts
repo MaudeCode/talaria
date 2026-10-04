@@ -6,7 +6,7 @@
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { agentSteerText, isContextCompressionMarker, isReasoningBlock, messageText, normalizeAssistantDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml } from './merge.js'
+import { agentSteerText, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { toolArgs } from './tool-display.js'
@@ -573,9 +573,9 @@ export function readAnchorSceneRows(session: Session, query: { messageRef: strin
   return { scene_ref: sceneRef, rows: rows.slice(start, before), start, end: before, total, complete: start === 0 }
 }
 
-/** A turn opens at a user message the reader sees (text or attachments); hidden prompts and compaction markers do not. */
+/** A turn opens at a user message the reader sees (text or attachments); hidden prompts and marker rows do not. */
 function opensTurn(m: Record<string, unknown>): boolean {
-  if (m.role !== 'user' || isContextCompressionMarker(m) || isDict(m._steer)) return false
+  if (m.role !== 'user' || markerKind(m) || isDict(m._steer)) return false
   return messageText(m.content).trim() !== '' || (Array.isArray(m.attachments) && m.attachments.length > 0)
 }
 

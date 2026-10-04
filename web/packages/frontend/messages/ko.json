@@ -1886,6 +1886,8 @@
 	"background_line_command_failed": "백그라운드 명령 {command} 실패",
 	"background_line_command_failed_exit": "백그라운드 명령 {command} 실패 (종료 코드 {code})",
 	"background_update_details": "백그라운드 결과 전체 보기",
+	"marker_context_compaction": "컨텍스트 압축",
+	"marker_preserved_task_list": "보존된 작업 목록",
 	"live_background": "백그라운드 결과 처리 중",
 	"steer_send_now": "지금 보내기",
 	"steer_edit": "조정 메시지 편집",

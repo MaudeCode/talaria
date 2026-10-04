@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { AlertTriangle, ArrowUp, CheckCircle2, Copy, GitBranch, Info, Pencil, RotateCcw, Volume2 } from 'lucide-react'
+import { AlertTriangle, ArrowUp, CheckCircle2, Copy, GitBranch, Info, ListChecks, Pencil, RotateCcw, Shrink, Volume2 } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import type { BackgroundLine, Message } from '../../contracts'
 import { Markdown } from './render/Markdown'
@@ -114,6 +114,33 @@ export const BackgroundUpdateRow = memo(function BackgroundUpdateRow({ row }: { 
             {row.message.timestamp ? <span className="msg-time">{formatDate(row.message.timestamp)}</span> : null}
             <IconButton label={m.copy()} className="h-6 w-6" onClick={() => { void navigator.clipboard.writeText(text).then(() => showToast(m.copied())) }}><Copy size={12} aria-hidden="true" /></IconButton>
           </div>
+        </div>
+      </details>
+    </div>
+  )
+})
+
+/**
+ * TAL-305: a marker the server stamped `_marker_kind` (a compaction summary or a preserved task list), shown as a collapsed
+ * card titled by its kind, never as anyone's message. The body opens from the title: `_marker_body` when sent, else `content`.
+ */
+export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage }) {
+  const { message } = row
+  if (!message._marker_kind) return null
+  const tasks = message._marker_kind === 'preserved_task_list'
+  const Icon = tasks ? ListChecks : Shrink
+  const text = message._marker_body ?? messageText(message.content)
+  return (
+    <div className="msg-row" data-role="marker" data-msg-idx={row.index} data-message-key={row.key}>
+      <details className="marker-card rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-muted">
+        <summary className="flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+          <Icon size={14} aria-hidden="true" className="shrink-0" />
+          <span className="font-medium text-text">{tasks ? m.marker_preserved_task_list() : m.marker_context_compaction()}</span>
+        </summary>
+        <div className="mt-2">
+          <CollapsedBody excerpt={message._marker_body === undefined && message._display_truncated ? message._display_excerpt : undefined}>
+            {(excerpt) => <div className="msg-body whitespace-pre-wrap">{excerpt ?? text}</div>}
+          </CollapsedBody>
         </div>
       </details>
     </div>

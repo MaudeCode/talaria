@@ -1928,6 +1928,8 @@
 	"background_line_command_failed": "Polecenie w tle {command} nie powiodło się",
 	"background_line_command_failed_exit": "Polecenie w tle {command} nie powiodło się (kod {code})",
 	"background_update_details": "Pokaż pełny wynik w tle",
+	"marker_context_compaction": "Kompaktowanie kontekstu",
+	"marker_preserved_task_list": "Zachowana lista zadań",
 	"live_background": "Przetwarza wyniki w tle",
 	"steer_send_now": "Wyślij teraz",
 	"steer_edit": "Edytuj wskazówkę",
