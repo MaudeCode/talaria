@@ -1434,14 +1434,128 @@ function stampIntentionalShrink(session: Session, oldCount: number, newCount: nu
   return true
 }
 
-/** Align model context with the display prefix (Python `truncate_context_for_display_keep`, simplified to the row-count contract). */
+/** Python truthiness for the JSON values a transcript row carries. */
+function pyTruthy(v: unknown): boolean {
+  if (Array.isArray(v)) return v.length > 0
+  if (isDict(v)) return Object.keys(v).length > 0
+  return Boolean(v)
+}
+
+/** JSON with sorted object keys (Python `json.dumps(..., sort_keys=True)`). */
+function sortedJson(v: unknown): string {
+  return JSON.stringify(v, (_key, value: unknown) => (isDict(value) ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, value[k]])) : value)) ?? ''
+}
+
+/** Equality key for a row `id`/`timestamp`; `null` when the value is absent. Numbers compare by value (`2 == 2.0`). */
+function identityKey(v: unknown): string | null {
+  if (v === null || v === undefined) return null
+  return typeof v === 'string' ? `s${v}` : typeof v === 'number' ? `n${String(v)}` : `j${sortedJson(v)}`
+}
+
+function rowSignature(row: unknown): string | null {
+  if (!isDict(row)) return null
+  const field = (v: unknown): string => (!pyTruthy(v) ? '' : typeof v === 'string' ? v : sortedJson(v))
+  return JSON.stringify([field(row.role), field(row.content), field(row.tool_call_id), field(row.tool_use_id), field(row.tool_name || row.name), field(row.tool_calls)])
+}
+
+/** First index in sorted `positions` whose value is `>= start`. */
+function lowerBound(positions: number[], start: number): number {
+  let lo = 0
+  let hi = positions.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (positions[mid]! < start) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+/**
+ * Map each display row to the context row it represents, scanning forward. An `id` match wins; otherwise the role+content
+ * signature must match, and a shared `timestamp` makes it exact. A signature match where an identity is missing is weak:
+ * one weak candidate counts as a match, a second one before any exact match leaves the row ambiguous.
+ */
+function alignDisplayToContext(ctx: unknown[], full: unknown[]): { matches: (number | null)[]; ambiguous: (number | null)[] } {
+  const index = () => new Map<string, number[]>()
+  const push = (map: Map<string, number[]>, key: string, idx: number): void => {
+    const list = map.get(key)
+    if (list) list.push(idx)
+    else map.set(key, [idx])
+  }
+  const first = (list: number[] | undefined, start: number): number | undefined => list?.[lowerBound(list, start)]
+  const byId = index(), bySigTs = index(), bySigTsNoId = index()
+  const weakAny = index(), weakNoId = index(), weakNoTs = index(), weakNoIdNoTs = index()
+  ctx.forEach((row, idx) => {
+    const sig = rowSignature(row)
+    if (sig === null) return
+    const id = identityKey((row as Message).id)
+    const ts = identityKey((row as Message).timestamp)
+    push(weakAny, sig, idx)
+    if (id === null) push(weakNoId, sig, idx)
+    if (ts === null) push(weakNoTs, sig, idx)
+    if (id === null && ts === null) push(weakNoIdNoTs, sig, idx)
+    if (id !== null) push(byId, id, idx)
+    if (ts !== null) {
+      push(bySigTs, `${sig}\0${ts}`, idx)
+      if (id === null) push(bySigTsNoId, `${sig}\0${ts}`, idx)
+    }
+  })
+
+  const matches: (number | null)[] = []
+  const ambiguous: (number | null)[] = []
+  let next = 0
+  for (const message of full) {
+    let match: number | null = null
+    let ambiguousAt: number | null = null
+    const sig = rowSignature(message)
+    if (sig !== null) {
+      const id = identityKey((message as Message).id)
+      const ts = identityKey((message as Message).timestamp)
+      const exact = [id !== null ? first(byId.get(id), next) : undefined, ts !== null ? first((id !== null ? bySigTsNoId : bySigTs).get(`${sig}\0${ts}`), next) : undefined]
+        .filter((idx): idx is number => idx !== undefined)
+      const exactIdx = exact.length ? Math.min(...exact) : null
+      const weakList = (id !== null ? (ts !== null ? weakNoIdNoTs : weakNoId) : ts !== null ? weakNoTs : weakAny).get(sig) ?? []
+      const w = lowerBound(weakList, next)
+      const [firstWeak, secondWeak] = [weakList[w], weakList[w + 1]]
+      if (secondWeak !== undefined && (exactIdx === null || secondWeak < exactIdx)) ambiguousAt = firstWeak!
+      else match = exactIdx ?? firstWeak ?? null
+    }
+    matches.push(match)
+    ambiguous.push(ambiguousAt)
+    if (match !== null) next = match + 1
+  }
+  return { matches, ambiguous }
+}
+
+/** Align model context with the display prefix `full[:keep]` (Python `truncate_context_for_display_keep`, #5096/#5563). */
 export function truncateContextForDisplayKeep(context: Message[] | null | undefined, full: unknown[], keep: number): Message[] {
   if (keep <= 0) return []
-  const rows = context ?? []
-  if (!rows.length) return []
-  if (keep >= full.length) return [...rows]
-  // ponytail: context rows map 1:1 onto display rows for WebUI-authored transcripts; fuzzy alignment stays in Python until compression lands.
-  return rows.slice(0, Math.min(rows.length, keep))
+  const ctx = context ?? []
+  if (!ctx.length || !full.length) return []
+  if (keep < full.length) {
+    const { matches, ambiguous } = alignDisplayToContext(ctx, full)
+    const lastKept = matches[keep - 1]!
+    const firstUnkept = matches[keep]!
+    const boundary = full[keep - 1]
+    const keptUser = isDict(boundary) && boundary.role === 'user'
+    // Cut at the first unkept display row; a kept user turn ends at its own row so unkept tool rows after it drop.
+    if (firstUnkept !== null) return lastKept !== null && keptUser ? ctx.slice(0, lastKept + 1) : ctx.slice(0, firstUnkept)
+    if (lastKept !== null) {
+      const ambiguousUnkept = ambiguous[keep]!
+      return ambiguousUnkept !== null && isDict(boundary) && !keptUser ? ctx.slice(0, ambiguousUnkept) : ctx.slice(0, lastKept + 1)
+    }
+    // Both boundary rows unresolved in a shorter (compressed) context: cut past the last kept display row that resolved,
+    // accepting a weak match. Under-keeping beats slicing at the raw display index.
+    if (ctx.length < full.length) {
+      for (let i = keep - 1; i >= 0; i -= 1) {
+        const resolved = matches[i] ?? ambiguous[i]
+        if (resolved !== null && resolved !== undefined) return ctx.slice(0, resolved + 1)
+      }
+    }
+  }
+  // Unalignable (or nothing cut): keep the compaction prefix a longer context carries, then `keep` rows (#5096).
+  const prefixLen = Math.max(0, ctx.length - full.length)
+  return ctx.slice(0, prefixLen + keep)
 }
 
 export function truncateSessionAtKeep(session: Session, keep: number): [number, number] {
