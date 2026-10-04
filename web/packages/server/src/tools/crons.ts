@@ -18,6 +18,8 @@ export interface CronDeps {
   log: (line: string) => void
   /** Python `_publish_session_list_changed("cron_complete", profile=...)` once a manual run finishes. */
   publishSessionsChanged?: (reason: string, profile: string | null) => void
+  /** TAL-301: the catalog entry id a job's stored `(model, provider)` selects in a profile home's picker catalog. */
+  modelOptionFor?: (home: string, model: string | null, provider: string | null) => Promise<string | null>
   /** Python `_RUNNING_CRON_JOBS`: job id → start time, read by the session list's `cron_running` stamp. */
   runningJobs?: Map<string, number>
 }
@@ -211,8 +213,11 @@ export class CronService {
     return rows
   }
 
-  private view(row: StoredJob): Dict {
-    return { ...jobForApi(row.job, this.deps.runningJobs?.has(str(row.job.id)) ?? false), profile: str(row.job.profile).trim() || row.profile, owner_profile: row.profile, read_only: !row.managed }
+  /** `pickerHome` is the profile whose `/api/models` catalog the requesting client shows. */
+  private async view(row: StoredJob, pickerHome: string): Promise<Dict> {
+    const payload: Dict = { ...jobForApi(row.job, this.deps.runningJobs?.has(str(row.job.id)) ?? false), profile: str(row.job.profile).trim() || row.profile, owner_profile: row.profile, read_only: !row.managed }
+    payload.model_option_id = (await this.deps.modelOptionFor?.(pickerHome, str(payload.model) || null, str(payload.provider) || null)) ?? null
+    return payload
   }
 
   private requireExecutionStore(row: StoredJob): void {
@@ -273,7 +278,8 @@ export class CronService {
   async list(active: string, allProfiles: boolean): Promise<Dict> {
     const activeJobs: Dict[] = []
     const otherJobs: Dict[] = []
-    try { for (const row of await this.storedJobs(active)) (row.managed ? activeJobs : otherJobs).push(this.view(row)) }
+    const pickerHome = this.deps.profileHome(active)
+    try { for (const row of await this.storedJobs(active)) (row.managed ? activeJobs : otherJobs).push(await this.view(row, pickerHome)) }
     catch (error) { if (error instanceof SidecarError && error.condition === 'cron_unavailable') return { jobs: [], cron_unavailable: true }; throw error }
     const all = allProfiles && !this.deps.isolatedProfileMode()
     return { jobs: all ? [...activeJobs, ...otherJobs] : activeJobs, all_profiles: all, active_profile: active, other_profile_count: all ? 0 : otherJobs.length }
@@ -339,7 +345,7 @@ export class CronService {
     await this.validateContext(executionHome, job)
     try {
       const result = await this.sidecar().call('cron.create', { profile_home: executionHome, job, execution_home: profile ? executionHome : null })
-      return { ok: true, job: this.view({ home: executionHome, profile: profile ?? active, job: result.job, managed: true }) }
+      return { ok: true, job: await this.view({ home: executionHome, profile: profile ?? active, job: result.job, managed: true }, home) }
     } catch (error) {
       throw new HttpFailure(400, str((error as Error).message))
     }
@@ -350,6 +356,7 @@ export class CronService {
     if (!jobId) throw new HttpFailure(400, 'Missing required field(s): job_id')
     const store = await this.resolveStore(home, jobId)
     const storedId = str(store.job.id)
+    const pickerHome = home
     home = store.home
     const updates: Dict = {}
     for (const [k, v] of Object.entries(body)) {
@@ -375,7 +382,7 @@ export class CronService {
     await this.validateContext(home, updates)
     try {
       const result = await this.sidecar().call('cron.update', { profile_home: home, job_id: storedId, updates })
-      return { ok: true, job: this.view({ ...store, job: result.job }) }
+      return { ok: true, job: await this.view({ ...store, job: result.job }, pickerHome) }
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'not_found') throw new HttpFailure(404, 'Job not found')
       throw new HttpFailure(400, str((error as Error).message))
@@ -389,7 +396,7 @@ export class CronService {
     try {
       const result = await this.sidecar().call(method, { profile_home: store.home, job_id: str(store.job.id), ...extra })
       // Python returned the raw `pause_job`/`resume_job` record and `{ok, job_id}` for delete.
-      return 'job' in result ? { ok: true, job: this.view({ ...store, job: result.job }) } : { ok: true, job_id: jobId }
+      return 'job' in result ? { ok: true, job: await this.view({ ...store, job: result.job }, home) } : { ok: true, job_id: jobId }
     } catch (error) {
       if (error instanceof SidecarError && error.condition === 'not_found') throw new HttpFailure(404, 'Job not found')
       // Python had no handler for `resume_job`'s ValueError (expired one-shot): it surfaced as a 500.

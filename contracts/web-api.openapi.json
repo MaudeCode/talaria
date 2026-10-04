@@ -2574,6 +2574,17 @@
                             }
                           ]
                         },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -4305,6 +4316,17 @@
                             }
                           ]
                         },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -5781,6 +5803,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
                         },
                         "messages": {
                           "type": "array",
@@ -8352,6 +8385,17 @@
                             }
                           ]
                         },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -10791,6 +10835,17 @@
                             }
                           ]
                         },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -13157,6 +13212,17 @@
                             }
                           ]
                         },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -14721,6 +14787,17 @@
                             }
                           ]
                         },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -16271,6 +16348,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
                         },
                         "messages": {
                           "type": "array",
@@ -24524,6 +24612,17 @@
                             }
                           ]
                         },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
+                        },
                         "messages": {
                           "type": "array",
                           "items": {
@@ -26083,6 +26182,17 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "model_option_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "TAL-301: the catalog entry id the stored model/provider selects; null when none."
                             },
                             "messages": {
                               "type": "array",
@@ -29990,6 +30100,16 @@
                     "default_bare_id": {
                       "type": "string"
                     },
+                    "default_option_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "groups": {
                       "type": "array",
                       "items": {
@@ -30201,6 +30321,16 @@
                         },
                         "default_bare_id": {
                           "type": "string"
+                        },
+                        "default_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "groups": {
                           "type": "array",
@@ -31791,6 +31921,16 @@
                         "default_bare_id": {
                           "type": "string"
                         },
+                        "default_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "groups": {
                           "type": "array",
                           "items": {
@@ -32226,6 +32366,16 @@
                         },
                         "default_bare_id": {
                           "type": "string"
+                        },
+                        "default_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "groups": {
                           "type": "array",
@@ -38240,6 +38390,16 @@
                               }
                             ]
                           },
+                          "model_option_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "workspace": {
                             "anyOf": [
                               {
@@ -38939,6 +39099,16 @@
                             }
                           ]
                         },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "workspace": {
                           "anyOf": [
                             {
@@ -39523,6 +39693,16 @@
                             }
                           ]
                         },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "workspace": {
                           "anyOf": [
                             {
@@ -39902,6 +40082,16 @@
                           ]
                         },
                         "provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model_option_id": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -40291,6 +40481,16 @@
                           ]
                         },
                         "provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model_option_id": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -40699,6 +40899,16 @@
                             }
                           ]
                         },
+                        "model_option_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "workspace": {
                           "anyOf": [
                             {
@@ -41079,6 +41289,16 @@
                           ]
                         },
                         "provider": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model_option_id": {
                           "anyOf": [
                             {
                               "type": "string"

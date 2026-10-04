@@ -41,9 +41,10 @@ describe('the picker overflow split', () => {
 /** TAL-301: every `/api/models` and `/api/providers` entry carries the server's split of its id. */
 describe('catalog entries carry their routing provider and bare id', () => {
   let s: TestServer
+  let sidecar: FakeSidecar
 
   beforeAll(async () => {
-    const sidecar = new FakeSidecar()
+    sidecar = new FakeSidecar()
     s = await bootTestServer({ sidecar })
     writeFileSync(join(s.state, 'config.yaml'), '# seed\n')
     writeEnvFile(join(s.state, '.env'), { ANTHROPIC_API_KEY: 'sk-ant-test-1234', GOOGLE_API_KEY: 'g-test-1234', GEMINI_API_KEY: 'g-test-5678' })
@@ -72,7 +73,7 @@ describe('catalog entries carry their routing provider and bare id', () => {
     expect(byId('@gemini:gemini-2.5-flash')).toMatchObject({ provider_id: 'gemini', bare_id: 'gemini-2.5-flash' })
     expect(byId('@google:gemini-2.5-flash')).toMatchObject({ provider_id: 'google', bare_id: 'gemini-2.5-flash' })
     expect(byId('claude-opus-4.7')).toMatchObject({ provider_id: 'anthropic', bare_id: 'claude-opus-4.7' })
-    expect(catalog).toMatchObject({ default_model: '@custom:localhost:8080:m', default_provider_id: 'custom:localhost:8080', default_bare_id: 'm' })
+    expect(catalog).toMatchObject({ default_model: '@custom:localhost:8080:m', default_provider_id: 'custom:localhost:8080', default_bare_id: 'm', default_option_id: '@custom:localhost:8080:m' })
   })
 
   it('stamps /api/providers model lists with the card provider', async () => {
@@ -80,6 +81,36 @@ describe('catalog entries carry their routing provider and bare id', () => {
     const ollama = rows.find((r) => r.id === 'ollama')
     expect(ollama?.models).toContainEqual(expect.objectContaining({ id: 'llama3:8b', provider_id: 'ollama', bare_id: 'llama3:8b' }))
     for (const row of rows) for (const m of row.models) expect(m.provider_id).toBe(parseProviderQualifiedModel(m.id)?.[1] ?? row.id)
+  })
+
+  it('session payloads carry the catalog entry their stored pair selects', async () => {
+    const post = async (path: string, body: Json): Promise<Json> => (await (await s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })).json()) as Json
+    const sid = String(((await post('/api/session/new', {})).session as Json).session_id)
+    const cases: [Json, string | null][] = [
+      [{ model: '@ollama:llama3:8b', model_provider: 'ollama' }, '@ollama:llama3:8b'],
+      [{ model: '@custom:localhost:8080:m', model_provider: 'custom:localhost:8080' }, '@custom:localhost:8080:m'],
+      [{ model: 'gemini-2.5-flash', model_provider: 'google' }, '@google:gemini-2.5-flash'],
+      [{ model: 'gemini-2.5-flash', model_provider: 'gemini' }, '@gemini:gemini-2.5-flash'],
+      [{ model: 'not-in-catalog', model_provider: 'ollama' }, null],
+    ]
+    for (const [body, optionId] of cases) {
+      const updated = (await post('/api/session/update', { session_id: sid, ...body })).session as Json
+      expect(updated.model_option_id, JSON.stringify(body)).toBe(optionId)
+      const detail = ((await (await s.get(`/api/session?session_id=${sid}`)).json()) as Json).session as Json
+      expect(detail.model_option_id, JSON.stringify(body)).toBe(optionId)
+    }
+  })
+
+  it('cron job payloads carry the catalog entry their stored pair selects', async () => {
+    const jobs = new Map<string, Json>()
+    sidecar.respond('cron.list', () => ({ jobs: [...jobs.values()] as never[] }))
+    sidecar.respond('cron.create', (params) => { const job = { id: `c${String(jobs.size + 1)}`, name: null, profile: null, toast_notifications: true, monitor: '', continuity: false, ...(params.job as Json), context_from: [] }; jobs.set(job.id, job); return { job: job } })
+    const create = async (body: Json): Promise<Json> => ((await (await s.get('/api/crons/create', { method: 'POST', body: JSON.stringify({ schedule: 'every 1h', prompt: 'hi', ...body }), headers: { 'content-type': 'application/json' } })).json()) as Json).job as Json
+    expect(await create({ model: '@ollama:llama3:8b' })).toMatchObject({ model: 'llama3:8b', provider: 'ollama', model_option_id: '@ollama:llama3:8b' })
+    expect(await create({ model: 'gemini-2.5-flash', provider: 'google' })).toMatchObject({ model_option_id: '@google:gemini-2.5-flash' })
+    expect(await create({ model: 'gemini-2.5-flash' })).toMatchObject({ model_option_id: null })
+    const listed = ((await (await s.get('/api/crons')).json()) as Json).jobs as Json[]
+    expect(listed.map((j) => j.model_option_id)).toEqual(['@ollama:llama3:8b', '@google:gemini-2.5-flash', null])
   })
 
   it('stamps /api/models/live entries with the echoed provider', async () => {

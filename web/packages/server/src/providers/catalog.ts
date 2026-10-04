@@ -49,6 +49,15 @@ function stampModelEntries(models: ModelEntry[], providerId: string): ModelEntry
   })
 }
 
+/** TAL-301: the catalog entry a stored `(model, provider)` pair selects, so clients render the pairing instead of computing it. */
+export function catalogOptionId(catalog: ModelsCatalog, model: string | null, provider: string | null): string | null {
+  const bare = str(model).trim()
+  const pid = str(provider).trim().toLowerCase()
+  if (!bare || !pid) return null
+  for (const g of catalog.groups) for (const e of [...g.models, ...(g.extra_models ?? [])]) if (e.bare_id === bare && str(e.provider_id).toLowerCase() === pid) return e.id
+  return null
+}
+
 /** Python `_split_picker_overflow_models`: past 25 rows the picker shows 15, keeping the selected model visible. */
 export function splitPickerOverflow(models: ModelEntry[], selected: string, providerId: string): [ModelEntry[], ModelEntry[]] {
   if (models.length <= MODEL_PICKER_OVERFLOW_THRESHOLD) return [models, []]
@@ -59,7 +68,7 @@ export function splitPickerOverflow(models: ModelEntry[], selected: string, prov
   if (idx >= 0) { const displaced = visible[visible.length - 1]!; visible[visible.length - 1] = extras[idx]!; extras[idx] = displaced }
   return [visible, extras]
 }
-export interface ModelsCatalog { active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }> }
+export interface ModelsCatalog { active_provider: string | null; default_model: string; default_provider_id?: string | null; default_bare_id?: string; default_option_id?: string | null; groups: ModelGroup[]; aliases: Record<string, string>; configured_model_badges: Record<string, { role: string; label: string; provider: string }> }
 
 /**
  * TAL-388: stamp each auxiliary slot with its display value and the catalog entry whose provider/model pair equals the
@@ -222,6 +231,8 @@ export class ProviderCatalog {
   private readonly liveIds = new Map<string, { at: number; ids: string[] }>()
   private readonly liveInflight = new Map<string, Promise<string[]>>()
   private readonly providersCache = new Map<string, { at: number; key: string; payload: { providers: Dict[]; active_provider: string | null } }>()
+  /** TAL-301: the last catalog served per profile home, for the sync session payloads' `model_option_id`. */
+  private readonly lastModels = new Map<string, ModelsCatalog>()
 
   constructor(private readonly deps: CatalogDeps) {}
 
@@ -240,6 +251,19 @@ export class ProviderCatalog {
       this.liveIds.delete(key)
     }
     this.providersCache.clear()
+  }
+
+  /** TAL-301: the entry id a stored `(model, provider)` pair selects in the last catalog built for this home; a cold home starts building one. */
+  modelOptionFor(profileHome: string, model: string | null, provider: string | null): string | null {
+    const catalog = this.lastModels.get(profileHome)
+    if (!catalog) { void this.warmModelOptions(profileHome); return null }
+    return catalogOptionId(catalog, model, provider)
+  }
+
+  /** Builds the catalog `modelOptionFor` reads once per home; an unavailable catalog leaves every option id null. */
+  async warmModelOptions(profileHome: string): Promise<void> {
+    if (this.lastModels.has(profileHome)) return
+    try { await this.models(profileHome) } catch { /* fail closed: no option ids */ }
   }
 
   /**
@@ -580,10 +604,17 @@ export class ProviderCatalog {
     const defaults = { active_provider: active, default_model: defaultModel, default_provider_id: defaultProvider, default_bare_id: defaultBare }
     if (!kept.length && defaultModel) {
       const providerId = active ?? 'default'
-      return { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} }
+      return this.remember(profileHome, { ...defaults, groups: [{ provider: 'Default', provider_id: providerId, models: stampModelEntries([{ id: defaultModel, label: labelForModel(defaultModel, []) }], providerId) }], aliases: {}, configured_model_badges: {} })
     }
     const stamped = kept.map((g) => ({ ...g, models: stampModelEntries(g.models, g.provider_id), ...(g.extra_models ? { extra_models: stampModelEntries(g.extra_models, g.provider_id) } : {}) }))
-    return { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) }
+    return this.remember(profileHome, { ...defaults, groups: stamped, aliases, configured_model_badges: this.badges(kept, active, defaultModel, fallbackCfg) })
+  }
+
+  /** Stamps the default's entry id and keeps the catalog for `modelOptionFor`. */
+  private remember(profileHome: string, catalog: ModelsCatalog): ModelsCatalog {
+    catalog.default_option_id = catalogOptionId(catalog, catalog.default_bare_id ?? null, catalog.default_provider_id ?? null)
+    this.lastModels.set(profileHome, catalog)
+    return structuredClone(catalog)
   }
 
   /** Python `_configured_model_badges_from_static_catalog`: which picker rows are the main/fallback selections. */
