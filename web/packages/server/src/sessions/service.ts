@@ -151,7 +151,12 @@ export class SessionService {
       return url
     }
     const workspace = s.workspace.trim() || null
-    return (text) => projectMediaRefs(text, { workspace, localUrl })
+    // A scene's final answer usually repeats its row's text: each distinct text is parsed once.
+    const projected = new Map<string, MediaProjection | null>()
+    return (text) => {
+      if (!projected.has(text)) projected.set(text, projectMediaRefs(text, { workspace, localUrl }))
+      return projected.get(text) ?? null
+    }
   }
 
   publish(reason: string, profile?: string | null, sessionId?: string | null): void {
@@ -429,7 +434,7 @@ export class SessionService {
     if (pending) transcript = withPendingUserTurn(transcript, pending)
     if (journaled)transcript = withoutRunningTurnOutput(transcript, { ...journaled, localCount: s.messages.length })
     // Turn ids, tool outcomes and scenes are computed over the full transcript, so every window reports the same values.
-    const all: unknown[] = loadMessages ? withBodyExcerpts(withDisplayMedia(this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(transcript))), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null })), this.mediaProjector(s)), s.active_stream_id) : []
+    const all: unknown[] = loadMessages ? this.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(transcript))), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: msgLimit !== null })) : []
     let truncated: unknown[] = []
     let offset = 0
     let summaryCount: number | null = null
@@ -444,6 +449,8 @@ export class SessionService {
         truncated = all.slice(prompt, offset + truncated.length)
         offset = prompt
       }
+      // Per-row display fields (TAL-186 media, TAL-456 excerpts cut from that display text) only for the rows sent.
+      truncated = withBodyExcerpts(withDisplayMedia(truncated, this.mediaProjector(s)), s.active_stream_id)
       if (msgLimit !== null) truncated = messagesForLimitedPayload(truncated)
     } else {
       summaryCount = s.metadataMessageCount ?? s.messages.length

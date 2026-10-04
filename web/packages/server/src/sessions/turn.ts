@@ -802,9 +802,9 @@ export class TurnRunner {
     payload.assistant_name = this.deps.service().assistantName(s)
     payload.workspace_name = this.deps.service().workspaceNames()(s)
     const service = this.deps.service()
-    const scened = withBodyExcerpts(withDisplayMedia(service.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages))), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true })), service.mediaProjector(s)), s.active_stream_id)
+    const scened = service.backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages))), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true }))
     const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
-    const limited = messagesForLimitedPayload(window)
+    const limited = messagesForLimitedPayload(withBodyExcerpts(withDisplayMedia(window, service.mediaProjector(s)), s.active_stream_id))
     payload.messages = limited
     payload.message_count = s.messages.length
     payload._messages_offset = offset
