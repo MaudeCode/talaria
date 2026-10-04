@@ -7,7 +7,7 @@ test.use({ serviceWorkers: 'block' })
 
 const messages = [
   { role: 'user', id: 1, content: 'Where are the docs?' },
-  { role: 'assistant', id: 2, content: 'See [the guide](https://docs.example.com/guide/getting-started?ref=chat) for setup.' },
+  { role: 'assistant', id: 2, content: `See [the guide](https://docs.example.com/guide/getting-started?ref=chat) for setup, or [the long one](https://docs.example.com/${'a'.repeat(6000)}).` },
 ]
 
 async function openSession(page: Page) {
@@ -44,5 +44,18 @@ test('a trusted host opens directly after the server check (TAL-279)', async ({ 
     await expect(page.getByRole('dialog')).toHaveCount(0)
   } finally {
     await page.request.post('/api/settings', { data: { trusted_link_hosts: [] } })
+  }
+})
+
+test('a very long link keeps the dialog actions on screen (TAL-279)', async ({ page }) => {
+  await openSession(page)
+  await page.getByRole('button', { name: 'the long one' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Open external link?' })
+  await expect(dialog).toBeVisible()
+  const viewport = page.viewportSize()!
+  for (const name of ['Cancel', 'Open link']) {
+    const box = (await dialog.getByRole('button', { name }).boundingBox())!
+    expect(box.y).toBeGreaterThanOrEqual(0)
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height)
   }
 })
