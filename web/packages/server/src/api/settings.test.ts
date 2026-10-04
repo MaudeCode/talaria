@@ -679,6 +679,21 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect((await json(res)).completed).toBe(true)
   })
 
+  it('the auth-off local gate treats CGNAT/Tailscale peers as remote and private LANs as local', async () => {
+    s.deps.config.env.HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
+    try {
+      // Past the gate, a probe without a URL answers invalid_url and a terminal start without a session answers 400.
+      const gate = async (ip?: string): Promise<number[]> => {
+        const headers: Record<string, string> = ip ? { 'x-forwarded-for': ip } : {}
+        return [(await post(s, '/api/onboarding/probe', { provider: 'custom', base_url: 'notaurl' }, headers)).status, (await post(s, '/api/terminal/start', {}, headers)).status]
+      }
+      for (const ip of ['100.64.1.2', '100.100.100.100', '100.127.255.254', '::ffff:100.64.1.2', '8.8.8.8']) expect(await gate(ip), ip).toEqual([403, 403])
+      for (const ip of [undefined, '127.0.0.1', '::1', '192.168.1.10', '10.1.2.3', '172.16.0.1', '169.254.1.1', 'fd12::1', 'fe80::1', '::ffff:192.168.1.10']) expect(await gate(ip), String(ip)).toEqual([200, 400])
+    } finally {
+      delete s.deps.config.env.HERMES_WEBUI_TRUST_FORWARDED_FOR
+    }
+  })
+
   it('onboarding OAuth runs the device flow through the sidecar: success, expiry, denial and cancel', async () => {
     // Synthetic flows: each flow id answers its scripted statuses in order; nothing reaches a real provider or credential.
     const scripts = new Map<string, { provider: string; statuses: string[]; error?: string }>([
@@ -738,7 +753,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     // The onboarding gate still applies to every OAuth route: a remote client without the opt-in is refused.
     s.deps.config.env.HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
     try {
-      // A global address: documentation ranges such as 203.0.113.0/24 count as non-global, so local.
+      // A global address is remote.
       const remote = { 'x-forwarded-for': '8.8.8.8' }
       expect((await post(s, '/api/onboarding/oauth/start', { provider: 'openai-codex' }, remote)).status).toBe(403)
       expect((await s.get('/api/onboarding/oauth/poll?flow_id=flow-ok', { headers: remote })).status).toBe(403)

@@ -8,8 +8,7 @@ import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
 import { activeProfileName, buildProfileCookie, ensureTrustedAuthSession, sessionCanManageServer } from '../auth/gate.js'
 import { forwardedClientIp, isLoopback, rawPeerIsTrustedProxy } from '../http/origin.js'
-import { isNonGlobalAddress } from '../http/addresses.js'
-import { isIP } from 'node:net'
+import { isPrivateLan } from '../http/addresses.js'
 import { HttpFailure } from '../sessions/service.js'
 import { SidecarError } from '../sidecar/client.js'
 import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
@@ -48,12 +47,8 @@ const home = (ctx: RequestContext): string => ctx.deps.profileHome(activeProfile
 const auxiliaryState = async (ctx: RequestContext): Promise<Dict> => stampAuxiliarySelections(auxiliaryModels(await ctx.deps.agentConfig.read(home(ctx))), await ctx.deps.catalog.models(home(ctx)))
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase())
 
-/** Python `addr.is_loopback or addr.is_private` (`ipaddress` treats every non-global range as private). */
-function ipIsLoopbackOrPrivate(addr: string): boolean {
-  const ip = addr.trim()
-  if (!isIP(ip)) return false
-  return isLoopback(ip) || isNonGlobalAddress(ip)
-}
+/** Python `addr.is_loopback or addr.is_private`: CGNAT/Tailscale `100.64.0.0/10` peers are remote. */
+const ipIsLoopbackOrPrivate = (addr: string): boolean => isLoopback(addr.trim()) || isPrivateLan(addr)
 
 /** Python `_onboarding_request_is_local`: forwarded headers count only behind a trusted proxy with the opt-in. */
 export function onboardingRequestIsLocal(ctx: RequestContext): boolean {
