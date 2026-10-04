@@ -372,6 +372,19 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
     }
   })
 
+  it('keeps an Agent stash conflict\'s recovery instructions on the succeeded notification', async () => {
+    const originalApply = s.deps.updates.apply.bind(s.deps.updates)
+    const message = 'agent updated to v2.0.0. Your local modifications could not be re-applied cleanly and were set aside in the git stash.'
+    s.deps.updates.apply = () => Promise.resolve({ ok: true, target: 'agent', stash_conflict: true, message })
+    try {
+      const result = await json(await post(s, '/api/updates/apply', { target: 'agent' }))
+      const listed = await json(await s.get('/api/update-notifications'))
+      expect((listed.notifications as Json[]).find((row) => row.id === result.notification_id)).toMatchObject({ phase: 'succeeded', detail: message })
+    } finally {
+      s.deps.updates.apply = originalApply
+    }
+  })
+
   it('deduplicates concurrent update requests onto one server lifecycle record', async () => {
     const originalApply = s.deps.updates.apply.bind(s.deps.updates)
     let finish!: () => void

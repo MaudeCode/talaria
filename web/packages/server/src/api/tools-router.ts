@@ -92,7 +92,10 @@ async function applyWithNotification(
     else if (result.ok !== true) ctx.deps.updateNotifications.transition(notification.id, 'failed', null, verifiedIdentity, result.message || result.error)
     else if (target === 'webui' && result.restart_scheduled === true) {
       ctx.deps.updateNotifications.transition(notification.id, 'restarting', str(result.sourceRevision || result.candidate_revision), verifiedIdentity)
-    } else ctx.deps.updateNotifications.transition(notification.id, 'succeeded', null, verifiedIdentity)
+    } else {
+      // A kept Agent stash needs the user's attention; its recovery commands ride on the success record.
+      ctx.deps.updateNotifications.transition(notification.id, 'succeeded', null, verifiedIdentity, result.stash_conflict === true ? result.message : undefined)
+    }
     return { ...result, notification_id: notification.id }
   } catch (error) {
     ctx.deps.updateNotifications.transition(notification.id, 'failed', null, undefined, error instanceof Error ? error.message : null)

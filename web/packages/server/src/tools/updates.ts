@@ -14,6 +14,7 @@ import { readCapped } from '../http/capped.js'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { Dict } from '../config/agent-config.js'
 import { dict } from '../config/agent-config.js'
@@ -620,11 +621,12 @@ export async function checkAgentUpdate(path: string | null, git: GitRun, channel
     const message = fetched.out ? `fetch failed: ${sanitizeGitDiagnostic(fetched.out)}` : 'fetch failed'
     return { name: 'agent', channel, behind: null, error: message, stale_check: true, dirty: await isDirty(path, git) }
   }
+  await recoverInterruptedAutostash(path, git)
   try { return { ...await agentTarget(path, git, channel), dirty: await isDirty(path, git) } }
   catch (error) { return { name: 'agent', channel, behind: null, error: (error as Error).message } }
 }
 
-/** Fetch, confirm the immutable Agent target, stash, fast-forward, and pop. */
+/** Fetch, confirm the immutable Agent target, stash, fast-forward, and restore the stash. */
 export async function applyAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
   const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
@@ -644,6 +646,7 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
   if (warning) return warning
   const ref = str(info.branch)
   const revision = str(info.latest_sha)
+  await recoverInterruptedAutostash(path, git)
   const status = await git(['status', '--porcelain', '--untracked-files=no'], path)
   if (!status.ok) {
     if (isGitLockError(status.out)) return { ok: false, message: `Failed to inspect repo status due to a repository lock: ${status.out.trim()}`, lock_conflict: true }
@@ -652,33 +655,92 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
   if (status.out.split('\n').some((line) => ['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'].includes(line.slice(0, 2)))) {
     return { ok: false, message: `The local agent repo has unresolved merge conflicts. To reset to the latest remote version run: git -C ${path} checkout . && git -C ${path} pull --ff-only`, conflict: true }
   }
-  let stashed = false
+  let saved: Autostash | null = null
   if (status.out) {
-    if (!(await git(['stash', 'push', '-m', 'hermes-update-autostash'], path)).ok) return { ok: false, message: 'Failed to stash local changes' }
-    stashed = true
+    const result = await saveLocalChanges(path, git)
+    if (typeof result === 'string') return { ok: false, message: result }
+    saved = result
   }
   // Merge the immutable commit that was checked/acknowledged, never re-fetch a moving ref here.
   const pulled = await git(['merge', '--ff-only', revision], path, 30_000)
   if (!pulled.ok) {
-    let note = ''
-    if (stashed) note = ` ${await restoreStash(path, git, pulled.out)}`
-    if (isGitLockError(pulled.out)) return { ok: false, message: `Pull failed due to a repository lock: ${pulled.out.trim()}.${note}`, lock_conflict: true }
-    return { ok: false, message: `Pull failed: ${sanitizeGitDiagnostic(pulled.out)}.${note}` }
+    const restored = saved ? await restoreLocalChanges(path, git, saved) : null
+    const note = restored ? ` ${restored.note}` : ''
+    const conflict = restored && !restored.applied ? { stash_conflict: true } : {}
+    if (isGitLockError(pulled.out)) return { ok: false, message: `Pull failed due to a repository lock: ${pulled.out.trim()}.${note}`, lock_conflict: true, ...conflict }
+    return { ok: false, message: `Pull failed: ${sanitizeGitDiagnostic(pulled.out)}.${note}`, ...conflict }
   }
-  let message = `agent updated to ${ref}`
-  if (stashed) {
-    const popped = await git(['stash', 'pop'], path)
-    if (!popped.ok) message += '. Local changes remain in `git stash list`; resolve them manually.'
-  }
+  const restored = saved ? await restoreLocalChanges(path, git, saved) : null
   const verified = await verifiedAgentIdentity(path, revision, git)
   if (!verified) return { ok: false, message: 'The Agent update completed, but the installed revision could not be verified.', target: 'agent' }
-  return { ok: true, message, target: 'agent', ref, ...verified }
+  return { ok: true, message: `agent updated to ${ref}.${restored ? ` ${restored.note}` : ''}`, target: 'agent', ref, ...verified, ...(restored && !restored.applied ? { stash_conflict: true } : {}) }
 }
 
-async function restoreStash(path: string, git: GitRun, pullOut: string): Promise<string> {
-  if ((await git(['stash', 'pop'], path)).ok) return 'Local modifications were restored from the temporary stash.'
-  if ((await git(['stash', 'apply'], path)).ok) { await git(['stash', 'drop'], path); return 'Local modifications were restored from the temporary stash.' }
-  return `Your local modifications could not be restored automatically (stash pop failed after pull error: ${pullOut.trim().slice(0, 200) || 'no detail'}). They remain safely in \`git stash list\`; run \`git -C ${path} stash pop\` once the lock is cleared.`
+interface Autostash { sha: string; ref: string; dir: string; patch: string }
+const AUTOSTASH_REFS = 'refs/talaria/autostash/'
+/** An update holds its saved changes here only while it runs; one left behind marks an interrupted update. */
+const PENDING_AUTOSTASH_REFS = `${AUTOSTASH_REFS}pending/`
+
+async function autostashPatch(path: string, git: GitRun, sha: string): Promise<Autostash | null> {
+  const dir = mkdtempSync(join(tmpdir(), 'talaria-autostash-'))
+  const saved: Autostash = { sha, ref: `${PENDING_AUTOSTASH_REFS}${sha}`, dir, patch: join(dir, 'autostash.patch') }
+  if ((await git(['diff', '--binary', `--output=${saved.patch}`, `${sha}^1`, sha], path)).ok) return saved
+  rmSync(dir, { recursive: true, force: true })
+  return null
+}
+
+/**
+ * Save tracked local changes as a stash commit under a private per-commit ref, never the shared stash reflog
+ * whose entries other processes can shift, then revert exactly those changes. `git apply` writes the whole patch
+ * or nothing, so an edit made meanwhile aborts the update instead of being lost. Returns an error message on failure.
+ */
+async function saveLocalChanges(path: string, git: GitRun): Promise<Autostash | string> {
+  const created = await git(['stash', 'create', 'hermes-update-autostash'], path)
+  if (!created.ok || !SHA.test(created.out)) return 'Failed to stash local changes'
+  const sha = created.out
+  if (!(await git(['update-ref', `${PENDING_AUTOSTASH_REFS}${sha}`, sha], path)).ok) return 'Failed to stash local changes'
+  const saved = await autostashPatch(path, git, sha)
+  if (!saved || (lstatSync(saved.patch).size > 0 && !(await git(['apply', '-R', '--whitespace=nowarn', saved.patch], path)).ok)) {
+    if (saved) rmSync(saved.dir, { recursive: true, force: true })
+    await git(['update-ref', '-d', `${PENDING_AUTOSTASH_REFS}${sha}`, sha], path)
+    return 'Local changes in the Agent checkout changed while the update was saving them, so nothing was modified. Try the update again.'
+  }
+  // Only the index returns to HEAD; the working tree is untouched and staged content stays in the saved commit.
+  await git(['reset', '-q'], path)
+  return saved
+}
+
+/** Re-apply the saved changes atomically; on a conflict keep the commit under its own ref and leave the files as the update wrote them. */
+async function restoreLocalChanges(path: string, git: GitRun, saved: Autostash): Promise<{ applied: boolean; note: string }> {
+  try {
+    if (lstatSync(saved.patch).size === 0 || (await git(['apply', '--whitespace=nowarn', saved.patch], path)).ok) {
+      await git(['update-ref', '-d', saved.ref, saved.sha], path)
+      return { applied: true, note: 'Local modifications were restored.' }
+    }
+  } finally { rmSync(saved.dir, { recursive: true, force: true }) }
+  const short = saved.sha.slice(0, 12)
+  // The kept ref owns the commit; the stash list entry is only a convenience others may drop.
+  const keptRef = `${AUTOSTASH_REFS}${saved.sha}`
+  const kept = (await git(['update-ref', keptRef, saved.sha], path)).ok
+  if (kept) await git(['update-ref', '-d', saved.ref, saved.sha], path)
+  const ref = kept ? keptRef : saved.ref
+  const listed = kept && (await git(['stash', 'store', '-m', 'hermes-update-autostash', saved.sha], path)).ok
+  return { applied: false, note: `Your local modifications could not be re-applied cleanly and were saved as ${short} under ${ref}${listed ? ' and in the git stash' : ''}; Agent files were left as the update wrote them. To inspect: git -C ${path} stash show -p ${short}. To re-apply: git -C ${path} stash apply ${short}, then resolve conflicts. Once you are satisfied, run git -C ${path} update-ref -d ${ref}${listed ? ' and drop that stash entry' : ''}.` }
+}
+
+/** Finish an update the server stopped mid-way: its saved changes return to the tree, or are kept and listed in the git stash if they no longer apply. */
+async function recoverInterruptedAutostash(path: string, git: GitRun): Promise<void> {
+  const refs = await git(['for-each-ref', '--format=%(objectname)', PENDING_AUTOSTASH_REFS], path)
+  if (!refs.ok) return
+  for (const sha of refs.out.split('\n').filter((line) => SHA.test(line))) {
+    const saved = await autostashPatch(path, git, sha)
+    if (!saved) continue
+    // Stopped before the revert or after the restore: the changes are already in the tree.
+    if (lstatSync(saved.patch).size === 0 || (await git(['apply', '-R', '--check', saved.patch], path)).ok) {
+      rmSync(saved.dir, { recursive: true, force: true })
+      await git(['update-ref', '-d', saved.ref, sha], path)
+    } else await restoreLocalChanges(path, git, saved)
+  }
 }
 
 /** Python `apply_force_update` (agent branch): fetch, refuse a pure-ancestor rewind, `checkout . && clean -fd && reset --hard`. */

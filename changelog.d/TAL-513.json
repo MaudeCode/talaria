@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "When your local edits to the Hermes Agent checkout conflict with an Agent update, Talaria Web now keeps them in the Git stash and leaves the Agent files clean, instead of restarting onto files with conflict markers.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

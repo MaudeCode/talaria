@@ -73,6 +73,21 @@ The tested pin remains Talaria's official support reference. A different Agent
 revision warns but can attempt operations; missing capabilities and unsafe
 credential isolation still fail at use. Automatic updates still apply only to Web.
 
+**Update Agent** keeps tracked local edits in the Agent checkout. It saves them
+with `git stash create` under a private `refs/talaria/autostash/<sha>` ref, never
+the shared stash list, and reverts exactly that patch before fast-forwarding.
+Afterwards it re-applies the patch with `git apply`, which writes all of it or
+nothing. If the edits conflict with the update, the Agent files stay as the
+update wrote them, with no conflict markers. The saved commit stays under its
+private ref, which the user deletes once satisfied. It is also listed in
+`git stash list` for convenience. The result carries `stash_conflict: true`
+with inspect, re-apply, and cleanup commands. An
+edit made while the update saves local changes aborts the update; nothing is
+lost. While an update runs, the saved commit lives under
+`refs/talaria/autostash/pending/<sha>`. If the server stops before restoring it,
+the next Agent check or update finishes the job: changes already in the tree
+just drop the ref, and the rest are re-applied or kept and listed as above.
+
 API callers can provide `agent_channel` independently of Web's `channel` on
 check/apply/force requests. Omitting it uses the persisted Agent setting. Cached
 checks are keyed by both channels, and old clients' `channel` remains Web-only.
@@ -129,7 +144,7 @@ visible across the same owner's profiles because the installation being updated 
 for another authenticated owner remain isolated. Automatic Web updates produce server-wide owner notices.
 
 The notification lifecycle is `applying`, `awaiting_confirmation`, `restarting`, then `succeeded`,
-`blocked`, `failed`, or `unknown`. A failed or blocked record keeps the apply's own explanation as `detail` (line breaks kept, bounded, cleared by the next phase); the notification center and the Updating dialog show it under the message. A restarted server marks an interrupted `applying` operation unknown.
+`blocked`, `failed`, or `unknown`. A failed or blocked record, and a succeeded Agent update that kept conflicting local edits in the git stash (`stash_conflict`), keeps the apply's own explanation as `detail` (line breaks kept, bounded, cleared by the next phase); the notification center and the Updating dialog show it under the message. A restarted server marks an interrupted `applying` operation unknown.
 A `restarting` Web operation becomes succeeded only when the running release identity exactly matches the
 persisted expected identity; otherwise it becomes unknown. A dropped connection never proves success.
 
