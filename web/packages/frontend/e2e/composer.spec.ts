@@ -354,3 +354,20 @@ test('editing a message puts its text in the composer and Send resubmits it (TAL
   await page.locator('#btnSend').click()
   await expect.poll(() => body?.message).toBe('Plan the release')
 })
+
+test('a second Edit click while the first is pending returns the text once (TAL-516)', async ({ page }) => {
+  const truncate = hold()
+  let truncates = 0
+  let truncated = false
+  const messages = [{ role: 'user', id: 1, content: 'Plan the release' }, { role: 'assistant', id: 2, content: 'Here is the plan.' }]
+  await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'edit-twice', title: 'Edit', messages: truncated ? [] : messages } } }))
+  await page.route('**/api/session/truncate', async (route) => { truncates++; await truncate.gate; truncated = true; await route.fulfill({ json: { ok: true, session: { session_id: 'edit-twice', title: 'Edit' } } }) })
+  await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+  await page.goto('/session/edit-twice')
+  const edit = page.locator('#messages .msg-row[data-role="user"]').getByRole('button', { name: 'Edit message' })
+  await edit.click({ force: true })
+  await edit.click({ force: true })
+  truncate.release()
+  await expect(page.locator('#msg')).toHaveValue('Plan the release')
+  expect(truncates).toBe(1)
+})

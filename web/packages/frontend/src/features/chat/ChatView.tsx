@@ -186,12 +186,16 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     }
   }, [sessionId, navigate, refresh, qc, onToggleYolo, onModelChange, onWorkspaceChange, onRegenerate, reasoning, setReasoning, runCompression])
 
+  // The return appends to the composer, so a second Edit click while the first is pending must not return the text twice.
+  const editing = useRef(false)
   const onEdit = useCallback(async (row: VisibleMessage, text: string) => {
-    if (!sessionId) return
-    const keep = row.index
-    await api.truncateSession(sessionId, keep)
-    await refresh()
-    returnToComposer(sessionId, text)
+    if (!sessionId || editing.current) return
+    editing.current = true
+    try {
+      await api.truncateSession(sessionId, row.index)
+      await refresh()
+      returnToComposer(sessionId, text)
+    } finally { editing.current = false }
   }, [sessionId, refresh])
   const onBranch = useCallback(async (row: VisibleMessage) => {
     if (!sessionId) return
