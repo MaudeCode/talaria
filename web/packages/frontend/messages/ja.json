@@ -216,20 +216,6 @@
 			}
 		}
 	],
-	"session_attention_generic": [
-		{
-			"declarations": [
-				"input n"
-			],
-			"selectors": [
-				"n"
-			],
-			"match": {
-				"n=1": "注意",
-				"n=*": "{n} 件"
-			}
-		}
-	],
 	"session_attention_approval_title": "権限判断を待っています",
 	"session_attention_clarify_title": "回答を待っています",
 	"session_attention_generic_title": "ユーザー操作を待っています",

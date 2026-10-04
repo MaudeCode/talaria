@@ -216,20 +216,6 @@
 			}
 		}
 	],
-	"session_attention_generic": [
-		{
-			"declarations": [
-				"input n"
-			],
-			"selectors": [
-				"n"
-			],
-			"match": {
-				"n=1": "注意",
-				"n=*": "{n} 项"
-			}
-		}
-	],
 	"session_attention_approval_title": "等待权限决定",
 	"session_attention_clarify_title": "等待你的回答",
 	"session_attention_generic_title": "等待用户操作",

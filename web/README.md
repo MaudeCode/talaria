@@ -45,6 +45,10 @@ talaria-web
 import the Agent on that venv, offers to install the pinned stable Agent release when none is found
 (POSIX; skip with `--skip-agent-install`), starts the server detached, waits for `/health`, prints the
 URL, and opens the browser. Under launchd, systemd, supervisord, or with `--foreground`, it stays attached instead.
+`$HERMES_HOME/.env` is agent-writable, so the server only takes credentials from it (names ending in `_KEY`,
+`_TOKEN`, or `_SECRET`), `HERMES_MODEL`, and a few tuning knobs (port, upload and session limits, bot name, default
+model); it warns about the rest. Set other `HERMES_WEBUI_*` settings, `HERMES_HOME`, or interpreter hooks such as
+`NODE_OPTIONS` in the process environment or the checkout `.env`. The Agent still reads the whole file itself.
 
 ```text
 talaria-web [port] [--host HOST] [--no-browser] [--skip-agent-install] [--foreground]

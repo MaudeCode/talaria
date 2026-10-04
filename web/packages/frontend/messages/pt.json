@@ -138,20 +138,6 @@
 			}
 		}
 	],
-	"session_attention_generic": [
-		{
-			"declarations": [
-				"input n"
-			],
-			"selectors": [
-				"n"
-			],
-			"match": {
-				"n=1": "Atenção",
-				"n=*": "{n} itens"
-			}
-		}
-	],
 	"session_attention_approval_title": "Aguardando decisão de permissão",
 	"session_attention_clarify_title": "Aguardando sua resposta",
 	"session_attention_generic_title": "Aguardando ação do usuário",

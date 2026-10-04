@@ -203,20 +203,6 @@
 			}
 		}
 	],
-	"session_attention_generic": [
-		{
-			"declarations": [
-				"input n"
-			],
-			"selectors": [
-				"n"
-			],
-			"match": {
-				"n=1": "Attention",
-				"n=*": "{n} items"
-			}
-		}
-	],
 	"session_attention_approval_title": "Waiting for permission decision",
 	"session_attention_clarify_title": "Waiting for your answer",
 	"session_attention_generic_title": "Waiting for user action",
