@@ -440,6 +440,15 @@ def _profile_toolsets() -> list[str]:
     return list(dict.fromkeys(name for raw in resolved for name in _LEGACY_TOOLSET_ALIASES.get(raw, (raw,))))
 
 
+def _profile_fallback_chain() -> list[dict] | None:
+    """The profile's fallback routes (``fallback_providers`` first, then legacy ``fallback_model``, deduplicated)
+    through the Agent's own resolver, like the CLI and gateway. Runs under the call's ``scoped_home``."""
+    from hermes_cli.config import load_config
+    from hermes_cli.fallback_config import get_fallback_chain
+
+    return get_fallback_chain(load_config() or {}) or None
+
+
 def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, kwargs: dict) -> str:
     """Cache identity of an ``AIAgent``: everything its constructor bound from the resolved runtime, so a rotated key,
     a different API mode, ACP command, or credential pool never reuses an agent built for the old bundle. The key
@@ -455,6 +464,8 @@ def _agent_signature(model: str, provider, runtime: dict, toolsets, home: str, k
         "max_iterations": kwargs.get("max_iterations"), "max_tokens": kwargs.get("max_tokens"),
         # Bound at construction too: a reasoning-effort change from the composer must build a fresh agent.
         "reasoning_config": kwargs.get("reasoning_config"),
+        # Entries may carry their own ``api_key``.
+        "fallback_model": hashlib.sha256(json.dumps(kwargs.get("fallback_model"), sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16],
     }
     return json.dumps(bundle, sort_keys=True, default=str)
 
@@ -696,6 +707,9 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
         reasoning_config = params.get("reasoning_config")
         if isinstance(reasoning_config, dict) and _supported(AIAgent, "reasoning_config"):
             kwargs["reasoning_config"] = reasoning_config
+        fallback_chain = _profile_fallback_chain()
+        if fallback_chain and _supported(AIAgent, "fallback_model"):
+            kwargs["fallback_model"] = fallback_chain
         signature = _agent_signature(resolved_model, resolved_provider, runtime, toolsets, str(params.get("profile_home")), kwargs)
         agent = None
         if not session_busy:
