@@ -20487,11 +20487,34 @@
                     },
                     "result": {
                       "type": "string"
+                    },
+                    "result_view": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "stdout": {
+                          "type": "string"
+                        },
+                        "stderr": {
+                          "type": "string"
+                        },
+                        "error": {
+                          "type": "string"
+                        },
+                        "exit_code": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      }
                     }
                   },
                   "required": [
                     "tool_call_id",
-                    "result"
+                    "result",
+                    "result_view"
                   ]
                 }
               }

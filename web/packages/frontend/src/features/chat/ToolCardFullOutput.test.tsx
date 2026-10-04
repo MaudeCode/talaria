@@ -13,8 +13,9 @@ import type { Message } from '../../contracts'
 afterEach(() => { cleanup(); localStorage.clear(); vi.mocked(api.fetchToolResult).mockReset() })
 
 const full = 'x'.repeat(6000)
-const clipped = `${full.slice(0, 4096)}\n\n[Tool output truncated in paginated session response; load the full transcript to inspect the complete result.]`
-const tool = (id: string, result: string, extra: Record<string, unknown> = {}) => ({ row_id: `tool:${id}`, role: 'tool', tool: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, preview: null, result, done: true, is_error: false, duration: null, cost_usd: null, ...extra } })
+// The view a scene row carries: each section capped by the server (TAL-315).
+const clipped = `${full.slice(0, 4000)}...`
+const tool = (id: string, result: string, extra: Record<string, unknown> = {}) => ({ row_id: `tool:${id}`, role: 'tool', tool: { id, name: 'read_file', kind: 'read', target: `${id}.txt`, preview: null, result, result_view: { text: result }, done: true, is_error: false, duration: null, cost_usd: null, ...extra } })
 
 function renderTurn() {
   // A limited response's scene, as the server ships it: the clipped row is flagged, the short one is not.
@@ -30,12 +31,13 @@ const resultText = (id: string) => document.querySelector(`[data-tool-id="${id}"
 
 describe('clipped tool output (TAL-331)', () => {
   it('fetches and shows the whole result of a row the server flagged as clipped', async () => {
-    vi.mocked(api.fetchToolResult).mockResolvedValue({ tool_call_id: 'big', result: full })
+    // The server's whole result: its raw JSON and the uncapped sections a client renders.
+    vi.mocked(api.fetchToolResult).mockResolvedValue({ tool_call_id: 'big', result: JSON.stringify({ output: full, exit_code: 0 }), result_view: { stdout: full, exit_code: 0 } })
     renderTurn()
     open('big')
     expect(resultText('big')).toBe(clipped)
     fireEvent.click(screen.getByRole('button', { name: 'Show full output' }))
-    await waitFor(() => { expect(resultText('big')).toBe(full) })
+    await waitFor(() => { expect(resultText('big')).toBe(`${full}\nExit code: 0`) })
     expect(vi.mocked(api.fetchToolResult).mock.calls[0]?.slice(0, 2)).toEqual(['sess-1', 'big'])
     expect(screen.queryByRole('button', { name: 'Show full output' })).toBeNull()
   })

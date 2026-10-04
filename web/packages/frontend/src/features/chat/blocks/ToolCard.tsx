@@ -26,7 +26,7 @@ export interface ToolCardData {
   resultView: ToolResultView | null
   /** TAL-372: the background work this call started, updated in place as it finishes (server scene field). */
   background?: BackgroundLink
-  /** TAL-331: the server clipped `result` in a limited response; the whole result is one request away. */
+  /** TAL-331: the server clipped or capped this result; the whole result is one request away. */
   resultTruncated?: boolean
 }
 
@@ -52,12 +52,12 @@ function resultText(view: ToolResultView): string {
 
 const RESULT_PRE = 'max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 font-mono text-[12px] text-pre-text'
 
-/** A result the server clipped: its preview until the reader asks for the whole result, which the server sends redacted. */
+/** A result the server clipped or capped: its sections until the reader asks for the whole view, which the server sends redacted. */
 function ClippedResult({ sessionId, callId, clipped }: { sessionId: string; callId: string; clipped: string }) {
   const query = useQuery({ queryKey: ['tool-result', sessionId, callId], queryFn: ({ signal }) => fetchToolResult(sessionId, callId, signal), enabled: false, staleTime: Infinity })
   return (
     <>
-      <pre className={RESULT_PRE}>{query.data?.result ?? clipped}</pre>
+      <pre className={RESULT_PRE}>{query.data ? resultText(query.data.result_view) : clipped}</pre>
       {!query.data && <Button variant="ghost" className="mt-1" disabled={query.isFetching} onClick={() => { void query.refetch() }}>{query.isFetching ? m.loading() : query.isError ? m.retry() : m.tool_show_full_output()}</Button>}
     </>
   )

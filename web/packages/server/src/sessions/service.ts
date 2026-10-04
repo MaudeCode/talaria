@@ -20,7 +20,7 @@ import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
+import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -1445,13 +1445,13 @@ export class SessionService {
   }
 
   /** TAL-331: one tool call's whole result, which a limited response clipped (`result_truncated`), redacted like the detail. */
-  readToolResult(query: { session_id: string; tool_call_id: string }): { tool_call_id: string; result: string } {
+  readToolResult(query: { session_id: string; tool_call_id: string }): { tool_call_id: string; result: string; result_view: ToolResultView } {
     const sid = query.session_id.trim()
     const id = query.tool_call_id.trim()
     if (!sid || !id) throw new HttpFailure(400, 'session_id and tool_call_id are required')
-    const result = fullToolResult(this.fullTranscript(sid).transcript, id)
-    if (result === null) throw new HttpFailure(404, 'Tool result not found')
-    return { tool_call_id: id, result: redactValue(result, this.deps.redactEnabled()) as string }
+    const full = fullToolResult(this.fullTranscript(sid).transcript, id)
+    if (full === null) throw new HttpFailure(404, 'Tool result not found')
+    return { tool_call_id: id, ...redactValue(full, this.deps.redactEnabled()) as typeof full }
   }
 
   // ── shares ───────────────────────────────────────────────────────────────

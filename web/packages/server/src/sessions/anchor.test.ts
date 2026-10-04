@@ -429,31 +429,35 @@ describe('anchor scenes over HTTP', () => {
     const sid = String(((await json(await post(s, '/api/session/new', {}))).session as Json).session_id)
     const session = s.deps.sessionStore.get(sid)
     const secret = 'sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
-    // The credential sits past the clip, so only the full result can leak it.
+    // The credential sits past both caps, so only the full result can leak it.
     const full = `${'x'.repeat(5000)} KEY=${secret} ${'y'.repeat(6000 - 5006 - secret.length)}`
     session.messages = [
       { role: 'user', content: 'Dump it', _turn_id: 'run-big' },
-      { role: 'assistant', content: 'Reading.', tool_calls: [{ id: 'big', name: 'read_file' }], _turn_id: 'run-big' },
+      { role: 'assistant', content: 'Reading.', tool_calls: [{ id: 'big', name: 'read_file' }, { id: 'small', name: 'read_file' }], _turn_id: 'run-big' },
       { role: 'tool', tool_call_id: 'big', content: full, _turn_id: 'run-big' },
+      { role: 'tool', tool_call_id: 'small', content: 'ok', _turn_id: 'run-big' },
       { role: 'assistant', content: 'Done.', _turn_id: 'run-big' },
     ]
     s.deps.sessionStore.save(session)
-    const tool = async (query: string) => {
+    const tool = async (query: string, id: string) => {
       const messages = ((await json(await s.get(`/api/session?session_id=${sid}${query}`))).session as Json).messages as Json[]
-      return ((messages.at(-1)?._anchor_activity_scene as Json).activity_rows as Json[]).find((r) => r.role === 'tool')?.tool as Json
+      return ((messages.at(-1)?._anchor_activity_scene as Json).activity_rows as Json[]).find((r) => (r.tool as Json | undefined)?.id === id)?.tool as Json
     }
     expect(full.length).toBe(6000)
-    const limited = await tool('&msg_limit=10')
+    const limited = await tool('&msg_limit=10', 'big')
     expect(limited).toMatchObject({ result_truncated: true, result_chars: 6000 })
     expect(String(limited.result).length).toBeLessThan(6000)
-    const whole = await tool('')
-    expect(whole.result_truncated).toBeUndefined()
-    expect(String(whole.result)).not.toContain(secret)
+    // The full detail keeps the whole result; the view clients show is capped (TAL-315), so the row is flagged there too.
+    const whole = await tool('', 'big')
     expect(String(whole.result).length).toBeGreaterThan(5000)
+    expect(String(whole.result)).not.toContain(secret)
+    expect(whole).toMatchObject({ result_truncated: true, result_chars: 6000 })
+    expect(String((whole.result_view as Json).text).length).toBeLessThan(String(whole.result).length)
+    expect((await tool('&msg_limit=10', 'small')).result_truncated).toBeUndefined()
     const res = await s.get(`/api/session/tool-result?session_id=${sid}&tool_call_id=big`)
     expect(res.status).toBe(200)
     const body = await json(res)
-    expect(body).toEqual({ tool_call_id: 'big', result: whole.result })
+    expect(body).toEqual({ tool_call_id: 'big', result: whole.result, result_view: { text: whole.result } })
     expect(JSON.stringify(body)).not.toContain(secret)
     expect((await s.get(`/api/session/tool-result?session_id=${sid}&tool_call_id=missing`)).status).toBe(404)
   })

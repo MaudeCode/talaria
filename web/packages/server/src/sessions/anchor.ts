@@ -331,10 +331,12 @@ export function toolReplies(messages: unknown[]): Map<string, Record<string, unk
   return results
 }
 
-/** One tool call's whole result text, as a full scene row shows it; null when no reply carries that call id. */
-export function fullToolResult(messages: unknown[], toolCallId: string): string | null {
+const viewCapped = (view: ToolResultView, full: ToolResultView): boolean => Object.entries(full).some(([key, field]) => field !== view[key as keyof ToolResultView])
+
+/** One tool call's whole result: its text as a full scene row shows it and its uncapped view; null when no reply carries that id. */
+export function fullToolResult(messages: unknown[], toolCallId: string): { result: string; result_view: ToolResultView } | null {
   const reply = toolCallId ? toolReplies(messages).get(toolCallId) : undefined
-  return reply ? messageText(reply.content) : null
+  return reply ? { result: messageText(reply.content), result_view: toolResultView(reply.content, Infinity) } : null
 }
 
 /**
@@ -381,17 +383,18 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       if (seenTools.has(id)) return
       seenTools.add(id)
       const reply = results.get(id)
-      // Full results, except in a limited response, which clips them like its raw tool rows (the full detail keeps them)
-      // and flags the clip, so a client can fetch the whole result from `/api/session/tool-result`.
+      // Full results, except in a limited response, which clips them like its raw tool rows (the full detail keeps them).
       const shown = reply && opts.clipToolResults ? toolMessageForLimitedPayload(reply) as Record<string, unknown> : reply
       const result = shown ? messageText(shown.content) : call.result ?? call.output ?? null
-      // The view always comes from the full result (TAL-315).
+      // The view always comes from the full result (TAL-315), with each section capped.
       const resultView = reply ? toolResultView(reply.content) : isDict(call.result_view) ? call.result_view as ToolResultView : null
+      // TAL-331: a clipped result or a capped section is flagged, so a client can fetch the whole from `/api/session/tool-result`.
+      const clipped = shown?._content_truncated === true || (reply !== undefined && resultView !== null && viewCapped(resultView, toolResultView(reply.content, Infinity)))
       push({ row_id: `tool:${id}`, role: 'tool', ...at, tool: {
         id, name: str(call.name) || str(isDict(call.function) ? call.function.name : '') || 'tool', args: toolArgs(call),
         preview: str(call.preview) || null, result, result_view: resultView, done: typeof call.done === 'boolean' ? call.done : true,
         is_error: call.is_error === true || reply?.is_error === true, duration: finite(call.duration), cost_usd: finite(call.cost_usd),
-        ...(shown?._content_truncated === true ? { result_truncated: true as const, result_chars: finite(shown._content_original_chars) } : {}),
+        ...(clipped && reply ? { result_truncated: true as const, result_chars: messageText(reply.content).length } : {}),
       } })
     }
     if (walked) {

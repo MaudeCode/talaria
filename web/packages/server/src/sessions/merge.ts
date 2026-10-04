@@ -408,13 +408,14 @@ function resultView(value: unknown, depth: number): ToolResultView {
  * a JSON result (nested JSON strings unwrapped, escaped line breaks undone) with `output`/`stdout`/`stderr` maps to its
  * terminal sections; any other object shows the first readable `result`, `results`, `preview`, `content`, `text`,
  * `message`, `summary`, `data` or `items`, else its `error` and exit code, else pretty JSON. A list of text parts joins
- * by line; a scalar shows as text, and a result that is not JSON exactly as written. Each field is capped like the snippet.
+ * by line; a scalar shows as text, and a result that is not JSON exactly as written. Each field is capped like the snippet
+ * (`limit`; TAL-331's whole-result read passes `Infinity`).
  */
-export function toolResultView(raw: unknown): ToolResultView {
+export function toolResultView(raw: unknown, limit = TOOL_RESULT_SNIPPET_MAX): ToolResultView {
   // Content parts read as their text; a list with no text (`[{ title }]`) is the result itself.
   const flat = Array.isArray(raw) ? messageText(raw) : raw
   const view = resultView(Array.isArray(raw) && !str(flat).trim() ? raw : flat, 0)
-  return Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field) : field]))
+  return Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field, limit) : field]))
 }
 
 /** A view the server already decided (a built scene row, or one stored with its scene): its known fields, capped. */
