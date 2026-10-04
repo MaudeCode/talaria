@@ -10645,6 +10645,7 @@
     "/api/session/retry": {
       "post": {
         "operationId": "session.retry",
+        "description": "`last_user_text` is the stored row's text; `last_user_prompt` and `last_user_attachments` are what to resend as the new turn.",
         "tags": [
           "sessions"
         ],
@@ -10682,6 +10683,39 @@
                         },
                         "last_user_text": {
                           "type": "string"
+                        },
+                        "last_user_prompt": {
+                          "type": "string"
+                        },
+                        "last_user_attachments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "filename": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "size": {
+                                "type": "number"
+                              },
+                              "mime": {
+                                "type": "string"
+                              },
+                              "is_image": {
+                                "type": "boolean"
+                              },
+                              "rollback_token": {
+                                "type": "string"
+                              }
+                            },
+                            "additionalProperties": {}
+                          }
                         },
                         "removed_count": {
                           "type": "integer",

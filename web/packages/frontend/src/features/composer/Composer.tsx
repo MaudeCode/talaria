@@ -81,7 +81,7 @@ function usePhone(): boolean {
 }
 
 /** What a turn posts besides its text: the session's model and workspace, and the active profile. */
-function turnRequest(target: Session, profile: string): QueuedTurn['request'] {
+export function turnRequest(target: Session, profile: string): QueuedTurn['request'] {
   return { model: target.model ?? undefined, model_provider: target.model_provider ?? undefined, workspace: target.workspace, profile }
 }
 

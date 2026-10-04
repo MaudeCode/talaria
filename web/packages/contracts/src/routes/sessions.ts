@@ -1,6 +1,6 @@
 import { oc } from '@orpc/contract'
 import { z } from 'zod'
-import { SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, SessionSchema } from '../views.js'
+import { SessionIdSchema, SessionRowSchema, SessionEnvelopeSchema, SessionsListSchema, SessionNewRequestSchema, DraftSchema, DraftResponseSchema, ProjectSchema, ProjectsSchema, SessionStatusSchema, SessionUsageSchema, SessionDeleteResultSchema, ShareReadSchema, ShareCreateResponseSchema, ActivitySceneRowSchema, SessionSchema, AttachmentSchema } from '../views.js'
 
 /** Session, project, share, and draft routes. Response rows are loose: the sidecar carries operator-defined extras. */
 
@@ -62,7 +62,7 @@ export const sessionsContract = {
     branch: oc.route({ method: 'POST', path: '/api/session/branch', tags }).input(SessionBody.extend({ keep_count: z.number().int().nullable().optional(), title: z.string().nullable().optional() })).output(z.object({ session_id: z.string(), title: z.string(), parent_session_id: z.string() })),
     truncate: oc.route({ method: 'POST', path: '/api/session/truncate', tags }).input(SessionBody.extend({ keep_count: Json.optional() })).output(OkSchema.extend({ session: SessionRowSchema })),
     clear: oc.route({ method: 'POST', path: '/api/session/clear', tags }).input(SessionBody).output(OkSchema.extend({ session: SessionRowSchema })),
-    retry: oc.route({ method: 'POST', path: '/api/session/retry', tags }).input(SessionBody).output(z.object({ ok: z.literal(true), last_user_text: z.string(), removed_count: z.number().int() }).or(z.object({ error: z.string() }))),
+    retry: oc.route({ method: 'POST', path: '/api/session/retry', tags, description: '`last_user_text` is the stored row\'s text; `last_user_prompt` and `last_user_attachments` are what to resend as the new turn.' }).input(SessionBody).output(z.object({ ok: z.literal(true), last_user_text: z.string(), last_user_prompt: z.string().optional(), last_user_attachments: z.array(AttachmentSchema).optional(), removed_count: z.number().int() }).or(z.object({ error: z.string() }))),
     undo: oc.route({ method: 'POST', path: '/api/session/undo', tags }).input(SessionBody).output(z.object({ ok: z.literal(true), removed_count: z.number().int(), removed_preview: z.string() }).or(z.object({ error: z.string() }))),
     update: oc.route({ method: 'POST', path: '/api/session/update', tags }).input(SessionBody.extend({ workspace: z.string().optional(), model: z.string().nullable().optional(), model_provider: z.string().nullable().optional() })).output(SessionEnvelopeSchema),
     toolsets: oc.route({ method: 'POST', path: '/api/session/toolsets', tags }).input(SessionBody.extend({ toolsets: z.array(z.string()).nullable().optional() })).output(z.object({ ok: z.literal(true), enabled_toolsets: z.array(z.string()).nullable() })),

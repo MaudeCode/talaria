@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Regenerate, /retry, and Retry on an error in Web chats now resend your last message and its attachments instead of only removing the last reply.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

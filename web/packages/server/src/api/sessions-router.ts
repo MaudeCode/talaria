@@ -1,7 +1,7 @@
 /** Session, project, share, workspace, and file procedures. */
 import { implement } from '@orpc/server'
 import { stateDbHasSession } from '../sessions/state-db.js'
-import { sessionsContract, workspacesContract } from '@maudecode/talaria-web-contracts'
+import { sessionsContract, workspacesContract, type Attachment } from '@maudecode/talaria-web-contracts'
 import { mkdirSync } from 'node:fs'
 import { closeSync, existsSync, lstatSync, statSync } from 'node:fs'
 import { writeFully } from '../fs/atomic.js'
@@ -198,7 +198,7 @@ export const sessionsRouter = os.router({
     })),
     retry: os.session.retry.handler(({ input, context: { ctx } }) => run(async () => {
       guardVisibility(ctx, input.session_id)
-      return ctx.deps.sessions.retry(input.session_id) as Promise<{ ok: true; last_user_text: string; removed_count: number } | { error: string }>
+      return ctx.deps.sessions.retry(input.session_id) as Promise<{ ok: true; last_user_text: string; last_user_prompt: string; last_user_attachments: Attachment[]; removed_count: number } | { error: string }>
     })),
     undo: os.session.undo.handler(({ input, context: { ctx } }) => run(async () => {
       guardVisibility(ctx, input.session_id)

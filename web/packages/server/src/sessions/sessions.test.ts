@@ -267,6 +267,23 @@ describe('session lifecycle over HTTP', () => {
     expect(await json(res)).toMatchObject({ ok: true, last_user_text: 'first', removed_count: 2 })
     expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toEqual([])
 
+    // TAL-515: what to resend is the prompt as typed, without the lines the server adds, and the files that reached the
+    // model (only those with a path); `last_user_text` stays the stored text.
+    const stored = '[Workspace::v1: /tmp/ws]\nSummarize the logs\n\n[Attached files: /tmp/notes.txt]'
+    const file = { filename: 'notes.txt', path: '/tmp/notes.txt', mime: 'text/plain' }
+    writeMessages(s, sid, [{ role: 'user', content: stored, attachments: [file, 'legacy.txt'] }, { role: 'assistant', content: 'fine' }])
+    res = await post(s, '/api/session/retry', { session_id: sid })
+    expect(await json(res)).toEqual({ ok: true, last_user_text: stored, last_user_prompt: 'Summarize the logs', last_user_attachments: [file], removed_count: 2 })
+    // Without files to resend, a trailing attached-files line is the user's own text.
+    writeMessages(s, sid, [{ role: 'user', content: 'See\n\n[Attached files: example.txt]', attachments: ['legacy.txt'] }, { role: 'assistant', content: 'fine' }])
+    res = await post(s, '/api/session/retry', { session_id: sid })
+    expect(await json(res)).toMatchObject({ ok: true, last_user_prompt: 'See\n\n[Attached files: example.txt]', last_user_attachments: [] })
+    // Nothing resendable: the exchange stays.
+    writeMessages(s, sid, [{ role: 'user', content: '', attachments: ['legacy.txt'] }, { role: 'assistant', content: 'fine' }])
+    res = await post(s, '/api/session/retry', { session_id: sid })
+    expect(await json(res)).toEqual({ error: 'The last message has nothing to resend.' })
+    expect(((await json(await s.get(`/api/session?session_id=${sid}`))).session as Json).messages).toHaveLength(2)
+
     writeMessages(s, sid, [
       { role: 'user', content: 'a' }, { role: 'assistant', content: '', reasoning: 'think', tool_calls: [{ id: 't', name: 'read_file' }] },
       { role: 'tool', tool_call_id: 't', content: 'x' }, { role: 'assistant', content: 'b' }, { role: 'user', content: 'c' },
