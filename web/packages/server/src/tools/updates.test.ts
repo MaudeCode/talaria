@@ -817,6 +817,28 @@ describe('Agent checkout updates', () => {
     expect(stashes(a.agent)).toHaveLength(1)
   })
 
+  it.each([
+    ['the stashed file, before the apply', 'VERSION', true],
+    ['another file, during the apply', 'README', false],
+  ])('an edit to %s is never reset away', async (_, file, before) => {
+    const a = agentInstall()
+    writeFileSync(join(a.agent, 'VERSION'), 'local edit\n')
+    const edit = (): void => { writeFileSync(join(a.agent, file), 'edited during the update\n') }
+    const racing: GitRun = async (args, cwd, timeout) => {
+      const applying = args[0] === 'stash' && args[1] === 'apply'
+      if (applying && before) edit()
+      const out = await runGit(args, cwd, timeout)
+      if (applying && !before) edit()
+      return out
+    }
+    const events: string[] = []
+    const result = await agentService(a.agent, racing, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
+    expect(result).toMatchObject({ ok: false, target: 'agent', stash_conflict: true })
+    expect(events).toEqual([])
+    expect(readFileSync(join(a.agent, file), 'utf8')).toBe('edited during the update\n')
+    expect(stashes(a.agent)).toHaveLength(1)
+  })
+
   it('a cleanly applied stash is dropped and the update restarts', async () => {
     const a = agentInstall()
     writeFileSync(join(a.agent, 'README'), 'local note\n')

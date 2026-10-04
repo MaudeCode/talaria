@@ -674,19 +674,32 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
   return { ok: true, message: `agent updated to ${ref}.${restored ? ` ${restored.note}` : ''}`, target: 'agent', ref, ...verified, ...(restored && !restored.applied ? { stash_conflict: true } : {}) }
 }
 
+const gitLines = (out: string): string[] => out.split('\n').filter(Boolean)
+
 /**
  * Python stash recovery: apply the autostash; on conflict reset tracked files to HEAD and keep the stash.
  * `clean` means the tracked tree is known to hold no conflict markers or unsaved edits, so a restart is safe.
+ * A tracked edit made after the autostash is not in the stash, so nothing here may reset it away.
  */
 async function restoreStash(path: string, git: GitRun): Promise<{ applied: boolean; clean: boolean; note: string }> {
-  // A tracked edit made after the autostash is not in the stash; a reset would destroy it, so leave both alone.
+  const kept = `Your local modifications remain in the git stash; review git -C ${path} status, then run git -C ${path} stash apply.`
   const status = await git(['status', '--porcelain', '--untracked-files=no'], path)
   if (!status.ok || status.out) {
-    return { applied: false, clean: false, note: `Tracked Agent files changed after the update stashed your local modifications, or their state could not be read, so the stash was not re-applied and nothing was reset. Your earlier modifications remain in the git stash. Review git -C ${path} status, then run git -C ${path} stash apply.` }
+    return { applied: false, clean: false, note: `Tracked Agent files changed after the update stashed your local modifications, or their state could not be read, so nothing was re-applied or reset. ${kept}` }
   }
   if ((await git(['stash', 'apply'], path)).ok) {
     const dropped = (await git(['stash', 'drop'], path)).ok
     return { applied: true, clean: true, note: `Local modifications were restored from the temporary stash.${dropped ? '' : ' The temporary stash entry may still be present because git stash drop failed.'}` }
+  }
+  // Git refuses to apply over a dirty overlapping path without merging; only a merge conflict leaves unmerged paths.
+  const unmerged = await git(['diff', '--name-only', '--diff-filter=U'], path)
+  if (!unmerged.ok || !unmerged.out) return { applied: false, clean: false, note: `Your local modifications could not be re-applied, and nothing was reset. ${kept}` }
+  // Reset only when every changed path came from the stash, so an edit made meanwhile is never discarded.
+  const changed = await git(['diff', '--name-only', 'HEAD'], path)
+  const stashed = await git(['stash', 'show', '--name-only', 'stash@{0}'], path)
+  const fromStash = new Set(gitLines(stashed.out))
+  if (!changed.ok || !stashed.ok || gitLines(changed.out).some((file) => !fromStash.has(file))) {
+    return { applied: false, clean: false, note: `Your local modifications conflicted with the update while other tracked files also changed, so nothing was reset. Manual intervention needed: resolve the conflicts listed by git -C ${path} status. Your earlier modifications remain in the git stash.` }
   }
   if (!(await git(['reset', '--hard', 'HEAD'], path)).ok) {
     return { applied: false, clean: false, note: `Your local modifications could not be restored from the stash, and resetting tracked files to HEAD failed. Manual intervention needed: run git -C ${path} reset --hard HEAD to remove any conflict markers, then git -C ${path} stash apply. Your changes remain in the git stash.` }
