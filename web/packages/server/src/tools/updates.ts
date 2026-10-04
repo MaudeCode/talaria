@@ -14,6 +14,7 @@ import { readCapped } from '../http/capped.js'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { Dict } from '../config/agent-config.js'
 import { dict } from '../config/agent-config.js'
@@ -652,23 +653,24 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
   if (status.out.split('\n').some((line) => ['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'].includes(line.slice(0, 2)))) {
     return { ok: false, message: `The local agent repo has unresolved merge conflicts. To reset to the latest remote version run: git -C ${path} checkout . && git -C ${path} pull --ff-only`, conflict: true }
   }
-  let stashed = false
+  let stashed: string | null = null
   if (status.out) {
     if (!(await git(['stash', 'push', '-m', 'hermes-update-autostash'], path)).ok) return { ok: false, message: 'Failed to stash local changes' }
-    stashed = true
+    // Restore and drop this exact entry, never whichever stash is newest by then.
+    const pushed = await git(['rev-parse', '--verify', 'refs/stash'], path)
+    if (!pushed.ok || !SHA.test(pushed.out)) return { ok: false, message: `Local changes were stashed, but the stash entry could not be identified. They remain in git stash list; run git -C ${path} stash apply.` }
+    stashed = pushed.out
   }
   // Merge the immutable commit that was checked/acknowledged, never re-fetch a moving ref here.
   const pulled = await git(['merge', '--ff-only', revision], path, 30_000)
   if (!pulled.ok) {
-    const restored = stashed ? await restoreStash(path, git) : null
+    const restored = stashed ? await restoreStash(path, git, stashed) : null
     const note = restored ? ` ${restored.note}` : ''
     const conflict = restored && !restored.applied ? { stash_conflict: true } : {}
     if (isGitLockError(pulled.out)) return { ok: false, message: `Pull failed due to a repository lock: ${pulled.out.trim()}.${note}`, lock_conflict: true, ...conflict }
     return { ok: false, message: `Pull failed: ${sanitizeGitDiagnostic(pulled.out)}.${note}`, ...conflict }
   }
-  const restored = stashed ? await restoreStash(path, git) : null
-  // Never report success, or restart, onto a tree that may hold conflict markers or edits nobody saved.
-  if (restored && !restored.clean) return { ok: false, target: 'agent', stash_conflict: true, message: `Agent updated to ${ref}. ${restored.note}` }
+  const restored = stashed ? await restoreStash(path, git, stashed) : null
   const verified = await verifiedAgentIdentity(path, revision, git)
   if (!verified) return { ok: false, message: 'The Agent update completed, but the installed revision could not be verified.', target: 'agent' }
   return { ok: true, message: `agent updated to ${ref}.${restored ? ` ${restored.note}` : ''}`, target: 'agent', ref, ...verified, ...(restored && !restored.applied ? { stash_conflict: true } : {}) }
@@ -677,34 +679,22 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
 const gitLines = (out: string): string[] => out.split('\n').filter(Boolean)
 
 /**
- * Python stash recovery: apply the autostash; on conflict reset tracked files to HEAD and keep the stash.
- * `clean` means the tracked tree is known to hold no conflict markers or unsaved edits, so a restart is safe.
- * A tracked edit made after the autostash is not in the stash, so nothing here may reset it away.
+ * Re-apply the exact autostash with `git apply`, which writes the whole patch or nothing, so a conflict never
+ * leaves markers and nothing ever needs a destructive reset; the stash is kept for manual resolution.
  */
-async function restoreStash(path: string, git: GitRun): Promise<{ applied: boolean; clean: boolean; note: string }> {
-  const kept = `Your local modifications remain in the git stash; review git -C ${path} status, then run git -C ${path} stash apply.`
-  const status = await git(['status', '--porcelain', '--untracked-files=no'], path)
-  if (!status.ok || status.out) {
-    return { applied: false, clean: false, note: `Tracked Agent files changed after the update stashed your local modifications, or their state could not be read, so nothing was re-applied or reset. ${kept}` }
-  }
-  if ((await git(['stash', 'apply'], path)).ok) {
-    const dropped = (await git(['stash', 'drop'], path)).ok
-    return { applied: true, clean: true, note: `Local modifications were restored from the temporary stash.${dropped ? '' : ' The temporary stash entry may still be present because git stash drop failed.'}` }
-  }
-  // Git refuses to apply over a dirty overlapping path without merging; only a merge conflict leaves unmerged paths.
-  const unmerged = await git(['diff', '--name-only', '--diff-filter=U'], path)
-  if (!unmerged.ok || !unmerged.out) return { applied: false, clean: false, note: `Your local modifications could not be re-applied, and nothing was reset. ${kept}` }
-  // Reset only when every changed path came from the stash, so an edit made meanwhile is never discarded.
-  const changed = await git(['diff', '--name-only', 'HEAD'], path)
-  const stashed = await git(['stash', 'show', '--name-only', 'stash@{0}'], path)
-  const fromStash = new Set(gitLines(stashed.out))
-  if (!changed.ok || !stashed.ok || gitLines(changed.out).some((file) => !fromStash.has(file))) {
-    return { applied: false, clean: false, note: `Your local modifications conflicted with the update while other tracked files also changed, so nothing was reset. Manual intervention needed: resolve the conflicts listed by git -C ${path} status. Your earlier modifications remain in the git stash.` }
-  }
-  if (!(await git(['reset', '--hard', 'HEAD'], path)).ok) {
-    return { applied: false, clean: false, note: `Your local modifications could not be restored from the stash, and resetting tracked files to HEAD failed. Manual intervention needed: run git -C ${path} reset --hard HEAD to remove any conflict markers, then git -C ${path} stash apply. Your changes remain in the git stash.` }
-  }
-  return { applied: false, clean: true, note: `Your local modifications conflicted with the update and were set aside in the git stash; tracked files match HEAD. To inspect: git -C ${path} stash show -p. To re-apply: git -C ${path} stash apply, then resolve conflicts, and drop the stash once you are satisfied.` }
+async function restoreStash(path: string, git: GitRun, stash: string): Promise<{ applied: boolean; note: string }> {
+  const dir = mkdtempSync(join(tmpdir(), 'talaria-autostash-'))
+  const patch = join(dir, 'autostash.patch')
+  try {
+    const diffed = await git(['diff', '--binary', `--output=${patch}`, `${stash}^1`, stash], path)
+    if (!diffed.ok || !(await git(['apply', '--whitespace=nowarn', patch], path)).ok) {
+      return { applied: false, note: `Your local modifications could not be re-applied cleanly and were set aside in the git stash (${stash.slice(0, 12)}); Agent files were left as the update wrote them. To inspect: git -C ${path} stash show -p ${stash.slice(0, 12)}. To re-apply: git -C ${path} stash apply ${stash.slice(0, 12)}, then resolve conflicts, and drop that stash entry once you are satisfied.` }
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+  const entries = await git(['stash', 'list', '--format=%H'], path)
+  const index = entries.ok ? gitLines(entries.out).indexOf(stash) : -1
+  const dropped = index >= 0 && (await git(['stash', 'drop', `stash@{${String(index)}}`], path)).ok
+  return { applied: true, note: `Local modifications were restored from the temporary stash.${dropped ? '' : ' The temporary stash entry may still be present because git stash drop failed.'}` }
 }
 
 /** Python `apply_force_update` (agent branch): fetch, refuse a pure-ancestor rewind, `checkout . && clean -fd && reset --hard`. */

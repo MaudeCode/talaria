@@ -774,8 +774,10 @@ describe('Agent checkout updates', () => {
   it('a conflicting local edit leaves a clean checkout, keeps the stash, and restarts onto the update', async () => {
     const a = agentInstall()
     writeFileSync(join(a.agent, 'VERSION'), 'local edit\n')
+    const commands: string[][] = []
+    const recorded: GitRun = (args, cwd, timeout) => { commands.push(args); return runGit(args, cwd, timeout) }
     const events: string[] = []
-    const result = await agentService(a.agent, runGit, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
+    const result = await agentService(a.agent, recorded, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
     expect(result).toMatchObject({ ok: true, target: 'agent', stash_conflict: true, restart_scheduled: true })
     expect(String(result.message)).toContain('stash apply')
     expect(events).toEqual(['gateway', 'restart'])
@@ -784,24 +786,10 @@ describe('Agent checkout updates', () => {
     expect(git(a.agent, 'status', '--porcelain')).toBe('')
     expect(stashes(a.agent)).toHaveLength(1)
     expect(git(a.agent, 'stash', 'show', '-p', 'stash@{0}')).toContain('+local edit')
+    expect(commands.filter((args) => args[0] === 'reset')).toEqual([]) // nothing is ever reset away
   })
 
-  it('a failed cleanup reset after a stash conflict fails closed without restarting', async () => {
-    const a = agentInstall()
-    writeFileSync(join(a.agent, 'VERSION'), 'local edit\n')
-    const commands: string[][] = []
-    const noReset: GitRun = (args, cwd, timeout) => { commands.push(args); return args.join(' ') === 'reset --hard HEAD' ? Promise.resolve({ ok: false, out: 'error: could not reset' }) : runGit(args, cwd, timeout) }
-    const events: string[] = []
-    const result = await agentService(a.agent, noReset, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
-    expect(result).toMatchObject({ ok: false, target: 'agent', stash_conflict: true })
-    expect(String(result.message)).toContain('Manual intervention')
-    expect(String(result.message)).toContain(`git -C ${a.agent} reset --hard HEAD`)
-    expect(events).toEqual([])
-    expect(commands).not.toContainEqual(['stash', 'drop'])
-    expect(stashes(a.agent)).toHaveLength(1)
-  })
-
-  it('an edit made after the autostash is never reset away', async () => {
+  it('an edit made during the merge is never discarded', async () => {
     const a = agentInstall()
     writeFileSync(join(a.agent, 'VERSION'), 'local edit\n')
     const concurrent: GitRun = async (args, cwd, timeout) => {
@@ -809,34 +797,47 @@ describe('Agent checkout updates', () => {
       if (args[0] === 'merge') writeFileSync(join(a.agent, 'README'), 'edited during the update\n')
       return out
     }
-    const events: string[] = []
-    const result = await agentService(a.agent, concurrent, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
-    expect(result).toMatchObject({ ok: false, target: 'agent', stash_conflict: true })
-    expect(events).toEqual([])
+    const result = await agentService(a.agent, concurrent, []).apply('agent', null, () => true, { confirmedRevision: a.v2 })
+    expect(result).toMatchObject({ ok: true, stash_conflict: true })
     expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('edited during the update\n')
+    expect(readFileSync(join(a.agent, 'VERSION'), 'utf8')).toBe('2.0.0\n')
     expect(stashes(a.agent)).toHaveLength(1)
   })
 
   it.each([
-    ['the stashed file, before the apply', 'VERSION', true],
-    ['another file, during the apply', 'README', false],
-  ])('an edit to %s is never reset away', async (_, file, before) => {
+    ['the stashed file', 'README', true],
+    ['another file', 'VERSION', false],
+  ])('an edit to %s just before the restore is never discarded', async (_, file, conflicts) => {
     const a = agentInstall()
-    writeFileSync(join(a.agent, 'VERSION'), 'local edit\n')
-    const edit = (): void => { writeFileSync(join(a.agent, file), 'edited during the update\n') }
+    writeFileSync(join(a.agent, 'README'), 'local note\n')
     const racing: GitRun = async (args, cwd, timeout) => {
-      const applying = args[0] === 'stash' && args[1] === 'apply'
-      if (applying && before) edit()
+      if (args.includes('apply')) writeFileSync(join(a.agent, file), 'edited during the update\n')
+      return runGit(args, cwd, timeout)
+    }
+    const result = await agentService(a.agent, racing, []).apply('agent', null, () => true, { confirmedRevision: a.v2 })
+    expect(result).toMatchObject({ ok: true })
+    expect(readFileSync(join(a.agent, file), 'utf8')).toBe('edited during the update\n')
+    expect(result.stash_conflict).toBe(conflicts ? true : undefined)
+    expect(stashes(a.agent)).toHaveLength(conflicts ? 1 : 0)
+    if (!conflicts) expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('local note\n')
+  })
+
+  it('drops the exact autostash when another stash is created meanwhile', async () => {
+    const a = agentInstall()
+    writeFileSync(join(a.agent, 'README'), 'local note\n')
+    let other = false
+    const racing: GitRun = async (args, cwd, timeout) => {
       const out = await runGit(args, cwd, timeout)
-      if (applying && !before) edit()
+      if (!other && args.includes('apply') && out.ok) {
+        other = true
+        writeFileSync(join(a.agent, 'VERSION'), 'another edit\n')
+        git(a.agent, 'stash', 'push', '-m', 'another process')
+      }
       return out
     }
-    const events: string[] = []
-    const result = await agentService(a.agent, racing, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
-    expect(result).toMatchObject({ ok: false, target: 'agent', stash_conflict: true })
-    expect(events).toEqual([])
-    expect(readFileSync(join(a.agent, file), 'utf8')).toBe('edited during the update\n')
+    expect(await agentService(a.agent, racing, []).apply('agent', null, () => true, { confirmedRevision: a.v2 })).toMatchObject({ ok: true })
     expect(stashes(a.agent)).toHaveLength(1)
+    expect(stashes(a.agent)[0]).toContain('another process')
   })
 
   it('a cleanly applied stash is dropped and the update restarts', async () => {
@@ -851,7 +852,7 @@ describe('Agent checkout updates', () => {
     expect(stashes(a.agent)).toEqual([])
   })
 
-  it('a pull failure whose stash restore conflicts resets the checkout and keeps the stash', async () => {
+  it('a pull failure whose stash restore conflicts keeps a clean checkout and the stash', async () => {
     const a = agentInstall()
     writeFileSync(join(a.agent, 'VERSION'), 'local edit\n')
     // A failed merge that still moved the tree is the only way the restore can conflict; simulate it.
