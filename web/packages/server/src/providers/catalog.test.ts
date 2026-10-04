@@ -81,4 +81,10 @@ describe('catalog entries carry their routing provider and bare id', () => {
     expect(ollama?.models).toContainEqual(expect.objectContaining({ id: 'llama3:8b', provider_id: 'ollama', bare_id: 'llama3:8b' }))
     for (const row of rows) for (const m of row.models) expect(m.provider_id).toBe(parseProviderQualifiedModel(m.id)?.[1] ?? row.id)
   })
+
+  it('stamps /api/models/live entries with the echoed provider', async () => {
+    const live = (await (await s.get('/api/models/live?provider=gemini')).json()) as { provider: string; models: Entry[] }
+    expect(live.provider).toBe('gemini')
+    expect(live.models).toContainEqual(expect.objectContaining({ id: 'gemini-2.5-flash', provider_id: 'gemini', bare_id: 'gemini-2.5-flash' }))
+  })
 })

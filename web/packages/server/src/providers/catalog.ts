@@ -633,7 +633,7 @@ export class ProviderCatalog {
     // OpenAI-family rows with `supports_fast_tier`; the answer carries `count`.
     if (provider !== 'nous' && ids.length > MODEL_PICKER_OVERFLOW_THRESHOLD) ids = ids.slice(0, MODEL_PICKER_VISIBLE_TARGET)
     const annotateFastTier = isOpenAiFamilyProvider(provider)
-    const models = ids.filter(Boolean).map((id) => ({ id, label: labelForModel(id, []), ...(annotateFastTier ? { supports_fast_tier: mainModelSupportsServiceTier(id, provider) } : {}) }))
+    const models = stampModelEntries(ids.filter(Boolean).map((id) => ({ id, label: labelForModel(id, []), ...(annotateFastTier ? { supports_fast_tier: mainModelSupportsServiceTier(id, provider) } : {}) })), provider)
     return { provider, source, models, count: models.length }
   }
 
@@ -646,7 +646,7 @@ export class ProviderCatalog {
     const config = await this.deps.config.read(profileHome)
     const section = modelSection(config)
     const pid = canonicaliseProviderId(provider ?? section.provider) || null
-    const bare = model.replace(/^@[^:]+:/, '')
+    const bare = unqualifiedModelId(model)
     const positive = (v: unknown): number | null => { const n = Math.trunc(Number(v)); return Number.isFinite(n) && n > 0 ? n : null }
     const fromModels = (models: unknown): number | null => {
       if (isDict(models)) { for (const key of [model, bare]) { const e = models[key]; const n = positive(isDict(e) ? e.context_length : e); if (n !== null) return n } }
@@ -656,7 +656,7 @@ export class ProviderCatalog {
     let baseUrl = ''
     let configContextLength: number | null = null
     const sectionModel = str(section.default || (typeof config.model === 'string' ? config.model : '')).trim()
-    if (sectionModel && [model, bare].includes(sectionModel.replace(/^@[^:]+:/, ''))) configContextLength = positive(section.context_length)
+    if (sectionModel && [model, bare].includes(unqualifiedModelId(sectionModel))) configContextLength = positive(section.context_length)
     if (!pid || canonicaliseProviderId(section.provider) === pid) baseUrl = str(section.base_url).trim()
     if (pid) {
       const providersCfg = dict(config.providers)

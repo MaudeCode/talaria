@@ -416,7 +416,7 @@ export function selectionExists(catalog: ModelsCatalog, model: string | null, pr
   const norm = (s: string): string => s.trim().toLowerCase()
   return groups.some((g) => (!provider || g.provider_id === provider) && g.models.some((m) => {
     const id = norm(m.id)
-    return id === norm(model) || id === norm(`@${g.provider_id}:${model}`) || id.replace(/^@[^:]+:/, '') === norm(model)
+    return id === norm(model) || id === norm(`@${g.provider_id}:${model}`) || norm(parseProviderQualifiedModel(m.id)?.[0] ?? m.id) === norm(model)
   }))
 }
 
