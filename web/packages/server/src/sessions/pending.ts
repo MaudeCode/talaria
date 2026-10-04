@@ -125,6 +125,11 @@ export class PendingPrompts {
     return q
   }
 
+  /** Forget an emptied queue only once no stream watches it: a later prompt must reach the same subscribers. */
+  private prune(map: Map<string, Queue>, sid: string, q: Queue): void {
+    if (!q.entries.length && !q.subscribers.size && map.get(sid) === q) map.delete(sid)
+  }
+
   private notify(q: Queue): void {
     const payload = { pending: q.entries[0] ? { ...q.entries[0] } : null, pending_count: q.entries.length }
     for (const sub of q.subscribers) {
@@ -174,7 +179,7 @@ export class PendingPrompts {
       if (index < 0) return { entry: null, found: false }
     }
     const [entry] = q.entries.splice(index, 1)
-    if (!q.entries.length) this.approvals.delete(sid)
+    this.prune(this.approvals, sid, q)
     this.notify(q)
     this.events.publish('attention_resolved')
     return { entry: entry ?? null, found: true }
@@ -184,10 +189,27 @@ export class PendingPrompts {
     const q = this.approvals.get(sid)
     if (!q) return []
     const entries = q.entries.splice(0)
-    this.approvals.delete(sid)
+    this.prune(this.approvals, sid, q)
     this.notify(q)
     if (entries.length) this.events.publish('attention_resolved')
     return entries
+  }
+
+  approvalRequestIds(sid: string): string[] {
+    return (this.approvals.get(sid)?.entries ?? []).map((e) => str(e.request_id)).filter(Boolean)
+  }
+
+  /** TAL-514: drop the approvals with these `request_id`s (ones the Agent no longer holds); returns the dropped entries. */
+  dropApprovals(sid: string, requestIds: ReadonlySet<string>): Record<string, unknown>[] {
+    const q = this.approvals.get(sid)
+    if (!q) return []
+    const dropped = q.entries.filter((e) => requestIds.has(str(e.request_id)))
+    if (!dropped.length) return []
+    q.entries.splice(0, q.entries.length, ...q.entries.filter((e) => !dropped.includes(e)))
+    this.prune(this.approvals, sid, q)
+    this.notify(q)
+    this.events.publish('attention_resolved')
+    return dropped
   }
 
   hasApprovalId(sid: string, approvalId: string): boolean {
@@ -209,7 +231,7 @@ export class PendingPrompts {
     sub.closed = true
     const q = this.approvals.get(sid)
     q?.subscribers.delete(sub)
-    if (q && !q.entries.length && !q.subscribers.size) this.approvals.delete(sid)
+    if (q) this.prune(this.approvals, sid, q)
   }
 
   // ── clarify ──
@@ -255,7 +277,7 @@ export class PendingPrompts {
     const index = clarifyId ? q.entries.findIndex((e) => e.clarify_id === clarifyId) : 0
     if (index < 0) return { entry: null, head: null }
     const [entry] = q.entries.splice(index, 1)
-    if (!q.entries.length) this.clarifies.delete(sid)
+    this.prune(this.clarifies, sid, q)
     this.notify(q)
     this.events.publish('attention_resolved')
     return { entry: entry ?? null, head: index === 0 ? this.clarifyHeadFrame(sid) : null }
@@ -266,7 +288,7 @@ export class PendingPrompts {
     if (!q) return 0
     const n = q.entries.length
     q.entries.length = 0
-    this.clarifies.delete(sid)
+    this.prune(this.clarifies, sid, q)
     this.notify(q)
     if (n) this.events.publish('attention_resolved')
     return n
@@ -287,7 +309,7 @@ export class PendingPrompts {
     sub.closed = true
     const q = this.clarifies.get(sid)
     q?.subscribers.delete(sub)
-    if (q && !q.entries.length && !q.subscribers.size) this.clarifies.delete(sid)
+    if (q) this.prune(this.clarifies, sid, q)
   }
 
   /** Session ids with any outstanding prompt (sidebar attention). */

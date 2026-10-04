@@ -37,7 +37,7 @@ const ServerTurn = z.looseObject({ session_id: z.string().optional(), stream_id:
 const Loose = z.looseObject({})
 
 export const CHAT_EVENT_NAMES = [
-  'token', 'reasoning', 'tool', 'tool_complete', 'interim_assistant', 'approval', 'clarify', 'compressing', 'compressed',
+  'token', 'reasoning', 'tool', 'tool_complete', 'interim_assistant', 'approval', 'approval_cleared', 'clarify', 'compressing', 'compressed',
   'title', 'title_status', 'warning', 'apperror', 'cancel', 'error', 'done', 'stream_end', 'metering', 'context_status',
   'goal', 'goal_continue', 'pending_steer_leftover', 'steer_consumed', 'steer_pending', 'steer_withdrawn', 'state_saved', 'todo_state', 'bg_task_complete',
   'server_turn_started', 'hello', 'initial', 'events', 'gateway_status', 'sessions_changed',
@@ -51,6 +51,8 @@ export const ChatEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('tool'), data: Tool }),
   z.object({ event: z.literal('tool_complete'), data: ToolComplete }),
   z.object({ event: z.literal('approval'), data: Approval }),
+  /** TAL-514: the last pending approval was withdrawn (answered elsewhere, or the Agent stopped waiting); clients drop the card. */
+  z.object({ event: z.literal('approval_cleared'), data: z.looseObject({ session_id: z.string().optional(), pending_count: z.number() }) }),
   z.object({ event: z.literal('clarify'), data: Clarify }),
   z.object({ event: z.literal('compressing'), data: Compression }),
   z.object({ event: z.literal('compressed'), data: Compression }),

@@ -536,6 +536,34 @@ def _supported(cls, name: str) -> bool:
     return name in parameters or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values())
 
 
+def _approval_notifier(session_id: str, emit):
+    """The Agent's gateway notify callback for one turn: emits each parked approval, then ``approval_resolved``
+    (id plus the Agent's reason) once its wait ends by any path, an ``approvals.timeout`` expiry included (TAL-514)."""
+    try:
+        from tools.approval import register_gateway_settle
+    except Exception:  # noqa: BLE001
+        register_gateway_settle = None
+
+    def notify(data):
+        payload = dict(data or {})
+        payload.setdefault("session_id", session_id)
+        payload.setdefault("approval_id", str(payload.get("request_id") or uuid.uuid4().hex))
+        emit("approval", payload)
+        request_id = str(payload.get("request_id") or "")
+        if register_gateway_settle is None or not request_id:
+            return
+        approval_id = payload["approval_id"]
+
+        def settle(reason):
+            emit("approval_resolved", {"approval_id": approval_id, "session_id": session_id, "reason": str(reason or "")})
+
+        # False: the wait already ended between the emit and this registration.
+        if not register_gateway_settle(session_id, request_id, settle):
+            settle("resolved")
+
+    return notify
+
+
 def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, one function
     session_id = str(params.get("session_id") or "").strip()
     stream_id = str(params.get("stream_id") or "").strip()
@@ -691,15 +719,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             from tools.approval import register_gateway_notify, unregister_gateway_notify
         except Exception:  # noqa: BLE001
             register_gateway_notify = unregister_gateway_notify = None
-        if register_gateway_notify is not None:
-            def _approval_cb(data):
-                payload = dict(data or {})
-                payload.setdefault("session_id", session_id)
-                payload.setdefault("approval_id", str(payload.get("request_id") or uuid.uuid4().hex))
-                emit("approval", payload)
-            approval_cb = _approval_cb
-        else:
-            approval_cb = None
+        approval_cb = _approval_notifier(session_id, emit) if register_gateway_notify is not None else None
 
         kwargs: dict = dict(
             model=resolved_model,

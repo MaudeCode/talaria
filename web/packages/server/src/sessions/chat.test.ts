@@ -1585,6 +1585,80 @@ describe('chat turns through the sidecar', () => {
     await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&after_event_id=${String(start.stream_id)}:0`, (f) => f.event === 'stream_end')
   })
 
+  it('withdraws an approval the Agent timed out and shows the one queued behind it (TAL-514)', async () => {
+    const sid = await newSession(s)
+    let release: () => void = () => undefined
+    let emitFrame: (frame: { event: string; data: Json }) => void = () => undefined
+    sidecar.respond('chat.start', async (params, emit) => {
+      emitFrame = emit
+      emit({ event: 'approval', data: { request_id: 'to-1', command: 'rm -rf build', session_id: sid } })
+      emit({ event: 'approval', data: { request_id: 'to-2', command: 'rm -rf dist', session_id: sid } })
+      await new Promise<void>((resolve) => { release = resolve })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'clean' }))
+    const streamId = String(start.stream_id)
+    const queued = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'approval' && (f.data as Json).pending_count === 2)
+    const head = (data: Json): unknown => (data.pending as Json | null)?.approval_id ?? null
+    const settled = (approvalId: string | null, count: number) => (f: SseFrame): boolean => f.event === 'approval' && head(f.data as Json) === approvalId && (f.data as Json).pending_count === count
+    // The Agent's approvals.timeout expires on the head: the approval stream, GET pending, and the chat card all move on.
+    const timedOut = s.sse(`/api/approval/stream?session_id=${sid}`, settled('to-2', 1))
+    await new Promise((r) => setTimeout(r, 50))
+    emitFrame({ event: 'approval_resolved', data: { approval_id: 'to-1', session_id: sid, reason: 'timeout' } })
+    expect((await timedOut).filter((f) => f.event === 'approval').map((f) => f.data)).toMatchObject([{ pending: { approval_id: 'to-2' }, pending_count: 1 }])
+    expect(await json(await s.get(`/api/approval/pending?session_id=${sid}`))).toMatchObject({ pending: { approval_id: 'to-2' }, pending_count: 1 })
+    const promoted = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(queued.length)}`, (f) => f.event === 'approval')
+    expect(promoted.filter((f) => f.event === 'approval').map((f) => f.data)).toMatchObject([{ approval_id: 'to-2', pending_count: 1 }])
+    // The second approval is answerable; the Agent's settle frame for it clears the chat card.
+    const watcher = s.sse(`/api/approval/stream?session_id=${sid}`, settled('to-3', 1))
+    await new Promise((r) => setTimeout(r, 50))
+    sidecar.respond('approval.respond', (params) => ({ ok: params.request_id === 'to-2', resolved: params.request_id === 'to-2' ? 1 : 0, choice: params.choice }))
+    expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'to-2' }))).toEqual({ ok: true, choice: 'once' })
+    emitFrame({ event: 'approval_resolved', data: { approval_id: 'to-2', session_id: sid, reason: 'resolved' } })
+    const cleared = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(queued.length + promoted.length)}`, (f) => f.event === 'approval_cleared')
+    expect(cleared.filter((f) => f.event.startsWith('approval')).map((f) => [f.event, f.data])).toEqual([['approval_cleared', { session_id: sid, pending_count: 0 }]])
+    // An approval stream that watched the queue empty still hears the next prompt.
+    emitFrame({ event: 'approval', data: { request_id: 'to-3', command: 'rm -rf out', session_id: sid } })
+    expect((await watcher).filter((f) => f.event === 'approval').map((f) => f.data)).toMatchObject([{ pending: null, pending_count: 0 }, { pending: { approval_id: 'to-3' }, pending_count: 1 }])
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
+  })
+
+  it('drops approvals the Agent no longer holds when it rejects an answer (TAL-514)', async () => {
+    const sid = await newSession(s)
+    let release: () => void = () => undefined
+    let emitFrame: (frame: { event: string; data: Json }) => void = () => undefined
+    sidecar.respond('chat.start', async (params, emit) => {
+      emitFrame = emit
+      emit({ event: 'approval', data: { request_id: 'dead-1', command: 'rm -rf build', session_id: sid } })
+      emit({ event: 'approval', data: { request_id: 'live-2', command: 'rm -rf dist', session_id: sid } })
+      await new Promise<void>((resolve) => { release = resolve })
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'done' }])
+    })
+    const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'clean' }))
+    const streamId = String(start.stream_id)
+    const queued = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'approval' && (f.data as Json).pending_count === 2)
+    // The Agent stopped waiting on dead-1 without the server hearing; it still holds live-2. live-3 parks while the
+    // snapshot is in flight, so the snapshot cannot list it and it must survive the reconcile.
+    sidecar.respond('approval.respond', () => ({ ok: false, resolved: 0, choice: 'once' }))
+    sidecar.respond('approval.pending', () => {
+      const snapshot = { pending: [{ request_id: 'live-2', command: 'rm -rf dist' }] }
+      emitFrame({ event: 'approval', data: { request_id: 'live-3', command: 'rm -rf out', session_id: sid } })
+      return snapshot
+    })
+    expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'dead-1' }))).toEqual({ ok: true, choice: 'once', stale_cleared: true, pending_count: 2 })
+    expect(await json(await s.get(`/api/approval/pending?session_id=${sid}`))).toMatchObject({ pending: { approval_id: 'live-2' }, pending_count: 2 })
+    const promoted = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(queued.length)}`, (f) => f.event === 'approval' && (f.data as Json).approval_id === 'live-2')
+    expect(promoted.filter((f) => f.event === 'approval').map((f) => f.data)).toMatchObject([{ approval_id: 'dead-1', pending_count: 3 }, { approval_id: 'live-2', pending_count: 2 }])
+    // A dead card answered with YOLO reports YOLO on once it is set.
+    sidecar.respond('approval.pending', () => ({ pending: [] }))
+    sidecar.respond('approval.set_yolo', (params) => ({ yolo_enabled: params.enabled, released: 0 }))
+    expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'live-2', yolo: true }))).toEqual({ ok: true, choice: 'once', stale_cleared: true, pending_count: 0, yolo_enabled: true })
+    expect((await json(await s.get(`/api/approval/pending?session_id=${sid}`))).pending_count).toBe(0)
+    release()
+    await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:0`, (f) => f.event === 'stream_end')
+  })
+
   it('a steer accepted as the turn completes is still reported by that turn', async () => {
     const sid = await newSession(s)
     let finishTurn: () => void = () => undefined

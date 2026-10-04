@@ -268,6 +268,8 @@ export const ChatStreamSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('approval'), data: Loose }),
   z.object({ event: z.literal('clarify'), data: Loose }),
   z.object({ event: z.literal('clarify_resolved'), data: Loose }),
+  /** The Agent stopped waiting on an approval: `reason` is its settle cause (`resolved`, `timeout`, `interrupted`, `session_closed`). */
+  z.object({ event: z.literal('approval_resolved'), data: z.looseObject({ approval_id: z.string(), session_id: z.string().optional(), reason: z.string().optional() }) }),
   z.object({ event: z.literal('compressing'), data: Loose }),
   z.object({ event: z.literal('warning'), data: Loose }),
   z.object({ event: z.literal('status'), data: Loose }),

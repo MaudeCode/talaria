@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "An approval request the agent stopped waiting for disappears from Web and the app, and the next queued request shows and can be answered instead of being stuck behind it.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
