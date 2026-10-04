@@ -165,15 +165,18 @@ export function githubJson(fetchImpl: typeof fetch, env: Record<string, string |
   }
 }
 
-export interface PublishedRelease { tag: string; version: string; sourceRevision: string; releaseSet: string; image: string; npm: string | null; manifestReleaseSet: string; runtime: Dict; release_url: string; channelVersions: string[] }
-
-/** Published channel releases newer than `installed`, up to `release`: what an update skips past. Never below 1. */
-function releasesBehind(installed: string, release: PublishedRelease): number {
-  return Math.max(1, release.channelVersions.filter((v) => compareVersions(installed, v) < 0 && compareVersions(v, release.version) <= 0).length)
+export interface PublishedRelease { tag: string; version: string; sourceRevision: string; releaseSet: string; image: string; npm: string | null; manifestReleaseSet: string; runtime: Dict; release_url: string
+  /** Completed channel releases newer than the `installed` version passed to `publishedWebRelease`, this one included; 1 when it was not passed. */
+  releasesBehind: number
 }
 
-/** Python `published_web_release`: the newest completed `release-set-<sha>` whose Web component matches the channel's tag family. */
-export async function publishedWebRelease(channel: Channel, getJson: GetJson, now: () => number = () => performance.now()): Promise<PublishedRelease> {
+const completeManifest = (m: Dict | null, tag: string): m is Dict => m?.schemaVersion === 1 && m.status === 'complete' && m.releaseSet === tag.slice('release-set-'.length)
+
+/**
+ * Python `published_web_release`: the newest completed `release-set-<sha>` whose Web component matches the channel's tag family.
+ * `installed` (a bare `X.Y.Z`) also counts the completed releases an update skips, one manifest per older release set (TAL-624).
+ */
+export async function publishedWebRelease(channel: Channel, getJson: GetJson, now: () => number = () => performance.now(), installed?: string): Promise<PublishedRelease> {
   const tagPattern = new RegExp(`^${channel === 'experimental' ? 'web-exp-v' : 'web-v'}${VERSION}$`)
   const deadline = now() + 15_000
   const fetchJson = (path: string, asset = false): Promise<unknown> => {
@@ -190,17 +193,39 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
   }
   if (exhausted) throw new ReleaseUnavailable('Release history exceeds automatic lookup; update manually')
   published.sort((a, b) => (str(a.published_at) < str(b.published_at) ? 1 : str(a.published_at) > str(b.published_at) ? -1 : 0))
-  const channelVersions = published.map((r) => str(r.tag_name)).filter((t) => tagPattern.test(t)).map((t) => t.split('-v').pop() ?? '')
-  for (const release of published) {
+  /** A release set's tag and manifest; null for other releases. */
+  const manifestOf = async (release: Dict): Promise<{ tag: string; m: Dict | null } | null> => {
     const tag = release.tag_name
-    if (typeof tag !== 'string' || !/^release-set-[a-f0-9]{40}$/.test(tag)) continue
+    if (typeof tag !== 'string' || !/^release-set-[a-f0-9]{40}$/.test(tag)) return null
     if (!Array.isArray(release.assets)) throw new ReleaseUnavailable('Published release set has invalid assets')
     const assets = release.assets.filter((a): a is Dict => Boolean(a) && typeof a === 'object' && (a as Dict).name === 'release-set.json')
     const id = assets[0]?.id
     if (assets.length !== 1 || typeof id !== 'number' || !Number.isInteger(id) || id < 1) throw new ReleaseUnavailable('Published release set lacks its immutable manifest')
     const manifest = await fetchJson(`/releases/assets/${String(id)}`, true)
-    const m = manifest && typeof manifest === 'object' && !Array.isArray(manifest) ? (manifest as Dict) : null
-    if (m?.schemaVersion !== 1 || m.status !== 'complete' || m.releaseSet !== tag.slice('release-set-'.length)) throw new ReleaseUnavailable('Release set is incomplete or has inconsistent provenance')
+    return { tag, m: manifest && typeof manifest === 'object' && !Array.isArray(manifest) ? (manifest as Dict) : null }
+  }
+  /** Distinct completed channel versions above `installed` in the older release sets, plus `latest`. A Web tag without a completed set never counts; an unreadable set ends the count. */
+  const releasesSince = async (older: Dict[], latest: string): Promise<number> => {
+    if (installed === undefined || compareVersions(latest, installed) <= 0) return 1
+    const versions = new Set([latest])
+    try {
+      for (const release of older) {
+        const set = await manifestOf(release)
+        if (!set || !completeManifest(set.m, set.tag)) continue
+        const webTag = dict(dict(set.m.components).web).tag
+        if (typeof webTag !== 'string' || !tagPattern.test(webTag)) continue
+        const version = webTag.split('-v').pop() ?? ''
+        if (compareVersions(version, installed) <= 0) break
+        versions.add(version)
+      }
+    } catch { /* the newest release still counts */ }
+    return versions.size
+  }
+  for (const [index, release] of published.entries()) {
+    const set = await manifestOf(release)
+    if (!set) continue
+    const { tag, m } = set
+    if (!completeManifest(m, tag)) throw new ReleaseUnavailable('Release set is incomplete or has inconsistent provenance')
     if (!m.components || typeof m.components !== 'object' || Array.isArray(m.components)) throw new ReleaseUnavailable('Release set lacks component metadata')
     const componentRaw = (m.components as Dict).web ?? {}
     if (!componentRaw || typeof componentRaw !== 'object' || Array.isArray(componentRaw)) throw new ReleaseUnavailable('Release set lacks Web metadata')
@@ -233,7 +258,7 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
       manifestReleaseSet: str(m.releaseSet),
       runtime: { tag: componentTag, version: component.version, sourceRevision: source, releaseSet: source, contracts: supported, compatibleAgent: agent },
       release_url: `${REPOSITORY_URL}/releases/tag/${tag}`,
-      channelVersions,
+      releasesBehind: await releasesSince(published.slice(index + 1), str(component.version)),
     }
   }
   throw new ReleaseUnavailable('No completed Talaria Web release is available on this channel')
@@ -402,9 +427,11 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
   const result: Dict = { name: 'webui', channel, repo_url: REPOSITORY_URL, current_version: currentVersion, behind: null, no_git: root === null }
   if (root !== null) return { ...result, manual_update: true, message: CONTRIBUTOR_CHECKOUT_MESSAGE }
   if (channel === 'experimental' && npmInstall && registry) return checkNpmExperimental(result, npmInstall, id, registry)
+  const packaged = new RegExp(`^${channel === 'experimental' ? 'web-exp-v' : 'web-v'}${VERSION}$`).exec(currentVersion)?.slice(1, 4).join('.')
+  const installed = npmInstall?.version ?? packaged
   let release: PublishedRelease
   try {
-    release = await publishedWebRelease(channel, getJson)
+    release = await publishedWebRelease(channel, getJson, undefined, installed && new RegExp(`^${VERSION}$`).test(installed) ? installed : undefined)
   } catch (error) {
     if (error instanceof ReleaseUnavailable) return { ...result, manual_update: true, error: error.message, ...(error.transient ? { stale_check: true } : {}) }
     return { ...result, manual_update: true, error: 'Talaria release metadata is unavailable. Private repositories require TALARIA_RELEASE_TOKEN with Contents read access.' }
@@ -418,7 +445,7 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
     if (npmInstall && channel === 'stable' && release.npm && !str(id.release().tag).startsWith('web-exp-v')) {
       const comparison = compareVersions(npmInstall.version, release.version)
       if (comparison > 0) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: 0, no_git: true, install_kind: 'npm', manual_update: true, message: 'This npm installation is ahead of the selected Stable release.' }
-      if (comparison < 0) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: releasesBehind(npmInstall.version, release), no_git: true, install_kind: 'npm', npm: release.npm, manual_update: false, message: `Stable npm update ${release.version} is available.` }
+      if (comparison < 0) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: release.releasesBehind, no_git: true, install_kind: 'npm', npm: release.npm, manual_update: false, message: `Stable npm update ${release.version} is available.` }
       const installed = diskRelease(npmInstall.packageRoot)
       if (!same(installed, release.runtime)) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: null, no_git: true, install_kind: 'npm', manual_update: true, error: 'Installed npm release metadata does not match the completed release.' }
       const metadataRepair = !same(id.release(), release.runtime)
@@ -431,7 +458,7 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
       const installed = version.slice(1).map(Number)
       const latest = release.version.split('.').map(Number)
       const cmp = installed.map((v, i) => Math.sign(v - (latest[i] ?? 0))).find((s) => s !== 0) ?? 0
-      if (cmp !== 0) behind = cmp < 0 ? releasesBehind(version.slice(1, 4).join('.'), release) : 0
+      if (cmp !== 0) behind = cmp < 0 ? release.releasesBehind : 0
     }
     return { ...result, current_sha: current, behind, no_git: true, manual_update: true, message: 'Use the published Talaria Web image or authenticated monorepo installation; legacy checkouts require migration.' }
   }
