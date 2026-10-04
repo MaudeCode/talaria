@@ -285,15 +285,20 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertEqual(checked.map(\.id), ["@custom:localhost:8080:m"])
     }
 
-    /// An older server stamps nothing: an entry matches its exact id only, and
-    /// a provider named on both sides still has to agree.
-    func testUnstampedEntryMatchesItsExactIDOnly() {
+    /// An older server stamps nothing: an entry matches its exact id, or the
+    /// `@provider:model` spelling it gives an inactive provider's row for the
+    /// stored bare pair; a provider named on both sides still has to agree.
+    func testUnstampedEntryMatchesItsExactOrProviderSpelledID() {
         let prefixed = ModelCatalogOption(id: "@gemini:flash", displayName: "Prefixed", providerID: "gemini")
         let bare = ModelCatalogOption(id: "flash", displayName: "Bare", providerID: "gemini")
+        let colonPrefixed = ModelCatalogOption(id: "@ollama:llama3:8b", displayName: "Llama", providerID: "ollama")
 
         XCTAssertTrue(prefixed.isSelected(optionID: nil, modelID: "@gemini:flash", providerID: nil))
         XCTAssertTrue(prefixed.isSelected(optionID: nil, modelID: "@gemini:flash", providerID: "gemini"))
-        XCTAssertFalse(prefixed.isSelected(optionID: nil, modelID: "flash", providerID: "gemini"))
+        XCTAssertTrue(prefixed.isSelected(optionID: nil, modelID: "flash", providerID: "gemini"))
+        XCTAssertFalse(prefixed.isSelected(optionID: nil, modelID: "flash", providerID: "google"))
+        XCTAssertFalse(prefixed.isSelected(optionID: nil, modelID: "flash", providerID: nil))
+        XCTAssertTrue(colonPrefixed.isSelected(optionID: nil, modelID: "llama3:8b", providerID: "ollama"))
         XCTAssertFalse(bare.isSelected(optionID: nil, modelID: "flash", providerID: "google"))
         XCTAssertTrue(bare.isSelected(optionID: nil, modelID: "flash", providerID: "gemini"))
         XCTAssertEqual([prefixed, bare].firstSelected(optionID: nil, modelID: "flash", providerID: nil)?.displayName, "Bare")

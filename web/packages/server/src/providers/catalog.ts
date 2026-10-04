@@ -251,6 +251,9 @@ export class ProviderCatalog {
       this.liveIds.delete(key)
     }
     this.providersCache.clear()
+    // The picker catalog changed: option ids rebuild on the next read rather than pairing against the old one.
+    if (profileHome) this.lastModels.delete(profileHome)
+    else this.lastModels.clear()
   }
 
   /** TAL-301: the entry id a stored `(model, provider)` pair selects in the last catalog built for this home; a cold home starts building one. */

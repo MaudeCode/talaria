@@ -144,6 +144,12 @@ struct ChatComposerConfigLoader {
             if state.currentModel == nil {
                 state.currentModel = modelsResponse.defaultModel
                 state.currentModelOptionID = modelsResponse.defaultOptionID
+            } else if state.currentModelOptionID == nil,
+                      state.currentModel == (modelsResponse.defaultBareID ?? modelsResponse.defaultModel),
+                      state.currentModelProvider == nil || state.currentModelProvider == modelsResponse.defaultProviderID {
+                // A profile default (profile switch, profile row) is the
+                // server's default selection: take its entry.
+                state.currentModelOptionID = modelsResponse.defaultOptionID
             }
             if Self.nonEmpty(state.currentModelProvider) == nil {
                 state.currentModelProvider = Self.nonEmpty(selectedProfile?.provider)

@@ -64,11 +64,16 @@ extension ModelCatalogOption {
     /// Whether this entry is the selection. A server-stamped catalog names
     /// the selected entry itself (`optionID`, TAL-301), so the app only
     /// compares ids. An older server's unstamped entry falls back to its exact
-    /// id, and a provider named on both sides still has to agree.
+    /// id (a provider named on both sides still has to agree), or to the
+    /// `@provider:model` spelling that server gives an inactive provider's row.
     public func isSelected(optionID: String?, modelID: String?, providerID: String?) -> Bool {
         if bareID != nil { return optionID != nil && id == optionID }
         guard let modelID, !modelID.isEmpty else { return false }
-        return id == modelID && (providerID == nil || self.providerID == nil || self.providerID == providerID)
+        if id == modelID {
+            return providerID == nil || self.providerID == nil || self.providerID == providerID
+        }
+        guard let providerID, self.providerID == providerID else { return false }
+        return id == "@\(providerID):\(modelID)"
     }
 }
 

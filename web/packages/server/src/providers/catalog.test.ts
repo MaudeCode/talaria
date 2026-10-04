@@ -101,6 +101,15 @@ describe('catalog entries carry their routing provider and bare id', () => {
     }
   })
 
+  it('a catalog invalidation drops the option ids it paired against', async () => {
+    await s.get('/api/models')
+    expect(s.deps.catalog.modelOptionFor(s.state, 'llama3:8b', 'ollama')).toBe('@ollama:llama3:8b')
+    s.deps.catalog.invalidate(s.state)
+    expect(s.deps.catalog.modelOptionFor(s.state, 'llama3:8b', 'ollama')).toBeNull()
+    await s.deps.catalog.warmModelOptions(s.state)
+    expect(s.deps.catalog.modelOptionFor(s.state, 'llama3:8b', 'ollama')).toBe('@ollama:llama3:8b')
+  })
+
   it('cron job payloads carry the catalog entry their stored pair selects', async () => {
     const jobs = new Map<string, Json>()
     sidecar.respond('cron.list', () => ({ jobs: [...jobs.values()] as never[] }))

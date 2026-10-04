@@ -561,6 +561,18 @@ public final class ChatViewModel {
         currentModelOptionID
     }
 
+    /// The catalog entry a draft picked. A draft saved before drafts kept the
+    /// entry id (TAL-301) holds only the server's bare pair, which the stamped
+    /// entry carries as `bareID`/`providerID`.
+    private func draftModelOption(_ settings: ChatDraftSettings, modelID: String) -> ModelCatalogOption? {
+        let options = modelCatalogGroups.flatMap(\.slashAutocompleteModels)
+        guard settings.modelOptionID == nil else {
+            return options.firstSelected(optionID: settings.modelOptionID, modelID: modelID, providerID: settings.modelProviderID)
+        }
+        return options.first { $0.bareID == modelID && $0.providerID == settings.modelProviderID }
+            ?? options.firstSelected(optionID: nil, modelID: modelID, providerID: settings.modelProviderID)
+    }
+
     public var selectedWorkspacePath: String? {
         currentWorkspace
     }
@@ -1199,9 +1211,7 @@ public final class ChatViewModel {
 
         guard canContinueDraftSettingsRestore(expectedInteractionGeneration) else { return }
         if let modelID = settings.modelID,
-           let option = modelCatalogGroups
-               .flatMap(\.slashAutocompleteModels)
-               .firstSelected(optionID: settings.modelOptionID, modelID: modelID, providerID: settings.modelProviderID),
+           let option = draftModelOption(settings, modelID: modelID),
            !option.isSelected(optionID: currentModelOptionID, modelID: currentModel, providerID: currentModelProvider) {
             _ = await selectComposerModel(option, recordsInteraction: false)
             guard canContinueDraftSettingsRestore(expectedInteractionGeneration) else { return }
