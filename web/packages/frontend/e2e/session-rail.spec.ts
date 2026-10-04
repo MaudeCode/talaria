@@ -42,6 +42,17 @@ async function openSidebar(page: Page): Promise<void> {
   await expect(item(page, 'rail-idle')).toBeVisible()
 }
 
+/** Where the actions always show (narrow, with a pointer), no timestamp sits under them. */
+async function expectTimesClearActions(page: Page): Promise<void> {
+  for (const sid of ['rail-idle', 'rail-running', 'rail-attention', 'rail-both']) {
+    const actions = item(page, sid).locator('.session-actions')
+    if (await actions.evaluate((node) => getComputedStyle(node).opacity !== '1' || getComputedStyle(node).display === 'none')) continue
+    const time = await item(page, sid).locator('.session-time').boundingBox()
+    const box = await actions.boundingBox()
+    expect(time && box && time.x + time.width <= box.x, `${sid} timestamp clears the actions`).toBe(true)
+  }
+}
+
 async function expectStatus(page: Page): Promise<void> {
   const accent = await resolved(page, '--accent')
   const warning = await resolved(page, '--warning')
@@ -55,14 +66,7 @@ async function expectStatus(page: Page): Promise<void> {
   expect(await item(page, 'rail-attention').ariaSnapshot()).toContain('Waiting for permission decision')
   expect(await item(page, 'rail-both').ariaSnapshot()).toContain('Streaming')
   expect(await item(page, 'rail-both').ariaSnapshot()).not.toContain('Waiting for permission decision')
-  // Where the actions always show (narrow, with a pointer), no timestamp sits under them.
-  for (const sid of ['rail-idle', 'rail-running', 'rail-attention', 'rail-both']) {
-    const actions = item(page, sid).locator('.session-actions')
-    if (await actions.evaluate((node) => getComputedStyle(node).opacity !== '1' || getComputedStyle(node).display === 'none')) continue
-    const time = await item(page, sid).locator('.session-time').boundingBox()
-    const box = await actions.boundingBox()
-    expect(time && box && time.x + time.width <= box.x, `${sid} timestamp clears the actions`).toBe(true)
-  }
+  await expectTimesClearActions(page)
   // A running row keeps its ordinary timestamp and stays single-line.
   await expect(item(page, 'rail-running').locator('.session-time')).toBeVisible()
   const [idle, running] = await Promise.all(['rail-idle', 'rail-running'].map(async (sid) => (await item(page, sid).boundingBox())?.height ?? 0))
@@ -113,6 +117,10 @@ test('the left rail carries run and attention status, apart from selection and t
     await expect(running).toHaveAttribute('aria-current', 'page')
     expect(await rail(running)).toMatchObject({ content: '""', color: await resolved(page, '--accent') })
     expect((await rail(item(page, 'rail-idle'))).content).toBe('none')
+    // Card skins pad the selected row as a card; its timestamp still clears the actions.
+    await page.mouse.move(0, 0)
+    await page.evaluate(() => { document.documentElement.dataset.skin = 'codex'; document.documentElement.dataset.skinTraits = 'card-sessions' })
+    await expectTimesClearActions(page)
   }
 })
 

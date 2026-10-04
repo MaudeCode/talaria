@@ -27,6 +27,10 @@
   @media (hover: hover) {
     [data-skin-traits~="card-sessions"] .session-item.active:hover { padding-right: 64px; }
   }
+  /* Narrow screens with a pointer always show the actions; keep the card's timestamp clear of them. */
+  @media (max-width: 640px) and (hover: hover) {
+    [data-skin-traits~="card-sessions"] .session-item.active { padding-right: 64px; }
+  }
   [data-skin-traits~="card-sessions"] .session-item.active:hover .session-time,
   [data-skin-traits~="card-sessions"] .session-item.active:focus-within .session-time { display: inline-flex; visibility: hidden; }
 }
