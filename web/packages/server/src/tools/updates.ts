@@ -168,7 +168,7 @@ export function githubJson(fetchImpl: typeof fetch, env: Record<string, string |
 export interface PublishedRelease { tag: string; version: string; sourceRevision: string; releaseSet: string; image: string; npm: string | null; manifestReleaseSet: string; runtime: Dict; release_url: string; channelVersions: string[] }
 
 /** Published channel releases newer than `installed`, up to `release`: what an update skips past. Never below 1. */
-export function releasesBehind(installed: string, release: PublishedRelease): number {
+function releasesBehind(installed: string, release: PublishedRelease): number {
   return Math.max(1, release.channelVersions.filter((v) => compareVersions(installed, v) < 0 && compareVersions(v, release.version) <= 0).length)
 }
 

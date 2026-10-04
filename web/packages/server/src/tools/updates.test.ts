@@ -17,7 +17,7 @@ import { detectWebuiVersion, developmentInfo } from '../release.js'
 import { WEB_ROOT } from '../test/harness.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
-  applyAgentUpdate, applyWebUpdate, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable, releasesBehind,
+  applyAgentUpdate, applyWebUpdate, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
   REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type BuildRun, type GetJson, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
 } from './updates.js'
 
@@ -301,6 +301,20 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect((await checkWebUpdate(null, 'web-v3.0.0', 'stable', s.run, s.getJson, s.identity)).behind).toBe(0)
   })
 
+  it('packaged and npm installs report every Stable release they are behind (TAL-624)', async () => {
+    const s = sourceInstall()
+    const tags = ['web-v1.1.0', 'web-v1.2.0', 'web-v2.0.0', 'web-exp-v1.5.0', 'app-v9.0.0', 'web-v99.0.0']
+    const listed: GetJson = async (path, opts) => {
+      const body = await s.getJson(path, opts)
+      return opts.asset ? body : [...(body as Dict[]), ...tags.map((tag_name) => ({ tag_name, published_at: 'synthetic', assets: [] }))]
+    }
+    s.id.release = { sourceRevision: 'c'.repeat(40) }
+    expect((await checkWebUpdate(null, 'web-v1.0.0', 'stable', s.run, listed, s.identity)).behind).toBe(3)
+    expect((await checkWebUpdate(null, 'web-v1.2.0', 'stable', s.run, listed, s.identity)).behind).toBe(1)
+    const n = npmPackageInstall(s)
+    expect(await checkWebUpdate(n.packageRoot, 'web-v1.0.0', 'stable', s.run, listed, s.identity, n.npm)).toMatchObject({ install_kind: 'npm', behind: 3 })
+  })
+
   function npmPackageInstall(s: Install, initial: 'success' | 'failure' | 'bad-stamp' = 'success') {
     const mode = { outcome: initial }
     const globalRoot = join(tmp(), 'lib/node_modules')
@@ -487,15 +501,6 @@ describe('published release sets (test_tal203_published_releases.py)', () => {
     expect(f.requests).toEqual([['/releases?per_page=100&page=1', false], ['/releases/assets/123', true]])
     expect(result.release_url).toContain('MaudeCode/talaria/releases/tag/release-set-')
     expect(result.runtime).toEqual({ tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: sha, releaseSet: sha, contracts: { appWeb: [1], webRelay: [2] }, compatibleAgent: f.manifest.agent })
-  })
-
-  it('counts every published channel release an update skips (TAL-624)', async () => {
-    const f = fixture()
-    for (const tag of ['web-v1.1.0', 'web-v1.2.0', 'web-v2.0.0', 'web-exp-v1.5.0', 'app-v1.9.0']) f.entries.push({ tag_name: tag, published_at: 'synthetic', assets: [] })
-    const release = await publishedWebRelease('stable', f.getJson)
-    expect(releasesBehind('1.0.0', release)).toBe(3)
-    expect(releasesBehind('1.2.0', release)).toBe(1)
-    expect(releasesBehind('1.0.0', { ...release, channelVersions: [] })).toBe(1)
   })
 
   it.each([['status', 'candidate'], ['releaseSet', 'main'], ['schemaVersion', 2]])('rejects partial or inconsistent manifests (%s=%s)', async (field, value) => {
