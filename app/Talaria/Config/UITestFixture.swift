@@ -586,7 +586,11 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             Self.backgroundDismissed.withLock { $0 = true }
             return json(["ok": true, "task": Self.backgroundTasks()[1]])
         case "/api/session/tool-result":
-            return json(["tool_call_id": "ui-fixture-tool", "result": "fixture result, in full"])
+            return json([
+                "tool_call_id": "ui-fixture-tool",
+                "result": "fixture result, in full",
+                "result_view": ["text": "fixture result, in full"]
+            ])
         case "/api/session/new":
             // The title echoes the requested profile so a UI test can see that a
             // "new chat in <profile>" entry point pinned the session (TAL-77).

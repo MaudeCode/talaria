@@ -9,8 +9,8 @@ struct ToolCallCardView: View {
     @Environment(\.chatFullToolResultLoader) private var loadFullToolResult
     @AppStorage(ChatTranscriptDisplaySettings.toolCardsStartExpandedKey) private var startsExpanded = false
     @State private var userToggledExpansion: Bool?
-    /// TAL-331: the whole result of a call the server clipped, once the reader asked for it.
-    @State private var fullResult: String?
+    /// TAL-331: the whole result of a call the server clipped or capped, once the reader asked for it.
+    @State private var fullResult: ToolResultView?
     @State private var isLoadingFullResult = false
     @State private var fullResultFailed = false
 
@@ -50,7 +50,7 @@ struct ToolCallCardView: View {
     private func expandedContent(statusDisplay: ToolCallStatusDisplay) -> some View {
         var shownCall = toolCall
         if let fullResult {
-            shownCall.preview = fullResult
+            shownCall.resultView = fullResult
         }
         let displayContent = ToolCallDisplayFormatter.content(for: shownCall)
 
@@ -264,11 +264,11 @@ struct ToolCallCardView: View {
 
 /// TAL-331: fetches the whole result of a tool call the server clipped; the chat screen supplies it for its session.
 struct ChatFullToolResultLoaderKey: EnvironmentKey {
-    static let defaultValue: (@MainActor (String) async throws -> String)? = nil
+    static let defaultValue: (@MainActor (String) async throws -> ToolResultView)? = nil
 }
 
 extension EnvironmentValues {
-    var chatFullToolResultLoader: (@MainActor (String) async throws -> String)? {
+    var chatFullToolResultLoader: (@MainActor (String) async throws -> ToolResultView)? {
         get { self[ChatFullToolResultLoaderKey.self] }
         set { self[ChatFullToolResultLoaderKey.self] = newValue }
     }

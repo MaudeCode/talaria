@@ -1764,7 +1764,7 @@ extension ChatViewModelSendTests {
             XCTAssertEqual(components.path, "/api/session/tool-result")
             let id = components.queryItems?.first { $0.name == "tool_call_id" }?.value
             return id == "big"
-                ? apiTestJSONResponse(#"{"tool_call_id":"big","result":"\#(full)"}"#, for: request)
+                ? apiTestJSONResponse(#"{"tool_call_id":"big","result":"{}","result_view":{"stdout":"\#(full)","exit_code":0}}"#, for: request)
                 : apiTestJSONResponse(#"{"error":"Tool result not found"}"#, statusCode: 404, for: request)
         }
         let decoder = JSONDecoder()
@@ -1779,8 +1779,9 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(timeline.toolCalls.map(\.id), ["big", "small"])
         XCTAssertEqual(timeline.toolCalls.map(\.resultTruncated), [true, false])
 
+        // The server's uncapped sections (TAL-315), which the card shows in place of its capped ones.
         let result = try await viewModel.fullToolResult(toolCallID: "big")
-        XCTAssertEqual(result, full)
+        XCTAssertEqual(result, ToolResultView(stdout: full, exitCode: 0))
         XCTAssertEqual(requests.first?.queryItems?.first { $0.name == "session_id" }?.value, "session-abc")
 
         do {

@@ -460,9 +460,22 @@ public struct AnchorScenePageResponse: Decodable, Equatable {
     }
 }
 
-/// `GET /api/session/tool-result`: one tool call's whole result.
+/// `GET /api/session/tool-result`: one tool call's whole result and its uncapped sections.
 public struct ToolResultResponse: Decodable, Equatable {
     public let result: String
+    public let resultView: ToolResultView?
+
+    enum CodingKeys: String, CodingKey {
+        case result
+        case resultView
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        result = container.decodeLossyStringIfPresent(forKey: .result) ?? ""
+        // Through `JSONValue`, as scene rows read it: a keyed decode would miss `exit_code` under snake-case conversion.
+        resultView = ToolResultView(try? container.decodeIfPresent(JSONValue.self, forKey: .resultView))
+    }
 }
 
 extension AssistantActivityScene {
