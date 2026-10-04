@@ -811,14 +811,22 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
             error = str(last_error)
         if not error and isinstance(result.get("error"), str) and result.get("error"):
             error = str(result["error"])
-        status = "cancelled" if cancelled else ("error" if error and not result.get("messages") else "completed")
+        # The Agent ends a failed turn with ``failed``/``partial`` (never ``status``), often after text streamed and with
+        # the turn's messages; a failed turn is an error whatever it carries.
+        failed = bool(result.get("failed"))
+        partial = bool(result.get("partial"))
+        if not error and failed and result.get("final_response"):
+            error = str(result["final_response"])
+        status = "cancelled" if cancelled else ("error" if failed or (error and not result.get("messages")) else "completed")
         pending_steer = str(result.get("pending_steer") or "") if isinstance(result, dict) else ""
         return {
             "status": status,
             "messages": [m for m in (result.get("messages") or []) if isinstance(m, dict)],
             "final_response": str(result.get("final_response") or ""),
             "error": error,
-            "result_status": str(result.get("status") or result.get("state") or ""),
+            "failed": failed,
+            "partial": partial,
+            "compression_exhausted": bool(result.get("compression_exhausted")),
             "tool_limit_reached": bool(result.get("tool_limit_reached") or result.get("max_iterations_reached")),
             "usage": _usage(agent),
             "context": _context_length(agent),

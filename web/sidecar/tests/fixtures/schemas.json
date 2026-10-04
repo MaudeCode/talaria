@@ -3884,8 +3884,14 @@
           "null"
         ]
       },
-      "result_status": {
-        "type": "string"
+      "failed": {
+        "type": "boolean"
+      },
+      "partial": {
+        "type": "boolean"
+      },
+      "compression_exhausted": {
+        "type": "boolean"
       },
       "tool_limit_reached": {
         "type": "boolean"
@@ -3970,7 +3976,9 @@
       "messages",
       "final_response",
       "error",
-      "result_status",
+      "failed",
+      "partial",
+      "compression_exhausted",
       "tool_limit_reached",
       "usage",
       "context",

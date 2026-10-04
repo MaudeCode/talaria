@@ -16,7 +16,7 @@ type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 const completedTurn = (messages: Json[]): SidecarResult<'chat.start'> => ({
-  status: 'completed', messages, final_response: str(messages[messages.length - 1]?.content), error: null, result_status: 'completed', tool_limit_reached: false,
+  status: 'completed', messages, final_response: str(messages[messages.length - 1]?.content), error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false,
   usage: { prompt_tokens: 10, completion_tokens: 5, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'test-model', provider: 'test', compressed: false,
   agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
 })

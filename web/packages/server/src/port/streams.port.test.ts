@@ -17,7 +17,7 @@ type ChatResult = SidecarResult<'chat.start'>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
 const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 const completed = (messages: Json[], extra: Partial<ChatResult> = {}): ChatResult => ({
-  status: 'completed', messages, final_response: str(messages[messages.length - 1]?.content), error: null, result_status: 'completed', tool_limit_reached: false,
+  status: 'completed', messages, final_response: str(messages[messages.length - 1]?.content), error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false,
   usage: { prompt_tokens: 10, completion_tokens: 5, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: {}, model: 'test-model', provider: 'test', compressed: false,
   agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [], ...extra,
 })
@@ -942,9 +942,9 @@ describe('chat streams, cancel, and error settlement', () => {
     expect(messages.at(-1)?.content).toBe('**Error:** synthetic hard failure')
   })
 
-  it('a completed answer flagged partial still settles as done', async () => {
+  it('a partial with no error text and a complete answer still settles as done', async () => {
     const sid = await newSession(s)
-    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'complete answer' }], { result_status: 'partial' }))
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'complete answer' }], { partial: true, final_response: '' }))
     const { frames: out, apperror, messages } = await settle(sid)
     expect(apperror).toBeUndefined()
     expect(out.some((f) => f.event === 'done')).toBe(true)
@@ -953,7 +953,7 @@ describe('chat streams, cancel, and error settlement', () => {
 
   it('an unfinished tool call with no answer is no_response', async () => {
     const sid = await newSession(s)
-    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'x', arguments: '{}' } }] }], { result_status: 'partial', final_response: '', token_sent: false }))
+    sidecar.respond('chat.start', (params) => completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'x', arguments: '{}' } }] }], { partial: true, final_response: '', token_sent: false }))
     const { frames: out, apperror, messages } = await settle(sid)
     expect(apperror?.type).toBe('no_response')
     expect(out.some((f) => f.event === 'done')).toBe(false)
@@ -962,11 +962,54 @@ describe('chat streams, cancel, and error settlement', () => {
 
   it('a partial that only replays the prompt is no_response', async () => {
     const sid = await newSession(s)
-    sidecar.respond('chat.start', (params, emit) => { emit({ event: 'token', data: { text: 'echo' } }); return completed([{ role: 'user', content: str(params.user_message) }], { result_status: 'partial', final_response: '', token_sent: false }) })
+    sidecar.respond('chat.start', (params, emit) => { emit({ event: 'token', data: { text: 'echo' } }); return completed([{ role: 'user', content: str(params.user_message) }], { partial: true, final_response: '', token_sent: false }) })
     const { frames: out, apperror, messages } = await settle(sid)
     expect(apperror?.type).toBe('no_response')
     expect(out.some((f) => f.event === 'done')).toBe(false)
     expect(messages.at(-1)).toMatchObject({ _error: true })
+  })
+
+  // TAL-506: the Agent's own failure flags end the turn even after text streamed and with the turn's messages present.
+  const agentFailure = (extra: Partial<ChatResult>): void => {
+    sidecar.respond('chat.start', (params, emit) => {
+      emit({ event: 'token', data: { text: 'Partial answer' } })
+      const call = { id: 'c1', type: 'function', function: { name: 'terminal', arguments: '{}' } }
+      return completed([{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'Partial answer', tool_calls: [call] }, { role: 'tool', tool_call_id: 'c1', content: 'interrupted' }], { final_response: str(extra.error), ...extra })
+    })
+  }
+  const expectFailedTurn = (out: SseFrame[], messages: Json[], apperror: Json | undefined, message: string): void => {
+    expect(out.some((f) => f.event === 'done'), JSON.stringify(out.map((f) => f.event))).toBe(false)
+    expect(str(apperror?.message)).toContain(message)
+    const partialIdx = messages.findIndex((m) => m._partial && m.content === 'Partial answer')
+    expect(partialIdx).toBeGreaterThanOrEqual(0)
+    expect(partialIdx).toBeLessThan(messages.findIndex((m) => m._error))
+    expect(messages.at(-1)).toMatchObject({ _error: true })
+  }
+
+  it('a partial Agent result after streamed text is a terminal failure with the Agent error', async () => {
+    const sid = await newSession(s)
+    agentFailure({ partial: true, error: 'Stopped after repeated invalid tool calls.' })
+    const { frames: out, apperror, messages } = await settle(sid)
+    expectFailedTurn(out, messages, apperror, 'Stopped after repeated invalid tool calls.')
+    expect(apperror?.terminal_state).toBe('error')
+  })
+
+  it('a failed Agent result after streamed text is a terminal failure with the Agent error', async () => {
+    const sid = await newSession(s)
+    agentFailure({ status: 'error', failed: true, error: 'HTTP 402: insufficient credits' })
+    const { frames: out, apperror, messages } = await settle(sid)
+    expectFailedTurn(out, messages, apperror, 'HTTP 402: insufficient credits')
+    expect(apperror?.type).toBe('quota_exhausted')
+  })
+
+  it('an Agent result with compression_exhausted shows the compression recovery card whatever its text', async () => {
+    const sid = await newSession(s)
+    agentFailure({ status: 'error', failed: true, partial: true, compression_exhausted: true, error: 'The conversation no longer fits in the model context window.' })
+    const { frames: out, apperror, messages } = await settle(sid)
+    expectFailedTurn(out, messages, apperror, 'The conversation no longer fits in the model context window.')
+    expect(apperror).toMatchObject({ type: 'compression_exhausted', terminal_state: 'compression_exhausted', recommended_recovery_action: 'start_focused_continuation' })
+    expect(apperror?.compression_recovery).toMatchObject({ terminal_state: 'compression_exhausted', source_session_id: sid })
+    expect(messages.at(-1)?._compressionRecovery).toMatchObject({ terminal_state: 'compression_exhausted' })
   })
 
   it('a failed status with an empty error and a complete answer is no_response', async () => {

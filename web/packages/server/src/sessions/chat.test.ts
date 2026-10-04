@@ -22,7 +22,7 @@ async function newSession(s: TestServer): Promise<string> {
 }
 
 const completed = (messages: Json[], extra: Partial<ChatResult> = {}): ChatResult => ({
-  status: 'completed', messages, final_response: str(messages[messages.length - 1]?.content), error: null, result_status: 'completed', tool_limit_reached: false,
+  status: 'completed', messages, final_response: str(messages[messages.length - 1]?.content), error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false,
   usage: { prompt_tokens: 120, completion_tokens: 30, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0.001 }, context: { context_length: 200000 }, model: 'test-model', provider: 'test', compressed: false,
   agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [], ...extra,
 })
@@ -1792,10 +1792,10 @@ describe('chat turns through the sidecar', () => {
     seeded.messages = [{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }]
     seeded.context_messages = [{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }]
     s.deps.sessionStore.save(seeded)
-    // The sidecar reports `completed` whenever a failed run still carries messages: history plus the unanswered prompt.
+    // The Agent's failed result still carries messages: history plus the unanswered prompt.
     sidecar.respond('chat.start', (params) => ({
       ...completed([{ role: 'user', content: 'first question', timestamp: 100 }, { role: 'assistant', content: 'first answer', timestamp: 101 }, { role: 'user', content: str(params.user_message), timestamp: 200 }]),
-      final_response: '', error: '401 invalid api key', result_status: 'partial', token_sent: false,
+      status: 'error', final_response: '', error: '401 invalid api key', failed: true, token_sent: false,
     }))
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'second question' }))
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'apperror' || f.event === 'done')

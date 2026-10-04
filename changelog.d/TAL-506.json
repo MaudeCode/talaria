@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Web chats show an error, or the context recovery card, when the agent fails a turn after it started answering, instead of saving the turn as finished.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
