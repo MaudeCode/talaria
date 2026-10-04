@@ -132,6 +132,13 @@ export const listDir = (session_id: string, path = '.', showHidden = false) => o
 export const readFile = (session_id: string, path: string) => orpc().files.read({ session_id, path })
 export const rawFileUrl = (session_id: string, path: string) => `api/file/raw${qs({ session_id, path })}`
 export const saveFile = (session_id: string, path: string, content: string) => orpc().files.save({ session_id, path, content })
+export const createFile = (session_id: string, path: string) => orpc().files.create({ session_id, path, content: '' })
+export const createDir = (session_id: string, path: string) => orpc().files.createDir({ session_id, path })
+export const renameEntry = (session_id: string, path: string, new_name: string) => orpc().files.rename({ session_id, path, new_name })
+export const moveEntry = (session_id: string, path: string, dest_dir: string) => orpc().files.move({ session_id, path, dest_dir })
+export const deleteEntry = (session_id: string, path: string, recursive: boolean) => orpc().files.delete({ session_id, path, recursive })
+export const revealEntry = (session_id: string, path: string) => orpc().files.reveal({ session_id, path })
+export const openInVsCode = (session_id: string, path: string) => orpc().files.openVsCode({ session_id, path })
 export const folderDownloadUrl = (session_id: string, path: string) => `api/folder/download${qs({ session_id, path })}`
 export const fetchGitInfo = (sessionId: string) => orpc().gitInfo({ session_id: sessionId })
 

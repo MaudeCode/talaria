@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Create, rename, move, and delete files and folders from the workspace panel, or reveal them in your file manager and open them in VS Code. Drag an item onto a folder to move it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

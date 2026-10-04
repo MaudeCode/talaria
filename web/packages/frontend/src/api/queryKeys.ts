@@ -23,6 +23,7 @@ export const keys = {
   commands: ['commands'] as const,
   workspaces: ['workspaces'] as const,
   files: {
+    lists: (workspace: string) => ['files', 'list', workspace] as const,
     list: (workspace: string, path: string, hidden: boolean) => ['files', 'list', workspace, path, hidden] as const,
     content: (workspace: string, path: string) => ['files', 'content', workspace, path] as const,
     git: (workspace: string) => ['files', 'git', workspace] as const,
