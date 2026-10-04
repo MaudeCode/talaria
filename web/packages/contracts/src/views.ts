@@ -543,7 +543,8 @@ export type TodoState = z.infer<typeof TodoStateSchema>
 
 // ── onboarding ───────────────────────────────────────────────────────────
 
-export const OnboardingProviderSchema = z.looseObject({ id: z.string(), name: z.string().optional(), label: z.string().optional(), kind: z.string().optional(), oauth: z.boolean().optional(), needs_key: z.boolean().optional(), base_url: NullableString.optional(), models: z.array(Json).optional(), category: z.string().optional() })
+/** `oauth_flow` (TAL-398): `device_code` when the provider signs in through `/api/onboarding/oauth/*` instead of taking an API key; `oauth_label` then names the account to sign in with, and `signed_in` says whether the profile already holds its credential. */
+export const OnboardingProviderSchema = z.looseObject({ id: z.string(), name: z.string().optional(), label: z.string().optional(), kind: z.string().optional(), oauth: z.boolean().optional(), needs_key: z.boolean().optional(), base_url: NullableString.optional(), models: z.array(Json).optional(), category: z.string().optional(), oauth_flow: z.literal('device_code').nullable().optional(), oauth_label: z.string().optional(), signed_in: z.boolean().optional() })
 export const OnboardingStatusSchema = z.looseObject({
   completed: z.boolean(),
   settings: z.looseObject({ bot_name: z.string().optional(), default_model: z.string().optional(), default_workspace: NullableString.optional(), password_enabled: z.boolean().optional() }).optional(),
@@ -554,7 +555,15 @@ export const OnboardingStatusSchema = z.looseObject({
 })
 export type OnboardingStatus = z.infer<typeof OnboardingStatusSchema>
 export const OnboardingProbeSchema = z.looseObject({ ok: z.boolean().optional(), success: z.boolean().optional(), error: z.string().optional(), message: z.string().optional(), models: z.array(Json).optional() })
-export const OnboardingOAuthSchema = z.looseObject({ ok: z.boolean().optional(), status: z.string().optional(), url: z.string().optional(), verification_url: z.string().optional(), user_code: z.string().optional(), message: z.string().optional(), error: z.string().optional(), flow_id: z.string().optional() })
+/**
+ * One device-code sign-in (TAL-398). `status` is `pending` until the flow ends `approved`, `denied`, `expired`, `cancelled`
+ * or `error`; `ok` is false for every ending without a credential, and `error` then carries the Agent's reason.
+ * `user_code`, `verification_url`, `expires_in` and `interval` (seconds between polls) come with the start.
+ */
+export const OnboardingOAuthSchema = z.looseObject({
+  ok: z.boolean().optional(), status: z.string().optional(), url: z.string().optional(), verification_url: z.string().optional(), user_code: z.string().optional(), message: z.string().optional(),
+  error: z.string().nullable().optional(), flow_id: z.string().optional(), provider: z.string().optional(), expires_in: z.number().int().optional(), interval: z.number().int().optional(),
+})
 
 // ── automation ───────────────────────────────────────────────────────────
 

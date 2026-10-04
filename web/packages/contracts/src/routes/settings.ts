@@ -54,8 +54,8 @@ export const settingsContract = {
     setup: oc.route({ method: 'POST', path: '/api/onboarding/setup', tags }).input(Loose).output(z.looseObject({ ok: z.boolean().optional(), error: z.string().optional(), status: Json.optional() })),
     complete: oc.route({ method: 'POST', path: '/api/onboarding/complete', tags }).input(Loose.optional()).output(OnboardingStatusSchema),
     probe: oc.route({ method: 'POST', path: '/api/onboarding/probe', tags }).input(z.object({ provider: z.string().optional(), base_url: z.string().optional(), api_key: z.string().nullable().optional() })).output(OnboardingProbeSchema),
-    oauthStart: oc.route({ method: 'POST', path: '/api/onboarding/oauth/start', tags, summary: 'Browser OAuth flows are not available in this release (501).' }).input(Loose).output(OnboardingOAuthSchema),
-    oauthCancel: oc.route({ method: 'POST', path: '/api/onboarding/oauth/cancel', tags }).input(Loose).output(OnboardingOAuthSchema),
-    oauthPoll: oc.route({ method: 'GET', path: '/api/onboarding/oauth/poll', tags }).input(z.object({ flow_id: z.string().optional() })).output(OnboardingOAuthSchema),
+    oauthStart: oc.route({ method: 'POST', path: '/api/onboarding/oauth/start', tags, summary: "Start a device-code sign-in for a provider whose onboarding entry has `oauth_flow: 'device_code'`." }).input(z.looseObject({ provider: z.string().optional() })).output(OnboardingOAuthSchema),
+    oauthCancel: oc.route({ method: 'POST', path: '/api/onboarding/oauth/cancel', tags, summary: 'Cancel a pending device-code sign-in; nothing is saved after it.' }).input(z.looseObject({ flow_id: z.string().optional() })).output(OnboardingOAuthSchema),
+    oauthPoll: oc.route({ method: 'GET', path: '/api/onboarding/oauth/poll', tags, summary: 'Report a device-code sign-in; `approved` means the Agent saved the credential.' }).input(z.object({ flow_id: z.string().optional() })).output(OnboardingOAuthSchema),
   },
 }

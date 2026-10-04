@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
+import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { loadEnvFile, writeEnvFile } from '../providers/env-file.js'
 import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel, uniqueQuotaSources } from '../providers/catalog.js'
@@ -676,8 +677,131 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(await json(res)).toMatchObject({ ok: false, error: 'connect_refused' })
     res = await post(s, '/api/onboarding/complete', {})
     expect((await json(res)).completed).toBe(true)
-    res = await post(s, '/api/onboarding/oauth/start', { provider: 'anthropic' })
-    expect(res.status).toBe(501)
+  })
+
+  it('onboarding OAuth runs the device flow through the sidecar: success, expiry, denial and cancel', async () => {
+    // Synthetic flows: each flow id answers its scripted statuses in order; nothing reaches a real provider or credential.
+    const scripts = new Map<string, { provider: string; statuses: string[]; error?: string }>([
+      ['flow-ok', { provider: 'openai-codex', statuses: ['pending', 'approved'] }],
+      ['flow-late', { provider: 'nous', statuses: ['expired'], error: 'The sign-in code expired before it was approved.' }],
+      ['flow-no', { provider: 'xai-oauth', statuses: ['denied'], error: 'Sign-in was declined.' }],
+      ['flow-stop', { provider: 'minimax-oauth', statuses: ['pending'] }],
+    ])
+    const order = ['flow-ok', 'flow-late', 'flow-no', 'flow-stop']
+    sidecar.respond('oauth.start', (params) => {
+      const flowId = order.shift()!
+      expect(scripts.get(flowId)?.provider).toBe(params.provider)
+      return { flow_id: flowId, provider: params.provider, status: 'pending', user_code: `CODE-${flowId}`, verification_url: `https://auth.example.test/device?flow=${flowId}`, expires_in: 900, interval: 5 }
+    })
+    sidecar.respond('oauth.poll', (params) => {
+      const script = scripts.get(params.flow_id)!
+      const status = (script.statuses.length > 1 ? script.statuses.shift()! : script.statuses[0]!) as SidecarResult<'oauth.poll'>['status']
+      return { flow_id: params.flow_id, provider: script.provider, status, error: status === 'expired' || status === 'denied' ? script.error ?? null : null }
+    })
+    sidecar.respond('oauth.cancel', (params) => {
+      scripts.get(params.flow_id)!.statuses = ['cancelled']
+      return { flow_id: params.flow_id, provider: scripts.get(params.flow_id)!.provider, status: 'cancelled', error: null }
+    })
+    const poll = async (flowId: string): Promise<Json> => json(await s.get(`/api/onboarding/oauth/poll?flow_id=${flowId}`))
+
+    // Success: the start answers the code to show, polling reports pending, then approved.
+    let res = await post(s, '/api/onboarding/oauth/start', { provider: 'openai-codex' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toMatchObject({ ok: true, status: 'pending', provider: 'openai-codex', flow_id: 'flow-ok', user_code: 'CODE-flow-ok', verification_url: 'https://auth.example.test/device?flow=flow-ok', expires_in: 900, interval: 5 })
+    expect(sidecar.calls.filter((c) => c.method === 'oauth.start').at(-1)?.params).toEqual({ profile_home: s.state, provider: 'openai-codex' })
+    expect(await poll('flow-ok')).toMatchObject({ ok: true, status: 'pending', flow_id: 'flow-ok' })
+    expect(await poll('flow-ok')).toMatchObject({ ok: true, status: 'approved', flow_id: 'flow-ok', provider: 'openai-codex' })
+    expect(sidecar.calls.filter((c) => c.method === 'oauth.poll').at(-1)?.params).toEqual({ profile_home: s.state, flow_id: 'flow-ok' })
+
+    // Expiry and denial end the flow with the Agent's reason.
+    expect((await post(s, '/api/onboarding/oauth/start', { provider: 'nous' })).status).toBe(200)
+    expect(await poll('flow-late')).toMatchObject({ ok: false, status: 'expired', error: 'The sign-in code expired before it was approved.' })
+    expect((await post(s, '/api/onboarding/oauth/start', { provider: 'xai-oauth' })).status).toBe(200)
+    expect(await poll('flow-no')).toMatchObject({ ok: false, status: 'denied', error: 'Sign-in was declined.' })
+
+    // Cancel stops the flow; a later poll reports it cancelled.
+    expect((await post(s, '/api/onboarding/oauth/start', { provider: 'minimax-oauth' })).status).toBe(200)
+    res = await post(s, '/api/onboarding/oauth/cancel', { flow_id: 'flow-stop' })
+    expect(res.status).toBe(200)
+    expect(await json(res)).toMatchObject({ ok: true, status: 'cancelled', flow_id: 'flow-stop' })
+    expect(sidecar.calls.filter((c) => c.method === 'oauth.cancel').at(-1)?.params).toEqual({ profile_home: s.state, flow_id: 'flow-stop' })
+    expect(await poll('flow-stop')).toMatchObject({ ok: false, status: 'cancelled' })
+
+    // Only device-flow providers start; a flow id is required to poll or cancel.
+    const starts = sidecar.calls.filter((c) => c.method === 'oauth.start').length
+    expect((await post(s, '/api/onboarding/oauth/start', { provider: 'anthropic' })).status).toBe(400)
+    expect((await post(s, '/api/onboarding/oauth/start', {})).status).toBe(400)
+    expect(sidecar.calls.filter((c) => c.method === 'oauth.start')).toHaveLength(starts)
+    expect((await s.get('/api/onboarding/oauth/poll')).status).toBe(400)
+    expect((await post(s, '/api/onboarding/oauth/cancel', {})).status).toBe(400)
+
+    // The onboarding gate still applies to every OAuth route: a remote client without the opt-in is refused.
+    s.deps.config.env.HERMES_WEBUI_TRUST_FORWARDED_FOR = '1'
+    try {
+      // A global address: documentation ranges such as 203.0.113.0/24 count as non-global, so local.
+      const remote = { 'x-forwarded-for': '8.8.8.8' }
+      expect((await post(s, '/api/onboarding/oauth/start', { provider: 'openai-codex' }, remote)).status).toBe(403)
+      expect((await s.get('/api/onboarding/oauth/poll?flow_id=flow-ok', { headers: remote })).status).toBe(403)
+      expect((await post(s, '/api/onboarding/oauth/cancel', { flow_id: 'flow-ok' }, remote)).status).toBe(403)
+      expect(sidecar.calls.filter((c) => c.method === 'oauth.start')).toHaveLength(starts)
+      s.deps.config.env.HERMES_WEBUI_ONBOARDING_OPEN = '1'
+      expect((await s.get('/api/onboarding/oauth/poll?flow_id=flow-ok', { headers: remote })).status).toBe(200)
+    } finally {
+      delete s.deps.config.env.HERMES_WEBUI_TRUST_FORWARDED_FOR
+      delete s.deps.config.env.HERMES_WEBUI_ONBOARDING_OPEN
+    }
+  })
+
+  it('the onboarding wizard lists device-code sign-ins and saves one only after the Agent stored its credential', async () => {
+    const providers = ((await json(await s.get('/api/onboarding/status'))).setup as Json).providers as Json[]
+    expect(providers.filter((p) => p.oauth_flow === 'device_code').map((p) => p.id).sort()).toEqual(['minimax-oauth', 'nous', 'openai-codex', 'xai-oauth'])
+    expect(providers.find((p) => p.id === 'openrouter')?.oauth_flow).toBeNull()
+    expect(providers.find((p) => p.id === 'openai-codex')?.signed_in).toBe(false)
+    expect(providers.find((p) => p.id === 'openrouter')).not.toHaveProperty('signed_in')
+    const authPath = join(s.state, 'auth.json')
+    const savedAuth = existsSync(authPath) ? readFileSync(authPath, 'utf8') : null
+    try {
+      let res = await post(s, '/api/onboarding/setup', { provider: 'openai-codex', model: 'gpt-5.5', api_key: 'sk-ignored-12345', confirm_overwrite: true })
+      expect(res.status).toBe(400)
+      expect((await json(res)).error).toBe('Sign in to ChatGPT before continuing.')
+      // A synthetic credential in the profile's own auth store, as the Agent writes it after an approved flow.
+      writeFileSync(authPath, JSON.stringify({ providers: { 'openai-codex': { tokens: { access_token: 'synthetic-access', refresh_token: 'synthetic-refresh' } } } }))
+      const envCalls = sidecar.calls.length
+      res = await post(s, '/api/onboarding/setup', { provider: 'openai-codex', model: 'gpt-5.5', api_key: 'sk-ignored-12345', confirm_overwrite: true })
+      expect(res.status).toBe(200)
+      expect(configs.get(s.state)?.model).toEqual({ default: 'gpt-5.5', provider: 'openai-codex' })
+      const saved = await json(res)
+      expect(((saved.setup as Json).providers as Json[]).find((p) => p.id === 'openai-codex')?.signed_in).toBe(true)
+      expect(saved.system).toMatchObject({ provider_ready: true })
+      // No API key is written for a sign-in provider.
+      expect(sidecar.calls.slice(envCalls).some((c) => c.method === 'runtime.env')).toBe(false)
+      rmSync(authPath)
+      const system = (await json(await s.get('/api/onboarding/status'))).system as Json
+      expect(system).toMatchObject({ provider_ready: false, provider_note_key: 'onboarding_notice_provider_sign_in_required', provider_note: 'Hermes has a saved provider/model selection but still needs you to sign in to ChatGPT.' })
+    } finally {
+      if (savedAuth === null) rmSync(authPath, { force: true })
+      else writeFileSync(authPath, savedAuth)
+      configs.set(s.state, { ...configs.get(s.state), model: { default: 'claude-sonnet-4-6', provider: 'anthropic' } })
+    }
+  })
+
+  it('a sidecar that cannot start the flow answers its reason, and no sidecar is a 503', async () => {
+    sidecar.respond('oauth.start', () => { throw new SidecarError('OpenAI rejected the device-code login request.', { condition: 'oauth_failed' }) })
+    let res = await post(s, '/api/onboarding/oauth/start', { provider: 'openai-codex' })
+    expect(res.status).toBe(502)
+    expect((await json(res)).error).toBe('OpenAI rejected the device-code login request.')
+    sidecar.respond('oauth.poll', () => { throw new SidecarError('Unknown or expired sign-in.', { condition: 'oauth_flow_not_found' }) })
+    res = await s.get('/api/onboarding/oauth/poll?flow_id=gone')
+    expect(res.status).toBe(404)
+    sidecar.respond('oauth.start', () => { throw new SidecarError('This profile uses the Nous free tier. Sign in from Hermes with `hermes portal`.', { condition: 'oauth_unsupported' }) })
+    expect((await post(s, '/api/onboarding/oauth/start', { provider: 'nous' })).status).toBe(409)
+    const previous = sidecar.status
+    sidecar.status = 'stopped'
+    try {
+      expect((await post(s, '/api/onboarding/oauth/start', { provider: 'openai-codex' })).status).toBe(503)
+    } finally {
+      sidecar.status = previous
+    }
   })
 
   it('providers/self-hosted writes the provider block and activates the model', async () => {

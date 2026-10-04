@@ -31768,6 +31768,22 @@
                               },
                               "category": {
                                 "type": "string"
+                              },
+                              "oauth_flow": {
+                                "anyOf": [
+                                  {
+                                    "const": "device_code"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "oauth_label": {
+                                "type": "string"
+                              },
+                              "signed_in": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -32160,6 +32176,22 @@
                               },
                               "category": {
                                 "type": "string"
+                              },
+                              "oauth_flow": {
+                                "anyOf": [
+                                  {
+                                    "const": "device_code"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "oauth_label": {
+                                "type": "string"
+                              },
+                              "signed_in": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -32480,7 +32512,7 @@
     "/api/onboarding/oauth/start": {
       "post": {
         "operationId": "onboarding.oauthStart",
-        "summary": "Browser OAuth flows are not available in this release (501).",
+        "summary": "Start a device-code sign-in for a provider whose onboarding entry has `oauth_flow: 'device_code'`.",
         "tags": [
           "settings"
         ],
@@ -32490,8 +32522,10 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "propertyNames": {
-                  "type": "string"
+                "properties": {
+                  "provider": {
+                    "type": "string"
+                  }
                 },
                 "additionalProperties": {}
               }
@@ -32525,10 +32559,30 @@
                       "type": "string"
                     },
                     "error": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "flow_id": {
                       "type": "string"
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "expires_in": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "interval": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     }
                   },
                   "additionalProperties": {}
@@ -32542,6 +32596,7 @@
     "/api/onboarding/oauth/cancel": {
       "post": {
         "operationId": "onboarding.oauthCancel",
+        "summary": "Cancel a pending device-code sign-in; nothing is saved after it.",
         "tags": [
           "settings"
         ],
@@ -32551,8 +32606,10 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "propertyNames": {
-                  "type": "string"
+                "properties": {
+                  "flow_id": {
+                    "type": "string"
+                  }
                 },
                 "additionalProperties": {}
               }
@@ -32586,10 +32643,30 @@
                       "type": "string"
                     },
                     "error": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "flow_id": {
                       "type": "string"
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "expires_in": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "interval": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     }
                   },
                   "additionalProperties": {}
@@ -32603,6 +32680,7 @@
     "/api/onboarding/oauth/poll": {
       "get": {
         "operationId": "onboarding.oauthPoll",
+        "summary": "Report a device-code sign-in; `approved` means the Agent saved the credential.",
         "tags": [
           "settings"
         ],
@@ -32644,10 +32722,30 @@
                       "type": "string"
                     },
                     "error": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "flow_id": {
                       "type": "string"
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "expires_in": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "interval": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     }
                   },
                   "additionalProperties": {}

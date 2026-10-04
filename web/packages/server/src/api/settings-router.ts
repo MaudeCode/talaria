@@ -11,13 +11,15 @@ import { forwardedClientIp, isLoopback, rawPeerIsTrustedProxy } from '../http/or
 import { isNonGlobalAddress } from '../http/addresses.js'
 import { isIP } from 'node:net'
 import { HttpFailure } from '../sessions/service.js'
+import { SidecarError } from '../sidecar/client.js'
+import type { SidecarParams, SidecarResult } from '@maudecode/talaria-web-contracts'
 import { SessionNotFound } from '../sessions/store.js'
 import { auxiliaryModels, canonicaliseProviderId, ConfigUnavailable, maxTokensStatus, personalityPrompt, personalityRows, reasoningStatus, setAuxiliaryModel, setDefaultModel, setMaxTokens, validReasoningEffort, type Dict } from '../config/agent-config.js'
 import { ProfileError, validateProfileName } from '../profiles/profiles.js'
 import { OnboardingError } from '../onboarding.js'
 import { writeEnvFile } from '../providers/env-file.js'
 import { displayName, providerEnvVar, stampAuxiliarySelections } from '../providers/catalog.js'
-import { OAUTH_PROVIDERS } from '../providers/tables.js'
+import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
 import { displayBotName, SETTINGS_SPEECH_KEYS, pyBool } from '../settings.js'
 import { str } from '../util.js'
 
@@ -191,7 +193,31 @@ const effortsResolver = (ctx: RequestContext) => async (model: string, provider:
   }
 }
 
-const OAUTH_UNAVAILABLE = 'Browser OAuth onboarding is not available in this release. Run `hermes auth` in a terminal, then reload.'
+const OAUTH_GATE_DENIED = 'Onboarding OAuth is only available from local networks when auth is not enabled. To bypass this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.'
+
+/** TAL-398: a device-code sign-in runs in the Agent sidecar, which writes the credential to the profile's own auth store. Callers check the onboarding gate first. */
+async function oauthCall<M extends 'oauth.start' | 'oauth.poll' | 'oauth.cancel'>(ctx: RequestContext, method: M, params: SidecarParams<M>): Promise<SidecarResult<M>> {
+  const sidecar = ctx.deps.sidecar()
+  if (!sidecar) throw new HttpError(503, 'Provider sign-in needs the Agent sidecar, which is not running.', { condition: 'sidecar_unavailable' })
+  try {
+    return await sidecar.call(method, params)
+  } catch (error) {
+    if (!(error instanceof SidecarError)) throw error
+    const status = { sidecar_unavailable: 503, oauth_flow_not_found: 404, oauth_unsupported: 409, invalid_params: 400 }[error.condition] ?? (error.code === -32602 ? 400 : 502)
+    throw new HttpError(status, error.message, { condition: error.condition })
+  }
+}
+
+/** One flow's state as the onboarding view renders it: `ok` is false for every ending without a credential. */
+function oauthView(flow: SidecarResult<'oauth.poll'>): Dict {
+  return { ok: flow.status === 'pending' || flow.status === 'approved', flow_id: flow.flow_id, provider: flow.provider, status: flow.status, error: flow.error }
+}
+
+function oauthFlowId(raw: unknown): string {
+  const flowId = str(raw).trim()
+  if (!flowId) throw new HttpError(400, 'flow_id is required')
+  return flowId
+}
 
 export const settingsRouter = os.router({
   settings: {
@@ -385,12 +411,27 @@ export const settingsRouter = os.router({
         throw new HttpError(500, `probe failed: ${str((error as Error).message)}`)
       }
     })),
-    oauthStart: os.onboarding.oauthStart.handler(({ context: { ctx } }) => run(async () => {
-      if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, 'Onboarding OAuth is only available from local networks when auth is not enabled. To bypass this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.')
-      throw new HttpError(501, OAUTH_UNAVAILABLE)
+    oauthStart: os.onboarding.oauthStart.handler(({ input, context: { ctx } }) => run(async () => {
+      if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, OAUTH_GATE_DENIED)
+      const provider = str(input.provider).trim().toLowerCase()
+      if (!provider) throw new HttpError(400, 'provider is required')
+      if (SUPPORTED_PROVIDER_SETUPS[provider]?.oauth_flow !== 'device_code') throw new HttpError(400, `'${displayName(provider)}' does not sign in with a device code here. Run \`hermes auth\` in a terminal for it.`)
+      const flow = await oauthCall(ctx, 'oauth.start', { profile_home: home(ctx), provider })
+      return { ok: true, flow_id: flow.flow_id, provider: flow.provider, status: flow.status, user_code: flow.user_code, verification_url: flow.verification_url, url: flow.verification_url, expires_in: flow.expires_in, interval: flow.interval }
     })),
-    oauthCancel: os.onboarding.oauthCancel.handler(() => run(() => { throw new HttpError(501, OAUTH_UNAVAILABLE) })),
-    oauthPoll: os.onboarding.oauthPoll.handler(() => run(() => { throw new HttpError(501, OAUTH_UNAVAILABLE) })),
+    oauthCancel: os.onboarding.oauthCancel.handler(({ input, context: { ctx } }) => run(async () => {
+      if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, OAUTH_GATE_DENIED)
+      const flow = await oauthCall(ctx, 'oauth.cancel', { profile_home: home(ctx), flow_id: oauthFlowId(input.flow_id) })
+      // The cancel answer is about the request: a flow that had already ended keeps its own ending.
+      return { ...oauthView(flow), ok: flow.status === 'cancelled' }
+    })),
+    oauthPoll: os.onboarding.oauthPoll.handler(({ input, context: { ctx } }) => run(async () => {
+      if (!(await onboardingGateAllows(ctx))) throw new HttpError(403, OAUTH_GATE_DENIED)
+      const flow = await oauthCall(ctx, 'oauth.poll', { profile_home: home(ctx), flow_id: oauthFlowId(input.flow_id) })
+      // A new credential changes which providers and models the catalog lists.
+      if (flow.status === 'approved') ctx.deps.catalog.invalidate()
+      return oauthView(flow)
+    })),
   },
 })
 

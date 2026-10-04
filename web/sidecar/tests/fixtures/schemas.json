@@ -3091,6 +3091,120 @@
     ],
     "additionalProperties": false
   },
+  "oauth.start": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "flow_id": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "const": "pending"
+      },
+      "user_code": {
+        "type": "string"
+      },
+      "verification_url": {
+        "type": "string"
+      },
+      "expires_in": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      },
+      "interval": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      }
+    },
+    "required": [
+      "flow_id",
+      "provider",
+      "status",
+      "user_code",
+      "verification_url",
+      "expires_in",
+      "interval"
+    ],
+    "additionalProperties": false
+  },
+  "oauth.poll": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "flow_id": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "denied",
+          "expired",
+          "cancelled",
+          "error"
+        ]
+      },
+      "error": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "flow_id",
+      "provider",
+      "status",
+      "error"
+    ],
+    "additionalProperties": false
+  },
+  "oauth.cancel": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "flow_id": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "denied",
+          "expired",
+          "cancelled",
+          "error"
+        ]
+      },
+      "error": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "flow_id",
+      "provider",
+      "status",
+      "error"
+    ],
+    "additionalProperties": false
+  },
   "aux.complete": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",

@@ -33,6 +33,8 @@ export const RETIRED_AUX_TASK_SLOTS = ['session_search']
 export interface ProviderSetup {
   label: string; env_var: string; env_var_aliases?: string[]; default_model: string; default_base_url?: string; requires_base_url: boolean
   key_optional?: boolean; models: { id: string; label: string }[]; category: string; quick?: boolean; oauth_provider?: string; oauth_label?: string
+  /** TAL-398: the provider signs in through the Agent's device-code flow (`/api/onboarding/oauth/*`) instead of an API key. */
+  oauth_flow?: 'device_code'
 }
 const toOpenRouterNamespace = (id: string): string => id
 /** Python `_SUPPORTED_PROVIDER_SETUPS` (onboarding wizard). */
@@ -49,6 +51,11 @@ export const SUPPORTED_PROVIDER_SETUPS: Record<string, ProviderSetup> = {
   zai: { label: 'Z.AI / GLM (智谱)', env_var: 'GLM_API_KEY', default_model: 'glm-5.1', default_base_url: 'https://open.bigmodel.cn/api/paas/v4', requires_base_url: false, models: [...(PROVIDER_MODELS.zai ?? [])], category: 'specialized' },
   nvidia: { label: 'NVIDIA NIM', env_var: 'NVIDIA_API_KEY', default_model: 'nvidia/llama-3.3-nemotron-super-49b-v1.5', default_base_url: 'https://integrate.api.nvidia.com/v1', requires_base_url: false, models: [...(PROVIDER_MODELS.nvidia ?? [])], category: 'specialized' },
   mistralai: { label: 'Mistral', env_var: 'MISTRAL_API_KEY', default_model: 'mistral-large-latest', default_base_url: 'https://api.mistral.ai/v1', requires_base_url: false, models: [...(PROVIDER_MODELS.mistralai ?? [])], category: 'specialized' },
+  // TAL-398: the Agent's device-code sign-ins; `oauth_provider` is where the credential lands in the profile's auth store.
+  'openai-codex': { label: 'OpenAI Codex (ChatGPT sign-in)', env_var: '', default_model: 'gpt-5.5', requires_base_url: false, models: [], category: 'easy_start', oauth_provider: 'openai-codex', oauth_label: 'ChatGPT', oauth_flow: 'device_code' },
+  nous: { label: 'Nous Portal (sign-in)', env_var: '', default_model: 'anthropic/claude-sonnet-4.6', requires_base_url: false, models: [], category: 'easy_start', oauth_provider: 'nous', oauth_label: 'Nous Portal', oauth_flow: 'device_code' },
+  'xai-oauth': { label: 'xAI Grok (SuperGrok sign-in)', env_var: '', default_model: 'grok-4.20', requires_base_url: false, models: [], category: 'specialized', oauth_provider: 'xai-oauth', oauth_label: 'xAI', oauth_flow: 'device_code' },
+  'minimax-oauth': { label: 'MiniMax (sign-in)', env_var: '', default_model: 'MiniMax-M3', requires_base_url: false, models: [], category: 'specialized', oauth_provider: 'minimax-oauth', oauth_label: 'MiniMax', oauth_flow: 'device_code' },
   'x-ai': { label: 'xAI (Grok)', env_var: 'XAI_API_KEY', default_model: 'grok-4.20', default_base_url: 'https://api.x.ai/v1', requires_base_url: false, models: [...(PROVIDER_MODELS.xai ?? PROVIDER_MODELS['x-ai'] ?? [])], category: 'specialized' },
 }
 export const PROVIDER_CATEGORIES = [
@@ -56,4 +63,4 @@ export const PROVIDER_CATEGORIES = [
   { id: 'self_hosted', label: 'Open / self-hosted', order: 1 },
   { id: 'specialized', label: 'Specialized', order: 2 },
 ]
-export const UNSUPPORTED_PROVIDER_NOTE = 'Advanced provider flows such as Nous Portal and GitHub Copilot are still terminal-first. OpenAI Codex and Anthropic Claude Code can be authenticated in this onboarding flow when your Hermes config selects the corresponding provider.'
+export const UNSUPPORTED_PROVIDER_NOTE = 'OpenAI Codex, Nous Portal, xAI Grok and MiniMax sign in here with a code. GitHub Copilot, Qwen and Anthropic Claude Code still sign in from a terminal with hermes auth.'
