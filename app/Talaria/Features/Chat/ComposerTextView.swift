@@ -62,8 +62,7 @@ struct ComposerTextView: UIViewRepresentable {
         let isRTL = context.environment.layoutDirection == .rightToLeft
         textView.semanticContentAttribute = isRTL ? .forceRightToLeft : .unspecified
         textView.textAlignment = isRTL ? .right : .natural
-        textView.isEditable = !isDisabled
-        textView.isSelectable = !isDisabled
+        context.coordinator.applyEditability(!isDisabled, to: textView)
         textView.textColor = isDisabled ? .secondaryLabel : .label
         textView.isKeyboardSendEnabled = isKeyboardSendEnabled
         textView.onKeyboardSend = onKeyboardSend
@@ -89,6 +88,8 @@ struct ComposerTextView: UIViewRepresentable {
         // away would drop the marked text, so it waits for the composition to end and
         // is then applied exactly once.
         private var pendingExternalText: String?
+        // The editability the latest update asked for; a deferred disable applies this value.
+        private var targetEditability = true
 
         init(
             text: Binding<String>,
@@ -119,6 +120,25 @@ struct ComposerTextView: UIViewRepresentable {
 
             pendingExternalText = nil
             textView.text = boundText
+        }
+
+        func applyEditability(_ isEditable: Bool, to textView: UITextView) {
+            targetEditability = isEditable
+            guard textView.isEditable != isEditable else { return }
+            guard !isEditable, textView.isFirstResponder else {
+                textView.isEditable = isEditable
+                textView.isSelectable = isEditable
+                return
+            }
+
+            // Disabling the focused field resigns it, and the keyboard animation lays out the
+            // hosting view inside this SwiftUI update: an AttributeGraph cycle that hangs the
+            // main thread (TAL-415). Disable it once the update has finished.
+            Task { @MainActor [weak self, weak textView] in
+                guard let self, let textView, textView.delegate === self else { return }
+                textView.isEditable = self.targetEditability
+                textView.isSelectable = self.targetEditability
+            }
         }
 
         func syncFocus(for textView: UITextView, shouldFocus: Bool, isDisabled: Bool) {
