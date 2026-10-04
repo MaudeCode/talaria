@@ -802,6 +802,8 @@ describe('Agent redactor parity', () => {
       ['ghp_ab\x1bPx\x07.\x1b\\cdef1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       // A C0 control inside a sequence runs without ending it; CAN or SUB cancels it, and ESC or a C1 control interrupts it.
       ['ghp_abcdef\x1b[31\x07m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      // A parameter after an intermediate makes a terminal ignore the CSI through its final byte.
+      ['ghp_abcdef\x1b[1 2m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       ['ghp_abcdef\x1b\x07(B123456\x1b(\nB7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       ['ghp_abcdef\x1b[31\x18123456\x1b]0;t\x1a7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       ['ghp_abcdef\x1b[31\x1b[0m123456\x1b]0;t\x9b1m7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
@@ -819,6 +821,9 @@ describe('Agent redactor parity', () => {
       // A payload token split by another sequence or string, and a token whose rest is a hidden payload.
       ['\x1b]0;ghp_abcdef\x1b[31m1234567890ABCDEF1234567890abcdef\x07', '\x1b]0;ghp_ab...cdef\x07'],
       ['\x1b]0;ghp_abcdef\x1b]0;junk\x071234567890ABCDEF1234567890abcdef\x07', '\x1b]0;ghp_ab...cdef\x07'],
+      ['\x1b]0;ghp_abcdef\x1b]0;junk_name\x071234567890ABCDEF1234567890abcdef\x07', '\x1b]0;ghp_ab...cdef\x07'],
+      // A prefix-like name in a hyperlink is no hidden token: an OSC's command number is not its payload.
+      ['\x1b]8;;file:///tmp/ghp_tools\x1b\\ghp_tools\x1b]8;;\x1b\\', '\x1b]8;;file:///tmp/ghp_tools\x1b\\ghp_tools\x1b]8;;\x1b\\'],
       ['\x1b]0;ghp_abc\x07\x1b]0;junk\x07\x1b_def1234567890ABCDEF1234567890abcdef\x1b\\', '\x1b]0;ghp_ab...cdef\x1b\\'],
       ['ghp_abcdefghij\x1b_1234567890ABCDEF1234567890abcdef\x1b\\', 'ghp_ab...cdef\x1b\\'],
     ]) {

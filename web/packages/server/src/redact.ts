@@ -227,7 +227,8 @@ const SEQ_C0 = String.raw`\x00-\x17\x19\x1c-\x1f\x7f`
 /** Where a sequence ends early: CAN or SUB cancels it, and ESC, a C1 control or the end of the text interrupts it. */
 const SEQ_CUT = String.raw`(?:[\x18\x1a]|(?=[\x1b\x80-\x9f]|$))`
 const SEQ_ESC = String.raw`\x1b[${SEQ_C0}]*`
-const SEQ_CSI = String.raw`(?:${SEQ_ESC}\[|\x9b)[0-?${SEQ_C0}]*(?:[ -/][ -/${SEQ_C0}]*)?(?:[@-~]|${SEQ_CUT})`
+/** Parameters and intermediates in any order: a parameter after an intermediate makes a terminal ignore the CSI. */
+const SEQ_CSI = String.raw`(?:${SEQ_ESC}\[|\x9b)[ -?${SEQ_C0}]*(?:[@-~]|${SEQ_CUT})`
 const SEQ_NF = String.raw`${SEQ_ESC}[ -/][ -/${SEQ_C0}]*(?:[0-~]|${SEQ_CUT})`
 const SEQ_SINGLE = String.raw`${SEQ_ESC}[0-OQ-WYZ\\\x60-~]`
 /**
@@ -250,28 +251,15 @@ const ANSI_GAPS_RE = new RegExp(
 /** `ANSI_GAPS_RE` with a string's payload kept: only its opener and terminator are gaps. */
 const ANSI_PAYLOAD_GAPS_RE = new RegExp([SEQ_CSI, String.raw`${SEQ_ESC}[\]PX^_]`, SEQ_NF, SEQ_SINGLE, CONTROL_CHAR_RE.source].join('|'), 'g')
 /**
- * The views a split token is matched on, each as its gaps and whether a gap's token characters stay: without whole
- * escape sequences, without them but keeping string payloads (a terminal title can hold a token), without control
- * characters only (an escape's final byte can be a token's), and without them but keeping the token characters of
- * string payloads (a token can run through payloads and the sequences between them).
+ * The views a split token is matched on: without whole escape sequences, without them but keeping string payloads (a
+ * terminal title can hold a token), and without control characters only (an escape's final byte can be a token's).
  */
-const SPLIT_VIEWS: [RegExp, boolean][] = [[ANSI_GAPS_RE, false], [ANSI_PAYLOAD_GAPS_RE, false], [CONTROL_CHARS_RE, false], [ANSI_GAPS_RE, true]]
+const SPLIT_VIEWS = [ANSI_GAPS_RE, ANSI_PAYLOAD_GAPS_RE, CONTROL_CHARS_RE]
+const ANSI_GAP_AT_RE = new RegExp(ANSI_GAPS_RE.source, 'y')
 const TOKEN_CHAR_RE = /[A-Za-z0-9_-]/
-const NON_TOKEN_CHARS_RE = /[^A-Za-z0-9_-]+/g
-const STRING_OPENER_RE = new RegExp(String.raw`^(?:${SEQ_ESC}[\]PX^_]|[\x90\x98\x9d-\x9f])`)
-
-/** Where a gap's payload starts when it is a string sequence, or -1. */
-function payloadStart(gap: string): number {
-  return STRING_OPENER_RE.exec(gap)?.[0].length ?? -1
-}
-
-function splitView(text: string, [gaps, keepPayloads]: [RegExp, boolean]): string {
-  if (!keepPayloads) return text.replace(gaps, '')
-  return text.replace(gaps, (gap) => {
-    const from = payloadStart(gap)
-    return from === -1 ? '' : gap.slice(from).replace(NON_TOKEN_CHARS_RE, '')
-  })
-}
+/** A string sequence's opener, with an OSC's command number (`8;`), which is no payload. */
+const STRING_OPENER_RE = new RegExp(String.raw`^(?:(?:${SEQ_ESC}\]|\x9d)(?:\d*;)?|${SEQ_ESC}[PX^_]|[\x90\x98\x9e\x9f])`)
+const PAYLOAD_RUN_CAP = 65_536
 const CRED_TEST_RE = new RegExp(CRED_RE.source)
 /** `CRED_RE`'s prefix and body from a position, without its boundaries (a split token checks the original ones). */
 const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
@@ -279,6 +267,9 @@ const SPLIT_TOKEN_CAP = 1024
 /** Where a `CRED_RE` prefix and body start at a boundary, however they end. */
 const CRED_START_RE = new RegExp(CRED_RE.source.replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'g')
 const CRED_WHOLE_RE = new RegExp(`^${CRED_RE.source}$`)
+/** `CRED_START_RE` and `CRED_RUN_RE` without their body: a credential's prefix, however little of its body follows. */
+const CRED_PREFIX_RE = new RegExp(CRED_START_RE.source.replace(/\{\d+,?\}/g, '{0}'), 'g')
+const CRED_PREFIX_RUN_RE = new RegExp(CRED_RUN_RE.source.replace(/\{\d+,?\}/g, '{0}'), 'y')
 /** A URL query parameter's value, up to the next `&` or `#`. */
 const QUERY_VALUE_RE = /[^&#]*/y
 const PRIVKEY_RE = /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g
@@ -322,24 +313,29 @@ function splitTokenEnd(text: string, stripped: string, kept: number[], i: number
 
 /**
  * The original spans, and the joined text, of prefixed credentials whose body a gap of one of `SPLIT_VIEWS` splits,
- * matched on the text without those gaps. A token starts at a boundary of the stripped text, or where a stripped control hid the original
- * one (`note\nghp_…`); one starting inside a token already masked is part of it.
+ * matched on the text without those gaps, plus `payloadRunSpan`'s from each prefix. A token starts at a boundary of the
+ * stripped text, or where a stripped gap hid the original one (`note\nghp_…`); one starting inside a token already
+ * masked is part of it.
  */
-function splitTokenSpans(text: string, view: [RegExp, boolean]): [number, number, string][] {
-  const stripped = splitView(text, view)
-  if (stripped === text) return []
+function splitTokenSpans(text: string, gaps: RegExp): [number, number, string][] {
+  const stripped = text.replace(gaps, '')
+  if (stripped.length === text.length) return []
   // The original index of each kept character.
   const kept: number[] = []
   let at = 0
-  for (const m of text.matchAll(view[0])) {
+  for (const m of text.matchAll(gaps)) {
     while (at < m.index) kept.push(at++)
-    const from = view[1] ? payloadStart(m[0]) : -1
-    if (from !== -1) for (let k = from; k < m[0].length; k += 1) if (TOKEN_CHAR_RE.test(m[0][k]!)) kept.push(at + k)
     at += m[0].length
   }
   while (at < text.length) kept.push(at++)
   const starts = [...stripped.matchAll(CRED_START_RE)].map((m) => m.index)
-  for (let i = 1; i < kept.length; i += 1) if (kept[i]! - kept[i - 1]! > 1 && /[A-Za-z0-9_-]/.test(stripped[i - 1]!)) starts.push(i)
+  const prefixStarts = [...stripped.matchAll(CRED_PREFIX_RE)].map((m) => m.index)
+  for (let i = 1; i < kept.length; i += 1) {
+    if (kept[i]! - kept[i - 1]! <= 1 || !TOKEN_CHAR_RE.test(stripped[i - 1]!)) continue
+    starts.push(i)
+    CRED_PREFIX_RUN_RE.lastIndex = i
+    if (CRED_PREFIX_RUN_RE.test(stripped)) prefixStarts.push(i)
+  }
   const spans: [number, number, string][] = []
   let scanned = 0
   for (const i of starts.sort((a, b) => a - b)) {
@@ -349,12 +345,51 @@ function splitTokenSpans(text: string, view: [RegExp, boolean]): [number, number
     spans.push([kept[i]!, kept[e - 1]! + 1, stripped.slice(i, e)])
     scanned = e
   }
+  let walked = 0
+  for (const i of prefixStarts.sort((a, b) => a - b)) {
+    if (kept[i]! < walked) continue
+    const [span, reached] = payloadRunSpan(text, kept[i]!)
+    if (span) spans.push(span)
+    walked = reached
+  }
   return spans
+}
+
+/**
+ * Fail-closed for a token split across string payloads: from a credential prefix at `start`, the span through the run of
+ * token characters and whole escape sequences after it, when a string payload in the run holds token characters, and
+ * where the run stopped. Any subset of payloads can hold a token's pieces and the rest junk
+ * (`\x1b]0;ghp_ab\x1b]0;x_y\x07cd…`), so the run is masked whole rather than rebuilt.
+ */
+function payloadRunSpan(text: string, start: number): [[number, number, string] | null, number] {
+  let token = ''
+  let end = start
+  let hidden = false
+  let k = start
+  // ponytail: a run longer than PAYLOAD_RUN_CAP is masked in pieces; raise it if longer hidden tokens appear.
+  while (k < text.length && k - start < PAYLOAD_RUN_CAP) {
+    ANSI_GAP_AT_RE.lastIndex = k
+    const gap = ANSI_GAP_AT_RE.exec(text)?.[0]
+    if (gap) {
+      const from = STRING_OPENER_RE.exec(gap)?.[0].length ?? gap.length
+      for (let j = from; j < gap.length; j += 1) {
+        if (!TOKEN_CHAR_RE.test(gap[j]!)) continue
+        token += gap[j]!
+        end = k + j + 1
+        hidden = true
+      }
+      k += gap.length
+    } else if (TOKEN_CHAR_RE.test(text[k]!)) {
+      token += text[k]!
+      end = k += 1
+    } else break
+  }
+  return [hidden ? [start, end, token] : null, k]
 }
 
 /** Masks each union of the split-token spans every view finds, so no view masks a piece of a token another one joins. */
 function maskSplitTokens(text: string): string {
-  const spans = SPLIT_VIEWS.flatMap((view) => splitTokenSpans(text, view)).sort((a, b) => a[0] - b[0])
+  const spans = SPLIT_VIEWS.flatMap((gaps) => splitTokenSpans(text, gaps)).sort((a, b) => a[0] - b[0])
   let out = ''
   let last = 0
   for (let k = 0; k < spans.length; ) {
@@ -1572,7 +1607,7 @@ export function mightContainSensitiveText(text: string): boolean {
   if (!text) return false
   // A control or zero-width character or an ANSI escape sequence inside a prefix (`x\u200bai-…`) does not hide it: the
   // redactor joins split tokens.
-  const views = SPLIT_VIEWS.map((view) => splitView(text, view))
+  const views = SPLIT_VIEWS.map((gaps) => text.replace(gaps, ''))
   if (CASE_MARKERS.some((m) => views.some((view) => view.includes(m)))) return true
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
