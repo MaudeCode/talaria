@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Switching models or regenerating a reply keeps the commands you allowed for the session and no longer cancels an approval that is waiting for you.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}
