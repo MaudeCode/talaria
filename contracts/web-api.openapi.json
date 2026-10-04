@@ -35417,6 +35417,9 @@
                     },
                     "backup_failed": {
                       "type": "boolean"
+                    },
+                    "stash_conflict": {
+                      "type": "boolean"
                     }
                   },
                   "additionalProperties": {}
@@ -35532,6 +35535,9 @@
                     },
                     "backup_failed": {
                       "type": "boolean"
+                    },
+                    "stash_conflict": {
+                      "type": "boolean"
                     }
                   },
                   "additionalProperties": {}
@@ -35646,6 +35652,9 @@
                       ]
                     },
                     "backup_failed": {
+                      "type": "boolean"
+                    },
+                    "stash_conflict": {
                       "type": "boolean"
                     }
                   },

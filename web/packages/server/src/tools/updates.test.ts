@@ -762,6 +762,76 @@ describe('Agent checkout updates', () => {
     expect((await checkAgentUpdate(a.agent, runGit)).behind).toBe(0)
   })
 
+  function agentService(agent: string, git: GitRun, events: string[]): UpdateService {
+    return new UpdateService({
+      webRoot: join(tmp(), 'web'), git, getJson: noReleases, identity: { release: () => DEV, stamped: () => DEV, runningSourceRevision: () => null }, webuiVersion: 'x',
+      agentDir: () => agent, channel: () => 'stable', includeAgent: () => true, blockers: () => ({ active_streams: 0, active_runs: 0, blocking_stream_ids: [], blocking_run_ids: [], restart_blocked: false }),
+      scheduleRestart: () => events.push('restart'), gatewayRestart: () => { events.push('gateway'); return Promise.resolve({ status: 'completed' }) }, sleep: () => Promise.resolve(), log: () => undefined,
+    })
+  }
+  const stashes = (agent: string): string[] => git(agent, 'stash', 'list').split('\n').filter(Boolean)
+
+  it('a conflicting local edit leaves a clean checkout, keeps the stash, and restarts onto the update', async () => {
+    const a = agentInstall()
+    writeFileSync(join(a.agent, 'VERSION'), 'local edit\n')
+    const events: string[] = []
+    const result = await agentService(a.agent, runGit, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
+    expect(result).toMatchObject({ ok: true, target: 'agent', stash_conflict: true, restart_scheduled: true })
+    expect(String(result.message)).toContain('stash apply')
+    expect(events).toEqual(['gateway', 'restart'])
+    expect(git(a.agent, 'rev-parse', 'HEAD')).toBe(a.v2)
+    expect(readFileSync(join(a.agent, 'VERSION'), 'utf8')).toBe('2.0.0\n') // no conflict markers
+    expect(git(a.agent, 'status', '--porcelain')).toBe('')
+    expect(stashes(a.agent)).toHaveLength(1)
+    expect(git(a.agent, 'stash', 'show', '-p', 'stash@{0}')).toContain('+local edit')
+  })
+
+  it('a failed cleanup reset after a stash conflict fails closed without restarting', async () => {
+    const a = agentInstall()
+    writeFileSync(join(a.agent, 'VERSION'), 'local edit\n')
+    const commands: string[][] = []
+    const noReset: GitRun = (args, cwd, timeout) => { commands.push(args); return args.join(' ') === 'reset --hard HEAD' ? Promise.resolve({ ok: false, out: 'error: could not reset' }) : runGit(args, cwd, timeout) }
+    const events: string[] = []
+    const result = await agentService(a.agent, noReset, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
+    expect(result).toMatchObject({ ok: false, target: 'agent', stash_conflict: true })
+    expect(String(result.message)).toContain('Manual intervention')
+    expect(String(result.message)).toContain(`git -C ${a.agent} reset --hard HEAD`)
+    expect(events).toEqual([])
+    expect(commands).not.toContainEqual(['stash', 'drop'])
+    expect(stashes(a.agent)).toHaveLength(1)
+  })
+
+  it('a cleanly applied stash is dropped and the update restarts', async () => {
+    const a = agentInstall()
+    writeFileSync(join(a.agent, 'README'), 'local note\n')
+    const events: string[] = []
+    const result = await agentService(a.agent, runGit, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
+    expect(result).toMatchObject({ ok: true, restart_scheduled: true })
+    expect(result.stash_conflict).toBeUndefined()
+    expect(events).toEqual(['gateway', 'restart'])
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('local note\n')
+    expect(stashes(a.agent)).toEqual([])
+  })
+
+  it('a pull failure whose stash restore conflicts resets the checkout and keeps the stash', async () => {
+    const a = agentInstall()
+    writeFileSync(join(a.agent, 'VERSION'), 'local edit\n')
+    // A failed merge that still moved the tree is the only way the restore can conflict; simulate it.
+    const moved: GitRun = async (args, cwd, timeout) => {
+      if (args[0] !== 'merge') return runGit(args, cwd, timeout)
+      await runGit(['merge', '--ff-only', a.v2], cwd, timeout)
+      return { ok: false, out: 'fatal: synthetic merge failure' }
+    }
+    const events: string[] = []
+    const result = await agentService(a.agent, moved, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
+    expect(result).toMatchObject({ ok: false, stash_conflict: true })
+    expect(String(result.message)).toContain('synthetic merge failure')
+    expect(events).toEqual([])
+    expect(readFileSync(join(a.agent, 'VERSION'), 'utf8')).toBe('2.0.0\n')
+    expect(git(a.agent, 'status', '--porcelain')).toBe('')
+    expect(stashes(a.agent)).toHaveLength(1)
+  })
+
   it('the force path resets hard but refuses a pure-ancestor rewind', async () => {
     const a = agentInstall()
     writeFileSync(join(a.agent, 'VERSION'), 'broken\n')

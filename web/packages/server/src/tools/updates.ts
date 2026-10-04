@@ -624,7 +624,7 @@ export async function checkAgentUpdate(path: string | null, git: GitRun, channel
   catch (error) { return { name: 'agent', channel, behind: null, error: (error as Error).message } }
 }
 
-/** Fetch, confirm the immutable Agent target, stash, fast-forward, and pop. */
+/** Fetch, confirm the immutable Agent target, stash, fast-forward, and restore the stash. */
 export async function applyAgentUpdate(path: string | null, git: GitRun, channel: Channel = DEFAULT_CHANNEL, policy?: AgentUpdatePolicy): Promise<Dict> {
   if (!path || !existsSync(join(path, '.git'))) return { ok: false, message: 'Not a git repository' }
   const fetched = await git(['fetch', 'origin', '--quiet', '--tags', '--force'], path, 15_000)
@@ -660,25 +660,30 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
   // Merge the immutable commit that was checked/acknowledged, never re-fetch a moving ref here.
   const pulled = await git(['merge', '--ff-only', revision], path, 30_000)
   if (!pulled.ok) {
-    let note = ''
-    if (stashed) note = ` ${await restoreStash(path, git, pulled.out)}`
-    if (isGitLockError(pulled.out)) return { ok: false, message: `Pull failed due to a repository lock: ${pulled.out.trim()}.${note}`, lock_conflict: true }
-    return { ok: false, message: `Pull failed: ${sanitizeGitDiagnostic(pulled.out)}.${note}` }
+    const restored = stashed ? await restoreStash(path, git) : null
+    const note = restored ? ` ${restored.note}` : ''
+    const conflict = restored && !restored.applied ? { stash_conflict: true } : {}
+    if (isGitLockError(pulled.out)) return { ok: false, message: `Pull failed due to a repository lock: ${pulled.out.trim()}.${note}`, lock_conflict: true, ...conflict }
+    return { ok: false, message: `Pull failed: ${sanitizeGitDiagnostic(pulled.out)}.${note}`, ...conflict }
   }
-  let message = `agent updated to ${ref}`
-  if (stashed) {
-    const popped = await git(['stash', 'pop'], path)
-    if (!popped.ok) message += '. Local changes remain in `git stash list`; resolve them manually.'
-  }
+  const restored = stashed ? await restoreStash(path, git) : null
+  // Never report success, or restart, onto a tree that may still hold conflict markers.
+  if (restored?.resetFailed) return { ok: false, target: 'agent', stash_conflict: true, message: `Agent updated to ${ref}. ${restored.note}` }
   const verified = await verifiedAgentIdentity(path, revision, git)
   if (!verified) return { ok: false, message: 'The Agent update completed, but the installed revision could not be verified.', target: 'agent' }
-  return { ok: true, message, target: 'agent', ref, ...verified }
+  return { ok: true, message: `agent updated to ${ref}.${restored ? ` ${restored.note}` : ''}`, target: 'agent', ref, ...verified, ...(restored && !restored.applied ? { stash_conflict: true } : {}) }
 }
 
-async function restoreStash(path: string, git: GitRun, pullOut: string): Promise<string> {
-  if ((await git(['stash', 'pop'], path)).ok) return 'Local modifications were restored from the temporary stash.'
-  if ((await git(['stash', 'apply'], path)).ok) { await git(['stash', 'drop'], path); return 'Local modifications were restored from the temporary stash.' }
-  return `Your local modifications could not be restored automatically (stash pop failed after pull error: ${pullOut.trim().slice(0, 200) || 'no detail'}). They remain safely in \`git stash list\`; run \`git -C ${path} stash pop\` once the lock is cleared.`
+/** Python stash recovery: apply the autostash; on conflict reset tracked files to HEAD and keep the stash. */
+async function restoreStash(path: string, git: GitRun): Promise<{ applied: boolean; resetFailed: boolean; note: string }> {
+  if ((await git(['stash', 'apply'], path)).ok) {
+    const dropped = (await git(['stash', 'drop'], path)).ok
+    return { applied: true, resetFailed: false, note: `Local modifications were restored from the temporary stash.${dropped ? '' : ' The temporary stash entry may still be present because git stash drop failed.'}` }
+  }
+  if (!(await git(['reset', '--hard', 'HEAD'], path)).ok) {
+    return { applied: false, resetFailed: true, note: `Restoring your local modifications conflicted and the cleanup failed. Manual intervention needed: run git -C ${path} reset --hard HEAD to remove conflict markers. Your changes remain in the git stash.` }
+  }
+  return { applied: false, resetFailed: false, note: `Your local modifications conflicted with the update and were set aside in the git stash; tracked files match HEAD. To inspect: git -C ${path} stash show -p. To re-apply: git -C ${path} stash apply, then resolve conflicts, and drop the stash once you are satisfied.` }
 }
 
 /** Python `apply_force_update` (agent branch): fetch, refuse a pure-ancestor rewind, `checkout . && clean -fd && reset --hard`. */
