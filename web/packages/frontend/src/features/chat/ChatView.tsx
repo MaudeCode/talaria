@@ -138,14 +138,20 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   }, [sessionId, session, refresh, bootstrap.profile])
 
   // Manual compression: start, poll the job to done/error, then load the compacted session (a new id when the server forks).
+  // Leaving the session unmounts this view and stops the poll, so it never navigates from the session shown next.
   const [compressing, setCompressing] = useState(false)
+  const compression = useRef<AbortController | null>(null)
+  useEffect(() => () => compression.current?.abort(), [])
   const runCompression = useCallback(async (sid: string) => {
+    const { signal } = (compression.current = new AbortController())
     setCompressing(true)
     try {
       await api.compressSession(sid)
       for (let i = 0; i < 600; i++) {
         await new Promise((r) => setTimeout(r, 1000))
+        signal.throwIfAborted()
         const st = await api.compressStatus(sid)
+        signal.throwIfAborted()
         if (st.status === 'running') continue
         if (st.status === 'error') throw new Error(st.error ?? m.compress_failed_label())
         if (st.status === 'idle') throw new Error(m.compress_failed_label())
@@ -158,7 +164,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       }
       throw new Error(m.compress_failed_label())
     } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
+      if (!signal.aborted) showToast(e instanceof Error ? e.message : String(e), 5000, 'error')
     } finally {
       setCompressing(false)
     }
