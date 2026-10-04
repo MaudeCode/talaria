@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BODY_EXCERPT_LIMIT, extractToolCallsFromMessages, toolOutcome, withBodyExcerpts, withToolCallOutcomes } from './merge.js'
+import { BODY_EXCERPT_LIMIT, extractToolCallsFromMessages, mergeSessionMessagesAppendOnly, toolOutcome, withBodyExcerpts, withToolCallOutcomes } from './merge.js'
 
 describe('toolOutcome (TAL-313)', () => {
   it('fails a result that reports an error, a non-zero exit code, or success false, in any persisted shape', () => {
@@ -103,5 +103,41 @@ describe('withBodyExcerpts (TAL-456)', () => {
     expect(out[0]).toBe(rows[0])
     expect(out[1]?._display_truncated).toBe(true)
     expect(rows[1]).not.toHaveProperty('_display_truncated')
+  })
+})
+
+describe('mergeSessionMessagesAppendOnly truncation watermark (TAL-504)', () => {
+  const msg = (role: string, content: string, timestamp: number) => ({ role, content, timestamp })
+  const contents = (rows: { content?: unknown }[]) => rows.map((m) => m.content)
+  const state = [msg('user', 'u1', 100), msg('assistant', 'a1', 101), msg('user', 'u2', 102), msg('assistant', 'a2', 103), msg('user', 'u3', 104), msg('assistant', 'a3', 105)]
+
+  it('keeps the deleted tail out while the sidecar has not advanced past the watermark', () => {
+    expect(contents(mergeSessionMessagesAppendOnly(state.slice(0, 2), state, { truncationWatermark: 101 }))).toEqual(['u1', 'a1'])
+  })
+
+  it('skips the state tail after a sidecar truncation (Python test_reconciled_messages_skip_state_tail_after_sidecar_truncation)', () => {
+    const sidecar = [msg('user', 'first', 1), msg('assistant', 'reply first', 2)]
+    const db = [...sidecar, msg('user', 'second', 3), msg('assistant', 'reply second', 4)]
+    expect(contents(mergeSessionMessagesAppendOnly(sidecar, db, { truncationWatermark: 2 }))).toEqual(['first', 'reply first'])
+  })
+
+  it('filters a deleted tail above the watermark (Python test_above_watermark_deleted_tail_still_filtered_when_sidecar_not_advanced)', () => {
+    const sidecar = [msg('user', 'q1', 1), msg('assistant', 'a1', 2)]
+    expect(contents(mergeSessionMessagesAppendOnly(sidecar, [...sidecar, msg('assistant', 'deleted tail', 5)], { truncationWatermark: 2 }))).toEqual(['q1', 'a1'])
+  })
+
+  it('keeps only rows at or before the watermark for an empty sidecar (Python test_core_a_not_advanced_watermark_equals_boundary_does_not_resurrect)', () => {
+    const db = [msg('user', 'u1', 50), msg('assistant', 'a1', 51), msg('user', 'deleted-u2', 100), msg('assistant', 'deleted-a2', 101), msg('user', 'deleted-u3', 150), msg('assistant', 'deleted-a3', 151)]
+    expect(contents(mergeSessionMessagesAppendOnly([], db, { truncationWatermark: 51 }))).toEqual(['u1', 'a1'])
+  })
+
+  it('merges state rows newer than the sidecar once the sidecar has advanced past the watermark', () => {
+    const sidecar = [msg('user', 'u1', 100), msg('assistant', 'a1', 101), msg('user', 'after edit', 200)]
+    const db = [...state, msg('user', 'after edit', 200), msg('assistant', 'CLI reply', 201)]
+    expect(contents(mergeSessionMessagesAppendOnly(sidecar, db, { truncationWatermark: 101 }))).toEqual(['u1', 'a1', 'after edit', 'CLI reply'])
+  })
+
+  it('keeps state rows newer than a compression watermark, which marks compressed rows rather than a cut', () => {
+    expect(contents(mergeSessionMessagesAppendOnly(state.slice(0, 2), state, { truncationWatermark: 101, compressedWatermark: true }))).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3'])
   })
 })

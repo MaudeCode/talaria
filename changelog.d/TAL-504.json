@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Messages removed with truncate, undo, retry, or edit stay removed in chats continued from the CLI, and are no longer sent to the model.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

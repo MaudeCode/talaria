@@ -29,6 +29,7 @@ export const METADATA_FIELDS = [
   'compression_recovery_source_session_id', 'compression_recovery_action',
   'truncation_watermark',
   'truncation_boundary',
+  'truncation_watermark_compressed',
   'clear_generation',
   'intentional_shrink_generation',
   'gateway_routing', 'gateway_routing_history', 'llm_title_generated', 'manual_title',
@@ -220,6 +221,8 @@ export class Session {
   compression_recovery_action: string | null
   truncation_watermark: unknown
   truncation_boundary: unknown
+  /** TAL-504: the watermark marks compressed rows (newer state.db rows are new), not a cut suffix. */
+  truncation_watermark_compressed: boolean
   clear_generation: unknown
   intentional_shrink_generation: unknown
   gateway_routing: Record<string, unknown> | null
@@ -330,6 +333,7 @@ export class Session {
     this.compression_recovery_action = recoveryAction ? str(recoveryAction).trim() : null
     this.truncation_watermark = take('truncation_watermark', null)
     this.truncation_boundary = take('truncation_boundary', null)
+    this.truncation_watermark_compressed = take('truncation_watermark_compressed', false) === true
     this.clear_generation = take('clear_generation', null)
     this.intentional_shrink_generation = take('intentional_shrink_generation', null)
     const routing = take('gateway_routing', null)

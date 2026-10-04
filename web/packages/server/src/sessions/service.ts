@@ -225,7 +225,7 @@ export class SessionService {
    */
   mergedTranscript(s: Session, local: Message[] = s.messages, stateRows: Message[] = this.stateDbRows(s)): Message[] {
     if (!stateRows.length) return local
-    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark })
+    return mergeSessionMessagesAppendOnly(local, stateRows, { truncationWatermark: s.truncation_watermark, compressedWatermark: s.truncation_watermark_compressed })
   }
 
   /**
@@ -941,6 +941,7 @@ export class SessionService {
         // #4836: an intentional-shrink boundary, so append-only state.db reconciliation does not replay compressed rows.
         live.truncation_watermark = truncationWatermarkFor(compressed)
         live.truncation_boundary = live.truncation_watermark
+        live.truncation_watermark_compressed = true
         live.last_prompt_tokens = result.after_tokens
         live.post_compression_context_tokens_estimate = result.after_tokens
         this.store.save(live)
@@ -1033,7 +1034,7 @@ export class SessionService {
         messages: copyJson(session.messages), tool_calls: copyJson(session.tool_calls), pinned: false, archived: false, project_id: session.project_id, profile: session.profile,
         input_tokens: session.input_tokens, output_tokens: session.output_tokens, estimated_cost: session.estimated_cost, cache_read_tokens: session.cache_read_tokens, cache_write_tokens: session.cache_write_tokens,
         personality: session.personality, enabled_toolsets: session.enabled_toolsets, context_length: session.context_length, threshold_tokens: session.threshold_tokens,
-        truncation_watermark: session.truncation_watermark, truncation_boundary: session.truncation_boundary, context_messages: copyJson(session.context_messages),
+        truncation_watermark: session.truncation_watermark, truncation_boundary: session.truncation_boundary, truncation_watermark_compressed: session.truncation_watermark_compressed, context_messages: copyJson(session.context_messages),
         gateway_routing: copyJson(session.gateway_routing), gateway_routing_history: copyJson(session.gateway_routing_history), llm_title_generated: session.llm_title_generated,
         manual_title: session.manual_title, composer_draft: copyJson(session.composer_draft), context_engine: session.context_engine, context_engine_state: copyJson(session.context_engine_state),
         created_at: now, updated_at: now,
@@ -1453,6 +1454,7 @@ export function truncateSessionAtKeep(session: Session, keep: number): [number, 
   session.context_messages = truncateContextForDisplayKeep(session.context_messages, full, keep)
   session.truncation_watermark = truncationWatermarkFor(session.messages)
   session.truncation_boundary = session.truncation_watermark
+  session.truncation_watermark_compressed = false
   return [oldMsgCount, oldCtxCount]
 }
 
@@ -1462,6 +1464,7 @@ function shrinkTo(session: Session, lastUserIdx: number): void {
   stampIntentionalShrink(session, history.length, session.messages.length)
   session.truncation_watermark = truncationWatermarkFor(session.messages)
   session.truncation_boundary = session.truncation_watermark
+  session.truncation_watermark_compressed = false
   if (session.context_messages.length) {
     const ctxLast = findLastUserIndex(session.context_messages)
     if (ctxLast !== null) session.context_messages = session.context_messages.slice(0, ctxLast)
