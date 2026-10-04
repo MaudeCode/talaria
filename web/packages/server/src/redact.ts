@@ -647,6 +647,170 @@ function redactUserFlags(text: string): string {
 }
 
 /**
+ * Flags whose value is a secret only for one command (elsewhere a bare `-p` is a port or a path): `separate` flags take the
+ * next word, `attached` ones the rest of their own (`mysql -phunter2`, where a lone `-p` prompts). `login`: only when the
+ * subcommand is `login` (`docker login`, `helm registry login`), not a later word (`docker run image login -p x`). `stop`:
+ * the options end at the first operand, the command run (`sshpass -p pw ssh -p 2222 h`), past the values of `values` flags.
+ * `percent`: the secret follows a `%` (`bob%pw`). `switches`: global options known to take no value, so the word after one
+ * may be the subcommand (`docker --debug run login -p x`).
+ */
+interface CommandFlags { separate?: string[]; attached?: string[]; login?: true; switches?: string[]; values?: string[]; stop?: true; percent?: true }
+const REGISTRY_LOGIN: CommandFlags = { separate: ['-p'], attached: ['-p'], login: true, switches: ['-D', '--debug', '--tls', '--tlsverify', '-r', '--remote', '--syslog'] }
+const MYSQL: CommandFlags = { attached: ['-p'] }
+const COMMAND_FLAGS: Record<string, CommandFlags> = {
+  docker: REGISTRY_LOGIN, podman: REGISTRY_LOGIN, buildah: REGISTRY_LOGIN, nerdctl: REGISTRY_LOGIN, skopeo: REGISTRY_LOGIN, oras: REGISTRY_LOGIN, helm: REGISTRY_LOGIN,
+  mysql: MYSQL, mysqladmin: MYSQL, mysqldump: MYSQL, mysqlimport: MYSQL, mysqlshow: MYSQL, mysqlcheck: MYSQL, mysqlslap: MYSQL, mysql_upgrade: MYSQL, mysqlbinlog: MYSQL, mysqlsh: MYSQL,
+  mariadb: MYSQL, 'mariadb-admin': MYSQL, 'mariadb-dump': MYSQL, 'mariadb-import': MYSQL, 'mariadb-show': MYSQL, 'mariadb-check': MYSQL, 'mariadb-slap': MYSQL, 'mariadb-upgrade': MYSQL, 'mariadb-binlog': MYSQL,
+  sshpass: { separate: ['-p'], attached: ['-p'], values: ['-f', '-d', '-P'], stop: true },
+  'redis-cli': { separate: ['-a', '--pass'] },
+  smbclient: { separate: ['-U', '--user'], attached: ['-U', '--user='], percent: true },
+}
+/**
+ * A known command's name as a word: bare, after a path, a listed argv element, or composed by quotes (`do"cker"`); or a
+ * word the shell computes in whole or part (`$CLIENT`, `$(echo $(which mysql))`, `` `printf docker` ``, `my${EMPTY}sql`),
+ * which may name any of them wherever it stands (`sudo -u root $CLIENT -ppw`). A computed word is matched whole when its
+ * pieces are flat, so a quoted one reads as a listed element; otherwise up to its first expansion, and read from there.
+ */
+/** A parameter, substitution or backtick piece of a word; a name is read whole, so a word splits into pieces one way only. */
+const EXPANSION = String.raw`\$[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_])|\$\{[^{}\n]*\}|\$\([^()\n]*\)|\x60[^\x60\n]*\x60`
+const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[\\])(?:(?:${Object.keys(COMMAND_FLAGS).map((name) => name.replaceAll(/(?<=.)(?=.)/g, String.raw`["'\\]*`)).join('|')}|[\w./-]*(?:${EXPANSION})(?:[\w./-]|${EXPANSION})*)(?=[\s;&|)'",\]]|$)|[\w./-]*(?=\$[({A-Za-z_]|\x60))`, 'g')
+/** Every command's flags, for an executable the shell computes. */
+const ALL_COMMAND_FLAGS = [...new Set(Object.values(COMMAND_FLAGS))]
+const COMMAND_FLAG_TEST_RE = new RegExp(COMMAND_FLAG_RE.source)
+
+/**
+ * For an argv (`words` as the programs receive them), the words holding a command's secret, each with the offset it starts
+ * at. Every known command named so far is read at once, so a wrapper's operand naming one (`sudo -u mysql docker login -p
+ * pw`) does not hide the command it runs.
+ */
+function commandFlagMasks(words: readonly string[]): Map<number, number> {
+  const masks = new Map<number, number>()
+  const states = new Map<CommandFlags, { active: boolean; next: number }>()
+  const secret = (flags: CommandFlags, index: number, value: string | undefined, from: number): void => {
+    if (value === undefined) return
+    const at = flags.percent ? value.indexOf('%', from) + 1 : from
+    if ((at || !flags.percent) && value.slice(at) && value.slice(at) !== '***') masks.set(index, at)
+  }
+  for (let i = 0; i < words.length; i += 1) {
+    const word = words[i]!
+    for (const [flags, state] of states) {
+      if (i < state.next) continue
+      if (!state.active) {
+        // The subcommand is the first operand past the options; one right after a bare option may be its value. One the shell
+        // computes (`docker "$ACTION" -p pw`) may be `login`.
+        if (word === 'login' || /[$`]/.test(word)) state.active = true
+        else if (!word.startsWith('-') && word !== 'registry' && !(/^-[^=]*$/.test(words[i - 1]!) && !flags.switches?.includes(words[i - 1]!))) states.delete(flags)
+        continue
+      }
+      if (flags.separate?.includes(word)) { secret(flags, i + 1, words[i + 1], 0); state.next = i + 2; continue }
+      const prefix = flags.attached?.find((p) => word.length > p.length && word.startsWith(p))
+      if (prefix !== undefined) { secret(flags, i, word, prefix.length + (word[prefix.length] === '=' ? 1 : 0)); continue }
+      if (flags.values?.includes(word)) { state.next = i + 2; continue }
+      if (flags.stop && !word.startsWith('-')) states.delete(flags)
+    }
+    const name = word.slice(word.lastIndexOf('/') + 1)
+    // A command named again (`docker login docker -p pw`, a host) keeps the state it is in. A word the shell computes may
+    // be the executable (`sudo -u root $CLIENT -ppw`), so it may be any known command.
+    const named = Object.hasOwn(COMMAND_FLAGS, name) ? [COMMAND_FLAGS[name]!] : !word.startsWith('-') && /[$`]/.test(word) ? ALL_COMMAND_FLAGS : []
+    for (const flags of named) if (!states.has(flags)) states.set(flags, { active: !flags.login, next: i + 1 })
+  }
+  return masks
+}
+
+/** `raw`, a shell word reading `plain`, masked from `plain`'s offset `from`; a word whose kept part is not literal is masked whole. */
+function maskWordFrom(raw: string, plain: string, from: number): string {
+  if (!from) return maskShellWord(raw)
+  const kept = plain.slice(0, from)
+  const quoted = splitQuoted(raw)
+  if (quoted?.inner.startsWith(kept)) return `${quoted.open}${kept}***${quoted.close}`
+  return raw.startsWith(kept) ? kept + maskShellWord(raw.slice(from)) : maskShellWord(raw)
+}
+
+/** A redirection operator, with its file descriptor. */
+const REDIRECT_RE = /[0-9]*(?:&>>?|<<<|<<-?|<>|>>|>&|<&|>\||[<>])/y
+/**
+ * The words of the simple command (or `list`ed argv) at `from`, up to a shell metacharacter, the line end, a list's close
+ * or the close of the `enclosing` quote, and where the scan stopped. An unterminated quote ends the command with its word.
+ * Only a list's elements end at `,`, `]` or `}`; in a shell word they are ordinary characters (`-phunter,2`).
+ */
+function commandWords(text: string, from: number, enclosing: string, list: boolean): { spans: [number, number][]; end: number } {
+  const spans: [number, number][] = []
+  const [gap, close, stop] = list ? [/[ \t,<>]/, /[\n;&|()\]}]/, /[\s;&|()<>,\]}]/] : [/[ \t]/, /[\n;&|()]/, /[\s;&|()<>]/]
+  let i = from
+  let redirect = false
+  for (;;) {
+    while (i < text.length && gap.test(text[i]!)) i += 1
+    // A redirection and its target (`</dev/null`, `2> /tmp/e`, `2>&1`) are no argument: the shell removes them.
+    REDIRECT_RE.lastIndex = i
+    if (!list && i < text.length && text[i] !== enclosing && REDIRECT_RE.test(text)) { i = REDIRECT_RE.lastIndex; redirect = true; continue }
+    if (i >= text.length || text[i] === enclosing || close.test(text[i]!)) return { spans, end: i }
+    const start = i
+    while (i < text.length && text[i] !== enclosing && !stop.test(text[i]!)) {
+      const c = text[i]!
+      if (c === '\\') i += 2
+      else if ((c === "'" || c === '"') && c !== enclosing) {
+        // A quote groups across newlines, and an inner quote of the other kind (`sh -c "mysql -p'a b'"`) groups for the shell
+        // that runs the command.
+        let k = i + 1
+        while (k < text.length && text[k] !== c && text[k] !== enclosing) k += c === '"' && text[k] === '\\' ? 2 : 1
+        // An unterminated quote runs to the text end (or the enclosing close); its word is still read, so its secret is masked.
+        if (text[k] !== c) { spans.push([start, Math.min(k, text.length)]); return { spans, end: Math.min(k, text.length) } }
+        i = k + 1
+      } else if (c === '`' || (c === '$' && (text[i + 1] === '(' || text[i + 1] === '{'))) {
+        // A substitution is part of its word (`-p$(printf pw)`), spaces and nested ones included.
+        const [open, close] = c === '`' ? ['', '`'] : [text[i + 1]!, text[i + 1] === '(' ? ')' : '}']
+        let k = i + 1
+        for (let depth = 1; k < text.length && text[k] !== enclosing; k += 1) {
+          if (text[k] === close && (depth -= 1) === 0) break
+          if (text[k] === open && k > i + 1) depth += 1
+        }
+        if (text[k] !== close) { spans.push([start, Math.min(k, text.length)]); return { spans, end: Math.min(k, text.length) } }
+        i = k + 1
+      } else i += 1
+    }
+    if (!redirect) spans.push([start, Math.min(i, text.length)])
+    redirect = false
+  }
+}
+
+/**
+ * `COMMAND_FLAGS` secrets in shell text and listed argv text (`['mysql', '-phunter2']`). A quoted word that holds a known
+ * command (`sh -c 'mysql -phunter2'`) is read as a command of its own.
+ */
+function redactCommandFlags(text: string): string {
+  let out = ''
+  let last = 0
+  const quoteAt = quoteTracker(text)
+  const re = new RegExp(COMMAND_FLAG_RE)
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    const quote = quoteAt(m.index).slice(-1)
+    // A listed element (`'mysql',`) is read from its opening quote; a command inside a quoted argument ends at its close.
+    let listed = quote !== '' && text[m.index + m[0].length] === quote
+    // A computed word matched only to its first expansion (`"$(echo $(which docker))"`) is listed when it fills its quotes.
+    if (!listed && quote && text[m.index - 1] === quote) {
+      const probe = commandWords(text, m.index, quote, false)
+      listed = probe.spans.length === 1 && text[probe.end] === quote
+    }
+    const { spans, end } = commandWords(text, listed ? text.lastIndexOf(quote, m.index) : m.index, listed ? '' : quote, listed)
+    const words = spans.map(([start, stop]) => shellDequote(text.slice(start, stop)))
+    const masks = commandFlagMasks(words)
+    for (const [k, [start, stop]] of spans.entries()) {
+      if (start < last) continue
+      const raw = text.slice(start, stop)
+      const from = masks.get(k)
+      // A nested command is a quoted or substituted word with a space, strictly inside this text.
+      const nested = (listed || !quote) && raw.length < text.length && /['"]|\$\(|\x60/.test(raw) && /\s/.test(raw) && COMMAND_FLAG_TEST_RE.test(raw)
+      const replaced = from !== undefined ? maskWordFrom(raw, words[k]!, from) : nested ? redactCommandFlags(raw) : raw
+      if (replaced === raw) continue
+      out += text.slice(last, start) + replaced
+      last = stop
+    }
+    re.lastIndex = Math.max(end, re.lastIndex, m.index + 1)
+  }
+  return out + text.slice(last)
+}
+
+/**
  * Header credentials (`AUTH_HDR_RE`, `BEARER_RE`: a head group, then the credential). A parameterized credential is masked
  * whole; a single credential is read to the end of its shell word, so an adjacent quoted piece (`Bearer foo'bar`, which
  * the shell passes as `foobar`) is masked with it.
@@ -1309,6 +1473,7 @@ function redactRules(text: string): string {
   out = out.replace(TELEGRAM_TOKEN_RE, (_, bot: string | undefined, id: string) => `${bot ?? ''}${id}:***`)
   out = out.replace(PHONE_RE, (phone) => { const keep = phone.length <= 8 ? 2 : 4; return `${phone.slice(0, keep)}****${phone.slice(-keep)}` })
   out = redactUserFlags(out)
+  out = redactCommandFlags(out)
   out = out.replace(QUERY_KEY_RE, (whole, head: string, value: string) => (/[A-Za-z0-9]/.test(value) ? head + mask(value) : whole))
   out = out.replace(PRIVKEY_RE, '[REDACTED PRIVATE KEY]').replace(PRIVKEY_OPEN_RE, '[REDACTED PRIVATE KEY]')
   return restoreCodeEnvKeyLiterals(text, out)
@@ -1346,6 +1511,7 @@ export function mightContainSensitiveText(text: string): boolean {
   if (text.includes('@') && new RegExp(BARE_USERINFO_RE.source).test(text)) return true
   if (DYNAMIC_KEY_PIECE_RE.test(text) || /\$[({A-Za-z_0-9@*#?$!'-]|`/.test(text)) return true
   if (USER_FLAG_TEST_RE.test(text)) return true
+  if (COMMAND_FLAG_TEST_RE.test(text)) return true
   if (text.includes(':') && TELEGRAM_TEST_RE.test(text)) return true
   if (text.includes('<@') && DISCORD_RE.test(text)) return true
   if (text.includes('+') && PHONE_TEST_RE.test(text)) return true
@@ -1537,7 +1703,10 @@ function redactArgs(value: unknown, enabled: boolean): unknown {
     // A `[name, value]` header tuple naming a credential.
     if (value.length === 2 && typeof value[0] === 'string' && isCredentialKey(value[0])) return [value[0], maskLeaves(value[1])]
     // An argv array (`['login', '--password', 'hunter2']`): a credential flag's value is the next element.
+    const commandMasks = commandFlagMasks(value.map((item) => (typeof item === 'string' || typeof item === 'number' ? String(item) : '')))
     return value.map((item, i) => {
+      const from = commandMasks.get(i)
+      if (from !== undefined) return typeof item === 'string' ? maskWordFrom(item, item, from) : maskLeaves(item)
       const flag: unknown = value[i - 1]
       if (typeof flag === 'string' && item !== '' && item !== null && item !== undefined) {
         if (ARGV_USER_FLAG_RE.test(flag)) return typeof item === 'string' ? item.replace(/:.*/s, ':***') : maskLeaves(item)
