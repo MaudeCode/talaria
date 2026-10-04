@@ -251,6 +251,7 @@ struct ChatView: View {
             modelGroups: viewModel.modelCatalogGroups,
             selectedModelID: viewModel.selectedModelID,
             selectedModelProviderID: viewModel.selectedModelProviderID,
+            selectedModelOptionID: viewModel.selectedModelOptionID,
             selectedModelTitle: viewModel.selectedModelTitle,
             workspaceRoots: viewModel.workspaceRoots,
             selectedWorkspacePath: viewModel.selectedWorkspacePath,
@@ -2008,6 +2009,7 @@ struct ChatView: View {
         ChatDraftSettings(
             modelID: viewModel.selectedModelID,
             modelProviderID: viewModel.selectedModelProviderID,
+            modelOptionID: viewModel.selectedModelOptionID,
             reasoningEffort: viewModel.selectedReasoningEffort,
             profileName: viewModel.selectedProfileName,
             workspacePath: viewModel.selectedWorkspacePath

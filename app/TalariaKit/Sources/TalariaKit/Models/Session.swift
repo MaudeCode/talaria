@@ -246,6 +246,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     public let workspace: String?
     public let model: String?
     public let modelProvider: String?
+    /// TAL-301: the catalog entry the server says `model`/`modelProvider` selects.
+    public let modelOptionID: String?
     public let messageCount: Int?
     public let createdAt: Double?
     public let updatedAt: Double?
@@ -289,6 +291,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         workspace: String? = nil,
         model: String? = nil,
         modelProvider: String? = nil,
+        modelOptionID: String? = nil,
         messageCount: Int? = nil,
         createdAt: Double? = nil,
         updatedAt: Double? = nil,
@@ -327,6 +330,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         self.workspace = workspace
         self.model = model
         self.modelProvider = modelProvider
+        self.modelOptionID = modelOptionID
         self.messageCount = messageCount
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -363,6 +367,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case sessionId, title, workspace, model, modelProvider
+        case modelOptionID = "modelOptionId"
         case messageCount, createdAt, updatedAt, lastMessageAt
         case pinned, archived, projectId, profile
         case inputTokens, outputTokens, estimatedCost
@@ -389,6 +394,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         workspace = container.decodeLossyStringIfPresent(forKey: .workspace)
         model = container.decodeLossyStringIfPresent(forKey: .model)
         modelProvider = container.decodeLossyStringIfPresent(forKey: .modelProvider)
+        modelOptionID = container.decodeLossyStringIfPresent(forKey: .modelOptionID)
         messageCount = container.decodeLossyIntIfPresent(forKey: .messageCount)
         createdAt = container.decodeLossyDoubleIfPresent(forKey: .createdAt)
         updatedAt = container.decodeLossyDoubleIfPresent(forKey: .updatedAt)
@@ -452,6 +458,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         workspace = detail.workspace
         model = detail.model
         modelProvider = detail.modelProvider
+        modelOptionID = detail.modelOptionID
         messageCount = detail.messageCount ?? detail.messages?.count
         createdAt = detail.createdAt
         updatedAt = detail.updatedAt
@@ -499,6 +506,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
             workspace: workspace,
             model: model,
             modelProvider: modelProvider,
+            modelOptionID: modelOptionID,
             messageCount: messageCount,
             createdAt: createdAt,
             updatedAt: updatedAt,
@@ -564,6 +572,7 @@ extension SessionSummary {
             workspace: workspace ?? row.workspace,
             model: model ?? row.model,
             modelProvider: modelProvider ?? row.modelProvider,
+            modelOptionID: model != nil ? modelOptionID : row.modelOptionID,
             messageCount: messageCount ?? row.messageCount,
             createdAt: createdAt ?? row.createdAt,
             updatedAt: updatedAt ?? row.updatedAt,
@@ -715,6 +724,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let workspace: String?
     public let model: String?
     public let modelProvider: String?
+    /// TAL-301: the catalog entry the server says `model`/`modelProvider` selects.
+    public let modelOptionID: String?
     public let messageCount: Int?
     let createdAt: Double?
     let updatedAt: Double?
@@ -775,6 +786,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case workspace
         case model
         case modelProvider
+        case modelOptionID = "modelOptionId"
         case messageCount
         case createdAt
         case updatedAt
@@ -837,6 +849,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         workspace = container.decodeLossyStringIfPresent(forKey: .workspace)
         model = container.decodeLossyStringIfPresent(forKey: .model)
         modelProvider = container.decodeLossyStringIfPresent(forKey: .modelProvider)
+        modelOptionID = container.decodeLossyStringIfPresent(forKey: .modelOptionID)
         messageCount = container.decodeLossyIntIfPresent(forKey: .messageCount)
         createdAt = container.decodeLossyDoubleIfPresent(forKey: .createdAt)
         updatedAt = container.decodeLossyDoubleIfPresent(forKey: .updatedAt)

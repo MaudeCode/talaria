@@ -12,7 +12,7 @@ struct DefaultModelPickerView: View {
     @State private var isLoading = false
     @State private var groups: [ModelCatalogGroup] = []
     @State private var defaultModel: String?
-    @State private var defaultProvider: String?
+    @State private var defaultOptionID: String?
     @State private var customModel = ""
     @State private var selectedModel: String?
     @State private var selectedProvider: String?
@@ -203,16 +203,15 @@ struct DefaultModelPickerView: View {
         isSaving && selectedModel == model.id && model.providerID == selectedProvider
     }
 
-    /// Whether this row is the current default: the row whose server-stamped
-    /// `(bareID, providerID)` equals the server's split of the stored default,
-    /// or, while a save is in flight, the tapped row.
+    /// Whether this row is the current default: the entry the server says
+    /// the stored default selects, or, while a save is in flight, the tapped row.
     private func isCurrentDefault(_ model: ModelCatalogOption) -> Bool {
         DefaultModelPickerSelection.isChecked(
             model,
             selectedModel: selectedModel,
             selectedProvider: selectedProvider,
-            defaultModel: defaultModel,
-            defaultProvider: defaultProvider
+            defaultOptionID: defaultOptionID,
+            defaultModel: defaultModel
         )
     }
 
@@ -231,8 +230,8 @@ struct DefaultModelPickerView: View {
 
         do {
             let response = try await APIClient(baseURL: server).models()
-            defaultModel = response.defaultBareID ?? response.defaultModel ?? currentDefaultModel
-            defaultProvider = response.defaultProviderID
+            defaultModel = response.defaultModel ?? currentDefaultModel
+            defaultOptionID = response.defaultOptionID
             groups = response.catalogGroups
         } catch {
             errorMessage = error.localizedDescription

@@ -228,6 +228,7 @@ final class ModelCatalogTests: XCTestCase {
           "default_model": "@custom:localhost:8080:m",
           "default_provider_id": "custom:localhost:8080",
           "default_bare_id": "m",
+          "default_option_id": "@custom:localhost:8080:m",
           "active_provider": "anthropic",
           "groups": [
             {"name": "Anthropic", "provider_id": "anthropic", "models": [
@@ -248,9 +249,9 @@ final class ModelCatalogTests: XCTestCase {
         """.utf8))
     }
 
-    /// Each stored `(model, provider)` pair ticks exactly one entry, and the
-    /// picked `id` with its `providerID` (what the app sends) ticks the same one.
-    func testStoredPairTicksExactlyOneEntryOfTheServerSplitCatalog() throws {
+    /// A stamped catalog ticks exactly the entry the server names for the
+    /// stored pair; the app never re-pairs `(model, provider)` itself.
+    func testServerOptionIDTicksExactlyOneEntryOfAStampedCatalog() throws {
         let options = try colonCatalog().catalogGroups.flatMap(\.models)
         let cases: [(String, String, String)] = [
             ("llama3:8b", "ollama", "@ollama:llama3:8b"),
@@ -259,29 +260,26 @@ final class ModelCatalogTests: XCTestCase {
             ("gemini-2.5-flash", "google", "@google:gemini-2.5-flash"),
             ("claude-opus-4.7", "anthropic", "claude-opus-4.7")
         ]
-        for (model, provider, expectedID) in cases {
-            let matches = options.filter { $0.matchesSelection(modelID: model, providerID: provider) }
-            XCTAssertEqual(matches.map(\.id), [expectedID], "\(model) / \(provider)")
-            let picked = try XCTUnwrap(matches.first)
-            XCTAssertEqual(options.filter { $0.matchesSelection(modelID: picked.id, providerID: picked.providerID) }.map(\.id), [expectedID])
+        for (model, provider, optionID) in cases {
+            let selected = options.filter { $0.isSelected(optionID: optionID, modelID: model, providerID: provider) }
+            XCTAssertEqual(selected.map(\.id), [optionID], "\(model) / \(provider)")
+            XCTAssertEqual(selected.first?.providerID, provider)
         }
-        // A pair naming no provider, or another provider, ticks nothing.
-        XCTAssertNil(options.firstMatchingSelection(modelID: "gemini-2.5-flash", providerID: nil))
-        XCTAssertNil(options.firstMatchingSelection(modelID: "llama3:8b", providerID: "openai"))
+        // The server paired nothing: no entry ticks, even one with the same id.
+        XCTAssertNil(options.firstSelected(optionID: nil, modelID: "claude-opus-4.7", providerID: "anthropic"))
     }
 
-    func testModelsResponseDecodesTheServerSplitDefault() throws {
+    func testModelsResponseDecodesTheServerSelectedDefault() throws {
         let response = try colonCatalog()
-        XCTAssertEqual(response.defaultProviderID, "custom:localhost:8080")
-        XCTAssertEqual(response.defaultBareID, "m")
+        XCTAssertEqual(response.defaultOptionID, "@custom:localhost:8080:m")
         let options = response.catalogGroups.flatMap(\.models)
         let checked = options.filter {
             DefaultModelPickerSelection.isChecked(
                 $0,
                 selectedModel: nil,
                 selectedProvider: nil,
-                defaultModel: response.defaultBareID,
-                defaultProvider: response.defaultProviderID
+                defaultOptionID: response.defaultOptionID,
+                defaultModel: response.defaultModel
             )
         }
         XCTAssertEqual(checked.map(\.id), ["@custom:localhost:8080:m"])
@@ -293,25 +291,26 @@ final class ModelCatalogTests: XCTestCase {
         let prefixed = ModelCatalogOption(id: "@gemini:flash", displayName: "Prefixed", providerID: "gemini")
         let bare = ModelCatalogOption(id: "flash", displayName: "Bare", providerID: "gemini")
 
-        XCTAssertTrue(prefixed.matchesSelection(modelID: "@gemini:flash", providerID: nil))
-        XCTAssertTrue(prefixed.matchesSelection(modelID: "@gemini:flash", providerID: "gemini"))
-        XCTAssertFalse(prefixed.matchesSelection(modelID: "flash", providerID: "gemini"))
-        XCTAssertFalse(bare.matchesSelection(modelID: "flash", providerID: "google"))
-        XCTAssertTrue(bare.matchesSelection(modelID: "flash", providerID: "gemini"))
-        XCTAssertEqual([prefixed, bare].firstMatchingSelection(modelID: "flash", providerID: nil)?.displayName, "Bare")
+        XCTAssertTrue(prefixed.isSelected(optionID: nil, modelID: "@gemini:flash", providerID: nil))
+        XCTAssertTrue(prefixed.isSelected(optionID: nil, modelID: "@gemini:flash", providerID: "gemini"))
+        XCTAssertFalse(prefixed.isSelected(optionID: nil, modelID: "flash", providerID: "gemini"))
+        XCTAssertFalse(bare.isSelected(optionID: nil, modelID: "flash", providerID: "google"))
+        XCTAssertTrue(bare.isSelected(optionID: nil, modelID: "flash", providerID: "gemini"))
+        XCTAssertEqual([prefixed, bare].firstSelected(optionID: nil, modelID: "flash", providerID: nil)?.displayName, "Bare")
     }
 
-    /// A tap records the row's provider. The previous stored default must not
-    /// stay checkmarked / Selected while the save is in flight.
+    /// A tap records the row's id and provider. The previous stored default
+    /// must not stay checkmarked / Selected while the save is in flight.
     func testPickerInFlightSelectionTicksOnlyTheTappedProviderRow() throws {
-        let options = try colonCatalog().catalogGroups.flatMap(\.models)
+        let response = try colonCatalog()
+        let options = response.catalogGroups.flatMap(\.models)
         let checked = options.filter {
             DefaultModelPickerSelection.isChecked(
                 $0,
                 selectedModel: "@google:gemini-2.5-flash",
                 selectedProvider: "google",
-                defaultModel: "m",
-                defaultProvider: "custom:localhost:8080"
+                defaultOptionID: response.defaultOptionID,
+                defaultModel: response.defaultModel
             )
         }
         XCTAssertEqual(checked.map(\.id), ["@google:gemini-2.5-flash"])
@@ -320,14 +319,14 @@ final class ModelCatalogTests: XCTestCase {
     /// A custom save records the typed id with no provider. That must not
     /// tick a same-id catalog row while the request is in flight.
     func testPickerCustomSaveDoesNotTickCatalogRows() throws {
-        let options = try colonCatalog().catalogGroups.flatMap(\.models)
-        XCTAssertFalse(options.contains {
+        let response = try colonCatalog()
+        XCTAssertFalse(response.catalogGroups.flatMap(\.models).contains {
             DefaultModelPickerSelection.isChecked(
                 $0,
                 selectedModel: "claude-opus-4.7",
                 selectedProvider: nil,
-                defaultModel: "m",
-                defaultProvider: "custom:localhost:8080"
+                defaultOptionID: response.defaultOptionID,
+                defaultModel: response.defaultModel
             )
         })
     }

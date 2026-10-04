@@ -40,6 +40,7 @@ struct MessageComposerView: View {
     let modelGroups: [ModelCatalogGroup]
     let selectedModelID: String?
     let selectedModelProviderID: String?
+    let selectedModelOptionID: String?
     let selectedModelTitle: String
     let workspaceRoots: [WorkspaceRoot]
     let selectedWorkspacePath: String?
@@ -352,6 +353,7 @@ struct MessageComposerView: View {
                 modelGroups: modelGroups,
                 selectedModelID: selectedModelID,
                 selectedModelProviderID: selectedModelProviderID,
+                selectedModelOptionID: selectedModelOptionID,
                 favoriteModelKeys: favoriteModelKeys,
                 recentModelKeys: recentModelKeys,
                 onSelect: { option in
@@ -854,6 +856,7 @@ struct MessageComposerView: View {
             modelGroups: modelGroups,
             selectedModelID: selectedModelID,
             selectedModelProviderID: selectedModelProviderID,
+            selectedModelOptionID: selectedModelOptionID,
             selectedModelTitle: selectedModelTitle,
             isLoadingModels: isLoadingModels,
             favoriteModelKeys: favoriteModelKeys,

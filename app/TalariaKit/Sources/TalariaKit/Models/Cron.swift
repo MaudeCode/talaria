@@ -55,6 +55,8 @@ public struct CronJob: Decodable, Equatable, Identifiable {
     public let skills: [String]?
     public let model: String?
     public let provider: String?
+    /// TAL-301: the catalog entry the server says `model`/`provider` selects.
+    public let modelOptionID: String?
     public let profile: String?
     public let toastNotifications: Bool?
     /// Server-derived (TAL-296): the status, attention flag, and Resume/Pause choice. Running state comes only from
@@ -79,6 +81,7 @@ public struct CronJob: Decodable, Equatable, Identifiable {
         case skills
         case model
         case provider
+        case modelOptionID = "modelOptionId"
         case profile
         case toastNotifications
         case derivedState
@@ -103,6 +106,7 @@ public struct CronJob: Decodable, Equatable, Identifiable {
         skills = (try? container.decodeIfPresent([String].self, forKey: .skills)) ?? nil
         model = container.decodeLossyStringIfPresent(forKey: .model)
         provider = container.decodeLossyStringIfPresent(forKey: .provider)
+        modelOptionID = container.decodeLossyStringIfPresent(forKey: .modelOptionID)
         profile = container.decodeLossyStringIfPresent(forKey: .profile)
         toastNotifications = container.decodeLossyBoolIfPresent(forKey: .toastNotifications)
         derivedState = container.decodeLossyStringIfPresent(forKey: .derivedState)
@@ -582,6 +586,9 @@ public struct CronJobEditorDraft: Equatable {
     var skillsText: String
     public var model: String
     public var provider: String
+    /// The catalog entry the model row shows: the server's pairing for a
+    /// saved job, or the picked entry.
+    public var modelOptionID: String?
     public var profile: String
     public var toastNotifications: Bool
 
@@ -593,6 +600,7 @@ public struct CronJobEditorDraft: Equatable {
         skillsText: String = "",
         model: String = "",
         provider: String = "",
+        modelOptionID: String? = nil,
         profile: String = "",
         toastNotifications: Bool = true
     ) {
@@ -603,6 +611,7 @@ public struct CronJobEditorDraft: Equatable {
         self.skillsText = skillsText
         self.model = model
         self.provider = provider
+        self.modelOptionID = modelOptionID
         self.profile = profile
         self.toastNotifications = toastNotifications
     }
@@ -616,6 +625,7 @@ public struct CronJobEditorDraft: Equatable {
             skillsText: job.skills?.joined(separator: ", ") ?? "",
             model: job.model ?? "",
             provider: job.provider ?? "",
+            modelOptionID: job.modelOptionID,
             profile: job.profile ?? "",
             toastNotifications: job.toastNotifications ?? true
         )
@@ -679,6 +689,7 @@ public struct CronJobEditorDraft: Equatable {
     public mutating func applyModelSelection(_ option: ModelCatalogOption?) {
         model = option?.id ?? ""
         provider = option?.providerID ?? ""
+        modelOptionID = option?.id
     }
 
     /// The option the editor's Model row shows, or `nil` for "Server Default".
@@ -688,7 +699,7 @@ public struct CronJobEditorDraft: Equatable {
         guard let modelID = trimmedModel else { return nil }
         return groups
             .flatMap(\.slashAutocompleteModels)
-            .firstMatchingSelection(modelID: modelID, providerID: trimmedProvider)
+            .firstSelected(optionID: modelOptionID, modelID: modelID, providerID: trimmedProvider)
             ?? ModelCatalogOption(id: modelID, displayName: modelID, providerID: trimmedProvider)
     }
 

@@ -61,23 +61,20 @@ public struct ModelCatalogOption: Identifiable, Equatable, Hashable, Sendable {
 }
 
 extension ModelCatalogOption {
-    /// Whether this entry is the stored `(model, provider)` pair. The server
-    /// splits every `@provider:model` id once and stamps each entry with its
-    /// routing provider and bare id, so this is plain equality; a just-picked
-    /// `id` names itself. An older server's unstamped entry matches its exact
+    /// Whether this entry is the selection. A server-stamped catalog names
+    /// the selected entry itself (`optionID`, TAL-301), so the app only
+    /// compares ids. An older server's unstamped entry falls back to its exact
     /// id, and a provider named on both sides still has to agree.
-    public func matchesSelection(modelID: String?, providerID: String?) -> Bool {
+    public func isSelected(optionID: String?, modelID: String?, providerID: String?) -> Bool {
+        if bareID != nil { return optionID != nil && id == optionID }
         guard let modelID, !modelID.isEmpty else { return false }
-        guard let bareID else {
-            return id == modelID && (providerID == nil || self.providerID == nil || self.providerID == providerID)
-        }
-        return (bareID == modelID || id == modelID) && self.providerID == providerID
+        return id == modelID && (providerID == nil || self.providerID == nil || self.providerID == providerID)
     }
 }
 
 extension Collection where Element == ModelCatalogOption {
-    public func firstMatchingSelection(modelID: String?, providerID: String?) -> ModelCatalogOption? {
-        first { $0.matchesSelection(modelID: modelID, providerID: providerID) }
+    public func firstSelected(optionID: String?, modelID: String?, providerID: String?) -> ModelCatalogOption? {
+        first { $0.isSelected(optionID: optionID, modelID: modelID, providerID: providerID) }
     }
 }
 

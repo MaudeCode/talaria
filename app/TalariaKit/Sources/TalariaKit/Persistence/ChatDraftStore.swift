@@ -20,13 +20,16 @@ public struct ChatDraftAttachment: Equatable, Sendable {
 public struct ChatDraftSettings: Equatable, Sendable {
     public var modelID: String?
     public var modelProviderID: String?
+    /// The picked catalog entry (TAL-301), restored by id rather than re-paired.
+    public var modelOptionID: String?
     public var reasoningEffort: String?
     public var profileName: String?
     public var workspacePath: String?
 
-    public init(modelID: String? = nil, modelProviderID: String? = nil, reasoningEffort: String? = nil, profileName: String? = nil, workspacePath: String? = nil) {
+    public init(modelID: String? = nil, modelProviderID: String? = nil, modelOptionID: String? = nil, reasoningEffort: String? = nil, profileName: String? = nil, workspacePath: String? = nil) {
         self.modelID = modelID
         self.modelProviderID = modelProviderID
+        self.modelOptionID = modelOptionID
         self.reasoningEffort = reasoningEffort
         self.profileName = profileName
         self.workspacePath = workspacePath
@@ -36,6 +39,7 @@ public struct ChatDraftSettings: Equatable, Sendable {
         let normalized = normalized()
         return normalized.modelID == nil
             && normalized.modelProviderID == nil
+            && normalized.modelOptionID == nil
             && normalized.reasoningEffort == nil
             && normalized.profileName == nil
             && normalized.workspacePath == nil
@@ -46,6 +50,7 @@ public struct ChatDraftSettings: Equatable, Sendable {
         Self.normalized(
             modelID: modelID,
             modelProviderID: modelProviderID,
+            modelOptionID: modelOptionID,
             reasoningEffort: reasoningEffort,
             profileName: profileName,
             workspacePath: workspacePath
@@ -55,6 +60,7 @@ public struct ChatDraftSettings: Equatable, Sendable {
     private static func normalized(
         modelID: String?,
         modelProviderID: String?,
+        modelOptionID: String?,
         reasoningEffort: String?,
         profileName: String?,
         workspacePath: String?
@@ -67,6 +73,7 @@ public struct ChatDraftSettings: Equatable, Sendable {
         return ChatDraftSettings(
             modelID: value(modelID),
             modelProviderID: value(modelProviderID),
+            modelOptionID: value(modelOptionID),
             reasoningEffort: value(reasoningEffort),
             profileName: value(profileName),
             workspacePath: value(workspacePath)
@@ -298,6 +305,7 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
     private struct SettingsRecord: Codable {
         let modelID: String?
         let modelProviderID: String?
+        let modelOptionID: String?
         let reasoningEffort: String?
         let profileName: String?
         let workspacePath: String?
@@ -305,6 +313,7 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
         init(_ settings: ChatDraftSettings) {
             modelID = settings.modelID
             modelProviderID = settings.modelProviderID
+            modelOptionID = settings.modelOptionID
             reasoningEffort = settings.reasoningEffort
             profileName = settings.profileName
             workspacePath = settings.workspacePath
@@ -314,6 +323,7 @@ public actor ChatDraftFilePersistence: ChatDraftPersisting {
             let normalized = ChatDraftSettings(
                 modelID: modelID,
                 modelProviderID: modelProviderID,
+                modelOptionID: modelOptionID,
                 reasoningEffort: reasoningEffort,
                 profileName: profileName,
                 workspacePath: workspacePath

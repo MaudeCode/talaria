@@ -1037,6 +1037,52 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(colonBearing.selectedModelTitle, "qwen3:32b")
     }
 
+    /// TAL-301: with a stamped catalog the title names the entry the server
+    /// paired with the session, and picking that entry again is a no-op.
+    @MainActor
+    func testSelectedModelFollowsTheServerOptionID() async throws {
+        let modelsJSON = """
+        {
+          "groups": [
+            {"name": "Anthropic", "provider_id": "anthropic", "models": [
+              {"id": "@custom:localhost:8080:m", "name": "Local M", "provider_id": "custom:localhost:8080", "bare_id": "m"}
+            ]},
+            {"name": "Ollama", "provider_id": "ollama", "models": [
+              {"id": "@ollama:llama3:8b", "name": "Llama3 8B", "provider_id": "ollama", "bare_id": "llama3:8b"}
+            ]}
+          ]
+        }
+        """
+        func makeConfiguredViewModel(optionID: String?) throws -> ChatViewModel {
+            try makeViewModel(
+                sessionSummary: makeSession(model: "llama3:8b", modelProvider: "ollama", modelOptionID: optionID)
+            ) { request in
+                switch request.url?.path {
+                case "/api/profiles": return apiTestJSONResponse(#"{"profiles": []}"#, for: request)
+                case "/api/models": return apiTestJSONResponse(modelsJSON, for: request)
+                case "/api/reasoning": return apiTestJSONResponse(#"{"reasoning_effort": "medium"}"#, for: request)
+                case "/api/workspaces": return apiTestJSONResponse(#"{"workspaces": []}"#, for: request)
+                case "/api/commands": return apiTestJSONResponse(#"{"commands": []}"#, for: request)
+                default:
+                    XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                    throw URLError(.badURL)
+                }
+            }
+        }
+
+        let paired = try makeConfiguredViewModel(optionID: "@ollama:llama3:8b")
+        await paired.loadComposerConfiguration()
+        XCTAssertEqual(paired.selectedModelTitle, "Llama3 8B")
+        let option = try XCTUnwrap(paired.modelCatalogGroups.flatMap(\.models).first { $0.id == "@ollama:llama3:8b" })
+        let changed = await paired.selectComposerModel(option)
+        XCTAssertFalse(changed, "The server-selected entry is already the session's model.")
+
+        // The server paired nothing: the app keeps the stored name instead of re-pairing it.
+        let unpaired = try makeConfiguredViewModel(optionID: nil)
+        await unpaired.loadComposerConfiguration()
+        XCTAssertEqual(unpaired.selectedModelTitle, "llama3:8b")
+    }
+
     /// A composer `.task(id:)` that restarts while a catalog request is in flight
     /// must neither cancel the request nor let the replacement caller see an empty
     /// catalog as loaded (TAL-160).

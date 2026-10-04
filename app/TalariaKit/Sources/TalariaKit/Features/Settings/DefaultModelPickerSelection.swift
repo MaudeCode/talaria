@@ -4,14 +4,15 @@ public enum DefaultModelPickerSelection {
     /// The checkmark rule, static and internal so tests can pin the
     /// decoded-response-to-checked-row mapping without driving SwiftUI.
     ///
-    /// `defaultModel`/`defaultProvider` are the server's split of the stored
-    /// default (`default_bare_id`/`default_provider_id`).
+    /// `defaultOptionID` is the entry the server says the stored default
+    /// selects (`default_option_id`); `defaultModel` is only the exact-id
+    /// fallback for an older server's unstamped catalog.
     public static func isChecked(
         _ model: ModelCatalogOption,
         selectedModel: String?,
         selectedProvider: String?,
-        defaultModel: String?,
-        defaultProvider: String?
+        defaultOptionID: String?,
+        defaultModel: String?
     ) -> Bool {
         // An in-flight tap owns the projection: OR-ing the previous default
         // would leave two rows announcing "Selected" until the save finishes.
@@ -19,8 +20,8 @@ public enum DefaultModelPickerSelection {
         // owns the spinner via `isSavingCustom`.
         if selectedModel != nil {
             guard selectedProvider != nil else { return false }
-            return model.matchesSelection(modelID: selectedModel, providerID: selectedProvider)
+            return model.id == selectedModel && model.providerID == selectedProvider
         }
-        return model.matchesSelection(modelID: defaultModel, providerID: defaultProvider)
+        return model.isSelected(optionID: defaultOptionID, modelID: defaultModel, providerID: nil)
     }
 }

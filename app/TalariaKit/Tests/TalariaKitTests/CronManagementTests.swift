@@ -292,6 +292,27 @@ final class CronManagementModelTests: XCTestCase {
         XCTAssertNil(CronJobEditorDraft(model: "  ", provider: "openai").modelSelection(in: catalog))
     }
 
+    /// TAL-301: a stamped catalog shows the entry the server paired with the
+    /// saved job, and a pick records its own id.
+    func testCronJobEditorDraftModelSelectionFollowsTheServerOptionID() {
+        let stamped = ModelCatalogOption(id: "@ollama:llama3:8b", displayName: "Llama3 8B", providerID: "ollama", bareID: "llama3:8b")
+        let catalog = [ModelCatalogGroup(id: "ollama", name: "Ollama", providerID: "ollama", models: [stamped])]
+
+        XCTAssertEqual(
+            CronJobEditorDraft(model: "llama3:8b", provider: "ollama", modelOptionID: "@ollama:llama3:8b").modelSelection(in: catalog),
+            stamped
+        )
+        XCTAssertEqual(
+            CronJobEditorDraft(model: "llama3:8b", provider: "ollama").modelSelection(in: catalog)?.id,
+            "llama3:8b",
+            "Without the server's pairing the row names the stored model rather than re-pairing it."
+        )
+        var draft = CronJobEditorDraft()
+        draft.applyModelSelection(stamped)
+        XCTAssertEqual(draft.modelOptionID, "@ollama:llama3:8b")
+        XCTAssertEqual(draft.modelSelection(in: catalog), stamped)
+    }
+
     func testCronJobEditorDraftSkillToggleRoundTripsThroughSkillsText() {
         var draft = CronJobEditorDraft(skillsText: "writing")
 
