@@ -12,7 +12,7 @@ struct DefaultModelPickerView: View {
     @State private var isLoading = false
     @State private var groups: [ModelCatalogGroup] = []
     @State private var defaultModel: String?
-    @State private var activeProvider: String?
+    @State private var defaultProvider: String?
     @State private var customModel = ""
     @State private var selectedModel: String?
     @State private var selectedProvider: String?
@@ -203,29 +203,16 @@ struct DefaultModelPickerView: View {
         isSaving && selectedModel == model.id && model.providerID == selectedProvider
     }
 
-    /// Whether this row is the current default.
-    ///
-    /// Compared through `matchesSelection`, which normalizes the `@provider:`
-    /// prefix the server adds to models outside the active provider. A raw `==`
-    /// left the checkmark off every row whose saved spelling differed from the
-    /// catalog's current one, so the picker could not answer "which one am I on"
-    /// at all.
-    ///
-    /// The in-flight branch matches against the provider captured at tap time,
-    /// so only the tapped row announces "Selected". The stored default is
-    /// matched against the provider its own spelling names — an embedded
-    /// `@provider:` prefix stays authoritative — falling back to
-    /// `activeProvider` for a bare id, which belongs to whichever provider is
-    /// active. Without that fallback, Core's catalog dedup can prefix the
-    /// active provider's own rows while an inactive provider keeps the bare
-    /// spelling, and the wrong row ticks.
+    /// Whether this row is the current default: the row whose server-stamped
+    /// `(bareID, providerID)` equals the server's split of the stored default,
+    /// or, while a save is in flight, the tapped row.
     private func isCurrentDefault(_ model: ModelCatalogOption) -> Bool {
         DefaultModelPickerSelection.isChecked(
             model,
             selectedModel: selectedModel,
             selectedProvider: selectedProvider,
             defaultModel: defaultModel,
-            activeProvider: activeProvider
+            defaultProvider: defaultProvider
         )
     }
 
@@ -244,9 +231,9 @@ struct DefaultModelPickerView: View {
 
         do {
             let response = try await APIClient(baseURL: server).models()
-            defaultModel = response.defaultModel ?? currentDefaultModel
+            defaultModel = response.defaultBareID ?? response.defaultModel ?? currentDefaultModel
+            defaultProvider = response.defaultProviderID
             groups = response.catalogGroups
-            activeProvider = response.activeProvider
         } catch {
             errorMessage = error.localizedDescription
         }

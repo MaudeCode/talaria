@@ -5555,8 +5555,7 @@ public final class ChatViewModel {
     }
 
     private static func compactModelTitle(_ modelID: String) -> String {
-        let raw = modelID.split(separator: ":").last.map(String.init) ?? modelID
-        let suffix = raw.split(separator: "/").last.map(String.init) ?? raw
+        let suffix = modelID.split(separator: "/").last.map(String.init) ?? modelID
         return suffix.replacingOccurrences(of: "gpt-", with: "GPT-", options: [.caseInsensitive])
     }
 

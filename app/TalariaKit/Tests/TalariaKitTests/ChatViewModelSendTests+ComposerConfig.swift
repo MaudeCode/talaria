@@ -1025,6 +1025,16 @@ extension ChatViewModelSendTests {
 
         await unknownCustom.loadComposerConfiguration()
         XCTAssertEqual(unknownCustom.selectedModelTitle, "custom-model")
+
+        // TAL-301: a stored model is bare, so its own colons stay in the title.
+        let colonBearing = try makeConfiguredViewModel(
+            model: "qwen3:32b",
+            provider: "ollama",
+            modelsJSON: #"{"groups": []}"#
+        )
+
+        await colonBearing.loadComposerConfiguration()
+        XCTAssertEqual(colonBearing.selectedModelTitle, "qwen3:32b")
     }
 
     /// A composer `.task(id:)` that restarts while a catalog request is in flight

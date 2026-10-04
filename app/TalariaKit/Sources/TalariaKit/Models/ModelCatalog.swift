@@ -48,104 +48,36 @@ public struct ModelCatalogOption: Identifiable, Equatable, Hashable, Sendable {
     public let id: String
     public let displayName: String
     public let providerID: String?
+    /// The server's split of `id` (`bare_id`); `nil` for an older server or a
+    /// typed custom id.
+    public let bareID: String?
 
-    public init(id: String, displayName: String, providerID: String?) {
+    public init(id: String, displayName: String, providerID: String?, bareID: String? = nil) {
         self.id = id
         self.displayName = displayName
         self.providerID = providerID
-    }
-}
-
-public struct ProviderQualifiedModelID: Equatable, Hashable, Sendable {
-    let rawValue: String
-
-    public init(_ rawValue: String) {
-        self.rawValue = rawValue
-    }
-
-    /// The model id without the `@provider:` prefix the server adds to models
-    /// that belong to a provider other than the active one
-    /// (`_apply_provider_prefix`, `api/config.py:2279` @ 399cd7ab — verified on
-    /// the live deployment, where `openai-codex` is active and its models are
-    /// bare while `@deepseek:` and `@gemini:` ones are prefixed).
-    ///
-    /// The same model is therefore spelled differently depending on which
-    /// provider happens to be active, so a saved default written under one
-    /// spelling stopped matching the catalog under the other and the picker
-    /// showed no checkmark at all.
-    var bareValue: String {
-        guard rawValue.hasPrefix("@"), let separator = rawValue.lastIndex(of: ":") else {
-            return rawValue
-        }
-        return String(rawValue[rawValue.index(after: separator)...])
-    }
-
-    /// The provider named by an `@provider:` prefix, if there is one. The
-    /// provider may itself contain colons, so the final separator begins the
-    /// model id.
-    public var providerPrefix: String? {
-        guard rawValue.hasPrefix("@"), let separator = rawValue.lastIndex(of: ":") else { return nil }
-        let provider = rawValue[rawValue.index(after: rawValue.startIndex)..<separator]
-        return provider.isEmpty ? nil : String(provider)
-    }
-
-    func normalized(for providerID: String?) -> String {
-        guard let providerID else { return bareValue }
-        let prefix = "@\(providerID):"
-        guard rawValue.hasPrefix(prefix) else { return bareValue }
-        return String(rawValue.dropFirst(prefix.count))
+        self.bareID = bareID
     }
 }
 
 extension ModelCatalogOption {
+    /// Whether this entry is the stored `(model, provider)` pair. The server
+    /// splits every `@provider:model` id once and stamps each entry with its
+    /// routing provider and bare id, so this is plain equality; a just-picked
+    /// `id` names itself. An older server's unstamped entry matches its exact
+    /// id, and a provider named on both sides still has to agree.
     public func matchesSelection(modelID: String?, providerID: String?) -> Bool {
-        guard let modelID else { return false }
-
-        let optionID = ProviderQualifiedModelID(id)
-        let selectionID = ProviderQualifiedModelID(modelID)
-        let optionProvider = self.providerID ?? optionID.providerPrefix
-        let selectionProvider = providerID
-            ?? optionProvider.flatMap { selectionID.rawValue.hasPrefix("@\($0):") ? $0 : nil }
-            ?? selectionID.providerPrefix
-        guard optionID.normalized(for: optionProvider) == selectionID.normalized(for: selectionProvider)
-        else { return false }
-
-        // A provider named on either side has to agree, so two providers
-        // offering the same bare id can't be confused — this deployment really
-        // does serve `@gemini:gemini-2.5-flash` and `@google:gemini-2.5-flash`
-        // side by side. The `@provider:` prefix counts as naming one.
-        guard let selectionProvider else {
-            // A selection that names no provider is the active provider's
-            // spelling, because the prefix is exactly what the server adds to
-            // everyone else. Matching it against a prefixed option would tick
-            // every provider that happens to offer the same bare id.
-            return optionID.providerPrefix == nil
+        guard let modelID, !modelID.isEmpty else { return false }
+        guard let bareID else {
+            return id == modelID && (providerID == nil || self.providerID == nil || self.providerID == providerID)
         }
-        // Same rule in the other direction. An option carrying no provider at
-        // all cannot be shown to belong to the named one, and guessing "yes"
-        // here is the exact mirror of the double-checkmark bug the selection
-        // side above was just fixed for. This also restores what the original
-        // `self.providerID == providerID` comparison did before the prefix
-        // normalization was added, so it is not a new restriction.
-        //
-        // `parseModelOptions` fills `providerID` from the group's `provider_id`,
-        // so this is only reachable if a server returns a group without one.
-        guard let optionProvider else { return false }
-        return optionProvider == selectionProvider
+        return (bareID == modelID || id == modelID) && self.providerID == providerID
     }
 }
 
 extension Collection where Element == ModelCatalogOption {
     public func firstMatchingSelection(modelID: String?, providerID: String?) -> ModelCatalogOption? {
-        guard let modelID, !modelID.isEmpty else { return nil }
-
-        // Prefer the identical spelling; only then fall back to the normalized
-        // comparison, so an exact match is never lost to a same-named model.
-        if let exact = first(where: { $0.id == modelID && (providerID == nil || $0.providerID == providerID) }) {
-            return exact
-        }
-
-        return first { $0.matchesSelection(modelID: modelID, providerID: providerID) }
+        first { $0.matchesSelection(modelID: modelID, providerID: providerID) }
     }
 }
 
@@ -253,7 +185,8 @@ private enum ModelCatalogParser {
             return ModelCatalogOption(
                 id: id,
                 displayName: displayName,
-                providerID: optionProviderID
+                providerID: optionProviderID,
+                bareID: stringValue(from: dict["bare_id"])
             )
         }
     }
