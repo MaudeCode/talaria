@@ -34,7 +34,7 @@ export function useCommandPalette(text: string) {
 export function CommandPaletteList({ items, active, listId, onPick, onHover }: { items: CommandSuggestion[]; active: number; listId: string; onPick: (s: CommandSuggestion) => void; onHover: (i: number) => void }) {
   if (items.length === 0) return null
   return (
-    <ul id={listId} role="listbox" aria-label="Commands" className="cmd-dropdown absolute bottom-full left-0 right-0 z-20 mb-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-surface p-1 shadow-md">
+    <ul id={listId} role="listbox" aria-label="Commands" className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-surface p-1 shadow-md">
       {items.map((s, i) => (
         <li key={s.name} id={`${listId}-${s.name}`} role="option" aria-selected={i === active} onMouseEnter={() => onHover(i)} onMouseDown={(e) => { e.preventDefault(); onPick(s) }} className={cn('flex cursor-default items-baseline gap-2 rounded-md px-2 py-1.5 text-sm', i === active && 'bg-hover')}>
           <span className="font-mono text-text">/{s.name}</span>

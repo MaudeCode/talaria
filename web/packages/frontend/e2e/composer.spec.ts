@@ -426,3 +426,14 @@ for (const size of ['default', 'xlarge'] as const) {
     }
   })
 }
+
+test('slash suggestions show the server catalog above the composer, aliases included (TAL-314)', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('#msg').pressSequentially('/fo')
+  const palette = page.getByRole('listbox', { name: 'Commands' })
+  await expect(palette).toBeVisible()
+  await expect(palette.getByRole('option').first()).toHaveText(/^\/branch/)
+  await page.locator('#msg').fill('/term')
+  await page.locator('#msg').pressSequentially('i')
+  await expect(palette.getByRole('option', { name: /\/terminal/ })).toBeVisible()
+})
