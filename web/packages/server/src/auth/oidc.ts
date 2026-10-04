@@ -140,12 +140,15 @@ export class OidcService {
 
   constructor(private readonly deps: OidcDeps) {}
 
-  /** Python `is_oidc_enabled` on the last resolved config (sync for the auth gate). */
+  /** Python `is_oidc_enabled` on the last resolved config (sync for the auth gate): an unreadable config keeps it on. */
   enabledSync(): boolean {
+    return this.availableSync() || this.lastConfig?.config_read_failed === true
+  }
+
+  /** The last config resolved and is complete enough to offer SSO; what login, status and native handoff advertise. */
+  availableSync(): boolean {
     const cfg = this.lastConfig
-    if (!cfg) return false
-    if (cfg.config_read_failed) return true
-    return Boolean(cfg.issuer && cfg.client_id && cfg.allow_claim && cfg.allow_values.length)
+    return Boolean(cfg && !cfg.config_read_failed && cfg.issuer && cfg.client_id && cfg.allow_claim && cfg.allow_values.length)
   }
 
   async enabled(): Promise<boolean> {
@@ -337,7 +340,8 @@ export class OidcService {
 
   /** Python `begin_native_authorization`. */
   async beginNative(requestBaseUrl: string, callbackUrl: string, clientState: string, codeChallenge: string): Promise<{ flow_id: string; authorization_url: string; server_id: string; expires_in: number }> {
-    if (!(await this.enabled())) throw new OidcConfigError('Native OIDC login is not configured')
+    // The same resolved-config decision status advertises: an unresolved or incomplete config never mints a flow.
+    await this.require()
     const origin = normalizeServerOrigin(requestBaseUrl)
     const callback = validateNativeCallback(callbackUrl)
     const state = str(clientState).trim()

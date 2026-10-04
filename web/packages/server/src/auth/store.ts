@@ -58,8 +58,10 @@ export interface AuthStoreOptions {
   now?: () => number
   /** At least one passkey credential is registered (feature flag applied by the caller). */
   passkeysEnabled?: () => boolean
-  /** Last-known OIDC availability (sync for the auth gate). */
+  /** Last-known OIDC auth posture (sync for the auth gate); stays on while the operator config is unreadable. */
   oidcEnabled?: () => boolean
+  /** Last-known OIDC config resolved and complete, so SSO can be offered. */
+  oidcAvailable?: () => boolean
   /** Refresh the OIDC config before `isAuthEnabled` answers; errors are swallowed. */
   oidcProbe?: () => Promise<unknown>
   /** `webui_passkey_enabled` from the base-home config.yaml (last known), consulted when the env flag is unset. */
@@ -128,6 +130,7 @@ export class AuthStore {
   private readonly warned = new Set<string>()
   passkeysEnabled: () => boolean
   oidcEnabled: () => boolean
+  oidcAvailable: () => boolean
   private readonly oidcProbe: () => Promise<unknown>
   passkeyConfigFlag: () => unknown
   persistWrite: (file: string, text: string) => Promise<void>
@@ -151,6 +154,7 @@ export class AuthStore {
     this.attempts = this.loadLoginAttempts()
     this.passkeysEnabled = opts.passkeysEnabled ?? (() => false)
     this.oidcEnabled = opts.oidcEnabled ?? (() => false)
+    this.oidcAvailable = opts.oidcAvailable ?? (() => false)
     this.oidcProbe = opts.oidcProbe ?? (() => Promise.resolve())
     this.passkeyConfigFlag = opts.passkeyConfigFlag ?? (() => undefined)
     this.persistWrite = opts.persistWrite ?? writeSecretFile
@@ -293,6 +297,13 @@ export class AuthStore {
   async isOidcEnabled(): Promise<boolean> {
     try { await this.oidcProbe() } catch { /* last-known config stands */ }
     return this.oidcEnabled()
+  }
+
+  /** OIDC posture and offerability after resolving its config; `unavailable` means the gate is held closed but SSO must fail. */
+  async oidcState(): Promise<{ available: boolean; unavailable: boolean }> {
+    const enabled = await this.isOidcEnabled()
+    const available = enabled && this.oidcAvailable()
+    return { available, unavailable: enabled && !available }
   }
 
   async verifyPassword(plain: string): Promise<boolean> {

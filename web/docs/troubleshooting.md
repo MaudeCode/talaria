@@ -251,7 +251,8 @@ For a foreground `talaria-web --foreground`, stop it with Ctrl-C and start it ag
 An installed Agent revision different from the Web release's tested pin now produces an unsupported-version
 warning, not a blanket refusal. If Agent imports fail, the sidecar can still read and write operator config;
 SSO can use a readable config. A sidecar or RPC transport failure, unreadable or invalid YAML, or a genuinely
-missing Agent capability still fails closed. Check the sidecar status and the specific failing operation before
+missing Agent capability still fails closed: sign-in stays required, `/api/auth/status` reports
+`oidc_unavailable: true`, and the login page says SSO is temporarily unavailable. Check the sidecar status and the specific failing operation before
 changing the Agent checkout.
 
 ---

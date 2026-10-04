@@ -18,6 +18,8 @@ export const AuthStatusSchema = z.object({
   logged_in: z.boolean(),
   oidc_enabled: z.boolean(),
   oidc_native_handoff_enabled: z.boolean(),
+  /** SSO may be configured but the operator config could not be resolved: the gate stays closed and SSO is withheld until it resolves. */
+  oidc_unavailable: z.boolean(),
   password_auth_enabled: z.boolean(),
   passwordless_enabled: z.boolean(),
   passkeys_enabled: z.boolean(),

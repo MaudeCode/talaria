@@ -6,6 +6,7 @@
     "logged_in": false,
     "oidc_enabled": false,
     "oidc_native_handoff_enabled": false,
+    "oidc_unavailable": false,
     "passkey_feature_flag": false,
     "passkeys_count": 0,
     "passkeys_enabled": false,

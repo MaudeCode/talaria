@@ -362,7 +362,7 @@ export function csrfError(reason: CsrfFailure): string {
 export async function authStatusPayload(ctx: RequestContext): Promise<AuthStatus> {
   const auth = ctx.deps.auth
   const authEnabled = await auth.isAuthEnabled()
-  const oidcEnabled = await auth.isOidcEnabled()
+  const oidc = await auth.oidcState()
   let sessionInfo: SessionInfo | null = null
   let loggedIn = false
   if (authEnabled) {
@@ -377,8 +377,9 @@ export async function authStatusPayload(ctx: RequestContext): Promise<AuthStatus
   const payload: AuthStatus = {
     auth_enabled: authEnabled,
     logged_in: loggedIn,
-    oidc_enabled: oidcEnabled,
-    oidc_native_handoff_enabled: oidcEnabled,
+    oidc_enabled: oidc.available,
+    oidc_native_handoff_enabled: oidc.available,
+    oidc_unavailable: oidc.unavailable,
     password_auth_enabled: passwordAuthEnabled,
     passwordless_enabled: passkeys > 0 && !passwordAuthEnabled,
     passkeys_enabled: passkeys > 0,

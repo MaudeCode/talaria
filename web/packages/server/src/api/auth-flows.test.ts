@@ -638,13 +638,38 @@ describe('OIDC operator config availability', () => {
     } finally { await s.close(); await sidecar.close() }
   })
 
+  it('an unreadable operator config withholds SSO while the gate stays closed, and offers it once the config resolves', async () => {
+    let clock = 1_700_000_000
+    const env = { HERMES_WEBUI_OIDC_ISSUER: ISSUER, HERMES_WEBUI_OIDC_CLIENT_ID: 'web-client', HERMES_WEBUI_OIDC_ALLOW_CLAIM: 'groups', HERMES_WEBUI_OIDC_ALLOW_VALUES: 'admins', HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS: 'idp.example' }
+    const s = await bootTestServer({ env, now: () => clock, deps: (deps) => { writeFileSync(join(deps.config.hermesHome, 'config.yaml'), 'webui_oidc: {}\n') } })
+    try {
+      s.deps.fetch = fakeIdp(() => Date.now() / 1000).fetch
+      const unresolved = { auth_enabled: true, logged_in: false, oidc_enabled: false, oidc_native_handoff_enabled: false, oidc_unavailable: true }
+      expect(await json(await s.get('/api/auth/status'))).toMatchObject(unresolved)
+      expect((await json(await s.get('/api/bootstrap'))).auth).toMatchObject(unresolved)
+      expect((await s.get('/api/sessions')).status).toBe(401)
+      expect((await s.get('/api/auth/oidc/start')).status).toBe(404)
+      const nativeStart = () => post(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: b64u(randomBytes(24)), code_challenge: b64u(randomBytes(32)), code_challenge_method: 'S256' })
+      const refused = await nativeStart()
+      expect(refused.status).toBe(404)
+      expect(String((await json(refused)).error)).toContain('operator config could not be resolved')
+      rmSync(join(s.state, 'config.yaml'))
+      s.deps.agentConfig.invalidate()
+      clock += 10
+      expect(await json(await s.get('/api/auth/status'))).toMatchObject({ auth_enabled: true, oidc_enabled: true, oidc_native_handoff_enabled: true, oidc_unavailable: false })
+      expect((await s.get('/api/sessions')).status).toBe(401)
+      expect((await s.get('/api/auth/oidc/start')).status).toBe(302)
+      expect((await nativeStart()).status).toBe(200)
+    } finally { await s.close() }
+  })
+
   it('an unreadable operator config with no last-known policy keeps the API gated until it can be read', async () => {
     let clock = 1_700_000_000
     // config.yaml exists at boot but no sidecar can read it: the auth policy inside is unknown from the first request.
     const s = await bootTestServer({ now: () => clock, deps: (deps) => { writeFileSync(join(deps.config.hermesHome, 'config.yaml'), 'webui_oidc: {}\n') } })
     try {
       expect((await s.get('/api/sessions')).status).toBe(401)
-      expect(await json(await s.get('/api/auth/status'))).toMatchObject({ auth_enabled: true, oidc_enabled: true })
+      expect(await json(await s.get('/api/auth/status'))).toMatchObject({ auth_enabled: true, oidc_enabled: false, oidc_unavailable: true })
       const start = await s.get('/api/auth/oidc/start')
       expect(start.status).toBe(404)
       expect(String((await json(start)).error)).toContain('operator config could not be resolved')
