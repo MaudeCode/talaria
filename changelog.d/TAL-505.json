@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Editing, retrying, or branching a compressed chat now removes the dropped messages from what the model remembers and keeps every reply you kept.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
