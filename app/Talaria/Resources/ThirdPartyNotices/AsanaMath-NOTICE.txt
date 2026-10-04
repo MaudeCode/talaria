@@ -1,0 +1,10 @@
+Copyright (c) 2007-2019, Apostolos Syropoulos (<asyropoulos@yahoo.com),
+with Reserved Font Name Asana Math.
+Copyright (c) 2000 Young Ryu,
+with Reserved Font Name pxfonts.
+Copyright (c) 1997, 1999 Claudio Beccari,
+with Reserved Font Name gsmn1000.
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL

@@ -134,6 +134,16 @@ struct AboutSettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Support")
+
+                SettingsDivider()
+
+                NavigationLink {
+                    AcknowledgementsView()
+                } label: {
+                    SettingsAccessoryRow(title: String(localized: "Acknowledgements"), systemImage: "doc.text")
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the copyright and license notices for the open-source software in Talaria.")
             }
         }
     }
@@ -144,6 +154,56 @@ struct AboutSettingsView: View {
 
     private var appBuild: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? String(localized: "Unknown")
+    }
+}
+
+/// TAL-57: the bundled `ThirdPartyNotices` listed by its `Acknowledgements.json`, readable offline.
+struct AcknowledgementsView: View {
+    static let directory = Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: nil)
+    private static let acknowledgements = directory.flatMap { try? Acknowledgement.load(from: $0) } ?? []
+
+    var body: some View {
+        SettingsPage(title: String(localized: "Acknowledgements")) {
+            SettingsCard(title: String(localized: "Open Source")) {
+                ForEach(Array(Self.acknowledgements.enumerated()), id: \.element.id) { index, acknowledgement in
+                    if index > 0 {
+                        SettingsDivider()
+                    }
+
+                    NavigationLink {
+                        AcknowledgementDetailView(acknowledgement: acknowledgement)
+                    } label: {
+                        SettingsAccessoryRow(
+                            title: acknowledgement.name,
+                            value: acknowledgement.version,
+                            systemImage: "doc.text"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens this component's copyright and license notice.")
+                }
+            }
+        }
+    }
+}
+
+private struct AcknowledgementDetailView: View {
+    let acknowledgement: Acknowledgement
+
+    var body: some View {
+        SettingsPage(title: acknowledgement.name) {
+            SettingsCard(title: String(localized: "License")) {
+                Text(verbatim: notice)
+                    .font(AppFont.footnote())
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var notice: String {
+        AcknowledgementsView.directory.flatMap { try? acknowledgement.notice(in: $0) } ?? ""
     }
 }
 

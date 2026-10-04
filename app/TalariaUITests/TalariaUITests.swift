@@ -595,6 +595,25 @@ final class SettingsStructureUITests: SettingsUITestCase {
         add(screenshot)
     }
 
+    func testAboutAcknowledgementsShowBundledLicenseNotices() throws {
+        launchFixture()
+        openSettings()
+        tapSettingsCategory(id: "about", title: "About")
+
+        tapSettingsRow(label: "Acknowledgements")
+        XCTAssertTrue(app.navigationBars["Acknowledgements"].awaitExistence(timeout: Self.navigationTimeout))
+        tapSettingsRow(label: "SwiftMath, 1.7.3")
+        XCTAssertTrue(app.navigationBars["SwiftMath"].awaitExistence(timeout: Self.navigationTimeout))
+        let notice = app.staticTexts
+            .matching(NSPredicate(format: "label CONTAINS %@", "Copyright (c) 2023 Computer Inspirations"))
+            .firstMatch
+        XCTAssertTrue(notice.awaitExistence(timeout: 3), "Missing SwiftMath's bundled license notice")
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "SwiftMath acknowledgement"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testSettingsRootCategoriesRoutesAndServerContent() throws {
         launchFixture()
         openSettings()
