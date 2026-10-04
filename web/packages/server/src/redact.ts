@@ -667,12 +667,14 @@ const COMMAND_FLAGS: Record<string, CommandFlags> = {
 }
 /**
  * A known command's name as a word: bare, after a path, a listed argv element, or composed by quotes (`do"cker"`); or, in
- * command position, a name the shell computes whole or in part (`$CLIENT`, `$(which docker)`, `` `printf docker` ``,
- * `my${EMPTY}sql`), which may be any.
+ * command position (past assignments and plain wrappers), a name the shell computes whole or in part (`$CLIENT`,
+ * `$(which docker)`, `` `printf docker` ``, `my${EMPTY}sql`, `LC_ALL=C $CLIENT`), which may be any.
  */
 /** A parameter, substitution or backtick piece of a word; a name is read whole, so a word splits into pieces one way only. */
 const EXPANSION = String.raw`\$[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_])|\$\{[^{}\n]*\}|\$\([^()\n]*\)|\x60[^\x60\n]*\x60`
-const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[\\])(?:${Object.keys(COMMAND_FLAGS).map((name) => name.replaceAll(/(?<=.)(?=.)/g, String.raw`["'\\]*`)).join('|')}|(?<=(?:^|[;&|(\n\x60{[])[ \t]*['"]?)[\w./-]*(?:${EXPANSION})(?:[\w./-]|${EXPANSION})*)(?=[\s;&|)'",\]]|$)`, 'g')
+/** A word before the executable: an assignment (`LC_ALL=C`) or a wrapper that runs the next word (`env`, `sudo`). */
+const COMMAND_PREFIX = String.raw`(?:[A-Za-z_][A-Za-z0-9_]*=[^\s;&|()]*|sudo|doas|env|exec|command|builtin|time|nice|nohup)`
+const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[\\])(?:${Object.keys(COMMAND_FLAGS).map((name) => name.replaceAll(/(?<=.)(?=.)/g, String.raw`["'\\]*`)).join('|')}|(?=[\w./-]*[$\x60])(?<=(?:^|[;&|(\n\x60{[])[ \t]*(?:${COMMAND_PREFIX}[ \t]+)*['"]?)[\w./-]*(?:${EXPANSION})(?:[\w./-]|${EXPANSION})*)(?=[\s;&|)'",\]]|$)`, 'g')
 /** Every command's flags, for an executable the shell computes. */
 const ALL_COMMAND_FLAGS = [...new Set(Object.values(COMMAND_FLAGS))]
 const COMMAND_FLAG_TEST_RE = new RegExp(COMMAND_FLAG_RE.source)
