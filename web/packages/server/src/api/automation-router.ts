@@ -14,6 +14,7 @@ import { intQuery, kanbanFailure, truthyQuery } from '../tools/kanban.js'
 import { TerminalNotRunning } from '../tools/terminal.js'
 import { onboardingGateAllows } from './settings-router.js'
 import { sanitizeError } from '../workspace/media.js'
+import { WORKSPACE_BUSY_MESSAGE } from '../workspace/git.js'
 import { str } from '../util.js'
 
 const os = implement(automationContract).$context<ApiContext>().use(requestSessionIdGuard)
@@ -142,6 +143,7 @@ export const automationRouter = os.router({
       let cwd: string
       // Python answered `resolve_trusted_workspace`'s ValueError text unsanitised.
       try { cwd = ctx.deps.workspaces.resolveTrusted(workspace, profile) } catch (error) { throw new HttpError(400, (error as Error).message) }
+      if (ctx.deps.git.workspaceBusy(cwd)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
       try {
         const term = ctx.deps.terminals.start(sid, cwd, { rows: input.rows, cols: input.cols, restart: Boolean(input.restart) })
         return { ok: true as const, session_id: sid, workspace: term.workspace, running: term.isAlive }

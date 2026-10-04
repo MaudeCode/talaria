@@ -368,6 +368,7 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     onTurnEnd: (sessionId) => { void completions.drainDeferred(sessionId) },
     profileDeleting: (profile) => profiles.isDeleting(profile),
     updateInProgress: () => deps.updates.blocksNewWork(),
+    workspaceBusy: (workspace) => deps.git.workspaceBusy(workspace),
     syncTitle: (session) => sessions.deps.syncTitle(session),
     profileConfig: async (profile) => { try { return await agentConfig.read(profileHome(profile ?? activeProfile())) } catch { return null } },
     env,

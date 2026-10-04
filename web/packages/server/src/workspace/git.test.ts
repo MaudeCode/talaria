@@ -205,11 +205,11 @@ describe('slow git off the event loop', () => {
   let shimDir: string
   let marker: string
   beforeAll(async () => {
-    // A `git` shim that sleeps before every push, so the push stays in flight while the test probes the server.
+    // A `git` shim that sleeps before every push and pull, so the command stays in flight while the test probes the server.
     const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
     shimDir = mkdtempSync(join(tmpdir(), 'talaria-slow-git-'))
     marker = join(shimDir, 'push-started')
-    writeFileSync(join(shimDir, 'git'), `#!/bin/sh\nfor a in "$@"; do if [ "$a" = push ]; then touch '${marker}'; sleep 2; break; fi; done\nexec '${realGit}' "$@"\n`)
+    writeFileSync(join(shimDir, 'git'), `#!/bin/sh\nfor a in "$@"; do if [ "$a" = push ] || [ "$a" = pull ]; then touch '${marker}'; sleep 2; break; fi; done\nexec '${realGit}' "$@"\n`)
     chmodSync(join(shimDir, 'git'), 0o755)
     const env = { HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE: '1', ...identity, PATH: `${shimDir}:${process.env.PATH ?? ''}` }
     // A short lock wait so contention answers `operation_in_progress` well before the slow push finishes.
@@ -229,13 +229,14 @@ describe('slow git off the event loop', () => {
     rmSync(shimDir, { recursive: true, force: true })
   })
 
-  async function pushInFlight(sid: string): Promise<{ push: Promise<Response>; settled: () => boolean }> {
+  async function inFlight(sid: string, op = 'push'): Promise<{ push: Promise<Response>; settled: () => boolean }> {
     rmSync(marker, { force: true })
     let done = false
-    const push = post(s, '/api/git/push', { session_id: sid }).finally(() => { done = true })
+    const push = post(s, `/api/git/${op}`, { session_id: sid }).finally(() => { done = true })
     while (!existsSync(marker)) await new Promise((r) => setTimeout(r, 20))
     return { push, settled: () => done }
   }
+  const pushInFlight = (sid: string): ReturnType<typeof inFlight> => inFlight(sid)
 
   it('serves another HTTP request while a push is in flight', async () => {
     const { sid } = await repoSession(s)
@@ -256,6 +257,45 @@ describe('slow git off the event loop', () => {
     expect((await push).status).toBe(200)
     // The timed-out waiter's chain does not stay behind in the lock map.
     expect((s.deps.git as unknown as { locks: Map<string, unknown> }).locks.size).toBe(0)
+  })
+
+  it('no chat run or terminal starts in the workspace while a working-tree mutation runs', async () => {
+    const { sid } = await repoSession(s)
+    const { push: pull, settled } = await inFlight(sid, 'pull')
+    let res = await post(s, '/api/chat/start', { session_id: sid, message: 'hi' })
+    expect(await json(res)).toMatchObject({ error: 'A Git operation is running in this workspace.' })
+    expect(res.status).toBe(409)
+    res = await post(s, '/api/terminal/start', { session_id: sid })
+    expect(await json(res)).toMatchObject({ error: 'A Git operation is running in this workspace.' })
+    expect(res.status).toBe(409)
+    expect(settled()).toBe(false)
+    expect((await pull).status).toBe(200)
+    // Released with the mutation.
+    expect(s.deps.git.workspaceBusy(join(s.state, 'workspace'))).toBe(false)
+  })
+
+  it('worktree removal holds the worktree busy from its lock checks through the removal', async () => {
+    const { sid, ws } = await repoSession(s)
+    const worktree = join(realpathSync(s.state), 'wt-remove')
+    git(ws, 'worktree', 'add', '-q', '-b', 'wt-remove', worktree)
+    const session = s.deps.sessionStore.get(sid)
+    Object.assign(session, { worktree_path: worktree, worktree_repo_root: ws })
+    s.deps.sessionStore.save(session)
+    const seen: boolean[] = []
+    const locks = s.deps.worktreeLocks
+    s.deps.worktreeLocks = {
+      lockedByStream: (sess) => { seen.push(s.deps.git.workspaceBusy(worktree)); return locks.lockedByStream(sess) },
+      lockedByTerminal: (id, path) => { seen.push(s.deps.git.workspaceBusy(worktree)); return locks.lockedByTerminal(id, path) },
+    }
+    try {
+      const res = await post(s, '/api/session/worktree/remove', { session_id: sid })
+      expect(await json(res)).toMatchObject({ ok: true, removed_path: worktree })
+    } finally {
+      s.deps.worktreeLocks = locks
+    }
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.every(Boolean)).toBe(true)
+    expect(s.deps.git.workspaceBusy(worktree)).toBe(false)
   })
 })
 

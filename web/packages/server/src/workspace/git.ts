@@ -22,6 +22,7 @@ export const STATUS_CACHE_LIMIT = 32
 export const DIFF_SIZE_LIMIT = 512 * 1024
 export const COMMIT_MESSAGE_DIFF_LIMIT = 64 * 1024
 export const WORKSPACE_GIT_DESTRUCTIVE_ENV = 'HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE'
+export const WORKSPACE_BUSY_MESSAGE = 'A Git operation is running in this workspace.'
 const GIT_ENV_SCRUB_KEYS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GIT_SSH', 'GIT_SSH_COMMAND']
 const GIT_ENV_SCRUB_PREFIXES = ['GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_']
 const BRANCH_SWITCH_STASH_PREFIX = 'hermes-webui branch switch'
@@ -154,8 +155,33 @@ export class GitRunner {
   private readonly locks = new Map<string, Promise<void>>()
   private readonly statusCache = new Map<string, { storedAt: number; repoRoot: string; fingerprint: string; payload: GitStatus }>()
   private readonly generations = new Map<string, number>()
+  /** Workspaces a working-tree mutation or worktree removal is changing, with their hold counts. */
+  private readonly busy = new Map<string, number>()
 
   constructor(readonly deps: GitRunnerDeps) {}
+
+  /**
+   * Hold `path` busy until `fn` settles. The hold is taken before `fn` runs, so checks `fn` makes synchronously (no run
+   * active) and admission's `workspaceBusy` refusal leave no gap for a chat run or terminal to start in between.
+   */
+  async holdWorkspace<T>(path: string, fn: () => Promise<T>): Promise<T> {
+    const key = resolvePathLikePython(path)
+    this.busy.set(key, (this.busy.get(key) ?? 0) + 1)
+    try {
+      return await fn()
+    } finally {
+      const left = (this.busy.get(key) ?? 1) - 1
+      if (left) this.busy.set(key, left)
+      else this.busy.delete(key)
+    }
+  }
+
+  /** Whether `path` overlaps a held workspace (the same directory, inside it, or containing it). */
+  workspaceBusy(path: string): boolean {
+    const ws = resolvePathLikePython(path)
+    for (const held of this.busy.keys()) if (held === ws || isWithin(ws, held) || isWithin(held, ws)) return true
+    return false
+  }
 
   destructiveEnabled(): boolean {
     return ['1', 'true', 'yes', 'on'].includes((this.deps.env[WORKSPACE_GIT_DESTRUCTIVE_ENV] ?? '').trim().toLowerCase())
