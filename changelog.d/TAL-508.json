@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Insights and quota widgets show Claude and ChatGPT Codex account limits again instead of reporting them as unavailable.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

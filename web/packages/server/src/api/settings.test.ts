@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
-import { ProviderQuotaSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
+import { AccountUsageSnapshotSchema, ProviderQuotaSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { loadEnvFile, writeEnvFile } from '../providers/env-file.js'
 import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel, uniqueQuotaSources } from '../providers/catalog.js'
@@ -399,6 +399,15 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(missing).toMatchObject({ requested_source_id: 'qsrc_unknown', missing_source: true, sources: [] })
     // The scope survives restarts: a second read answers the same id.
     expect((await json(await s.get(`/api/provider/quotas?source=${anthropicId}`))).sources).toHaveLength(1)
+  })
+
+  it('an available Agent snapshot, as the sidecar serialises it, loads as available (TAL-508)', async () => {
+    // Asserted equal to `usage.account`'s output for a property-backed `available` in sidecar/tests/test_usage_account.py.
+    const snapshot = AccountUsageSnapshotSchema.parse(JSON.parse(readFileSync(join(import.meta.dirname, '../../../../sidecar/tests/fixtures/usage_account_available.json'), 'utf8')))
+    sidecar.respond('usage.account', () => ({ snapshot }))
+    expect(await json(await s.get('/api/provider/quota?provider=anthropic&refresh=1'))).toMatchObject({ ok: true, provider: 'anthropic', status: 'available', label: 'Claude limits' })
+    const sources = (await json(await s.get('/api/provider/quotas?refresh=1'))).sources as { provider_id: string; status: string; windows: unknown[] }[]
+    expect(sources.find((q) => q.provider_id === 'anthropic')).toMatchObject({ status: 'available', windows: [expect.objectContaining({ label: 'Current session', used_percent: 12 })] })
   })
 
   it('quota sources list each source id once, ordered by provider, account label, then source id (TAL-272)', async () => {

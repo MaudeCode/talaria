@@ -50,7 +50,8 @@ def account(provider: str, *, base_url: str | None, api_key: str | None) -> dict
     row.setdefault("provider", provider)
     row["windows"] = [w for w in (row.get("windows") or []) if isinstance(w, dict)]
     row["details"] = list(row.get("details") or [])
-    row["available"] = bool(row.get("available"))
+    # The Agent's `available` is a property, which `_plain` (asdict/vars) never sees; read it off the snapshot.
+    row["available"] = bool(getattr(snapshot, "available", row.get("available")))
     return row
 
 

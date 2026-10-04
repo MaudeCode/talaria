@@ -66,10 +66,11 @@ SCENARIOS: list[tuple[str, dict]] = [
     ("state_db.sync_title", {"profile_home": "{home}", "session_id": "webui-1", "title": "Hello again"}),
     ("state_db.delete_cli_session", {"profile_home": "{home}", "session_id": "cli-1"}),
     ("state_db.delete_cli_session", {"profile_home": "{home}", "session_id": "missing"}),
-    # mcp / stt
+    # mcp / stt / usage (a provider with no account-usage fetcher answers offline)
     ("mcp.status", {"profile_home": "{home}"}),
     ("mcp.registry_tools", {"profile_home": "{home}"}),
     ("stt.capability", {"profile_home": "{home}"}),
+    ("usage.account", {"profile_home": "{home}", "provider": "zai"}),
     # cron
     ("cron.list", {"profile_home": "{home}"}),
     ("cron.create", {"profile_home": "{home}", "job": {"schedule": "every 1h", "prompt": "say hi", "name": "hello"}}),
@@ -112,5 +113,5 @@ DYNAMIC: list[tuple[str, str]] = [
 # Methods deliberately not exercised here: they need credentials, the
 # network, a running gateway, or a real audio file.
 UNEXERCISED = {"runtime.handshake", "runtime.shutdown", "goals.restore", "commands.exec", "kanban.dispatch",
-               "providers.resolve_runtime", "oauth.start", "oauth.poll", "oauth.cancel", "aux.complete", "stt.transcribe", "usage.account", "gateway.restart", "mcp.reload", "cron.run",
+               "providers.resolve_runtime", "oauth.start", "oauth.poll", "oauth.cancel", "aux.complete", "stt.transcribe", "gateway.restart", "mcp.reload", "cron.run",
                "worktree.create", "chat.start", "chat.interrupt", "chat.steer", "chat.steer_withdraw", "chat.steer_now", "chat.evict_agent", "chat.commit_memory", "chat.compress", "chat.compress_finalize", "approval.respond", "approval.pending", "approval.set_yolo", "clarify.respond", "config.set"}

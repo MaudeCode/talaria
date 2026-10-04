@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import pathlib
 import sys
 import types
 from dataclasses import dataclass
@@ -19,9 +21,44 @@ class Window:
 
 @dataclass(frozen=True)
 class Snapshot:
+    """Mirrors the Agent's ``AccountUsageSnapshot``: ``available`` is a property, so ``asdict``/``vars`` omit it."""
+
     provider: str
     fetched_at: datetime
+    title: str = "Account limits"
+    plan: str | None = None
     windows: tuple[Window, ...] = ()
+    details: tuple[str, ...] = ()
+    unavailable_reason: str | None = None
+
+    @property
+    def available(self) -> bool:
+        return bool(self.windows or self.details) and not self.unavailable_reason
+
+
+# The serialised snapshot the server's quota test replays as the sidecar's `usage.account` answer.
+AVAILABLE_FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "usage_account_available.json"
+
+
+def _fake_agent(monkeypatch, snapshot):
+    module = types.ModuleType("agent.account_usage")
+    module.fetch_account_usage = lambda provider, base_url=None, api_key=None: snapshot
+    monkeypatch.setitem(sys.modules, "agent", types.ModuleType("agent"))
+    monkeypatch.setitem(sys.modules, "agent.account_usage", module)
+
+
+def test_account_reads_available_from_the_snapshot_property(monkeypatch):
+    fetched_at = datetime(2026, 9, 28, 7, 30, tzinfo=timezone.utc)
+    _fake_agent(monkeypatch, Snapshot("anthropic", fetched_at, title="Claude limits", plan="max",
+                                      windows=(Window("Current session", 12, datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc)),)))
+    row = usage.account("anthropic", base_url=None, api_key=None)
+    assert row["available"] is True
+    assert row == json.loads(AVAILABLE_FIXTURE.read_text())
+
+    _fake_agent(monkeypatch, Snapshot("anthropic", fetched_at, unavailable_reason="Anthropic account limits are only available for OAuth-backed Claude accounts."))
+    row = usage.account("anthropic", base_url=None, api_key=None)
+    assert row["available"] is False
+    assert row["unavailable_reason"] == "Anthropic account limits are only available for OAuth-backed Claude accounts."
 
 
 def test_account_serialises_datetimes_as_iso_8601(monkeypatch):
@@ -34,10 +71,7 @@ def test_account_serialises_datetimes_as_iso_8601(monkeypatch):
             Window("Unknown", 5),
         ),
     )
-    module = types.ModuleType("agent.account_usage")
-    module.fetch_account_usage = lambda provider, base_url=None, api_key=None: snapshot
-    monkeypatch.setitem(sys.modules, "agent", types.ModuleType("agent"))
-    monkeypatch.setitem(sys.modules, "agent.account_usage", module)
+    _fake_agent(monkeypatch, snapshot)
 
     row = usage.account("anthropic", base_url=None, api_key=None)
 
