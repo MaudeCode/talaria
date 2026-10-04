@@ -1540,16 +1540,20 @@ export class TurnRunner {
     return pending ? ['approval', { ...pending, pending_count }] : ['approval_cleared', { session_id: sessionId, pending_count: 0 }]
   }
 
-  /** Drop mirrored approvals the Agent no longer holds; a failed read keeps them (the card stays answerable). */
+  /**
+   * Drop mirrored approvals the Agent no longer holds; a failed read keeps them (the card stays answerable). Only
+   * entries queued before the read are candidates: one the Agent parks meanwhile can be missing from its snapshot.
+   */
   private async reconcileApprovals(sessionId: string, sidecar: SidecarLike): Promise<void> {
-    let live: Record<string, unknown>[]
+    const before = this.deps.pending.approvalRequestIds(sessionId)
+    let live: Set<string>
     try {
-      live = (await sidecar.call('approval.pending', { session_id: sessionId })).pending
+      live = new Set((await sidecar.call('approval.pending', { session_id: sessionId })).pending.map((p) => str(p.request_id)))
     } catch (error) {
       this.deps.log(`[webui] approval reconcile failed for ${sessionId}: ${(error as Error).message}`)
       return
     }
-    if (this.deps.pending.retainApprovals(sessionId, new Set(live.map((p) => str(p.request_id)))).length) this.emitToSession(sessionId, ...this.approvalHeadFrame(sessionId))
+    if (this.deps.pending.dropApprovals(sessionId, new Set(before.filter((id) => !live.has(id)))).length) this.emitToSession(sessionId, ...this.approvalHeadFrame(sessionId))
   }
 
   private withYoloLock<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {

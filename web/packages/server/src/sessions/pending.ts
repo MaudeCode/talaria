@@ -195,11 +195,15 @@ export class PendingPrompts {
     return entries
   }
 
-  /** TAL-514: drop approvals whose `request_id` the Agent no longer holds; returns the dropped entries. */
-  retainApprovals(sid: string, live: ReadonlySet<string>): Record<string, unknown>[] {
+  approvalRequestIds(sid: string): string[] {
+    return (this.approvals.get(sid)?.entries ?? []).map((e) => str(e.request_id)).filter(Boolean)
+  }
+
+  /** TAL-514: drop the approvals with these `request_id`s (ones the Agent no longer holds); returns the dropped entries. */
+  dropApprovals(sid: string, requestIds: ReadonlySet<string>): Record<string, unknown>[] {
     const q = this.approvals.get(sid)
     if (!q) return []
-    const dropped = q.entries.filter((e) => str(e.request_id) && !live.has(str(e.request_id)))
+    const dropped = q.entries.filter((e) => requestIds.has(str(e.request_id)))
     if (!dropped.length) return []
     q.entries.splice(0, q.entries.length, ...q.entries.filter((e) => !dropped.includes(e)))
     this.prune(this.approvals, sid, q)

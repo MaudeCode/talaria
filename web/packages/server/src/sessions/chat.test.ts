@@ -1627,7 +1627,9 @@ describe('chat turns through the sidecar', () => {
   it('drops approvals the Agent no longer holds when it rejects an answer (TAL-514)', async () => {
     const sid = await newSession(s)
     let release: () => void = () => undefined
+    let emitFrame: (frame: { event: string; data: Json }) => void = () => undefined
     sidecar.respond('chat.start', async (params, emit) => {
+      emitFrame = emit
       emit({ event: 'approval', data: { request_id: 'dead-1', command: 'rm -rf build', session_id: sid } })
       emit({ event: 'approval', data: { request_id: 'live-2', command: 'rm -rf dist', session_id: sid } })
       await new Promise<void>((resolve) => { release = resolve })
@@ -1636,13 +1638,18 @@ describe('chat turns through the sidecar', () => {
     const start = await json(await post(s, '/api/chat/start', { session_id: sid, message: 'clean' }))
     const streamId = String(start.stream_id)
     const queued = await s.sse(`/api/chat/stream?stream_id=${streamId}`, (f) => f.event === 'approval' && (f.data as Json).pending_count === 2)
-    // The Agent stopped waiting on dead-1 without the server hearing; it still holds live-2.
+    // The Agent stopped waiting on dead-1 without the server hearing; it still holds live-2. live-3 parks while the
+    // snapshot is in flight, so the snapshot cannot list it and it must survive the reconcile.
     sidecar.respond('approval.respond', () => ({ ok: false, resolved: 0, choice: 'once' }))
-    sidecar.respond('approval.pending', () => ({ pending: [{ request_id: 'live-2', command: 'rm -rf dist' }] }))
-    expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'dead-1' }))).toEqual({ ok: true, choice: 'once', stale_cleared: true, pending_count: 1 })
-    expect(await json(await s.get(`/api/approval/pending?session_id=${sid}`))).toMatchObject({ pending: { approval_id: 'live-2' }, pending_count: 1 })
-    const promoted = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(queued.length)}`, (f) => f.event === 'approval')
-    expect(promoted.filter((f) => f.event === 'approval').map((f) => f.data)).toMatchObject([{ approval_id: 'live-2', pending_count: 1 }])
+    sidecar.respond('approval.pending', () => {
+      const snapshot = { pending: [{ request_id: 'live-2', command: 'rm -rf dist' }] }
+      emitFrame({ event: 'approval', data: { request_id: 'live-3', command: 'rm -rf out', session_id: sid } })
+      return snapshot
+    })
+    expect(await json(await post(s, '/api/approval/respond', { session_id: sid, choice: 'once', approval_id: 'dead-1' }))).toEqual({ ok: true, choice: 'once', stale_cleared: true, pending_count: 2 })
+    expect(await json(await s.get(`/api/approval/pending?session_id=${sid}`))).toMatchObject({ pending: { approval_id: 'live-2' }, pending_count: 2 })
+    const promoted = await s.sse(`/api/chat/stream?stream_id=${streamId}&after_event_id=${streamId}:${String(queued.length)}`, (f) => f.event === 'approval' && (f.data as Json).approval_id === 'live-2')
+    expect(promoted.filter((f) => f.event === 'approval').map((f) => f.data)).toMatchObject([{ approval_id: 'dead-1', pending_count: 3 }, { approval_id: 'live-2', pending_count: 2 }])
     // A dead card answered with YOLO reports YOLO on once it is set.
     sidecar.respond('approval.pending', () => ({ pending: [] }))
     sidecar.respond('approval.set_yolo', (params) => ({ yolo_enabled: params.enabled, released: 0 }))
