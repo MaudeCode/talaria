@@ -19,6 +19,7 @@ const answer = (params: SidecarParams<'chat.start'>, text: string): SidecarResul
 })
 const continueWith = (prompt: string): Decision => ({ status: 'active', should_continue: true, continuation_prompt: prompt, verdict: 'continue', reason: 'more to do', message: '↻ Continuing toward goal (1/20): more to do', message_key: 'goal_continuing', message_args: [1, 20, 'more to do'] })
 const achieved: Decision = { status: 'done', should_continue: false, continuation_prompt: null, verdict: 'done', reason: 'notes shipped', message: '✓ Goal achieved: notes shipped', message_key: 'goal_achieved', message_args: ['notes shipped'] }
+const inactive: Decision = { status: null, should_continue: false, continuation_prompt: null, verdict: 'inactive', reason: 'no active goal', message: '' }
 const goalFrames = (frames: SseFrame[]): [string, Json][] => frames.filter((f) => f.event === 'goal' || f.event === 'goal_continue').map((f) => [f.event, f.data as Json])
 
 describe('/goal continuation after a goal turn settles (TAL-396)', () => {
@@ -33,6 +34,7 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     sidecar.calls.length = 0
     sidecar.respond('goals.snapshot', () => ({ goal: null, snapshot: null }))
     sidecar.respond('goals.command', (params) => ({ ok: true, action: 'set', message: `⊙ Goal set: ${params.args}`, goal: { ...state, goal: params.args }, kickoff_prompt: params.args }))
+    sidecar.respond('goals.evaluate', () => inactive)
     sidecar.respond('aux.complete', () => ({ model: 'aux', text: 'Title: "Release notes"', usage: null }))
   })
 
@@ -106,7 +108,7 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     expect(calls('chat.start')).toHaveLength(1)
   })
 
-  it('a failed evaluation or failed turn ends the goal run without a continuation, and a plain turn is never evaluated', async () => {
+  it('a failed evaluation or failed turn ends the goal run without a continuation, and a turn without a goal shows nothing', async () => {
     const sid = await newSession()
     sidecar.respond('chat.start', (params) => answer(params, 'progress'))
     sidecar.respond('goals.evaluate', () => { throw new SidecarError('judge exploded', { condition: 'sidecar_error' }) })
@@ -122,11 +124,32 @@ describe('/goal continuation after a goal turn settles (TAL-396)', () => {
     expect(failed.some((f) => f.event === 'apperror')).toBe(true)
     expect(goalFrames(failed)).toEqual([])
 
+    sidecar.calls.length = 0
+    sidecar.respond('goals.evaluate', () => inactive)
     sidecar.respond('chat.start', (params) => answer(params, 'plain'))
     const plain = str((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'unrelated question' }))).stream_id)
     expect(goalFrames(await untilEnd(plain))).toEqual([])
     await idle(sid)
-    expect(calls('goals.evaluate')).toEqual([])
+    expect(calls('goals.evaluate')).toEqual([expect.objectContaining({ session_id: sid, last_response: 'plain' })])
+    expect(calls('chat.start')).toHaveLength(1)
+
+    sidecar.respond('goals.evaluate', () => { throw new SidecarError('goals unavailable', { condition: 'goals_unavailable' }) })
+    expect(goalFrames(await untilEnd(str((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'another question' }))).stream_id)))).toEqual([])
+  })
+
+  it('a resumed or persisted goal continues from the next user message', async () => {
+    const sid = await newSession()
+    let turn = 0
+    sidecar.respond('chat.start', (params) => answer(params, `answer ${String(++turn)}`))
+    const decisions = [continueWith('Continue toward the goal.'), achieved]
+    sidecar.respond('goals.evaluate', () => decisions.shift() ?? inactive)
+    const user = str((await json(await post(s, '/api/chat/start', { session_id: sid, message: 'continue' }))).stream_id)
+    const first = goalFrames(await untilEnd(user))
+    expect(first.map(([event, data]) => [event, data.state])).toEqual([['goal', 'continuing'], ['goal_continue', 'continuing']])
+    const second = goalFrames(await untilEnd(str(first[1]![1].stream_id)))
+    expect(second.map(([event, data]) => [event, data.state, data.decision])).toEqual([['goal', 'evaluating', undefined], ['goal', 'idle', 'done']])
+    await idle(sid)
+    expect(calls('chat.start').map((p) => str(p.user_message).split('\n').pop())).toEqual(['continue', 'Continue toward the goal.'])
   })
 
   it('a user message sent while the goal is judged runs first and is evaluated as the goal turn', async () => {

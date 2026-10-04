@@ -1323,25 +1323,29 @@ export class TurnRunner {
   }
 
   /**
-   * TAL-396 (Agent gateway `_post_turn_goal_continuation`): after a goal turn settles, the Agent's GoalManager judges it
-   * and the server starts the continuation turn it asks for. A user turn that took the session meanwhile runs first and
-   * becomes the goal turn that is judged next. A stopped or failed turn never gets here, so the run ends there.
+   * TAL-396 (Agent gateway `_post_turn_goal_continuation`): after every turn settles, the Agent's GoalManager judges it
+   * while a goal is active and the server starts the continuation turn it asks for. Any turn counts, so a resumed or
+   * persisted goal picks up from the next user message. A user turn that took the session meanwhile runs first and is
+   * judged next. A stopped or failed turn never gets here, so the run ends there.
    */
   private async continueGoal(s: Session, streamId: string, put: (event: string, data: Record<string, unknown>) => void): Promise<void> {
     const sidecar = this.deps.sidecar()
     const lastResponse = lastAnswer(s.messages)
     // The Agent never drives a goal from an empty reply.
-    if (!this.registry.goalRelated.has(streamId) || !sidecar || !lastResponse) return
+    if (!sidecar || !lastResponse) return
     const sessionId = s.session_id
-    put('goal', { session_id: sessionId, state: 'evaluating', message: 'Evaluating goal progress…', message_key: 'goal_evaluating_progress' })
+    // Only a known goal turn shows progress up front; any other turn shows nothing unless a goal turns out to be active.
+    const goalTurn = this.registry.goalRelated.has(streamId)
+    if (goalTurn) put('goal', { session_id: sessionId, state: 'evaluating', message: 'Evaluating goal progress…', message_key: 'goal_evaluating_progress' })
     let decision: SidecarResult<'goals.evaluate'>
     try {
       decision = await sidecar.call('goals.evaluate', { session_id: sessionId, profile_home: this.deps.profileHome(s.profile), last_response: lastResponse, user_initiated: true })
     } catch (error) {
       this.deps.log(`[webui] WARNING: goal evaluation failed for ${sessionId}: ${(error as Error).message}`)
-      put('goal', { session_id: sessionId, state: 'idle', decision: 'error', message: '' })
+      if (goalTurn) put('goal', { session_id: sessionId, state: 'idle', decision: 'error', message: '' })
       return
     }
+    if (!goalTurn && decision.verdict === 'inactive') return
     const prompt = str(decision.continuation_prompt).trim()
     const proceed = decision.should_continue && Boolean(prompt)
     const status = { message: decision.message, message_key: decision.message_key, message_args: decision.message_args ?? [], decision: decision.verdict }
