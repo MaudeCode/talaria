@@ -165,7 +165,12 @@ export function githubJson(fetchImpl: typeof fetch, env: Record<string, string |
   }
 }
 
-export interface PublishedRelease { tag: string; version: string; sourceRevision: string; releaseSet: string; image: string; npm: string | null; manifestReleaseSet: string; runtime: Dict; release_url: string }
+export interface PublishedRelease { tag: string; version: string; sourceRevision: string; releaseSet: string; image: string; npm: string | null; manifestReleaseSet: string; runtime: Dict; release_url: string; channelVersions: string[] }
+
+/** Published channel releases newer than `installed`, up to `release`: what an update skips past. Never below 1. */
+export function releasesBehind(installed: string, release: PublishedRelease): number {
+  return Math.max(1, release.channelVersions.filter((v) => compareVersions(installed, v) < 0 && compareVersions(v, release.version) <= 0).length)
+}
 
 /** Python `published_web_release`: the newest completed `release-set-<sha>` whose Web component matches the channel's tag family. */
 export async function publishedWebRelease(channel: Channel, getJson: GetJson, now: () => number = () => performance.now()): Promise<PublishedRelease> {
@@ -185,6 +190,7 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
   }
   if (exhausted) throw new ReleaseUnavailable('Release history exceeds automatic lookup; update manually')
   published.sort((a, b) => (str(a.published_at) < str(b.published_at) ? 1 : str(a.published_at) > str(b.published_at) ? -1 : 0))
+  const channelVersions = published.map((r) => str(r.tag_name)).filter((t) => tagPattern.test(t)).map((t) => t.split('-v').pop() ?? '')
   for (const release of published) {
     const tag = release.tag_name
     if (typeof tag !== 'string' || !/^release-set-[a-f0-9]{40}$/.test(tag)) continue
@@ -227,6 +233,7 @@ export async function publishedWebRelease(channel: Channel, getJson: GetJson, no
       manifestReleaseSet: str(m.releaseSet),
       runtime: { tag: componentTag, version: component.version, sourceRevision: source, releaseSet: source, contracts: supported, compatibleAgent: agent },
       release_url: `${REPOSITORY_URL}/releases/tag/${tag}`,
+      channelVersions,
     }
   }
   throw new ReleaseUnavailable('No completed Talaria Web release is available on this channel')
@@ -411,7 +418,7 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
     if (npmInstall && channel === 'stable' && release.npm && !str(id.release().tag).startsWith('web-exp-v')) {
       const comparison = compareVersions(npmInstall.version, release.version)
       if (comparison > 0) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: 0, no_git: true, install_kind: 'npm', manual_update: true, message: 'This npm installation is ahead of the selected Stable release.' }
-      if (comparison < 0) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: 1, no_git: true, install_kind: 'npm', npm: release.npm, manual_update: false, message: `Stable npm update ${release.version} is available.` }
+      if (comparison < 0) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: releasesBehind(npmInstall.version, release), no_git: true, install_kind: 'npm', npm: release.npm, manual_update: false, message: `Stable npm update ${release.version} is available.` }
       const installed = diskRelease(npmInstall.packageRoot)
       if (!same(installed, release.runtime)) return { ...result, current_sha: id.release().sourceRevision ?? null, behind: null, no_git: true, install_kind: 'npm', manual_update: true, error: 'Installed npm release metadata does not match the completed release.' }
       const metadataRepair = !same(id.release(), release.runtime)
@@ -424,7 +431,7 @@ export async function checkWebUpdate(webRoot: string | null, currentVersion: str
       const installed = version.slice(1).map(Number)
       const latest = release.version.split('.').map(Number)
       const cmp = installed.map((v, i) => Math.sign(v - (latest[i] ?? 0))).find((s) => s !== 0) ?? 0
-      if (cmp !== 0) behind = cmp < 0 ? 1 : 0
+      if (cmp !== 0) behind = cmp < 0 ? releasesBehind(version.slice(1, 4).join('.'), release) : 0
     }
     return { ...result, current_sha: current, behind, no_git: true, manual_update: true, message: 'Use the published Talaria Web image or authenticated monorepo installation; legacy checkouts require migration.' }
   }

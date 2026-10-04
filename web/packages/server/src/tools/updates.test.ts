@@ -17,7 +17,7 @@ import { detectWebuiVersion, developmentInfo } from '../release.js'
 import { WEB_ROOT } from '../test/harness.js'
 import { RESTART_EXIT_CODE, supervise } from '../cli/supervise.js'
 import {
-  applyAgentUpdate, applyWebUpdate, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable,
+  applyAgentUpdate, applyWebUpdate, checkAgentUpdate, checkWebUpdate, forceAgentUpdate, githubJson, inventoryLocks, npmInstallInfo, publishedWebRelease, ReleaseUnavailable, releasesBehind,
   REPOSITORY_URL, runGit, sanitizeGitDiagnostic, UpdateService, waitUntilRestartSafe, type BuildRun, type GetJson, type GitRun, type PublishedRelease, type ReleaseIdentity, type RestartBlockers, type UpdateServiceDeps,
 } from './updates.js'
 
@@ -66,7 +66,7 @@ function sourceInstall(): Install {
   // The production URL stays configured; only this fixture's transport is redirected to its own repository.
   git(client, 'remote', 'set-url', 'origin', 'https://github.com/MaudeCode/talaria.git')
   const runtime = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, contracts: { appWeb: [1], webRelay: [2] }, compatibleAgent: { ...PIN['x-talaria'], image: PIN.services['hermes-agent'].image } }
-  const release: PublishedRelease = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}`, npm: null, manifestReleaseSet: latest, runtime, release_url: `${REPOSITORY_URL}/releases/tag/release-set-${latest}` }
+  const release: PublishedRelease = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}`, npm: null, manifestReleaseSet: latest, runtime, release_url: `${REPOSITORY_URL}/releases/tag/release-set-${latest}`, channelVersions: [] }
   const id = { release: DEV as Dict, stamped: DEV as Dict, running: null as string | null }
   const identity: ReleaseIdentity = { release: () => id.release, stamped: () => id.stamped, runningSourceRevision: () => id.running }
   const commands: string[][] = []
@@ -487,6 +487,15 @@ describe('published release sets (test_tal203_published_releases.py)', () => {
     expect(f.requests).toEqual([['/releases?per_page=100&page=1', false], ['/releases/assets/123', true]])
     expect(result.release_url).toContain('MaudeCode/talaria/releases/tag/release-set-')
     expect(result.runtime).toEqual({ tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: sha, releaseSet: sha, contracts: { appWeb: [1], webRelay: [2] }, compatibleAgent: f.manifest.agent })
+  })
+
+  it('counts every published channel release an update skips (TAL-624)', async () => {
+    const f = fixture()
+    for (const tag of ['web-v1.1.0', 'web-v1.2.0', 'web-v2.0.0', 'web-exp-v1.5.0', 'app-v1.9.0']) f.entries.push({ tag_name: tag, published_at: 'synthetic', assets: [] })
+    const release = await publishedWebRelease('stable', f.getJson)
+    expect(releasesBehind('1.0.0', release)).toBe(3)
+    expect(releasesBehind('1.2.0', release)).toBe(1)
+    expect(releasesBehind('1.0.0', { ...release, channelVersions: [] })).toBe(1)
   })
 
   it.each([['status', 'candidate'], ['releaseSet', 'main'], ['schemaVersion', 2]])('rejects partial or inconsistent manifests (%s=%s)', async (field, value) => {
