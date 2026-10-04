@@ -172,6 +172,22 @@ export const PROVIDERS_METHODS = {
   'models.capabilities': { params: ProfileHomeParams.extend({ provider: z.string(), model: z.string() }), result: z.object({ capabilities: Loose.nullable() }) },
 } as const
 
+// ── oauth ──────────────────────────────────────────────────────────────
+/**
+ * TAL-398: an Agent device-code sign-in (Nous Portal, OpenAI Codex, xAI, MiniMax) the sidecar runs for one profile home.
+ * `oauth.start` answers the code to show; a sidecar thread polls the provider and writes the credential through the
+ * Agent's own auth store. A flow belongs to the profile home that started it: poll and cancel from another home do not
+ * find it. `error` is the Agent's reason for a flow that ended without a credential.
+ */
+export const OAuthFlowStatusSchema = z.enum(['pending', 'approved', 'denied', 'expired', 'cancelled', 'error'])
+const OAuthFlow = z.object({ flow_id: z.string(), provider: z.string(), status: OAuthFlowStatusSchema, error: z.string().nullable() })
+const OAuthFlowParams = ProfileHomeParams.extend({ flow_id: z.string().min(1) })
+export const OAUTH_METHODS = {
+  'oauth.start': { params: ProfileHomeParams.extend({ provider: z.string().min(1) }), result: z.object({ flow_id: z.string(), provider: z.string(), status: z.literal('pending'), user_code: z.string(), verification_url: z.string(), expires_in: z.number().int(), interval: z.number().int() }) },
+  'oauth.poll': { params: OAuthFlowParams, result: OAuthFlow },
+  'oauth.cancel': { params: OAuthFlowParams, result: OAuthFlow },
+} as const
+
 // ── aux / text / process / usage / gateway ─────────────────────────────
 export const AuxUsageSchema = z.object({ prompt_tokens: z.number().int().optional(), completion_tokens: z.number().int().optional(), total_tokens: z.number().int().optional() })
 export const AUX_METHODS = {

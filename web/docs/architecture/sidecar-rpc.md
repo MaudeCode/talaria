@@ -106,6 +106,7 @@ under Hermes Agent's context-local home override (`talaria_sidecar/home.py`).
 | `stt` | `capability`, `transcribe` | |
 | `cron` | `list`, `get`, `create`, `update`, `delete`, `pause`, `resume`, `run`, `status`, `history`, `run_detail`, `output`, `delivery_options` | `run`: `started` |
 | `providers` | `registry`, `auth_status`, `model_ids`, `resolve_runtime`, `credential_pool` | |
+| `oauth` | `start`, `poll`, `cancel` | |
 | `models` | `context_length`, `estimate_tokens`, `capabilities`, `reasoning_efforts` | |
 | `aux` | `complete`, `resolve` | `complete`: `token` |
 | `text` | `image_mode`, `portal_tags` | |
@@ -166,6 +167,14 @@ model context, so the browser job and the iOS route share one worker. The
 Agent's context-engine notification is two-phase: a compressed result carries a
 `commit_token`, and the server answers `chat.compress_finalize` with whether it
 installed the result (an unanswered token is discarded after ten minutes).
+
+Provider sign-in is `oauth.*` (TAL-398). `oauth.start` runs the Agent's own
+device-code request for Nous Portal, OpenAI Codex, xAI, or MiniMax under the
+profile home and returns the code to show. A sidecar thread waits for the
+approval and saves the credential with the Agent's auth-store helpers under that
+home. A flow belongs to the home that started it. After a cancel or an expiry,
+nothing is saved, and a new start for the same home and provider supersedes the
+pending one. Flows live only in the sidecar process.
 
 ## Versioning
 

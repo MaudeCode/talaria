@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Sign in to OpenAI Codex, Nous Portal, xAI Grok, or MiniMax during Talaria Web setup with a code you approve in your browser, without running hermes auth in a terminal.",
+      "highlight": true,
+      "components": ["web"]
+    }
+  ]
+}

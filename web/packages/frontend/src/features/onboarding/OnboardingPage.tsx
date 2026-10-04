@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useForm } from '@tanstack/react-form'
@@ -15,6 +15,8 @@ import { showToast } from '../toast/toast'
 import { Toaster } from '../toast/Toaster'
 import { useLocale } from '../../i18n/useLocale'
 import { loadBootstrap } from '../../app/bootstrap'
+import { keys } from '../../api/queryKeys'
+import { OAuthSignIn } from './OAuthSignIn'
 
 const STEPS = ['system', 'setup', 'workspace', 'password', 'finish'] as const
 type Step = (typeof STEPS)[number]
@@ -61,13 +63,18 @@ export function OnboardingPage() {
     },
   })
 
+  // The form starts from the first status; a later refetch (after a sign-in) must not undo the user's choices.
+  const initialized = useRef(false)
   useEffect(() => {
     if (!data) return
-    const current = data.setup?.current ?? {}
-    form.setFieldValue('provider', current.provider ?? 'openrouter')
-    form.setFieldValue('workspace', data.workspaces?.last ?? data.settings?.default_workspace ?? '')
-    form.setFieldValue('model', data.settings?.default_model ?? current.model ?? '')
-    form.setFieldValue('baseUrl', current.base_url ?? '')
+    if (!initialized.current) {
+      initialized.current = true
+      const current = data.setup?.current ?? {}
+      form.setFieldValue('provider', current.provider ?? 'openrouter')
+      form.setFieldValue('workspace', data.workspaces?.last ?? data.settings?.default_workspace ?? '')
+      form.setFieldValue('model', data.settings?.default_model ?? current.model ?? '')
+      form.setFieldValue('baseUrl', current.base_url ?? '')
+    }
     if (data.completed) void navigate({ to: '/' })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
@@ -84,7 +91,7 @@ export function OnboardingPage() {
       const note = system.provider_note === undefined || system.provider_note === '' ? fallback : system.provider_note
       return { text: note, kind: ok ? 'success' : system.hermes_found && system.imports_ok ? 'info' : 'warn' }
     }
-    if (key === 'setup') return { text: system.chat_ready ? m.onboarding_notice_setup_already_ready() : m.onboarding_notice_setup_required(), kind: system.chat_ready ? 'success' : 'info' }
+    if (key === 'setup') return { text: system.chat_ready ? m.onboarding_notice_setup_already_ready() : m.onboarding_notice_setup_choose(), kind: system.chat_ready ? 'success' : 'info' }
     if (key === 'workspace') return { text: m.onboarding_notice_workspace(), kind: 'info' }
     if (key === 'password') return { text: settings.password_enabled ? m.onboarding_notice_password_enabled() : m.onboarding_notice_password_recommended(), kind: settings.password_enabled ? 'success' : 'info' }
     return { text: m.onboarding_notice_finish(), kind: 'success' }
@@ -93,6 +100,13 @@ export function OnboardingPage() {
   const setNotice = (n: Notice) => setErrorNotice(n)
 
   const selectedProvider = (id: string) => providers.find((p) => p.id === id) ?? null
+  // A sign-in saves the credential server-side: the server's `approved` counts until the refreshed status reports `signed_in`.
+  const [approvedSignIns, setApprovedSignIns] = useState<ReadonlySet<string>>(() => new Set())
+  const signedIn = (p: { id: string; signed_in?: boolean | undefined } | null) => !!p && (!!p.signed_in || approvedSignIns.has(p.id))
+  const onSignedIn = useCallback((id: string) => {
+    setApprovedSignIns((current) => (current.has(id) ? current : new Set(current).add(id)))
+    void qc.invalidateQueries({ queryKey: keys.onboarding })
+  }, [qc])
 
   async function saveProviderSetup(v: FormValues) {
     const current = data?.setup?.current ?? {}
@@ -131,6 +145,7 @@ export function OnboardingPage() {
       if (key === 'setup') {
         if (!v.provider) throw new Error(m.onboarding_error_provider_required())
         const raw = selectedProvider(v.provider)
+        if (raw?.oauth_flow && !signedIn(raw)) throw new Error(m.onboarding_error_sign_in_required())
         const extra = raw ? ProviderExtra.safeParse(raw) : null
         const requiresBaseUrl = !!(extra?.success && extra.data.requires_base_url)
         if ((v.provider === 'custom' || requiresBaseUrl) && !v.baseUrl) throw new Error(m.onboarding_error_base_url_required())
@@ -216,29 +231,38 @@ export function OnboardingPage() {
                     {(field) => (
                       <label className="onboarding-field flex flex-col gap-1 text-sm">
                         <span>{m.onboarding_provider_label()}</span>
-                        <Select id="onboardingProviderSelect" value={field.state.value} onValueChange={(v) => field.handleChange(v)}>
+                        <Select id="onboardingProviderSelect" value={field.state.value} onValueChange={(v) => { field.handleChange(v); form.setFieldValue('model', selectedProvider(v)?.default_model ?? '') }}>
                           {providers.map((p) => <option key={p.id} value={p.id}>{p.label ?? p.name ?? p.id}</option>)}
                           {providers.length === 0 && <option value={field.state.value}>{field.state.value}</option>}
                         </Select>
                       </label>
                     )}
                   </form.Field>
-                  <form.Field name="apiKey">
-                    {(field) => (
-                      <label className="onboarding-field flex flex-col gap-1 text-sm">
-                        <span>{m.onboarding_api_key_label()}</span>
-                        <TextInput id="onboardingApiKeyInput" type="password" autoComplete="off" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} placeholder={m.onboarding_api_key_placeholder()} />
-                      </label>
-                    )}
-                  </form.Field>
-                  <form.Field name="baseUrl">
-                    {(field) => (
-                      <label className="onboarding-field flex flex-col gap-1 text-sm">
-                        <span>{m.onboarding_base_url_label()}</span>
-                        <TextInput id="onboardingBaseUrlInput" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} placeholder={m.onboarding_base_url_placeholder()} />
-                      </label>
-                    )}
-                  </form.Field>
+                  <form.Subscribe selector={(st) => st.values.provider}>{(providerId) => {
+                    const signIn = selectedProvider(providerId)
+                    // A sign-in provider takes no API key or base URL: the server runs its device-code flow.
+                    if (signIn?.oauth_flow) return <OAuthSignIn key={signIn.id} provider={signIn.id} label={signIn.oauth_label || signIn.label || signIn.id} signedIn={signedIn(signIn)} onApproved={onSignedIn} />
+                    return (
+                      <>
+                        <form.Field name="apiKey">
+                          {(field) => (
+                            <label className="onboarding-field flex flex-col gap-1 text-sm">
+                              <span>{m.onboarding_api_key_label()}</span>
+                              <TextInput id="onboardingApiKeyInput" type="password" autoComplete="off" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} placeholder={m.onboarding_api_key_placeholder()} />
+                            </label>
+                          )}
+                        </form.Field>
+                        <form.Field name="baseUrl">
+                          {(field) => (
+                            <label className="onboarding-field flex flex-col gap-1 text-sm">
+                              <span>{m.onboarding_base_url_label()}</span>
+                              <TextInput id="onboardingBaseUrlInput" value={field.state.value} onChange={(e) => field.handleChange(e.target.value)} placeholder={m.onboarding_base_url_placeholder()} />
+                            </label>
+                          )}
+                        </form.Field>
+                      </>
+                    )
+                  }}</form.Subscribe>
                   <p className="text-xs text-muted">{data.setup?.unsupported_note ?? ''}</p>
                 </>
               )}

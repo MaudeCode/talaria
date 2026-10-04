@@ -106,11 +106,13 @@ environment. Create or manage keys at `https://aimlapi.com/app/keys`. Model
 discovery comes from the live `/v1/models` response for that endpoint, not from
 a static WebUI-maintained model list.
 
-Advanced provider flows such as Nous Portal and GitHub Copilot are still
-terminal-first. OpenAI Codex and Anthropic Claude Code OAuth can be started in
-the onboarding flow when your Hermes config selects the corresponding provider.
-If the wizard points you back to `hermes model`, use that CLI flow first, then
-refresh WebUI.
+OpenAI Codex, Nous Portal, xAI Grok, and MiniMax sign in from the setup step.
+Choose the provider, select **Sign in**, open the link, and enter the code shown.
+The wizard continues after the provider approves. The Agent saves the credential
+to the profile's own `auth.json`; WebUI keeps no copy. The sign-in routes use the
+same local-network gate as the rest of onboarding (or
+`HERMES_WEBUI_ONBOARDING_OPEN=1`). GitHub Copilot, Qwen, and Anthropic Claude
+Code still sign in from a terminal with `hermes auth`, then refresh WebUI.
 
 ### Provider plugins
 

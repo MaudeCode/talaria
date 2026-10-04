@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import type { AgentConfig, Config, Dict } from './config/agent-config.js'
-import { dict, isDict, modelSection } from './config/agent-config.js'
+import { canonicaliseProviderId, dict, isDict, modelSection, parseProviderQualifiedModel } from './config/agent-config.js'
 import { loadEnvFile, writeEnvFile } from './providers/env-file.js'
 import { PROVIDER_CATEGORIES, PROVIDER_DISPLAY, SUPPORTED_PROVIDER_SETUPS, UNSUPPORTED_PROVIDER_NOTE } from './providers/tables.js'
 import type { ModelsCatalog } from './providers/catalog.js'
@@ -45,8 +45,14 @@ const currentModel = (cfg: Config): string => (typeof cfg.model === 'string' ? c
 const normalizeBaseUrl = (v: unknown): string => str(v).trim().replace(/\/+$/, '')
 const currentBaseUrl = (cfg: Config): string => normalizeBaseUrl(modelSection(cfg).base_url)
 
+/** A picked `/api/models` id (`@provider:model`) is saved as its bare model, like `setDefaultModel`; one qualified for another provider is refused. */
 function normalizeModelForProvider(provider: string, model: string): string {
-  const clean = model.trim()
+  let clean = model.trim()
+  const qualified = parseProviderQualifiedModel(clean)
+  if (qualified) {
+    if (canonicaliseProviderId(qualified[1]) !== canonicaliseProviderId(provider)) throw new OnboardingError(`Model '${clean}' belongs to another provider than '${provider}'.`)
+    clean = qualified[0].trim()
+  }
   if (!clean) return ''
   if ((provider === 'anthropic' || provider === 'openai') && clean.startsWith(`${provider}/`)) return clean.slice(provider.length + 1)
   return clean
@@ -81,7 +87,7 @@ function oauthPayloadHasToken(state: unknown): boolean {
 export function providerOauthAuthenticated(providerRaw: string, home: string): boolean {
   let provider = providerRaw.trim().toLowerCase()
   provider = ({ claude: 'anthropic', 'claude-code': 'anthropic' } as Record<string, string>)[provider] ?? provider
-  if (!['openai-codex', 'copilot', 'copilot-acp', 'qwen-oauth', 'nous', 'anthropic'].includes(provider)) return false
+  if (!['openai-codex', 'copilot', 'copilot-acp', 'qwen-oauth', 'nous', 'xai-oauth', 'minimax-oauth', 'anthropic'].includes(provider)) return false
   try {
     const store = JSON.parse(readFileSync(join(home, 'auth.json'), 'utf8')) as Dict
     const providers = store.providers
@@ -146,6 +152,11 @@ export class Onboarding {
         noteKey = 'onboarding_notice_provider_auth_required'
         noteArgs.push(provider)
         note = `Provider '${provider}' is configured but not yet authenticated. Run 'hermes auth' or 'hermes model' in a terminal to complete setup, then reload the Web UI.`
+      } else if (SUPPORTED_PROVIDER_SETUPS[provider]?.oauth_flow) {
+        noteKey = 'onboarding_notice_provider_sign_in_required'
+        const name = SUPPORTED_PROVIDER_SETUPS[provider]?.oauth_label ?? provider
+        noteArgs.push(name)
+        note = `Hermes has a saved provider/model selection but still needs you to sign in to ${name}.`
       } else {
         noteKey = 'onboarding_notice_provider_api_key_required'
         note = 'Hermes has a saved provider/model selection but still needs the API key required to chat.'
@@ -164,7 +175,8 @@ export class Onboarding {
     const order = new Map(PROVIDER_CATEGORIES.map((c) => [c.id, c.order]))
     const providers = Object.entries(SUPPORTED_PROVIDER_SETUPS).map(([id, meta]) => ({
       id, label: meta.label, env_var: meta.env_var, default_model: meta.default_model, default_base_url: meta.default_base_url ?? '', requires_base_url: meta.requires_base_url,
-      key_optional: Boolean(meta.key_optional), models: [...meta.models], category: meta.category, quick: Boolean(meta.quick), oauth_provider: meta.oauth_provider ?? '', oauth_label: meta.oauth_label ?? '',
+      key_optional: Boolean(meta.key_optional), models: [...meta.models], category: meta.category, quick: Boolean(meta.quick), oauth_provider: meta.oauth_provider ?? '', oauth_label: meta.oauth_label ?? '', oauth_flow: meta.oauth_flow ?? null,
+      ...(meta.oauth_flow ? { signed_in: providerOauthAuthenticated(meta.oauth_provider ?? id, home) } : {}),
     })).sort((a, b) => (order.get(a.category) ?? 99) - (order.get(b.category) ?? 99) || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0))
     const categories = [...PROVIDER_CATEGORIES].sort((a, b) => a.order - b.order).map((c) => ({ id: c.id, label: c.label, providers: providers.filter((p) => p.category === c.id).map((p) => p.id) }))
     const currentIsOauth = (!(provider in SUPPORTED_PROVIDER_SETUPS) && provider !== '') || providerOauthAuthenticated(provider, home)
@@ -223,8 +235,10 @@ export class Onboarding {
     }
     const envPath = join(home, '.env')
     const cfg = await this.deps.config.read(home)
-    if (!apiKey && !providerApiKeyPresent(provider, cfg, loadEnvFile(envPath))) {
-      const oauthReady = Boolean(meta.oauth_provider) && providerOauthAuthenticated(meta.oauth_provider ?? '', home)
+    const oauthReady = Boolean(meta.oauth_provider) && providerOauthAuthenticated(meta.oauth_provider ?? '', home)
+    if (meta.oauth_flow) {
+      if (!oauthReady) throw new OnboardingError(`Sign in to ${meta.oauth_label ?? meta.label} before continuing.`)
+    } else if (!apiKey && !providerApiKeyPresent(provider, cfg, loadEnvFile(envPath))) {
       if (!meta.key_optional && !oauthReady) throw new OnboardingError(`${meta.env_var} is required`)
     }
     await this.deps.config.update(home, (c) => {
@@ -236,7 +250,8 @@ export class Onboarding {
       else Reflect.deleteProperty(m, 'base_url')
       c.model = m
     })
-    if (apiKey) await this.writeCredential(home, meta.env_var, apiKey)
+    // A sign-in provider has no API key: its credential is the Agent's own auth-store entry.
+    if (apiKey && meta.env_var) await this.writeCredential(home, meta.env_var, apiKey)
     return this.status()
   }
 
