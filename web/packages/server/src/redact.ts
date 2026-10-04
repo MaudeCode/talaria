@@ -250,10 +250,28 @@ const ANSI_GAPS_RE = new RegExp(
 /** `ANSI_GAPS_RE` with a string's payload kept: only its opener and terminator are gaps. */
 const ANSI_PAYLOAD_GAPS_RE = new RegExp([SEQ_CSI, String.raw`${SEQ_ESC}[\]PX^_]`, SEQ_NF, SEQ_SINGLE, CONTROL_CHAR_RE.source].join('|'), 'g')
 /**
- * The views a split token is matched on: without whole escape sequences, without them but keeping string payloads (a
- * terminal title can hold a token), and without control characters only (an escape's final byte can be a token's).
+ * The views a split token is matched on, each as its gaps and whether a gap's token characters stay: without whole
+ * escape sequences, without them but keeping string payloads (a terminal title can hold a token), without control
+ * characters only (an escape's final byte can be a token's), and without them but keeping the token characters of
+ * string payloads (a token can run through payloads and the sequences between them).
  */
-const SPLIT_VIEWS = [ANSI_GAPS_RE, ANSI_PAYLOAD_GAPS_RE, CONTROL_CHARS_RE]
+const SPLIT_VIEWS: [RegExp, boolean][] = [[ANSI_GAPS_RE, false], [ANSI_PAYLOAD_GAPS_RE, false], [CONTROL_CHARS_RE, false], [ANSI_GAPS_RE, true]]
+const TOKEN_CHAR_RE = /[A-Za-z0-9_-]/
+const NON_TOKEN_CHARS_RE = /[^A-Za-z0-9_-]+/g
+const STRING_OPENER_RE = new RegExp(String.raw`^(?:${SEQ_ESC}[\]PX^_]|[\x90\x98\x9d-\x9f])`)
+
+/** Where a gap's payload starts when it is a string sequence, or -1. */
+function payloadStart(gap: string): number {
+  return STRING_OPENER_RE.exec(gap)?.[0].length ?? -1
+}
+
+function splitView(text: string, [gaps, keepPayloads]: [RegExp, boolean]): string {
+  if (!keepPayloads) return text.replace(gaps, '')
+  return text.replace(gaps, (gap) => {
+    const from = payloadStart(gap)
+    return from === -1 ? '' : gap.slice(from).replace(NON_TOKEN_CHARS_RE, '')
+  })
+}
 const CRED_TEST_RE = new RegExp(CRED_RE.source)
 /** `CRED_RE`'s prefix and body from a position, without its boundaries (a split token checks the original ones). */
 const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
@@ -307,14 +325,16 @@ function splitTokenEnd(text: string, stripped: string, kept: number[], i: number
  * matched on the text without those gaps. A token starts at a boundary of the stripped text, or where a stripped control hid the original
  * one (`note\nghp_…`); one starting inside a token already masked is part of it.
  */
-function splitTokenSpans(text: string, gaps: RegExp): [number, number, string][] {
-  const stripped = text.replace(gaps, '')
-  if (stripped.length === text.length) return []
+function splitTokenSpans(text: string, view: [RegExp, boolean]): [number, number, string][] {
+  const stripped = splitView(text, view)
+  if (stripped === text) return []
   // The original index of each kept character.
   const kept: number[] = []
   let at = 0
-  for (const m of text.matchAll(gaps)) {
+  for (const m of text.matchAll(view[0])) {
     while (at < m.index) kept.push(at++)
+    const from = view[1] ? payloadStart(m[0]) : -1
+    if (from !== -1) for (let k = from; k < m[0].length; k += 1) if (TOKEN_CHAR_RE.test(m[0][k]!)) kept.push(at + k)
     at += m[0].length
   }
   while (at < text.length) kept.push(at++)
@@ -334,7 +354,7 @@ function splitTokenSpans(text: string, gaps: RegExp): [number, number, string][]
 
 /** Masks each union of the split-token spans every view finds, so no view masks a piece of a token another one joins. */
 function maskSplitTokens(text: string): string {
-  const spans = SPLIT_VIEWS.flatMap((gaps) => splitTokenSpans(text, gaps)).sort((a, b) => a[0] - b[0])
+  const spans = SPLIT_VIEWS.flatMap((view) => splitTokenSpans(text, view)).sort((a, b) => a[0] - b[0])
   let out = ''
   let last = 0
   for (let k = 0; k < spans.length; ) {
@@ -1552,7 +1572,7 @@ export function mightContainSensitiveText(text: string): boolean {
   if (!text) return false
   // A control or zero-width character or an ANSI escape sequence inside a prefix (`x\u200bai-…`) does not hide it: the
   // redactor joins split tokens.
-  const views = SPLIT_VIEWS.map((gaps) => text.replace(gaps, ''))
+  const views = SPLIT_VIEWS.map((view) => splitView(text, view))
   if (CASE_MARKERS.some((m) => views.some((view) => view.includes(m)))) return true
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
