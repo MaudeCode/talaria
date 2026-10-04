@@ -1136,6 +1136,8 @@ export class SessionService {
     try {
       await this.store.withLock(sid, () => {
         if (blocking()) throw new HttpFailure(409, 'Session has an active run; stop it before deleting')
+        // A public share outlives its session file, and revokeShare needs the session, so revoke it first.
+        try { this.deps.shares.revoke(this.store.get(sid, { metadataOnly: true })) } catch (error) { if (!(error instanceof SessionNotFound)) throw error }
         if (!this.store.deleteFiles(sid)) throw new HttpFailure(500, 'Failed to delete session data')
       }, { timeoutMs: 5000 })
     } catch (error) {

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Deleting a shared conversation in Talaria Web now revokes its public share link, so the link stops working.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
