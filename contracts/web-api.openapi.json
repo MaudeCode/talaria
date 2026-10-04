@@ -31769,6 +31769,9 @@
                               "category": {
                                 "type": "string"
                               },
+                              "default_model": {
+                                "type": "string"
+                              },
                               "oauth_flow": {
                                 "anyOf": [
                                   {
@@ -32175,6 +32178,9 @@
                                 }
                               },
                               "category": {
+                                "type": "string"
+                              },
+                              "default_model": {
                                 "type": "string"
                               },
                               "oauth_flow": {

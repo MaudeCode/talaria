@@ -544,7 +544,7 @@ export type TodoState = z.infer<typeof TodoStateSchema>
 // ── onboarding ───────────────────────────────────────────────────────────
 
 /** `oauth_flow` (TAL-398): `device_code` when the provider signs in through `/api/onboarding/oauth/*` instead of taking an API key; `oauth_label` then names the account to sign in with, and `signed_in` says whether the profile already holds its credential. */
-export const OnboardingProviderSchema = z.looseObject({ id: z.string(), name: z.string().optional(), label: z.string().optional(), kind: z.string().optional(), oauth: z.boolean().optional(), needs_key: z.boolean().optional(), base_url: NullableString.optional(), models: z.array(Json).optional(), category: z.string().optional(), oauth_flow: z.literal('device_code').nullable().optional(), oauth_label: z.string().optional(), signed_in: z.boolean().optional() })
+export const OnboardingProviderSchema = z.looseObject({ id: z.string(), name: z.string().optional(), label: z.string().optional(), kind: z.string().optional(), oauth: z.boolean().optional(), needs_key: z.boolean().optional(), base_url: NullableString.optional(), models: z.array(Json).optional(), category: z.string().optional(), default_model: z.string().optional(), oauth_flow: z.literal('device_code').nullable().optional(), oauth_label: z.string().optional(), signed_in: z.boolean().optional() })
 export const OnboardingStatusSchema = z.looseObject({
   completed: z.boolean(),
   settings: z.looseObject({ bot_name: z.string().optional(), default_model: z.string().optional(), default_workspace: NullableString.optional(), password_enabled: z.boolean().optional() }).optional(),

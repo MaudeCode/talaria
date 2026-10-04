@@ -339,12 +339,21 @@ def _gc(now: float) -> None:
                 del _FLOWS[flow_id]
 
 
+def _pending(home: Path, provider: str) -> list[Flow]:
+    with _FLOWS_LOCK:
+        return [f for f in _FLOWS.values() if f.provider == provider and f.status == "pending" and _same_home(f.home, home)]
+
+
 def start(home: Path, provider: str, *, providers: dict[str, Provider] | None = None) -> dict:
     steps = (providers or PROVIDERS).get(provider)
     if steps is None:
         raise InvalidParams(f"{provider} has no device-code sign-in")
     begin, wait, save = steps
     _gc(time.time())
+    # A new start replaces the pending flow for this home and provider before the code request, so an approval of the
+    # old code that lands while the provider answers can no longer save. A start racing this one is caught below.
+    for old in _pending(home, provider):
+        _cancel(old)
     try:
         with scoped_home(home):
             display, state = begin()
@@ -357,8 +366,8 @@ def start(home: Path, provider: str, *, providers: dict[str, Provider] | None = 
         # The browser opens this link: anything but a web address is refused before a flow exists.
         raise RpcError("The provider answered an invalid sign-in link.", condition="oauth_failed")
     flow = Flow(secrets.token_urlsafe(16), provider, home, time.time() + int(display["expires_in"]), max(1, int(display["interval"])))
+    superseded = _pending(home, provider)
     with _FLOWS_LOCK:
-        superseded = [f for f in _FLOWS.values() if f.provider == provider and f.status == "pending" and _same_home(f.home, home)]
         _FLOWS[flow.flow_id] = flow
     for old in superseded:
         _cancel(old)

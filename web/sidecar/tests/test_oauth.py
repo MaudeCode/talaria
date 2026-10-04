@@ -171,6 +171,22 @@ def test_a_new_start_supersedes_the_pending_flow_for_the_same_home_and_provider(
     assert sorted(home.name for home, _ in provider.saved) == sorted([tmp_path.name, "other"])
 
 
+def test_the_old_flow_is_cancelled_before_the_new_code_request(provider, tmp_path):
+    first = start(provider, tmp_path)
+    seen = []
+
+    def begin():
+        seen.append(oauth.poll(tmp_path, first["flow_id"])["status"])
+        raise RuntimeError("provider unavailable")
+
+    with pytest.raises(RpcError):
+        oauth.start(tmp_path, "openai-codex", providers={"openai-codex": (begin, None, None)})
+    assert seen == ["cancelled"]
+    provider.answer.set()  # the old code is approved after the replacement began
+    time.sleep(0.1)
+    assert provider.saved == []
+
+
 def test_an_unknown_provider_and_a_failed_start_are_errors(provider, tmp_path):
     with pytest.raises(InvalidParams):
         oauth.start(tmp_path, "anthropic")

@@ -226,7 +226,7 @@ export function OnboardingPage() {
                     {(field) => (
                       <label className="onboarding-field flex flex-col gap-1 text-sm">
                         <span>{m.onboarding_provider_label()}</span>
-                        <Select id="onboardingProviderSelect" value={field.state.value} onValueChange={(v) => field.handleChange(v)}>
+                        <Select id="onboardingProviderSelect" value={field.state.value} onValueChange={(v) => { field.handleChange(v); form.setFieldValue('model', selectedProvider(v)?.default_model ?? '') }}>
                           {providers.map((p) => <option key={p.id} value={p.id}>{p.label ?? p.name ?? p.id}</option>)}
                           {providers.length === 0 && <option value={field.state.value}>{field.state.value}</option>}
                         </Select>
