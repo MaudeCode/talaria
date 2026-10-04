@@ -801,6 +801,22 @@ describe('Agent checkout updates', () => {
     expect(stashes(a.agent)).toHaveLength(1)
   })
 
+  it('an edit made after the autostash is never reset away', async () => {
+    const a = agentInstall()
+    writeFileSync(join(a.agent, 'VERSION'), 'local edit\n')
+    const concurrent: GitRun = async (args, cwd, timeout) => {
+      const out = await runGit(args, cwd, timeout)
+      if (args[0] === 'merge') writeFileSync(join(a.agent, 'README'), 'edited during the update\n')
+      return out
+    }
+    const events: string[] = []
+    const result = await agentService(a.agent, concurrent, events).apply('agent', null, () => true, { confirmedRevision: a.v2 })
+    expect(result).toMatchObject({ ok: false, target: 'agent', stash_conflict: true })
+    expect(events).toEqual([])
+    expect(readFileSync(join(a.agent, 'README'), 'utf8')).toBe('edited during the update\n')
+    expect(stashes(a.agent)).toHaveLength(1)
+  })
+
   it('a cleanly applied stash is dropped and the update restarts', async () => {
     const a = agentInstall()
     writeFileSync(join(a.agent, 'README'), 'local note\n')

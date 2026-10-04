@@ -667,23 +667,31 @@ export async function applyAgentUpdate(path: string | null, git: GitRun, channel
     return { ok: false, message: `Pull failed: ${sanitizeGitDiagnostic(pulled.out)}.${note}`, ...conflict }
   }
   const restored = stashed ? await restoreStash(path, git) : null
-  // Never report success, or restart, onto a tree that may still hold conflict markers.
-  if (restored?.resetFailed) return { ok: false, target: 'agent', stash_conflict: true, message: `Agent updated to ${ref}. ${restored.note}` }
+  // Never report success, or restart, onto a tree that may hold conflict markers or edits nobody saved.
+  if (restored && !restored.clean) return { ok: false, target: 'agent', stash_conflict: true, message: `Agent updated to ${ref}. ${restored.note}` }
   const verified = await verifiedAgentIdentity(path, revision, git)
   if (!verified) return { ok: false, message: 'The Agent update completed, but the installed revision could not be verified.', target: 'agent' }
   return { ok: true, message: `agent updated to ${ref}.${restored ? ` ${restored.note}` : ''}`, target: 'agent', ref, ...verified, ...(restored && !restored.applied ? { stash_conflict: true } : {}) }
 }
 
-/** Python stash recovery: apply the autostash; on conflict reset tracked files to HEAD and keep the stash. */
-async function restoreStash(path: string, git: GitRun): Promise<{ applied: boolean; resetFailed: boolean; note: string }> {
+/**
+ * Python stash recovery: apply the autostash; on conflict reset tracked files to HEAD and keep the stash.
+ * `clean` means the tracked tree is known to hold no conflict markers or unsaved edits, so a restart is safe.
+ */
+async function restoreStash(path: string, git: GitRun): Promise<{ applied: boolean; clean: boolean; note: string }> {
+  // A tracked edit made after the autostash is not in the stash; a reset would destroy it, so leave both alone.
+  const status = await git(['status', '--porcelain', '--untracked-files=no'], path)
+  if (!status.ok || status.out) {
+    return { applied: false, clean: false, note: `Tracked Agent files changed after the update stashed your local modifications, or their state could not be read, so the stash was not re-applied and nothing was reset. Your earlier modifications remain in the git stash. Review git -C ${path} status, then run git -C ${path} stash apply.` }
+  }
   if ((await git(['stash', 'apply'], path)).ok) {
     const dropped = (await git(['stash', 'drop'], path)).ok
-    return { applied: true, resetFailed: false, note: `Local modifications were restored from the temporary stash.${dropped ? '' : ' The temporary stash entry may still be present because git stash drop failed.'}` }
+    return { applied: true, clean: true, note: `Local modifications were restored from the temporary stash.${dropped ? '' : ' The temporary stash entry may still be present because git stash drop failed.'}` }
   }
   if (!(await git(['reset', '--hard', 'HEAD'], path)).ok) {
-    return { applied: false, resetFailed: true, note: `Your local modifications could not be restored from the stash, and resetting tracked files to HEAD failed. Manual intervention needed: run git -C ${path} reset --hard HEAD to remove any conflict markers, then git -C ${path} stash apply. Your changes remain in the git stash.` }
+    return { applied: false, clean: false, note: `Your local modifications could not be restored from the stash, and resetting tracked files to HEAD failed. Manual intervention needed: run git -C ${path} reset --hard HEAD to remove any conflict markers, then git -C ${path} stash apply. Your changes remain in the git stash.` }
   }
-  return { applied: false, resetFailed: false, note: `Your local modifications conflicted with the update and were set aside in the git stash; tracked files match HEAD. To inspect: git -C ${path} stash show -p. To re-apply: git -C ${path} stash apply, then resolve conflicts, and drop the stash once you are satisfied.` }
+  return { applied: false, clean: true, note: `Your local modifications conflicted with the update and were set aside in the git stash; tracked files match HEAD. To inspect: git -C ${path} stash show -p. To re-apply: git -C ${path} stash apply, then resolve conflicts, and drop the stash once you are satisfied.` }
 }
 
 /** Python `apply_force_update` (agent branch): fetch, refuse a pure-ancestor rewind, `checkout . && clean -fd && reset --hard`. */
