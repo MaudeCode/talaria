@@ -31191,9 +31191,326 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "propertyNames": {
-                    "type": "string"
+                  "properties": {
+                    "computed_at": {
+                      "type": "string",
+                      "description": "ISO-8601 UTC reference time of every window `pace`."
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "provider": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "display_name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "supported": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "quota": {
+                      "description": "OpenRouter credits (`limit_remaining`, `usage`, `limit`), else null."
+                    },
+                    "account_limits": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "available": {
+                              "type": "boolean"
+                            },
+                            "stale": {
+                              "type": "boolean"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "plan": {},
+                            "unavailable_reason": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "windows": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "used_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "remaining_percent": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "reset_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "ISO-8601 UTC."
+                                  },
+                                  "detail": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "window_seconds": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The provider value, else 5h or weekly from the label; null when unknown."
+                                  },
+                                  "pace": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "expected_remaining_percent": {
+                                            "type": "number"
+                                          },
+                                          "pace_delta_percent": {
+                                            "type": "number"
+                                          },
+                                          "burn_rate": {
+                                            "type": "number"
+                                          },
+                                          "minutes_to_reset": {
+                                            "type": "number"
+                                          },
+                                          "projected_minutes_to_empty": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ],
+                                            "description": "Minutes until the window empties at the current burn; null when nothing has been used."
+                                          },
+                                          "elapsed_minutes": {
+                                            "type": "number"
+                                          },
+                                          "valid_until": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "expected_remaining_percent",
+                                          "pace_delta_percent",
+                                          "burn_rate",
+                                          "minutes_to_reset",
+                                          "projected_minutes_to_empty",
+                                          "elapsed_minutes",
+                                          "valid_until"
+                                        ],
+                                        "additionalProperties": {}
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "Null for a window without a future reset, a usage value, or a 5h/weekly length."
+                                  },
+                                  "forecast": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "outcome": {
+                                            "enum": [
+                                              "safe",
+                                              "warning"
+                                            ],
+                                            "type": "string",
+                                            "description": "`warning` when the projection empties the window before it resets."
+                                          },
+                                          "budget_unit": {
+                                            "enum": [
+                                              "hour",
+                                              "day"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "budget_percent": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ],
+                                            "description": "Remaining percent per `budget_unit` until reset."
+                                          },
+                                          "depletion_margin_minutes": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ],
+                                            "description": "Projected empty minus reset, in minutes; negative empties early, null when no depletion is projected."
+                                          }
+                                        },
+                                        "required": [
+                                          "outcome",
+                                          "budget_unit",
+                                          "budget_percent",
+                                          "depletion_margin_minutes"
+                                        ],
+                                        "additionalProperties": {}
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "label",
+                                  "used_percent",
+                                  "remaining_percent",
+                                  "reset_at",
+                                  "detail",
+                                  "window_seconds",
+                                  "pace",
+                                  "forecast"
+                                ],
+                                "additionalProperties": {}
+                              }
+                            },
+                            "details": {},
+                            "fetched_at": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "ISO-8601 UTC."
+                            },
+                            "pace_window_index": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "session_window_index": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "weekly_window_index": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "windows",
+                            "fetched_at"
+                          ],
+                          "additionalProperties": {}
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
                   },
+                  "required": [
+                    "computed_at",
+                    "ok",
+                    "provider",
+                    "display_name",
+                    "supported",
+                    "status",
+                    "message"
+                  ],
                   "additionalProperties": {}
                 }
               }

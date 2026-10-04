@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { SidecarError } from '../sidecar/client.js'
-import type { SidecarResult } from '@maudecode/talaria-web-contracts'
+import { ProviderQuotaSchema, type SidecarResult } from '@maudecode/talaria-web-contracts'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { loadEnvFile, writeEnvFile } from '../providers/env-file.js'
 import { applyProviderPrefix, deduplicateModelIds, formatOllamaLabel, labelForModel, uniqueQuotaSources } from '../providers/catalog.js'
@@ -884,6 +884,12 @@ describe('provider quota windows carry server-computed pace (TAL-409)', () => {
     const quota = await json(await s.get('/api/provider/quota?provider=anthropic'))
     expect(quota.computed_at).toBe('2026-09-28T08:00:00Z')
     expect(quota.account_limits).toMatchObject({ windows: [session, weekly, monthly], pace_window_index: 1, session_window_index: 0, weekly_window_index: 1 })
+    // Every branch of the singular route answers its contract: account usage, a keyless OpenRouter, an unsupported provider.
+    for (const provider of ['anthropic', 'openrouter', 'zai']) {
+      const res = await s.get(`/api/provider/quota?provider=${provider}`)
+      expect(res.status).toBe(200)
+      expect(ProviderQuotaSchema.safeParse(await res.json()).success).toBe(true)
+    }
 
     // The shared fixture the App and Web decode is this exact response (`RECORD_TAL409=1` rewrites it).
     if (process.env.RECORD_TAL409) writeFileSync(FIXTURE, `${JSON.stringify(quotas, null, 2)}\n`)
