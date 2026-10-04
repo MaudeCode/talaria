@@ -659,7 +659,7 @@ const REGISTRY_LOGIN: CommandFlags = { separate: ['-p'], attached: ['-p'], login
 const MYSQL: CommandFlags = { attached: ['-p'] }
 const COMMAND_FLAGS: Record<string, CommandFlags> = {
   docker: REGISTRY_LOGIN, podman: REGISTRY_LOGIN, buildah: REGISTRY_LOGIN, nerdctl: REGISTRY_LOGIN, skopeo: REGISTRY_LOGIN, oras: REGISTRY_LOGIN, helm: REGISTRY_LOGIN,
-  mysql: MYSQL, mysqladmin: MYSQL, mysqldump: MYSQL, mysqlimport: MYSQL, mysqlshow: MYSQL, mysqlcheck: MYSQL, mysqlslap: MYSQL, mysql_upgrade: MYSQL, mysqlbinlog: MYSQL,
+  mysql: MYSQL, mysqladmin: MYSQL, mysqldump: MYSQL, mysqlimport: MYSQL, mysqlshow: MYSQL, mysqlcheck: MYSQL, mysqlslap: MYSQL, mysql_upgrade: MYSQL, mysqlbinlog: MYSQL, mysqlsh: MYSQL,
   mariadb: MYSQL, 'mariadb-admin': MYSQL, 'mariadb-dump': MYSQL, 'mariadb-import': MYSQL, 'mariadb-show': MYSQL, 'mariadb-check': MYSQL, 'mariadb-slap': MYSQL, 'mariadb-upgrade': MYSQL, 'mariadb-binlog': MYSQL,
   sshpass: { separate: ['-p'], attached: ['-p'], values: ['-f', '-d', '-P'], stop: true },
   'redis-cli': { separate: ['-a', '--pass'] },
@@ -667,9 +667,12 @@ const COMMAND_FLAGS: Record<string, CommandFlags> = {
 }
 /**
  * A known command's name as a word: bare, after a path, a listed argv element, or composed by quotes (`do"cker"`); or, in
- * command position, a name the shell computes (`$CLIENT`, `$(which docker)`, `` `printf docker` ``), which may be any.
+ * command position, a name the shell computes whole or in part (`$CLIENT`, `$(which docker)`, `` `printf docker` ``,
+ * `my${EMPTY}sql`), which may be any.
  */
-const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[\\])(?:${Object.keys(COMMAND_FLAGS).map((name) => name.replaceAll(/(?<=.)(?=.)/g, String.raw`["'\\]*`)).join('|')}|(?<=(?:^|[;&|(\n\x60{[])[ \t]*['"]?)(?:\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|\$\([^()\n]*\)|\x60[^\x60\n]*\x60))(?=[\s;&|)'",\]]|$)`, 'g')
+/** A parameter, substitution or backtick piece of a word; a name is read whole, so a word splits into pieces one way only. */
+const EXPANSION = String.raw`\$[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_])|\$\{[^{}\n]*\}|\$\([^()\n]*\)|\x60[^\x60\n]*\x60`
+const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[\\])(?:${Object.keys(COMMAND_FLAGS).map((name) => name.replaceAll(/(?<=.)(?=.)/g, String.raw`["'\\]*`)).join('|')}|(?<=(?:^|[;&|(\n\x60{[])[ \t]*['"]?)[\w./-]*(?:${EXPANSION})(?:[\w./-]|${EXPANSION})*)(?=[\s;&|)'",\]]|$)`, 'g')
 /** Every command's flags, for an executable the shell computes. */
 const ALL_COMMAND_FLAGS = [...new Set(Object.values(COMMAND_FLAGS))]
 const COMMAND_FLAG_TEST_RE = new RegExp(COMMAND_FLAG_RE.source)
