@@ -77,7 +77,7 @@ def _chat_start(ctx, params: dict) -> dict:
     ctx.emit("token", {"text": "talaria-contract"})
     history = [*params.get("conversation_history", []), {"role": "user", "content": params.get("user_message", "")}, {"role": "assistant", "content": "talaria-contract"}]
     return {
-        "status": "completed", "messages": history, "final_response": "talaria-contract", "error": None, "result_status": "completed",
+        "status": "completed", "messages": history, "final_response": "talaria-contract", "error": None, "failed": False, "partial": False, "compression_exhausted": False,
         "tool_limit_reached": False, "usage": {"prompt_tokens": 0, "completion_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0, "estimated_cost_usd": None},
         "context": {}, "model": params.get("model") or "replay", "provider": params.get("model_provider") or "replay", "compressed": False,
         "agent_session_id": params.get("session_id", ""), "token_sent": True, "pending_steer": "", "live_tool_calls": [],
