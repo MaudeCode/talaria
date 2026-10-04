@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A new, duplicated, or linked chat no longer briefly disappears from the Chats list when a refresh that started earlier finishes.",
+      "highlight": false
+    }
+  ]
+}
