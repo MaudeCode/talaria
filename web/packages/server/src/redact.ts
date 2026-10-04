@@ -651,10 +651,11 @@ function redactUserFlags(text: string): string {
  * next word, `attached` ones the rest of their own (`mysql -phunter2`, where a lone `-p` prompts). `login`: only when the
  * subcommand is `login` (`docker login`, `helm registry login`), not a later word (`docker run image login -p x`). `stop`:
  * the options end at the first operand, the command run (`sshpass -p pw ssh -p 2222 h`), past the values of `values` flags.
- * `percent`: the secret follows a `%` (`bob%pw`).
+ * `percent`: the secret follows a `%` (`bob%pw`). `switches`: global options known to take no value, so the word after one
+ * may be the subcommand (`docker --debug run login -p x`).
  */
-interface CommandFlags { separate?: string[]; attached?: string[]; login?: true; values?: string[]; stop?: true; percent?: true }
-const REGISTRY_LOGIN: CommandFlags = { separate: ['-p'], attached: ['-p'], login: true }
+interface CommandFlags { separate?: string[]; attached?: string[]; login?: true; switches?: string[]; values?: string[]; stop?: true; percent?: true }
+const REGISTRY_LOGIN: CommandFlags = { separate: ['-p'], attached: ['-p'], login: true, switches: ['-D', '--debug', '--tls', '--tlsverify', '-r', '--remote', '--syslog'] }
 const MYSQL: CommandFlags = { attached: ['-p'] }
 const COMMAND_FLAGS: Record<string, CommandFlags> = {
   docker: REGISTRY_LOGIN, podman: REGISTRY_LOGIN, buildah: REGISTRY_LOGIN, nerdctl: REGISTRY_LOGIN, skopeo: REGISTRY_LOGIN, oras: REGISTRY_LOGIN, helm: REGISTRY_LOGIN,
@@ -663,8 +664,8 @@ const COMMAND_FLAGS: Record<string, CommandFlags> = {
   'redis-cli': { separate: ['-a', '--pass'] },
   smbclient: { separate: ['-U', '--user'], attached: ['-U', '--user='], percent: true },
 }
-/** A known command's name as a word: bare, after a path, or a listed argv element. */
-const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[])(?:${Object.keys(COMMAND_FLAGS).join('|')})(?=[\s;&|)'",\]]|$)`, 'g')
+/** A known command's name as a word: bare, after a path, a listed argv element, or composed by quotes (`do"cker"`). */
+const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[\\])(?:${Object.keys(COMMAND_FLAGS).map((name) => name.replaceAll(/(?<=.)(?=.)/g, String.raw`["'\\]*`)).join('|')})(?=[\s;&|)'",\]]|$)`, 'g')
 const COMMAND_FLAG_TEST_RE = new RegExp(COMMAND_FLAG_RE.source)
 
 /**
@@ -687,7 +688,7 @@ function commandFlagMasks(words: readonly string[]): Map<number, number> {
       if (!state.active) {
         // The subcommand is the first operand past the options; one right after a bare option may be its value.
         if (word === 'login') state.active = true
-        else if (!word.startsWith('-') && word !== 'registry' && !/^-[^=]*$/.test(words[i - 1]!)) states.delete(flags)
+        else if (!word.startsWith('-') && word !== 'registry' && !(/^-[^=]*$/.test(words[i - 1]!) && !flags.switches?.includes(words[i - 1]!))) states.delete(flags)
         continue
       }
       if (flags.separate?.includes(word)) { secret(flags, i + 1, words[i + 1], 0); state.next = i + 2; continue }
@@ -697,7 +698,9 @@ function commandFlagMasks(words: readonly string[]): Map<number, number> {
       if (flags.stop && !word.startsWith('-')) states.delete(flags)
     }
     const name = word.slice(word.lastIndexOf('/') + 1)
-    if (Object.hasOwn(COMMAND_FLAGS, name)) states.set(COMMAND_FLAGS[name]!, { active: !COMMAND_FLAGS[name]!.login, next: i + 1 })
+    // A command named again (`docker login docker -p pw`, a host) keeps the state it is in.
+    const flags = Object.hasOwn(COMMAND_FLAGS, name) ? COMMAND_FLAGS[name]! : undefined
+    if (flags && !states.has(flags)) states.set(flags, { active: !flags.login, next: i + 1 })
   }
   return masks
 }
