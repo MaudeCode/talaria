@@ -89,7 +89,12 @@ extension UITestFixtureURLProtocol {
         switch url.path {
         case "/api/insights" where ProcessInfo.processInfo.arguments.contains("--ui-test-insights-refresh-error")
             && URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "days" && $0.value == "7" }) == true:
-            return state.consumeFailure(for: "insights-refresh") ? URLError(.cannotConnectToHost) : nil
+            // Transient for all four attempts Insights retries, so the refresh exhausts them (TAL-191).
+            let failsAttempt = (1...4).contains { state.consumeFailure(for: "insights-refresh-\($0)") }
+            return failsAttempt ? URLError(.cannotConnectToHost) : nil
+        case "/api/insights":
+            // Definitive, so the first load fails without the retries a transient error earns.
+            return state.consumeFailure(for: url.path) ? URLError(.badServerResponse) : nil
         case "/api/kanban/board":
             // The Board's incremental poll carries `since=`; only the full load is broken.
             guard url.query?.contains("since=") != true else { return nil }

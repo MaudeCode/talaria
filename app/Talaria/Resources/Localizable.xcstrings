@@ -133363,6 +133363,119 @@
         }
       }
     },
+    "Showing cached server analytics while refreshing." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Showing cached server analytics while refreshing."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zwischengespeicherte Serveranalysen werden während der Aktualisierung angezeigt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se muestran los análisis del servidor guardados en caché mientras se actualizan."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les analyses du serveur en cache sont affichées pendant l’actualisation."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vengono mostrate le analisi del server memorizzate nella cache durante l’aggiornamento."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opgeslagen serveranalyses worden getoond tijdens het vernieuwen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wyświetlane są zapisane analizy serwera podczas odświeżania."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mostrando análises do servidor em cache durante a atualização."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Показана сохранённая аналитика сервера, идёт обновление."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yenilenirken önbellekteki sunucu analizleri gösteriliyor."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تُعرض تحليلات الخادم المخزّنة مؤقتًا أثناء التحديث."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "מוצגים נתוני ניתוח שרת מהמטמון בזמן הרענון."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "تازہ کاری کے دوران سرور کے محفوظ شدہ تجزیات دکھائے جا رہے ہیں۔"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新中はキャッシュされたサーバー分析を表示しています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새로 고치는 동안 캐시된 서버 분석을 표시합니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在刷新，显示缓存的服务器分析。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在重新整理，顯示快取的伺服器分析。"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在重新整理，顯示快取的伺服器分析。"
+          }
+        }
+      }
+    },
     "Showing cached server analytics. Refresh failed: %@" : {
       "extractionState" : "manual",
       "localizations" : {
