@@ -10,7 +10,7 @@
     },
     {
       "category": "Changed",
-      "summary": "While a Git pull, checkout, stage, discard, commit, or worktree removal is changing a workspace, starting a chat run or terminal there is declined with a message until it finishes.",
+      "summary": "While a Git pull, checkout, stage, discard, commit, or worktree removal is changing a workspace, starting a chat run or terminal or editing files there is declined with a message until it finishes.",
       "highlight": false,
       "components": [
         "web"

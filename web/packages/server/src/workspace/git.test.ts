@@ -213,7 +213,7 @@ describe('slow git off the event loop', () => {
     chmodSync(join(shimDir, 'git'), 0o755)
     const env = { HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE: '1', ...identity, PATH: `${shimDir}:${process.env.PATH ?? ''}` }
     // A short lock wait so contention answers `operation_in_progress` well before the slow push finishes.
-    s = await bootTestServer({ env, deps: (d) => { d.git = new GitRunner({ env: { ...env, HOME: process.env.HOME }, mutationLockTimeoutMs: 200 }) } })
+    s = await bootTestServer({ env, deps: (d) => { d.git = new GitRunner({ ...d.git.deps, env: { ...env, HOME: process.env.HOME }, mutationLockTimeoutMs: 200 }) } })
     const ws = join(s.state, 'workspace')
     const origin = join(s.state, 'origin.git')
     git(s.state, 'init', '-q', '--bare', origin)
@@ -287,6 +287,59 @@ describe('slow git off the event loop', () => {
     const res = await post(s, '/api/chat/start', { session_id: sidB, message: 'hi' })
     expect(await json(res)).toMatchObject({ error: 'A Git operation is running in this workspace.' })
     expect((await pull).status).toBe(200)
+  })
+
+  it('a working-tree mutation refuses while a run is already active anywhere in the repository', async () => {
+    const ws = realpathSync(join(s.state, 'workspace'))
+    mkdirSync(join(ws, 'sub-c'), { recursive: true })
+    expect((await post(s, '/api/workspaces/add', { path: join(ws, 'sub-c') })).status).toBe(200)
+    const sid = String(((await json(await post(s, '/api/session/new', { workspace: join(ws, 'sub-c') }))).session as Json).session_id)
+    // A run in a sibling directory that was admitted before the mutation took the repository hold.
+    s.deps.registry.activeRuns.set('sibling-run', { stream_id: 'sibling-run', session_id: 'other', started_at: 0, phase: 'running', workspace: join(ws, 'sub-d'), model: null, provider: null, ephemeral: false })
+    try {
+      const res = await post(s, '/api/git/pull', { session_id: sid })
+      expect(await json(res)).toMatchObject({ code: 'active_stream' })
+      expect(res.status).toBe(409)
+    } finally {
+      s.deps.registry.activeRuns.delete('sibling-run')
+    }
+  })
+
+  it('file writes, rollback restore, directory creation, and worktree sessions wait out a working-tree mutation', async () => {
+    const { sid, ws } = await repoSession(s)
+    const { push: pull } = await inFlight(sid, 'pull')
+    const busy = { error: 'A Git operation is running in this workspace.' }
+    const attempts: [string, unknown][] = [
+      ['/api/file/create', { session_id: sid, path: 'new-during-pull.txt', content: 'x' }],
+      ['/api/file/save', { session_id: sid, path: 'README.md', content: 'clobbered' }],
+      ['/api/file/delete', { session_id: sid, path: 'README.md' }],
+      ['/api/rollback/restore', { workspace: ws, checkpoint: 'abc' }],
+      ['/api/workspaces/add', { path: join(ws, 'made-during-pull'), create: true }],
+      ['/api/session/new', { workspace: ws, worktree: true }],
+    ]
+    for (const [route, body] of attempts) {
+      const res = await post(s, route, body)
+      expect({ route, status: res.status, body: await json(res) }).toMatchObject({ route, status: 409, body: busy })
+    }
+    expect(existsSync(join(ws, 'new-during-pull.txt'))).toBe(false)
+    expect(existsSync(join(ws, 'made-during-pull'))).toBe(false)
+    expect((await pull).status).toBe(200)
+  })
+
+  it('worktree removal waits for a Git mutation in its main checkout', async () => {
+    const { sid, ws } = await repoSession(s)
+    const worktree = join(realpathSync(s.state), 'wt-serial')
+    git(ws, 'worktree', 'add', '-q', '-b', 'wt-serial', worktree)
+    const wtSid = String(((await json(await post(s, '/api/session/new', { workspace: ws }))).session as Json).session_id)
+    const session = s.deps.sessionStore.get(wtSid)
+    Object.assign(session, { worktree_path: worktree, worktree_repo_root: ws })
+    s.deps.sessionStore.save(session)
+    const { push: pull } = await inFlight(sid, 'pull')
+    const res = await post(s, '/api/session/worktree/remove', { session_id: wtSid })
+    expect(await json(res)).toMatchObject({ code: 'operation_in_progress' })
+    expect(existsSync(worktree)).toBe(true)
+    expect((await pull).status).toBe(200)
+    expect(await json(await post(s, '/api/session/worktree/remove', { session_id: wtSid }))).toMatchObject({ ok: true })
   })
 
   it('worktree removal holds the worktree busy from its lock checks through the removal', async () => {

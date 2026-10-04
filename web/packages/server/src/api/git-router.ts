@@ -4,7 +4,7 @@ import { gitContract } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
-import { cleanGeneratedCommitMessage, GitWorkspaceError, WORKSPACE_GIT_DESTRUCTIVE_ENV, type GitStatus } from '../workspace/git.js'
+import { cleanGeneratedCommitMessage, GitWorkspaceError, WORKSPACE_BUSY_MESSAGE, WORKSPACE_GIT_DESTRUCTIVE_ENV, type GitStatus } from '../workspace/git.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
 import { removeWorktreeForSession, worktreeStatusForSession } from '../workspace/worktrees.js'
 import { isSafeSessionId, type Session } from '../sessions/session.js'
@@ -17,7 +17,8 @@ const os = implement(gitContract).$context<ApiContext>().use(requestSessionIdGua
 /** Python `_git_bad`: `{error, code}` with the classified reason. */
 function gitBad(error: unknown, status = 400): never {
   if (error instanceof HttpError) throw error
-  if (error instanceof GitWorkspaceError) throw new HttpError(status, sanitizeError(error), { code: error.code || 'git_failed' })
+  // A run that is active where the mutation would change files is the same 409 the router answers up front.
+  if (error instanceof GitWorkspaceError) throw new HttpError(error.code === 'active_stream' ? 409 : status, sanitizeError(error), { code: error.code || 'git_failed' })
   // Python let anything that was not a `GitWorkspaceError` escape to the dispatcher's 500.
   throw error
 }
@@ -184,6 +185,8 @@ export const gitRouter = os.router({
       if (!Object.keys(input).length) throw new HttpError(400, 'request body is required')
       const checkpoint = input.checkpoint ?? input.id
       if (!input.workspace || !checkpoint) throw new HttpError(400, 'workspace and checkpoint are required')
+      // The restore is synchronous, so refusing while Git holds the workspace keeps the two from overlapping.
+      if (ctx.deps.git.workspaceBusy(input.workspace)) throw new HttpError(409, WORKSPACE_BUSY_MESSAGE)
       try {
         return ctx.deps.rollback.restore(input.workspace, checkpoint) as never
       } catch (error) {
@@ -221,11 +224,12 @@ export const gitRouter = os.router({
       }
       if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
       try {
-        // Held for the whole removal; its stream/terminal checks run synchronously inside the hold, so none can start.
+        // Serialized with Git mutations and held busy; its stream/terminal checks run synchronously inside the hold.
         const remove = (): Promise<Record<string, unknown>> => removeWorktreeForSession(session, ctx.deps.worktreeLocks, { force: Boolean(input.force) })
         const worktree = str(session.worktree_path)
-        return await (worktree ? ctx.deps.git.holdWorkspace(worktree, remove) : remove()) as { ok: true; removed_path: string; warnings: string[] | null }
+        return await (worktree ? ctx.deps.git.removeWorktreeExclusive(worktree, str(session.worktree_repo_root) || null, remove) : remove()) as { ok: true; removed_path: string; warnings: string[] | null }
       } catch (error) {
+        if (error instanceof GitWorkspaceError) gitBad(error)
         throw error instanceof Error && !('code' in error) ? new HttpError(400, error.message) : new HttpError(500, sanitizeError(error))
       }
     }),

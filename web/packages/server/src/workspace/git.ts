@@ -23,6 +23,7 @@ export const DIFF_SIZE_LIMIT = 512 * 1024
 export const COMMIT_MESSAGE_DIFF_LIMIT = 64 * 1024
 export const WORKSPACE_GIT_DESTRUCTIVE_ENV = 'HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE'
 export const WORKSPACE_BUSY_MESSAGE = 'A Git operation is running in this workspace.'
+export const WORKSPACE_WRITE_BUSY_MESSAGE = 'A file operation is running in this workspace.'
 const GIT_ENV_SCRUB_KEYS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GIT_SSH', 'GIT_SSH_COMMAND']
 const GIT_ENV_SCRUB_PREFIXES = ['GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_']
 const BRANCH_SWITCH_STASH_PREFIX = 'hermes-webui branch switch'
@@ -73,6 +74,8 @@ export interface GitRunnerDeps {
   now?: () => number
   /** How long a mutation waits for the repo's previous one before answering `operation_in_progress`. */
   mutationLockTimeoutMs?: number
+  /** Whether a chat run is active in a workspace overlapping `path`; a working-tree mutation refuses to start then. */
+  activeRunIn?: (path: string) => boolean
 }
 
 interface RunOptions {
@@ -107,6 +110,31 @@ export function spawnGit(cwd: string, argv: string[], timeoutMs: number, env?: R
 }
 
 type Stats = Map<string, [number, number, boolean]>
+
+/** Whether two paths are the same directory or one contains the other. */
+export function pathsOverlap(a: string, b: string): boolean {
+  const x = resolvePathLikePython(a)
+  const y = resolvePathLikePython(b)
+  return x === y || isWithin(x, y) || isWithin(y, x)
+}
+
+function overlapsAny(held: Map<string, number>, path: string): boolean {
+  for (const p of held.keys()) if (pathsOverlap(p, path)) return true
+  return false
+}
+
+/** Count `path` in `held` until `fn` settles; the count is taken before `fn` runs. */
+async function holding<T>(held: Map<string, number>, path: string, fn: () => Promise<T>): Promise<T> {
+  const key = resolvePathLikePython(path)
+  held.set(key, (held.get(key) ?? 0) + 1)
+  try {
+    return await fn()
+  } finally {
+    const left = (held.get(key) ?? 1) - 1
+    if (left) held.set(key, left)
+    else held.delete(key)
+  }
+}
 
 export function classifyGitError(message: string, args: string[] = []): string {
   const text = message.toLowerCase()
@@ -155,32 +183,39 @@ export class GitRunner {
   private readonly locks = new Map<string, Promise<void>>()
   private readonly statusCache = new Map<string, { storedAt: number; repoRoot: string; fingerprint: string; payload: GitStatus }>()
   private readonly generations = new Map<string, number>()
-  /** Workspaces a working-tree mutation or worktree removal is changing, with their hold counts. */
+  /** Workspaces a working-tree mutation or worktree removal is changing; runs, terminals, and file writes stay out. */
   private readonly busy = new Map<string, number>()
+  /** Workspaces an asynchronous writer (worktree creation) is changing; working-tree mutations stay out. */
+  private readonly writing = new Map<string, number>()
 
   constructor(readonly deps: GitRunnerDeps) {}
 
   /**
    * Hold `path` busy until `fn` settles. The hold is taken before `fn` runs, so checks `fn` makes synchronously (no run
-   * active) and admission's `workspaceBusy` refusal leave no gap for a chat run or terminal to start in between.
+   * active) and admission's `workspaceBusy` refusal leave no gap for a chat run, terminal, or file write in between.
    */
-  async holdWorkspace<T>(path: string, fn: () => Promise<T>): Promise<T> {
-    const key = resolvePathLikePython(path)
-    this.busy.set(key, (this.busy.get(key) ?? 0) + 1)
-    try {
-      return await fn()
-    } finally {
-      const left = (this.busy.get(key) ?? 1) - 1
-      if (left) this.busy.set(key, left)
-      else this.busy.delete(key)
-    }
+  holdWorkspace<T>(path: string, fn: () => Promise<T>): Promise<T> {
+    return holding(this.busy, path, fn)
   }
 
   /** Whether `path` overlaps a held workspace (the same directory, inside it, or containing it). */
   workspaceBusy(path: string): boolean {
-    const ws = resolvePathLikePython(path)
-    for (const held of this.busy.keys()) if (held === ws || isWithin(ws, held) || isWithin(held, ws)) return true
-    return false
+    return overlapsAny(this.busy, path)
+  }
+
+  /** Run an asynchronous workspace writer at `path`: refused while Git holds it, and Git mutations refuse meanwhile. */
+  holdWrite<T>(path: string, fn: () => Promise<T>): Promise<T> {
+    if (this.workspaceBusy(path)) throw new GitWorkspaceError(WORKSPACE_BUSY_MESSAGE, 'operation_in_progress')
+    return holding(this.writing, path, fn)
+  }
+
+  /**
+   * Worktree removal: serialized with Git mutations in the main checkout and in the worktree (the same per-repo locks),
+   * and held busy so no run, terminal, or file write starts there. `fn`'s synchronous lock checks run inside the hold.
+   */
+  async removeWorktreeExclusive<T>(worktree: string, repoRoot: string | null, fn: () => Promise<T>): Promise<T> {
+    const inWorktree = (): Promise<T> => this.withLock(worktree, () => this.holdWorkspace(worktree, fn))
+    return repoRoot ? await this.withLock(repoRoot, inWorktree) : await inWorktree()
   }
 
   destructiveEnabled(): boolean {
@@ -366,9 +401,25 @@ export class GitRunner {
 
   // ── mutation lock ────────────────────────────────────────────────────────
 
-  /** `holdRepo` keeps runs and terminals out of the whole repository while a working-tree mutation runs. */
+  /**
+   * The per-repo mutation lock. `holdRepo` (working-tree mutations) also holds the whole repository busy and, in the same
+   * tick, refuses when a run or an asynchronous writer is already active anywhere in it.
+   */
   private async withMutationLock<T>(ctx: GitContext, fn: () => Promise<T>, { holdRepo = true } = {}): Promise<T> {
-    const key = ctx.repoRoot
+    try {
+      return await this.withLock(ctx.repoRoot, () => (holdRepo ? this.holdWorkspace(ctx.repoRoot, () => { this.assertRepoFree(ctx.repoRoot); return fn() }) : fn()))
+    } finally {
+      this.invalidateStatusCache(ctx.repoRoot)
+    }
+  }
+
+  private assertRepoFree(repoRoot: string): void {
+    if (this.deps.activeRunIn?.(repoRoot)) throw new GitWorkspaceError('A session run is active. Wait for it to finish before running this Git operation.', 'active_stream')
+    if (overlapsAny(this.writing, repoRoot)) throw new GitWorkspaceError(WORKSPACE_WRITE_BUSY_MESSAGE, 'operation_in_progress')
+  }
+
+  private async withLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
+    const key = resolvePathLikePython(path)
     const previous = this.locks.get(key) ?? Promise.resolve()
     let release!: () => void
     const current = new Promise<void>((r) => { release = r })
@@ -384,9 +435,8 @@ export class GitRunner {
       throw new GitWorkspaceError('Another Git operation is still running', 'operation_in_progress')
     }
     try {
-      return await (holdRepo ? this.holdWorkspace(ctx.repoRoot, fn) : fn())
+      return await fn()
     } finally {
-      this.invalidateStatusCache(ctx.repoRoot)
       release()
     }
   }
