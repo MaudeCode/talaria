@@ -648,9 +648,10 @@ function redactUserFlags(text: string): string {
 
 /**
  * Flags whose value is a secret only for one command (elsewhere a bare `-p` is a port or a path): `separate` flags take the
- * next word, `attached` ones the rest of their own (`mysql -phunter2`, where a lone `-p` prompts). `login`: only after a
- * `login` word (`docker login`, `helm registry login`). `stop`: the options end at the first operand, the command run
- * (`sshpass -p pw ssh -p 2222 h`), past the values of `values` flags. `percent`: the secret follows a `%` (`bob%pw`).
+ * next word, `attached` ones the rest of their own (`mysql -phunter2`, where a lone `-p` prompts). `login`: only when the
+ * subcommand is `login` (`docker login`, `helm registry login`), not a later word (`docker run image login -p x`). `stop`:
+ * the options end at the first operand, the command run (`sshpass -p pw ssh -p 2222 h`), past the values of `values` flags.
+ * `percent`: the secret follows a `%` (`bob%pw`).
  */
 interface CommandFlags { separate?: string[]; attached?: string[]; login?: true; values?: string[]; stop?: true; percent?: true }
 const REGISTRY_LOGIN: CommandFlags = { separate: ['-p'], attached: ['-p'], login: true }
@@ -666,29 +667,37 @@ const COMMAND_FLAGS: Record<string, CommandFlags> = {
 const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[])(?:${Object.keys(COMMAND_FLAGS).join('|')})(?=[\s;&|)'",\]]|$)`, 'g')
 const COMMAND_FLAG_TEST_RE = new RegExp(COMMAND_FLAG_RE.source)
 
-/** For an argv (`words` as the programs receive them), the words holding a command's secret, each with the offset it starts at. */
+/**
+ * For an argv (`words` as the programs receive them), the words holding a command's secret, each with the offset it starts
+ * at. Every known command named so far is read at once, so a wrapper's operand naming one (`sudo -u mysql docker login -p
+ * pw`) does not hide the command it runs.
+ */
 function commandFlagMasks(words: readonly string[]): Map<number, number> {
   const masks = new Map<number, number>()
-  let flags: CommandFlags | undefined
-  let active = false
-  const secret = (index: number, value: string | undefined, from: number): void => {
+  const states = new Map<CommandFlags, { active: boolean; next: number }>()
+  const secret = (flags: CommandFlags, index: number, value: string | undefined, from: number): void => {
     if (value === undefined) return
-    const at = flags!.percent ? value.indexOf('%', from) + 1 : from
-    if ((at || !flags!.percent) && value.slice(at) && value.slice(at) !== '***') masks.set(index, at)
+    const at = flags.percent ? value.indexOf('%', from) + 1 : from
+    if ((at || !flags.percent) && value.slice(at) && value.slice(at) !== '***') masks.set(index, at)
   }
   for (let i = 0; i < words.length; i += 1) {
     const word = words[i]!
-    if (flags && active) {
-      if (flags.separate?.includes(word)) { secret(i + 1, words[i + 1], 0); i += 1; continue }
+    for (const [flags, state] of states) {
+      if (i < state.next) continue
+      if (!state.active) {
+        // The subcommand is the first operand past the options; one right after a bare option may be its value.
+        if (word === 'login') state.active = true
+        else if (!word.startsWith('-') && word !== 'registry' && !/^-[^=]*$/.test(words[i - 1]!)) states.delete(flags)
+        continue
+      }
+      if (flags.separate?.includes(word)) { secret(flags, i + 1, words[i + 1], 0); state.next = i + 2; continue }
       const prefix = flags.attached?.find((p) => word.length > p.length && word.startsWith(p))
-      if (prefix !== undefined) { secret(i, word, prefix.length + (word[prefix.length] === '=' ? 1 : 0)); continue }
-      if (flags.values?.includes(word)) { i += 1; continue }
-      if (!flags.stop || word.startsWith('-')) continue
-      flags = undefined
+      if (prefix !== undefined) { secret(flags, i, word, prefix.length + (word[prefix.length] === '=' ? 1 : 0)); continue }
+      if (flags.values?.includes(word)) { state.next = i + 2; continue }
+      if (flags.stop && !word.startsWith('-')) states.delete(flags)
     }
-    if (flags && word === 'login') { active = true; continue }
     const name = word.slice(word.lastIndexOf('/') + 1)
-    if (Object.hasOwn(COMMAND_FLAGS, name)) { flags = COMMAND_FLAGS[name]!; active = !flags.login }
+    if (Object.hasOwn(COMMAND_FLAGS, name)) states.set(COMMAND_FLAGS[name]!, { active: !COMMAND_FLAGS[name]!.login, next: i + 1 })
   }
   return masks
 }
@@ -704,7 +713,7 @@ function maskWordFrom(raw: string, plain: string, from: number): string {
 
 /**
  * The words of the simple command (or listed argv) at `from`, up to a shell metacharacter, the line end, a list's close or
- * the close of the `enclosing` quote, and where the scan stopped. An unterminated quote ends the command at the line end.
+ * the close of the `enclosing` quote, and where the scan stopped. An unterminated quote ends the command with its word.
  */
 function commandWords(text: string, from: number, enclosing: string): { spans: [number, number][]; end: number } {
   const spans: [number, number][] = []
@@ -716,10 +725,12 @@ function commandWords(text: string, from: number, enclosing: string): { spans: [
     while (i < text.length && text[i] !== enclosing && !/[\s;&|()<>,\]}]/.test(text[i]!)) {
       const c = text[i]!
       if (c === '\\') i += 2
-      else if (!enclosing && (c === "'" || c === '"')) {
+      else if ((c === "'" || c === '"') && c !== enclosing) {
+        // An inner quote of the other kind (`sh -c "mysql -p'a b'"`) groups for the shell that runs the command.
         let k = i + 1
-        while (k < text.length && text[k] !== c && text[k] !== '\n') k += c === '"' && text[k] === '\\' ? 2 : 1
-        if (text[k] !== c) return { spans, end: Math.min(k, text.length) }
+        while (k < text.length && text[k] !== c && text[k] !== '\n' && text[k] !== enclosing) k += c === '"' && text[k] === '\\' ? 2 : 1
+        // An unterminated quote runs to the line end (or the enclosing close); its word is still read, so its secret is masked.
+        if (text[k] !== c) { spans.push([start, Math.min(k, text.length)]); return { spans, end: Math.min(k, text.length) } }
         i = k + 1
       } else i += 1
     }
