@@ -501,7 +501,7 @@ export const UpdateNotificationSchema = z.object({
   acknowledged_action_id: z.string().nullable(),
   verified_revision: z.string().regex(/^[a-f0-9]{40}$/).nullable(),
   verified_version: z.string().min(1).max(80).nullable(),
-  /** The apply's own explanation of a failed or blocked attempt, line breaks kept; null in every other phase. */
+  /** The apply's own explanation of a failed or blocked attempt, or of a success that needs attention (an Agent update that kept local edits in the git stash), line breaks kept; null otherwise. */
   detail: z.string().max(2000).nullable(),
   unread: z.boolean(),
   active: z.boolean(),

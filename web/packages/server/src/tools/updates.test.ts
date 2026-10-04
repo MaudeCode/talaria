@@ -840,6 +840,23 @@ describe('Agent checkout updates', () => {
     expect(stashes(a.agent)[0]).toContain('another process')
   })
 
+  it('never drops another process\'s stash pushed between the lookup and the drop', async () => {
+    const a = agentInstall()
+    writeFileSync(join(a.agent, 'README'), 'local note\n')
+    let other = false
+    const racing: GitRun = (args, cwd, timeout) => {
+      if (!other && args[0] === 'stash' && args[1] === 'drop') {
+        other = true
+        writeFileSync(join(a.agent, 'VERSION'), 'another edit\n')
+        git(a.agent, 'stash', 'push', '-m', 'another process')
+      }
+      return runGit(args, cwd, timeout)
+    }
+    expect(await agentService(a.agent, racing, []).apply('agent', null, () => true, { confirmedRevision: a.v2 })).toMatchObject({ ok: true })
+    expect(stashes(a.agent).some((entry) => entry.includes('another process'))).toBe(true)
+    expect(git(a.agent, 'stash', 'show', '-p', stashes(a.agent).find((entry) => entry.includes('another process'))!.split(':')[0]!)).toContain('+another edit')
+  })
+
   it('a cleanly applied stash is dropped and the update restarts', async () => {
     const a = agentInstall()
     writeFileSync(join(a.agent, 'README'), 'local note\n')

@@ -73,7 +73,7 @@ describe('UpdateNotificationStore', () => {
     expect(restarted.list(tab).tab_update).not.toHaveProperty('watchers')
   })
 
-  it('keeps a failed or blocked attempt\'s own explanation, line breaks included, and drops it on the next phase', () => {
+  it('keeps a failed, blocked, or attention-needing success\'s own explanation, line breaks included, and drops it on the next phase', () => {
     const root = temp()
     const store = new UpdateNotificationStore(root)
     const web = store.begin(alice, 'webui')
@@ -81,7 +81,9 @@ describe('UpdateNotificationStore', () => {
     expect(store.transition(web.id, 'failed', null, undefined, '  npm run build failed.\r\nRun `npm ci`\u0007 again.  ')?.detail).toBe('npm run build failed.\nRun `npm ci`  again.')
     expect(new UpdateNotificationStore(root).list(alice).notifications[0]?.detail).toBe('npm run build failed.\nRun `npm ci`  again.')
     expect(store.transition(web.id, 'blocked', null, undefined, 'x'.repeat(3_000))?.detail).toHaveLength(2_000)
-    expect(store.transition(web.id, 'succeeded', null, undefined, 'ignored')?.detail).toBeNull()
+    expect(store.transition(web.id, 'succeeded')?.detail).toBeNull()
+    expect(store.transition(web.id, 'succeeded', null, undefined, 'Local edits were set aside in the git stash.')?.detail).toBe('Local edits were set aside in the git stash.')
+    expect(store.transition(web.id, 'restarting', null, undefined, 'ignored')?.detail).toBeNull()
   })
 
   it('follows the operation a tab rejoined most recently, not the newest one', () => {

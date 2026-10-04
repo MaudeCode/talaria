@@ -693,7 +693,17 @@ async function restoreStash(path: string, git: GitRun, stash: string): Promise<{
   } finally { rmSync(dir, { recursive: true, force: true }) }
   const entries = await git(['stash', 'list', '--format=%H'], path)
   const index = entries.ok ? gitLines(entries.out).indexOf(stash) : -1
-  const dropped = index >= 0 && (await git(['stash', 'drop', `stash@{${String(index)}}`], path)).ok
+  let dropped = false
+  if (index >= 0) {
+    const out = await git(['stash', 'drop', `stash@{${String(index)}}`], path)
+    const removed = /\(([0-9a-f]{40})\)/.exec(out.out)?.[1]
+    dropped = out.ok && removed === stash
+    // A stash pushed after the lookup shifts the index; put back the entry that was removed instead so nothing is lost.
+    if (out.ok && removed && removed !== stash) {
+      const subject = await git(['log', '-1', '--format=%s', removed], path)
+      await git(['stash', 'store', '-m', subject.ok && subject.out ? subject.out : 'Restored by the Agent updater', removed], path)
+    }
+  }
   return { applied: true, note: `Local modifications were restored from the temporary stash.${dropped ? '' : ' The temporary stash entry may still be present because git stash drop failed.'}` }
 }
 

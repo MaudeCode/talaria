@@ -30,7 +30,7 @@ interface StoredUpdateNotification {
   acknowledged_action_id: string | null
   verified_revision: string | null
   verified_version: string | null
-  /** The apply's own explanation of a failed or blocked attempt (sanitized, bounded); null in every other phase. */
+  /** The apply's own explanation of a failed or blocked attempt, or of a success that needs attention (sanitized, bounded); null otherwise. */
   detail: string | null
   performed_action_ids: string[]
   dismissed_at: string | null
@@ -229,7 +229,7 @@ export class UpdateNotificationStore {
     row.updated_at = this.now().toISOString()
     if (phaseChanged) row.read_at = null
     row.expected_identity = expectedIdentity?.trim().slice(0, 160) || null
-    row.detail = phase === 'failed' || phase === 'blocked' ? safeDetail(detail) : null
+    row.detail = phase === 'failed' || phase === 'blocked' || phase === 'succeeded' ? safeDetail(detail) : null
     if (verifiedIdentity) {
       row.verified_revision = typeof verifiedIdentity.revision === 'string' && REVISION.test(verifiedIdentity.revision) ? verifiedIdentity.revision : null
       row.verified_version = safeText(verifiedIdentity.version, '', 80) || null
