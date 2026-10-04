@@ -2,9 +2,10 @@
   "entries": [
     {
       "category": "Fixed",
-      "summary": "While the server cannot read its sign-in settings, the login page says SSO is temporarily unavailable instead of offering an SSO button that fails, and sign-in stays required.",
+      "summary": "While the server cannot read its sign-in settings, sign-in stays required and the login page and app say single sign-on is temporarily unavailable instead of offering an SSO button that fails.",
       "highlight": false,
       "components": [
+        "app",
         "web"
       ]
     }

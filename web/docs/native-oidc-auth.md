@@ -3,7 +3,9 @@
 Hermes WebUI can hand a successful browser OIDC login to a native app without
 putting a WebUI cookie or an OIDC token in the app callback URL. The handoff is
 available only when `GET /api/auth/status` reports both `oidc_enabled` and
-`oidc_native_handoff_enabled` as `true`. The same endpoint reports
+`oidc_native_handoff_enabled` as `true`. While the operator config cannot be
+resolved, both are `false` and `oidc_unavailable` is `true`: authentication stays
+required, and SSO is offered again once the config resolves. The same endpoint reports
 `can_manage_server`: `true` only for an owner session (or when auth is
 disabled), `false` for profile-bound SSO sessions, which cannot apply updates
 or perform other owner-only operations. When the operator configures

@@ -300,10 +300,10 @@ export class AuthStore {
   }
 
   /** OIDC posture and offerability after resolving its config; `unavailable` means the gate is held closed but SSO must fail. */
-  async oidcState(): Promise<{ enabled: boolean; available: boolean; unavailable: boolean }> {
+  async oidcState(): Promise<{ available: boolean; unavailable: boolean }> {
     const enabled = await this.isOidcEnabled()
     const available = enabled && this.oidcAvailable()
-    return { enabled, available, unavailable: enabled && !available }
+    return { available, unavailable: enabled && !available }
   }
 
   async verifyPassword(plain: string): Promise<boolean> {
