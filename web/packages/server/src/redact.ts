@@ -338,7 +338,8 @@ function maskSplitTokens(text: string): string {
   let out = ''
   let last = 0
   for (let k = 0; k < spans.length; ) {
-    let [start, end, token] = spans[k]!
+    const start = spans[k]![0]
+    let [, end, token] = spans[k]!
     for (k += 1; k < spans.length && spans[k]![0] < end; k += 1) {
       const [, nextEnd, nextToken] = spans[k]!
       end = Math.max(end, nextEnd)
