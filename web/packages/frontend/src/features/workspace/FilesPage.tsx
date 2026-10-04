@@ -50,7 +50,11 @@ function WorkspaceFiles({ workspace, sessionId, active }: { workspace: string; s
   const git = useQuery({ queryKey: keys.files.git(sessionId), queryFn: () => api.fetchGitInfo(sessionId), staleTime: 30_000, retry: false, enabled: active })
   const content = useQuery({ queryKey: keys.files.content(workspace, file ?? ''), queryFn: () => api.readFile(sessionId, file ?? ''), enabled: !!file && active, staleTime: 5_000 })
   const save = useMutation({ mutationFn: (text: string) => api.saveFile(sessionId, file ?? '', text), onSuccess: () => { showToast(m.ws_panel_saved()); setDraft(null); void qc.invalidateQueries({ queryKey: keys.files.content(workspace, file ?? '') }) }, onError: (e) => showToast(e instanceof Error ? e.message : String(e), 4000, 'error') })
-  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: keys.files.lists(workspace) }), qc.invalidateQueries({ queryKey: keys.files.git(sessionId) })])
+  // A path can now name another file (rename, move, delete then create), so cached contents are dropped, not just marked stale.
+  const refresh = () => {
+    qc.removeQueries({ queryKey: keys.files.contents(workspace) })
+    return Promise.all([qc.invalidateQueries({ queryKey: keys.files.lists(workspace) }), qc.invalidateQueries({ queryKey: keys.files.git(sessionId) })])
+  }
   // Menu and drag operations report the server's refusal (symlink, conflict, missing) inline above the tree.
   const op = useMutation({ mutationFn: (call: () => Promise<unknown>) => call(), onMutate: () => setNotice(null), onError: (e) => setNotice(errorText(e)), onSettled: refresh })
   const go = (path: string) => { setNotice(null); setDir(path) }

@@ -1,4 +1,5 @@
-import { symlinkSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from './fixtures'
 
@@ -6,14 +7,13 @@ test.use({ serviceWorkers: 'block' })
 
 /** TAL-519: the Files page creates, renames, moves and deletes entries in a real synthetic workspace and shows the server's refusals. */
 test('the Files page creates, renames, moves and deletes workspace entries', async ({ page, errors }, testInfo) => {
-  const created = (await (await page.request.post('/api/session/new', { data: {} })).json()) as { session: { session_id: string } }
+  // The test owns its workspace: the server's default one sits under /dev/shm on Linux CI, which the server refuses to browse.
+  const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'tal519-')))
+  writeFileSync(join(workspace, 'seed.txt'), '')
+  symlinkSync('seed.txt', join(workspace, 'link'))
+  expect((await page.request.post('/api/workspaces/add', { data: { path: workspace } })).ok()).toBe(true)
+  const created = (await (await page.request.post('/api/session/new', { data: { workspace } })).json()) as { session: { session_id: string } }
   const sid = created.session.session_id
-  // Both projects share one server workspace, so each run works in its own folder.
-  const root = `tal519-${testInfo.project.name}-${String(Date.now())}`
-  expect((await page.request.post('/api/file/create-dir', { data: { session_id: sid, path: root } })).ok()).toBe(true)
-  const listing = (await (await page.request.get(`/api/list?session_id=${sid}&path=${root}`)).json()) as { workspace: string }
-  expect((await page.request.post('/api/file/create', { data: { session_id: sid, path: `${root}/seed.txt` } })).ok()).toBe(true)
-  symlinkSync('seed.txt', join(listing.workspace, root, 'link'))
   // Reveal and Open in VS Code launch desktop apps on the server's machine; record their requests instead.
   const launched: { route: string; path: string }[] = []
   for (const name of ['reveal', 'open-vscode']) {
@@ -34,7 +34,6 @@ test('the Files page creates, renames, moves and deletes workspace entries', asy
     await item(name).click({ button: 'right' })
     await page.getByRole('menu').getByRole('menuitem', { name: action }).click()
   }
-  await item(root).click()
   await expect(tree.getByRole('treeitem', { name: /^link/ })).toBeVisible()
 
   await expect(page.getByRole('button', { name: 'New Folder' })).toBeVisible()
@@ -44,37 +43,49 @@ test('the Files page creates, renames, moves and deletes workspace entries', asy
   await expect(item('docs')).toBeVisible()
 
   await page.getByRole('button', { name: 'New File' }).click()
-  await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.md')
+  await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.txt')
   await page.getByRole('button', { name: 'Create' }).click()
-  await expect(item('notes.md')).toBeVisible()
+  await expect(item('notes.txt')).toBeVisible()
+  await item('notes.txt').click()
+  await page.getByRole('textbox', { name: 'Preview' }).fill('old text')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled()
+  await page.getByRole('button', { name: 'Back' }).click()
 
   // A name that already exists: the dialog stays open with the server's refusal.
   await page.getByRole('button', { name: 'New File' }).click()
-  await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.md')
+  await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.txt')
   await page.getByRole('button', { name: 'Create' }).click()
   await expect(page.getByRole('dialog').getByRole('alert')).toHaveText('File already exists')
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
 
-  await actions('notes.md', 'Rename')
-  await page.getByRole('textbox', { name: 'New name:' }).fill('plan.md')
+  await actions('notes.txt', 'Rename')
+  await page.getByRole('textbox', { name: 'New name:' }).fill('plan.txt')
   await page.getByRole('button', { name: 'Save' }).click()
-  await expect(item('plan.md')).toBeVisible()
-  await expect(item('notes.md')).toHaveCount(0)
+  await expect(item('plan.txt')).toBeVisible()
+  await expect(item('notes.txt')).toHaveCount(0)
+  // A new file at the renamed file's old path opens empty, not with the old file's cached text.
+  await page.getByRole('button', { name: 'New File' }).click()
+  await page.getByRole('textbox', { name: 'New file name (e.g. notes.md):' }).fill('notes.txt')
+  await page.getByRole('button', { name: 'Create' }).click()
+  await item('notes.txt').click()
+  await expect(page.getByRole('textbox', { name: 'Preview' })).toHaveValue('')
+  await page.getByRole('button', { name: 'Back' }).click()
 
-  await item('plan.md').dragTo(item('docs'))
-  await expect(item('plan.md')).toHaveCount(0)
+  await item('plan.txt').dragTo(item('docs'))
+  await expect(item('plan.txt')).toHaveCount(0)
   if (process.env.TAL519_SHOTS) {
     await item('docs').click({ button: 'right' })
     await page.screenshot({ path: `${process.env.TAL519_SHOTS}/menu-${testInfo.project.name}.png` })
     await page.keyboard.press('Escape')
   }
   await item('docs').click()
-  await expect(item('plan.md')).toBeVisible()
+  await expect(item('plan.txt')).toBeVisible()
   await page.getByRole('button', { name: 'Up one level' }).click()
 
   await actions('docs', 'Reveal in file manager')
   await actions('docs', 'Open in VS Code')
-  await expect.poll(() => launched).toEqual([{ route: 'reveal', path: `${root}/docs` }, { route: 'open-vscode', path: `${root}/docs` }])
+  await expect.poll(() => launched).toEqual([{ route: 'reveal', path: 'docs' }, { route: 'open-vscode', path: 'docs' }])
 
   // Delete asks first; cancelling keeps the entry.
   await actions('docs', 'Delete')
@@ -92,5 +103,7 @@ test('the Files page creates, renames, moves and deletes workspace entries', asy
   await confirm.getByRole('button', { name: 'Delete' }).click()
   await expect(item('docs')).toHaveCount(0)
 
+  await page.request.post('/api/workspaces/remove', { data: { path: workspace } })
+  rmSync(workspace, { recursive: true, force: true })
   errors.splice(0, errors.length, ...errors.filter((e) => !/400 POST .*\/api\/file\/(create|delete)$|status of 400/.test(e)))
 })
