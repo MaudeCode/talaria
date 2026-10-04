@@ -35,6 +35,8 @@ export function OAuthSignIn({ provider, label, signedIn, onApproved }: { provide
         if (next.status === 'pending') timer = window.setTimeout(() => { void tick() }, waitMs)
       } catch (e) {
         if (stopped) return
+        // The panel gives up on this flow, so the server must too: otherwise a later approval would still save.
+        void api.onboardingOauthCancel(pendingId).catch(() => undefined)
         setFailure(message(e))
         setFlow(null)
       }

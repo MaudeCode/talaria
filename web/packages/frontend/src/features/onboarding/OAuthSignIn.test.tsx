@@ -53,6 +53,16 @@ describe('OAuthSignIn', () => {
     expect(screen.getByRole('button', { name: 'Sign in with ChatGPT' })).toBeEnabled()
   })
 
+  it('a poll that fails cancels the flow it gives up on', async () => {
+    vi.mocked(api.onboardingOauthPoll).mockRejectedValue(new Error('Network error'))
+    render(<OAuthSignIn provider="openai-codex" label="ChatGPT" signedIn={false} onApproved={vi.fn()} />)
+    await startFlow()
+    await nextPoll()
+    expect(api.onboardingOauthCancel).toHaveBeenCalledWith('flow-1')
+    expect(screen.getByRole('alert')).toHaveTextContent('Network error')
+    expect(screen.getByRole('button', { name: 'Sign in with ChatGPT' })).toBeEnabled()
+  })
+
   it('cancel stops the flow, and leaving a pending flow cancels it', async () => {
     vi.mocked(api.onboardingOauthPoll).mockResolvedValue({ ok: true, status: 'pending', flow_id: 'flow-1' })
     const view = render(<OAuthSignIn provider="openai-codex" label="ChatGPT" signedIn={false} onApproved={vi.fn()} />)

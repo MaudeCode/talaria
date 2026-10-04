@@ -758,6 +758,9 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(providers.find((p) => p.id === 'openrouter')?.oauth_flow).toBeNull()
     expect(providers.find((p) => p.id === 'openai-codex')?.signed_in).toBe(false)
     expect(providers.find((p) => p.id === 'openrouter')).not.toHaveProperty('signed_in')
+    // Every sign-in provider is an OAuth provider the catalog knows, so an approval brings its model group.
+    const catalog = (await json(await s.get('/api/providers'))).providers as Json[]
+    for (const id of ['minimax-oauth', 'nous', 'openai-codex', 'xai-oauth']) expect(catalog.find((p) => p.id === id), id).toMatchObject({ is_oauth: true })
     const authPath = join(s.state, 'auth.json')
     const savedAuth = existsSync(authPath) ? readFileSync(authPath, 'utf8') : null
     try {
