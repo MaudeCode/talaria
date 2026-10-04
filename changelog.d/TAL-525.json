@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "A provider key you remove in Settings stops working right away, even after you have used another profile, instead of lingering until Talaria Web restarts.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

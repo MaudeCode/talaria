@@ -7,6 +7,7 @@ import re
 
 from .. import SIDECAR_RPC_VERSION
 from ..errors import InvalidParams, RpcError
+from ..home import edit_launch_env
 from ..rpc import CallContext
 
 
@@ -53,6 +54,7 @@ def register(registry) -> None:
             os.environ.pop(name, None)
         for name, value in to_set.items():
             os.environ[name] = value
+        edit_launch_env(to_set, to_unset)
         # Cached agents bound the credentials they were built with; none of them may outlive a credential change.
         from .chat import evict_all_agents
 

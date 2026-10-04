@@ -17,6 +17,8 @@ sys.path.append(sys.argv[1])
 
 from agent.secret_scope import current_secret_scope, get_secret  # noqa: E402
 from talaria_sidecar.home import scoped_home  # noqa: E402
+from talaria_sidecar.methods import build_methods  # noqa: E402
+from talaria_sidecar.runtime import AgentRuntime  # noqa: E402
 
 ROOT = Path(os.environ["HERMES_HOME"])
 HOMES = {"default": ROOT, "alpha": ROOT / "profiles" / "alpha", "beta": ROOT / "profiles" / "beta"}
@@ -78,4 +80,14 @@ def _read_in(home: Path) -> dict:
 
 # The launch profile keeps its process-exported credentials after named-profile calls.
 results["default_after_named"] = _outcome(lambda: _read_in(ROOT))
+
+
+def _settings_edit() -> dict:
+    methods = build_methods(AgentRuntime(ROOT, Path(sys.argv[1])))
+    methods["runtime.env"](None, {"unset": ["OPENAI_API_KEY"], "set": {"LAUNCH_ENV_ONLY": "rotated"}})
+    return _read_in(ROOT)
+
+
+# A Settings edit reaches the launch profile even after multiplexing froze its environment.
+results["default_after_env_edit"] = _outcome(_settings_edit)
 print(json.dumps(results, sort_keys=True))
