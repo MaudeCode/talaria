@@ -798,6 +798,8 @@ describe('Agent redactor parity', () => {
       ['ghp_abcdef\x1bXsos\x1b\\123456\x1b^pm\x1b\\7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       ['ghp_abcdef\x90dcs\x9c123456\x9fapc\x9c7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       ['gh\x85p_abcdef1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      // Only OSC ends at BEL; the other strings run to ST.
+      ['ghp_ab\x1bPx\x07.\x1b\\cdef1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       ['ghp_abcdef\x84123456\x8f7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       // The piece before the sequence is a whole token by itself.
       ['ghp_abcdefghij\x1b[31m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
