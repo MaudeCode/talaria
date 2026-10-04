@@ -18,6 +18,7 @@ import { useTranscript, type VisibleMessage } from './useTranscript'
 import { Transcript } from './Transcript'
 import { TranscriptSkeleton } from './TranscriptSkeleton'
 import { Composer, type QueuedTurn } from '../composer/Composer'
+import { returnToComposer } from '../composer/composerReturn'
 import { ApprovalCard } from './ApprovalCard'
 import { ClarifyCard } from './ClarifyCard'
 import { useClarify } from './useClarify'
@@ -190,8 +191,7 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
     const keep = row.index
     await api.truncateSession(sessionId, keep)
     await refresh()
-    const el = document.getElementById('msg') as HTMLTextAreaElement | null
-    if (el) { el.value = text; el.dispatchEvent(new Event('input', { bubbles: true })); el.focus() }
+    returnToComposer(sessionId, text)
   }, [sessionId, refresh])
   const onBranch = useCallback(async (row: VisibleMessage) => {
     if (!sessionId) return

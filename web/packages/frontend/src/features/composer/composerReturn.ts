@@ -1,7 +1,8 @@
 /**
- * TAL-425: text that comes back to a session's composer: a steer taken back for editing, or one a Stop withdrew. Only
- * the tab that sent a steer gets a stopped one back (its ids live in this tab's sessionStorage, so a reload keeps
- * them); other tabs just drop its bubble. Text for a composer that is not mounted waits until it is.
+ * TAL-425: text that comes back to a session's composer: a steer taken back for editing, one a Stop withdrew, or a sent
+ * message taken back by Edit (TAL-516). Only the tab that sent a steer gets a stopped one back (its ids live in this
+ * tab's sessionStorage, so a reload keeps them); other tabs just drop its bubble. Text for a composer that is not
+ * mounted waits until it is.
  */
 type Listener = (text: string) => void
 
