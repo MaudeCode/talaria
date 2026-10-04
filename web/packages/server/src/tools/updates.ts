@@ -681,7 +681,7 @@ async function restoreStash(path: string, git: GitRun): Promise<{ applied: boole
     return { applied: true, resetFailed: false, note: `Local modifications were restored from the temporary stash.${dropped ? '' : ' The temporary stash entry may still be present because git stash drop failed.'}` }
   }
   if (!(await git(['reset', '--hard', 'HEAD'], path)).ok) {
-    return { applied: false, resetFailed: true, note: `Restoring your local modifications conflicted and the cleanup failed. Manual intervention needed: run git -C ${path} reset --hard HEAD to remove conflict markers. Your changes remain in the git stash.` }
+    return { applied: false, resetFailed: true, note: `Your local modifications could not be restored from the stash, and resetting tracked files to HEAD failed. Manual intervention needed: run git -C ${path} reset --hard HEAD to remove any conflict markers, then git -C ${path} stash apply. Your changes remain in the git stash.` }
   }
   return { applied: false, resetFailed: false, note: `Your local modifications conflicted with the update and were set aside in the git stash; tracked files match HEAD. To inspect: git -C ${path} stash show -p. To re-apply: git -C ${path} stash apply, then resolve conflicts, and drop the stash once you are satisfied.` }
 }
