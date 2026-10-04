@@ -23,7 +23,11 @@ const Cancel = z.looseObject({ terminal_state: TurnTerminalStateSchema.optional(
 const StreamEnd = z.looseObject({ session_id: z.string().optional() })
 const Metering = z.looseObject({ session_id: z.string().optional(), usage: z.unknown().optional(), tps: z.number().nullable().optional(), tps_available: z.boolean().optional(), estimated: z.boolean().optional() })
 const ContextStatus = z.looseObject({ session_id: z.string().optional(), state: z.string().optional(), decision: z.string().optional(), message: z.string().optional(), message_key: z.string().optional(), message_args: z.array(z.unknown()).optional(), prefill: z.unknown().optional() })
-const Goal = z.looseObject({ session_id: z.string().optional(), state: z.unknown().optional(), text: z.string().optional(), decision: z.string().optional(), continuation_prompt: z.string().optional() })
+/**
+ * TAL-396: `/goal` progress after a goal turn settles. `state` is `evaluating`, `continuing` or `idle`; `decision` is the
+ * Agent's verdict (`continue`, `done`, `inactive`, `error`…); `goal_continue` names the continuation turn's `stream_id`.
+ */
+const Goal = z.looseObject({ session_id: z.string().optional(), state: z.unknown().optional(), text: z.string().optional(), decision: z.string().optional(), continuation_prompt: z.string().optional(), stream_id: z.string().optional(), message: z.string().optional(), message_key: z.string().optional(), message_args: z.array(z.unknown()).optional() })
 /** `after_tool_call_id`: the tool that had completed when the Agent took the steer (null before any tool), its causal place. */
 const Steer = z.looseObject({ session_id: z.string().optional(), steer_id: z.string().optional(), text: z.string().optional(), consumed_at: z.number().optional(), after_tool_call_id: z.string().nullable().optional() })
 const StateSaved = z.looseObject({ session_id: z.string().optional(), status: z.string().optional(), kind: z.string().optional(), name: z.string().optional(), reason: z.string().optional(), action: z.string().optional() })

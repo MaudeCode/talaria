@@ -16,7 +16,7 @@ import type { SessionService } from './service.js'
 import { HttpFailure, markSessionTitleGenerated } from './service.js'
 import type { SessionEventBus } from './events.js'
 import { StreamRegistry, SessionChannels, type StreamChannel } from './streams.js'
-import type { ClarifyAnswers, PendingSteer, SteerWithdrawn, SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
+import type { ClarifyAnswers, PendingSteer, SidecarResult, SteerWithdrawn, SteerWithdrawRequest } from '@maudecode/talaria-web-contracts'
 import { PendingPrompts, clarifyReply } from './pending.js'
 import { RunJournal, type RunJournalWriter } from './journal.js'
 import { CONTEXT_USAGE_FIELDS, Session, titleFrom, type Message } from './session.js'
@@ -681,13 +681,12 @@ export class TurnRunner {
       this.registry.activeRuns.delete(streamId)
       this.settledStreams.add(streamId)
       this.startSteerFollowUp(sessionId, leftovers)
-      await this.backgroundTitle(s, put)
+      // Title work and the goal judge run side by side; `stream_end` follows both, so their frames reach the stream.
+      const work = await Promise.allSettled([this.backgroundTitle(s, put), this.continueGoal(s, streamId, put)])
+      put('stream_end', { session_id: sessionId })
+      for (const r of work) if (r.status === 'rejected') throw r.reason
       // Python: the last non-error assistant reply with content, else "(no answer produced)".
-      if (opts.onDone) {
-        let answer = ''
-        for (let i = s.messages.length - 1; i >= 0; i -= 1) { const m = s.messages[i]!; if (m.role !== 'assistant' || m._error) continue; const text = messageText(m.content).trim(); if (text) { answer = text; break } }
-        opts.onDone(answer || '(no answer produced)')
-      }
+      opts.onDone?.(lastAnswer(s.messages) || '(no answer produced)')
     } catch (error) {
       if (settledAt.value && !(error instanceof SidecarError)) {
         deps.log(`[webui] ERROR settling turn ${streamId}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
@@ -1028,44 +1027,40 @@ export class TurnRunner {
     const status = (status: string, reason = '', title = '', rawPreview = ''): void => {
       put('title_status', { session_id: sessionId, status, ...(reason ? { reason } : {}), ...(title ? { title } : {}), ...(rawPreview ? { raw_preview: rawPreview } : {}) })
     }
-    try {
-      if (!eligible || (s.llm_title_generated && !invalidExisting) || !userText || !assistantText) return
-      if (s.manual_title) { status('skipped', 'manual_title', placeholder); return }
-      if (!this.deps.titleGenerationEnabled()) { status('skipped', 'title_generation_disabled', placeholder); return }
-      const generated = await this.llmTitle(s, userText, assistantText)
-      const { status: llmStatus, rawPreview } = generated
-      let next = generated.title
-      let source = llmStatus
-      if (!next) {
-        const fallback = fallbackTitleFromExchange(userText, assistantText)
-        if (fallback && !isGenericFallbackTitle(fallback)) { next = fallback; source = 'fallback' }
-      }
-      const fallbackReason = source === 'fallback' && llmStatus ? `local_summary:${llmStatus}` : 'local_summary'
-      let current: Session = s
-      try { current = this.deps.store.get(sessionId) } catch { current = s }
-      let effective = str(current.title).trim()
-      let wrote = false
-      if (next) {
-        const stillAuto = effective === placeholder || ['Untitled', 'New Chat', ''].includes(effective) || effective === titleFrom(current.messages, '') || looksInvalidGeneratedTitle(current.title) || defaultTitle(current)
-        if (current.manual_title || !stillAuto) { status('skipped', 'manual_title', effective); return }
-        if (next !== effective) {
-          current.title = next
-          markSessionTitleGenerated(current)
-          this.deps.store.save(current, { touchUpdatedAt: false })
-          // Python `sync_session_title` after generation: the state.db row follows when `sync_to_insights` is on.
-          await this.deps.syncTitle?.(current)
-          this.deps.events.publish('title', { profile: current.profile, sessionId })
-          effective = next
-          wrote = true
-        }
-      }
-      if (wrote) {
-        status(source, source === 'fallback' ? fallbackReason : llmStatus, effective, rawPreview)
-        put('title', { session_id: sessionId, title: effective })
-      } else status('skipped', source || 'unchanged', effective, rawPreview)
-    } finally {
-      put('stream_end', { session_id: sessionId })
+    if (!eligible || (s.llm_title_generated && !invalidExisting) || !userText || !assistantText) return
+    if (s.manual_title) { status('skipped', 'manual_title', placeholder); return }
+    if (!this.deps.titleGenerationEnabled()) { status('skipped', 'title_generation_disabled', placeholder); return }
+    const generated = await this.llmTitle(s, userText, assistantText)
+    const { status: llmStatus, rawPreview } = generated
+    let next = generated.title
+    let source = llmStatus
+    if (!next) {
+      const fallback = fallbackTitleFromExchange(userText, assistantText)
+      if (fallback && !isGenericFallbackTitle(fallback)) { next = fallback; source = 'fallback' }
     }
+    const fallbackReason = source === 'fallback' && llmStatus ? `local_summary:${llmStatus}` : 'local_summary'
+    let current: Session = s
+    try { current = this.deps.store.get(sessionId) } catch { current = s }
+    let effective = str(current.title).trim()
+    let wrote = false
+    if (next) {
+      const stillAuto = effective === placeholder || ['Untitled', 'New Chat', ''].includes(effective) || effective === titleFrom(current.messages, '') || looksInvalidGeneratedTitle(current.title) || defaultTitle(current)
+      if (current.manual_title || !stillAuto) { status('skipped', 'manual_title', effective); return }
+      if (next !== effective) {
+        current.title = next
+        markSessionTitleGenerated(current)
+        this.deps.store.save(current, { touchUpdatedAt: false })
+        // Python `sync_session_title` after generation: the state.db row follows when `sync_to_insights` is on.
+        await this.deps.syncTitle?.(current)
+        this.deps.events.publish('title', { profile: current.profile, sessionId })
+        effective = next
+        wrote = true
+      }
+    }
+    if (wrote) {
+      status(source, source === 'fallback' ? fallbackReason : llmStatus, effective, rawPreview)
+      put('title', { session_id: sessionId, title: effective })
+    } else status('skipped', source || 'unchanged', effective, rawPreview)
   }
 
   // ── cancel / steer ───────────────────────────────────────────────────────
@@ -1327,6 +1322,47 @@ export class TurnRunner {
     this.deps.log(`[webui] WARNING: steer follow-up for ${sessionId} not started (${String(started._status)}): ${str(started.error)}`)
   }
 
+  /**
+   * TAL-396 (Agent gateway `_post_turn_goal_continuation`): after every turn settles, the Agent's GoalManager judges it
+   * while a goal is active and the server starts the continuation turn it asks for. Any turn counts, so a resumed or
+   * persisted goal picks up from the next user message. A user turn that took the session meanwhile runs first and is
+   * judged next. A stopped or failed turn never gets here, so the run ends there.
+   */
+  private async continueGoal(s: Session, streamId: string, put: (event: string, data: Record<string, unknown>) => void): Promise<void> {
+    const sidecar = this.deps.sidecar()
+    const lastResponse = lastAnswer(s.messages)
+    // The Agent never drives a goal from an empty reply.
+    if (!sidecar || !lastResponse) return
+    const sessionId = s.session_id
+    // Only a known goal turn shows progress up front; any other turn shows nothing unless a goal turns out to be active.
+    const goalTurn = this.registry.goalRelated.has(streamId)
+    if (goalTurn) put('goal', { session_id: sessionId, state: 'evaluating', message: 'Evaluating goal progress…', message_key: 'goal_evaluating_progress' })
+    let decision: SidecarResult<'goals.evaluate'>
+    try {
+      decision = await sidecar.call('goals.evaluate', { session_id: sessionId, profile_home: this.deps.profileHome(s.profile), last_response: lastResponse, user_initiated: true })
+    } catch (error) {
+      this.deps.log(`[webui] WARNING: goal evaluation failed for ${sessionId}: ${(error as Error).message}`)
+      if (goalTurn) put('goal', { session_id: sessionId, state: 'idle', decision: 'error', message: '' })
+      return
+    }
+    if (!goalTurn && decision.verdict === 'inactive') return
+    const prompt = str(decision.continuation_prompt).trim()
+    const proceed = decision.should_continue && Boolean(prompt)
+    const status = { message: decision.message, message_key: decision.message_key, message_args: decision.message_args ?? [], decision: decision.verdict }
+    put('goal', { session_id: sessionId, state: proceed ? 'continuing' : 'idle', ...status })
+    if (!proceed) return
+    let current: Session
+    try { current = this.deps.store.get(sessionId) } catch { return }
+    const started = this.start(current, { msg: prompt, attachments: [], workspace: current.workspace, model: current.model, modelProvider: current.model_provider, goalRelated: true })
+    if (started._status === 409 && started.active_stream_id) { this.registry.goalRelated.add(started.active_stream_id); return }
+    if (started._status !== undefined && started._status >= 400) {
+      this.deps.log(`[webui] WARNING: goal continuation for ${sessionId} not started (${String(started._status)}): ${str(started.error)}`)
+      put('goal', { session_id: sessionId, state: 'idle', decision: 'error', message: '' })
+      return
+    }
+    put('goal_continue', { session_id: sessionId, state: 'continuing', continuation_prompt: prompt, text: prompt, stream_id: str(started.stream_id), ...status })
+  }
+
   /** The Agent's pending steer text settles which steers it has taken: those become `steer_consumed` and their rows. */
   private settleConsumedSteers(sessionId: string, streamId: string, pendingText: string): void {
     for (const record of this.takeConsumedSteers(streamId, pendingText, { keepLeftovers: true })) this.emitToSession(sessionId, 'steer_consumed', record)
@@ -1519,6 +1555,17 @@ export class TurnRunner {
     if (head) this.emitToSession(sessionId, 'clarify', head)
     return { ok: true, response }
   }
+}
+
+/** The turn's answer: the last non-error assistant reply with content. */
+function lastAnswer(messages: Message[]): string {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i]!
+    if (m.role !== 'assistant' || m._error) continue
+    const text = messageText(m.content).trim()
+    if (text) return text
+  }
+  return ''
 }
 
 function previousStartedAt(s: Session, run: { started_at: number } | undefined): number {

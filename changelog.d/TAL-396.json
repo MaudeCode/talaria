@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A goal set with /goal keeps working through follow-up turns until it is done, its turn budget runs out, or you pause or stop it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
