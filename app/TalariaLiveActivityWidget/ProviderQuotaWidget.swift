@@ -135,7 +135,10 @@ private extension ProviderQuotaWidgetSnapshot {
                         ProviderQuotaWindow(label: "Monthly", windowSeconds: 2_592_000, usedPercent: 37, remainingPercent: 63),
                     ],
                     retryAfter: nil,
-                    fetchedAt: nil
+                    fetchedAt: nil,
+                    paceWindowIndex: 1,
+                    sessionWindowIndex: 0,
+                    weeklyWindowIndex: 1
                 )
             ]
         )

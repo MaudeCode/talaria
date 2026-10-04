@@ -57,15 +57,6 @@ enum ProviderQuotaUrgency: Equatable {
     case unavailable
 }
 
-struct ProviderQuotaPace: Equatable {
-    let expectedRemainingPercent: Double
-    let paceDeltaPercent: Double
-    let burnRate: Double
-    let minutesToReset: Double
-    let projectedMinutesToEmpty: Double?
-    let projectionEligible: Bool
-}
-
 struct ProviderQuotaPresentationState: Equatable {
     let window: ProviderQuotaWindow?
     let percent: Double?
@@ -74,9 +65,15 @@ struct ProviderQuotaPresentationState: Equatable {
     let referenceDate: Date
     let freshnessDate: Date
     let isStale: Bool
-    let pace: ProviderQuotaPace?
+    /// The window's server pace while it is still valid at `referenceDate`.
+    let pace: ProviderQuotaWindowPace?
     let urgency: ProviderQuotaUrgency
     let settings: ProviderQuotaEvaluationSettings
+    var forecast: ProviderQuotaWindowForecast? = nil
+    /// The cached pace expired at its window's reset; only a refresh brings the new window's pace.
+    var paceNeedsRefresh = false
+    /// The server time the pace and forecast describe.
+    var computedAt: Date? = nil
 
     var expectedPercent: Double? {
         guard let expectedRemaining = pace?.expectedRemainingPercent else { return nil }
@@ -108,7 +105,10 @@ struct ProviderQuotaPresentationState: Equatable {
             isStale: urgency == .stale || isStale,
             pace: pace,
             urgency: urgency,
-            settings: settings
+            settings: settings,
+            forecast: forecast,
+            paceNeedsRefresh: paceNeedsRefresh,
+            computedAt: computedAt
         )
     }
 }

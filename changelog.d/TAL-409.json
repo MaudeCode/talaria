@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Provider quota pace, burn rate, budget, forecast, and reset times show again in Insights, widgets, and pace alerts.",
+      "highlight": true,
+      "components": ["app"]
+    },
+    {
+      "category": "Changed",
+      "summary": "Quota pace and forecasts now come from your server and stay visible offline with the time they were calculated, until the quota window resets.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

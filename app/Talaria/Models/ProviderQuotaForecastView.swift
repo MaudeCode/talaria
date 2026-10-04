@@ -44,8 +44,14 @@ struct ProviderQuotaForecastView: View {
 
             HStack(spacing: 5) {
                 Image(systemName: state.isStale ? "clock.badge.exclamationmark" : "clock")
-                Text("Updated \(state.freshnessDate, style: .relative)")
-                    .lineLimit(1)
+                Group {
+                    if let computedAt = state.computedAt {
+                        Text("As of \(computedAt, style: .time)")
+                    } else {
+                        Text("Updated \(state.freshnessDate, style: .relative)")
+                    }
+                }
+                .lineLimit(1)
             }
             .font(.caption2)
             .foregroundStyle(state.isStale ? .orange : .secondary)

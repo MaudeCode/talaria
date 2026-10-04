@@ -81,7 +81,9 @@ struct ProviderQuotaLockScreenPaceView: View {
     }
 
     private var paceLabel: String {
-        state.paceLabel ?? String(localized: "Pace unavailable")
+        state.paceLabel ?? (state.paceNeedsRefresh
+            ? String(localized: "Refresh needed")
+            : String(localized: "Pace unavailable"))
     }
 
     private var paceDetail: ProviderQuotaLockScreenPaceDetail {

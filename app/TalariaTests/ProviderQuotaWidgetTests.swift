@@ -301,13 +301,13 @@ final class ProviderQuotaWidgetTests: XCTestCase {
             paceCriticalBurnRatePercent: 175,
             paceMinimumElapsedHours: 0
         )
-        let pace = ProviderQuotaPace(
+        let pace = ProviderQuotaWindowPace(
             expectedRemainingPercent: 50,
             paceDeltaPercent: -3.8,
             burnRate: 1.18,
             minutesToReset: 3 * 24 * 60,
             projectedMinutesToEmpty: 1.5 * 24 * 60,
-            projectionEligible: true
+            elapsedMinutes: 4 * 24 * 60
         )
         let state = ProviderQuotaPresentationState(
             window: ProviderQuotaWindow(label: "Weekly", usedPercent: 25, remainingPercent: 75),
@@ -319,7 +319,13 @@ final class ProviderQuotaWidgetTests: XCTestCase {
             isStale: false,
             pace: pace,
             urgency: .warning,
-            settings: settings
+            settings: settings,
+            forecast: ProviderQuotaWindowForecast(
+                outcome: .warning,
+                budgetUnit: .day,
+                budgetPercent: 25,
+                depletionMarginMinutes: -1.5 * 24 * 60
+            )
         )
 
         let forecast = ProviderQuotaForecastSummary(state: state)
@@ -347,6 +353,104 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         )
         XCTAssertEqual(unavailable.forecastLabel, "Forecast unavailable")
         XCTAssertEqual(unavailable.outcome, .unavailable)
+
+        var lasting = state
+        lasting.forecast = ProviderQuotaWindowForecast(outcome: .safe, budgetUnit: .hour, budgetPercent: 12.5, depletionMarginMinutes: 90)
+        XCTAssertEqual(ProviderQuotaForecastSummary(state: lasting).budgetTitle, "Budget / hr")
+        XCTAssertEqual(ProviderQuotaForecastSummary(state: lasting).budgetLabel, "12.5%")
+        XCTAssertEqual(ProviderQuotaForecastSummary(state: lasting).forecastLabel, "Lasts through reset")
+        lasting.forecast = ProviderQuotaWindowForecast(outcome: .safe, budgetUnit: .hour)
+        XCTAssertEqual(ProviderQuotaForecastSummary(state: lasting).forecastLabel, "No depletion projected")
+    }
+
+    func testServerPaceRendersUntilValidUntilThenNeedsRefresh() {
+        let computedAt = Date(timeIntervalSince1970: 1_900_000_000)
+        let reset = computedAt.addingTimeInterval(4 * 60 * 60)
+        let resetText = ISO8601DateFormatter().string(from: reset)
+        let settings = ProviderQuotaEvaluationSettings(
+            percentageMode: .used,
+            colorBasis: .pace,
+            windowSelection: .automatic,
+            warningRemainingPercent: 25,
+            criticalRemainingPercent: 10,
+            paceTolerancePercent: 3,
+            paceWarningBurnRatePercent: 125,
+            paceCriticalBurnRatePercent: 175,
+            paceMinimumElapsedHours: 0
+        )
+        let window = ProviderQuotaWindow(
+            label: "Session",
+            windowSeconds: 18_000,
+            usedPercent: 10,
+            remainingPercent: 90,
+            resetAt: resetText,
+            pace: ProviderQuotaWindowPace(
+                expectedRemainingPercent: 80,
+                paceDeltaPercent: 10,
+                burnRate: 0.5,
+                minutesToReset: 240,
+                projectedMinutesToEmpty: 540,
+                elapsedMinutes: 60,
+                validUntil: resetText
+            ),
+            forecast: ProviderQuotaWindowForecast(outcome: .safe, budgetUnit: .hour, budgetPercent: 22.5, depletionMarginMinutes: 300)
+        )
+        let source = ProviderQuotaWidgetSource(
+            sourceID: "qsrc_pace",
+            cachedAt: computedAt,
+            providerLabel: "Claude",
+            accountLabel: "Claude",
+            isActiveProvider: true,
+            status: "available",
+            plan: nil,
+            windows: [window],
+            retryAfter: nil,
+            fetchedAt: ISO8601DateFormatter().string(from: computedAt),
+            paceWindowIndex: 0,
+            sessionWindowIndex: 0,
+            computedAt: ISO8601DateFormatter().string(from: computedAt)
+        )
+
+        // An hour later the cached server values render unchanged, marked stale and "as of" their computation.
+        let cached = ProviderQuotaPresentation.state(for: source, settings: settings, at: computedAt.addingTimeInterval(60 * 60))
+        XCTAssertEqual(cached.pace, window.pace)
+        XCTAssertEqual(cached.forecast, window.forecast)
+        XCTAssertEqual(cached.computedAt, computedAt)
+        XCTAssertEqual(cached.resetAt, reset)
+        XCTAssertTrue(cached.isStale)
+        XCTAssertFalse(cached.paceNeedsRefresh)
+        XCTAssertEqual(cached.paceLabel, "10% under pace")
+        XCTAssertEqual(ProviderQuotaForecastSummary(state: cached).burnRateLabel, "0.50×")
+        XCTAssertEqual(ProviderQuotaForecastSummary(state: cached).forecastLabel, "Lasts through reset")
+
+        // Past the window's reset the cached pace describes the previous window.
+        let expired = ProviderQuotaPresentation.state(for: source, settings: settings, at: reset.addingTimeInterval(1))
+        XCTAssertNil(expired.pace)
+        XCTAssertNil(expired.forecast)
+        XCTAssertNil(expired.paceLabel)
+        XCTAssertTrue(expired.paceNeedsRefresh)
+        XCTAssertEqual(expired.percent, 10)
+        XCTAssertEqual(ProviderQuotaForecastSummary(state: expired).forecastLabel, "Refresh needed")
+        XCTAssertEqual(ProviderQuotaForecastSummary(state: expired).outcome, .unavailable)
+
+        // An old server sends no pace: unavailable, never refresh-needed, and no client math.
+        let legacy = ProviderQuotaWidgetSource(
+            sourceID: "qsrc_legacy",
+            cachedAt: computedAt,
+            providerLabel: "Claude",
+            accountLabel: "Claude",
+            isActiveProvider: true,
+            status: "available",
+            plan: nil,
+            windows: [ProviderQuotaWindow(label: "Session", usedPercent: 10, resetAt: resetText)],
+            retryAfter: nil,
+            fetchedAt: nil
+        )
+        let legacyState = ProviderQuotaPresentation.state(for: legacy, settings: settings, at: computedAt)
+        XCTAssertNil(legacyState.pace)
+        XCTAssertFalse(legacyState.paceNeedsRefresh)
+        XCTAssertEqual(legacyState.percent, 10)
+        XCTAssertEqual(ProviderQuotaForecastSummary(state: legacyState).forecastLabel, "Forecast unavailable")
     }
 
     func testWidgetProfilesCaptureProviderIconVisibilityAndStyle() throws {
@@ -373,16 +477,35 @@ final class ProviderQuotaWidgetTests: XCTestCase {
         )
     }
 
-    func testAutomaticUrgencyDefaultsToWeeklyPaceAndCanUseOverallPercentage() {
+    func testUrgencyUsesServerPaceAndWindowsTheServerSelects() {
         let now = Date(timeIntervalSince1970: 1_900_000_000)
         let resetInFiveDays = ISO8601DateFormatter().string(from: now.addingTimeInterval(5 * 24 * 60 * 60))
 
-        func urgency(used: Double, basis: ProviderQuotaWidgetColorBasis) -> ProviderQuotaUrgency {
+        // The server's pace for 10%, 30%, 32% and 90% used five days before a weekly reset.
+        func weekly(used: Double, delta: Double, burn: Double, projected: Double) -> ProviderQuotaWindow {
+            ProviderQuotaWindow(
+                label: "Weekly",
+                windowSeconds: 604_800,
+                usedPercent: used,
+                remainingPercent: 100 - used,
+                resetAt: resetInFiveDays,
+                pace: ProviderQuotaWindowPace(
+                    expectedRemainingPercent: 71.4,
+                    paceDeltaPercent: delta,
+                    burnRate: burn,
+                    minutesToReset: 7200,
+                    projectedMinutesToEmpty: projected,
+                    elapsedMinutes: 2880,
+                    validUntil: resetInFiveDays
+                )
+            )
+        }
+        func urgency(_ window: ProviderQuotaWindow, basis: ProviderQuotaWidgetColorBasis) -> ProviderQuotaUrgency {
             ProviderQuotaUrgencyCalculator.urgency(
-                windows: [ProviderQuotaWindow(label: "Weekly", usedPercent: used, resetAt: resetInFiveDays)],
+                window: window,
+                pace: window.pace,
                 status: "available",
                 isStale: false,
-                referenceDate: now,
                 basis: basis,
                 warningRemainingPercent: 25,
                 criticalRemainingPercent: 10,
@@ -393,38 +516,46 @@ final class ProviderQuotaWidgetTests: XCTestCase {
             )
         }
 
-        XCTAssertEqual(urgency(used: 10, basis: .pace), .healthy)
-        XCTAssertEqual(urgency(used: 30, basis: .pace), .healthy)
-        XCTAssertEqual(urgency(used: 32, basis: .pace), .warning)
-        XCTAssertEqual(urgency(used: 90, basis: .pace), .critical)
-        XCTAssertEqual(urgency(used: 90, basis: .overall), .critical)
+        XCTAssertEqual(urgency(weekly(used: 10, delta: 18.6, burn: 0.35, projected: 25_920), basis: .pace), .healthy)
+        XCTAssertEqual(urgency(weekly(used: 30, delta: -1.4, burn: 1.05, projected: 6720), basis: .pace), .healthy)
+        XCTAssertEqual(urgency(weekly(used: 32, delta: -3.4, burn: 1.12, projected: 6120), basis: .pace), .warning)
+        XCTAssertEqual(urgency(weekly(used: 90, delta: -61.4, burn: 3.15, projected: 320), basis: .pace), .critical)
+        XCTAssertEqual(urgency(weekly(used: 90, delta: -61.4, burn: 3.15, projected: 320), basis: .overall), .critical)
 
-        let windows = [
-            ProviderQuotaWindow(label: "Session", usedPercent: 10),
-            ProviderQuotaWindow(label: "Weekly", usedPercent: 30, resetAt: resetInFiveDays),
-        ]
-        XCTAssertEqual(ProviderQuotaUrgencyCalculator.displayWindow(from: windows, basis: .pace)?.label, "Weekly")
-        XCTAssertEqual(ProviderQuotaUrgencyCalculator.displayWindow(from: windows, basis: .overall)?.label, "Session")
-
-        let sessionReset = ISO8601DateFormatter().string(from: now.addingTimeInterval(4 * 60 * 60))
-        let sessionPace = ProviderQuotaUrgencyCalculator.pace(
-            for: ProviderQuotaWindow(label: "Session", usedPercent: 10, resetAt: sessionReset),
-            referenceDate: now,
-            minimumElapsedHours: 0
+        func source(paceIndex: Int?, sessionIndex: Int?, weeklyIndex: Int?) -> ProviderQuotaWidgetSource {
+            ProviderQuotaWidgetSource(
+                sourceID: "qsrc_select",
+                providerLabel: "Claude",
+                accountLabel: "Claude",
+                isActiveProvider: true,
+                status: "available",
+                plan: nil,
+                windows: [
+                    ProviderQuotaWindow(label: "Session", usedPercent: 10),
+                    weekly(used: 30, delta: -1.4, burn: 1.05, projected: 6720),
+                ],
+                retryAfter: nil,
+                fetchedAt: nil,
+                paceWindowIndex: paceIndex,
+                sessionWindowIndex: sessionIndex,
+                weeklyWindowIndex: weeklyIndex
+            )
+        }
+        let selected = source(paceIndex: 1, sessionIndex: 0, weeklyIndex: 1)
+        XCTAssertEqual(ProviderQuotaUrgencyCalculator.displayWindow(for: selected, basis: .pace)?.label, "Weekly")
+        XCTAssertEqual(ProviderQuotaUrgencyCalculator.displayWindow(for: selected, basis: .overall)?.label, "Session")
+        XCTAssertEqual(
+            ProviderQuotaUrgencyCalculator.displayWindow(for: selected, basis: .overall, selection: .weekly)?.label,
+            "Weekly"
         )
-        XCTAssertEqual(sessionPace?.expectedRemainingPercent, 80)
-        XCTAssertEqual(sessionPace?.paceDeltaPercent, 10)
-
-        let collapsedWeeklyReset = ISO8601DateFormatter().string(
-            from: now.addingTimeInterval((6 * 24 + 6) * 60 * 60)
+        XCTAssertEqual(
+            ProviderQuotaUrgencyCalculator.displayWindow(for: selected, basis: .pace, selection: .session)?.label,
+            "Session"
         )
-        let collapsedWeeklyPace = ProviderQuotaUrgencyCalculator.pace(
-            for: ProviderQuotaWindow(label: "Session", usedPercent: 12, resetAt: collapsedWeeklyReset),
-            referenceDate: now,
-            minimumElapsedHours: 0
-        )
-        XCTAssertEqual(collapsedWeeklyPace?.expectedRemainingPercent, 89.3)
-        XCTAssertEqual(collapsedWeeklyPace?.paceDeltaPercent, -1.3)
+        // An old server names no windows: the first window shows and no label is matched.
+        let legacy = source(paceIndex: nil, sessionIndex: nil, weeklyIndex: nil)
+        XCTAssertEqual(ProviderQuotaUrgencyCalculator.displayWindow(for: legacy, basis: .pace)?.label, "Session")
+        XCTAssertNil(ProviderQuotaUrgencyCalculator.displayWindow(for: legacy, basis: .pace, selection: .weekly))
     }
 
     func testHiddenProviderSettingsNormalizePersistAndRestoreProviders() {
@@ -837,13 +968,12 @@ final class ProviderQuotaWidgetTests: XCTestCase {
             referenceDate: Date(timeIntervalSince1970: 1_900_000_000),
             freshnessDate: Date(timeIntervalSince1970: 1_899_999_900),
             isStale: false,
-            pace: ProviderQuotaPace(
+            pace: ProviderQuotaWindowPace(
                 expectedRemainingPercent: 75,
                 paceDeltaPercent: 5,
                 burnRate: 0.8,
                 minutesToReset: 60,
-                projectedMinutesToEmpty: nil,
-                projectionEligible: false
+                elapsedMinutes: 240
             ),
             urgency: .healthy,
             settings: settings

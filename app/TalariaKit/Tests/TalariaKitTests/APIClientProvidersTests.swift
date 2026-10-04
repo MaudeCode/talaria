@@ -132,6 +132,96 @@ final class APIClientProvidersTests: APIClientTestCase {
         XCTAssertEqual(roundTrip, response)
     }
 
+    func testSharedProviderQuotaFixtureDecodesServerPaceForecastAndWindowIndexes() throws {
+        let response = try decodedQuotaFixture()
+        let source = try XCTUnwrap(response.sources.first)
+
+        XCTAssertEqual(response.computedAt, "2026-09-28T08:00:00Z")
+        XCTAssertEqual(source.computedAt, "2026-09-28T08:00:00Z")
+        XCTAssertEqual(source.paceWindowIndex, 1)
+        XCTAssertEqual(source.sessionWindowIndex, 0)
+        XCTAssertEqual(source.weeklyWindowIndex, 1)
+        XCTAssertEqual(source.windows.map(\.label), ["Session", "Weekly", "Monthly"])
+        XCTAssertEqual(source.windows.map(\.windowSeconds), [18_000, 604_800, nil])
+        let weekly = source.windows[1]
+        XCTAssertNotNil(ProviderQuotaDateParser.date(from: weekly.resetAt))
+        XCTAssertEqual(weekly.pace, ProviderQuotaWindowPace(
+            expectedRemainingPercent: 71.4,
+            paceDeltaPercent: -3.4,
+            burnRate: 1.12,
+            minutesToReset: 7200,
+            projectedMinutesToEmpty: 6120,
+            elapsedMinutes: 2880,
+            validUntil: "2026-10-03T08:00:00Z"
+        ))
+        XCTAssertEqual(weekly.forecast, ProviderQuotaWindowForecast(
+            outcome: .warning,
+            budgetUnit: .day,
+            budgetPercent: 13.6,
+            depletionMarginMinutes: -1080
+        ))
+        XCTAssertNil(source.windows[2].pace)
+        XCTAssertNil(source.windows[2].forecast)
+    }
+
+    func testWidgetSnapshotPersistsServerPaceAndStillLoadsALegacyV1Snapshot() throws {
+        let suite = "ProviderQuotaPaceSnapshot.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ProviderQuotaWidgetSnapshotStore(defaults: defaults)
+
+        let response = try decodedQuotaFixture()
+        let sources = try response.sources.map {
+            ProviderQuotaWidgetSource($0, scopeID: try XCTUnwrap(response.scopeID), scopeLabel: "Home · default")
+        }
+        XCTAssertTrue(store.save(scopeID: try XCTUnwrap(response.scopeID), sources: sources))
+        let loaded = try XCTUnwrap(store.load()?.sources.first)
+        XCTAssertEqual(loaded, sources.first)
+        XCTAssertEqual(loaded.computedAt, "2026-09-28T08:00:00Z")
+        XCTAssertEqual(loaded.paceWindowIndex, 1)
+        XCTAssertEqual(loaded.windows[1].forecast?.outcome, .warning)
+
+        // Written by a build before the server shipped pace: no pace, forecast, indexes, or computedAt.
+        defaults.set(Data("""
+        {
+          "updatedAt": 0,
+          "sources": [{
+            "sourceID": "qsrc_legacy",
+            "scopeID": "qscope_legacy",
+            "scopeLabel": "Home · default",
+            "cachedAt": 0,
+            "providerID": "anthropic",
+            "providerLabel": "Anthropic",
+            "accountLabel": "Anthropic",
+            "isActiveProvider": true,
+            "status": "available",
+            "plan": "Max",
+            "windows": [{ "label": "Weekly", "usedPercent": 30, "remainingPercent": 70, "resetAt": "2026-10-03T08:00:00Z" }],
+            "fetchedAt": "2026-09-28T07:59:30Z"
+          }]
+        }
+        """.utf8), forKey: ProviderQuotaWidgetSnapshotStore.storageKey)
+        let legacy = try XCTUnwrap(store.load()?.sources.first)
+        XCTAssertEqual(legacy.sourceID, "qsrc_legacy")
+        XCTAssertEqual(legacy.windows.first?.usedPercent, 30)
+        XCTAssertNil(legacy.windows.first?.pace)
+        XCTAssertNil(legacy.paceWindowIndex)
+        XCTAssertNil(legacy.computedAt)
+    }
+
+    private func decodedQuotaFixture() throws -> ProviderQuotasResponse {
+        // app/TalariaKit/Tests/TalariaKitTests/<file> -> repository root
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(
+            ProviderQuotasResponse.self,
+            from: Data(contentsOf: root.appendingPathComponent("contracts/fixtures/provider-quotas.json"))
+        )
+    }
+
     func testProvidersRequestDecodesLiveShape() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.httpMethod, "GET")
