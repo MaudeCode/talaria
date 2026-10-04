@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The message box keeps your chosen text size when you hover over it or click into it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}
