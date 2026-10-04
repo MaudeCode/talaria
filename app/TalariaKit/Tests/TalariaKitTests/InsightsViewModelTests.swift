@@ -176,6 +176,207 @@ final class InsightsViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.sourceDescription.contains("Server insights unavailable"))
     }
 
+    // MARK: - Refresh retries (TAL-191)
+
+    @MainActor
+    func testCachedSnapshotStaysVisibleAndMarkedCachedWhileTheFirstRequestIsInFlight() async throws {
+        let cache = try seededCache(tokens: 350)
+        let client = ScriptedInsightsClient(results: [])
+        let viewModel = InsightsViewModel(client: client, cache: cache, sleep: RecordingSleeper().sleep)
+
+        let load = Task { await viewModel.load() }
+        await client.waitForPendingRequest()
+
+        XCTAssertTrue(viewModel.isLoading)
+        XCTAssertEqual(viewModel.totalTokens, 350)
+        XCTAssertTrue(viewModel.sourceDescription.contains("Showing cached server analytics"))
+
+        client.completePendingRequest(with: .success(try insights(tokens: 125)))
+        await load.value
+        XCTAssertEqual(viewModel.totalTokens, 125)
+        XCTAssertFalse(viewModel.sourceDescription.contains("cached"))
+    }
+
+    @MainActor
+    func testTransientFailuresRetryOnTheDecidedScheduleAndPersistTheRecoveredSnapshot() async throws {
+        let cache = try seededCache(tokens: 350)
+        let sleeper = RecordingSleeper()
+        let client = ScriptedInsightsClient(results: [
+            .failure(APIError.http(statusCode: 503, body: nil)),
+            .failure(APIError.network(underlying: URLError(.timedOut))),
+            .failure(APIError.http(statusCode: 408, body: nil)),
+            .success(try insights(tokens: 125)),
+        ])
+        let viewModel = InsightsViewModel(client: client, cache: cache, sleep: sleeper.sleep)
+
+        await viewModel.load()
+
+        XCTAssertEqual(client.requestedDays, [30, 30, 30, 30])
+        XCTAssertEqual(sleeper.delays, [.seconds(1), .seconds(2), .seconds(4)])
+        XCTAssertEqual(viewModel.totalTokens, 125)
+        XCTAssertEqual(cache.load(timeframe: .last30Days)?.totalTokens, 125)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertNil(viewModel.lastError)
+        XCTAssertNil(viewModel.fallbackReason)
+        XCTAssertFalse(viewModel.isLoading)
+    }
+
+    @MainActor
+    func testExhaustedTransientRetriesKeepTheCachedSnapshotWithAStaleExplanation() async throws {
+        let cache = try seededCache(tokens: 350)
+        let sleeper = RecordingSleeper()
+        let client = ScriptedInsightsClient(results: [502, 504, 503, 502].map {
+            .failure(APIError.http(statusCode: $0, body: nil))
+        })
+        let viewModel = InsightsViewModel(client: client, cache: cache, sleep: sleeper.sleep)
+
+        await viewModel.load()
+
+        XCTAssertEqual(client.requestedDays.count, 4)
+        XCTAssertEqual(sleeper.delays, [.seconds(1), .seconds(2), .seconds(4)])
+        XCTAssertEqual(viewModel.totalTokens, 350)
+        XCTAssertEqual(cache.load(timeframe: .last30Days)?.totalTokens, 350)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertNotNil(viewModel.lastError)
+        XCTAssertTrue(viewModel.sourceDescription.contains("Showing cached server analytics. Refresh failed"))
+        XCTAssertFalse(viewModel.isLoading)
+    }
+
+    @MainActor
+    func testExhaustedTransientRetriesWithoutASnapshotShowTheTerminalError() async throws {
+        let sleeper = RecordingSleeper()
+        let client = ScriptedInsightsClient(results: Array(
+            repeating: .failure(APIError.network(underlying: URLError(.notConnectedToInternet))),
+            count: 4
+        ))
+        let viewModel = InsightsViewModel(client: client, sleep: sleeper.sleep)
+
+        await viewModel.load()
+
+        XCTAssertEqual(client.requestedDays.count, 4)
+        XCTAssertEqual(sleeper.delays, [.seconds(1), .seconds(2), .seconds(4)])
+        XCTAssertFalse(viewModel.hasLoadedAnalytics)
+        XCTAssertNotNil(viewModel.errorMessage)
+        XCTAssertFalse(viewModel.isLoading)
+    }
+
+    @MainActor
+    func testDefinitiveFailuresDoNotRetry() async throws {
+        let definitive: [Error] = [
+            APIError.unauthorized,
+            APIError.invalidServerURL,
+            APIError.http(statusCode: 400, body: nil),
+            APIError.http(statusCode: 404, body: nil),
+            APIError.decoding(underlying: StubInsightsError()),
+            APIError.network(underlying: URLError(.badURL)),
+            APIError.network(underlying: URLError(.cancelled)),
+            StubInsightsError(),
+        ]
+        for error in definitive {
+            let sleeper = RecordingSleeper()
+            let client = ScriptedInsightsClient(results: [.failure(error)])
+            let viewModel = InsightsViewModel(client: client, sleep: sleeper.sleep)
+
+            await viewModel.load()
+
+            XCTAssertEqual(client.requestedDays.count, 1, "\(error)")
+            XCTAssertEqual(sleeper.delays, [], "\(error)")
+            XCTAssertNotNil(viewModel.errorMessage, "\(error)")
+        }
+
+        let sleeper = RecordingSleeper()
+        let client = ScriptedInsightsClient(results: [.failure(CancellationError())])
+        let viewModel = InsightsViewModel(client: client, sleep: sleeper.sleep)
+        await viewModel.load()
+        XCTAssertEqual(client.requestedDays.count, 1)
+        XCTAssertEqual(sleeper.delays, [])
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
+    @MainActor
+    func testCancellationDuringARetryWaitStopsFurtherAttempts() async throws {
+        let cache = try seededCache(tokens: 350)
+        let sleeper = RecordingSleeper(holds: true)
+        let client = ScriptedInsightsClient(results: [
+            .failure(APIError.http(statusCode: 503, body: nil)),
+            .success(try insights(tokens: 125)),
+        ])
+        let viewModel = InsightsViewModel(client: client, cache: cache, sleep: sleeper.sleep)
+
+        let load = Task { await viewModel.load() }
+        let isWaiting = await sleeper.waitForPendingSleep()
+        XCTAssertTrue(isWaiting)
+        load.cancel()
+        await load.value
+
+        XCTAssertEqual(client.requestedDays.count, 1)
+        XCTAssertEqual(viewModel.totalTokens, 350)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertFalse(viewModel.isLoading)
+    }
+
+    @MainActor
+    func testANewerTimeframeLoadKeepsAnOlderRetryFromCommitting() async throws {
+        let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: try isolatedDefaults())
+        let sleeper = RecordingSleeper(holds: true)
+        let client = ScriptedInsightsClient(results: [
+            .failure(APIError.http(statusCode: 503, body: nil)),
+            .success(try insights(tokens: 125, days: 7)),
+            .success(try insights(tokens: 999)),
+        ])
+        let viewModel = InsightsViewModel(client: client, cache: cache, sleep: sleeper.sleep)
+
+        let olderLoad = Task { await viewModel.load() }
+        let isWaiting = await sleeper.waitForPendingSleep()
+        XCTAssertTrue(isWaiting)
+
+        viewModel.selectedTimeframe = .last7Days
+        await viewModel.load()
+        sleeper.releasePendingSleep()
+        await olderLoad.value
+
+        XCTAssertEqual(client.requestedDays, [30, 7])
+        XCTAssertEqual(viewModel.totalTokens, 125)
+        XCTAssertEqual(viewModel.periodTitle, "Last 7 Days")
+        XCTAssertNil(cache.load(timeframe: .last30Days))
+        XCTAssertFalse(viewModel.isLoading)
+    }
+
+    @MainActor
+    func testRefreshPersistsOnlyItsOwnServerAndTimeframe() async throws {
+        let defaults = try isolatedDefaults()
+        let server = URL(string: "https://insights.test")!
+        let cache = InsightsResponseCache(server: server, defaults: defaults)
+        let otherServer = InsightsResponseCache(server: URL(string: "https://other.test")!, defaults: defaults)
+        cache.save(try insights(tokens: 7), timeframe: .last7Days)
+        otherServer.save(try insights(tokens: 30), timeframe: .last30Days)
+        let client = ScriptedInsightsClient(results: [.success(try insights(tokens: 125))])
+        let viewModel = InsightsViewModel(client: client, cache: cache, sleep: RecordingSleeper().sleep)
+
+        await viewModel.load()
+
+        XCTAssertEqual(cache.load(timeframe: .last30Days)?.totalTokens, 125)
+        XCTAssertEqual(cache.load(timeframe: .last7Days)?.totalTokens, 7)
+        XCTAssertEqual(otherServer.load(timeframe: .last30Days)?.totalTokens, 30)
+    }
+
+    private func insights(tokens: Int, days: Int = 30) throws -> InsightsResponse {
+        try decodeInsights(#"{"period_days":\#(days),"total_sessions":1,"total_tokens":\#(tokens)}"#)
+    }
+
+    private func isolatedDefaults() throws -> UserDefaults {
+        let suiteName = "InsightsViewModelTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        return defaults
+    }
+
+    private func seededCache(tokens: Int) throws -> InsightsResponseCache {
+        let cache = InsightsResponseCache(server: URL(string: "https://insights.test")!, defaults: try isolatedDefaults())
+        cache.save(try insights(tokens: tokens), timeframe: .last30Days)
+        return cache
+    }
+
     private func decodeInsights(_ json: String) throws -> InsightsResponse {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -245,5 +446,71 @@ private final class DelayedInsightsClient: InsightsDataClient {
     func completePendingRequest(with result: Result<InsightsResponse, Error>) {
         pendingContinuation?.resume(with: result)
         pendingContinuation = nil
+    }
+}
+
+@MainActor
+private final class ScriptedInsightsClient: InsightsDataClient {
+    private var results: [Result<InsightsResponse, Error>]
+    private var pendingContinuation: CheckedContinuation<InsightsResponse, Error>?
+    private(set) var requestedDays: [Int] = []
+
+    /// Answers each request with the next scripted result, then suspends until the test completes it.
+    init(results: [Result<InsightsResponse, Error>]) {
+        self.results = results
+    }
+
+    func insights(days: Int) async throws -> InsightsResponse {
+        requestedDays.append(days)
+        if !results.isEmpty {
+            return try results.removeFirst().get()
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            pendingContinuation = continuation
+        }
+    }
+
+    func waitForPendingRequest() async {
+        while pendingContinuation == nil {
+            await Task.yield()
+        }
+    }
+
+    func completePendingRequest(with result: Result<InsightsResponse, Error>) {
+        pendingContinuation?.resume(with: result)
+        pendingContinuation = nil
+    }
+}
+
+/// Records retry delays without waiting on the wall clock; a holding sleeper suspends until released or cancelled.
+@MainActor
+private final class RecordingSleeper {
+    private let holds: Bool
+    private var pendingRelease: AsyncStream<Void>.Continuation?
+    private(set) var delays: [Duration] = []
+
+    init(holds: Bool = false) {
+        self.holds = holds
+    }
+
+    func sleep(_ delay: Duration) async throws {
+        delays.append(delay)
+        guard holds else { return }
+        let (release, continuation) = AsyncStream<Void>.makeStream()
+        pendingRelease = continuation
+        for await _ in release { return }
+        throw CancellationError()
+    }
+
+    func waitForPendingSleep() async -> Bool {
+        for _ in 0..<1_000 where pendingRelease == nil {
+            await Task.yield()
+        }
+        return pendingRelease != nil
+    }
+
+    func releasePendingSleep() {
+        pendingRelease?.yield()
+        pendingRelease = nil
     }
 }

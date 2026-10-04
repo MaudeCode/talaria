@@ -138,7 +138,7 @@ final class AgentPanelContentUITests: AgentPanelUITestCase {
         add(recovered)
 
         app.buttons["7 Days"].tap()
-        let warning = element(labelContaining: "Showing cached server analytics")
+        let warning = element(labelContaining: "Showing cached server analytics. Refresh failed")
         repeatStep(8, until: { warning.exists && !warning.frame.isEmpty && app.frame.contains(warning.frame) }) { app.swipeUp() }
         XCTAssertTrue(warning.awaitExistence(timeout: 10), "The failed refresh must explain the cached snapshot")
         XCTAssertFalse(element(labelContaining: "Could Not Load Analytics").exists)
