@@ -523,7 +523,7 @@ describe('redactSensitive cost', () => {
     // A quadratic scan takes seconds on these inputs; a linear one takes milliseconds.
     // Unquoted runs, and many credential keys inside one long quoted argument.
     // The Agent's ported families: env names, split tokens, JWT headers, phone numbers and bare URL userinfo.
-    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
+    for (const text of [...['abcdefghij-', 'a.b+c-', 'token_', '--password ', 'aB', 'aBcD_', 'ABCd', 'AB', 'PW', 'KEY_', 'a_pw', 'a_key_', 'ghp_a\x1b', 'ghp_a\x1b[1m', 'ghp_a\x1b]8;;a', '\x1b[1', 'ghp_ab\n', 'eyJaaaaaaaaaa.', '+1234567', 'https://aaaaaaaa', 'DB_PW="', "db_pw='a ", 'ghp_ab\nK=', 'a_key=x\\ ', 'a_key=,', '\nsk-a', 'sk-aaaaaaaaaaaa\n', '&a_key=x', 'sk-aaaaaaaaaa\nsk-b\n'].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       ...['Authorization: x ', 'Authorization: *** ', 'secret sauce ', 'password=*** '].map((seg) => `"${seg.repeat(Math.ceil(200_000 / seg.length))}"`),
       // One huge identifier that does name a credential, and many long ones that are followed by a separator.
       `--${'aB'.repeat(100_000)}Password=x`, `${'a'.repeat(1_000)}= `.repeat(200), `${'a'.repeat(1_000)}://x:`.repeat(200),
@@ -783,6 +783,20 @@ describe('Agent redactor parity', () => {
     expect(redactText('ghp_abcdef\x1b1234567890ABCDEF1234567890abcdef\x1b-x', true)).toBe('ghp_ab...cdef\x1b-x')
     for (const text of ['author_key=name', 'COMPASS_KEY=north', 'PASSAGE_KEY=title', 'compass_key=north']) expect(redactText(text, true)).toBe(text)
     expect(redactText('DB_PASS=north', true)).toBe('DB_PASS=***')
+  })
+
+  it('masks a token split by an ANSI escape sequence, and keeps the sequences around a whole one', () => {
+    for (const [input, expected] of [
+      ['ghp_abcdef\x1b[31m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x1b[1;38;5;196m1234567890ABCDEF1234567890abcdef\x1b[0m done', 'ghp_ab...cdef\x1b[0m done'],
+      ['ghp_abcdef\x1b]8;;https://x.test\x07123456\x1b]8;;\x1b\\7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['gh\x1b[1mp_abcdef1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef1234567890ABCDEF1234567890abcdef\x1b[0m\nnext', 'ghp_ab...cdef\x1b[0m\nnext'],
+      ['\x1b[32mghp_abcdef1234567890ABCDEF1234567890abcdef\x1b[0m', '\x1b[32mghp_ab...cdef\x1b[0m'],
+    ]) {
+      expect(redactText(input, true)).toBe(expected)
+      expect(sanitizeShareMessage({ role: 'assistant', content: input }, [], [], '/nonexistent-home')?.content).toBe(expected)
+    }
   })
 
   it('masks a split token before a sentence period, and a spaced URL query value up to its fragment', () => {

@@ -221,7 +221,11 @@ const PHONE_RE = /(?<![A-Za-z0-9])\+[1-9]\d{6,14}(?![A-Za-z0-9])/g
 const URL_BARE_TOKEN_RE = /((?:https?|wss?|git|ssh|ftps?|sftp):\/\/)([^\s:@/?#]{8,})(?=@\S)/gi
 /** Control and zero-width characters that can split a token body (`ghp_abc\x1bdef`, `sk-abc\u200bdef`). */
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\ufeff]/
-const CONTROL_CHARS_RE = new RegExp(CONTROL_CHAR_RE.source, 'g')
+/**
+ * What splits a token body: a complete ANSI escape sequence (CSI `ESC [ … final byte`, OSC `ESC ] … BEL/ST`) or one
+ * control or zero-width character.
+ */
+const SPLIT_GAP_RE = new RegExp(String.raw`\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|` + CONTROL_CHAR_RE.source, 'g')
 const CRED_TEST_RE = new RegExp(CRED_RE.source)
 /** `CRED_RE`'s prefix and body from a position, without its boundaries (a split token checks the original ones). */
 const CRED_RUN_RE = new RegExp(CRED_RE.source.replace(/^\(\?<!\[A-Za-z0-9_-\]\)/, '').replace(/\(\?!\[A-Za-z0-9_-\]\)$/, ''), 'y')
@@ -276,11 +280,16 @@ function splitTokenEnd(text: string, stripped: string, kept: number[], i: number
  * one (`note\nghp_…`); one starting inside a token already masked is part of it.
  */
 function maskControlSplitTokens(text: string): string {
-  const stripped = text.replace(CONTROL_CHARS_RE, '')
+  const stripped = text.replace(SPLIT_GAP_RE, '')
   if (stripped.length === text.length) return text
   // The original index of each kept character.
   const kept: number[] = []
-  for (let i = 0; i < text.length; i += 1) if (!CONTROL_CHAR_RE.test(text[i]!)) kept.push(i)
+  let at = 0
+  for (const m of text.matchAll(SPLIT_GAP_RE)) {
+    while (at < m.index) kept.push(at++)
+    at += m[0].length
+  }
+  while (at < text.length) kept.push(at++)
   const starts = [...stripped.matchAll(CRED_START_RE)].map((m) => m.index)
   for (let i = 1; i < kept.length; i += 1) if (kept[i]! - kept[i - 1]! > 1 && /[A-Za-z0-9_-]/.test(stripped[i - 1]!)) starts.push(i)
   let out = ''
@@ -1496,8 +1505,9 @@ const PHONE_TEST_RE = new RegExp(PHONE_RE.source)
 
 export function mightContainSensitiveText(text: string): boolean {
   if (!text) return false
-  // A control or zero-width character inside a prefix (`x\u200bai-…`) does not hide it: the redactor joins split tokens.
-  const joined = text.replace(CONTROL_CHARS_RE, '')
+  // A control or zero-width character or an ANSI escape sequence inside a prefix (`x\u200bai-…`) does not hide it: the
+  // redactor joins split tokens.
+  const joined = text.replace(SPLIT_GAP_RE, '')
   if (CASE_MARKERS.some((m) => joined.includes(m))) return true
   const lower = text.toLowerCase()
   if (LOWER_MARKERS.some((m) => lower.includes(m))) return true
