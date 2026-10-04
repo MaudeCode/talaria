@@ -207,7 +207,17 @@ describe('command-specific short credential flags', () => {
     for (const text of ['mysql -p$(printf hunter2) db', 'sshpass -p $(printf hunter2) ssh h', 'sshpass -p `printf hunter2` ssh h', 'mysql -p${PW:-hunter 2} db', 'mysql -p$(printf "$(echo hunter2)") db']) expect(redactText(text, true)).not.toContain('hunter2')
     for (const text of ['$CLIENT login -p hunter2', '${CLIENT} login -p hunter2', '"$CLIENT" login -p hunter2', '$(which docker) login -p hunter2', 'x=$(mysql -phunter2 -e "select 1")']) expect(redactText(text, true)).not.toContain('hunter2')
     expect(publicToolFrame({ name: 'terminal', args: { command: ['$CLIENT', 'login', '-p', 'hunter2'] } }, true).args).toEqual({ command: ['$CLIENT', 'login', '-p', '***'] })
-    for (const text of ['$EDITOR -p file', 'cd $DIR && ls -p', '$CLIENT run image login -p public']) expect(redactText(text, true)).toBe(text)
+    for (const text of ['cd $DIR && ls -p', '$CLIENT run image login -p public', 'cp $SRC -p dst']) expect(redactText(text, true)).toBe(text)
+    // A computed executable may be any known command, and a backtick one too.
+    for (const text of ['$CLIENT -phunter2 db', '$CLIENT -a hunter2', '$CLIENT -U bob%hunter2 //h/s', "['$CLIENT', '-phunter2']", '`printf docker` login -p hunter2', 'x; `printf mysql` -phunter2']) expect(redactText(text, true)).not.toContain('hunter2')
+  })
+
+  it('keeps shell punctuation inside a bare credential word', () => {
+    expect(redactText('mysql -phunter,2 db', true)).toBe('mysql -p*** db')
+    expect(redactText('sshpass -p hunter]2 ssh h', true)).toBe('sshpass -p *** ssh h')
+    expect(redactText('redis-cli -a hunter}2 ping', true)).toBe('redis-cli -a *** ping')
+    // A list's punctuation still ends its elements.
+    expect(redactText(`['redis-cli', '-a', 123456, 'ping']`, true)).toBe(`['redis-cli', '-a', ***, 'ping']`)
   })
 
   it('reads the command a wrapper runs and only the login subcommand', () => {
@@ -514,11 +524,11 @@ describe('redactSensitive cost', () => {
       Array.from({ length: 5 }, (_, i) => `A=${i}; `).join('') + '$A '.repeat(50_000), `A=${'x'.repeat(10_000)}; ${'B=$A; '.repeat(30_000)}`, `A=x; ${'A=$A$A; '.repeat(25_000)}curl -u bob:$A`,
       `P=hunter2; ${'Q="${P}x"; curl -u bob:$Q '.repeat(8_000)}`, `export ${'"A=1" '.repeat(40_000)}`, `A=1; ${'A+=1; '.repeat(30_000)}$A`, `x # '\n`.repeat(40_000), `A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; ${'$A '.repeat(40_000)}`, `export ${'"A=$(x" '.repeat(30_000)}`, `A=1; A=2; B=1; B=2; C=1; C=2; ${'curl -u bob:$A$B$C '.repeat(12_000)}`, `P=hunter2; ${'curl -u bob:$P '.repeat(15_000)}`, `A=${'x'.repeat(10_000)}; ${'$A'.repeat(50_000)}`,
       // Command-specific short flags: many commands in one command, quoted ones, and unterminated quotes.
-      ...['mysql ', 'mysql -p', 'docker login -p x ', `sh -c 'mysql `, `mysql '`, `'mysql', `, `"mysql -p" `, 'sshpass -f ', 'mysql docker sshpass redis-cli smbclient helm -x ', `d'o"c\\k'e"r `, 'docker login docker ', 'mysql -p"\n', 'docker $A -p x ', 'mysql -p$(', 'mysql -p$(a ', '$A login -p x ', `sh -c "mysql -p'a `].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length)))]) {
+      ...['mysql ', 'mysql -p', 'docker login -p x ', `sh -c 'mysql `, `mysql '`, `'mysql', `, `"mysql -p" `, 'sshpass -f ', 'mysql docker sshpass redis-cli smbclient helm -x ', `d'o"c\\k'e"r `, 'docker login docker ', 'mysql -p"\n', 'docker $A -p x ', 'mysql -p$(', 'mysql -p$(a ', '$A login -p x ', 'x; `a` -p ', 'mysql -pa,b ', `sh -c "mysql -p'a `].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length)))]) {
       const started = performance.now()
       mightContainSensitiveText(text)
       redactSensitive(text)
-      expect(performance.now() - started).toBeLessThan(1000)
+      expect(performance.now() - started, JSON.stringify(text.slice(0, 60))).toBeLessThan(1000)
     }
     // Each input is held to a second; the whole run gets room for many of them on a loaded machine.
   }, 30_000)

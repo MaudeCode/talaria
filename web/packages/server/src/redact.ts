@@ -666,10 +666,12 @@ const COMMAND_FLAGS: Record<string, CommandFlags> = {
   smbclient: { separate: ['-U', '--user'], attached: ['-U', '--user='], percent: true },
 }
 /**
- * A known command's name as a word: bare, after a path, a listed argv element, or composed by quotes (`do"cker"`); or a
- * name the shell computes (`$CLIENT`), which may be one.
+ * A known command's name as a word: bare, after a path, a listed argv element, or composed by quotes (`do"cker"`); or, in
+ * command position, a name the shell computes (`$CLIENT`, `$(which docker)`, `` `printf docker` ``), which may be any.
  */
-const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[\\])(?:${Object.keys(COMMAND_FLAGS).map((name) => name.replaceAll(/(?<=.)(?=.)/g, String.raw`["'\\]*`)).join('|')}|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|\$\([^()\n]*\))(?=[\s;&|)'",\]]|$)`, 'g')
+const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[\\])(?:${Object.keys(COMMAND_FLAGS).map((name) => name.replaceAll(/(?<=.)(?=.)/g, String.raw`["'\\]*`)).join('|')}|(?<=(?:^|[;&|(\n\x60{[])[ \t]*['"]?)(?:\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|\$\([^()\n]*\)|\x60[^\x60\n]*\x60))(?=[\s;&|)'",\]]|$)`, 'g')
+/** Every command's flags, for an executable the shell computes. */
+const ALL_COMMAND_FLAGS = [...new Set(Object.values(COMMAND_FLAGS))]
 const COMMAND_FLAG_TEST_RE = new RegExp(COMMAND_FLAG_RE.source)
 
 /**
@@ -703,10 +705,10 @@ function commandFlagMasks(words: readonly string[]): Map<number, number> {
       if (flags.stop && !word.startsWith('-')) states.delete(flags)
     }
     const name = word.slice(word.lastIndexOf('/') + 1)
-    // A command named again (`docker login docker -p pw`, a host) keeps the state it is in. A name the shell computes
-    // (`$CLIENT login -p pw`) may be a registry client.
-    const flags = Object.hasOwn(COMMAND_FLAGS, name) ? COMMAND_FLAGS[name]! : !word.startsWith('-') && /[$`]/.test(word) ? REGISTRY_LOGIN : undefined
-    if (flags && !states.has(flags)) states.set(flags, { active: !flags.login, next: i + 1 })
+    // A command named again (`docker login docker -p pw`, a host) keeps the state it is in. An executable the shell computes
+    // (`$CLIENT -ppw`) may be any known command.
+    const named = Object.hasOwn(COMMAND_FLAGS, name) ? [COMMAND_FLAGS[name]!] : i === 0 && /[$`]/.test(word) ? ALL_COMMAND_FLAGS : []
+    for (const flags of named) if (!states.has(flags)) states.set(flags, { active: !flags.login, next: i + 1 })
   }
   return masks
 }
@@ -721,17 +723,19 @@ function maskWordFrom(raw: string, plain: string, from: number): string {
 }
 
 /**
- * The words of the simple command (or listed argv) at `from`, up to a shell metacharacter, the line end, a list's close or
- * the close of the `enclosing` quote, and where the scan stopped. An unterminated quote ends the command with its word.
+ * The words of the simple command (or `list`ed argv) at `from`, up to a shell metacharacter, the line end, a list's close
+ * or the close of the `enclosing` quote, and where the scan stopped. An unterminated quote ends the command with its word.
+ * Only a list's elements end at `,`, `]` or `}`; in a shell word they are ordinary characters (`-phunter,2`).
  */
-function commandWords(text: string, from: number, enclosing: string): { spans: [number, number][]; end: number } {
+function commandWords(text: string, from: number, enclosing: string, list: boolean): { spans: [number, number][]; end: number } {
   const spans: [number, number][] = []
+  const [gap, close, stop] = list ? [/[ \t,<>]/, /[\n;&|()\]}]/, /[\s;&|()<>,\]}]/] : [/[ \t<>]/, /[\n;&|()]/, /[\s;&|()<>]/]
   let i = from
   for (;;) {
-    while (i < text.length && /[ \t,<>]/.test(text[i]!)) i += 1
-    if (i >= text.length || text[i] === enclosing || /[\n;&|()\]}]/.test(text[i]!)) return { spans, end: i }
+    while (i < text.length && gap.test(text[i]!)) i += 1
+    if (i >= text.length || text[i] === enclosing || close.test(text[i]!)) return { spans, end: i }
     const start = i
-    while (i < text.length && text[i] !== enclosing && !/[\s;&|()<>,\]}]/.test(text[i]!)) {
+    while (i < text.length && text[i] !== enclosing && !stop.test(text[i]!)) {
       const c = text[i]!
       if (c === '\\') i += 2
       else if ((c === "'" || c === '"') && c !== enclosing) {
@@ -771,7 +775,7 @@ function redactCommandFlags(text: string): string {
     const quote = quoteAt(m.index).slice(-1)
     // A listed element (`'mysql',`) is read from its opening quote; a command inside a quoted argument ends at its close.
     const listed = quote !== '' && text[m.index + m[0].length] === quote
-    const { spans, end } = commandWords(text, listed ? text.lastIndexOf(quote, m.index) : m.index, listed ? '' : quote)
+    const { spans, end } = commandWords(text, listed ? text.lastIndexOf(quote, m.index) : m.index, listed ? '' : quote, listed)
     const words = spans.map(([start, stop]) => shellDequote(text.slice(start, stop)))
     const masks = commandFlagMasks(words)
     for (const [k, [start, stop]] of spans.entries()) {
