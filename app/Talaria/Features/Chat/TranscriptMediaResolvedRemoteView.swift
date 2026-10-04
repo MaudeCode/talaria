@@ -5,6 +5,7 @@ import UIKit
 import UniformTypeIdentifiers
 import TalariaKit
 
+/// A remote item the server could not classify (`isUnknownRemoteMedia`), shown as whatever its bytes decode to.
 struct TranscriptMediaResolvedRemoteView: View {
     let reference: TranscriptMediaReference
     let loadMediaData: (TranscriptMediaReference) async -> Data?
@@ -17,7 +18,7 @@ struct TranscriptMediaResolvedRemoteView: View {
             switch resolvedMedia {
             case let .image(image):
                 Button {
-                    onPreviewMedia?(reference)
+                    onPreviewMedia?(reference.resolved(as: .image))
                 } label: {
                     thumbnailContent(image)
                 }
@@ -33,7 +34,7 @@ struct TranscriptMediaResolvedRemoteView: View {
 
             case .video:
                 Button {
-                    onPreviewMedia?(reference)
+                    onPreviewMedia?(reference.resolved(as: .video))
                 } label: {
                     TranscriptMediaVideoTile(reference: reference)
                 }

@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Images and media the agent mentions inside lists, quotes, bold text or links now appear in place without breaking the surrounding formatting.",
+      "highlight": false,
+      "components": ["app", "web"]
+    },
+    {
+      "category": "Added",
+      "summary": "Talaria Web now shows images the agent shares inline in its replies, with audio, video and files as tiles below the message.",
+      "highlight": true,
+      "components": ["web"]
+    }
+  ]
+}

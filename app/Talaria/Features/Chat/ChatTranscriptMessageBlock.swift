@@ -155,6 +155,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             messageRow(
                 activityMessage(
                     text: turn.finalAnswer,
+                    display: turn.finalAnswerDisplay,
                     includesAttachments: true,
                     includesTurnMetrics: true,
                     displayExcerpt: finalAnswerExcerpt(for: turn)
@@ -208,6 +209,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             messageRow(
                 activityMessage(
                     text: turn.finalAnswer,
+                    display: turn.finalAnswerDisplay,
                     includesAttachments: true,
                     includesTurnMetrics: true,
                     displayExcerpt: finalAnswerExcerpt(for: turn)
@@ -368,6 +370,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                     messageRow(
                         activityMessage(
                             text: text,
+                            display: segment.display,
                             includesAttachments: false,
                             includesTurnMetrics: false
                         ),
@@ -400,6 +403,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             messageRow(
                 activityMessage(
                     text: text,
+                    display: row.display,
                     includesAttachments: includesAttachments ?? (index == firstProseIndex),
                     includesTurnMetrics: includesTurnMetrics ?? (index == lastProseIndex)
                 ),
@@ -520,6 +524,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
 
     private func activityMessage(
         text: String,
+        display: TranscriptDisplayBody? = nil,
         includesAttachments: Bool,
         includesTurnMetrics: Bool,
         displayExcerpt: String? = nil
@@ -538,7 +543,8 @@ struct ChatTranscriptMessageBlock: View, Equatable {
             turnTps: includesTurnMetrics ? message.turnTps : nil,
             turnId: message.turnId,
             steer: message.steer,
-            displayExcerpt: displayExcerpt
+            displayExcerpt: displayExcerpt,
+            displayBody: display
         )
     }
 }

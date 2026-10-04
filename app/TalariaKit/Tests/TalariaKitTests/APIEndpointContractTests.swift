@@ -594,6 +594,36 @@ final class SharedContractTests: XCTestCase {
         XCTAssertEqual(try label("unknown_window"), "–")
     }
 
+    func testSharedWebSessionShowsTheMediaExampleAsTheServerRewroteIt() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-186 has no such example.
+        guard let example = object["media_session"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode(
+            [ChatMessage].self,
+            from: JSONSerialization.data(withJSONObject: try XCTUnwrap(example["messages"]))
+        )
+        let reply = try XCTUnwrap(messages.first { $0.role == "assistant" })
+        let display = try XCTUnwrap(reply.displayBody)
+        // `content` stays as written for copy and edit; the display text carries the server's media URLs.
+        XCTAssertTrue(reply.content?.contains("MEDIA:/talaria-contract/out/chart.png") == true)
+        XCTAssertFalse(display.text.contains("MEDIA:/talaria-contract/out/chart.png"))
+        XCTAssertTrue(display.text.contains("MEDIA:/talaria-contract/out/secret.png"), "Fenced code stays literal")
+        XCTAssertEqual(display.media.map(\.mediaKind), [.image, .audio])
+        XCTAssertEqual(display.tiles.map(\.name), ["narration.mp3"])
+        let chart = try XCTUnwrap(display.media.first)
+        XCTAssertEqual(display.image(for: URL(string: chart.url)), chart)
+        XCTAssertEqual(
+            APIClient(baseURL: URL(string: "https://example.test/talaria")!).transcriptMediaURL(for: chart.url)?.absoluteString,
+            "https://example.test/talaria/api/media?path=%2Ftalaria-contract%2Fout%2Fchart.png&session_id=contract-media-session"
+        )
+        // The final answer renders the scene's display text, as Web does.
+        let sceneRows = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: reply)).rows
+        let turn = try XCTUnwrap(CompletedAssistantTurn(rows: [AssistantActivityRow(id: "work", content: .reasoning(.init(text: "Plan")))] + sceneRows))
+        XCTAssertEqual(turn.finalAnswerDisplay, display)
+    }
+
     func testSharedWebSessionShowsEachInlineThinkingExampleAsTheServerSplitIt() throws {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
         // A release checks this App against every retained Web; one from before TAL-302 has no such example.

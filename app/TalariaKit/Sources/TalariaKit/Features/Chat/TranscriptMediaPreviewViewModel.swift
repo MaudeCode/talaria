@@ -1,11 +1,9 @@
-import AVFoundation
 import Foundation
 import SwiftUI
 
 @MainActor
 @Observable
 public final class TranscriptMediaPreviewViewModel {
-    private let sessionID: String?
     private let reference: TranscriptMediaReference
     private let apiClient: APIClient
     private var didLoad = false
@@ -14,7 +12,6 @@ public final class TranscriptMediaPreviewViewModel {
     private var temporaryVideoURL: URL?
 
     public private(set) var previewData: Data?
-    public private(set) var audioData: Data?
     public private(set) var videoFileURL: URL?
     public private(set) var originalByteCount: Int?
     public private(set) var isLoading = false
@@ -23,11 +20,9 @@ public final class TranscriptMediaPreviewViewModel {
 
     public init(
         server: URL,
-        sessionID: String?,
         reference: TranscriptMediaReference,
         apiClient: APIClient? = nil
     ) {
-        self.sessionID = sessionID
         self.reference = reference
         self.apiClient = apiClient ?? APIClient(baseURL: server)
     }
@@ -54,13 +49,12 @@ public final class TranscriptMediaPreviewViewModel {
         let generation = loadGeneration
         didLoad = true
         previewData = nil
-        audioData = nil
         videoFileURL = nil
         originalByteCount = nil
         originalData = nil
         removeTemporaryVideoFile()
 
-        guard reference.isRasterImageCandidate || reference.isVideoCandidate else {
+        guard reference.isRasterImageCandidate || reference.mediaKind == .video else {
             errorMessage = String(localized: "Preview is not available for this media type.")
             return
         }
@@ -75,12 +69,12 @@ public final class TranscriptMediaPreviewViewModel {
         }
 
         do {
-            let data = try await transcriptMediaData()
+            let data = try await apiClient.transcriptMediaData(for: reference)
             guard !Task.isCancelled, loadGeneration == generation else { return }
             originalData = data
             originalByteCount = data.count
 
-            if reference.isVideoCandidate {
+            if reference.mediaKind == .video {
                 let fileURL = try writeTemporaryVideoFile(data)
                 guard !Task.isCancelled, loadGeneration == generation else {
                     try? FileManager.default.removeItem(at: fileURL)
@@ -97,17 +91,7 @@ public final class TranscriptMediaPreviewViewModel {
                     previewData = downsampled
                 } else {
                     guard !Task.isCancelled, loadGeneration == generation else { return }
-                    if reference.isExtensionlessRemoteMediaCandidate {
-                        if Self.isAudioData(data) {
-                            audioData = data
-                        } else {
-                            let fileURL = try writeTemporaryVideoFile(data)
-                            temporaryVideoURL = fileURL
-                            videoFileURL = fileURL
-                        }
-                    } else {
-                        errorMessage = String(localized: "Could not decode this image.")
-                    }
+                    errorMessage = String(localized: "Could not decode this image.")
                 }
             }
         } catch {
@@ -126,7 +110,7 @@ public final class TranscriptMediaPreviewViewModel {
             return originalData
         }
 
-        let data = try await transcriptMediaData()
+        let data = try await apiClient.transcriptMediaData(for: reference)
         try Task.checkCancellation()
         originalData = data
         originalByteCount = data.count
@@ -142,31 +126,9 @@ public final class TranscriptMediaPreviewViewModel {
         )
     }
 
-    private func transcriptMediaData() async throws -> Data {
-        switch reference.source {
-        case .localPath:
-            guard let sessionID = resolvedSessionID else {
-                throw TranscriptMediaPreviewError.missingSessionID
-            }
-            return try await apiClient.transcriptMediaData(for: reference, sessionID: sessionID)
-        case .remoteURL:
-            return try await apiClient.transcriptMediaData(for: reference, sessionID: resolvedSessionID ?? "")
-        }
-    }
-
-    private var resolvedSessionID: String? {
-        guard let sessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !sessionID.isEmpty
-        else {
-            return nil
-        }
-        return sessionID
-    }
-
     public func cleanupTemporaryFiles() {
         loadGeneration += 1
         isLoading = false
-        audioData = nil
         removeTemporaryVideoFile()
         videoFileURL = nil
     }
@@ -186,17 +148,9 @@ public final class TranscriptMediaPreviewViewModel {
         temporaryVideoURL = nil
     }
 
-    private static func isAudioData(_ data: Data) -> Bool {
-        (try? AVAudioPlayer(data: data)) != nil
-    }
-
     private var resolvedExportKind: TranscriptMediaResolvedExportKind? {
         if previewData != nil {
             return .image
-        }
-
-        if audioData != nil {
-            return .audio
         }
 
         if videoFileURL != nil {
@@ -207,23 +161,8 @@ public final class TranscriptMediaPreviewViewModel {
     }
 }
 
-private enum TranscriptMediaPreviewError: LocalizedError {
-    case missingSessionID
-
-    var errorDescription: String? {
-        String(localized: "Preview is not available for this media without a server session.")
-    }
-}
-
 private extension TranscriptMediaReference {
     var videoFileExtension: String {
-        switch source {
-        case let .remoteURL(url):
-            let ext = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
-            return ext.isEmpty ? "mp4" : ext
-        case let .localPath(path):
-            let ext = URL(fileURLWithPath: path).pathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
-            return ext.isEmpty ? "mp4" : ext
-        }
+        fileExtension.isEmpty ? "mp4" : fileExtension
     }
 }

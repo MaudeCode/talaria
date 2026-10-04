@@ -10,6 +10,7 @@ import { code } from '@streamdown/code'
 import { math } from '@streamdown/math'
 import { mermaid } from '@streamdown/mermaid'
 import { cjk } from '@streamdown/cjk'
+import { appUrl } from '../../../lib/appRoot'
 import 'streamdown/styles.css'
 import 'katex/dist/katex.min.css'
 import { Dialog } from '../../../ui/Dialog'
@@ -17,6 +18,11 @@ import { Button } from '../../../ui/Button'
 import { m } from '../../../paraglide/messages.js'
 
 const PLUGINS = { code, math, mermaid, cjk }
+/**
+ * TAL-186: server media URLs are relative to the app root (`./api/media?…`, which hardening turns into `/api/media?…`),
+ * never to the current route or the origin root.
+ */
+const urlTransform = (url: string): string => (/^\.?\/api\//.test(url) ? appUrl(url.replace(/^\./, '')).href : url)
 const SHIKI_THEMES: [string, string] = ['github-light', 'github-dark']
 
 export interface LinkCheck { opens_directly: boolean; host: string | null }
@@ -81,6 +87,7 @@ export const Markdown = memo(function Markdown({ text, streaming = false, classN
       dir={dir}
       controls={{ code: { copy: true, download: true }, table: { copy: true, download: true }, mermaid: { copy: true, download: true, fullscreen: true, panZoom: true } }}
       linkSafety={linkSafety}
+      urlTransform={urlTransform}
     >
       {text}
     </Streamdown>

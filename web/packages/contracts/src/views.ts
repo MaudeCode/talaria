@@ -60,10 +60,22 @@ export const BackgroundLinkSchema = z.object({
 })
 export type BackgroundLink = z.infer<typeof BackgroundLinkSchema>
 
+/**
+ * TAL-186: one local or remote media reference the server recognized in a message's Markdown (a `MEDIA:` token, a bare
+ * `file://` URL or a local image destination), in content order. `url` is relative to the app root (`./api/media?path=…&session_id=…`)
+ * for a local file the `/api/media` allow-list serves, or the remote `http(s)` URL as written. Clients render `image`
+ * items inline from the display text and every other kind as a tile after it. A remote URL without a file
+ * extension has no known kind and is a `file`.
+ */
+export const DisplayMediaSchema = z.object({ url: z.string(), name: z.string(), mime: z.string(), kind: z.enum(['image', 'audio', 'video', 'pdf', 'file']) })
+export type DisplayMedia = z.infer<typeof DisplayMediaSchema>
+
 /** One normalized activity row: the server decides role, order, tool completion/error, and steering consumption. */
 export const ActivitySceneRowSchema = z.looseObject({
   row_id: z.string(), order_index: z.number().int(), role: z.enum(['prose', 'reasoning', 'tool', 'steering']), created_at: z.number().optional(),
   text: z.string().optional(), titles: z.array(z.string()).optional(),
+  /** TAL-186: a prose row's `text` with its media references rewritten for display (see `_display_content`), and its media. */
+  display_text: z.string().optional(), media: z.array(DisplayMediaSchema).optional(),
   tool: z.looseObject({ id: z.string(), name: z.string(), ...ToolDisplayFields, args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable(), background: BackgroundLinkSchema.optional() }).optional(),
   steering: z.looseObject({ steer_id: z.string(), consumed: z.boolean(), submitted_at: z.number().nullable(), consumed_at: z.number().nullable(), phase_duration: z.number().nullable().optional() }).optional(),
 })
@@ -82,6 +94,8 @@ export const ActivitySceneSchema = z.looseObject({
   version: z.literal('activity_scene_v1'), activity_rows: z.array(ActivitySceneRowSchema), final_answer: z.string().optional(),
   /** TAL-456: a settled final answer too long to lay out whole; clients render it collapsed, with a local "Show more". */
   final_answer_excerpt: z.string().optional(), turn_duration: z.number().nullable().optional(),
+  /** TAL-186: `final_answer` with its media references rewritten for display (see `_display_content`), and its media. */
+  final_answer_display: z.string().optional(), final_answer_media: z.array(DisplayMediaSchema).optional(),
   /** The turn's outcome (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...). */
   terminal_state: z.string().optional(),
   /** Whether the "Worked" disclosure opens by default: an unsuccessful outcome with work to read. */
@@ -122,6 +136,14 @@ export const MessageSchema = z.looseObject({
   /** A settled body too long to lay out whole: clients render `_display_excerpt` collapsed, with a local "Show more" for `content`. */
   _display_truncated: z.boolean().optional(),
   _display_excerpt: z.string().optional(),
+  /**
+   * TAL-186: an assistant row's text with each media reference the server serves rewritten to standard Markdown: an
+   * image to `![alt](url)`, any other file to `[name](url)`. Clients render it in place of `content` as one Markdown
+   * document; `content` stays as stored for copy and edit. Absent when the text has no such reference.
+   */
+  _display_content: z.string().optional(),
+  /** TAL-186: the media `_display_content` references, in content order. */
+  _media: z.array(DisplayMediaSchema).optional(),
   /**
    * TAL-371: an automatic background wakeup (delegation results, background process or watch notice), not a message the
    * user sent. Clients render it as a "Background update" disclosure: a localized label per `kind` (with `count`), a

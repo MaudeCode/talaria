@@ -410,7 +410,6 @@ struct ChatView: View {
     private func transcriptMediaPreviewView(for item: TranscriptMediaPreviewItem) -> some View {
         TranscriptMediaPreviewView(
             server: server,
-            sessionID: transcriptMediaSessionID,
             item: item,
             onAPIError: onAPIError
         )
@@ -1225,7 +1224,6 @@ struct ChatView: View {
             }
         )
         .environment(\.openURL, OpenURLAction(handler: handleTranscriptLink))
-        .environment(\.transcriptMediaWorkspaceRoot, viewModel.selectedWorkspacePath)
         .environment(\.pendingSteerControls, PendingSteerControls(
             actions: viewModel.pendingSteerActions,
             inFlight: viewModel.steerActionsInFlight,

@@ -30,10 +30,12 @@
     "@orpc/contract": "1.15.2",
     "@orpc/openapi": "1.15.2",
     "@orpc/server": "1.15.2",
+    "mdast-util-from-markdown": "2.0.3",
     "node-pty": "1.1.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@types/mdast": "4.0.4",
     "@types/node": "24.13.6",
     "eslint": "10.10.0",
     "typescript": "5.9.3",

@@ -248,10 +248,9 @@ final class ChatAttachmentCoordinator {
 
     func transcriptMediaThumbnailData(for reference: TranscriptMediaReference) async -> Data? {
         guard reference.isRasterImageCandidate else { return nil }
-        guard let sessionID = delegate?.attachmentSessionID else { return nil }
 
         do {
-            let data = try await client.transcriptMediaData(for: reference, sessionID: sessionID)
+            let data = try await client.transcriptMediaData(for: reference)
             return await ImagePreviewDownsampler.previewDataAsync(
                 from: data,
                 maxPixelSize: ImagePreviewDownsampler.attachmentMaxPixelSize
@@ -261,13 +260,10 @@ final class ChatAttachmentCoordinator {
         }
     }
 
-    /// Raw transcript media bytes for inline audio/video playback. Local paths
-    /// still require a real session ID so `/api/media` can authorize session media.
+    /// Raw transcript media bytes for inline audio/video playback; the server's URL names its session.
     func transcriptMediaData(for reference: TranscriptMediaReference) async -> Data? {
-        guard let sessionID = delegate?.attachmentSessionID else { return nil }
-
         do {
-            return try await client.transcriptMediaData(for: reference, sessionID: sessionID)
+            return try await client.transcriptMediaData(for: reference)
         } catch {
             return nil
         }

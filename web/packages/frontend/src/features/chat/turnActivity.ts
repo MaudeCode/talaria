@@ -2,12 +2,15 @@ import type { Message } from '../../contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import type { ToolCardData } from './blocks/ToolCard'
-import { BackgroundLinkSchema, ToolKindSchema, type ToolKind } from '@maudecode/talaria-web-contracts'
+import { BackgroundLinkSchema, DisplayMediaSchema, ToolKindSchema, type DisplayMedia, type ToolKind } from '@maudecode/talaria-web-contracts'
 import { extractInlineThinking, messageText, stripToolCallXml } from './render/text'
 import type { VisibleMessage } from './useTranscript'
 
+/** TAL-186: the server's display text for a body, with its media references rewritten, and the media it references. */
+export interface DisplayBody { display?: string; media?: DisplayMedia[] }
+
 export type ActivityItem =
-  | { key: string; kind: 'text'; text: string }
+  | ({ key: string; kind: 'text'; text: string } & DisplayBody)
   | { key: string; kind: 'reasoning'; text: string; titles?: string[] }
   | { key: string; kind: 'tool'; call: ToolCardData }
   | { key: string; kind: 'steering'; text: string; consumed: boolean }
@@ -16,6 +19,8 @@ export interface TurnActivity {
   key: string
   items: ActivityItem[]
   finalAnswer: string
+  /** TAL-186: what renders for `finalAnswer`; `finalAnswer` stays as written for copy and speech. */
+  finalAnswerDisplay?: DisplayBody
   /** The server's collapsed excerpt of a long final answer (TAL-456); `finalAnswer` stays whole for copy and speech. */
   finalAnswerExcerpt?: string
   status: string
@@ -31,6 +36,11 @@ const record = (v: unknown): Record<string, unknown> => v && typeof v === 'objec
 const text = (v: unknown): string => typeof v === 'string' ? v : ''
 /** The server's kind as sent; an older server's missing or unrecognized value shows as `unknown`. */
 const toolKindOf = (v: unknown): ToolKind => ToolKindSchema.safeParse(v).data ?? 'unknown'
+/** TAL-186: the server's display text and media, when it sent them. */
+function displayBody(display: unknown, media: unknown): DisplayBody {
+  const items = DisplayMediaSchema.array().safeParse(media).data
+  return { ...(typeof display === 'string' ? { display } : {}), ...(items?.length ? { media: items } : {}) }
+}
 /** TAL-372: a delegation row's link to the work it started, when the server sent a valid one. */
 const backgroundOf = (v: unknown): Pick<ToolCardData, 'background'> => { const link = BackgroundLinkSchema.safeParse(v).data; return link ? { background: link } : {} }
 
@@ -76,7 +86,7 @@ export function sceneItems(value: unknown): ActivityItem[] {
   return value.flatMap((raw): ActivityItem[] => {
     const row = record(raw)
     const key = text(row.row_id)
-    if (row.role === 'prose') return [{ key, kind: 'text', text: text(row.text) }]
+    if (row.role === 'prose') return [{ key, kind: 'text', text: text(row.text), ...displayBody(row.display_text, row.media) }]
     if (row.role === 'reasoning') return [{ key, kind: 'reasoning', text: text(row.text), titles: Array.isArray(row.titles) ? row.titles.map(text) : [] }]
     if (row.role === 'steering') return [{ key, kind: 'steering', text: text(row.text), consumed: record(row.steering).consumed === true }]
     if (row.role !== 'tool') return []
@@ -99,10 +109,12 @@ export function persistedActivity(row: VisibleMessage): TurnActivity {
   const scene = record(last.message._anchor_activity_scene)
   const key = row.turnKey ?? row.key
   if (scene.version !== 'activity_scene_v1' || !Array.isArray(scene.activity_rows)) {
-    return { key, items: [], finalAnswer: parts.map((part) => messageText(part.message.content)).filter((part) => part.trim()).join('\n\n'), status: 'completed' }
+    const bodies = parts.filter((part) => messageText(part.message.content).trim())
+    const display = bodies.some((part) => part.message._display_content !== undefined) ? bodies.map((part) => part.message._display_content ?? messageText(part.message.content)).join('\n\n') : undefined
+    return { key, items: [], finalAnswer: bodies.map((part) => messageText(part.message.content)).join('\n\n'), finalAnswerDisplay: displayBody(display, bodies.flatMap((part) => part.message._media ?? [])), status: 'completed' }
   }
   return {
-    key, items: sceneItems(scene.activity_rows), finalAnswer: text(scene.final_answer), ...(text(scene.final_answer_excerpt) ? { finalAnswerExcerpt: text(scene.final_answer_excerpt) } : {}), status: text(scene.terminal_state) || 'completed', expandedByDefault: scene.expanded_by_default === true,
+    key, items: sceneItems(scene.activity_rows), finalAnswer: text(scene.final_answer), finalAnswerDisplay: displayBody(scene.final_answer_display, scene.final_answer_media), ...(text(scene.final_answer_excerpt) ? { finalAnswerExcerpt: text(scene.final_answer_excerpt) } : {}), status: text(scene.terminal_state) || 'completed', expandedByDefault: scene.expanded_by_default === true,
     sceneRows: scene.activity_rows,
     ...(typeof scene.activity_rows_offset === 'number' && scene.activity_rows_offset > 0 ? { history: { ref: text(scene.activity_scene_ref), index: row.index, before: scene.activity_rows_offset } } : {}),
   }

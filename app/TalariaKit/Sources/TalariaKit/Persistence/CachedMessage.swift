@@ -25,6 +25,7 @@ public final class CachedMessage {
     var turnId: String?
     var steerData: Data?
     var displayExcerpt: String?
+    var displayBodyData: Data?
     var backgroundUpdateData: Data?
     var backgroundSilent: Bool?
     var markerKind: String?
@@ -90,6 +91,7 @@ public final class CachedMessage {
         turnId = message.turnId
         steerData = message.steer.flatMap { try? JSONEncoder().encode($0) }
         displayExcerpt = message.displayExcerpt
+        displayBodyData = message.displayBody.flatMap { try? JSONEncoder().encode($0) }
         backgroundUpdateData = message.backgroundUpdate.flatMap { try? JSONEncoder().encode($0) }
         backgroundSilent = message.backgroundSilent ? true : nil
         markerKind = message.markerKind?.wireValue

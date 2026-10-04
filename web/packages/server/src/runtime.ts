@@ -34,6 +34,7 @@ import { SessionService } from './sessions/service.js'
 import { ProjectStore } from './projects.js'
 import { WorkspaceRegistry } from './workspace/workspaces.js'
 import { resolvePathLikePython } from './workspace/paths.js'
+import type { MediaAccessDeps, MediaPolicyDeps } from './workspace/media.js'
 import { accessSync, constants as fsConstants, existsSync, statSync } from 'node:fs'
 import { basename, delimiter, dirname, join } from 'node:path'
 import type { Session } from './sessions/session.js'
@@ -249,8 +250,24 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
       if (n > 0) profileOps.set(key, n); else profileOps.delete(key)
     }
   }
+  const mediaActiveWorkspace = (): string | null => {
+    if (!workspaces.profileSupportsLocalIo(null)) return null
+    try {
+      const ws = resolvePathLikePython(workspaces.lastWorkspace(activeProfile()))
+      return statSync(ws).isDirectory() ? ws : null
+    } catch {
+      return null
+    }
+  }
+  const snapshotDir = (): string => {
+    const override = (env.HERMES_WEBUI_MEDIA_SNAPSHOT_DIR ?? '').trim()
+    return override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'media_snapshots')
+  }
+  const mediaPolicy: MediaPolicyDeps = { home, hermesHome: config.hermesHome, stateDir: config.stateDir, snapshotDir, activeWorkspace: mediaActiveWorkspace }
+  const mediaAccess: MediaAccessDeps = { home: config.homeDir, hermesHome: config.hermesHome, extraRoots: env.MEDIA_ALLOWED_ROOTS ?? '', activeWorkspace: mediaActiveWorkspace, policy: mediaPolicy }
   const sessions = new SessionService({
     sidecar: () => sidecar,
+    media: { access: mediaAccess, localIo: (profile) => workspaces.profileSupportsLocalIo(profile) },
     profileActivity,
     profileDeleting: (profile) => profiles.isDeleting(profile),
     backgroundReceipts: (sid) => background.receipts(sid),
@@ -357,19 +374,6 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
   const background = new BackgroundActivity({ store: backgroundStore, sidecar: () => sidecar, profileHome: (p) => profileHome(p ?? activeProfile()), liveStream: (id) => registry.liveIds.has(id), now, log })
   // Python `_MAX_SSE_CLIENTS_PER_IDENTITY`: eight concurrent streams per client identity unless overridden.
   const streamSlots = new StreamSlots(() => { const raw = Number.parseInt((env.HERMES_WEBUI_MAX_SSE_CLIENTS ?? '').trim(), 10); return Number.isFinite(raw) && raw > 0 ? raw : 8 })
-  const mediaActiveWorkspace = (): string | null => {
-    if (!workspaces.profileSupportsLocalIo(null)) return null
-    try {
-      const ws = resolvePathLikePython(workspaces.lastWorkspace(activeProfile()))
-      return statSync(ws).isDirectory() ? ws : null
-    } catch {
-      return null
-    }
-  }
-  const snapshotDir = (): string => {
-    const override = (env.HERMES_WEBUI_MEDIA_SNAPSHOT_DIR ?? '').trim()
-    return override ? override.replace(/^~(?=$|\/)/, home) : join(config.stateDir, 'media_snapshots')
-  }
   // eslint-disable-next-line prefer-const -- assigned after the turn runner exists
   let completions: CompletionDrain
   const relay = new RelayService({
@@ -541,8 +545,8 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     git,
     rollback,
     uploads,
-    mediaPolicy: { home, hermesHome: config.hermesHome, stateDir: config.stateDir, snapshotDir, activeWorkspace: mediaActiveWorkspace },
-    mediaActiveWorkspace,
+    mediaPolicy,
+    mediaAccess,
     worktreeLocks: { lockedByStream: (s) => Boolean(s.active_stream_id && activeStreamIds.has(s.active_stream_id)), lockedByTerminal: (sid, worktreePath) => { const term = deps.terminals.get(sid); return Boolean(term?.isAlive) && resolvePathLikePython(term?.workspace ?? '') === resolvePathLikePython(worktreePath) } },
     sidecar: () => sidecar,
     turns,

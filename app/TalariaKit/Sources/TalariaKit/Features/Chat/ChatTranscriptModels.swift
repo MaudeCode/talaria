@@ -31,6 +31,8 @@ public struct AssistantActivityRow: Identifiable, Equatable {
     public var content: Content
     var createdAt: Double? = nil
     var isFinalAnswer = false
+    /// A prose row's text as the server rewrote it for display, with its media (TAL-186).
+    public var display: TranscriptDisplayBody? = nil
 
     var kind: String {
         switch content {
@@ -87,11 +89,15 @@ public struct CompletedAssistantTurn: Equatable {
 
         public let id: String
         public let content: Content
+        /// A prose segment's display text and media from the server (TAL-186).
+        public var display: TranscriptDisplayBody? = nil
     }
 
     public let segments: [Segment]
     let workRows: [AssistantActivityRow]
     public let finalAnswer: String
+    /// `finalAnswer` as the server rewrote it for display, with its media (TAL-186).
+    public let finalAnswerDisplay: TranscriptDisplayBody?
     public let phases: [Phase]
     private let finalSegmentIndex: Int?
 
@@ -153,7 +159,7 @@ public struct CompletedAssistantTurn: Equatable {
             case .prose(let text):
                 appendActivity()
                 guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                segments.append(Segment(id: "prose:\(segments.count):\(row.id)", content: .prose(text)))
+                segments.append(Segment(id: "prose:\(segments.count):\(row.id)", content: .prose(text), display: row.display))
                 if rowIndex == finalIndex {
                     resolvedFinalSegmentIndex = segments.index(before: segments.endIndex)
                 }
@@ -186,9 +192,11 @@ public struct CompletedAssistantTurn: Equatable {
         if let finalIndex,
            case .prose(let finalAnswer) = rows[finalIndex].content {
             self.finalAnswer = finalAnswer
+            finalAnswerDisplay = rows[finalIndex].display
             workRows = rows.enumerated().compactMap { $0.offset == finalIndex ? nil : $0.element }
         } else {
             finalAnswer = ""
+            finalAnswerDisplay = nil
             workRows = rows
         }
 
@@ -416,7 +424,8 @@ public struct AssistantActivityTimeline: Equatable {
                     id: "\(segment.anchorID):\(row.id)",
                     content: row.content,
                     createdAt: row.createdAt,
-                    isFinalAnswer: row.isFinalAnswer
+                    isFinalAnswer: row.isFinalAnswer,
+                    display: row.display
                 )
             })
         }
@@ -439,7 +448,7 @@ public struct AssistantActivityTimeline: Equatable {
         if let finalAnswer = scene.finalAnswer {
             // The server's rows exclude the answer, which it sends as `final_answer` (possibly empty).
             if let finalAnswer = Self.nonEmpty(finalAnswer) {
-                timeline.rows.append(AssistantActivityRow(id: "scene:final", content: .prose(finalAnswer), isFinalAnswer: true))
+                timeline.rows.append(AssistantActivityRow(id: "scene:final", content: .prose(finalAnswer), isFinalAnswer: true, display: scene.finalAnswerDisplay))
             }
         } else {
             // Only a pre-TAL-328 server omits the field; its message text is the answer.
@@ -499,8 +508,19 @@ public struct AssistantActivityTimeline: Equatable {
         let rowID = row.rowID ?? "scene:\(sourceIndex)"
         switch row.role {
         case "prose":
+            let previous = rows.last
             if appendProseIfPresent(row.text, id: rowID) {
-                rows[rows.index(before: rows.endIndex)].createdAt = row.createdAt
+                let index = rows.index(before: rows.endIndex)
+                rows[index].createdAt = row.createdAt
+                if rows[index].id == rowID {
+                    rows[index].display = row.display
+                } else if let previous, previous.display != nil || row.display != nil {
+                    // Consecutive prose rows merge into one; their display text merges the same way.
+                    rows[index].display = TranscriptDisplayBody(
+                        text: (previous.display?.text ?? previous.text ?? "") + (row.display?.text ?? row.text ?? ""),
+                        media: (previous.display?.media ?? []) + (row.display?.media ?? [])
+                    )
+                }
             }
         case "reasoning":
             if appendReasoningIfPresent(row.text, titles: row.titles ?? [], id: rowID) {

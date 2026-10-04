@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BODY_EXCERPT_LIMIT, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, normalizeAssistantDisplay, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withMarkerKinds, withToolCallOutcomes } from './merge.js'
+import { BODY_EXCERPT_LIMIT, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, normalizeAssistantDisplay, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withToolCallOutcomes } from './merge.js'
 
 describe('toolOutcome (TAL-313)', () => {
   it('fails a result that reports an error, a non-zero exit code, or success false, in any persisted shape', () => {
@@ -103,6 +103,38 @@ describe('withBodyExcerpts (TAL-456)', () => {
     expect(out[0]).toBe(rows[0])
     expect(out[1]?._display_truncated).toBe(true)
     expect(rows[1]).not.toHaveProperty('_display_truncated')
+  })
+})
+
+describe('withDisplayMedia (TAL-186)', () => {
+  const project = (text: string) => (text.includes('MEDIA:') ? { text: text.replaceAll('MEDIA:/tmp/a.png', '![a.png](u)'), media: [{ url: 'u', name: 'a.png', mime: 'image/png', kind: 'image' as const }] } : null)
+
+  it('projects assistant content, the scene final answer and prose rows, and nothing else', () => {
+    const scene = { version: 'activity_scene_v1', final_answer: 'Done MEDIA:/tmp/a.png', activity_rows: [{ row_id: 'p', role: 'prose', text: 'First MEDIA:/tmp/a.png' }, { row_id: 'q', role: 'prose', text: 'plain' }, { row_id: 't', role: 'tool', text: 'MEDIA:/tmp/a.png' }] }
+    const rows = [{ role: 'user', content: 'MEDIA:/tmp/a.png' }, { role: 'assistant', content: 'Done MEDIA:/tmp/a.png', _anchor_activity_scene: scene }, { role: 'assistant', content: 'plain' }]
+    const [user, reply, plainReply] = withDisplayMedia(rows, project) as Record<string, unknown>[]
+    expect(user).toBe(rows[0])
+    expect(plainReply).toBe(rows[2])
+    expect(reply).toMatchObject({ content: 'Done MEDIA:/tmp/a.png', _display_content: 'Done ![a.png](u)', _media: [{ url: 'u' }] })
+    const projected = reply?._anchor_activity_scene as Record<string, unknown>
+    expect(projected).toMatchObject({ final_answer: 'Done MEDIA:/tmp/a.png', final_answer_display: 'Done ![a.png](u)', final_answer_media: [{ url: 'u' }] })
+    const [prose, plain, tool] = projected.activity_rows as Record<string, unknown>[]
+    expect(prose).toMatchObject({ text: 'First MEDIA:/tmp/a.png', display_text: 'First ![a.png](u)', media: [{ url: 'u' }] })
+    expect(plain).not.toHaveProperty('display_text')
+    expect(tool).not.toHaveProperty('display_text')
+    expect(rows[1]).not.toHaveProperty('_display_content')
+  })
+
+  it('cuts body excerpts from the display text', () => {
+    // The content fits the limit; its display text, with a long media URL, does not.
+    const url = 'u'.repeat(100)
+    const long = `${'w'.repeat(2900)} MEDIA:/tmp/a.png`
+    const scene = { version: 'activity_scene_v1', activity_rows: [], final_answer: long }
+    const longProject = (text: string) => ({ text: text.replace('MEDIA:/tmp/a.png', `![a.png](${url})`), media: [] })
+    const [reply] = withBodyExcerpts(withDisplayMedia([{ role: 'assistant', content: long, _anchor_activity_scene: scene }], longProject), null) as Record<string, unknown>[]
+    expect(reply?._display_truncated).toBe(true)
+    expect(reply?._display_excerpt).toBe('w'.repeat(2900))
+    expect((reply?._anchor_activity_scene as Record<string, unknown>).final_answer_excerpt).toBe('w'.repeat(2900))
   })
 })
 

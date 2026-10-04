@@ -5,7 +5,7 @@
  */
 import { closeSync, createReadStream, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs'
 import { constants as fsConstants } from 'node:fs'
-import { basename, extname, join, resolve } from 'node:path'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 import { tmpdir, userInfo } from 'node:os'
 import { createHash } from 'node:crypto'
 import type { RequestContext } from '../http/context.js'
@@ -229,6 +229,11 @@ function messageContentText(content: unknown): string {
   return str(content)
 }
 
+/** A `MEDIA:` path as the session-token grant reads it: `~` is the user's home, a relative path is the server's cwd. */
+export function mediaRefPath(ref: string): string {
+  return resolvePathLikePython(ref.replace(/^~(?=$|\/)/, process.env.HOME ?? ''))
+}
+
 /** Allow exact safe `MEDIA:` paths the assistant/tool emitted in the requested session. */
 export function sessionMediaTokenAllowsPath(session: Session | null, target: string, allowedMimes: Set<string>): boolean {
   if (!session) return false
@@ -245,7 +250,7 @@ export function sessionMediaTokenAllowsPath(session: Session | null, target: str
       const ref = m[1] ?? ''
       if (ref.includes('://')) continue
       try {
-        const expanded = resolvePathLikePython(ref.replace(/^~(?=$|\/)/, process.env.HOME ?? ''))
+        const expanded = mediaRefPath(ref)
         let resolved = expanded
         try { resolved = realpathSync(expanded) } catch { /* keep */ }
         if (resolved === targetResolved) return true
@@ -349,6 +354,54 @@ export function mediaDenyReason(target: string, deps: MediaPolicyDeps): string |
     if (underRoot && (DENY_FILENAMES.has(name) || DENY_TMP_SUFFIXES.some((s) => name.endsWith(s)))) return 'denied state filename'
   }
   return null
+}
+
+/** What `/api/media` authorizes against, besides the session: the homes, the safe temp roots, the active workspace and `MEDIA_ALLOWED_ROOTS`. */
+export interface MediaAccessDeps {
+  home: string
+  hermesHome: string
+  /** `MEDIA_ALLOWED_ROOTS`, separated by the platform's path delimiter. */
+  extraRoots: string
+  activeWorkspace: () => string | null
+  policy: MediaPolicyDeps
+}
+
+/** The file a `/api/media?path=` value names. Python `Path(raw).resolve()`: no `~` expansion and no NUL bytes; throws on an invalid path. */
+export function mediaTarget(rawPath: string): string {
+  if (rawPath.includes('\0')) throw new Error('embedded null byte')
+  const target = resolvePathLikePython(rawPath.startsWith('~') ? resolve(process.cwd(), rawPath) : rawPath)
+  try { return realpathSync(target) } catch { return target } // a missing path keeps its lexical resolution
+}
+
+/**
+ * The `/api/media` decision for a resolved target: the root that authorizes it (which also anchors the open, so a
+ * component replaced by a symlink after the check fails the descriptor walk), the file's own directory for a
+ * session-token grant, or null when the path is denied.
+ */
+export function mediaAnchorRoot(target: string, session: Session | null, deps: MediaAccessDeps): string | null {
+  const baseHermes = join(deps.home, '.hermes')
+  const allowedRoots: string[] = [deps.hermesHome, baseHermes]
+  const legacyTmp = safeLegacyTmpRoot([deps.home, deps.hermesHome, baseHermes])
+  if (legacyTmp) allowedRoots.push(legacyTmp)
+  const platformTemp = safePlatformTempRoot([deps.home, deps.hermesHome, baseHermes])
+  if (platformTemp) allowedRoots.push(platformTemp)
+  const activeWorkspace = deps.activeWorkspace()
+  if (activeWorkspace) allowedRoots.push(activeWorkspace)
+  for (const root of deps.extraRoots.trim().split(process.platform === 'win32' ? ';' : ':')) {
+    const r = root.trim()
+    if (!r) continue
+    try {
+      const rp = realpathSync(r)
+      if (statSync(rp).isDirectory()) allowedRoots.push(rp)
+    } catch { /* skip */ }
+  }
+  if (mediaDenyReason(target, deps.policy)) return null
+  for (const root of allowedRoots) {
+    let resolvedRoot: string
+    try { resolvedRoot = realpathSync(root) } catch { continue }
+    if (target === resolvedRoot || isWithin(target, resolvedRoot)) return resolvedRoot
+  }
+  return sessionMediaTokenAllowsPath(session, target, SESSION_MEDIA_TOKEN_TYPES) ? dirname(target) : null
 }
 
 // ── snapshot store (serve side) ──────────────────────────────────────────────
