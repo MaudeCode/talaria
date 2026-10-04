@@ -24,6 +24,7 @@ its launch-process ``TERMINAL_*`` under those files.
 from __future__ import annotations
 
 import contextlib
+import importlib
 import os
 import sys
 import threading
@@ -64,9 +65,9 @@ def edit_launch_env(to_set: dict[str, str], to_unset: list[str]) -> None:
 
     with _LAUNCH_ENV_LOCK:
         edit(_LAUNCH_ENV)
-    # Only an imported policy module can hold a frozen snapshot.
-    policy = sys.modules.get("tui_gateway.launch_profile_policy")
-    if policy is not None:
+    # Only an imported policy module can hold a frozen snapshot; importing it waits out a first import still running elsewhere.
+    if sys.modules.get("tui_gateway.launch_profile_policy") is not None:
+        policy = importlib.import_module("tui_gateway.launch_profile_policy")
         with policy._lock:
             edit(policy._snapshot)
 
