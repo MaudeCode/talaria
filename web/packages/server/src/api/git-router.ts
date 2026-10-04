@@ -75,21 +75,21 @@ function rollbackError(error: unknown): HttpError {
 }
 
 export const gitRouter = os.router({
-  gitInfo: os.gitInfo.handler(({ input, context: { ctx } }) => guard(() => {
+  gitInfo: os.gitInfo.handler(({ input, context: { ctx } }) => guard(async () => {
     const { workspace } = gitSession(ctx, input.session_id)
-    const status = ctx.deps.git.status(workspace, { useCache: true })
+    const status = await ctx.deps.git.status(workspace, { useCache: true })
     if (!status.is_git) return { git: null }
     const totals = status.totals ?? { changed: 0, staged: 0, unstaged: 0, untracked: 0, conflicts: 0 }
     return { git: { branch: status.branch ?? 'HEAD', dirty: totals.changed, modified: totals.staged + totals.unstaged, untracked: totals.untracked, ahead: status.ahead ?? 0, behind: status.behind ?? 0, is_git: true as const } }
   })),
   git: {
-    status: os.git.status.handler(({ input, context: { ctx } }) => guard(() => ({ git: asStatus(ctx.deps.git.status(gitSession(ctx, input.session_id).workspace, { useCache: true })) }))),
-    branches: os.git.branches.handler(({ input, context: { ctx } }) => guard(() => ({ branches: ctx.deps.git.branches(gitSession(ctx, input.session_id).workspace) }))),
-    diff: os.git.diff.handler(({ input, context: { ctx } }) => guard(() => {
+    status: os.git.status.handler(({ input, context: { ctx } }) => guard(async () => ({ git: asStatus(await ctx.deps.git.status(gitSession(ctx, input.session_id).workspace, { useCache: true })) }))),
+    branches: os.git.branches.handler(({ input, context: { ctx } }) => guard(async () => ({ branches: await ctx.deps.git.branches(gitSession(ctx, input.session_id).workspace) }))),
+    diff: os.git.diff.handler(({ input, context: { ctx } }) => guard(async () => {
       const { workspace } = gitSession(ctx, input.session_id)
       if (!input.path) throw new HttpError(400, 'path required')
       const kind = input.kind ?? (input.staged === '1' ? 'staged' : 'unstaged')
-      return { diff: ctx.deps.git.diff(workspace, input.path, kind) }
+      return { diff: await ctx.deps.git.diff(workspace, input.path, kind) }
     })),
     stage: os.git.stage.handler(({ input, context: { ctx } }) => guard(async () => {
       const paths = pathsFromBody(input)
@@ -120,14 +120,14 @@ export const gitRouter = os.router({
       rejectDestructiveIfUnsafe(ctx, session)
       return ctx.deps.git.commitSelected(workspace, input.message, paths) as Promise<{ ok: true; commit: string; paths: string[]; status: GitStatus }>
     })),
-    commitMessage: os.git.commitMessage.handler(({ input, context: { ctx } }) => guard(() => {
+    commitMessage: os.git.commitMessage.handler(({ input, context: { ctx } }) => guard(async () => {
       const { session, workspace } = gitSession(ctx, input.session_id)
-      return generateCommitMessage(ctx, session, ctx.deps.git.stagedCommitMessagePrompt(workspace))
+      return generateCommitMessage(ctx, session, await ctx.deps.git.stagedCommitMessagePrompt(workspace))
     })),
-    commitMessageSelected: os.git.commitMessageSelected.handler(({ input, context: { ctx } }) => guard(() => {
+    commitMessageSelected: os.git.commitMessageSelected.handler(({ input, context: { ctx } }) => guard(async () => {
       const paths = pathsFromBody(input)
       const { session, workspace } = gitSession(ctx, input.session_id)
-      return generateCommitMessage(ctx, session, ctx.deps.git.selectedCommitMessagePrompt(workspace, paths))
+      return generateCommitMessage(ctx, session, await ctx.deps.git.selectedCommitMessagePrompt(workspace, paths))
     })),
     fetch: os.git.fetch.handler(({ input, context: { ctx } }) => guard(() => ctx.deps.git.fetch(gitSession(ctx, input.session_id).workspace) as Promise<{ ok: true; message: string; status: GitStatus }>)),
     pull: os.git.pull.handler(({ input, context: { ctx } }) => guard(() => {
@@ -189,7 +189,7 @@ export const gitRouter = os.router({
     }),
   },
   worktree: {
-    status: os.worktree.status.handler(({ input, context: { ctx } }) => {
+    status: os.worktree.status.handler(async ({ input, context: { ctx } }) => {
       if (!input.session_id) throw new HttpError(400, 'session_id is required')
       let session: Session
       try {
@@ -199,13 +199,13 @@ export const gitRouter = os.router({
       }
       if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
       try {
-        return { status: worktreeStatusForSession(session, ctx.deps.worktreeLocks) }
+        return { status: await worktreeStatusForSession(session, ctx.deps.worktreeLocks) }
       } catch (error) {
         // Python: `ValueError` (every message `worktrees.ts` raises on purpose) → 400; anything else → 500 sanitised.
         throw error instanceof Error && !('code' in error) ? new HttpError(400, error.message) : new HttpError(500, sanitizeError(error))
       }
     }),
-    remove: os.worktree.remove.handler(({ input, context: { ctx } }) => {
+    remove: os.worktree.remove.handler(async ({ input, context: { ctx } }) => {
       const raw = input.session_id
       if (typeof raw !== 'string' || !raw.trim()) throw new HttpError(400, 'session_id must be a non-empty string')
       const sid = raw.trim()
@@ -218,7 +218,7 @@ export const gitRouter = os.router({
       }
       if (!ctx.deps.workspaces.profileSupportsLocalIo(session.profile)) throw new HttpError(400, REMOTE_WORKSPACE_UNSUPPORTED_CODE, { message: REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE })
       try {
-        return removeWorktreeForSession(session, ctx.deps.worktreeLocks, { force: Boolean(input.force) }) as { ok: true; removed_path: string; warnings: string[] | null }
+        return await removeWorktreeForSession(session, ctx.deps.worktreeLocks, { force: Boolean(input.force) }) as { ok: true; removed_path: string; warnings: string[] | null }
       } catch (error) {
         throw error instanceof Error && !('code' in error) ? new HttpError(400, error.message) : new HttpError(500, sanitizeError(error))
       }

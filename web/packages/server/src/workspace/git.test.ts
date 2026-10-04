@@ -1,9 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { bootTestServer, type TestServer } from '../test/harness.js'
-import { cleanGeneratedCommitMessage, classifyGitError } from './git.js'
+import { cleanGeneratedCommitMessage, classifyGitError, GitRunner } from './git.js'
 
 type Json = Record<string, unknown>
 const post = (s: TestServer, path: string, body: unknown): Promise<Response> => s.get(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -195,6 +196,64 @@ describe('workspace git over HTTP', () => {
     expect(res.status).toBe(400)
     expect(await json(res)).toEqual({ error: 'Git is not installed or not available on PATH', code: 'missing_git' })
     expect((await json(await s.get(`/api/git-info?session_id=${goneSid}`))).code).toBe('missing_git')
+  })
+})
+
+describe('slow git off the event loop', () => {
+  const identity = { GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' }
+  let s: TestServer
+  let shimDir: string
+  let marker: string
+  beforeAll(async () => {
+    // A `git` shim that sleeps before every push, so the push stays in flight while the test probes the server.
+    const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
+    shimDir = mkdtempSync(join(tmpdir(), 'talaria-slow-git-'))
+    marker = join(shimDir, 'push-started')
+    writeFileSync(join(shimDir, 'git'), `#!/bin/sh\nfor a in "$@"; do if [ "$a" = push ]; then touch '${marker}'; sleep 2; break; fi; done\nexec '${realGit}' "$@"\n`)
+    chmodSync(join(shimDir, 'git'), 0o755)
+    const env = { HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE: '1', ...identity, PATH: `${shimDir}:${process.env.PATH ?? ''}` }
+    // A short lock wait so contention answers `operation_in_progress` well before the slow push finishes.
+    s = await bootTestServer({ env, deps: (d) => { d.git = new GitRunner({ env: { ...env, HOME: process.env.HOME }, mutationLockTimeoutMs: 200 }) } })
+    const ws = join(s.state, 'workspace')
+    const origin = join(s.state, 'origin.git')
+    git(s.state, 'init', '-q', '--bare', origin)
+    git(ws, 'init', '-q', '-b', 'main')
+    writeFileSync(join(ws, 'README.md'), 'hello\n')
+    git(ws, 'add', '.')
+    git(ws, 'commit', '-q', '-m', 'init')
+    git(ws, 'remote', 'add', 'origin', origin)
+    git(ws, 'push', '-q', '-u', 'origin', 'main')
+  })
+  afterAll(async () => {
+    await s.close()
+    rmSync(shimDir, { recursive: true, force: true })
+  })
+
+  async function pushInFlight(sid: string): Promise<{ push: Promise<Response>; settled: () => boolean }> {
+    rmSync(marker, { force: true })
+    let done = false
+    const push = post(s, '/api/git/push', { session_id: sid }).finally(() => { done = true })
+    while (!existsSync(marker)) await new Promise((r) => setTimeout(r, 20))
+    return { push, settled: () => done }
+  }
+
+  it('serves another HTTP request while a push is in flight', async () => {
+    const { sid } = await repoSession(s)
+    const { push, settled } = await pushInFlight(sid)
+    const health = await s.get('/health')
+    expect(health.status).toBe(200)
+    expect(settled()).toBe(false)
+    const res = await push
+    expect(res.status, await res.clone().text()).toBe(200)
+  })
+
+  it('a second mutation on the same repo during a push answers operation_in_progress', async () => {
+    const { sid } = await repoSession(s)
+    const { push, settled } = await pushInFlight(sid)
+    const second = await post(s, '/api/git/fetch', { session_id: sid })
+    expect(await json(second)).toMatchObject({ error: 'Another Git operation is still running', code: 'operation_in_progress' })
+    expect(settled()).toBe(false)
+    expect((await push).status).toBe(200)
   })
 })
 
