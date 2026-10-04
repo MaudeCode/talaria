@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Commit messages written by your main model no longer copy the git diff into long-term memory or leave background connections open.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

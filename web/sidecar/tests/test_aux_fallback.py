@@ -87,3 +87,38 @@ def test_a_failing_auxiliary_call_falls_back_to_the_main_model(monkeypatch) -> N
     _patch(monkeypatch, lambda task, *, main_runtime=None: (Broken(), "aux-model"))
     result = aux.complete("compression", MESSAGES, main_runtime={"model": "m", "provider": "p"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
     assert result["text"] == "feat: main model answer" and len(FakeAgent.calls) == 1
+
+
+class RecordingMemoryAgent:
+    """Models the Agent's memory contract: an external provider is attached unless ``skip_memory``, every completed
+    turn is mirrored into it (``turn_finalizer`` → ``sync_all``), and ``close`` releases it."""
+
+    instances: list["RecordingMemoryAgent"] = []
+
+    def __init__(self, *, skip_memory: bool = False, skip_background_review: bool = False, **kwargs):
+        self.kwargs = {"skip_memory": skip_memory, "skip_background_review": skip_background_review, **kwargs}
+        self.synced: list[tuple[str, str]] | None = None if skip_memory else []
+        self.closed = False
+        self.end_session_on_close = None
+        RecordingMemoryAgent.instances.append(self)
+
+    def run_conversation(self, *, user_message, **kwargs):
+        if self.synced is not None:
+            self.synced.append((user_message, "feat: answer"))
+        return {"final_response": "feat: answer"}
+
+    def close(self):
+        self.end_session_on_close = getattr(self, "_end_session_on_close", True)
+        self.closed = True
+
+
+def test_main_model_fallback_skips_memory_and_closes_the_agent(monkeypatch) -> None:
+    RecordingMemoryAgent.instances.clear()
+    _patch(monkeypatch, lambda task, *, main_runtime=None: (None, None))
+    monkeypatch.setattr(chat, "_agent_class", lambda: RecordingMemoryAgent)
+    result = aux.complete("compression", [{"role": "user", "content": "diff with sk-secret"}], main_runtime={"model": "m", "provider": "p"}, max_tokens=None, temperature=None, ctx=Ctx(), main_fallback=True)
+    assert result["text"] == "feat: answer"
+    (agent,) = RecordingMemoryAgent.instances
+    assert not agent.synced, f"the diff reached long-term memory: {agent.synced}"
+    assert agent.kwargs["skip_memory"] is True and agent.kwargs["skip_background_review"] is True
+    assert agent.closed and agent.end_session_on_close is False
