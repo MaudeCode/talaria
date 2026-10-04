@@ -757,6 +757,8 @@ public final class SessionListViewModel {
 
         return await mutate(modelContext: modelContext, animation: animation) {
             try await sessionMutator.archive(sessionID: sessionId)
+            // A list response requested before the archive must not restore the row.
+            claimedRows.removeValue(forKey: sessionId)
         }
     }
 
@@ -775,6 +777,8 @@ public final class SessionListViewModel {
 
         return await mutate(modelContext: modelContext, animation: animation) {
             try await sessionMutator.delete(sessionID: sessionId)
+            // A list response requested before the delete must not restore the row.
+            claimedRows.removeValue(forKey: sessionId)
         }
     }
 

@@ -127,6 +127,63 @@ extension SessionListMutationTests {
         )
     }
 
+    /// Archiving or deleting the inserted row ends its claim: the earlier
+    /// response must not bring back a chat the server has just removed.
+    func testArchivedOrDeletedInsertIsNotRestoredByAnEarlierListResponse() async throws {
+        for (host, removal) in [
+            ("tal176-archive.test", "/api/session/archive"),
+            ("tal176-delete.test", "/api/session/delete"),
+        ] {
+            let staleListArrived = expectation(description: "\(removal): stale sessions request arrived")
+            let followUpArrived = expectation(description: "\(removal): follow-up sessions request arrived")
+            let lists = DeferredRequests()
+
+            DeferredMockURLProtocol.setOnRequest({ request in
+                switch request.request.url?.path {
+                case "/api/sessions":
+                    switch lists.append(request) {
+                    case 1: staleListArrived.fulfill()
+                    case 2: followUpArrived.fulfill()
+                    default: XCTFail("unexpected extra sessions request")
+                    }
+                case "/api/session":
+                    request.complete(withJSON: #"{"session":{"session_id":"linked","title":"Linked","archived":false}}"#)
+                case removal:
+                    request.complete(withJSON: #"{"ok":true}"#)
+                default:
+                    XCTFail("unexpected request \(request.request.url?.path ?? "nil")")
+                }
+            }, forHost: host)
+            defer { DeferredMockURLProtocol.setOnRequest(nil, forHost: host) }
+
+            let viewModel = try makeDeferredViewModel(host: host)
+
+            let staleLoad = Task { await viewModel.load() }
+            await fulfillment(of: [staleListArrived], timeout: 5)
+
+            let linkedResult = await viewModel.loadSessionForDeepLink(id: "linked")
+            let linked = try XCTUnwrap(linkedResult)
+            let removed = if removal == "/api/session/archive" {
+                await viewModel.archive(linked)
+            } else {
+                await viewModel.delete(linked)
+            }
+            XCTAssertTrue(removed)
+
+            lists.request(at: 0).complete(withJSON: Self.listJSON(["old"]))
+            await fulfillment(of: [followUpArrived], timeout: 5)
+
+            XCTAssertEqual(
+                viewModel.sessions.compactMap(\.sessionId),
+                ["old"],
+                "\(removal): an earlier list response must not restore a removed row."
+            )
+
+            lists.request(at: 1).complete(withJSON: Self.listJSON(["old"]))
+            _ = await staleLoad.value
+        }
+    }
+
     private func makeDeferredViewModel(host: String) throws -> SessionListViewModel {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DeferredMockURLProtocol.self]
