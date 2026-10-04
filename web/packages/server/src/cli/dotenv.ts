@@ -3,8 +3,8 @@
  * `ctl.sh`): the checkout `.env` applies unconditionally unless
  * `HERMES_WEBUI_PRESERVE_ENV` keeps values already in the environment; the
  * Hermes home `.env` is a fallback for keys the environment lacks (provider
- * credentials referenced as `${VAR}` in config.yaml) and never sets the
- * operator auth, isolation, or code-launch keys. `HERMES_WEBUI_NO_DOTENV=1` skips both.
+ * credentials referenced as `${VAR}` in config.yaml) and never sets
+ * deployment posture (see `isProtectedEnvKey`). `HERMES_WEBUI_NO_DOTENV=1` skips both.
  */
 import { join, resolve } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
@@ -13,54 +13,35 @@ const READONLY = new Set(['UID', 'GID', 'EUID', 'EGID', 'PPID'])
 const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /**
- * Deployment posture the agent-writable Hermes home `.env` may not set: otherwise a contained user could disable
- * isolation, swap the auth configuration, or choose the code that runs on the next start (#4589).
+ * The agent-writable Hermes home `.env` may not set deployment posture: otherwise a contained user could disable
+ * isolation, swap the auth configuration, move the home or state, or choose the code that runs on the next start
+ * (#4589). Every `HERMES_WEBUI_*` key is the operator's except these tuning knobs.
  */
+const HOME_ENV_WEBUI_KEYS: ReadonlySet<string> = new Set([
+  'HERMES_WEBUI_BOT_NAME',
+  'HERMES_WEBUI_DEFAULT_MODEL',
+  'HERMES_WEBUI_PORT',
+  'HERMES_WEBUI_MAX_UPLOAD_MB',
+  'HERMES_WEBUI_MAX_SSE_CLIENTS',
+  'HERMES_WEBUI_FOLDER_ZIP_MAX_FILES',
+  'HERMES_WEBUI_FOLDER_ZIP_MAX_MB',
+  'HERMES_WEBUI_LOG_MAX_BYTES',
+  'HERMES_WEBUI_PROCESS_WAKEUP_MAX_TURNS',
+  'HERMES_WEBUI_SESSIONS_MAX',
+  'HERMES_WEBUI_SESSION_SAVE_MODE',
+  'HERMES_WEBUI_RUN_JOURNAL_FSYNC',
+  'HERMES_WEBUI_RUN_JOURNAL_KEEP_RECENT',
+  'HERMES_WEBUI_RUN_JOURNAL_RETENTION_DAYS',
+])
+/** Outside that namespace: the home, config, and Web root selectors, internal markers, and interpreter/loader hooks. */
 const PROTECTED_ENV_KEYS: ReadonlySet<string> = new Set([
-  'HERMES_WEBUI_ISOLATED_PROFILE',
-  'HERMES_WEBUI_PASSWORD',
-  'HERMES_WEBUI_PASSKEY',
-  'HERMES_WEBUI_COOKIE_NAME',
-  'HERMES_WEBUI_SECURE',
-  'HERMES_WEBUI_SESSION_TTL',
-  'HERMES_WEBUI_SESSION_SLIDING',
-  'HERMES_WEBUI_TRUSTED_AUTH_HEADER',
-  'HERMES_WEBUI_TRUSTED_GROUPS_HEADER',
-  'HERMES_WEBUI_GROUP_PROFILE_MAP',
-  'HERMES_WEBUI_TRUSTED_AUTH_LOGOUT_URL',
-  'HERMES_WEBUI_TRUSTED_PROXY_CIDRS',
-  'HERMES_WEBUI_OIDC_ISSUER',
-  'HERMES_WEBUI_OIDC_CLIENT_ID',
-  'HERMES_WEBUI_OIDC_CLIENT_SECRET',
-  'HERMES_WEBUI_OIDC_REDIRECT_URI',
-  'HERMES_WEBUI_OIDC_SCOPES',
-  'HERMES_WEBUI_OIDC_ALLOW_CLAIM',
-  'HERMES_WEBUI_OIDC_ALLOW_VALUES',
-  'HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS',
-  'HERMES_WEBUI_OIDC_PROFILE_CLAIM',
-  'HERMES_WEBUI_OIDC_PROFILE_MAP',
-  'HERMES_WEBUI_OIDC_OWNER_CLAIM',
-  'HERMES_WEBUI_OIDC_OWNER_VALUES',
-  // Not in the Python list, but they gate access the same way: remote onboarding while auth is off, CSRF origins, and
-  // which forwarded client, host, scheme, and group values are believed.
-  'HERMES_WEBUI_ONBOARDING_OPEN',
-  'HERMES_WEBUI_ALLOWED_ORIGINS',
-  'HERMES_WEBUI_TRUST_FORWARDED_FOR',
-  'HERMES_WEBUI_TRUST_FORWARDED_HOST',
-  'HERMES_WEBUI_TRUST_FORWARDED_PROTO',
-  'HERMES_WEBUI_TRUSTED_GROUPS_PIPE_SEPARATOR',
-  // The code the server, sidecar, terminal, git, and browser run: launch selectors, extension and CSP sources, and the
-  // interpreter/loader hooks (`LD_*`, `DYLD_*`, and `GIT_CONFIG_*` match by prefix below).
-  'HERMES_WEBUI_SIDECAR_COMMAND',
-  'HERMES_WEBUI_PYTHON',
-  'HERMES_WEBUI_AGENT_DIR',
-  'HERMES_WEBUI_SERVER_CWD',
-  'HERMES_WEBUI_EXTENSION_DIR',
-  'HERMES_WEBUI_EXTENSION_MANIFEST',
-  'HERMES_WEBUI_EXTENSION_SCRIPT_URLS',
-  'HERMES_WEBUI_EXTENSION_STYLESHEET_URLS',
-  'HERMES_WEBUI_CSP_CONNECT_EXTRA',
-  'HERMES_WEBUI_CSP_FRAME_EXTRA',
+  'HERMES_HOME',
+  'HERMES_BASE_HOME',
+  'HERMES_CONFIG_PATH',
+  'HERMES_API_URL',
+  'HERMES_GATEWAY_HEALTH_URL',
+  'TALARIA_WEB_ROOT',
+  'TALARIA_WEB_WORKER',
   'NODE_OPTIONS',
   'NODE_PATH',
   'PYTHONPATH',
@@ -72,9 +53,10 @@ const PROTECTED_ENV_KEYS: ReadonlySet<string> = new Set([
   'GIT_EXEC_PATH',
   'GIT_ASKPASS',
 ])
-// ponytail: denylist of known hooks; switch the home .env to an allowlist if new launch/loader variables keep appearing.
+// ponytail: loader hooks are a known list; switch non-Web keys to an allowlist too if new ones keep appearing.
 const PROTECTED_ENV_PREFIXES = ['LD_', 'DYLD_', 'GIT_CONFIG_']
-const isProtectedEnvKey = (key: string): boolean => PROTECTED_ENV_KEYS.has(key) || PROTECTED_ENV_PREFIXES.some((p) => key.startsWith(p))
+const isProtectedEnvKey = (key: string): boolean =>
+  key.startsWith('HERMES_WEBUI_') ? !HOME_ENV_WEBUI_KEYS.has(key) : PROTECTED_ENV_KEYS.has(key) || PROTECTED_ENV_PREFIXES.some((p) => key.startsWith(p))
 
 function unescapeDouble(raw: string): string {
   let out = ''

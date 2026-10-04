@@ -53,12 +53,16 @@ describe('.env loading', () => {
       'HERMES_WEBUI_EXTENSION_MANIFEST', 'HERMES_WEBUI_EXTENSION_SCRIPT_URLS', 'HERMES_WEBUI_EXTENSION_STYLESHEET_URLS', 'HERMES_WEBUI_CSP_CONNECT_EXTRA',
       'HERMES_WEBUI_CSP_FRAME_EXTRA', 'NODE_OPTIONS', 'NODE_PATH', 'PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP', 'BASH_ENV', 'LD_PRELOAD', 'LD_AUDIT',
       'DYLD_INSERT_LIBRARIES', 'GIT_SSH_COMMAND', 'GIT_SSH', 'GIT_EXEC_PATH', 'GIT_ASKPASS', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
+      // Where the server listens, keeps its state and password hash, and finds the home, config, and Web root; any
+      // Web key not on the tuning allowlist (here one the server does not read yet) fails closed.
+      'HERMES_WEBUI_HOST', 'HERMES_WEBUI_STATE_DIR', 'HERMES_WEBUI_TLS_CERT', 'HERMES_WEBUI_TALARIA_RELAY_URL', 'HERMES_WEBUI_HOME_DOTENV_KEYS',
+      'HERMES_WEBUI_SOME_FUTURE_KEY', 'HERMES_HOME', 'HERMES_BASE_HOME', 'HERMES_CONFIG_PATH', 'TALARIA_WEB_ROOT',
     ]
-    writeFileSync(join(dir, 'hermes.env'), `${protectedKeys.map((k) => `${k}=from-profile`).join('\n')}\nOPENAI_API_KEY=sk-profile\n`)
+    writeFileSync(join(dir, 'hermes.env'), `${protectedKeys.map((k) => `${k}=from-profile`).join('\n')}\nOPENAI_API_KEY=sk-profile\nHERMES_WEBUI_MAX_UPLOAD_MB=50\n`)
     const env: Record<string, string | undefined> = { HERMES_WEBUI_ISOLATED_PROFILE: '1' }
     const logs: string[] = []
-    expect(loadLauncherDotenv({ env, repoEnvFile: null, hermesEnvFile: join(dir, 'hermes.env'), log: (line) => logs.push(line) })).toEqual(['OPENAI_API_KEY'])
-    expect(env).toEqual({ HERMES_WEBUI_ISOLATED_PROFILE: '1', OPENAI_API_KEY: 'sk-profile' })
+    expect(loadLauncherDotenv({ env, repoEnvFile: null, hermesEnvFile: join(dir, 'hermes.env'), log: (line) => logs.push(line) })).toEqual(['OPENAI_API_KEY', 'HERMES_WEBUI_MAX_UPLOAD_MB'])
+    expect(env).toEqual({ HERMES_WEBUI_ISOLATED_PROFILE: '1', OPENAI_API_KEY: 'sk-profile', HERMES_WEBUI_MAX_UPLOAD_MB: '50' })
     for (const key of protectedKeys) expect(logs.some((line) => line.includes(key))).toBe(true)
     // The checkout .env is deployment config, so it may still set them.
     writeFileSync(join(dir, 'repo.env'), 'HERMES_WEBUI_PASSWORD=operator\n')
