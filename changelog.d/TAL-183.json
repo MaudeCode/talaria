@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Signing out of a server while a reply is still running no longer lets that reply reappear after the same server is added again in the same app session.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}

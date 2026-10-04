@@ -202,8 +202,8 @@ public final class AuthManager {
 
     /// The production `resetServerScopedState`: clears the server's stored
     /// selection, session-row flags, Insights cache, cached responses
-    /// (`ResponseCache`), browsed Kanban Board, composer drafts, and its
-    /// offline cache in the app's SwiftData container.
+    /// (`ResponseCache`), browsed Kanban Board, suspended-stream snapshots,
+    /// composer drafts, and its offline cache in the app's SwiftData container.
     /// Draft removal is flushed to disk rather than left to the debounced
     /// write, and any failure propagates so an OIDC sign-in fails closed
     /// instead of exposing the previous profile's data.
@@ -221,6 +221,7 @@ public final class AuthManager {
             InsightsResponseCache(server: server, defaults: defaults).clear()
             ResponseCache(server: server, root: responseCacheRoot).clear()
             KanbanFeatureState.clearBrowsedBoard(for: server, in: defaults)
+            ActiveChatStreamSnapshotStore.shared.removeAll(for: server)
             await draftStore.discardDrafts(for: server)
             // The two durable deletions are independent: attempt both, then
             // surface the first failure so neither store outlives the other.

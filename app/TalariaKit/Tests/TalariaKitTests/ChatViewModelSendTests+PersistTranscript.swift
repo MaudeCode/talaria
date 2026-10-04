@@ -65,6 +65,43 @@ extension ChatViewModelSendTests {
         XCTAssertEqual(try CacheStore.cachedMessages(serverURL: server, sessionID: "session-abc", in: context), [])
     }
 
+    // TAL-183: the departing chat's onDisappear runs after the sign-out reset.
+    func testAChatSuspendedAfterASignOutSavesNoActiveStreamSnapshot() async throws {
+        let server = try XCTUnwrap(URL(string: "https://example.test"))
+        let streamClient = SpySSEStreamingClient()
+        let viewModel = try makeViewModel(streamClient: streamClient) { request in
+            apiTestJSONResponse(#"{"session_id": "session-abc", "stream_id": "stream-123"}"#, for: request)
+        }
+        _ = await viewModel.sendMessage("Private to the signed-out person")
+        streamClient.emit(.token("Partial answer."), lastEventID: "stream-123:1")
+        ServerCacheGeneration.advance(for: server)
+
+        viewModel.suspendStreamForNavigation()
+
+        XCTAssertNil(ActiveChatStreamSnapshotStore.shared.snapshot(
+            server: server,
+            sessionID: "session-abc",
+            streamID: "stream-123"
+        ))
+    }
+
+    func testRemovingOneServersActiveStreamSnapshotsKeepsTheOtherServers() throws {
+        let removed = try XCTUnwrap(URL(string: "https://removed.test"))
+        let kept = try XCTUnwrap(URL(string: "https://kept.test"))
+        let store = ActiveChatStreamSnapshotStore.shared
+        for server in [removed, kept] {
+            store.save(.synthetic, server: server, sessionID: "session-abc", streamID: "stream-1")
+            store.save(.synthetic, server: server, sessionID: "session-def", streamID: "stream-2")
+        }
+
+        store.removeAll(for: removed)
+
+        XCTAssertNil(store.snapshot(server: removed, sessionID: "session-abc", streamID: "stream-1"))
+        XCTAssertNil(store.snapshot(server: removed, sessionID: "session-def", streamID: "stream-2"))
+        XCTAssertEqual(store.snapshot(server: kept, sessionID: "session-abc", streamID: "stream-1"), .synthetic)
+        XCTAssertEqual(store.snapshot(server: kept, sessionID: "session-def", streamID: "stream-2"), .synthetic)
+    }
+
     func testAResponseArrivingAfterAResetIsNotCached() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
@@ -76,4 +113,22 @@ extension ChatViewModelSendTests {
 
         XCTAssertNil(ResponseCache(server: server, root: root).entry(ResponseCache.Kind.projects).load(ProjectsResponse.self))
     }
+}
+
+extension ActiveChatStreamSnapshot {
+    static let synthetic = ActiveChatStreamSnapshot(
+        messages: [ChatMessage(role: "user", content: "hello", timestamp: 1, messageId: "m1")],
+        messagesOffset: 0,
+        displayTitle: "Thread",
+        completedToolCallGroups: [],
+        completedReasoningGroups: [],
+        liveAssistantActivity: AssistantActivityTimeline(),
+        activeStreamLastEventID: nil,
+        streamingAssistantMessageID: nil,
+        toolCallAnchorMessageID: nil,
+        reasoningAnchorMessageID: nil,
+        contextWindowSnapshot: nil,
+        localAttachmentPreviews: [:],
+        pinnedLocalNotices: []
+    )
 }
