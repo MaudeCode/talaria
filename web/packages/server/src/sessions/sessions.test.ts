@@ -1390,6 +1390,9 @@ describe('server-resolved workspace display names (TAL-303)', () => {
       const workState = join(s.state, 'profiles', 'work', 'webui_state')
       mkdirSync(workState, { recursive: true })
       writeFileSync(join(workState, 'workspaces.json'), JSON.stringify([{ path: registered, name: 'Work Talaria' }]))
+      // Its config.yaml exists but has never been read, so its terminal backend is still unknown: a label grants no access, so
+      // the name holds on the first read too.
+      writeFileSync(join(s.state, 'profiles', 'work', 'config.yaml'), 'model: work-model\n')
       const dir = s.deps.sessionStore.sessionDir
       mkdirSync(dir, { recursive: true })
       const base = { title: 'needle', message_count: 1, last_message_at: 100, updated_at: 100, archived: false }

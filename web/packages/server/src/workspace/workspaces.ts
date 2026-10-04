@@ -243,10 +243,12 @@ export class WorkspaceRegistry {
     return resolvePathLikePython(this.deps.defaultWorkspace(), this.home)
   }
 
-  private cleanWorkspaceList(workspaces: unknown, profile: string | null): WorkspaceEntry[] {
+  /** `forNames` keeps every entry a profile without local I/O would drop: a label grants no access (TAL-303). */
+  private cleanWorkspaceList(workspaces: unknown, profile: string | null, forNames = false): WorkspaceEntry[] {
     const hermesProfiles = resolvePathLikePython(resolve(this.homePath(), '.hermes', 'profiles'))
     const result: WorkspaceEntry[] = []
-    const localIo = this.profileSupportsLocalIo(profile)
+    // A cold config.yaml cache reads as non-local until its background refresh lands, which would drop every entry.
+    const localIo = forNames || this.profileSupportsLocalIo(profile)
     if (!Array.isArray(workspaces)) return result
     for (const w of workspaces) {
       if (!w || typeof w !== 'object') continue
@@ -278,20 +280,21 @@ export class WorkspaceRegistry {
   }
 
   load(profile: string | null = null): WorkspaceEntry[] {
-    return this.read(profile, true)
-  }
-
-  /** TAL-303: `load` without rewriting a cleaned file, for display names that every session read resolves. */
-  entries(profile: string | null = null): WorkspaceEntry[] {
     return this.read(profile, false)
   }
 
-  private read(profile: string | null, persist: boolean): WorkspaceEntry[] {
+  /** TAL-303: the registry as named for display: never rewritten on read, and complete before a profile's config is cached. */
+  entries(profile: string | null = null): WorkspaceEntry[] {
+    return this.read(profile, true)
+  }
+
+  private read(profile: string | null, forNames: boolean): WorkspaceEntry[] {
+    const persist = !forNames
     const file = this.workspacesFile(profile)
     if (file !== null && existsSync(file)) {
       try {
         const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown
-        const cleaned = this.cleanWorkspaceList(raw, profile)
+        const cleaned = this.cleanWorkspaceList(raw, profile, forNames)
         if (persist && Array.isArray(raw) && cleaned.length !== raw.length) {
           try { writeFileSync(file, JSON.stringify(cleaned, null, 2), 'utf8') } catch { /* best effort */ }
         }
@@ -307,18 +310,18 @@ export class WorkspaceRegistry {
       isDefault = true
     }
     if (isDefault) {
-      const migrated = this.migrateGlobalWorkspaces(persist)
+      const migrated = this.migrateGlobalWorkspaces(forNames)
       if (migrated.length) return migrated
     }
     return [{ path: this.profileConfigDefaultWorkspace(profile), name: 'Home' }]
   }
 
-  private migrateGlobalWorkspaces(persist: boolean): WorkspaceEntry[] {
+  private migrateGlobalWorkspaces(forNames: boolean): WorkspaceEntry[] {
     if (!existsSync(this.globalWorkspacesFile)) return []
     try {
       const raw = JSON.parse(readFileSync(this.globalWorkspacesFile, 'utf8')) as unknown
-      const cleaned = this.cleanWorkspaceList(raw, null)
-      if (persist && Array.isArray(raw) && cleaned.length !== raw.length) writeFileSync(this.globalWorkspacesFile, JSON.stringify(cleaned, null, 2), 'utf8')
+      const cleaned = this.cleanWorkspaceList(raw, null, forNames)
+      if (!forNames && Array.isArray(raw) && cleaned.length !== raw.length) writeFileSync(this.globalWorkspacesFile, JSON.stringify(cleaned, null, 2), 'utf8')
       return cleaned
     } catch {
       return []
