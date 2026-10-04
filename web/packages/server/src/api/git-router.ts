@@ -4,7 +4,7 @@ import { gitContract } from '@maudecode/talaria-web-contracts'
 import { HttpError, requireFields, type ApiContext } from './router.js'
 import { requestSessionIdGuard } from './session-visibility.js'
 import type { RequestContext } from '../http/context.js'
-import { cleanGeneratedCommitMessage, GitWorkspaceError, WORKSPACE_BUSY_MESSAGE, WORKSPACE_GIT_DESTRUCTIVE_ENV, type GitStatus } from '../workspace/git.js'
+import { cleanGeneratedCommitMessage, enclosingRepoRoot, GitWorkspaceError, WORKSPACE_BUSY_MESSAGE, WORKSPACE_GIT_DESTRUCTIVE_ENV, type GitStatus } from '../workspace/git.js'
 import { REMOTE_WORKSPACE_UNSUPPORTED_CODE, REMOTE_WORKSPACE_UNSUPPORTED_MESSAGE } from '../workspace/workspaces.js'
 import { removeWorktreeForSession, worktreeStatusForSession } from '../workspace/worktrees.js'
 import { isSafeSessionId, type Session } from '../sessions/session.js'
@@ -47,11 +47,12 @@ export function gitSession(ctx: RequestContext, sid: unknown): { session: Sessio
 }
 
 /**
- * `rejectDestructiveIfUnsafe` plus a workspace hold for the whole mutation: the hold is taken in the same tick as the
- * active-run check, so no chat run or terminal starts in the workspace until the working tree stops changing.
+ * `rejectDestructiveIfUnsafe` plus a hold on the enclosing repository for the whole mutation. The hold is taken in the
+ * same tick as the active-run check, before any Git command, so no chat run, terminal, or file write starts anywhere in
+ * the repository until the working tree stops changing.
  */
 function workingTreeMutation<T>(ctx: RequestContext, session: Session, workspace: string, fn: () => Promise<T>): Promise<T> {
-  return ctx.deps.git.holdWorkspace(workspace, () => {
+  return ctx.deps.git.holdWorkspace(enclosingRepoRoot(workspace) ?? workspace, () => {
     rejectDestructiveIfUnsafe(ctx, session)
     return fn()
   })

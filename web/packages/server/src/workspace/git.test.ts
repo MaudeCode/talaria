@@ -209,7 +209,8 @@ describe('slow git off the event loop', () => {
     const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim()
     shimDir = mkdtempSync(join(tmpdir(), 'talaria-slow-git-'))
     marker = join(shimDir, 'push-started')
-    writeFileSync(join(shimDir, 'git'), `#!/bin/sh\nfor a in "$@"; do if [ "$a" = push ] || [ "$a" = pull ]; then touch '${marker}'; sleep 2; break; fi; done\nexec '${realGit}' "$@"\n`)
+    // With `slow-rev-parse` present, `rev-parse` (the context lookup every mutation starts with) sleeps too.
+    writeFileSync(join(shimDir, 'git'), `#!/bin/sh\nfor a in "$@"; do if [ "$a" = push ] || [ "$a" = pull ] || { [ "$a" = rev-parse ] && [ -e '${shimDir}/slow-rev-parse' ]; }; then touch '${marker}'; sleep 2; break; fi; done\nexec '${realGit}' "$@"\n`)
     chmodSync(join(shimDir, 'git'), 0o755)
     const env = { HERMES_WEBUI_WORKSPACE_GIT_DESTRUCTIVE: '1', ...identity, PATH: `${shimDir}:${process.env.PATH ?? ''}` }
     // A short lock wait so contention answers `operation_in_progress` well before the slow push finishes.
@@ -286,6 +287,31 @@ describe('slow git off the event loop', () => {
     const { push: pull } = await inFlight(sidA, 'pull')
     const res = await post(s, '/api/chat/start', { session_id: sidB, message: 'hi' })
     expect(await json(res)).toMatchObject({ error: 'A Git operation is running in this workspace.' })
+    expect((await pull).status).toBe(200)
+  })
+
+  it('a mutation from a subdirectory holds the whole repository before its first Git command', async () => {
+    const ws = realpathSync(join(s.state, 'workspace'))
+    const sessionIn = async (dir: string): Promise<string> => {
+      mkdirSync(dir, { recursive: true })
+      expect((await post(s, '/api/workspaces/add', { path: dir })).status).toBe(200)
+      return String(((await json(await post(s, '/api/session/new', { workspace: dir }))).session as Json).session_id)
+    }
+    const sidE = await sessionIn(join(ws, 'sub-e'))
+    const sidF = await sessionIn(join(ws, 'sub-f'))
+    writeFileSync(join(shimDir, 'slow-rev-parse'), '')
+    let pull: Promise<Response>
+    try {
+      rmSync(marker, { force: true })
+      pull = post(s, '/api/git/pull', { session_id: sidE })
+      while (!existsSync(marker)) await new Promise((r) => setTimeout(r, 20))
+      // The context lookup is still running; a terminal in the sibling directory must not start.
+      const res = await post(s, '/api/terminal/start', { session_id: sidF })
+      expect(await json(res)).toMatchObject({ error: 'A Git operation is running in this workspace.' })
+      expect(res.status).toBe(409)
+    } finally {
+      rmSync(join(shimDir, 'slow-rev-parse'), { force: true })
+    }
     expect((await pull).status).toBe(200)
   })
 

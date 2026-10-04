@@ -111,6 +111,20 @@ export function spawnGit(cwd: string, argv: string[], timeoutMs: number, env?: R
 
 type Stats = Map<string, [number, number, boolean]>
 
+/**
+ * The nearest directory at or above `path` holding a `.git` entry (a repository, linked worktree, or submodule root), the
+ * root Git itself would discover, found synchronously so a caller can hold it before its first await.
+ */
+export function enclosingRepoRoot(path: string): string | null {
+  let dir = resolvePathLikePython(path)
+  for (;;) {
+    if (existsSync(join(dir, '.git'))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
+}
+
 /** Whether two paths are the same directory or one contains the other. */
 export function pathsOverlap(a: string, b: string): boolean {
   const x = resolvePathLikePython(a)
@@ -908,11 +922,11 @@ export class GitRunner {
     const result = await this.withMutationLock(ctx, async () => {
       await this.validateCheckoutRequestLocked(ctx, ref, m, opts.newBranch ?? null)
       if (await this.dirtyWorktree(ctx)) throw new GitWorkspaceError('Checkout blocked because the Git worktree has uncommitted changes', 'dirty_worktree')
-      return await this.performCheckoutLocked(ctx, ref, m, opts.newBranch ?? null, Boolean(opts.track))
+      const checkedOut = await this.performCheckoutLocked(ctx, ref, m, opts.newBranch ?? null, Boolean(opts.track))
+      return { checkedOut, status: await this.status(workspace), branches: await this.branches(workspace) }
     })
-    const status = await this.status(workspace)
-    const branches = await this.branches(workspace)
-    return { ok: true, message: GitRunner.remoteMessage(result), current_branch: branches.current, status, branches }
+    const { status, branches } = result
+    return { ok: true, message: GitRunner.remoteMessage(result.checkedOut), current_branch: branches.current, status, branches }
   }
 
   async stashAndCheckout(workspace: string, ref: string, mode: string, opts: { newBranch?: string | null; track?: boolean } = {}): Promise<Record<string, unknown>> {
@@ -939,11 +953,9 @@ export class GitRunner {
         throw error
       }
       const restored = await this.restoreBranchSwitchStashLocked(ctx, await this.currentCheckoutLabel(ctx))
-      return { result, stashed, restored }
+      return { result, stashed, restored, status: await this.status(workspace), branches: await this.branches(workspace) }
     })
-    const status = await this.status(workspace)
-    const branches = await this.branches(workspace)
-    const { restored } = outcome
+    const { restored, status, branches } = outcome
     return {
       ok: true, message: GitRunner.remoteMessage(outcome.result), stash_name: outcome.stashed ? stashName : '', stashed: outcome.stashed,
       restored_stash: restored.restored_stash ?? null, restore_failed: Boolean(restored.restore_failed), restore_error: str(restored.restore_error),
@@ -1016,26 +1028,26 @@ export class GitRunner {
 
   async stage(workspace: string, paths: Iterable<unknown>): Promise<GitStatus> {
     const ctx = await this.requireContext(workspace)
-    await this.withMutationLock(ctx, async () => {
+    return await this.withMutationLock(ctx, async () => {
       await this.blockFilteredDestructiveWrite(ctx, 'Repository uses local Git filters; stage may corrupt index content. Use the terminal to stage manually.')
       await this.run(ctx, ['add', '--', ...GitRunner.pathspecs(ctx, paths)], { check: true, destructive: true, disableFilterAttributes: true })
+      return await this.status(workspace)
     })
-    return await this.status(workspace)
   }
 
   async unstage(workspace: string, paths: Iterable<unknown>): Promise<GitStatus> {
     const ctx = await this.requireContext(workspace)
     const specs = GitRunner.pathspecs(ctx, paths)
-    await this.withMutationLock(ctx, async () => {
+    return await this.withMutationLock(ctx, async () => {
       const result = await this.run(ctx, ['restore', '--staged', '--', ...specs], { destructive: true })
       if (result.status !== 0) await this.run(ctx, ['reset', 'HEAD', '--', ...specs], { check: true, destructive: true })
+      return await this.status(workspace)
     })
-    return await this.status(workspace)
   }
 
   async discard(workspace: string, paths: Iterable<unknown>, opts: { deleteUntracked?: boolean } = {}): Promise<GitStatus> {
     const ctx = await this.requireContext(workspace)
-    await this.withMutationLock(ctx, async () => {
+    return await this.withMutationLock(ctx, async () => {
       await this.blockFilteredDestructiveWrite(ctx, 'Repository uses local Git filters; discard may corrupt working-tree content. Use the terminal to discard manually.')
       const status = await this.status(workspace)
       const byPath = new Map((status.files ?? []).map((f) => [f.path, f]))
@@ -1061,8 +1073,8 @@ export class GitRunner {
         }
         await this.run(ctx, ['restore', '--worktree', '--', repoRel], { check: true, destructive: true, disableFilterAttributes: true })
       }
+      return await this.status(workspace)
     })
-    return await this.status(workspace)
   }
 
   // ── commit messages ──────────────────────────────────────────────────────
@@ -1159,19 +1171,19 @@ export class GitRunner {
     const msg = str(message).trim()
     if (!msg) throw new GitWorkspaceError('Commit message is required')
     const ctx = await this.requireContext(workspace)
-    // The SHA is read under the lock so a later mutation's HEAD cannot be reported as this commit.
-    const sha = await this.withMutationLock(ctx, async () => {
+    // The SHA and status are read under the lock so a later mutation's state cannot be reported as this commit's.
+    return await this.withMutationLock(ctx, async () => {
       await this.run(ctx, ['commit', '-m', msg], { timeoutMs: 10_000, check: true, destructive: true, disableFilterAttributes: true })
-      return (await this.run(ctx, ['rev-parse', '--short', 'HEAD'], { check: true })).stdout.trim()
+      const sha = (await this.run(ctx, ['rev-parse', '--short', 'HEAD'], { check: true })).stdout.trim()
+      return { ok: true, commit: sha, status: await this.status(workspace) }
     })
-    return { ok: true, commit: sha, status: await this.status(workspace) }
   }
 
   async commitSelected(workspace: string, message: string, paths: Iterable<unknown>): Promise<Record<string, unknown>> {
     const msg = str(message).trim()
     if (!msg) throw new GitWorkspaceError('Commit message is required')
     const ctx = await this.requireContext(workspace)
-    const [workspacePaths, sha] = await this.withMutationLock(ctx, async () => {
+    return await this.withMutationLock(ctx, async () => {
       const [specs, wsPaths] = await this.selectedFiles(ctx, paths)
       const [env, dir] = await this.selectedTempIndexEnv(ctx, specs)
       try {
@@ -1182,9 +1194,9 @@ export class GitRunner {
       } finally {
         rmSync(dir, { recursive: true, force: true })
       }
-      return [wsPaths, (await this.run(ctx, ['rev-parse', '--short', 'HEAD'], { check: true })).stdout.trim()] as const
+      const sha = (await this.run(ctx, ['rev-parse', '--short', 'HEAD'], { check: true })).stdout.trim()
+      return { ok: true, commit: sha, paths: wsPaths, status: await this.status(workspace) }
     })
-    return { ok: true, commit: sha, paths: workspacePaths, status: await this.status(workspace) }
   }
 
   private async branchName(ctx: GitContext): Promise<string> {
@@ -1195,24 +1207,26 @@ export class GitRunner {
 
   async fetch(workspace: string): Promise<Record<string, unknown>> {
     const ctx = await this.requireContext(workspace)
-    const result = await this.withMutationLock(ctx, async () => await this.run(ctx, ['fetch', '--prune', '--no-recurse-submodules'], {
-      timeoutMs: GIT_REMOTE_TIMEOUT_MS, check: true, forceDestructiveHardening: true, disableFilterAttributes: this.destructiveEnabled(), neutralizeFilterPrograms: true, neutralizeRemoteHelpers: true,
-    }), { holdRepo: false })
-    return { ok: true, message: GitRunner.remoteMessage(result), status: await this.status(workspace) }
+    return await this.withMutationLock(ctx, async () => {
+      const result = await this.run(ctx, ['fetch', '--prune', '--no-recurse-submodules'], {
+        timeoutMs: GIT_REMOTE_TIMEOUT_MS, check: true, forceDestructiveHardening: true, disableFilterAttributes: this.destructiveEnabled(), neutralizeFilterPrograms: true, neutralizeRemoteHelpers: true,
+      })
+      return { ok: true, message: GitRunner.remoteMessage(result), status: await this.status(workspace) }
+    }, { holdRepo: false })
   }
 
   async pull(workspace: string): Promise<Record<string, unknown>> {
     const ctx = await this.requireContext(workspace)
-    const result = await this.withMutationLock(ctx, async () => {
+    return await this.withMutationLock(ctx, async () => {
       await this.blockFilteredDestructiveWrite(ctx, 'Repository uses local Git filters; pull may corrupt working-tree content. Use the terminal to pull manually.')
-      return await this.run(ctx, ['pull', '--ff-only', '--no-recurse-submodules'], { timeoutMs: GIT_REMOTE_TIMEOUT_MS, check: true, destructive: true, disableFilterAttributes: true, neutralizeFilterPrograms: true, neutralizeRemoteHelpers: true })
+      const result = await this.run(ctx, ['pull', '--ff-only', '--no-recurse-submodules'], { timeoutMs: GIT_REMOTE_TIMEOUT_MS, check: true, destructive: true, disableFilterAttributes: true, neutralizeFilterPrograms: true, neutralizeRemoteHelpers: true })
+      return { ok: true, message: GitRunner.remoteMessage(result), status: await this.status(workspace) }
     })
-    return { ok: true, message: GitRunner.remoteMessage(result), status: await this.status(workspace) }
   }
 
   async push(workspace: string): Promise<Record<string, unknown>> {
     const ctx = await this.requireContext(workspace)
-    const result = await this.withMutationLock(ctx, async () => {
+    return await this.withMutationLock(ctx, async () => {
       const status = await this.status(workspace)
       const args = ['push']
       if (!status.upstream) {
@@ -1221,9 +1235,9 @@ export class GitRunner {
         if (!remotes.includes('origin')) throw new GitWorkspaceError('No upstream branch or origin remote is configured', 'no_upstream')
         args.push('-u', 'origin', branch)
       }
-      return await this.run(ctx, args, { timeoutMs: GIT_REMOTE_TIMEOUT_MS, check: true, destructive: true, disableFilterAttributes: true, neutralizeFilterPrograms: true, neutralizeRemoteHelpers: true })
+      const result = await this.run(ctx, args, { timeoutMs: GIT_REMOTE_TIMEOUT_MS, check: true, destructive: true, disableFilterAttributes: true, neutralizeFilterPrograms: true, neutralizeRemoteHelpers: true })
+      return { ok: true, message: GitRunner.remoteMessage(result), status: await this.status(workspace) }
     }, { holdRepo: false })
-    return { ok: true, message: GitRunner.remoteMessage(result), status: await this.status(workspace) }
   }
 }
 
