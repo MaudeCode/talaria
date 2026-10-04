@@ -17,14 +17,14 @@ import { useTasksWorkbench } from './TasksPage'
 // Persisted shape: cron.jobs.create_job record plus _cron_job_for_api projections
 // (profile, toast_notifications, monitor, continuity) with every field set.
 const full: CronJob = {
-  id: 'ab12cd34ef56', name: 'Digest', prompt: 'Summarise the inbox', skills: ['inbox', 'summary'], model: 'gpt-5.6-sol', provider: 'openai-codex',
+  id: 'ab12cd34ef56', name: 'Digest', prompt: 'Summarise the inbox', skills: ['inbox', 'summary'], model: 'gpt-5.6-sol', provider: 'openai-codex', model_option_id: '@openai-codex:gpt-5.6-sol',
   script: 'collect.sh', no_agent: false, monitor: 'https://example.com/status', continuity: true, context_from: ['self', 'feed0000feed'],
   schedule: { kind: 'cron', expr: '0 9 * * *', display: '0 9 * * *' }, schedule_display: '0 9 * * *', repeat: { times: null, completed: 4 },
   enabled: true, state: 'scheduled', next_run_at: '2026-09-18T09:00:00+02:00', last_run_at: '2026-09-17T09:00:00+02:00', last_status: 'ok',
   last_error: null, last_delivery_error: null, deliver: 'telegram', workdir: '/srv/digest', reasoning_effort: 'high', profile: 'work', toast_notifications: false,
   derived_state: 'active', needs_attention: false, resumable: false,
 }
-const feed: CronJob = { ...full, id: 'feed0000feed', name: 'Feed', context_from: [], continuity: false, monitor: '', skills: [], reasoning_effort: null, model: null, provider: null, workdir: null }
+const feed: CronJob = { ...full, id: 'feed0000feed', name: 'Feed', context_from: [], continuity: false, monitor: '', skills: [], reasoning_effort: null, model: null, provider: null, model_option_id: null, workdir: null }
 const attention: CronJob = { ...feed, id: 'a77e0000a77e', name: 'Stuck', enabled: false, state: 'completed', next_run_at: null, last_error: "No module named 'croniter'", last_delivery_error: 'telegram: 401', derived_state: 'needs_attention', needs_attention: true, resumable: true }
 const foreign: CronJob = { ...feed, id: 'f0e1f0e1f0e1', name: 'Other profile job', read_only: true, owner_profile: 'personal', profile: 'personal' }
 
@@ -126,7 +126,7 @@ describe('TasksPage', () => {
     })
   })
 
-  it('ticks each stored pair and saves a picked colon-bearing id with its own provider (TAL-301)', async () => {
+  it('ticks the server-paired entry for each stored pair and saves a picked colon-bearing id with its own provider (TAL-301)', async () => {
     const entry = (id: string, label: string, provider_id: string, bare_id: string) => ({ id, label, provider_id, bare_id })
     vi.mocked(api.fetchModels).mockResolvedValue({
       default_model: '@custom:localhost:8080:m', default_provider_id: 'custom:localhost:8080', default_bare_id: 'm',
@@ -137,11 +137,11 @@ describe('TasksPage', () => {
         { provider: 'Ollama', provider_id: 'ollama', models: [entry('@ollama:llama3:8b', 'Llama3 8B', 'ollama', 'llama3:8b')] },
       ],
     })
-    const cases: [string, string, string][] = [['m', 'custom:localhost:8080', 'Local M'], ['gemini-2.5-flash', 'gemini', 'Flash via Gemini'], ['gemini-2.5-flash', 'google', 'Flash via Google'], ['llama3:8b', 'ollama', 'Llama3 8B']]
+    const cases: [string, string, string, string][] = [['m', 'custom:localhost:8080', '@custom:localhost:8080:m', 'Local M'], ['gemini-2.5-flash', 'gemini', '@gemini:gemini-2.5-flash', 'Flash via Gemini'], ['gemini-2.5-flash', 'google', '@google:gemini-2.5-flash', 'Flash via Google'], ['llama3:8b', 'ollama', '@ollama:llama3:8b', 'Llama3 8B']]
     let form: HTMLElement | null = null
-    for (const [model, provider, label] of cases) {
+    for (const [model, provider, optionId, label] of cases) {
       cleanup()
-      const detail = await openJob('Digest', [{ ...full, model, provider }, feed])
+      const detail = await openJob('Digest', [{ ...full, model, provider, model_option_id: optionId }, feed])
       await userEvent.click(detail.getByRole('button', { name: /^edit/i }))
       form = await screen.findByRole('form', { name: /edit job/i })
       await waitFor(() => expect(within(form!).getByRole('combobox', { name: /model override/i })).toHaveTextContent(label))

@@ -6,7 +6,7 @@ import { useModelsQuery, useWorkspacesQuery } from '../../app/queries'
 import { HelpTip } from '../../ui/Field'
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
-import { catalogEntryById, catalogEntryFor } from '../../lib/modelEntry'
+import { catalogEntryById } from '../../lib/modelEntry'
 
 /**
  * T3 Code's composer control (TAL-429): borderless and muted until hovered, with a faded chevron. `sm` sits in the card's
@@ -34,17 +34,17 @@ export function Chip({ icon, label, title, className, disabled, row, size = 'sm'
 const RADIO_CLASS = 'flex cursor-default select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-[highlighted]:bg-hover data-[checked]:text-accent-text'
 
 /**
- * Conversation model picker: grouped by provider with a search field and a custom id entry. `model`/`provider` is the
- * stored pair (or a just-picked id); with none, the catalog default is ticked.
+ * Conversation model picker: grouped by provider with a search field and a custom id entry. `optionId` is the entry the
+ * server says `model` selects (or a just-picked id); with no `model`, the catalog default is ticked.
  */
-export function ModelChip({ model, provider, onChange, row }: { model: string | null; provider: string | null; onChange: (model: string, provider: string | null) => void; row?: boolean }) {
+export function ModelChip({ model, optionId, onChange, row }: { model: string | null; optionId: string | null; onChange: (model: string, provider: string | null) => void; row?: boolean }) {
   const models = useModelsQuery()
   const [query, setQuery] = useState('')
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase()
     return (models.data?.groups ?? []).map((g) => ({ ...g, models: g.models.filter((mm) => !q || mm.id.toLowerCase().includes(q) || (mm.label ?? '').toLowerCase().includes(q)) })).filter((g) => g.models.length > 0)
   }, [models.data, query])
-  const selected = model ? catalogEntryFor(models.data, model, provider) : catalogEntryFor(models.data, models.data?.default_bare_id, models.data?.default_provider_id)
+  const selected = catalogEntryById(models.data, model ? optionId : models.data?.default_option_id)
   const label = selected ? selected.label ?? selected.id : (model ?? models.data?.default_model) || '—'
   return (
     <Menu label={m.composer_control_model()} side="top" className="max-h-[60vh] min-w-72" trigger={<Chip id={row ? undefined : "composerModelChip"} icon={<Cpu size={16} aria-hidden="true" />} label={label} title={m.composer_control_model()} row={row} className="composer-model-chip" />}>

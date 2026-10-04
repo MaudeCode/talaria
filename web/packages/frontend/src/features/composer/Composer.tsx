@@ -494,7 +494,7 @@ export function Composer(props: ComposerProps) {
 
   // While a clarification owns the box, the message-only controls leave the footer (docs/ui-ux clarify-card).
   const hide = (k: string) => (!!clarify && MESSAGE_ONLY_CONTROLS.has(k)) || !!(settings as Record<string, unknown> | undefined)?.[k]
-  const modelChoice = session?.model ? { model: session.model, provider: session.model_provider ?? null } : { model: pendingChoices?.model ?? null, provider: pendingChoices?.model_provider ?? null }
+  const modelChoice = session?.model ? { model: session.model, optionId: session.model_option_id ?? null } : { model: pendingChoices?.model ?? null, optionId: pendingChoices?.model ?? null }
   const placeholder = clarify ? (clarify.step.choices.length ? m.clarify_composer_placeholder_choices() : m.clarify_composer_placeholder()) : busy ? (busyMode === 'queue' ? m.composer_placeholder_busy_queue() : busyMode === 'interrupt' ? m.composer_placeholder_busy_interrupt() : m.composer_placeholder_busy_steer()) : m.composer_placeholder()
   const context: ContextFigures = { percent: session?.context_usage_percent, used: session?.context_used_tokens, window: session?.context_window_tokens, thresholdPercent: session?.context_threshold_percent }
   const canSend = (text.trim() !== '' || files.some((f) => f.status === 'done')) && !sending && !locked
