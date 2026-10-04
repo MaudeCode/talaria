@@ -41,12 +41,16 @@ test('/retry resends the last prompt with its attachments', async ({ page }) => 
   expect(starts[0]).toMatchObject({ session_id: 'slash', message: 'Summarize the logs', attachments: [FILE] })
 })
 
-test('against a server without the resend fields, Regenerate resends the stored text', async ({ page }) => {
+test('against a server without the resend fields, Regenerate puts the stored text in the composer instead of sending it', async ({ page }) => {
   const starts = await mockRetry(page, 'old')
-  await page.route('**/api/session/retry', (route) => route.fulfill({ json: { ok: true, last_user_text: 'Summarize the logs', removed_count: 2 } }))
+  const stored = '[Workspace::v1: /tmp/retry]\nSummarize the logs\n\n[Attached files: /tmp/retry/notes.txt]'
+  await page.route('**/api/session/retry', (route) => route.fulfill({ json: { ok: true, last_user_text: stored, removed_count: 2 } }))
   await page.goto('/session/old')
   await page.getByRole('button', { name: 'Regenerate response' }).click()
-  await expect.poll(() => starts.length).toBe(1)
-  expect(starts[0]).toMatchObject({ session_id: 'old', message: 'Summarize the logs' })
-  expect(starts[0]).not.toHaveProperty('attachments')
+  await expect(page.locator('#msg')).toHaveValue(stored)
+  // `/retry` clears the composer before the text returns.
+  await page.locator('#msg').fill('/retry')
+  await page.locator('#btnSend').click()
+  await expect(page.locator('#msg')).toHaveValue(stored)
+  expect(starts).toEqual([])
 })

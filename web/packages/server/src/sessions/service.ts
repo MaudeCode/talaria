@@ -14,13 +14,13 @@ import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
 import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
 import { anchorSceneIntOrNull, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
-import { isSafeSessionId, lastMessageTimestamp, Session, titleFrom, type Message } from './session.js'
+import { isSafeSessionId, lastMessageTimestamp, Session, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, userPromptText, withAttachmentObjects, withBodyExcerpts, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
+import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -1000,12 +1000,13 @@ export class SessionService {
       const history = s.messages
       const lastUser = findLastUserIndex(history)
       if (lastUser === null) return { error: 'No previous message to retry.' }
-      // What a client resends (TAL-515): the prompt as typed and the files that reached the model, which only ever got
-      // attachments with a path. Nothing to resend fails before the exchange is removed.
+      // What a client resends (TAL-515): the files that reached the model, which only ever got attachments with a path,
+      // and the prompt as typed. The attached-files line is the server's only when such files exist; otherwise the user
+      // typed it. Nothing to resend fails before the exchange is removed.
       const prompt = history[lastUser]!
       const lastUserText = extractText(prompt.content)
-      const lastUserPrompt = userPromptText(lastUserText)
       const lastUserAttachments = attachmentObjects(Array.isArray(prompt.attachments) ? prompt.attachments : []).filter((a): a is Record<string, unknown> => isDict(a) && Boolean(str(a.path).trim()))
+      const lastUserPrompt = stripWorkspacePrefix(lastUserAttachments.length ? stripAttachedFilesMarker(lastUserText) : lastUserText, true)
       if (!lastUserPrompt && !lastUserAttachments.length) return { error: 'The last message has nothing to resend.' }
       const removed = history.length - lastUser
       shrinkTo(s, lastUser)

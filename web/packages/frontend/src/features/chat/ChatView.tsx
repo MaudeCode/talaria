@@ -124,9 +124,11 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       const r = await api.retrySession(sessionId)
       if ('error' in r) { showToast(r.error, 4000, 'error'); return }
       await refresh()
-      // Old-server fallback: a server without `last_user_prompt` returns only the stored text.
+      // Old-server fallback: without `last_user_prompt` the stored text may carry server-added lines, so it returns to the
+      // composer to review instead of being resent; on the next task, after a `/retry` has cleared the composer.
+      if (r.last_user_prompt === undefined) { const text = r.last_user_text; setTimeout(() => returnToComposer(sessionId, text), 0); return }
       const attachments = r.last_user_attachments ?? []
-      await startTurn({ sessionId, message: r.last_user_prompt ?? r.last_user_text, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
+      await startTurn({ sessionId, message: r.last_user_prompt, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
     } catch (e) {
       showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
     }

@@ -274,6 +274,10 @@ describe('session lifecycle over HTTP', () => {
     writeMessages(s, sid, [{ role: 'user', content: stored, attachments: [file, 'legacy.txt'] }, { role: 'assistant', content: 'fine' }])
     res = await post(s, '/api/session/retry', { session_id: sid })
     expect(await json(res)).toEqual({ ok: true, last_user_text: stored, last_user_prompt: 'Summarize the logs', last_user_attachments: [file], removed_count: 2 })
+    // Without files to resend, a trailing attached-files line is the user's own text.
+    writeMessages(s, sid, [{ role: 'user', content: 'See\n\n[Attached files: example.txt]', attachments: ['legacy.txt'] }, { role: 'assistant', content: 'fine' }])
+    res = await post(s, '/api/session/retry', { session_id: sid })
+    expect(await json(res)).toMatchObject({ ok: true, last_user_prompt: 'See\n\n[Attached files: example.txt]', last_user_attachments: [] })
     // Nothing resendable: the exchange stays.
     writeMessages(s, sid, [{ role: 'user', content: '', attachments: ['legacy.txt'] }, { role: 'assistant', content: 'fine' }])
     res = await post(s, '/api/session/retry', { session_id: sid })
