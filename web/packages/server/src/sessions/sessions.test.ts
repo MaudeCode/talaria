@@ -389,6 +389,28 @@ describe('session lifecycle over HTTP', () => {
     }
   })
 
+  it('ships sort_ts on detail, list and search rows, and lists a pinned row above a streaming one (TAL-306)', async () => {
+    const [pinned, streaming] = [String((await newSession(s)).session_id), String((await newSession(s)).session_id)]
+    writeMessages(s, pinned, [{ role: 'user', content: 'sortprobe pinned', timestamp: 1000 }, { role: 'assistant', content: 'ok', timestamp: 1001 }])
+    writeMessages(s, streaming, [{ role: 'user', content: 'sortprobe streaming', timestamp: 2000 }, { role: 'assistant', content: 'ok', timestamp: 2001 }])
+    expect((await post(s, '/api/session/pin', { session_id: pinned, pinned: true })).status).toBe(200)
+    const stored = s.deps.sessionStore.get(streaming)
+    stored.active_stream_id = 'sortprobe-run'
+    s.deps.sessionStore.save(stored)
+    s.deps.registry.liveIds.add('sortprobe-run')
+    try {
+      const list = ((await json(await s.get('/api/sessions'))).sessions as Json[]).map((r) => r.session_id)
+      expect(list.indexOf(pinned)).toBeLessThan(list.indexOf(streaming))
+      const detail = (await json(await s.get(`/api/session?session_id=${streaming}`))).session as Json
+      const row = ((await json(await s.get('/api/sessions'))).sessions as Json[]).find((r) => r.session_id === streaming)!
+      const hit = ((await json(await s.get('/api/sessions/search?q=sortprobe'))).sessions as Json[]).find((r) => r.session_id === streaming)!
+      for (const payload of [detail, row, hit]) expect(payload.sort_ts).toBe(payload.last_message_at)
+    } finally {
+      s.deps.registry.liveIds.delete('sortprobe-run')
+      await post(s, '/api/session/pin', { session_id: pinned, pinned: false })
+    }
+  })
+
   it('marks persisted read-only and subagent sessions read_only on every payload (TAL-312)', async () => {
     const readOnly = String((await newSession(s)).session_id)
     const subagent = String((await newSession(s)).session_id)

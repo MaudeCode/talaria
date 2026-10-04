@@ -1425,6 +1425,10 @@
                             "type": "boolean",
                             "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                           },
+                          "sort_ts": {
+                            "type": "number",
+                            "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                          },
                           "cron_running": {
                             "type": "boolean"
                           },
@@ -1633,6 +1637,7 @@
                           "is_streaming",
                           "source_kind",
                           "is_messaging_session",
+                          "sort_ts",
                           "read_only",
                           "can_branch",
                           "can_pin",
@@ -1640,7 +1645,8 @@
                           "can_duplicate"
                         ],
                         "additionalProperties": {}
-                      }
+                      },
+                      "description": "Canonical display order (TAL-306): pinned first, then active (streaming or a pending prompt), then newest `sort_ts`, then `session_id`. Clients keep it."
                     },
                     "sidebar_reference_sessions": {
                       "type": "array",
@@ -1739,6 +1745,10 @@
                             "type": "boolean",
                             "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                           },
+                          "sort_ts": {
+                            "type": "number",
+                            "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                          },
                           "cron_running": {
                             "type": "boolean"
                           },
@@ -1947,6 +1957,7 @@
                           "is_streaming",
                           "source_kind",
                           "is_messaging_session",
+                          "sort_ts",
                           "read_only",
                           "can_branch",
                           "can_pin",
@@ -2299,6 +2310,10 @@
                             "type": "boolean",
                             "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                           },
+                          "sort_ts": {
+                            "type": "number",
+                            "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                          },
                           "cron_running": {
                             "type": "boolean"
                           },
@@ -2507,6 +2522,7 @@
                           "is_streaming",
                           "source_kind",
                           "is_messaging_session",
+                          "sort_ts",
                           "read_only",
                           "can_branch",
                           "can_pin",
@@ -4075,6 +4091,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -4302,6 +4322,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -6022,6 +6043,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -6249,6 +6274,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -7715,6 +7741,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -7942,6 +7972,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -8146,6 +8177,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -8354,6 +8389,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -8509,6 +8545,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -8717,6 +8757,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -8879,6 +8920,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -9087,6 +9132,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -10546,6 +10592,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -10773,6 +10823,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -11002,6 +11053,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -11210,6 +11265,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -11362,6 +11418,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -11570,6 +11630,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -13231,6 +13292,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -13458,6 +13523,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -13783,6 +13849,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -13991,6 +14061,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -14144,6 +14215,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -14352,6 +14427,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -15843,6 +15919,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -16070,6 +16150,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -17623,6 +17704,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -17850,6 +17935,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -19390,6 +19476,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -19617,6 +19707,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -20819,6 +20910,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -21027,6 +21122,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -21179,6 +21275,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "cron_running": {
                           "type": "boolean"
                         },
@@ -21387,6 +21487,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -27963,6 +28064,10 @@
                           "type": "boolean",
                           "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                         },
+                        "sort_ts": {
+                          "type": "number",
+                          "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                        },
                         "read_only": {
                           "type": "boolean",
                           "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -28190,6 +28295,7 @@
                         "is_streaming",
                         "source_kind",
                         "is_messaging_session",
+                        "sort_ts",
                         "read_only",
                         "can_branch",
                         "can_pin",
@@ -29722,6 +29828,10 @@
                               "type": "boolean",
                               "description": "`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it."
                             },
+                            "sort_ts": {
+                              "type": "number",
+                              "description": "Epoch seconds the session sorts and date-buckets by: `last_message_at`, else `updated_at`, else `created_at`."
+                            },
                             "read_only": {
                               "type": "boolean",
                               "description": "The session cannot be modified from Web: a read-only import, a view-only subagent child, or a foreign session whose owner refuses claiming."
@@ -29949,6 +30059,7 @@
                             "is_streaming",
                             "source_kind",
                             "is_messaging_session",
+                            "sort_ts",
                             "read_only",
                             "can_branch",
                             "can_pin",

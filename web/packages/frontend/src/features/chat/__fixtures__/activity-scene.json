@@ -64,6 +64,7 @@
     ],
     "title": "Restored activity",
     "source_kind": "webui",
-    "is_messaging_session": false
+    "is_messaging_session": false,
+    "sort_ts": 0
   }
 }

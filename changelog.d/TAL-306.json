@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Chats appear in the same order on iPhone and the web, with pinned chats always first, then running chats, then the most recent.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}
