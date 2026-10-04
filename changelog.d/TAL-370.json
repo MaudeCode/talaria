@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "Passwords given with a command's short flag, such as docker login -p, mysql -p, sshpass -p, redis-cli -a and smbclient -U, are hidden in tool cards and their details.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

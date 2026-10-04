@@ -158,6 +158,36 @@ describe('curl -u', () => {
   })
 })
 
+describe('command-specific short credential flags', () => {
+  it('masks the secret short flag of a known command, separate or attached, through the public prefilter', () => {
+    expect(redactText('docker login -u bob -p hunter2 x', true)).toBe('docker login -u bob -p *** x')
+    expect(redactText('mysql -uroot -phunter2', true)).toBe('mysql -uroot -p***')
+    expect(redactText('sshpass -p hunter2 ssh h', true)).toBe('sshpass -p *** ssh h')
+    expect(redactText('redis-cli -a pw', true)).toBe('redis-cli -a ***')
+    expect(redactText('smbclient //h/s -U bob%hunter2', true)).toBe('smbclient //h/s -U bob%***')
+    expect(redactText(`sudo /usr/bin/mysqldump -h db -p'two words' app`, true)).toBe(`sudo /usr/bin/mysqldump -h db -p'***' app`)
+    expect(redactText('helm registry login r.example -u bob -p=hunter2', true)).toBe('helm registry login r.example -u bob -p=***')
+  })
+
+  it('keeps a short flag that is no credential for its command as written', () => {
+    for (const text of ['ssh -p 2222 host', 'tar -p -xf a.tar', 'cp -p a b', 'docker run -p 8080:80 nginx', 'mysql -p app', 'redis-cli -h h -p 6380', 'smbclient -U bob //h/s']) expect(redactText(text, true)).toBe(text)
+    // sshpass's options end at the command it runs.
+    expect(redactText('sshpass -p hunter2 ssh -p 2222 h', true)).toBe('sshpass -p *** ssh -p 2222 h')
+    expect(redactText('mysql -e "select 1"; ssh -p 2222 h', true)).toBe('mysql -e "select 1"; ssh -p 2222 h')
+  })
+
+  it('masks a command quoted inside another, in argv arrays and in the listed snapshot text', () => {
+    expect(redactText(`docker exec db sh -c 'mysql -uroot -phunter2'`, true)).toBe(`docker exec db sh -c 'mysql -uroot -p***'`)
+    expect(redactText(`{'command': "sshpass -p hunter2 ssh h"}`, true)).toBe(`{'command': "sshpass -p *** ssh h"}`)
+    expect(redactText(`['docker', 'login', '-u', 'bob', '-p', 'hunter2']`, true)).toBe(`['docker', 'login', '-u', 'bob', '-p', '***']`)
+    expect(redactText(`["/usr/bin/mysql", "-phunter2"]`, true)).toBe(`["/usr/bin/mysql", "-p***"]`)
+    expect(redactText(`['redis-cli', '-a', 123456]`, true)).toBe(`['redis-cli', '-a', ***]`)
+    const frame = publicToolFrame({ name: 'terminal', args: { command: ['docker', 'login', '-p', 'hunter2', 'x'], other: ['redis-cli', '-a', 123456], db: ['mysql', '-phunter3', '-p', 'app'] } }, true)
+    expect(frame.args).toEqual({ command: ['docker', 'login', '-p', '***', 'x'], other: ['redis-cli', '-a', '***'], db: ['mysql', '-p***', '-p', 'app'] })
+    expect(JSON.stringify(publicToolFrame({ name: 'terminal', args: { command: 'docker login -u bob -p hunter2 x' } }, true))).not.toContain('hunter2')
+  })
+})
+
 describe('round 44 shapes', () => {
   it('reads an argument enclosed in ANSI-C quotes with its escaped quotes', () => {
     expect(redactText(String.raw`login $'--password=correct\' horse' next`, true)).toBe(String.raw`login $'--password=***' next`)
@@ -442,7 +472,9 @@ describe('redactSensitive cost', () => {
       ...['A=x; ', 'A=x B=y ', 'export A=x ', '; ', ';A', `A='x `, 'A="x ', 'A=${ ', 'A=$( ', `A=n'x `, 'A=@; $A ', 'A=!; $A '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length))),
       `A=x; ${'$A ${A} '.repeat(30_000)}`, Array.from({ length: 20_000 }, (_, i) => `A=${i}; $A `).join(''), `${'A=$(x); '.repeat(20_000)}${'A=1; $A '.repeat(20_000)}`,
       Array.from({ length: 5 }, (_, i) => `A=${i}; `).join('') + '$A '.repeat(50_000), `A=${'x'.repeat(10_000)}; ${'B=$A; '.repeat(30_000)}`, `A=x; ${'A=$A$A; '.repeat(25_000)}curl -u bob:$A`,
-      `P=hunter2; ${'Q="${P}x"; curl -u bob:$Q '.repeat(8_000)}`, `export ${'"A=1" '.repeat(40_000)}`, `A=1; ${'A+=1; '.repeat(30_000)}$A`, `x # '\n`.repeat(40_000), `A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; ${'$A '.repeat(40_000)}`, `export ${'"A=$(x" '.repeat(30_000)}`, `A=1; A=2; B=1; B=2; C=1; C=2; ${'curl -u bob:$A$B$C '.repeat(12_000)}`, `P=hunter2; ${'curl -u bob:$P '.repeat(15_000)}`, `A=${'x'.repeat(10_000)}; ${'$A'.repeat(50_000)}`]) {
+      `P=hunter2; ${'Q="${P}x"; curl -u bob:$Q '.repeat(8_000)}`, `export ${'"A=1" '.repeat(40_000)}`, `A=1; ${'A+=1; '.repeat(30_000)}$A`, `x # '\n`.repeat(40_000), `A=1; A=2; B=1; B=2; C=1; C=2; D=1; D=2; ${'$A '.repeat(40_000)}`, `export ${'"A=$(x" '.repeat(30_000)}`, `A=1; A=2; B=1; B=2; C=1; C=2; ${'curl -u bob:$A$B$C '.repeat(12_000)}`, `P=hunter2; ${'curl -u bob:$P '.repeat(15_000)}`, `A=${'x'.repeat(10_000)}; ${'$A'.repeat(50_000)}`,
+      // Command-specific short flags: many commands in one command, quoted ones, and unterminated quotes.
+      ...['mysql ', 'mysql -p', 'docker login -p x ', `sh -c 'mysql `, `mysql '`, `'mysql', `, `"mysql -p" `, 'sshpass -f '].map((seg) => seg.repeat(Math.ceil(200_000 / seg.length)))]) {
       const started = performance.now()
       mightContainSensitiveText(text)
       redactSensitive(text)
