@@ -84,7 +84,8 @@ struct ArchivedSessionsView: View {
                         .padding(.horizontal, 24)
                 } else {
                     VStack(spacing: 2) {
-                        ForEach(visibleSessions) { session in
+                        // The server's canonical order (TAL-306); the client never re-sorts it.
+                        ForEach(viewModel.sessions) { session in
                             archivedSessionRow(for: session)
                         }
                     }
@@ -164,19 +165,5 @@ struct ArchivedSessionsView: View {
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }
-    }
-
-    private var visibleSessions: [SessionSummary] {
-        viewModel.sessions.sorted { left, right in
-            if (left.pinned == true) != (right.pinned == true) {
-                return left.pinned == true
-            }
-
-            return timestamp(for: left) > timestamp(for: right)
-        }
-    }
-
-    private func timestamp(for session: SessionSummary) -> Double {
-        session.lastMessageAt ?? session.updatedAt ?? session.createdAt ?? 0
     }
 }

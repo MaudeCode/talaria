@@ -192,6 +192,33 @@ extension SessionListMutationTests {
         return SessionListViewModel(server: server, client: client)
     }
 
+    /// TAL-306: until the next server list, a new chat sits at the top of the unpinned rows, never above a pinned one.
+    func testCreatedSessionGoesToTheTopOfItsPinSection() async throws {
+        let viewModel = try makeViewModel { request in
+            let body: String
+            switch request.url?.path {
+            case "/api/sessions":
+                body = #"{"sessions":[{"session_id":"pinned","title":"Pinned","pinned":true,"sort_ts":10},{"session_id":"old","title":"Old","sort_ts":20}]}"#
+            case "/api/workspaces":
+                body = #"{"workspaces":[{"path":"/tmp/workspace"}],"last":"/tmp/workspace"}"#
+            case "/api/session/new":
+                body = #"{"session":{"session_id":"new-1","title":"Fresh chat","archived":false,"sort_ts":30}}"#
+            default:
+                throw URLError(.badURL)
+            }
+            let url = try XCTUnwrap(request.url)
+            let response = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"]))
+            return (response, Data(body.utf8))
+        }
+        defer { MockURLProtocol.requestHandler = nil }
+
+        await viewModel.load()
+        let created = await viewModel.createSession()
+
+        XCTAssertEqual(created?.sessionId, "new-1")
+        XCTAssertEqual(viewModel.visibleSessions(searchText: "", selectedProjectID: nil).compactMap(\.sessionId), ["pinned", "new-1", "old"])
+    }
+
     private static func listJSON(_ ids: [String]) -> String {
         let rows = ids.map { #"{"session_id":"\#($0)","title":"\#($0)","archived":false}"# }
         return #"{"sessions":[\#(rows.joined(separator: ","))]}"#

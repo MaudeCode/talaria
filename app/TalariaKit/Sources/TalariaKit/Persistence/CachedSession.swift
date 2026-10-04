@@ -21,6 +21,8 @@ public final class CachedSession {
     var createdAt: Double?
     var updatedAt: Double?
     var lastMessageAt: Double?
+    /// The server's `sort_ts` (TAL-306). Optional so the unversioned store opens without a migration.
+    var sortTs: Double?
     var pinned: Bool?
     var archived: Bool?
     var projectId: String?
@@ -76,6 +78,7 @@ public final class CachedSession {
         createdAt = session.createdAt
         updatedAt = session.updatedAt
         lastMessageAt = session.lastMessageAt
+        sortTs = session.sortTs
         pinned = session.pinned
         archived = session.archived
         projectId = session.projectId

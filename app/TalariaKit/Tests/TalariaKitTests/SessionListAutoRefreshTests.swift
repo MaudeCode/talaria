@@ -217,6 +217,29 @@ final class SessionListAutoRefreshTests: XCTestCase {
         XCTAssertFalse(SessionNotificationRefresh.namesASession(userInfo: ["publisherId": "pub"]))
     }
 
+    // MARK: - Server order (TAL-306)
+
+    /// TAL-306: the list shows the server's canonical order as-is: the shared contract list Web
+    /// renders in the same order, with each row's `sort_ts` (a `created_at`-only row included).
+    func testListKeepsTheServersOrderForTheSharedContractList() async throws {
+        let rows = try Self.sharedSessionList()
+        let body = String(decoding: try JSONSerialization.data(withJSONObject: ["sessions": rows]), as: UTF8.self)
+        let viewModel = try makeViewModel(responses: SessionListResponses(bodies: [body]))
+        defer { MockURLProtocol.requestHandler = nil }
+
+        await viewModel.load()
+
+        let shown = viewModel.visibleSessions(searchText: "", selectedProjectID: nil)
+        XCTAssertEqual(shown.compactMap(\.sessionId), rows.compactMap { $0["session_id"] as? String })
+        XCTAssertEqual(shown.map(\.sortTimestamp), rows.map { $0["sort_ts"] as? Double })
+    }
+
+    func testSortTimestampFallsBackToTheFieldChainOnAnOlderServer() {
+        XCTAssertEqual(SessionSummary(lastMessageAt: 10, sortTs: 40).sortTimestamp, 40)
+        XCTAssertEqual(SessionSummary(createdAt: 30, updatedAt: 20).sortTimestamp, 20)
+        XCTAssertEqual(SessionSummary(createdAt: 30).sortTimestamp, 30)
+    }
+
     // MARK: - Reconciliation and transient failure
 
     func testAutomaticRefreshAdoptsASessionCreatedElsewhere() async throws {
@@ -378,6 +401,18 @@ final class SessionListAutoRefreshTests: XCTestCase {
             refresh: { await viewModel.load() },
             sleep: { _ in throw CancellationError() }
         )
+    }
+
+    /// `session_list.sessions` from the shared contract fixture, in the server's order.
+    private static func sharedSessionList() throws -> [[String: Any]] {
+        // app/TalariaKit/Tests/TalariaKitTests/<file> -> repository root
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("contracts/fixtures/web-session.json"))
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let list = try XCTUnwrap(fixture["session_list"] as? [String: Any])
+        return try XCTUnwrap(list["sessions"] as? [[String: Any]])
     }
 
     private func makeViewModel(responses: SessionListResponses) throws -> SessionListViewModel {
