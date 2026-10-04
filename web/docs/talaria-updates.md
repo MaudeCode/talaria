@@ -73,6 +73,17 @@ The tested pin remains Talaria's official support reference. A different Agent
 revision warns but can attempt operations; missing capabilities and unsafe
 credential isolation still fail at use. Automatic updates still apply only to Web.
 
+**Update Agent** keeps tracked local edits in the Agent checkout. It saves them
+with `git stash create` under a private `refs/talaria/autostash/<sha>` ref, never
+the shared stash list, and reverts exactly that patch before fast-forwarding.
+Afterwards it re-applies the patch with `git apply`, which writes all of it or
+nothing. If the edits conflict with the update, the Agent files stay as the
+update wrote them, with no conflict markers. The saved commit is then listed in
+`git stash list` (or kept under its private ref if listing fails), and the
+result carries `stash_conflict: true` with inspect and re-apply commands. An
+edit made while the update saves local changes aborts the update; nothing is
+lost.
+
 API callers can provide `agent_channel` independently of Web's `channel` on
 check/apply/force requests. Omitting it uses the persisted Agent setting. Cached
 checks are keyed by both channels, and old clients' `channel` remains Web-only.
