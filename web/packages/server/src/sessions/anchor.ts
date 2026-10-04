@@ -167,7 +167,8 @@ export function anchorSceneRecords(session: Session): Record<string, unknown> {
   return isDict(session.anchor_activity_scenes) ? session.anchor_activity_scenes : {}
 }
 
-export interface SceneTool { id: string; name: string; args: unknown; preview: string | null; result: unknown; result_view: ToolResultView | null; done: boolean; is_error: boolean; duration: number | null; cost_usd: number | null }
+/** `result_truncated`/`result_chars`: a limited response clipped `result`; `GET /api/session/tool-result` serves it whole. */
+export interface SceneTool { id: string; name: string; args: unknown; preview: string | null; result: unknown; result_view: ToolResultView | null; done: boolean; is_error: boolean; duration: number | null; cost_usd: number | null; result_truncated?: true; result_chars?: number | null }
 export interface SceneSteering { steer_id: string; consumed: boolean; submitted_at: number | null; consumed_at: number | null; phase_duration?: number | null }
 /** The one scene row shape both clients render: every decoding decision is made here. */
 export interface SceneRow {
@@ -236,6 +237,7 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
         done: typeof tool.done === 'boolean' ? tool.done : status !== 'running',
         is_error: tool.is_error === true || tool.error === true || status === 'error' || status === 'failed',
         duration: finite(tool.duration), cost_usd: finite(tool.cost_usd),
+        ...(tool.result_truncated === true ? { result_truncated: true as const, result_chars: finite(tool.result_chars) } : {}),
       } })
     }
   }
@@ -312,6 +314,29 @@ function terminalStateOf(last: Record<string, unknown>, finalAnswer: string): st
   return str(last.terminal_state) || str(last._terminal_state) || (last._max_iteration_summary_fallback === true ? 'tool_limit_reached' : '') || errorState || (finalAnswer.trim() ? 'completed' : 'no_response')
 }
 
+/** Each tool call's reply row by call id: `tool` rows, and Anthropic-style `tool_result` blocks in a user row's content. */
+export function toolReplies(messages: unknown[]): Map<string, Record<string, unknown>> {
+  const results = new Map<string, Record<string, unknown>>()
+  for (const m of messages) {
+    if (!isDict(m)) continue
+    if (m.role === 'tool') results.set(str(m.tool_call_id) || str(m.tool_use_id), m)
+    else if (m.role === 'user' && Array.isArray(m.content)) {
+      for (const part of m.content) {
+        if (isDict(part) && part.type === 'tool_result' && str(part.tool_use_id)) {
+          results.set(str(part.tool_use_id), { role: 'tool', tool_use_id: part.tool_use_id, content: part.content ?? '', is_error: part.is_error === true })
+        }
+      }
+    }
+  }
+  return results
+}
+
+/** One tool call's whole result text, as a full scene row shows it; null when no reply carries that call id. */
+export function fullToolResult(messages: unknown[], toolCallId: string): string | null {
+  const reply = toolCallId ? toolReplies(messages).get(toolCallId) : undefined
+  return reply ? messageText(reply.content) : null
+}
+
 /**
  * One completed turn's presentation, built from its rows: ordered reasoning / prose / tool rows (the work that folds
  * under "Worked"), the visible final answer, the outcome, and whether "Worked" opens by default. Every decision a
@@ -322,18 +347,7 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
   const last = assistants.at(-1)?.[0]
   if (!last) return null
   const finalAnswer = finalAnswerOf(last)
-  const results = new Map<string, Record<string, unknown>>()
-  for (const [m] of turn) {
-    if (m.role === 'tool') results.set(str(m.tool_call_id) || str(m.tool_use_id), m)
-    // Anthropic-style results: `tool_result` blocks in a user row's content, each naming its call.
-    else if (m.role === 'user' && Array.isArray(m.content)) {
-      for (const part of m.content) {
-        if (isDict(part) && part.type === 'tool_result' && str(part.tool_use_id)) {
-          results.set(str(part.tool_use_id), { role: 'tool', tool_use_id: part.tool_use_id, content: part.content ?? '', is_error: part.is_error === true })
-        }
-      }
-    }
-  }
+  const results = toolReplies(turn.map(([m]) => m))
   const rows: SceneRow[] = []
   const seenTools = new Set<string>()
   const push = (row: Omit<SceneRow, 'order_index'>) => rows.push({ ...row, order_index: rows.length })
@@ -367,14 +381,17 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       if (seenTools.has(id)) return
       seenTools.add(id)
       const reply = results.get(id)
-      // Full results, except in a limited response, which clips them like its raw tool rows (the full detail keeps them).
-      const result = reply ? messageText((opts.clipToolResults ? toolMessageForLimitedPayload(reply) as Record<string, unknown> : reply).content) : call.result ?? call.output ?? null
+      // Full results, except in a limited response, which clips them like its raw tool rows (the full detail keeps them)
+      // and flags the clip, so a client can fetch the whole result from `/api/session/tool-result`.
+      const shown = reply && opts.clipToolResults ? toolMessageForLimitedPayload(reply) as Record<string, unknown> : reply
+      const result = shown ? messageText(shown.content) : call.result ?? call.output ?? null
       // The view always comes from the full result (TAL-315).
       const resultView = reply ? toolResultView(reply.content) : isDict(call.result_view) ? call.result_view as ToolResultView : null
       push({ row_id: `tool:${id}`, role: 'tool', ...at, tool: {
         id, name: str(call.name) || str(isDict(call.function) ? call.function.name : '') || 'tool', args: toolArgs(call),
         preview: str(call.preview) || null, result, result_view: resultView, done: typeof call.done === 'boolean' ? call.done : true,
         is_error: call.is_error === true || reply?.is_error === true, duration: finite(call.duration), cost_usd: finite(call.cost_usd),
+        ...(shown?._content_truncated === true ? { result_truncated: true as const, result_chars: finite(shown._content_original_chars) } : {}),
       } })
     }
     if (walked) {

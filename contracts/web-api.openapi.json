@@ -3199,6 +3199,21 @@
                                                 "status",
                                                 "agents"
                                               ]
+                                            },
+                                            "result_truncated": {
+                                              "const": true
+                                            },
+                                            "result_chars": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -5146,6 +5161,21 @@
                                                 "status",
                                                 "agents"
                                               ]
+                                            },
+                                            "result_truncated": {
+                                              "const": true
+                                            },
+                                            "result_chars": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -6838,6 +6868,21 @@
                                                 "task_ids",
                                                 "status",
                                                 "agents"
+                                              ]
+                                            },
+                                            "result_truncated": {
+                                              "const": true
+                                            },
+                                            "result_chars": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
                                               ]
                                             }
                                           },
@@ -9670,6 +9715,21 @@
                                                 "status",
                                                 "agents"
                                               ]
+                                            },
+                                            "result_truncated": {
+                                              "const": true
+                                            },
+                                            "result_chars": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -12355,6 +12415,21 @@
                                                 "status",
                                                 "agents"
                                               ]
+                                            },
+                                            "result_truncated": {
+                                              "const": true
+                                            },
+                                            "result_chars": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -14967,6 +15042,21 @@
                                                 "status",
                                                 "agents"
                                               ]
+                                            },
+                                            "result_truncated": {
+                                              "const": true
+                                            },
+                                            "result_chars": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -16747,6 +16837,21 @@
                                                 "status",
                                                 "agents"
                                               ]
+                                            },
+                                            "result_truncated": {
+                                              "const": true
+                                            },
+                                            "result_chars": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -18514,6 +18619,21 @@
                                                 "status",
                                                 "agents"
                                               ]
+                                            },
+                                            "result_truncated": {
+                                              "const": true
+                                            },
+                                            "result_chars": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -20142,6 +20262,21 @@
                                   "status",
                                   "agents"
                                 ]
+                              },
+                              "result_truncated": {
+                                "const": true
+                              },
+                              "result_chars": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               }
                             },
                             "required": [
@@ -20302,6 +20437,61 @@
                     "ok",
                     "message_index",
                     "message_ref"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/tool-result": {
+      "get": {
+        "operationId": "session.toolResult",
+        "summary": "One tool call's whole, redacted result, for a scene row a limited response clipped (`result_truncated`); 404 for an unknown call id.",
+        "tags": [
+          "sessions"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          },
+          {
+            "name": "tool_call_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true,
+            "allowReserved": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tool_call_id": {
+                      "type": "string"
+                    },
+                    "result": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "tool_call_id",
+                    "result"
                   ]
                 }
               }
@@ -27087,6 +27277,21 @@
                                                 "status",
                                                 "agents"
                                               ]
+                                            },
+                                            "result_truncated": {
+                                              "const": true
+                                            },
+                                            "result_chars": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "integer",
+                                                  "minimum": -9007199254740991,
+                                                  "maximum": 9007199254740991
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -28845,6 +29050,21 @@
                                                     "task_ids",
                                                     "status",
                                                     "agents"
+                                                  ]
+                                                },
+                                                "result_truncated": {
+                                                  "const": true
+                                                },
+                                                "result_chars": {
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "integer",
+                                                      "minimum": -9007199254740991,
+                                                      "maximum": 9007199254740991
+                                                    },
+                                                    {
+                                                      "type": "null"
+                                                    }
                                                   ]
                                                 }
                                               },
