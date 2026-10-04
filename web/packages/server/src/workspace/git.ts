@@ -366,7 +366,8 @@ export class GitRunner {
 
   // ── mutation lock ────────────────────────────────────────────────────────
 
-  private async withMutationLock<T>(ctx: GitContext, fn: () => Promise<T>): Promise<T> {
+  /** `holdRepo` keeps runs and terminals out of the whole repository while a working-tree mutation runs. */
+  private async withMutationLock<T>(ctx: GitContext, fn: () => Promise<T>, { holdRepo = true } = {}): Promise<T> {
     const key = ctx.repoRoot
     const previous = this.locks.get(key) ?? Promise.resolve()
     let release!: () => void
@@ -383,7 +384,7 @@ export class GitRunner {
       throw new GitWorkspaceError('Another Git operation is still running', 'operation_in_progress')
     }
     try {
-      return await fn()
+      return await (holdRepo ? this.holdWorkspace(ctx.repoRoot, fn) : fn())
     } finally {
       this.invalidateStatusCache(ctx.repoRoot)
       release()
@@ -1146,7 +1147,7 @@ export class GitRunner {
     const ctx = await this.requireContext(workspace)
     const result = await this.withMutationLock(ctx, async () => await this.run(ctx, ['fetch', '--prune', '--no-recurse-submodules'], {
       timeoutMs: GIT_REMOTE_TIMEOUT_MS, check: true, forceDestructiveHardening: true, disableFilterAttributes: this.destructiveEnabled(), neutralizeFilterPrograms: true, neutralizeRemoteHelpers: true,
-    }))
+    }), { holdRepo: false })
     return { ok: true, message: GitRunner.remoteMessage(result), status: await this.status(workspace) }
   }
 
@@ -1171,7 +1172,7 @@ export class GitRunner {
         args.push('-u', 'origin', branch)
       }
       return await this.run(ctx, args, { timeoutMs: GIT_REMOTE_TIMEOUT_MS, check: true, destructive: true, disableFilterAttributes: true, neutralizeFilterPrograms: true, neutralizeRemoteHelpers: true })
-    })
+    }, { holdRepo: false })
     return { ok: true, message: GitRunner.remoteMessage(result), status: await this.status(workspace) }
   }
 }

@@ -274,6 +274,21 @@ describe('slow git off the event loop', () => {
     expect(s.deps.git.workspaceBusy(join(s.state, 'workspace'))).toBe(false)
   })
 
+  it('a repo-wide mutation from a subdirectory workspace also keeps runs out of sibling workspaces', async () => {
+    const ws = realpathSync(join(s.state, 'workspace'))
+    for (const sub of ['sub-a', 'sub-b']) mkdirSync(join(ws, sub), { recursive: true })
+    const sessionIn = async (dir: string): Promise<string> => {
+      expect((await post(s, '/api/workspaces/add', { path: dir })).status).toBe(200)
+      return String(((await json(await post(s, '/api/session/new', { workspace: dir }))).session as Json).session_id)
+    }
+    const sidA = await sessionIn(join(ws, 'sub-a'))
+    const sidB = await sessionIn(join(ws, 'sub-b'))
+    const { push: pull } = await inFlight(sidA, 'pull')
+    const res = await post(s, '/api/chat/start', { session_id: sidB, message: 'hi' })
+    expect(await json(res)).toMatchObject({ error: 'A Git operation is running in this workspace.' })
+    expect((await pull).status).toBe(200)
+  })
+
   it('worktree removal holds the worktree busy from its lock checks through the removal', async () => {
     const { sid, ws } = await repoSession(s)
     const worktree = join(realpathSync(s.state), 'wt-remove')
