@@ -2,6 +2,13 @@ import XCTest
 @testable import TalariaKit
 
 final class SlashCommandExecutorTests: XCTestCase {
+    /// Server catalog entries carrying the aliases (TAL-314).
+    private let catalog = [
+        AgentCommand(name: "compress", aliases: ["compact"], handler: "client", clients: ["web", "ios"]),
+        AgentCommand(name: "branch", aliases: ["fork"], handler: "client", clients: ["web", "ios"]),
+        AgentCommand(name: "background", aliases: ["bg"], handler: "client", clients: ["web", "ios"])
+    ]
+
     func testParseClearWithoutArgs() {
         let parsed = SlashCommandExecutor.parse("/clear")
         XCTAssertEqual(parsed?.command?.name, "clear")
@@ -29,8 +36,8 @@ final class SlashCommandExecutorTests: XCTestCase {
         XCTAssertEqual(parsed?.name, "branch")
         XCTAssertEqual(parsed?.args, "Planning Copy")
 
-        let alias = SlashCommandExecutor.parse("/fork Planning Copy")
-        XCTAssertEqual(alias?.command?.name, "fork")
+        let alias = SlashCommandExecutor.parse("/fork Planning Copy", catalog: catalog)
+        XCTAssertEqual(alias?.command?.name, "branch")
         XCTAssertEqual(alias?.command?.handler, .serverSide(.branch))
         XCTAssertEqual(alias?.name, "fork")
         XCTAssertEqual(alias?.args, "Planning Copy")
@@ -56,8 +63,8 @@ final class SlashCommandExecutorTests: XCTestCase {
         XCTAssertEqual(parsed?.name, "compress")
         XCTAssertEqual(parsed?.args, "architecture notes")
 
-        let alias = SlashCommandExecutor.parse("/compact architecture notes")
-        XCTAssertEqual(alias?.command?.name, "compact")
+        let alias = SlashCommandExecutor.parse("/compact architecture notes", catalog: catalog)
+        XCTAssertEqual(alias?.command?.name, "compress")
         XCTAssertEqual(alias?.command?.handler, .serverSide(.compress))
         XCTAssertEqual(alias?.name, "compact")
         XCTAssertEqual(alias?.args, "architecture notes")
@@ -96,19 +103,8 @@ final class SlashCommandExecutorTests: XCTestCase {
         XCTAssertEqual(parsed?.args, "")
     }
 
-    func testUnsupportedCommandFallback() {
-        XCTAssertEqual(
-            SlashCommandExecutor.unsupportedMessage(for: "terminal"),
-            "Terminal is not available in the mobile app."
-        )
-        XCTAssertEqual(
-            SlashCommandExecutor.unsupportedMessage(for: "not-real"),
-            "This command is not available in the mobile app."
-        )
-    }
-
     func testParseBusyInputCommands() {
-        for name in ["queue", "steer", "interrupt", "status", "btw", "background", "bg", "goal"] {
+        for name in ["queue", "steer", "interrupt", "status", "btw", "background", "goal"] {
             let parsed = SlashCommandExecutor.parse("/\(name)")
             XCTAssertEqual(parsed?.command?.name, name)
             XCTAssertEqual(parsed?.name, name)
@@ -121,7 +117,7 @@ final class SlashCommandExecutorTests: XCTestCase {
         XCTAssertEqual(SlashCommandExecutor.parse("/status")?.command?.handler, .serverSide(.status))
         XCTAssertEqual(SlashCommandExecutor.parse("/btw explain this")?.command?.handler, .serverSide(.btw))
         XCTAssertEqual(SlashCommandExecutor.parse("/background audit this")?.command?.handler, .serverSide(.background))
-        XCTAssertEqual(SlashCommandExecutor.parse("/bg audit this")?.command?.handler, .serverSide(.background))
+        XCTAssertEqual(SlashCommandExecutor.parse("/bg audit this", catalog: catalog)?.command?.handler, .serverSide(.background))
     }
 
     func testEmptyArgsHandlingTrimsWhitespace() {

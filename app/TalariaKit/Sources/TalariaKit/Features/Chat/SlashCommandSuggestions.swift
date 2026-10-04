@@ -8,9 +8,11 @@ public struct AgentSlashCommandSuggestion: Identifiable, Equatable {
 
     public var id: String { name.lowercased() }
 
+    /// Agent-handled catalog entries listed for iOS (TAL-314).
     init?(_ command: AgentCommand) {
-        guard command.cliOnly != true,
-              command.gatewayOnly != true,
+        guard command.isCatalogEntry,
+              !command.isClientHandled,
+              command.runsOnIOS,
               let name = Self.nonEmpty(command.name)
         else {
             return nil
@@ -35,7 +37,7 @@ public struct AgentSlashCommandSuggestion: Identifiable, Equatable {
 
             let key = suggestion.name.lowercased()
             guard !seen.contains(key) else { continue }
-            guard lower.isEmpty || key.hasPrefix(lower) else { continue }
+            guard command.matches(prefix: lower) else { continue }
 
             matches.append(suggestion)
             seen.insert(key)
@@ -47,11 +49,9 @@ public struct AgentSlashCommandSuggestion: Identifiable, Equatable {
     public static func command(named name: String, in commands: [AgentCommand]) -> AgentSlashCommandSuggestion? {
         let lower = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !lower.isEmpty else { return nil }
-        guard SlashCommandCatalog.command(named: lower) == nil else { return nil }
+        guard SlashCommandCatalog.command(named: lower, in: commands) == nil else { return nil }
 
-        return commands.lazy.compactMap(AgentSlashCommandSuggestion.init).first { suggestion in
-            suggestion.name.lowercased() == lower
-        }
+        return commands.lazy.filter { $0.resolves(lower) }.compactMap(AgentSlashCommandSuggestion.init).first
     }
 
     private static func nonEmpty(_ value: String?) -> String? {
@@ -62,9 +62,11 @@ public struct AgentSlashCommandSuggestion: Identifiable, Equatable {
 
 public struct ParsedSlashQuery {
     let query: String
+    let catalog: [AgentCommand]
 
-    public init(query: String) {
+    public init(query: String, catalog: [AgentCommand] = []) {
         self.query = query
+        self.catalog = catalog
     }
 
     public var commandName: String {
@@ -85,15 +87,15 @@ public struct ParsedSlashQuery {
     }
 
     public var isSubArgMode: Bool {
-        guard let command = SlashCommandCatalog.command(named: commandName) else { return false }
+        guard let command else { return false }
         guard command.subArgs != .none else { return false }
-        let prefix = "/\(command.name)"
+        let prefix = "/\(commandName)"
         guard query.hasPrefix(prefix) else { return false }
         let afterCommand = String(query.dropFirst(prefix.count))
         return afterCommand.hasPrefix(" ")
     }
 
     public var command: SlashCommand? {
-        SlashCommandCatalog.command(named: commandName)
+        SlashCommandCatalog.command(named: commandName, in: catalog)
     }
 }

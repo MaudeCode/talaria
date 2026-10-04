@@ -1,7 +1,10 @@
 import Foundation
 
+/// The iOS handlers and localized wording for client-handled slash commands, keyed by canonical name. Which commands
+/// exist, their aliases, display order, and which clients run them come from the server catalog (`GET /api/commands`,
+/// TAL-314).
 public enum SlashCommandCatalog {
-    static let allCommands: [SlashCommand] = [
+    private static let handlers: [String: SlashCommand] = Dictionary(uniqueKeysWithValues: [
         SlashCommand(
             name: "help",
             description: String(localized: "Show available slash commands"),
@@ -81,13 +84,6 @@ public enum SlashCommandCatalog {
             handler: .serverSide(.compress)
         ),
         SlashCommand(
-            name: "compact",
-            description: String(localized: "Alias for \("/compress")"),
-            argHint: String(localized: "focus topic"),
-            noEcho: true,
-            handler: .serverSide(.compress)
-        ),
-        SlashCommand(
             name: "retry",
             description: String(localized: "Retry the last turn"),
             noEcho: true,
@@ -102,13 +98,6 @@ public enum SlashCommandCatalog {
         SlashCommand(
             name: "branch",
             description: String(localized: "Fork the conversation"),
-            argHint: String(localized: "name"),
-            noEcho: true,
-            handler: .serverSide(.branch)
-        ),
-        SlashCommand(
-            name: "fork",
-            description: String(localized: "Alias for \("/branch")"),
             argHint: String(localized: "name"),
             noEcho: true,
             handler: .serverSide(.branch)
@@ -161,28 +150,23 @@ public enum SlashCommandCatalog {
             argHint: String(localized: "prompt"),
             noEcho: true,
             handler: .serverSide(.background)
-        ),
-        SlashCommand(
-            name: "bg",
-            description: String(localized: "Alias for \("/background")"),
-            argHint: String(localized: "prompt"),
-            noEcho: true,
-            handler: .serverSide(.background)
         )
-    ]
+    ].map { ($0.name, $0) })
 
-    public static func matching(_ query: String) -> [SlashCommand] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return allCommands }
-        let lower = trimmed.lowercased()
-        return allCommands.filter {
-            $0.name.lowercased().hasPrefix(lower) ||
-            $0.description.lowercased().contains(lower)
-        }
+    /// The client-handled commands the catalog lists for iOS whose name or alias starts with `query`, in server order.
+    public static func matching(_ query: String, in catalog: [AgentCommand]) -> [SlashCommand] {
+        let prefix = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return catalog
+            .filter { $0.isCatalogEntry && $0.isClientHandled && $0.runsOnIOS && $0.matches(prefix: prefix) }
+            .compactMap { $0.name.flatMap { handlers[$0.lowercased()] } }
     }
 
-    public static func command(named name: String) -> SlashCommand? {
-        allCommands.first { $0.name.lowercased() == name.lowercased() }
+    /// The iOS handler for a typed name or alias. A catalog entry outside iOS has none; without a catalog entry the
+    /// typed name is looked up directly, so commands still run before the catalog loads.
+    public static func command(named name: String, in catalog: [AgentCommand] = []) -> SlashCommand? {
+        guard let entry = catalog.entry(named: name) else { return handlers[name.lowercased()] }
+        guard entry.runsOnIOS, let canonical = entry.name else { return nil }
+        return handlers[canonical.lowercased()]
     }
 
     public static let reasoningLevels = ["show", "hide", "none", "minimal", "low", "medium", "high", "xhigh"]

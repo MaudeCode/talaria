@@ -15,7 +15,7 @@ public enum SlashCommandExecutionResult: Equatable {
 }
 
 public enum SlashCommandExecutor {
-    public static func parse(_ text: String) -> ParsedSlashCommand? {
+    public static func parse(_ text: String, catalog: [AgentCommand] = []) -> ParsedSlashCommand? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("/") else { return nil }
 
@@ -31,7 +31,7 @@ public enum SlashCommandExecutor {
         } ?? ""
 
         return ParsedSlashCommand(
-            command: SlashCommandCatalog.command(named: name),
+            command: SlashCommandCatalog.command(named: name, in: catalog),
             name: name,
             args: args
         )
@@ -39,12 +39,13 @@ public enum SlashCommandExecutor {
 
     @MainActor
     public static func execute(text: String, viewModel: ChatViewModel) async -> SlashCommandExecutionResult {
-        guard let parsed = parse(text) else { return .sendAsMessage }
+        let catalog = viewModel.agentCommands
+        guard let parsed = parse(text, catalog: catalog) else { return .sendAsMessage }
         guard !parsed.name.isEmpty else { return .needsSubArg }
 
         guard let command = parsed.command else {
-            if isKnownUnsupportedCommand(parsed.name) {
-                return .unsupported(friendlyMessage: unsupportedMessage(for: parsed.name))
+            if let message = unsupportedMessage(for: parsed.name, in: catalog) {
+                return .unsupported(friendlyMessage: message)
             }
             if parsed.name.lowercased() == "skill" {
                 return .unsupported(friendlyMessage: String(localized: "Use `/skills [query]` to search skills."))
@@ -56,37 +57,13 @@ public enum SlashCommandExecutor {
             return .sendAsMessage
         }
 
-        switch command.handler {
-        case .clientSide:
-            return await viewModel.executeSlashCommand(command, args: parsed.args)
-        case .serverSide:
-            return await viewModel.executeSlashCommand(command, args: parsed.args)
-        case .unsupported:
-            return .unsupported(friendlyMessage: unsupportedMessage(for: command.name))
-        }
+        return await viewModel.executeSlashCommand(command, args: parsed.args)
     }
 
-    static func unsupportedMessage(for commandName: String) -> String {
-        switch commandName.lowercased() {
-        case "terminal":
-            return String(localized: "Terminal is not available in the mobile app.")
-        case "theme":
-            return String(localized: "Theme switching is not available from mobile slash commands.")
-        case "voice":
-            return String(localized: "Voice commands are not available in the mobile app.")
-        case "yolo":
-            return String(localized: "YOLO mode is not available in the mobile app.")
-        default:
-            return String(localized: "This command is not available in the mobile app.")
-        }
-    }
-
-    static func isKnownUnsupportedCommand(_ commandName: String) -> Bool {
-        switch commandName.lowercased() {
-        case "terminal", "theme", "voice", "yolo":
-            return true
-        default:
-            return false
-        }
+    /// The message for a command the server catalog lists without iOS (TAL-314): its `unsupported_message`, or a
+    /// generic line when the server sends none.
+    static func unsupportedMessage(for name: String, in catalog: [AgentCommand]) -> String? {
+        guard let entry = catalog.entry(named: name), !entry.runsOnIOS else { return nil }
+        return entry.unsupportedMessage ?? String(localized: "This command is not available in the mobile app.")
     }
 }

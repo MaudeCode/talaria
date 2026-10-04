@@ -14,7 +14,7 @@ public struct SlashCommand: Identifiable, Equatable {
         description: String,
         argHint: String? = nil,
         noEcho: Bool = false,
-        handler: SlashCommandHandler = .unsupported,
+        handler: SlashCommandHandler,
         subArgs: SlashCommandSubArgs = .none
     ) {
         self.name = name
@@ -31,7 +31,6 @@ public struct SlashCommand: Identifiable, Equatable {
 }
 
 public enum SlashCommandHandler: Equatable {
-    case unsupported
     case clientSide(ClientSideAction)
     case serverSide(ServerSideAction)
 }

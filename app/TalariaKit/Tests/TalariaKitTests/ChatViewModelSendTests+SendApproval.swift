@@ -466,17 +466,25 @@ extension ChatViewModelSendTests {
     }
 
     @MainActor
-    func testKnownUnsupportedSlashCommandStaysBlockedWithoutSkillLookup() async throws {
+    func testServerUnsupportedSlashCommandStaysBlockedWithoutSkillLookup() async throws {
+        // TAL-314: the cached server catalog lists `/terminal` for Web only, with the message iOS shows.
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let cache = ResponseCache(server: try XCTUnwrap(URL(string: "https://example.test")), root: root)
+        cache.entry(ResponseCache.Kind.commands).save(Data(#"""
+        {"commands": [{"name": "terminal", "aliases": [], "handler": "client", "clients": ["web"], "unsupported_message": "Terminal stays on the web."}]}
+        """#.utf8))
         var requestedPaths: [String] = []
-        let viewModel = try makeViewModel { request in
+        let viewModel = try makeViewModel(responseCache: cache) { request in
             requestedPaths.append(request.url?.path ?? "nil")
-            XCTFail("Known unsupported commands should not request skills or start chat.")
+            XCTFail("Unsupported commands should not request skills or start chat.")
             throw URLError(.badURL)
         }
+        viewModel.showCachedComposerChoices()
 
         let result = await SlashCommandExecutor.execute(text: "/terminal", viewModel: viewModel)
 
-        XCTAssertEqual(result, .unsupported(friendlyMessage: "Terminal is not available in the mobile app."))
+        XCTAssertEqual(result, .unsupported(friendlyMessage: "Terminal stays on the web."))
         XCTAssertEqual(requestedPaths, [])
         XCTAssertNil(viewModel.activeStreamID)
     }
