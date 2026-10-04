@@ -16,7 +16,9 @@ def test_cache_only_eviction_keeps_approval_state_and_a_live_runs_agent(tmp_path
     root = tmp_path / ".hermes"
     root.mkdir()
     (root / "config.yaml").write_text("approvals:\n  mode: manual\n")
-    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(root), "PYTHONPATH": str(SIDECAR_ROOT), "HERMES_STATE_DB_GUARD_BYPASS": "1"}
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "HERMES_HOME": str(root), "PYTHONPATH": str(SIDECAR_ROOT), "HERMES_STATE_DB_GUARD_BYPASS": "1",
+           # Pattern detection parks the prompt; no tirith download writes into the synthetic home past the test.
+           "TIRITH_ENABLED": "0"}
     if os.environ.get("LD_LIBRARY_PATH"):  # relocated actions/setup-python interpreter
         env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
     probe = Path(__file__).with_name("evict_grants_probe.py")
