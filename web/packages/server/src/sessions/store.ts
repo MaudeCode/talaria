@@ -237,7 +237,7 @@ export class SessionStore {
       {
         workspace: (wt ? wt.path : opts.workspace) || defaults.workspace,
         model: opts.model ?? defaults.model,
-        model_provider: opts.model ? opts.modelProvider ?? null : opts.modelProvider ?? null,
+        model_provider: opts.model ? opts.modelProvider ?? null : opts.modelProvider ?? defaults.modelProvider ?? null,
         profile,
         project_id: opts.projectId ?? null,
         personality: null,

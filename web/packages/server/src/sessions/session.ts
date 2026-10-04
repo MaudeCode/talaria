@@ -86,6 +86,8 @@ export interface SessionInit {
 export interface SessionDefaults {
   workspace: string
   model: string | null
+  /** The profile's configured provider, applied to new sessions that request no model. */
+  modelProvider?: string | null
 }
 
 /** Message timestamp helpers (Python `_message_timestamp`, `_is_empty_partial_activity_message`, `_last_message_timestamp`). */

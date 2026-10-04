@@ -638,7 +638,8 @@ export class SessionService {
   }
 
   create(body: Record<string, unknown>, opts: { worktree?: { path: string; branch: string; repo_root: string; created_at: number } | null } = {}): Session {
-    const profile = (typeof body.profile === 'string' && body.profile) || null
+    // Python `new_session`: a body without a profile takes the request's active profile (cookie first).
+    const profile = (typeof body.profile === 'string' && body.profile) || this.deps.activeProfile()
     let prevSessionId = typeof body.prev_session_id === 'string' && body.prev_session_id ? body.prev_session_id : null
     if (prevSessionId && !this.sessionIdVisible(prevSessionId)) prevSessionId = null
     // Python: leaving a session for a new one flushes the previous session's memory in the background (W6).
