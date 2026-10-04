@@ -687,7 +687,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
         const headers: Record<string, string> = ip ? { 'x-forwarded-for': ip } : {}
         return [(await post(s, '/api/onboarding/probe', { provider: 'custom', base_url: 'notaurl' }, headers)).status, (await post(s, '/api/terminal/start', {}, headers)).status]
       }
-      for (const ip of ['100.64.1.2', '100.100.100.100', '100.127.255.254', '::ffff:100.64.1.2', '8.8.8.8']) expect(await gate(ip), ip).toEqual([403, 403])
+      for (const ip of ['100.64.1.2', '100.100.100.100', '100.127.255.254', '::ffff:100.64.1.2', 'fd7a:115c:a1e0::1', '8.8.8.8']) expect(await gate(ip), ip).toEqual([403, 403])
       for (const ip of [undefined, '127.0.0.1', '::1', '192.168.1.10', '10.1.2.3', '172.16.0.1', '169.254.1.1', 'fd12::1', 'fe80::1', '::ffff:192.168.1.10']) expect(await gate(ip), String(ip)).toEqual([200, 400])
     } finally {
       delete s.deps.config.env.HERMES_WEBUI_TRUST_FORWARDED_FOR
