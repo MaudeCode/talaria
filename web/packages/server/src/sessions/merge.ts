@@ -411,7 +411,9 @@ function resultView(value: unknown, depth: number): ToolResultView {
  * by line; a scalar shows as text, and a result that is not JSON exactly as written. Each field is capped like the snippet.
  */
 export function toolResultView(raw: unknown): ToolResultView {
-  const view = resultView(Array.isArray(raw) ? messageText(raw) : raw, 0)
+  // Content parts read as their text; a list with no text (`[{ title }]`) is the result itself.
+  const flat = Array.isArray(raw) ? messageText(raw) : raw
+  const view = resultView(Array.isArray(raw) && !str(flat).trim() ? raw : flat, 0)
   return Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field) : field]))
 }
 
@@ -437,7 +439,7 @@ export function toolOutcome(raw: unknown): { is_error: boolean; result_text: str
   if (typeof value === 'string') { try { data = JSON.parse(value) } catch { data = null } }
   const exit = isDict(data) ? data.exit_code ?? data.exitCode : undefined
   const isError = isDict(data) && (presentError(data.error) || (typeof exit === 'number' && exit !== 0) || data.success === false)
-  return { is_error: isError, result_text: toolResultSnippet(value), result_view: toolResultView(value) }
+  return { is_error: isError, result_text: toolResultSnippet(value), result_view: toolResultView(raw) }
 }
 
 const finiteOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)

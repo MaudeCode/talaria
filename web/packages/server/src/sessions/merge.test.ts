@@ -42,6 +42,7 @@ describe('toolOutcome (TAL-313)', () => {
       [{ result: '', message: 'saved' }, { text: 'saved' }],
       [{ content: [{ type: 'text', text: 'one' }, { type: 'text', text: 'two' }] }, { text: 'one\ntwo' }],
       [[{ type: 'text', text: 'part' }], { text: 'part' }],
+      [[{ title: 'match' }], { text: '[\n  {\n    "title": "match"\n  }\n]' }],
       [{ a: 1 }, { text: '{\n  "a": 1\n}' }],
       // Scalars and plain text; text that is not JSON stays as written.
       [42, { text: '42' }], [true, { text: 'true' }], ['true', { text: 'true' }],
