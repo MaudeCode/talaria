@@ -64,16 +64,30 @@ def list_commands() -> list[dict[str, Any]]:
 def _reload_mcp() -> str:
     with _RELOAD_MCP_LOCK:
         try:
-            from tools.mcp_tool import _lock, _servers, discover_mcp_tools, shutdown_mcp_servers
+            from agent.secret_scope import is_multiplex_active
+            from tools.mcp_tool import _lock, _mcp_tool_server_names, _server_visible_in_scope, _servers
+            from tools.mcp_tool_discovery import discover_mcp_tools
+            from tools.mcp_tool_lifecycle import shutdown_mcp_servers
+            from tools.mcp_tool_scope import _key_name
+            from tools.registry import registry
         except Exception as exc:  # noqa: BLE001
             raise RpcError("MCP runtime unavailable", condition="mcp_unavailable") from exc
+        # Like the gateway's ``_execute_mcp_reload``: under multiplexing only this profile's connections go down and
+        # come back. The bare shutdown is the process-wide wildcard, which would drop every other profile's servers.
+        scope = registry.current_scope_key() if is_multiplex_active() else None
+
+        def server_names() -> set[str]:
+            with _lock:
+                return {_key_name(key) for key in _servers if _server_visible_in_scope(key, scope)}
+
         try:
-            with _lock:
-                old = set(_servers.keys())
-            shutdown_mcp_servers()
-            tools = discover_mcp_tools()
-            with _lock:
-                connected = set(_servers.keys())
+            old = server_names()
+            shutdown_mcp_servers(scope=scope)
+            tools = discover_mcp_tools() or []
+            connected = server_names()
+            if scope is not None:
+                with _lock:
+                    tools = [name for name in tools if _mcp_tool_server_names.get(name) in connected]
         except Exception as exc:  # noqa: BLE001
             log.warning("Failed to reload MCP servers", exc_info=True)
             raise RpcError("Failed to reload MCP servers", condition="mcp_reload_failed") from exc
@@ -85,7 +99,7 @@ def _reload_mcp() -> str:
         lines.append(f"Added: {', '.join(sorted(added))}")
     if removed:
         lines.append(f"Removed: {', '.join(sorted(removed))}")
-    lines.append(f"{len(tools or [])} tool(s) available across {len(connected)} server(s)" if connected else "No MCP servers connected")
+    lines.append(f"{len(tools)} tool(s) available across {len(connected)} server(s)" if connected else "No MCP servers connected")
     if not reconnected and not added and not removed:
         lines.append("Tooling state was already current")
     return "\n".join(lines)

@@ -440,6 +440,18 @@ def _profile_toolsets() -> list[str]:
     return list(dict.fromkeys(name for raw in resolved for name in _LEGACY_TOOLSET_ALIASES.get(raw, (raw,))))
 
 
+def _discover_mcp_tools() -> None:
+    """Connect the profile's MCP servers before the turn's agent snapshots its tools, like the predecessor's turn start.
+    The Agent keys connections by profile scope and skips live ones, so later turns are cheap. Runs under the call's
+    ``scoped_home``; a failure leaves the turn without MCP tools rather than failing it."""
+    try:
+        from tools.mcp_tool_discovery import discover_mcp_tools
+
+        discover_mcp_tools()
+    except Exception:  # noqa: BLE001
+        log.warning("MCP discovery failed", exc_info=True)
+
+
 def _profile_fallback_chain() -> list[dict] | None:
     """The profile's fallback routes (``fallback_providers`` first, then legacy ``fallback_model``, deduplicated)
     through the Agent's own resolver, like the CLI and gateway. Runs under the call's ``scoped_home``."""
@@ -546,6 +558,7 @@ def start(ctx: CallContext, params: dict) -> dict:  # noqa: PLR0915 - one turn, 
                 raw_emit("steer_pending", {"text": pending})
         raw_emit(event, data)
     try:
+        _discover_mcp_tools()
         runtime = _resolve_runtime(provider, model)
         resolved_model = model or str(runtime.get("model") or "")
         resolved_provider = provider or runtime.get("provider")
