@@ -66,7 +66,7 @@ function sourceInstall(): Install {
   // The production URL stays configured; only this fixture's transport is redirected to its own repository.
   git(client, 'remote', 'set-url', 'origin', 'https://github.com/MaudeCode/talaria.git')
   const runtime = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, contracts: { appWeb: [1], webRelay: [2] }, compatibleAgent: { ...PIN['x-talaria'], image: PIN.services['hermes-agent'].image } }
-  const release: PublishedRelease = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}`, npm: null, manifestReleaseSet: latest, runtime, release_url: `${REPOSITORY_URL}/releases/tag/release-set-${latest}` }
+  const release: PublishedRelease = { tag: 'web-v2.0.0', version: '2.0.0', sourceRevision: latest, releaseSet: latest, image: `ghcr.io/maudecode/talaria-web@sha256:${'f'.repeat(64)}`, npm: null, manifestReleaseSet: latest, runtime, release_url: `${REPOSITORY_URL}/releases/tag/release-set-${latest}`, releasesBehind: 1 }
   const id = { release: DEV as Dict, stamped: DEV as Dict, running: null as string | null }
   const identity: ReleaseIdentity = { release: () => id.release, stamped: () => id.stamped, runningSourceRevision: () => id.running }
   const commands: string[][] = []
@@ -299,6 +299,25 @@ describe('Web source updates (test_tal203_source_update.py)', () => {
     expect(older.manual_update).toBe(true)
     expect(older.no_git).toBe(true)
     expect((await checkWebUpdate(null, 'web-v3.0.0', 'stable', s.run, s.getJson, s.identity)).behind).toBe(0)
+  })
+
+  it('packaged and npm installs report every completed Stable release they are behind (TAL-624)', async () => {
+    const s = sourceInstall()
+    const latest = (await s.getJson('/releases?per_page=100&page=1', { asset: false }) as Dict[])[0]!
+    // Newest first: completed sets for 1.2.0, 1.1.0 and the installed 1.0.0; 1.1.5 is a Web tag whose release set never completed.
+    const older = [['1.2.0', 'complete'], ['1.1.5', 'candidate'], ['1.1.0', 'complete'], ['1.0.0', 'complete']] as const
+    const sets = older.map(([version, status], i) => ({ id: 200 + i, version, status, sha: String(i).repeat(40), published_at: `2026-09-0${String(9 - i)}T00:00:00Z` }))
+    const listed: GetJson = async (path, opts) => {
+      const set = sets.find((x) => path === `/releases/assets/${String(x.id)}`)
+      if (!set) return opts.asset ? s.getJson(path, opts) : [latest, ...sets.flatMap((x) => [{ tag_name: `web-v${x.version}`, published_at: x.published_at, assets: [] }, { tag_name: `release-set-${x.sha}`, published_at: x.published_at, assets: [{ name: 'release-set.json', id: x.id }] }])]
+      const manifest = await s.getJson('/releases/assets/123', opts) as Dict
+      return { ...manifest, releaseSet: set.sha, status: set.status, components: { web: { ...(manifest.components as Dict).web as Dict, tag: `web-v${set.version}`, version: set.version } } }
+    }
+    s.id.release = { sourceRevision: 'c'.repeat(40) }
+    expect((await checkWebUpdate(null, 'web-v1.0.0', 'stable', s.run, listed, s.identity)).behind).toBe(3)
+    expect((await checkWebUpdate(null, 'web-v1.2.0', 'stable', s.run, listed, s.identity)).behind).toBe(1)
+    const n = npmPackageInstall(s)
+    expect(await checkWebUpdate(n.packageRoot, 'web-v1.0.0', 'stable', s.run, listed, s.identity, n.npm)).toMatchObject({ install_kind: 'npm', behind: 3 })
   })
 
   function npmPackageInstall(s: Install, initial: 'success' | 'failure' | 'bad-stamp' = 'success') {

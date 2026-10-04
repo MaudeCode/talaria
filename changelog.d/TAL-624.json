@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Update checks now report how many Talaria Web releases a server is behind instead of always saying 1.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}
