@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import uuid
@@ -39,8 +40,10 @@ def resolve_main_runtime(hint: dict | None) -> dict | None:
 
 
 def _main_model_completion(messages: list, runtime: dict, *, task: str) -> dict:
-    """Predecessor fallback: run the main model through ``AIAgent`` with no tools when no auxiliary client answers."""
-    from .chat import _agent_class
+    """Predecessor fallback: run the main model through ``AIAgent`` with no tools when no auxiliary client answers.
+
+    The throwaway agent never touches long-term memory (the prompt is a raw git diff) and is always closed."""
+    from .chat import _agent_class, _supported
 
     AIAgent = _agent_class()
 
@@ -51,8 +54,21 @@ def _main_model_completion(messages: list, runtime: dict, *, task: str) -> dict:
     for name in ("api_mode", "acp_command", "acp_args", "credential_pool"):
         if runtime.get(name) is not None:
             kwargs[name] = runtime[name]
+    for name in ("skip_memory", "skip_background_review"):
+        if _supported(AIAgent, name):
+            kwargs[name] = True
     agent = AIAgent(**kwargs)
-    result = agent.run_conversation(user_message=user, system_message=system, conversation_history=[], task_id=kwargs["session_id"])
+    try:
+        result = agent.run_conversation(user_message=user, system_message=system, conversation_history=[], task_id=kwargs["session_id"])
+    finally:
+        with contextlib.suppress(Exception):
+            agent._end_session_on_close = False
+        close = getattr(agent, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:  # noqa: BLE001
+                log.debug("%s fallback agent close failed", task, exc_info=True)
     return {"model": str(runtime.get("model") or ""), "text": str((result or {}).get("final_response") or "").strip(), "usage": None}
 
 
