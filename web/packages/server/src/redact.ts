@@ -659,14 +659,17 @@ const REGISTRY_LOGIN: CommandFlags = { separate: ['-p'], attached: ['-p'], login
 const MYSQL: CommandFlags = { attached: ['-p'] }
 const COMMAND_FLAGS: Record<string, CommandFlags> = {
   docker: REGISTRY_LOGIN, podman: REGISTRY_LOGIN, buildah: REGISTRY_LOGIN, nerdctl: REGISTRY_LOGIN, skopeo: REGISTRY_LOGIN, oras: REGISTRY_LOGIN, helm: REGISTRY_LOGIN,
-  mysql: MYSQL, mysqladmin: MYSQL, mysqldump: MYSQL, mysqlimport: MYSQL, mysqlshow: MYSQL, mysqlcheck: MYSQL, mysqlslap: MYSQL, mysql_upgrade: MYSQL,
-  mariadb: MYSQL, 'mariadb-admin': MYSQL, 'mariadb-dump': MYSQL, 'mariadb-import': MYSQL, 'mariadb-show': MYSQL, 'mariadb-check': MYSQL, 'mariadb-slap': MYSQL, 'mariadb-upgrade': MYSQL,
+  mysql: MYSQL, mysqladmin: MYSQL, mysqldump: MYSQL, mysqlimport: MYSQL, mysqlshow: MYSQL, mysqlcheck: MYSQL, mysqlslap: MYSQL, mysql_upgrade: MYSQL, mysqlbinlog: MYSQL,
+  mariadb: MYSQL, 'mariadb-admin': MYSQL, 'mariadb-dump': MYSQL, 'mariadb-import': MYSQL, 'mariadb-show': MYSQL, 'mariadb-check': MYSQL, 'mariadb-slap': MYSQL, 'mariadb-upgrade': MYSQL, 'mariadb-binlog': MYSQL,
   sshpass: { separate: ['-p'], attached: ['-p'], values: ['-f', '-d', '-P'], stop: true },
   'redis-cli': { separate: ['-a', '--pass'] },
   smbclient: { separate: ['-U', '--user'], attached: ['-U', '--user='], percent: true },
 }
-/** A known command's name as a word: bare, after a path, a listed argv element, or composed by quotes (`do"cker"`). */
-const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[\\])(?:${Object.keys(COMMAND_FLAGS).map((name) => name.replaceAll(/(?<=.)(?=.)/g, String.raw`["'\\]*`)).join('|')})(?=[\s;&|)'",\]]|$)`, 'g')
+/**
+ * A known command's name as a word: bare, after a path, a listed argv element, or composed by quotes (`do"cker"`); or a
+ * name the shell computes (`$CLIENT`), which may be one.
+ */
+const COMMAND_FLAG_RE = new RegExp(String.raw`(?<![^\s;&|()\x60'"/,[\\])(?:${Object.keys(COMMAND_FLAGS).map((name) => name.replaceAll(/(?<=.)(?=.)/g, String.raw`["'\\]*`)).join('|')}|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|\$\([^()\n]*\))(?=[\s;&|)'",\]]|$)`, 'g')
 const COMMAND_FLAG_TEST_RE = new RegExp(COMMAND_FLAG_RE.source)
 
 /**
@@ -700,8 +703,9 @@ function commandFlagMasks(words: readonly string[]): Map<number, number> {
       if (flags.stop && !word.startsWith('-')) states.delete(flags)
     }
     const name = word.slice(word.lastIndexOf('/') + 1)
-    // A command named again (`docker login docker -p pw`, a host) keeps the state it is in.
-    const flags = Object.hasOwn(COMMAND_FLAGS, name) ? COMMAND_FLAGS[name]! : undefined
+    // A command named again (`docker login docker -p pw`, a host) keeps the state it is in. A name the shell computes
+    // (`$CLIENT login -p pw`) may be a registry client.
+    const flags = Object.hasOwn(COMMAND_FLAGS, name) ? COMMAND_FLAGS[name]! : !word.startsWith('-') && /[$`]/.test(word) ? REGISTRY_LOGIN : undefined
     if (flags && !states.has(flags)) states.set(flags, { active: !flags.login, next: i + 1 })
   }
   return masks
@@ -738,6 +742,16 @@ function commandWords(text: string, from: number, enclosing: string): { spans: [
         // An unterminated quote runs to the text end (or the enclosing close); its word is still read, so its secret is masked.
         if (text[k] !== c) { spans.push([start, Math.min(k, text.length)]); return { spans, end: Math.min(k, text.length) } }
         i = k + 1
+      } else if (c === '`' || (c === '$' && (text[i + 1] === '(' || text[i + 1] === '{'))) {
+        // A substitution is part of its word (`-p$(printf pw)`), spaces and nested ones included.
+        const [open, close] = c === '`' ? ['', '`'] : [text[i + 1]!, text[i + 1] === '(' ? ')' : '}']
+        let k = i + 1
+        for (let depth = 1; k < text.length && text[k] !== enclosing; k += 1) {
+          if (text[k] === close && (depth -= 1) === 0) break
+          if (text[k] === open && k > i + 1) depth += 1
+        }
+        if (text[k] !== close) { spans.push([start, Math.min(k, text.length)]); return { spans, end: Math.min(k, text.length) } }
+        i = k + 1
       } else i += 1
     }
     spans.push([start, Math.min(i, text.length)])
@@ -764,8 +778,8 @@ function redactCommandFlags(text: string): string {
       if (start < last) continue
       const raw = text.slice(start, stop)
       const from = masks.get(k)
-      // A nested command is a quoted word with a space, strictly inside this text.
-      const nested = (listed || !quote) && raw.length < text.length && /['"]/.test(raw) && /\s/.test(raw) && COMMAND_FLAG_TEST_RE.test(raw)
+      // A nested command is a quoted or substituted word with a space, strictly inside this text.
+      const nested = (listed || !quote) && raw.length < text.length && /['"]|\$\(|\x60/.test(raw) && /\s/.test(raw) && COMMAND_FLAG_TEST_RE.test(raw)
       const replaced = from !== undefined ? maskWordFrom(raw, words[k]!, from) : nested ? redactCommandFlags(raw) : raw
       if (replaced === raw) continue
       out += text.slice(last, start) + replaced
