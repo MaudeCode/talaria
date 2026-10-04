@@ -1765,6 +1765,8 @@
 	"background_line_command_failed": "后台命令 {command} 失败",
 	"background_line_command_failed_exit": "后台命令 {command} 失败（退出码 {code}）",
 	"background_update_details": "显示完整的后台结果",
+	"marker_context_compaction": "上下文压实",
+	"marker_preserved_task_list": "已保留任务列表",
 	"live_background": "正在处理后台结果",
 	"steer_send_now": "立即发送",
 	"steer_edit": "编辑引导消息",

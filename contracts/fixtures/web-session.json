@@ -2620,5 +2620,85 @@
         "_turn_id": "legacy:32"
       }
     ]
+  },
+  "marker_session": {
+    "session_id": "contract-markers",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Summarise the plan.",
+        "message_id": "marker-prompt",
+        "timestamp": 1770000300,
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "assistant",
+        "content": "The plan has three steps.",
+        "message_id": "marker-reply",
+        "timestamp": 1770000301,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "The plan has three steps.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "7162b01e41ec7d4e052a24330d74295ceaaa6e7e066519d080d07cf34c137e6e"
+        },
+        "_turn_id": "legacy:0"
+      },
+      {
+        "role": "user",
+        "content": "[CONTEXT COMPACTION] Earlier turns were summarised: the user asked for a three-step plan.",
+        "message_id": "marker-compaction",
+        "timestamp": 1770000302,
+        "_turn_id": "legacy:0",
+        "_marker_kind": "context_compaction"
+      },
+      {
+        "role": "user",
+        "content": "[Your active task list was preserved across context compression]\n- [x] Draft the plan\n- [ ] Review the plan",
+        "message_id": "marker-task-list",
+        "timestamp": 1770000303,
+        "_turn_id": "legacy:0",
+        "_marker_kind": "preserved_task_list",
+        "_marker_body": "- [x] Draft the plan\n- [ ] Review the plan"
+      },
+      {
+        "role": "user",
+        "content": "What is context compaction?",
+        "message_id": "marker-question",
+        "timestamp": 1770000304,
+        "_turn_id": "legacy:4"
+      },
+      {
+        "role": "assistant",
+        "content": "Context compaction is how the Agent summarises older turns to fit its window.",
+        "message_id": "marker-prose",
+        "timestamp": 1770000305,
+        "_anchor_activity_scene": {
+          "version": "activity_scene_v1",
+          "activity_rows": [],
+          "final_answer": "Context compaction is how the Agent summarises older turns to fit its window.",
+          "turn_duration": null,
+          "terminal_state": "completed",
+          "expanded_by_default": false,
+          "has_consumed_steering": false,
+          "file_changes": [],
+          "activity_rows_total": 0,
+          "activity_rows_offset": 0,
+          "activity_rows_complete": true,
+          "activity_rows_omitted": 0,
+          "activity_scene_ref": "37f0ec046ba08a1aaf805c66b1fa7e485e00464e03b0d5cc93f744000e054f7f"
+        },
+        "_turn_id": "legacy:4"
+      }
+    ]
   }
 }

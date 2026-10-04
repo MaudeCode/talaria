@@ -1854,6 +1854,8 @@
 	"background_line_command_failed": "Comando en segundo plano {command} falló",
 	"background_line_command_failed_exit": "Comando en segundo plano {command} falló (salida {code})",
 	"background_update_details": "Mostrar el resultado completo en segundo plano",
+	"marker_context_compaction": "Compactación de contexto",
+	"marker_preserved_task_list": "Lista de tareas preservada",
 	"live_background": "Procesando resultados en segundo plano",
 	"steer_send_now": "Enviar ahora",
 	"steer_edit": "Editar indicación",

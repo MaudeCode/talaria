@@ -136,6 +136,13 @@ export const MessageSchema = z.looseObject({
      */
     lines: z.array(BackgroundLineSchema),
   }).optional(),
+  /**
+   * TAL-305: a marker the Agent wrote around context compaction, not a message anyone typed. Clients render a collapsed
+   * card with a localized title per kind and the body on expansion: `_marker_body` when sent, else `content`.
+   */
+  _marker_kind: z.enum(['context_compaction', 'preserved_task_list']).optional(),
+  /** TAL-305: a preserved task list's card body, without its marker line. */
+  _marker_body: z.string().optional(),
   /** TAL-460: part of the Agent's reply to the background update just before it in the same turn. */
   _background_reply: z.boolean().optional(),
   /** TAL-460: that reply is only a silence marker; clients show the update's lines and nothing of this turn's reply. */

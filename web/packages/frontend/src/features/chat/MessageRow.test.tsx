@@ -106,3 +106,43 @@ describe('background updates (TAL-460)', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Responding…')
   })
 })
+
+describe('compaction markers (TAL-305)', () => {
+  const fixture = (): Message[] => (JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { marker_session: { messages: Message[] } }).marker_session.messages
+  const transcript = (messages: Message[]) => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() })
+    return render(<Transcript rows={projectMessages(messages)} live={null} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />)
+  }
+
+  it('shows each server-marked row as a collapsed card, never a user bubble, and prose about compaction as prose', () => {
+    const messages = fixture()
+    const view = transcript(messages)
+    const keyOf = (id: string) => projectMessages(messages).find((r) => r.message.message_id === id)!.key
+    const order = [...view.container.querySelectorAll('[data-message-key]')].map((el) => `${el.getAttribute('data-role') ?? ''}:${el.getAttribute('data-message-key') ?? ''}`)
+    expect(order).toEqual([
+      `user:${keyOf('marker-prompt')}`, `assistant:${keyOf('marker-reply')}`,
+      `marker:${keyOf('marker-compaction')}`, `marker:${keyOf('marker-task-list')}`,
+      `user:${keyOf('marker-question')}`, `assistant:${keyOf('marker-prose')}`,
+    ])
+    const card = (id: string) => view.container.querySelector<HTMLDetailsElement>(`[data-message-key="${keyOf(id)}"] details`)!
+    const compaction = card('marker-compaction')
+    expect(compaction.open).toBe(false)
+    expect(compaction.querySelector('summary')).toHaveTextContent('Context compaction')
+    fireEvent.click(compaction.querySelector('summary')!)
+    expect(compaction.querySelector('.msg-body')?.textContent).toBe(messages.find((m) => m.message_id === 'marker-compaction')?.content)
+    const tasks = card('marker-task-list')
+    expect(tasks.querySelector('summary')).toHaveTextContent('Preserved task list')
+    expect(tasks.querySelector('.msg-body')?.textContent).toBe('- [x] Draft the plan\n- [ ] Review the plan')
+    expect(view.container.querySelector(`[data-message-key="${keyOf('marker-prose')}"]`)).toHaveTextContent('Context compaction is how the Agent')
+  })
+
+  it('keeps an assistant marker out of the turn around it', () => {
+    const rows = groupAssistantTurns(projectMessages([
+      { role: 'user', content: 'Go', _turn_id: 't' },
+      { role: 'assistant', id: 1, content: 'One', _turn_id: 't' },
+      { role: 'assistant', id: 2, content: '[context compaction] summary', _turn_id: 't', _marker_kind: 'context_compaction' },
+      { role: 'assistant', id: 3, content: 'Two', _turn_id: 't' },
+    ]))
+    expect(rows.map((row) => [row.message._marker_kind ?? row.message.role, (row.assistantRows ?? []).length])).toEqual([['user', 0], ['assistant', 1], ['context_compaction', 0], ['assistant', 1]])
+  })
+})

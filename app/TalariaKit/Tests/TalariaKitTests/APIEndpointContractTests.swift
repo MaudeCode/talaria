@@ -516,6 +516,21 @@ final class SharedContractTests: XCTestCase {
         XCTAssertTrue(shown.contains("user-no-reply-answer"))
     }
 
+    func testSharedWebSessionMarksOnlyTheServersMarkers() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-305 has no such example.
+        guard let example = object["marker_session"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let messages = try decoder.decode([ChatMessage].self, from: JSONSerialization.data(withJSONObject: example["messages"] ?? []))
+        XCTAssertEqual(messages.map { $0.markerKind }, [nil, nil, .contextCompaction, .preservedTaskList, nil, nil])
+        XCTAssertEqual(messages[3].markerBody, "- [x] Draft the plan\n- [ ] Review the plan")
+        // Each marker is a row of its own; the reply about compaction stays an ordinary assistant turn.
+        let rows = ChatViewModel.transcriptMessages(from: messages)
+        XCTAssertEqual(rows.map { $0.message.messageId }, ["marker-prompt", "marker-reply", "marker-compaction", "marker-task-list", "marker-question", "marker-prose"])
+        XCTAssertEqual(rows.last?.assistantSegments.count, 1)
+    }
+
     func testAnOlderBackgroundUpdateBecomesOneLineFromItsSummary() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

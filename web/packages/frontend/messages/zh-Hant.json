@@ -1819,6 +1819,8 @@
 	"background_line_command_failed": "背景命令 {command} 失敗",
 	"background_line_command_failed_exit": "背景命令 {command} 失敗（結束碼 {code}）",
 	"background_update_details": "顯示完整的背景結果",
+	"marker_context_compaction": "上下文壓實",
+	"marker_preserved_task_list": "已保留任務列表",
 	"live_background": "正在處理背景結果",
 	"steer_send_now": "立即傳送",
 	"steer_edit": "編輯引導訊息",

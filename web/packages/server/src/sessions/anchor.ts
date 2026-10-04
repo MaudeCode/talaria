@@ -6,7 +6,7 @@
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { agentSteerText, isContextCompressionMarker, isReasoningBlock, messageText, normalizeAssistantDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml } from './merge.js'
+import { agentSteerText, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { toolArgs } from './tool-display.js'
@@ -441,11 +441,11 @@ function withStoredOutcome(preview: Record<string, unknown>, built: Record<strin
   return next
 }
 
-/** Rows of the full transcript grouped by `_turn_id` (see withTurnIds), with their absolute indexes. */
+/** Rows of the full transcript grouped by `_turn_id` (see withTurnIds), with their absolute indexes. Marker rows render as their own cards, so no scene is built from or attached to one. */
 function turnsOf(messages: unknown[]): Map<string, [Record<string, unknown>, number][]> {
   const turns = new Map<string, [Record<string, unknown>, number][]>()
   messages.forEach((m, index) => {
-    if (!isDict(m)) return
+    if (!isDict(m) || markerKind(m)) return
     const id = str(m._turn_id)
     if (!id) return
     const rows = turns.get(id) ?? []
@@ -573,9 +573,9 @@ export function readAnchorSceneRows(session: Session, query: { messageRef: strin
   return { scene_ref: sceneRef, rows: rows.slice(start, before), start, end: before, total, complete: start === 0 }
 }
 
-/** A turn opens at a user message the reader sees (text or attachments); hidden prompts and compaction markers do not. */
+/** A turn opens at a user message the reader sees (text or attachments); hidden prompts and marker rows do not. */
 function opensTurn(m: Record<string, unknown>): boolean {
-  if (m.role !== 'user' || isContextCompressionMarker(m) || isDict(m._steer)) return false
+  if (m.role !== 'user' || markerKind(m) || isDict(m._steer)) return false
   return messageText(m.content).trim() !== '' || (Array.isArray(m.attachments) && m.attachments.length > 0)
 }
 

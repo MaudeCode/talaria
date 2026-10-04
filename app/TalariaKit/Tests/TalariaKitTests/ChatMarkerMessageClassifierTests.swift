@@ -1,103 +1,47 @@
 import XCTest
 @testable import TalariaKit
 
+/// The server classifies compaction markers and stamps `_marker_kind` (TAL-305); the app decodes it and never reads the text.
 final class ChatMarkerMessageClassifierTests: XCTestCase {
-    // MARK: - Context compaction
-
-    func testBracketedCompactionPrefixMatches() {
-        let message = makeMessage(role: "user", content: "[Context compaction] Summary of earlier conversation…")
-        XCTAssertEqual(ChatMarkerMessageClassifier.classify(message), .contextCompaction)
+    func testDecodesTheServersCompactionMarker() throws {
+        let message = try decode(#"{"role":"user","content":"[CONTEXT COMPACTION] Summary","_marker_kind":"context_compaction"}"#)
+        XCTAssertEqual(message.markerKind, .contextCompaction)
+        XCTAssertNil(message.markerBody)
     }
 
-    func testUnbracketedCompactionPrefixMatches() {
-        let message = makeMessage(role: "assistant", content: "Context compaction: the prior history was summarized.")
-        XCTAssertEqual(ChatMarkerMessageClassifier.classify(message), .contextCompaction)
+    func testDecodesTheServersPreservedTaskListAndItsBody() throws {
+        let message = try decode(#"{"role":"user","content":"[Your active task list was preserved across context compression]\n- one","_marker_kind":"preserved_task_list","_marker_body":"- one"}"#)
+        XCTAssertEqual(message.markerKind, .preservedTaskList)
+        XCTAssertEqual(message.markerBody, "- one")
     }
 
-    func testCompactionPrefixIsCaseInsensitive() {
-        let message = makeMessage(role: "user", content: "[CONTEXT COMPACTION] details")
-        XCTAssertEqual(ChatMarkerMessageClassifier.classify(message), .contextCompaction)
+    func testUnstampedMarkerTextIsAnOrdinaryMessage() throws {
+        for content in ["[CONTEXT COMPACTION] typed by hand", "Context compaction is how the Agent shortens history.", "[Your active task list was preserved across context compression]"] {
+            XCTAssertNil(try decode(#"{"role":"user","content":"\#(content)"}"#).markerKind, content)
+        }
     }
 
-    func testCompactionPrefixToleratesLeadingWhitespace() {
-        let message = makeMessage(role: "user", content: "  \n\t[context compaction] details")
-        XCTAssertEqual(ChatMarkerMessageClassifier.classify(message), .contextCompaction)
+    func testAnUnknownKindFromANewerServerIsAnOrdinaryMessage() throws {
+        let message = try decode(#"{"role":"user","content":"x","_marker_kind":"future_kind","_marker_body":"y"}"#)
+        XCTAssertNil(message.markerKind)
+        XCTAssertNil(message.markerBody)
     }
 
-    func testToolRoleNeverMatches() {
-        let message = makeMessage(role: "tool", content: "[context compaction] details")
-        XCTAssertNil(ChatMarkerMessageClassifier.classify(message))
+    func testAnAssistantMarkerStaysOutOfTheTurnAroundIt() {
+        let messages = [
+            ChatMessage(role: "user", content: "Go", timestamp: 1, messageId: "u", turnId: "t"),
+            ChatMessage(role: "assistant", content: "One", timestamp: 2, messageId: "a1", turnId: "t"),
+            ChatMessage(role: "assistant", content: "[context compaction] summary", timestamp: 3, messageId: "m", turnId: "t", markerKind: .contextCompaction),
+            ChatMessage(role: "assistant", content: "Two", timestamp: 4, messageId: "a2", turnId: "t"),
+        ]
+        let rows = ChatViewModel.transcriptMessages(from: messages)
+        XCTAssertEqual(rows.map { $0.message.messageId }, ["u", "a1", "m", "a2"])
+        XCTAssertEqual(rows.map { $0.assistantSegments.count }, [0, 1, 0, 1])
     }
 
-    func testMissingRoleNeverMatches() {
-        let message = makeMessage(role: nil, content: "[context compaction] details")
-        XCTAssertNil(ChatMarkerMessageClassifier.classify(message))
-    }
-
-    func testNonMarkerTextStartingWithContextDoesNotMatch() {
-        let message = makeMessage(role: "user", content: "Context windows are interesting — explain compaction.")
-        XCTAssertNil(ChatMarkerMessageClassifier.classify(message))
-    }
-
-    // MARK: - Preserved task list
-
-    func testPreservedTaskListPrefixMatchesForUserRole() {
-        let message = makeMessage(
-            role: "user",
-            content: "[Your active task list was preserved across context compression]\n1. Do the thing"
-        )
-        XCTAssertEqual(ChatMarkerMessageClassifier.classify(message), .preservedTaskList)
-    }
-
-    func testPreservedTaskListPrefixIsCaseInsensitiveAndToleratesWhitespace() {
-        let message = makeMessage(
-            role: "user",
-            content: "   [YOUR ACTIVE TASK LIST WAS PRESERVED ACROSS CONTEXT COMPRESSION] tasks"
-        )
-        XCTAssertEqual(ChatMarkerMessageClassifier.classify(message), .preservedTaskList)
-    }
-
-    func testPreservedTaskListPrefixDoesNotMatchNonUserRoles() {
-        let message = makeMessage(
-            role: "assistant",
-            content: "[Your active task list was preserved across context compression] tasks"
-        )
-        XCTAssertNil(ChatMarkerMessageClassifier.classify(message))
-    }
-
-    // MARK: - Plain messages
-
-    func testNormalUserMessageDoesNotMatch() {
-        let message = makeMessage(role: "user", content: "Hey, can you check the build?")
-        XCTAssertNil(ChatMarkerMessageClassifier.classify(message))
-    }
-
-    func testEmptyContentDoesNotMatch() {
-        let message = makeMessage(role: "user", content: nil)
-        XCTAssertNil(ChatMarkerMessageClassifier.classify(message))
-    }
-
-    // MARK: - Card body
-
-    func testCardBodyStripsPreservedTaskListMarker() {
-        let body = ChatMarkerMessageClassifier.cardBody(
-            for: .preservedTaskList,
-            content: "[Your active task list was preserved across context compression]\n1. First task\n2. Second task"
-        )
-        XCTAssertEqual(body, "1. First task\n2. Second task")
-    }
-
-    func testCardBodyKeepsCompactionTextIntact() {
-        let body = ChatMarkerMessageClassifier.cardBody(
-            for: .contextCompaction,
-            content: "  [Context compaction] Summary text  "
-        )
-        XCTAssertEqual(body, "[Context compaction] Summary text")
-    }
-
-    // MARK: - Helpers
-
-    private func makeMessage(role: String?, content: String?) -> ChatMessage {
-        ChatMessage(role: role, content: content, timestamp: nil, messageId: "test-id")
+    private func decode(_ json: String) throws -> ChatMessage {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(ChatMessage.self, from: Data(json.utf8))
     }
 }

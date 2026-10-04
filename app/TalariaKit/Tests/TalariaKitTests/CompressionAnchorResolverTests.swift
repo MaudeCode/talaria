@@ -43,7 +43,7 @@ final class CompressionAnchorResolverTests: XCTestCase {
         // (mirrors `_shouldShowSettledCompressionReference`).
         let messages = [
             makeMessage(role: "user", content: "Hello"),
-            makeMessage(role: "assistant", content: "[Context compaction]\nOlder messages were summarized."),
+            makeMessage(role: "assistant", content: "[Context compaction]\nOlder messages were summarized.", markerKind: .contextCompaction),
         ]
 
         let resolution = resolve(
@@ -57,7 +57,7 @@ final class CompressionAnchorResolverTests: XCTestCase {
     func testSummaryNotContainedInMarkerFallsBackToSummaryText() {
         let messages = [
             makeMessage(role: "user", content: "Hello"),
-            makeMessage(role: "assistant", content: "[Context compaction]\nAn unrelated earlier compaction."),
+            makeMessage(role: "assistant", content: "[Context compaction]\nAn unrelated earlier compaction.", markerKind: .contextCompaction),
         ]
 
         let resolution = resolve(
@@ -237,7 +237,8 @@ final class CompressionAnchorResolverTests: XCTestCase {
             makeMessage(role: "user", content: "First"),
             makeMessage(
                 role: "user",
-                content: "[Your active task list was preserved across context compression]\n- task"
+                content: "[Your active task list was preserved across context compression]\n- task",
+                markerKind: .preservedTaskList
             ),
             makeMessage(role: "assistant", content: "Second"),
         ]
@@ -398,14 +399,16 @@ final class CompressionAnchorResolverTests: XCTestCase {
         content: String?,
         ts: Double? = nil,
         messageId: String? = nil,
-        attachments: [MessageAttachment]? = nil
+        attachments: [MessageAttachment]? = nil,
+        markerKind: ChatMarkerMessageKind? = nil
     ) -> ChatMessage {
         ChatMessage(
             role: role,
             content: content,
             timestamp: ts,
             messageId: messageId,
-            attachments: attachments
+            attachments: attachments,
+            markerKind: markerKind
         )
     }
 

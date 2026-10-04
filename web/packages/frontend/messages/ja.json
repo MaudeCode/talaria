@@ -1821,6 +1821,8 @@
 	"background_line_command_failed": "バックグラウンドコマンド {command} が失敗しました",
 	"background_line_command_failed_exit": "バックグラウンドコマンド {command} が失敗しました（終了コード {code}）",
 	"background_update_details": "バックグラウンドの結果をすべて表示",
+	"marker_context_compaction": "コンテキストの圧縮",
+	"marker_preserved_task_list": "保持されたタスクリスト",
 	"live_background": "バックグラウンドの結果を処理中",
 	"steer_send_now": "今すぐ送信",
 	"steer_edit": "ステアリングメッセージを編集",

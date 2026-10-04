@@ -1894,6 +1894,8 @@
 	"background_line_command_failed": "Comando in background {command} non riuscito",
 	"background_line_command_failed_exit": "Comando in background {command} non riuscito (uscita {code})",
 	"background_update_details": "Mostra il risultato completo in background",
+	"marker_context_compaction": "Compattazione del contesto",
+	"marker_preserved_task_list": "Elenco attività conservato",
 	"live_background": "Elaborazione dei risultati in background",
 	"steer_send_now": "Invia ora",
 	"steer_edit": "Modifica indicazione",

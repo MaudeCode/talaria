@@ -59,8 +59,9 @@ enum CompressionAnchorResolver {
             return nil
         }
 
-        let referenceText = referenceText(in: messages, summary: summary)
-        guard shouldShowReference(referenceText) else { return nil }
+        // The latest server-marked compaction row already renders as its own card, so a reference that resolves to one
+        // is not shown twice.
+        guard let referenceText = referenceText(in: messages, summary: summary) else { return nil }
 
         let candidateIndices = anchorCandidateIndices(in: messages)
 
@@ -94,31 +95,22 @@ enum CompressionAnchorResolver {
 
     // MARK: - Reference text
 
-    /// Mirrors `_latestCompressionReferenceMessage`: prefer the latest literal
-    /// compaction-marker message (matching summary containment when a summary
-    /// exists), falling back to the summary itself.
-    private static func referenceText(in messages: [ChatMessage], summary: String) -> String {
+    /// Mirrors `_latestCompressionReferenceMessage`: the reference is the latest
+    /// server-marked compaction row (matching summary containment when a summary
+    /// exists), else the summary itself. Nil when it is that marker row, which
+    /// renders as its own card, or when there is no text to show.
+    private static func referenceText(in messages: [ChatMessage], summary: String) -> String? {
         let normalizedSummary = normalizedWhitespace(summary)
 
         for message in messages.reversed() {
-            guard ChatMarkerMessageClassifier.classify(message) == .contextCompaction else { continue }
+            guard message.markerKind == .contextCompaction else { continue }
 
-            let content = message.content ?? ""
-            if normalizedSummary.isEmpty || normalizedWhitespace(content).contains(normalizedSummary) {
-                return content
+            if normalizedSummary.isEmpty || normalizedWhitespace(message.content ?? "").contains(normalizedSummary) {
+                return nil
             }
         }
 
-        return summary
-    }
-
-    /// Mirrors `_shouldShowSettledCompressionReference`: non-empty reference
-    /// text that is not itself a literal compaction marker.
-    private static func shouldShowReference(_ referenceText: String) -> Bool {
-        let trimmed = referenceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-
-        return !ChatMarkerMessageClassifier.isContextCompactionText(trimmed)
+        return summary.isEmpty ? nil : summary
     }
 
     // MARK: - Anchor matching
@@ -138,7 +130,7 @@ enum CompressionAnchorResolver {
         messages.indices.filter { index in
             let message = messages[index]
             guard let role = message.role, !role.isEmpty, role != "tool" else { return false }
-            guard ChatMarkerMessageClassifier.classify(message) == nil else { return false }
+            guard message.markerKind == nil else { return false }
 
             let hasText = message.content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             let hasAttachments = message.attachments?.isEmpty == false

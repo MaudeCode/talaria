@@ -1912,6 +1912,8 @@
 	"background_line_command_failed": "Commande en arrière-plan {command} en échec",
 	"background_line_command_failed_exit": "Commande en arrière-plan {command} en échec (code {code})",
 	"background_update_details": "Afficher le résultat complet en arrière-plan",
+	"marker_context_compaction": "Compaction du contexte",
+	"marker_preserved_task_list": "Liste de tâches conservée",
 	"live_background": "Traitement des résultats en arrière-plan",
 	"steer_send_now": "Envoyer maintenant",
 	"steer_edit": "Modifier l’indication",

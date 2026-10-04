@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BODY_EXCERPT_LIMIT, extractToolCallsFromMessages, mergeSessionMessagesAppendOnly, normalizeAssistantDisplay, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withToolCallOutcomes } from './merge.js'
+import { BODY_EXCERPT_LIMIT, extractToolCallsFromMessages, markerKind, mergeDisplayMessagesAfterAgentResult, mergeSessionMessagesAppendOnly, normalizeAssistantDisplay, splitDisplayText, stripToolCallXml, toolOutcome, withBodyExcerpts, withMarkerKinds, withToolCallOutcomes } from './merge.js'
 
 describe('toolOutcome (TAL-313)', () => {
   it('fails a result that reports an error, a non-zero exit code, or success false, in any persisted shape', () => {
@@ -198,5 +198,50 @@ describe('assistant display text (TAL-302)', () => {
     expect(normalizeAssistantDisplay({ role: 'assistant', content: 'A', reasoning_content: 'plan', reasoning: 'plan\n\ninline' })).toEqual({ role: 'assistant', content: 'A', reasoning: 'plan\n\ninline' })
     // Text that merely occurs inside another part is still its own reasoning.
     expect(normalizeAssistantDisplay({ role: 'assistant', content: 'A', reasoning_content: 'Yes', reasoning: 'Yes, it exists.' })).toEqual({ role: 'assistant', content: 'A', reasoning: 'Yes\n\nYes, it exists.' })
+  })
+})
+
+describe('compaction markers (TAL-305)', () => {
+  const TASKS = '[Your active task list was preserved across context compression]'
+
+  it('classifies both marker kinds with one rule', () => {
+    const cases: [Record<string, unknown>, string | null][] = [
+      [{ role: 'user', content: '[CONTEXT COMPACTION] Earlier turns were summarised.' }, 'context_compaction'],
+      [{ role: 'user', content: ' \n[Context Compaction — reference only] lower' }, 'context_compaction'],
+      [{ role: 'assistant', content: '[context compaction] summary' }, 'context_compaction'],
+      [{ role: 'user', content: [{ type: 'text', text: '[CONTEXT COMPACTION] in parts' }] }, 'context_compaction'],
+      [{ role: 'system', content: '', _compaction_marker: true }, 'context_compaction'],
+      [{ role: 'user', content: 'x', _compression_marker: true }, 'context_compaction'],
+      [{ role: 'user', content: 'x', _context_compression_marker: true }, 'context_compaction'],
+      [{ role: 'user', content: `${TASKS}\n- [ ] ship it` }, 'preserved_task_list'],
+      [{ role: 'user', content: `  ${TASKS.toUpperCase()} tasks` }, 'preserved_task_list'],
+      // Prose about compaction, a tool result, and an assistant echo of the task-list line are ordinary messages.
+      [{ role: 'assistant', content: 'Context compaction is how the Agent shortens history.' }, null],
+      [{ role: 'user', content: 'context compaction, explain it' }, null],
+      [{ role: 'tool', content: '[CONTEXT COMPACTION] output' }, null],
+      [{ role: 'assistant', content: `${TASKS} tasks` }, null],
+      [{ role: 'user', content: 'Hello' }, null],
+    ]
+    for (const [message, kind] of cases) expect(markerKind(message), JSON.stringify(message)).toBe(kind)
+  })
+
+  it('stamps the kind, and the task list without its marker line, on copies', () => {
+    const rows = [
+      { role: 'user', content: '[CONTEXT COMPACTION] summary' },
+      { role: 'user', content: `  ${TASKS}\n- [ ] one\n- [x] two  ` },
+      { role: 'assistant', content: 'Context compaction is fine.' },
+    ]
+    const out = withMarkerKinds(rows) as Record<string, unknown>[]
+    expect(out[0]).toEqual({ ...rows[0], _marker_kind: 'context_compaction' })
+    expect(out[1]).toEqual({ ...rows[1], _marker_kind: 'preserved_task_list', _marker_body: '- [ ] one\n- [x] two' })
+    expect(out[2]).toBe(rows[2])
+    expect(rows[0]).not.toHaveProperty('_marker_kind')
+  })
+
+  it('drops bracketed markers of either case from the settled display', () => {
+    const previous = [{ role: 'user', content: 'Hi' }, { role: 'assistant', content: 'Hello' }, { role: 'user', content: '[context compaction] old summary' }]
+    const result = [...previous.slice(0, 2), { role: 'user', content: '[CONTEXT COMPACTION] new summary' }, { role: 'user', content: 'Next' }, { role: 'assistant', content: 'Context compaction is a summary step.' }]
+    const merged = mergeDisplayMessagesAfterAgentResult(previous, previous, result, 'Next')
+    expect(merged.map((m) => m.content)).toEqual(['Hi', 'Hello', 'Next', 'Context compaction is a summary step.'])
   })
 })

@@ -1830,6 +1830,8 @@
 	"background_line_command_failed": "Hintergrundbefehl {command} fehlgeschlagen",
 	"background_line_command_failed_exit": "Hintergrundbefehl {command} fehlgeschlagen (Exit {code})",
 	"background_update_details": "Vollständiges Hintergrundergebnis anzeigen",
+	"marker_context_compaction": "Kontextverdichtung",
+	"marker_preserved_task_list": "Aufgabenliste beibehalten",
 	"live_background": "Bearbeitet Hintergrundergebnisse",
 	"steer_send_now": "Jetzt senden",
 	"steer_edit": "Steuerhinweis bearbeiten",

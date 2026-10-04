@@ -39,7 +39,10 @@ export function turnIdOf(message: Message): string | undefined {
   return typeof message._turn_id === 'string' && message._turn_id ? message._turn_id : undefined
 }
 
-/** Consecutive assistant rows with one `_turn_id` form a turn; the final row retains its original mutation index. */
+/**
+ * Consecutive assistant rows with one `_turn_id` form a turn; the final row retains its original mutation index. A marker
+ * row (`_marker_kind`) is a card of its own, never part of a turn.
+ */
 export function groupAssistantTurns(rows: VisibleMessage[]): VisibleMessage[] {
   const out: VisibleMessage[] = []
   let group: VisibleMessage[] = []
@@ -50,7 +53,7 @@ export function groupAssistantTurns(rows: VisibleMessage[]): VisibleMessage[] {
     group = []
   }
   for (const row of rows) {
-    if (row.message.role !== 'assistant') { flush(); out.push(row); continue }
+    if (row.message.role !== 'assistant' || row.message._marker_kind) { flush(); out.push(row); continue }
     const previous = group.at(-1)
     if (previous && turnIdOf(previous.message) !== turnIdOf(row.message)) flush()
     group.push(row)

@@ -5,7 +5,7 @@ import { Link } from '@tanstack/react-router'
 import { m } from '../../paraglide/messages.js'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
-import { AssistantMessageRow, BackgroundUpdateRow, UserMessageRow, type RowActions } from './MessageRow'
+import { AssistantMessageRow, BackgroundUpdateRow, MarkerRow, UserMessageRow, type RowActions } from './MessageRow'
 import { LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
@@ -62,13 +62,13 @@ export function Transcript(props: TranscriptProps) {
     // The live turn owns rows the server already stamped with its turn id.
     return grouped.filter((row) => row.message.role !== 'assistant' || (row.turnKey !== live.streamId && row.turnKey !== live.turnId))
   }, [grouped, live, showLive])
-  const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user'
+  const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user' && !rows[rows.length - 1]?.message._marker_kind
   const showLiveUser = !!live && !isTerminal(live.status) && live.userText.trim() !== '' && !lastRowIsUser && !rows.some((r) => r.message.role === 'user' && messageKey(r.message) === live.userMessageId)
   // One slot for the user's newest text: the pending first send until the turn starts, then the live user row, so the
   // handover neither flashes nor duplicates.
   // A persisted user row as the tail means the server already carries the pending text; never show it twice.
   const liveUserText = showLiveUser ? (live?.userText ?? '') : !live && pendingUserText && !lastRowIsUser ? pendingUserText : ''
-  const lastAssistantIndex = useMemo(() => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i]?.message.role === 'assistant') return i; return -1 }, [rows])
+  const lastAssistantIndex = useMemo(() => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i]?.message.role === 'assistant' && !rows[i]?.message._marker_kind) return i; return -1 }, [rows])
   const virtualize = virtualizeLongTranscripts && rows.length > VIRTUALIZE_AT
 
   const pinnedRef = useRef(pinned)
@@ -175,6 +175,8 @@ export function Transcript(props: TranscriptProps) {
   const renderRow = (row: VisibleMessage, i: number) => (
     row.message._background_update
       ? <BackgroundUpdateRow key={row.key} row={row} />
+      : row.message._marker_kind
+      ? <MarkerRow key={row.key} row={row} />
       : row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
       : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} />

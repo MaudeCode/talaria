@@ -44,6 +44,10 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
     public internal(set) var backgroundUpdate: BackgroundUpdate?
     /// The server marked this row part of a background reply that is only a silence marker (TAL-460): it is not shown.
     public internal(set) var backgroundSilent: Bool
+    /// The server marked this row a compaction marker (TAL-305): render its card, never a message bubble.
+    public internal(set) var markerKind: ChatMarkerMessageKind?
+    /// The server's card body for a marker whose text is not the body as written (a preserved task list).
+    public internal(set) var markerBody: String?
 
     public init(
         role: String?,
@@ -65,7 +69,9 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         steer: [String: JSONValue]? = nil,
         displayExcerpt: String? = nil,
         backgroundUpdate: BackgroundUpdate? = nil,
-        backgroundSilent: Bool = false
+        backgroundSilent: Bool = false,
+        markerKind: ChatMarkerMessageKind? = nil,
+        markerBody: String? = nil
     ) {
         self.role = role
         self.content = content
@@ -87,6 +93,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         self.displayExcerpt = displayExcerpt
         self.backgroundUpdate = backgroundUpdate
         self.backgroundSilent = backgroundSilent
+        self.markerKind = markerKind
+        self.markerBody = markerBody
     }
 
     enum CodingKeys: String, CodingKey {
@@ -111,6 +119,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
         case displayExcerpt = "_displayExcerpt"
         case backgroundUpdate = "_backgroundUpdate"
         case backgroundSilent = "_backgroundSilent"
+        case markerKind = "_markerKind"
+        case markerBody = "_markerBody"
     }
 
     public init(from decoder: Decoder) throws {
@@ -142,6 +152,8 @@ public struct ChatMessage: Decodable, Equatable, Identifiable {
             : nil
         backgroundUpdate = try? container.decodeIfPresent(BackgroundUpdate.self, forKey: .backgroundUpdate)
         backgroundSilent = (try? container.decodeIfPresent(Bool.self, forKey: .backgroundSilent)) == true
+        markerKind = ChatMarkerMessageKind(wireValue: container.decodeLossyStringIfPresent(forKey: .markerKind))
+        markerBody = markerKind == nil ? nil : container.decodeLossyStringIfPresent(forKey: .markerBody)
     }
 
     private static func attachments(

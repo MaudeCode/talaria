@@ -95,11 +95,42 @@ export function messagesHavePrefix(messages: unknown[], prefix: unknown[]): bool
   return true
 }
 
+const PRESERVED_TASK_LIST_PREFIX = '[your active task list was preserved across context compression]'
+const hasPrefix = (text: string, prefix: string): boolean => text.slice(0, prefix.length).toLowerCase() === prefix
+
+export type MarkerKind = 'context_compaction' | 'preserved_task_list'
+
+/**
+ * TAL-305: the one rule for the marker rows the Agent writes around context compaction. A flagged row, or a user or
+ * assistant row starting `[context compaction`, is a compaction summary; a user row starting with the preserved-task-list
+ * line is that list. Both ignore case and leading whitespace; prose that merely mentions compaction is no marker.
+ */
+export function markerKind(msg: unknown): MarkerKind | null {
+  if (!isDict(msg)) return null
+  if (msg._context_compression_marker || msg._compression_marker || msg._compaction_marker) return 'context_compaction'
+  const role = str(msg.role)
+  const text = messageText(msg.content).trimStart()
+  if (role === 'user' && hasPrefix(text, PRESERVED_TASK_LIST_PREFIX)) return 'preserved_task_list'
+  if ((role === 'user' || role === 'assistant') && hasPrefix(text, '[context compaction')) return 'context_compaction'
+  return null
+}
+
 export function isContextCompressionMarker(msg: unknown): boolean {
-  if (!isDict(msg)) return false
-  if (msg._context_compression_marker || msg._compression_marker || msg._compaction_marker) return true
-  const text = messageText(msg.content)
-  return str(msg.role) === 'user' && text.startsWith('[CONTEXT COMPACTION]')
+  return markerKind(msg) === 'context_compaction'
+}
+
+/**
+ * TAL-305: stamps `_marker_kind` on marker rows, and `_marker_body` (the list without its marker line) on a preserved
+ * task list, so clients render a marker card instead of a message. Returns copies; stored rows are untouched.
+ */
+export function withMarkerKinds<T>(messages: T[]): T[] {
+  return messages.map((m) => {
+    const kind = markerKind(m)
+    if (!kind || !isDict(m)) return m
+    if (kind === 'context_compaction') return { ...m, _marker_kind: kind }
+    const body = messageText(m.content).trim().slice(PRESERVED_TASK_LIST_PREFIX.length).trim()
+    return { ...m, _marker_kind: kind, _marker_body: body }
+  })
 }
 
 /** A user prompt as the user typed it: without the workspace prefix and the attached-files line the server adds. */

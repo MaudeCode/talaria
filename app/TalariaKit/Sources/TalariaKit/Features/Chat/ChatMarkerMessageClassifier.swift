@@ -1,16 +1,31 @@
 import Foundation
 
-/// Marker messages the agent emits around context compaction. The server sends
-/// them as plain role-based messages with no structured flag, so — like the web
-/// UI (`_isContextCompactionMessage` / `_isPreservedCompressionTaskListMessage`
-/// in `ui.js`) — we detect them by content prefix.
+/// Marker rows the agent writes around context compaction. The server classifies
+/// them and stamps `_marker_kind` (TAL-305); the app only renders that field.
 public enum ChatMarkerMessageKind: Equatable {
     case contextCompaction
     case preservedTaskList
     /// Synthesized "Context compaction · Reference only" anchor card built from
-    /// session-level `compression_anchor_*` metadata — never produced by
-    /// `classify`, which only sees literal marker messages.
+    /// session-level `compression_anchor_*` metadata — never sent as a
+    /// `_marker_kind`.
     case compressionReference
+
+    /// The server's `_marker_kind`; an unknown kind renders as an ordinary message.
+    init?(wireValue: String?) {
+        switch wireValue {
+        case "context_compaction": self = .contextCompaction
+        case "preserved_task_list": self = .preservedTaskList
+        default: return nil
+        }
+    }
+
+    var wireValue: String? {
+        switch self {
+        case .contextCompaction: "context_compaction"
+        case .preservedTaskList: "preserved_task_list"
+        case .compressionReference: nil
+        }
+    }
 
     public var title: String {
         switch self {
@@ -19,60 +34,5 @@ public enum ChatMarkerMessageKind: Equatable {
         case .preservedTaskList:
             return String(localized: "Preserved task list")
         }
-    }
-}
-
-public enum ChatMarkerMessageClassifier {
-    private static let preservedTaskListPrefix = "[your active task list was preserved across context compression]"
-    private static let contextCompactionPrefixes = ["[context compaction", "context compaction"]
-
-    public static func classify(_ message: ChatMessage) -> ChatMarkerMessageKind? {
-        guard let role = message.role, role != "tool" else { return nil }
-
-        let text = trimmedContent(of: message)
-
-        if role == "user", hasCaseInsensitivePrefix(text, preservedTaskListPrefix) {
-            return .preservedTaskList
-        }
-
-        if isContextCompactionText(text) {
-            return .contextCompaction
-        }
-
-        return nil
-    }
-
-    /// Mirrors the web UI's `_isContextCompactionText`: true when the text is
-    /// itself a literal compaction marker (used both for classification and to
-    /// gate the synthesized reference card).
-    static func isContextCompactionText(_ text: String?) -> Bool {
-        let trimmed = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return contextCompactionPrefixes.contains { hasCaseInsensitivePrefix(trimmed, $0) }
-    }
-
-    /// The card body with the preserved-task-list marker line stripped, so the
-    /// preview/expanded text starts at the actual task list (mirrors the web
-    /// UI's `_preservedCompressionTaskListPreview`).
-    public static func cardBody(for kind: ChatMarkerMessageKind, content: String?) -> String {
-        let text = (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard kind == .preservedTaskList,
-              let markerRange = text.range(
-                of: preservedTaskListPrefix,
-                options: [.caseInsensitive, .anchored]
-              )
-        else {
-            return text
-        }
-
-        return String(text[markerRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func trimmedContent(of message: ChatMessage) -> String {
-        (message.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func hasCaseInsensitivePrefix(_ text: String, _ prefix: String) -> Bool {
-        text.range(of: prefix, options: [.caseInsensitive, .anchored]) != nil
     }
 }
