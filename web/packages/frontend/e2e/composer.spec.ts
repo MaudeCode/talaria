@@ -1,3 +1,4 @@
+import { createServer, type ServerResponse } from 'node:http'
 import type { Page, Route } from '@playwright/test'
 import { expect, test } from './fixtures'
 
@@ -371,3 +372,57 @@ test('a second Edit click while the first is pending returns the text once (TAL-
   await expect(page.locator('#msg')).toHaveValue('Plan the release')
   expect(truncates).toBe(1)
 })
+
+for (const size of ['default', 'xlarge'] as const) {
+  test(`hover and focus never change the composer's text size or layout: ${size} (TAL-249)`, async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'hover needs a fine pointer')
+    if (size !== 'default') await page.addInitScript((s) => { localStorage.setItem('hermes-font-size', s) }, size)
+    const streams: ServerResponse[] = []
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Access-Control-Allow-Origin': process.env.HERMES_E2E_BASE_URL!, 'Access-Control-Allow-Credentials': 'true' })
+      response.write(`id: type-run:1\nevent: token\ndata: ${JSON.stringify({ text: 'Working.' })}\n\n`)
+      streams.push(response)
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Missing fixture port')
+    await page.route('**/api/session?**', (route) => route.fulfill({ json: { session: { session_id: 'type', title: 'Type', messages: transcript('type', 1), active_stream_id: 'type-run', is_streaming: true } } }))
+    await page.route('**/api/chat/stream/status?**', (route) => route.fulfill({ json: { active: true, stream_id: 'type-run', replay_available: false } }))
+    await page.route('**/api/chat/stream?**', (route) => route.continue({ url: `http://127.0.0.1:${String(address.port)}${new URL(route.request().url()).search}` }))
+    await page.route('**/api/session/draft', (route) => route.fulfill({ json: { ok: true } }))
+    try {
+      await page.goto('/session/type')
+      const msg = page.locator('#msg')
+      await expect(msg).toHaveAttribute('placeholder', 'Enter = steer | /queue | /background | /interrupt')
+      const measure = () => msg.evaluate((el) => {
+        const style = getComputedStyle(el)
+        const placeholder = getComputedStyle(el, '::placeholder')
+        return {
+          fontSize: style.fontSize, lineHeight: style.lineHeight, padding: style.padding,
+          placeholderFontSize: placeholder.fontSize, placeholderLineHeight: placeholder.lineHeight,
+          height: el.getBoundingClientRect().height,
+          footerTop: document.querySelector('.composer-footer')!.getBoundingClientRect().top,
+          cardHeight: document.getElementById('composerBox')!.getBoundingClientRect().height,
+        }
+      })
+      // The text-size setting owns the size; default follows the skin's composer token.
+      const intended = size === 'xlarge' ? '20px' : await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--composer-font-size').trim())
+      for (const draft of ['', 'Check the backup logs too']) {
+        await msg.fill(draft)
+        await msg.blur()
+        await page.mouse.move(0, 0)
+        const rest = await measure()
+        expect(rest.fontSize).toBe(intended)
+        await msg.hover()
+        expect(await measure(), `hover, draft ${JSON.stringify(draft)}`).toEqual(rest)
+        await msg.focus()
+        expect(await measure(), `hover and focus, draft ${JSON.stringify(draft)}`).toEqual(rest)
+        await page.mouse.move(0, 0)
+        expect(await measure(), `focus, draft ${JSON.stringify(draft)}`).toEqual(rest)
+      }
+    } finally {
+      for (const response of streams) response.end()
+      await new Promise<void>((resolve) => server.close(() => { resolve() }))
+    }
+  })
+}

@@ -158,14 +158,11 @@ textarea#msg::placeholder{color:var(--muted)}
 .msg-body pre{border:var(--pre-border);border-radius:var(--r-md);box-shadow:none}
 .msg-body code{border-radius:4px}
 .msg-body table{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
-#msg,#msg:hover,#msg:focus,#msg:focus-visible{background:transparent;border:0;box-shadow:none;border-radius:0;outline:none;padding:14px 16px 6px;font-size:15px;line-height:1.5}
+#msg,#msg:hover,#msg:focus,#msg:focus-visible{background:transparent;border:0;box-shadow:none;border-radius:0;outline:none}
 .msg-row{animation:none}
-@media (max-width:768px){#msg{padding:12px 14px 6px;font-size:16px}}
 .chat-header-meta:empty{display:none}
 .msg-body{line-height:1.6;letter-spacing:var(--msg-tracking)}
 .msg-role,.msg-time{font-family:var(--font-mono);font-size:11px;letter-spacing:0}
-#msg{padding:16px 16px 6px;font-size:14.5px;line-height:1.6}
-@media (max-width:640px){#msg{padding:12px 12px 4px}}
 #panelChat{position:relative}
 #panelChat .sidebar-search{position:absolute;top:0;left:0;right:0;height:44px;margin:0;padding:7px 8px 7px 10px;display:flex;align-items:center;background:var(--sidebar);z-index:3;opacity:0;pointer-events:none;transform:scaleX(.97);transform-origin:right center;transition:opacity .15s ease,transform .15s ease}
 #panelChat.search-open .sidebar-search{opacity:1;pointer-events:auto;transform:none}
