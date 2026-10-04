@@ -39,12 +39,12 @@ and the per-session relay. The chat-turn events:
 | `warning` | Non-fatal provider/fallback warning |
 | `apperror` | Terminal application error (no trailing `stream_end`) |
 | `cancel` | Run cancelled |
-| `done` | Turn finalized (session payload); title/`stream_end` may follow |
+| `done` | Turn finalized (session payload); title, goal and `stream_end` may follow |
 | `stream_end` | SSE fence — close the client EventSource |
 | `metering` | Token/cost metering snapshot |
 | `context_status` | Context window / usage status |
-| `goal` | Goal / plan card update |
-| `goal_continue` | Goal continuation signal |
+| `goal` | `/goal` progress after a goal turn: `state` `evaluating`, then `continuing` or `idle` with the Agent's verdict and message |
+| `goal_continue` | The server started the goal's continuation turn (`stream_id`, `continuation_prompt`) |
 | `pending_steer_leftover` | Leftover steer text after interrupt |
 | `steer_consumed` | User steer inserted into the active run, with stable `steer_id`, text, and consumption timestamp |
 | `state_saved` | Durable state write acknowledgment |
