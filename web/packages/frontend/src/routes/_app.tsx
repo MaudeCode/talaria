@@ -1,8 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Outlet, createFileRoute, redirect } from '@tanstack/react-router'
 import { startPresence } from '../features/presence/presence'
 import { isAuthenticated } from '../contracts/bootstrap'
 import { legacyHashRoute } from '../contracts/url'
+import { useSettingsQuery } from '../app/queries'
+import { LinkPreferencesContext } from '../features/chat/render/Markdown'
 
 /**
  * Authenticated application layout. Authorization is server-owned (the shell
@@ -25,5 +27,10 @@ export const Route = createFileRoute('/_app')({
 function AppLayout() {
   // One presence lease per tab for the whole authenticated session, not per page.
   useEffect(() => startPresence(), [])
-  return <Outlet />
+  // Chat Markdown follows the signed-in user's link settings; until they load it keeps the default warning.
+  const settings = useSettingsQuery()
+  const confirm = settings.data?.confirm_external_links
+  const trustedHosts = settings.data?.trusted_link_hosts
+  const linkPreferences = useMemo(() => ({ confirm: confirm ?? true, trustedHosts: trustedHosts ?? [] }), [confirm, trustedHosts])
+  return <LinkPreferencesContext value={linkPreferences}><Outlet /></LinkPreferencesContext>
 }

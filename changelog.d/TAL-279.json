@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Opening an external link from a chat now asks in a centered dialog that names the destination site, and Preferences can turn that confirmation off or list trusted sites that open directly.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

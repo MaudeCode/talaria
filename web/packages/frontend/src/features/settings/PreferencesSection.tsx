@@ -25,6 +25,7 @@ export function PreferencesSection() {
   const models = useModelsQuery()
   const setDefault = useSetDefaultModel()
   const [botName, setBotName] = useState<string | null>(null)
+  const [trustedHosts, setTrustedHosts] = useState<string | null>(null)
   if (settings.isPending) return <LoadingState />
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => { void settings.refetch() }} />
   return (
@@ -83,6 +84,13 @@ export function PreferencesSection() {
       <Toggle label={m.settings_label_previous_messaging_sessions()} settingKey="show_previous_messaging_sessions" />
       <Toggle label={m.settings_label_sync_insights()} settingKey="sync_to_insights" />
       <Toggle label={m.settings_label_api_redact()} settingKey="api_redact_enabled" fallback />
+      <Toggle label={m.settings_label_confirm_external_links()} settingKey="confirm_external_links" fallback />
+      <FieldRow label={m.settings_label_trusted_link_hosts()} hint={m.settings_desc_trusted_link_hosts()} htmlFor="settingsTrustedLinkHosts">
+        <form className="flex items-start gap-2" onSubmit={(e) => { e.preventDefault(); if (trustedHosts !== null) { set({ trusted_link_hosts: trustedHosts.split('\n') }); setTrustedHosts(null) } }}>
+          <textarea id="settingsTrustedLinkHosts" rows={3} spellCheck={false} autoCapitalize="none" placeholder="docs.example.com" className="min-h-9 w-full rounded-md border border-border bg-input px-3 py-2 font-mono text-sm text-text placeholder:text-muted focus:border-accent" value={trustedHosts ?? (settings.data.trusted_link_hosts ?? []).join('\n')} onChange={(e) => setTrustedHosts(e.target.value)} />
+          <Button type="submit" disabled={trustedHosts === null}>{m.save()}</Button>
+        </form>
+      </FieldRow>
       <FieldRow label={m.settings_label_tab_visibility()} htmlFor="settingsHiddenTabs">
         <div id="settingsHiddenTabs" className="flex flex-wrap gap-3">
           {NAV_ITEMS.filter((n) => !FIXED_TABS.has(n.id)).map((n) => {

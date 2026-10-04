@@ -383,6 +383,8 @@ export const SettingsSchema = z.looseObject({
   auth_disabled_acknowledged: z.boolean().optional(), webui_version: z.string().optional(), agent_version: z.string().optional(), update_channel: z.string().optional(), agent_update_channel: z.enum(['stable', 'experimental']).optional(), update_channel_version: NullableString.optional(),
   max_tokens: NullableNumber.optional(), max_tokens_effective: NullableNumber.optional(), max_tokens_fallback: NullableNumber.optional(), tts_engine: z.string().optional(), tts_voice: z.string().optional(),
   dictation_append: z.boolean().optional(), persisted_speech_keys: z.array(z.string()).optional(),
+  /** TAL-279: ask before opening external chat links; `trusted_link_hosts` are exact, server-normalized hostnames that skip the ask. */
+  confirm_external_links: z.boolean().optional(), trusted_link_hosts: z.array(z.string()).optional(),
 })
 export type Settings = z.infer<typeof SettingsSchema>
 export const ProfileSchema = z.looseObject({

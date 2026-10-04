@@ -29175,6 +29175,15 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "confirm_external_links": {
+                      "type": "boolean"
+                    },
+                    "trusted_link_hosts": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "additionalProperties": {}
@@ -29373,6 +29382,15 @@
                       "type": "boolean"
                     },
                     "persisted_speech_keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "confirm_external_links": {
+                      "type": "boolean"
+                    },
+                    "trusted_link_hosts": {
                       "type": "array",
                       "items": {
                         "type": "string"
