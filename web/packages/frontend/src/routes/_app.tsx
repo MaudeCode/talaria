@@ -3,6 +3,8 @@ import { Outlet, createFileRoute, redirect } from '@tanstack/react-router'
 import { startPresence } from '../features/presence/presence'
 import { isAuthenticated } from '../contracts/bootstrap'
 import { legacyHashRoute } from '../contracts/url'
+import { checkExternalLink } from '../api/endpoints'
+import { LinkCheckContext } from '../features/chat/render/Markdown'
 
 /**
  * Authenticated application layout. Authorization is server-owned (the shell
@@ -25,5 +27,6 @@ export const Route = createFileRoute('/_app')({
 function AppLayout() {
   // One presence lease per tab for the whole authenticated session, not per page.
   useEffect(() => startPresence(), [])
-  return <Outlet />
+  // Signed-in chat Markdown asks the server whether a link skips the warning.
+  return <LinkCheckContext value={checkExternalLink}><Outlet /></LinkCheckContext>
 }

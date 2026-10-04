@@ -12,6 +12,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { atomicWriteText } from './fs/atomic.js'
 import { resolveDefaultWorkspace, type Env } from './config.js'
+import { normalizeTrustedLinkHosts } from './links.js'
 
 export type Settings = Record<string, unknown>
 
@@ -130,6 +131,8 @@ export function settingsDefaults(opts: { defaultWorkspace: string; botName: stri
     password_hash: null,
     auth_disabled_acknowledged: false,
     provider_cost_budget: null,
+    confirm_external_links: true,
+    trusted_link_hosts: [],
   }
 }
 
@@ -283,6 +286,7 @@ export class SettingsStore {
     const establishedKeys = Object.keys(stored).filter((k) => k !== 'show_cli_sessions' && k !== 'onboarding_completed')
     if (!('show_cli_sessions' in stored) && (pyBool(stored.onboarding_completed) || establishedKeys.length > 0)) settings.show_cli_sessions = false
     if (!pyBool(stored.virtualize_transcript_optin)) settings.virtualize_transcript = false
+    settings.trusted_link_hosts = normalizeTrustedLinkHosts(settings.trusted_link_hosts)
     const hasStoredAppearance = 'theme' in stored || 'skin' in stored
     ;[settings.theme, settings.skin] = normalizeAppearance(
       hasStoredAppearance ? stored.theme : settings.theme,
@@ -410,6 +414,10 @@ export class SettingsStore {
           cleaned.push(s)
         }
         v = cleaned
+      }
+      if (k === 'trusted_link_hosts') {
+        if (!Array.isArray(v)) continue
+        v = normalizeTrustedLinkHosts(v)
       }
       if (k === 'provider_cost_budget') {
         if (v === null || v === undefined || v === '') { current[k] = null; continue }

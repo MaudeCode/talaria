@@ -92,6 +92,21 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
     expect(configs.get(s.state)).not.toHaveProperty('max_tokens')
   })
 
+  it('POST /api/settings/link-check answers the saved link preferences per clicked URL (TAL-279)', async () => {
+    const check = async (url: string) => (await json(await post(s, '/api/settings/link-check', { url }))).opens_directly
+    expect(await json(await post(s, '/api/settings/link-check', { url: 'https://Docs.Example.com:8443/guide' }))).toEqual({ opens_directly: false, host: 'docs.example.com' })
+    expect(await check('https://docs.example.com/guide')).toBe(false)
+    await post(s, '/api/settings', { trusted_link_hosts: ['Docs.Example.com'] })
+    expect(await check('https://DOCS.example.com:8443/guide')).toBe(true)
+    expect(await check('https://docs.example.com.evil.test/')).toBe(false)
+    expect(await check('javascript:alert(1)')).toBe(false)
+    await post(s, '/api/settings', { confirm_external_links: false, trusted_link_hosts: [] })
+    expect(await check('https://anything.test/')).toBe(true)
+    expect(await check('/relative')).toBe(false)
+    await post(s, '/api/settings', { confirm_external_links: true })
+    expect(await check('https://anything.test/')).toBe(false)
+  })
+
   it('first password setup from loopback enables auth and logs the caller in with a session cookie', async () => {
     const res = await post(s, '/api/settings', { _set_password: 'correct horse battery' })
     expect(res.status).toBe(200)

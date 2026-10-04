@@ -21,6 +21,7 @@ import { displayName, providerEnvVar, stampAuxiliarySelections } from '../provid
 import { OAUTH_PROVIDERS, SUPPORTED_PROVIDER_SETUPS } from '../providers/tables.js'
 import { displayBotName, SETTINGS_SPEECH_KEYS, pyBool } from '../settings.js'
 import { str } from '../util.js'
+import { checkExternalLink, linkPreferences } from '../links.js'
 
 const os = implement(settingsContract).$context<ApiContext>().use(requestSessionIdGuard)
 
@@ -117,6 +118,8 @@ async function saveSettings(ctx: RequestContext, input: Dict): Promise<Dict> {
   const auth = deps.auth
   const body: Dict = { ...input }
   if (['auto_apply_updates', 'update_channel', 'agent_update_channel', 'check_for_updates'].some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage updates')
+  // Link safety applies to every user of this server, so only an owner may relax it.
+  if (['confirm_external_links', 'trusted_link_hosts'].some((key) => key in body) && !(await canManageServer(ctx))) throw new HttpError(403, 'An owner session is required to manage link safety')
   if ('bot_name' in body) body.bot_name = displayBotName(body.bot_name)
   const authEnabledBefore = await auth.isAuthEnabled()
   const passwordAuthBefore = authEnabledBefore && (await auth.getPasswordHash()) !== null
@@ -218,6 +221,7 @@ export const settingsRouter = os.router({
   settings: {
     get: os.settings.get.handler(({ context: { ctx } }) => run(() => settingsPayload(ctx))),
     save: os.settings.save.handler(({ input, context: { ctx } }) => run(() => saveSettings(ctx, input))),
+    linkCheck: os.settings.linkCheck.handler(({ input, context: { ctx } }) => checkExternalLink(input.url, linkPreferences(ctx.deps.settings.load()))),
   },
   profiles: {
     list: os.profiles.list.handler(({ context: { ctx } }) => run(async () => ({ profiles: await ctx.deps.profiles.list(activeProfileName(ctx)) as never[], active: activeProfileName(ctx), single_profile_mode: ctx.deps.isolatedProfileMode() }))),

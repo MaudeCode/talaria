@@ -246,6 +246,21 @@ describe('save', () => {
     expect(s.writeVersion).toBe(1)
   })
 
+  it('confirms external links by default and stores only exact, normalized trusted hosts (TAL-279)', async () => {
+    const s = store()
+    expect(s.load()).toMatchObject({ confirm_external_links: true, trusted_link_hosts: [] })
+    await s.save({
+      confirm_external_links: false,
+      trusted_link_hosts: [' Docs.Example.COM ', 'docs.example.com', 'bücher.de', '[::1]', 'example.com:443', 'https://example.com', 'example.com/path', 'user@example.com', '*.example.com', '', 42],
+    })
+    expect(onDisk()).toMatchObject({ confirm_external_links: false, trusted_link_hosts: ['docs.example.com', 'xn--bcher-kva.de', '[::1]'] })
+    expect(store().load()).toMatchObject({ confirm_external_links: false, trusted_link_hosts: ['docs.example.com', 'xn--bcher-kva.de', '[::1]'] })
+    await s.save({ trusted_link_hosts: 'example.com' })
+    expect(onDisk().trusted_link_hosts).toEqual(['docs.example.com', 'xn--bcher-kva.de', '[::1]'])
+    write({ trusted_link_hosts: ['Hand.Edited.Example', 'not a host'] })
+    expect(store().load().trusted_link_hosts).toEqual(['hand.edited.example'])
+  })
+
   it('normalises theme and skin on save, dropping the skin when a legacy theme is set alone', async () => {
     const s = store()
     expect((await s.save({ theme: 'light', skin: 'mono' })).skin).toBe('mono')
