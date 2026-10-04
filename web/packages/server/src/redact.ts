@@ -1460,7 +1460,9 @@ export function redactSensitive(text: string): string {
 
 function redactRules(text: string): string {
   if (!text) return text
-  let out = maskSplitTokens(maskSplitTokens(text, CONTROL_CHARS_RE), ANSI_GAPS_RE).replace(CRED_RE, (_, t: string) => mask(t))
+  // The ANSI view joins across every gap the control-only one does, so it goes first and a piece that is a token by
+  // itself (`ghp_abcdefghij\x1b[31m…`) is not masked alone; the control-only view then adds tokens inside OSC payloads.
+  let out = maskSplitTokens(maskSplitTokens(text, ANSI_GAPS_RE), CONTROL_CHARS_RE).replace(CRED_RE, (_, t: string) => mask(t))
   out = out.replace(EMBEDDED_AWS_RE, (t) => mask(t))
   out = redactHeaderCredentials(out, AUTH_HDR_RE)
   out = out.replace(JWT_RE, (t) => mask(t))

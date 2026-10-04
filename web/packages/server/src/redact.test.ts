@@ -788,6 +788,8 @@ describe('Agent redactor parity', () => {
   it('masks a token split by an ANSI escape sequence, and keeps the sequences around a whole one', () => {
     for (const [input, expected] of [
       ['ghp_abcdef\x1b[31m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      // The piece before the sequence is a whole token by itself.
+      ['ghp_abcdefghij\x1b[31m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       ['ghp_abcdef\x1b[1;38;5;196m1234567890ABCDEF1234567890abcdef\x1b[0m done', 'ghp_ab...cdef\x1b[0m done'],
       ['ghp_abcdef\x1b]8;;https://x.test\x07123456\x1b]8;;\x1b\\7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       ['gh\x1b[1mp_abcdef1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
