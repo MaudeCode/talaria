@@ -645,12 +645,17 @@ describe('OIDC operator config availability', () => {
       expect((await json(await s.get('/api/bootstrap'))).auth).toMatchObject(unresolved)
       expect((await s.get('/api/sessions')).status).toBe(401)
       expect((await s.get('/api/auth/oidc/start')).status).toBe(404)
+      const nativeStart = () => post(s, '/api/auth/oidc/native/start', { callback_url: 'talaria://oidc-callback', state: b64u(randomBytes(24)), code_challenge: b64u(randomBytes(32)), code_challenge_method: 'S256' })
+      const refused = await nativeStart()
+      expect(refused.status).toBe(404)
+      expect(String((await json(refused)).error)).toContain('operator config could not be resolved')
       rmSync(join(s.state, 'config.yaml'))
       s.deps.agentConfig.invalidate()
       clock += 10
       expect(await json(await s.get('/api/auth/status'))).toMatchObject({ auth_enabled: true, oidc_enabled: true, oidc_native_handoff_enabled: true, oidc_unavailable: false })
       expect((await s.get('/api/sessions')).status).toBe(401)
       expect((await s.get('/api/auth/oidc/start')).status).toBe(302)
+      expect((await nativeStart()).status).toBe(200)
     } finally { await s.close() }
   })
 

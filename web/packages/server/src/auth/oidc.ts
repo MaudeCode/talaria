@@ -340,7 +340,8 @@ export class OidcService {
 
   /** Python `begin_native_authorization`. */
   async beginNative(requestBaseUrl: string, callbackUrl: string, clientState: string, codeChallenge: string): Promise<{ flow_id: string; authorization_url: string; server_id: string; expires_in: number }> {
-    if (!(await this.enabled())) throw new OidcConfigError('Native OIDC login is not configured')
+    // The same resolved-config decision status advertises: an unresolved or incomplete config never mints a flow.
+    await this.require()
     const origin = normalizeServerOrigin(requestBaseUrl)
     const callback = validateNativeCallback(callbackUrl)
     const state = str(clientState).trim()
