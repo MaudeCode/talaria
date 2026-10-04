@@ -195,12 +195,12 @@ describe('skills, memory, prompts, commands, mcp, health, updates, diagnostics',
       expect(commands.find((c) => c.name === 'compress')).toMatchObject({ aliases: ['compact'], handler: 'client' })
       expect(commands.find((c) => c.name === 'branch')).toMatchObject({ aliases: ['fork'] })
       // Web-only commands carry the message other clients show.
-      expect(commands.find((c) => c.name === 'terminal')).toMatchObject({ clients: ['web'], unsupported_message: expect.any(String) })
+      expect(commands.find((c) => c.name === 'terminal')).toMatchObject({ clients: ['web'], unsupported_message: 'Terminal is not available in the mobile app.' })
       expect(commands.find((c) => c.name === 'usage')?.clients).toEqual(['web'])
       // Agent rows follow, run on every client unless CLI-only, and never list gateway-only commands.
       expect(names.slice(-2)).toEqual(['reload-skills', 'history'])
       expect(commands.find((c) => c.name === 'reload-skills')).toMatchObject({ handler: 'agent', clients: ['web', 'ios'], aliases: ['reload_skills'] })
-      expect(commands.find((c) => c.name === 'history')).toMatchObject({ handler: 'agent', clients: [], unsupported_message: expect.any(String) })
+      expect(commands.find((c) => c.name === 'history')).toMatchObject({ handler: 'agent', clients: [], unsupported_message: '/history runs only in the Hermes CLI.' })
       expect(names).not.toContain('sethome')
     } finally {
       const recorded = loadSidecarFixtures().get('commands.registry')?.[0]?.result
