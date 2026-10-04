@@ -891,6 +891,25 @@ describe('profiles, crons, workspaces, skills, and sessions across profiles', ()
     }
   })
 
+  it('a target profile without a default model falls back to one consistent model and provider pair', async () => {
+    const researchHome = join(s.state, 'profiles', 'research')
+    configs.set(researchHome, { model: { provider: 'openrouter' } })
+    configs.set(workHome, { model: { default: 'work-default-model', provider: 'anthropic' } })
+    writeFileSync(join(researchHome, 'config.yaml'), '# research provider only\n')
+    writeFileSync(join(workHome, 'config.yaml'), '# work default model pair\n')
+    try {
+      const res = await post(s, '/api/session/new', { profile: 'research' }, asWork())
+      expect(res.status, await res.clone().text()).toBe(200)
+      const sid = String(((await json(res)).session as Json).session_id)
+      expect(s.deps.sessionStore.get(sid)).toMatchObject({ profile: 'research', model: 'work-default-model', model_provider: 'anthropic' })
+    } finally {
+      configs.delete(researchHome)
+      configs.delete(workHome)
+      writeFileSync(join(researchHome, 'config.yaml'), '# seed\n')
+      writeFileSync(join(workHome, 'config.yaml'), '# seed\n')
+    }
+  })
+
   it('an explicit provider argument beats the parsed hint', () => {
     expect(splitProviderModel('@ollama:qwen3.8:27b-mtp-q8_0', 'anthropic')).toEqual(['qwen3.8:27b-mtp-q8_0', 'anthropic'])
   })

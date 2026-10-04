@@ -191,12 +191,17 @@ export function createDeps(opts: CreateDepsOptions): AppDeps {
     sessionDir: config.sessionDir,
     drafts,
     events,
-    // Python `_profile_default_model_state`: the profile's own config.yaml model, else the global default.
+    // Python `_profile_default_model_state`: the profile's own config.yaml model, else the global default. The provider
+    // always comes with its model, so a provider-only profile never pairs with another profile's model.
     defaults: (profile) => {
-      const [configured, configuredProvider] = profileDefaultModel(profile)
-      const [model, modelProvider] = parseProviderQualifiedModel(configured) ?? [configured, configuredProvider]
-      const s = settings.load()
-      return { workspace: workspaces.lastWorkspace(profile), model: model || (typeof s.default_model === 'string' && s.default_model ? s.default_model : null), modelProvider }
+      let [model, provider] = profileDefaultModel(profile)
+      if (!model) {
+        const s = settings.load()
+        model = typeof s.default_model === 'string' ? s.default_model : ''
+        provider = model && typeof s.default_model_provider === 'string' && s.default_model_provider ? s.default_model_provider : null
+      }
+      const [bare, modelProvider] = parseProviderQualifiedModel(model) ?? [model || null, provider]
+      return { workspace: workspaces.lastWorkspace(profile), model: bare, modelProvider }
     },
     activeStreamIds: () => activeStreamIds,
     now,
