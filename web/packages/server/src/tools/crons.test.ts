@@ -72,11 +72,37 @@ describe('cron job payloads carry the derived fields', () => {
 
   it('lists running from the manual-run map and returns pause/resume rows through the same shaping', async () => {
     const { service, home, runningJobs } = setup()
-    expect((await service.list('default', false)).jobs).toMatchObject([{ id: recurring.id, derived_state: 'active', resumable: false, running: false }])
+    expect((await service.list('default', false)).jobs).toMatchObject([{ id: recurring.id, derived_state: 'active', resumable: false, running: false, schedule_display: '0 9 * * *', schedule_input: '0 9 * * *' }])
     runningJobs.set(String(recurring.id), 1)
     expect((await service.list('default', false)).jobs).toMatchObject([{ running: true }])
-    expect((await service.pause(home, String(recurring.id), null)).job).toMatchObject({ derived_state: 'paused', needs_attention: false, resumable: true, running: true })
+    expect((await service.pause(home, String(recurring.id), null)).job).toMatchObject({ derived_state: 'paused', needs_attention: false, resumable: true, running: true, schedule_input: '0 9 * * *' })
     runningJobs.clear()
-    expect((await service.resume(home, String(recurring.id))).job).toMatchObject({ derived_state: 'error', needs_attention: false, resumable: false, running: false })
+    expect((await service.resume(home, String(recurring.id))).job).toMatchObject({ derived_state: 'error', needs_attention: false, resumable: false, running: false, schedule_input: '0 9 * * *' })
+  })
+})
+
+describe('cron schedule display and edit text (TAL-298)', () => {
+  const text = (schedule: unknown, extra: Dict = {}) => {
+    const { schedule_display, schedule_input } = jobForApi({ ...recurring, schedule, ...extra })
+    return { schedule_display, schedule_input }
+  }
+  it('builds both strings in scheduler vocabulary when no display is stored', () => {
+    expect(text({ kind: 'interval', minutes: 30 })).toEqual({ schedule_display: 'every 30m', schedule_input: 'every 30m' })
+    expect(text({ kind: 'interval', minutes: 120 })).toEqual({ schedule_display: 'every 2h', schedule_input: 'every 120m' })
+    expect(text({ kind: 'once', run_at: '2026-10-05T09:00:00+02:00' })).toEqual({ schedule_display: 'once at 2026-10-05T09:00:00+02:00', schedule_input: '2026-10-05T09:00:00+02:00' })
+    expect(text({ kind: 'cron', expr: '0 9 * * *' })).toEqual({ schedule_display: '0 9 * * *', schedule_input: '0 9 * * *' })
+  })
+  it('returns a stored display unchanged and keeps the editable value separate', () => {
+    expect(text({ kind: 'once', run_at: '2026-10-05T09:00:00Z', display: 'once at 2026-10-05 09:00' })).toEqual({ schedule_display: 'once at 2026-10-05 09:00', schedule_input: '2026-10-05T09:00:00Z' })
+    expect(text({ kind: 'interval', minutes: 30 }, { schedule_display: 'Every half hour' })).toEqual({ schedule_display: 'Every half hour', schedule_input: 'every 30m' })
+    expect(text({ kind: 'cron', expr: '0 9 * * *' }, { schedule_display: '' })).toEqual({ schedule_display: '0 9 * * *', schedule_input: '0 9 * * *' })
+  })
+  it('passes a legacy string schedule through as both strings', () => {
+    expect(text('0 3 * * *')).toEqual({ schedule_display: '0 3 * * *', schedule_input: '0 3 * * *' })
+    expect(text('0 3 * * *', { schedule_display: 'Every day at 03:00' })).toEqual({ schedule_display: 'Every day at 03:00', schedule_input: '0 3 * * *' })
+  })
+  it('falls back to the display for an unknown kind and emits empty strings without a schedule', () => {
+    expect(text({ kind: 'lunar', display: 'every full moon' })).toEqual({ schedule_display: 'every full moon', schedule_input: 'every full moon' })
+    expect(text(undefined)).toEqual({ schedule_display: '', schedule_input: '' })
   })
 })

@@ -16,6 +16,7 @@ final class APIClientCronEndpointTests: APIClientTestCase {
                   "name": "Morning digest",
                   "prompt": "Summarize overnight activity",
                   "schedule": {"kind": "cron", "expr": "0 7 * * *", "unexpected": true},
+                  "schedule_input": "0 7 * * *",
                   "schedule_display": "0 7 * * *",
                   "enabled": true,
                   "state": "scheduled",
@@ -30,6 +31,8 @@ final class APIClientCronEndpointTests: APIClientTestCase {
                 {
                   "id": "legacy-broken",
                   "schedule": {"kind": "cron", "expr": "0 8 * * *"},
+                  "schedule_display": "0 8 * * *",
+                  "schedule_input": "0 8 * * *",
                   "repeat": {"times": null, "completed": 17},
                   "enabled": false,
                   "state": "completed",
@@ -175,6 +178,8 @@ final class APIClientCronEndpointTests: APIClientTestCase {
                 "name": "Morning digest",
                 "prompt": "Summarize overnight activity",
                 "schedule": "0 7 * * *",
+                "schedule_display": "0 7 * * *",
+                "schedule_input": "0 7 * * *",
                 "enabled": true,
                 "state": "scheduled",
                 "model": "@openai:gpt-5.5",
@@ -230,6 +235,8 @@ final class APIClientCronEndpointTests: APIClientTestCase {
                 "name": "Updated digest",
                 "prompt": "Updated prompt",
                 "schedule": {"kind": "cron", "expr": "0 8 * * *"},
+                "schedule_display": "0 8 * * *",
+                "schedule_input": "0 8 * * *",
                 "enabled": true,
                 "state": "scheduled",
                 "model": "@anthropic:claude",
@@ -278,6 +285,8 @@ final class APIClientCronEndpointTests: APIClientTestCase {
                 "id": "job-provider",
                 "prompt": "Run it",
                 "schedule": "0 7 * * *",
+                "schedule_display": "0 7 * * *",
+                "schedule_input": "0 7 * * *",
                 "provider": "openai"
               }
             }

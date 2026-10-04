@@ -3,7 +3,7 @@ import { expect, test } from './fixtures'
 test.use({ serviceWorkers: 'block' })
 
 test('context choices follow the execution store', async ({ page }, testInfo) => {
-  const base = { prompt: 'Synthetic task', schedule: 'every 1h', schedule_display: 'every 1h', enabled: true, state: 'scheduled', toast_notifications: true, read_only: false }
+  const base = { prompt: 'Synthetic task', schedule: 'every 1h', schedule_display: 'every 1h', schedule_input: 'every 1h', enabled: true, state: 'scheduled', toast_notifications: true, read_only: false }
   const jobs = [
     { ...base, id: 'editor', name: 'Research task', profile: 'research', owner_profile: 'research', reasoning_effort: 'medium', context_from: [] },
     { ...base, id: 'research-source', name: 'Research source', profile: 'research', owner_profile: 'research' },
