@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "scope_id": "qscope_7db910e89e3a2372073d47b80ac9f2cc",
+  "profile_id": "default",
+  "active_provider": "anthropic",
+  "requested_source_id": null,
+  "missing_source": false,
+  "sources": [
+    {
+      "source_id": "qsrc_69e3029fba20a8b0ea82fff362e093f5",
+      "provider_id": "anthropic",
+      "provider_label": "Anthropic",
+      "account_label": "Anthropic",
+      "status": "available",
+      "supported": true,
+      "message": "Anthropic account limits loaded.",
+      "is_active_provider": true,
+      "quota": null,
+      "windows": [
+        {
+          "label": "Session",
+          "used_percent": 10,
+          "remaining_percent": 90,
+          "reset_at": "2026-09-28T12:00:00Z",
+          "detail": null,
+          "window_seconds": 18000,
+          "pace": {
+            "expected_remaining_percent": 80,
+            "pace_delta_percent": 10,
+            "burn_rate": 0.5,
+            "minutes_to_reset": 240,
+            "projected_minutes_to_empty": 540,
+            "elapsed_minutes": 60,
+            "valid_until": "2026-09-28T12:00:00Z"
+          },
+          "forecast": {
+            "outcome": "safe",
+            "budget_unit": "hour",
+            "budget_percent": 22.5,
+            "depletion_margin_minutes": 300
+          }
+        },
+        {
+          "label": "Weekly",
+          "used_percent": 32,
+          "remaining_percent": 68,
+          "reset_at": "2026-10-03T08:00:00Z",
+          "detail": null,
+          "window_seconds": 604800,
+          "pace": {
+            "expected_remaining_percent": 71.4,
+            "pace_delta_percent": -3.4,
+            "burn_rate": 1.12,
+            "minutes_to_reset": 7200,
+            "projected_minutes_to_empty": 6120,
+            "elapsed_minutes": 2880,
+            "valid_until": "2026-10-03T08:00:00Z"
+          },
+          "forecast": {
+            "outcome": "warning",
+            "budget_unit": "day",
+            "budget_percent": 13.6,
+            "depletion_margin_minutes": -1080
+          }
+        },
+        {
+          "label": "Monthly",
+          "used_percent": 5,
+          "remaining_percent": 95,
+          "reset_at": "2026-10-15T00:00:00Z",
+          "detail": null,
+          "window_seconds": null,
+          "pace": null,
+          "forecast": null
+        }
+      ],
+      "balances": [],
+      "plan": "max",
+      "details": [],
+      "unavailable_reason": null,
+      "retry_after": null,
+      "fetched_at": "2026-09-28T07:59:30Z",
+      "pace_window_index": 1,
+      "session_window_index": 0,
+      "weekly_window_index": 1
+    }
+  ],
+  "computed_at": "2026-09-28T08:00:00Z"
+}

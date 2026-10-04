@@ -3,10 +3,17 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { MessageSchema, SessionSchema } from './session'
 import { ChatEventSchema } from './sse'
+import { ProviderQuotasSchema } from './resources'
 import { groupAssistantTurns, persistedActivity } from '../features/chat/turnActivity'
 import { projectMessages } from '../features/chat/useTranscript'
 
 describe('shared monorepo contracts', () => {
+  it('parses the shared provider quota fixture the App decodes (TAL-409)', () => {
+    const fixture: unknown = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../contracts/fixtures/provider-quotas.json'), 'utf8'))
+    const window = ProviderQuotasSchema.parse(fixture).sources[0]?.windows?.[1]
+    expect(window).toMatchObject({ label: 'Weekly', pace: { burn_rate: 1.12 }, forecast: { outcome: 'warning' } })
+  })
+
   it('accepts the same session and activity scene as the native client', () => {
     const fixture: unknown = JSON.parse(readFileSync(
       resolve(import.meta.dirname, '../../../../../contracts/fixtures/web-session.json'), 'utf8',

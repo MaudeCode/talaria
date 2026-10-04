@@ -126,6 +126,108 @@ const PLUGIN_SETUP_ERRORS: Record<Exclude<PluginProvider['setup'], 'ready'>, str
 const PLUGIN_NO_MODELS = 'This provider listed no models.'
 const COST_SNAPSHOT_MAX_DAYS = 365
 
+const FIVE_HOUR_WINDOW_S = 18_000
+const WEEK_WINDOW_S = 604_800
+
+/** Swift `rounded()`: half away from zero. */
+function roundTo(value: number, digits: number): number {
+  const scale = 10 ** digits
+  return (Math.sign(value) * Math.round(Math.abs(value) * scale)) / scale
+}
+
+const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
+/** ISO-8601 UTC for epoch seconds, without a `.000` fraction. */
+export const isoAt = (seconds: number): string => new Date(seconds * 1000).toISOString().replace('.000Z', 'Z')
+
+/** ISO-8601 UTC (`…Z`) or null. Accepts the pre-TAL-409 sidecar's `str(datetime)` space form; a zone-less stamp is UTC. */
+export function isoUtc(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+  let text = value.trim().replace(' ', 'T')
+  if (text.includes('T') && !/(Z|[+-]\d{2}:?\d{2})$/i.test(text)) text += 'Z'
+  const ms = Date.parse(text)
+  return Number.isFinite(ms) ? isoAt(ms / 1000) : null
+}
+
+export interface QuotaPace { expected_remaining_percent: number; pace_delta_percent: number; burn_rate: number; minutes_to_reset: number; projected_minutes_to_empty: number | null; elapsed_minutes: number; valid_until: string }
+export interface QuotaForecast { outcome: 'safe' | 'warning'; budget_unit: 'hour' | 'day'; budget_percent: number | null; depletion_margin_minutes: number | null }
+export interface QuotaWindow { label: string; used_percent: number | null; remaining_percent: number | null; reset_at: string | null; detail: string | null; window_seconds: number | null; pace: QuotaPace | null; forecast: QuotaForecast | null }
+export interface QuotaWindows { windows: QuotaWindow[]; pace_window_index: number | null; session_window_index: number | null; weekly_window_index: number | null }
+
+/** The forecast a pace implies: per-hour or per-day budget until reset, and whether the projection empties the window first. */
+export function quotaForecast(pace: QuotaPace, remaining: number | null): QuotaForecast {
+  const daily = pace.minutes_to_reset >= 24 * 60
+  const margin = pace.projected_minutes_to_empty === null ? null : pace.projected_minutes_to_empty - pace.minutes_to_reset
+  return {
+    outcome: margin === null || margin >= 0 ? 'safe' : 'warning',
+    budget_unit: daily ? 'day' : 'hour',
+    budget_percent: remaining !== null && pace.minutes_to_reset > 0 ? remaining / (pace.minutes_to_reset / (daily ? 24 * 60 : 60)) : null,
+    depletion_margin_minutes: margin,
+  }
+}
+
+/**
+ * TAL-409: the one normaliser for account-usage windows (Python `_snapshot_windows_payload` plus the pace math the
+ * App used to run). Blank labels drop; `reset_at` becomes ISO `Z`; each window gets its duration, pace and forecast
+ * as of `nowSeconds`; the indexes name the windows the App shows for pace, session and weekly selections.
+ */
+export function normalizeQuotaWindows(raw: unknown, nowSeconds: number): QuotaWindows {
+  const nowMs = nowSeconds * 1000
+  const windows: QuotaWindow[] = []
+  for (const entry of Array.isArray(raw) ? raw : []) {
+    if (!isDict(entry)) continue
+    const label = str(entry.label).trim()
+    if (!label) continue
+    const usedRaw = finite(entry.used_percent)
+    const remainingRaw = finite(entry.remaining_percent)
+    const clamp = (v: number): number => Math.min(Math.max(v, 0), 100)
+    const used = usedRaw !== null ? clamp(usedRaw) : remainingRaw !== null ? clamp(100 - remainingRaw) : null
+    const remaining = used === null ? null : 100 - used
+    const resetAt = isoUtc(entry.reset_at)
+    const resetMs = resetAt === null ? null : Date.parse(resetAt)
+    const minutesToReset = resetMs === null ? null : Math.max(0, roundTo((resetMs - nowMs) / 60_000, 0))
+    const lower = label.toLowerCase()
+    const providedSeconds = finite(entry.window_seconds)
+    const windowSeconds = providedSeconds
+      ?? (lower.includes('week') ? WEEK_WINDOW_S
+        : lower.includes('5h') ? FIVE_HOUR_WINDOW_S
+          // A "Session" window is 5h, or the weekly window a provider collapsed into one session bucket.
+          : lower.includes('session') && minutesToReset !== null ? (minutesToReset > 5 * 60 ? WEEK_WINDOW_S : FIVE_HOUR_WINDOW_S)
+            : null)
+    let pace: QuotaPace | null = null
+    if (resetAt !== null && resetMs !== null && minutesToReset !== null && resetMs > nowMs && used !== null && remaining !== null
+      && (windowSeconds === FIVE_HOUR_WINDOW_S || windowSeconds === WEEK_WINDOW_S)) {
+      const windowMinutes = windowSeconds / 60
+      const elapsed = Math.max(0, windowMinutes - minutesToReset)
+      const expectedRemaining = roundTo(Math.min(Math.max((minutesToReset / windowMinutes) * 100, 0), 100), 1)
+      const expectedUsed = roundTo(100 - expectedRemaining, 1)
+      const usagePerMinute = elapsed > 0 ? used / elapsed : 0
+      pace = {
+        expected_remaining_percent: expectedRemaining,
+        pace_delta_percent: roundTo(remaining - expectedRemaining, 1),
+        burn_rate: expectedUsed > 0 ? roundTo(used / expectedUsed, 2) : 0,
+        minutes_to_reset: minutesToReset,
+        projected_minutes_to_empty: usagePerMinute > 0 ? roundTo(remaining / usagePerMinute, 0) : null,
+        elapsed_minutes: elapsed,
+        valid_until: resetAt,
+      }
+    }
+    windows.push({
+      label, used_percent: usedRaw, remaining_percent: remaining, reset_at: resetAt, detail: typeof entry.detail === 'string' ? entry.detail : null,
+      window_seconds: windowSeconds, pace, forecast: pace ? quotaForecast(pace, remaining) : null,
+    })
+  }
+  const index = (match: (w: QuotaWindow) => boolean): number | null => { const i = windows.findIndex(match); return i < 0 ? null : i }
+  const labelHas = (needle: string) => (w: QuotaWindow): boolean => w.label.toLowerCase().includes(needle)
+  const knownPace = (w: QuotaWindow): boolean => w.window_seconds === FIVE_HOUR_WINDOW_S || w.window_seconds === WEEK_WINDOW_S || ['week', 'session', '5h'].some((n) => labelHas(n)(w))
+  return {
+    windows,
+    pace_window_index: index(labelHas('week')) ?? index(knownPace),
+    session_window_index: index(labelHas('session')) ?? index(labelHas('5h')),
+    weekly_window_index: index(labelHas('week')),
+  }
+}
+
 export function displayName(pid: string): string {
   return PROVIDER_DISPLAY[pid] ?? pid.split('-').map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w)).join(' ')
 }
@@ -684,10 +786,12 @@ export class ProviderCatalog {
   /** Python `get_provider_quota`. */
   private readonly accountUsageCache = new Map<string, { at: number; limits: Dict | null }>()
 
-  async quota(profileHome: string, providerRaw: string | null, opts: { refresh?: boolean } = {}): Promise<Dict> {
+  async quota(profileHome: string, providerRaw: string | null, opts: { refresh?: boolean; at?: number } = {}): Promise<Dict> {
+    const at = opts.at ?? this.deps.now()
+    const computed_at = isoAt(at)
     const config = await this.deps.config.read(profileHome)
     const provider = (providerRaw ?? activeProviderFromConfig(config) ?? '').trim().toLowerCase()
-    if (!provider) return { ok: false, provider: null, display_name: null, supported: false, status: 'unavailable', quota: null, message: 'No active provider is configured.' }
+    if (!provider) return { computed_at, ok: false, provider: null, display_name: null, supported: false, status: 'unavailable', quota: null, message: 'No active provider is configured.' }
     const name = displayName(provider)
     if (ACCOUNT_USAGE_PROVIDERS.has(provider)) {
       const sidecar = this.deps.sidecar()
@@ -705,19 +809,21 @@ export class ProviderCatalog {
         }
         this.accountUsageCache.set(cacheKey, { at: this.deps.now(), limits })
       }
-      if (limits?.available) return { ok: true, provider, display_name: name, supported: true, status: limits.stale ? 'stale' : 'available', label: limits.title, quota: null, account_limits: limits, message: limits.stale ? `${name} refresh failed; showing last-known account limits.` : `${name} account limits loaded.` }
+      // The cache keeps the Agent's raw windows; pace is recomputed as of every response.
+      if (limits) limits = { ...limits, ...normalizeQuotaWindows(limits.windows, at), fetched_at: isoUtc(limits.fetched_at) }
+      if (limits?.available) return { computed_at, ok: true, provider, display_name: name, supported: true, status: limits.stale ? 'stale' : 'available', label: limits.title, quota: null, account_limits: limits, message: limits.stale ? `${name} refresh failed; showing last-known account limits.` : `${name} account limits loaded.` }
       const reason = str(limits?.unavailable_reason).trim()
-      return { ok: false, provider, display_name: name, supported: true, status: 'unavailable', quota: null, account_limits: limits, message: reason ? `${name} account limits are unavailable. ${reason}` : `${name} account limits are unavailable. Confirm provider authentication and try again.` }
+      return { computed_at, ok: false, provider, display_name: name, supported: true, status: 'unavailable', quota: null, account_limits: limits, message: reason ? `${name} account limits are unavailable. ${reason}` : `${name} account limits are unavailable. Confirm provider authentication and try again.` }
     }
     if (provider === 'openrouter') {
       const apiKey = this.apiKeyFor('openrouter', profileHome, config)
-      if (!apiKey) return { ok: false, provider, display_name: name, supported: true, status: 'no_key', quota: null, message: 'OpenRouter quota status needs an OPENROUTER_API_KEY configured on the server.' }
+      if (!apiKey) return { computed_at, ok: false, provider, display_name: name, supported: true, status: 'no_key', quota: null, message: 'OpenRouter quota status needs an OPENROUTER_API_KEY configured on the server.' }
       const info = await this.fetchOpenRouterKey(apiKey)
-      if (info.kind === 'ok') return { ok: true, provider, display_name: name, supported: true, status: 'available', label: 'OpenRouter credits', quota: info.quota, message: 'OpenRouter quota status loaded.' }
+      if (info.kind === 'ok') return { computed_at, ok: true, provider, display_name: name, supported: true, status: 'available', label: 'OpenRouter credits', quota: info.quota, message: 'OpenRouter quota status loaded.' }
       const status = info.kind === 'invalid_key' ? 'invalid_key' : 'unavailable'
-      return { ok: false, provider, display_name: name, supported: true, status, quota: null, message: status === 'invalid_key' ? 'OpenRouter rejected the configured API key.' : 'OpenRouter quota status is temporarily unavailable.' }
+      return { computed_at, ok: false, provider, display_name: name, supported: true, status, quota: null, message: status === 'invalid_key' ? 'OpenRouter rejected the configured API key.' : 'OpenRouter quota status is temporarily unavailable.' }
     }
-    return { ok: false, provider, display_name: name, supported: false, status: 'unsupported', quota: null, message: `No verified server-side quota or balance endpoint is available for ${name}.` }
+    return { computed_at, ok: false, provider, display_name: name, supported: false, status: 'unsupported', quota: null, message: `No verified server-side quota or balance endpoint is available for ${name}.` }
   }
 
   private async fetchOpenRouterKey(apiKey: string): Promise<{ kind: 'ok'; quota: Dict; label: string | null } | { kind: 'invalid_key' | 'unavailable' }> {
@@ -768,6 +874,7 @@ export class ProviderCatalog {
    * Each source id appears once (two custom providers can share a slug), ordered by provider, account label, then source id.
    */
   async quotas(profileHome: string, profile: string, opts: { sourceId?: string | null; refresh?: boolean } = {}): Promise<Dict> {
+    const at = this.deps.now()
     const status = await this.providers(profileHome)
     const active = status.active_provider
     const scopeId = this.quotaProfileScopeId(profile)
@@ -777,16 +884,16 @@ export class ProviderCatalog {
     const requested = str(opts.sourceId).trim() || null
     if (requested) descriptors = descriptors.filter((d) => d.source_id === requested)
     const sources = await Promise.all(descriptors.map(async (d) => {
-      const q = await this.quota(profileHome, d.provider_id, { refresh: opts.refresh ?? false })
+      const q = await this.quota(profileHome, d.provider_id, { refresh: opts.refresh ?? false, at })
       const limits = dict(q.account_limits)
       return {
         source_id: d.source_id, provider_id: d.provider_id, provider_label: d.provider_label, account_label: d.account_label,
         is_active_provider: d.provider_id === active, supported: q.supported === true, status: str(limits.status) || str(q.status) || 'unavailable',
-        plan: limits.plan ?? null, windows: limits.windows ?? [], quota: q.quota ?? null, balances: q.balances ?? [], details: limits.details ?? [],
+        plan: limits.plan ?? null, windows: limits.windows ?? [], pace_window_index: limits.pace_window_index ?? null, session_window_index: limits.session_window_index ?? null, weekly_window_index: limits.weekly_window_index ?? null, quota: q.quota ?? null, balances: q.balances ?? [], details: limits.details ?? [],
         unavailable_reason: limits.unavailable_reason ?? null, retry_after: limits.retry_after ?? null, fetched_at: limits.fetched_at ?? null, message: q.message ?? null,
       }
     }))
-    return { version: 1, scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !descriptors.length), sources }
+    return { version: 1, computed_at: isoAt(at), scope_id: scopeId, profile_id: profile, active_provider: active, requested_source_id: requested, missing_source: Boolean(requested && !descriptors.length), sources }
   }
 
   /** Python `get_provider_cost_history` (OpenRouter only; daily snapshots under `<home>/cost-snapshots`). */

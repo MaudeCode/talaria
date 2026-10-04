@@ -392,13 +392,33 @@ export const ProviderSchema = z.looseObject({
   is_custom: z.boolean().optional(), key_source: z.string().optional(), base_url: NullableString.optional(), auth_error: NullableString.optional(), env_var: NullableString.optional(), models: z.array(ModelEntrySchema).optional(), models_total: z.number().optional(),
 })
 export const ProvidersSchema = z.looseObject({ providers: z.array(ProviderSchema), active_provider: NullableString.optional() })
+/** TAL-409: a window's pace as of the envelope's `computed_at`. Stale once `valid_until` (the window's reset) passes. */
+export const QuotaPaceSchema = z.looseObject({
+  expected_remaining_percent: z.number(), pace_delta_percent: z.number(), burn_rate: z.number(), minutes_to_reset: z.number(),
+  projected_minutes_to_empty: NullableNumber.describe('Minutes until the window empties at the current burn; null when nothing has been used.'),
+  elapsed_minutes: z.number(), valid_until: z.string(),
+})
+export const QuotaForecastSchema = z.looseObject({
+  outcome: z.enum(['safe', 'warning']).describe('`warning` when the projection empties the window before it resets.'),
+  budget_unit: z.enum(['hour', 'day']), budget_percent: NullableNumber.describe('Remaining percent per `budget_unit` until reset.'),
+  depletion_margin_minutes: NullableNumber.describe('Projected empty minus reset, in minutes; negative empties early, null when no depletion is projected.'),
+})
+export const QuotaWindowSchema = z.looseObject({
+  label: z.string(), used_percent: NullableNumber, remaining_percent: NullableNumber, reset_at: NullableString.describe('ISO-8601 UTC.'), detail: NullableString,
+  window_seconds: NullableNumber.describe('The provider value, else 5h or weekly from the label; null when unknown.'),
+  pace: QuotaPaceSchema.nullable().describe('Null for a window without a future reset, a usage value, or a 5h/weekly length.'),
+  forecast: QuotaForecastSchema.nullable(),
+})
+const QuotaWindowIndex = z.number().int().nullable().optional()
 export const QuotaSourceSchema = z.looseObject({
   source_id: z.string(), provider_id: z.string().optional(), provider_label: z.string().optional(), account_label: z.string().optional(), status: z.string().optional(), supported: z.boolean().optional(), message: z.string().nullable().optional(),
-  is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: Json.optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
+  is_active_provider: z.boolean().optional(), quota: Json.optional(), windows: z.array(QuotaWindowSchema).optional(), balances: Json.optional(), plan: Json.optional(), details: Json.optional(), unavailable_reason: Json.optional(), retry_after: Json.optional(), fetched_at: Json.optional(),
+  pace_window_index: QuotaWindowIndex.describe('The window a pace-coloured widget shows: the weekly one, else the first 5h/session window.'),
+  session_window_index: QuotaWindowIndex.describe('The session (else 5h) window.'), weekly_window_index: QuotaWindowIndex.describe('The weekly window.'),
 })
 /** Python `get_provider_quotas`: the stable identity envelope the iOS quota widget persists (`scope_id`/`profile_id`). */
 export const ProviderQuotasSchema = z.looseObject({
-  version: z.number(), scope_id: z.string(), profile_id: z.string(), active_provider: NullableString, requested_source_id: NullableString,
+  version: z.number(), computed_at: z.string().describe('ISO-8601 UTC reference time of every window `pace`.'), scope_id: z.string(), profile_id: z.string(), active_provider: NullableString, requested_source_id: NullableString,
   missing_source: z.boolean().describe('True when `?source=` names a source id this scope no longer has; `sources` is then empty.'),
   sources: z.array(QuotaSourceSchema).describe('Each live source id exactly once, ordered by `provider_id`, then `account_label`, then `source_id`. Clients render this list as-is; a `?source=` read returns that one row.'),
 })
