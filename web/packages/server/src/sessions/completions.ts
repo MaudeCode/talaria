@@ -312,7 +312,7 @@ export class CompletionDrain {
     let total = 0
     for (const entry of pending) {
       const size = entry.wakeup_prompt.length
-      if (batch.length && total + size > WAKEUP_BATCH_MAX_CHARS) { this.recordDeferred(sid, entry.process_id, entry.wakeup_prompt); continue }
+      if (batch.length && total + size > WAKEUP_BATCH_MAX_CHARS) { this.recordDeferred(sid, entry.process_id, entry.wakeup_prompt, entry.event); continue }
       batch.push(entry)
       total += size
     }
