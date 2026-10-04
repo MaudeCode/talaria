@@ -6,7 +6,7 @@
  */
 import { str } from '../util.js'
 import { createHash } from 'node:crypto'
-import { agentSteerText, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml } from './merge.js'
+import { agentSteerText, isReasoningBlock, markerKind, messageText, normalizeAssistantDisplay, reasoningBlockText, reasoningFieldsText, splitDisplayText, stripToolCallXml, decidedResultView, toolResultView, type ToolResultView } from './merge.js'
 import type { Session } from './session.js'
 import { toolMessageForLimitedPayload } from './window.js'
 import { toolArgs } from './tool-display.js'
@@ -167,7 +167,7 @@ export function anchorSceneRecords(session: Session): Record<string, unknown> {
   return isDict(session.anchor_activity_scenes) ? session.anchor_activity_scenes : {}
 }
 
-export interface SceneTool { id: string; name: string; args: unknown; preview: string | null; result: unknown; done: boolean; is_error: boolean; duration: number | null; cost_usd: number | null }
+export interface SceneTool { id: string; name: string; args: unknown; preview: string | null; result: unknown; result_view: ToolResultView | null; done: boolean; is_error: boolean; duration: number | null; cost_usd: number | null }
 export interface SceneSteering { steer_id: string; consumed: boolean; submitted_at: number | null; consumed_at: number | null; phase_duration?: number | null }
 /** The one scene row shape both clients render: every decoding decision is made here. */
 export interface SceneRow {
@@ -227,9 +227,12 @@ export function normalizeSceneRows(value: unknown): SceneRow[] {
       put({ ...base, role: 'steering', text: str(row.text), steering: { steer_id: steerId || rowId, consumed, submitted_at: finite(payload.created_at) ?? finite(steering.submitted_at), consumed_at: consumed ? finite(payload.consumed_at) ?? finite(steering.consumed_at) ?? createdAt : null, phase_duration: finite(steering.phase_duration) } })
     } else if (row.role === 'tool') {
       const status = str(row.status).toLowerCase()
+      const result = tool.result ?? tool.output ?? tool.snippet ?? null
       put({ ...base, role: 'tool', tool: {
         id: toolId || rowId, name: str(tool.name) || 'tool', args: tool.args ?? null, preview: str(tool.snippet) || str(tool.preview) || null,
-        result: tool.result ?? tool.output ?? tool.snippet ?? null,
+        // A built row keeps the view its full result decided (deciding twice would unescape text kept as written); a row
+        // stored without one gets it from its own result.
+        result, result_view: isDict(tool.result_view) ? decidedResultView(tool.result_view) : result === null ? null : toolResultView(result),
         done: typeof tool.done === 'boolean' ? tool.done : status !== 'running',
         is_error: tool.is_error === true || tool.error === true || status === 'error' || status === 'failed',
         duration: finite(tool.duration), cost_usd: finite(tool.cost_usd),
@@ -366,9 +369,11 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
       const reply = results.get(id)
       // Full results, except in a limited response, which clips them like its raw tool rows (the full detail keeps them).
       const result = reply ? messageText((opts.clipToolResults ? toolMessageForLimitedPayload(reply) as Record<string, unknown> : reply).content) : call.result ?? call.output ?? null
+      // The view always comes from the full result (TAL-315).
+      const resultView = reply ? toolResultView(reply.content) : isDict(call.result_view) ? call.result_view as ToolResultView : null
       push({ row_id: `tool:${id}`, role: 'tool', ...at, tool: {
         id, name: str(call.name) || str(isDict(call.function) ? call.function.name : '') || 'tool', args: toolArgs(call),
-        preview: str(call.preview) || null, result, done: typeof call.done === 'boolean' ? call.done : true,
+        preview: str(call.preview) || null, result, result_view: resultView, done: typeof call.done === 'boolean' ? call.done : true,
         is_error: call.is_error === true || reply?.is_error === true, duration: finite(call.duration), cost_usd: finite(call.cost_usd),
       } })
     }

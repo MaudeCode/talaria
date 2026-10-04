@@ -28,7 +28,7 @@ and the per-session relay. The chat-turn events:
 | `token` | Assistant text delta |
 | `reasoning` | Model reasoning / thinking delta |
 | `tool` | Tool call started; required `id` names the call |
-| `tool_complete` | Tool call finished; carries the same `id` as its `tool` frame, the server's `is_error`, and `duration` (seconds between the server receiving the call's start and its completion) |
+| `tool_complete` | Tool call finished; carries the same `id` as its `tool` frame, the server's `is_error`, `duration` (seconds between the server receiving the call's start and its completion), and `result_view` (TAL-315, below) |
 | `interim_assistant` | Mid-turn assistant prose (pre-final) |
 | `approval` | Destructive-command approval prompt |
 | `clarify` | Structured clarification prompt |
@@ -131,6 +131,18 @@ back to the session file.
 - `duration`: the seconds the live stream measured for that call id, else
   `null` (history written before the server recorded durations).
 - `result`: the redacted result snippet, else `null`.
+- `result_view` (TAL-315): the result's display sections, else `null`:
+  `{ text?, stdout?, stderr?, error?, exit_code? }`. One server rule decides
+  them for live `tool_complete` frames (from the sidecar's raw result, so
+  `stderr` and `exit_code` survive), persisted calls, and scene tool rows. A
+  JSON result (nested JSON strings unwrapped, escaped line breaks undone) with
+  `output` / `stdout` / `stderr` maps to its terminal sections; another object
+  shows the first readable `result`, `results`, `preview`, `content`, `text`,
+  `message`, `summary`, `data` or `items`, else its `error` and exit code, else
+  pretty JSON. `exit_code` is sent only when it is non-zero or nothing else
+  shows. Each string is redacted and capped at 4000 characters. Clients show
+  the fields present in that order, with localized `Error:` / `Exit code:`
+  labels, and show `preview` only when the field is absent.
 
 The session-level `tool_calls` list stays for older clients; its entries also
 carry `is_error` and `duration`.

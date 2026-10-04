@@ -314,18 +314,130 @@ function presentError(v: unknown): boolean {
   return isDict(v) ? Object.keys(v).length > 0 : v === true
 }
 
+/** A tool result's display sections (TAL-315); clients label and render the fields present, in this order. */
+export interface ToolResultView { text?: string; stdout?: string; stderr?: string; error?: string; exit_code?: number }
+
+const RESULT_TEXT_KEYS = ['result', 'results', 'preview', 'content', 'text', 'message', 'summary', 'data', 'items']
+const RESULT_VIEW_MAX_DEPTH = 8
+
+const tryJson = (text: string): unknown => { try { return JSON.parse(text) as unknown } catch { return undefined } }
+const prettyJson = (value: unknown): string => { try { return JSON.stringify(value, null, 2) } catch { return str(value) } }
+/** Line breaks and tabs a JSON-encoded result left escaped (`\n`, `\\n`), as the characters they stand for. */
+const unescapeResultText = (text: string): string => text.replace(/\r\n/g, '\n').replace(/\\{1,2}r\\{1,2}n|\\{1,2}n/g, '\n').replace(/\\{1,2}t/g, '\t')
+
+/** The JSON a result string holds: as written, else with its escaped quotes undone; nested JSON strings unwrap three levels. */
+function resultJson(text: string): unknown {
+  const trimmed = text.trim()
+  let value = tryJson(trimmed)
+  if (value === undefined && trimmed.includes('\\"')) value = tryJson(trimmed.replaceAll('\\"', '"'))
+  for (let i = 0; i < 3 && typeof value === 'string'; i += 1) {
+    const inner = tryJson(value.trim())
+    if (inner === undefined) break
+    value = inner
+  }
+  return value
+}
+
+/** A section's text: a string unescaped, a scalar as written, a structure as pretty JSON; `undefined` when blank. */
+function sectionText(value: unknown): string | undefined {
+  const text = typeof value === 'string' ? unescapeResultText(value) : typeof value === 'number' || typeof value === 'boolean' ? String(value) : value === null || value === undefined ? '' : prettyJson(value)
+  return text.trim() || undefined
+}
+
+/** An exit code: an integer, or a string of one; anything else is dropped. */
+function exitCodeOf(value: unknown): number | undefined {
+  const n = typeof value === 'number' ? Math.trunc(value) : typeof value === 'string' && /^\s*[+-]?\d+\s*$/.test(value) ? Number(value) : NaN
+  return Number.isSafeInteger(n) ? n : undefined
+}
+
+/** A terminal result's sections; the exit code only when it is non-zero or nothing else would show. */
+function terminalView(data: Record<string, unknown>): ToolResultView {
+  const view: ToolResultView = {}
+  const stdout = sectionText(data.output) ?? sectionText(data.stdout)
+  const stderr = sectionText(data.stderr)
+  const error = sectionText(data.error)
+  if (stdout) view.stdout = stdout
+  if (stderr) view.stderr = stderr
+  if (error) view.error = error
+  const exit = exitCodeOf(data.exit_code ?? data.exitCode)
+  if (exit !== undefined && (exit !== 0 || !Object.keys(view).length)) view.exit_code = exit
+  return view
+}
+
+/** Every item of a list is a text part (`text`, `content` or `message`): their texts, one per line. */
+function textParts(items: unknown[]): string | undefined {
+  const texts = items.map((item) => (isDict(item) ? sectionText(item.text) ?? sectionText(item.content) ?? sectionText(item.message) : undefined))
+  return texts.length && texts.every(Boolean) ? texts.join('\n') : undefined
+}
+
+const isEmptyView = (view: ToolResultView): boolean => Object.keys(view).length === 0
+
+function resultView(value: unknown, depth: number): ToolResultView {
+  if (typeof value === 'string') {
+    const parsed = depth < RESULT_VIEW_MAX_DEPTH ? resultJson(value) : undefined
+    if (parsed !== undefined && typeof parsed !== 'string') {
+      const view = resultView(parsed, depth + 1)
+      if (!isEmptyView(view)) return view
+    }
+    // Top-level text that is not JSON shows exactly as written; strings inside JSON are unescaped.
+    const text = depth === 0 && parsed === undefined ? value.trim() : sectionText(typeof parsed === 'string' ? parsed : value)
+    return text ? { text } : {}
+  }
+  if (Array.isArray(value)) {
+    const text = textParts(value) ?? sectionText(value)
+    return text ? { text } : {}
+  }
+  if (!isDict(value)) {
+    const text = sectionText(value)
+    return text ? { text } : {}
+  }
+  if (depth >= RESULT_VIEW_MAX_DEPTH) return { text: prettyJson(value) }
+  // A process result: its output streams, error and exit code.
+  if (sectionText(value.output) ?? sectionText(value.stdout) ?? sectionText(value.stderr)) return terminalView(value)
+  for (const key of RESULT_TEXT_KEYS) {
+    const view = resultView(value[key], depth + 1)
+    if (!isEmptyView(view)) return view
+  }
+  const terminal = terminalView(value)
+  if (!isEmptyView(terminal)) return terminal
+  return Object.keys(value).length ? { text: prettyJson(value) } : {}
+}
+
+/**
+ * The server's one result view rule (TAL-315), ported from the iOS formatter so every client renders the same sections:
+ * a JSON result (nested JSON strings unwrapped, escaped line breaks undone) with `output`/`stdout`/`stderr` maps to its
+ * terminal sections; any other object shows the first readable `result`, `results`, `preview`, `content`, `text`,
+ * `message`, `summary`, `data` or `items`, else its `error` and exit code, else pretty JSON. A list of text parts joins
+ * by line; a scalar shows as text, and a result that is not JSON exactly as written. Each field is capped like the snippet.
+ */
+export function toolResultView(raw: unknown): ToolResultView {
+  const view = resultView(Array.isArray(raw) ? messageText(raw) : raw, 0)
+  return Object.fromEntries(Object.entries(view).map(([key, field]) => [key, typeof field === 'string' ? toolResultSnippet(field) : field]))
+}
+
+/** A view the server already decided (a built scene row, or one stored with its scene): its known fields, capped. */
+export function decidedResultView(value: Record<string, unknown>): ToolResultView {
+  const view: ToolResultView = {}
+  for (const key of ['text', 'stdout', 'stderr', 'error'] as const) {
+    const field = value[key]
+    if (typeof field === 'string' && field) view[key] = toolResultSnippet(field)
+  }
+  if (typeof value.exit_code === 'number' && Number.isSafeInteger(value.exit_code)) view.exit_code = value.exit_code
+  return view
+}
+
 /**
  * The server's one tool outcome rule (TAL-313), for a live `raw_result` and a persisted tool-role content alike: a result
  * is an error when it parses to an object with a non-empty `error`, a non-zero numeric `exit_code` / `exitCode`, or
- * `success: false`. `result_text` is the result's display snippet.
+ * `success: false`. `result_text` is the result's display snippet; `result_view` its display sections (TAL-315).
  */
-export function toolOutcome(raw: unknown): { is_error: boolean; result_text: string } {
+export function toolOutcome(raw: unknown): { is_error: boolean; result_text: string; result_view: ToolResultView } {
   const value = Array.isArray(raw) ? messageText(raw) : raw
   let data: unknown = value
   if (typeof value === 'string') { try { data = JSON.parse(value) } catch { data = null } }
   const exit = isDict(data) ? data.exit_code ?? data.exitCode : undefined
   const isError = isDict(data) && (presentError(data.error) || (typeof exit === 'number' && exit !== 0) || data.success === false)
-  return { is_error: isError, result_text: toolResultSnippet(value) }
+  return { is_error: isError, result_text: toolResultSnippet(value), result_view: toolResultView(value) }
 }
 
 const finiteOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
@@ -424,7 +536,8 @@ export function extractToolCallsFromMessages(messages: unknown[], liveToolCalls:
  * a call only the session-level list recorded joins the row at its `assistant_msg_idx`, a failed or cancelled turn's
  * partial snapshot shows the live calls it kept, and every call carries `done`
  * (answered, or outside the running turn), `is_error` (`toolOutcome` of its result, else the recorded value), `duration`
- * (recorded live, else `null`) and `result` (the result snippet, else `null`). Returns copies; stored rows are untouched.
+ * (recorded live, else `null`), `result` (the result snippet, else `null`) and `result_view` (its display sections, TAL-315,
+ * else `null`). Returns copies; stored rows are untouched.
  */
 export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown[], activeTurnId: string | null): T[] {
   // Every identifier a stored call may carry (`ToolCallSchema`).
@@ -484,6 +597,7 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
       return {
         done: Boolean(reply) || answered || !running, is_error: outcome ? outcome.flagged || outcome.is_error : rec?.is_error === true,
         duration: finiteOrNull(rec?.duration), result: outcome ? outcome.result_text : typeof rec?.snippet === 'string' ? rec.snippet : null,
+        result_view: outcome ? outcome.result_view : typeof rec?.snippet === 'string' ? toolResultView(rec.snippet) : null,
       }
     }
     const projected = [

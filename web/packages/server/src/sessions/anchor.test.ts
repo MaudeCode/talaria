@@ -29,7 +29,7 @@ describe('normalizeSceneRows', () => {
       [4, 'steering:s1', 'steering'], [5, 'prose:thinking', 'reasoning'], [6, 'prose', 'prose'],
     ])
     expect(rows[0]).toMatchObject({ text: 'Plan the check.', titles: ['Plan'] })
-    expect(rows[1]?.tool).toEqual({ id: 'c1', name: 'terminal', args: { command: 'false' }, preview: 'exit 1', result: 'exit 1', done: true, is_error: true, duration: null, cost_usd: null })
+    expect(rows[1]?.tool).toEqual({ id: 'c1', name: 'terminal', args: { command: 'false' }, preview: 'exit 1', result: 'exit 1', result_view: { text: 'exit 1' }, done: true, is_error: true, duration: null, cost_usd: null })
     expect(rows[2]?.tool).toMatchObject({ id: 'c2', done: true, is_error: false, result: 'A' })
     expect(rows[3]?.tool).toMatchObject({ id: 'c3', done: false, is_error: false })
     expect(rows[4]?.steering).toEqual({ steer_id: 's1', consumed: false, submitted_at: 3, consumed_at: null, phase_duration: null })
@@ -132,6 +132,19 @@ const turnOf = (rows: Json[]): [Json, number][] => rows.map((m, i) => [m, i])
 const commentaryItem = (text: string) => ({ type: 'message', role: 'assistant', phase: 'commentary', content: [{ type: 'output_text', text }] })
 
 describe('buildTurnScene', () => {
+  it('keeps the result view its full result decided, and decides one for a row stored without it (TAL-315)', () => {
+    const scene = buildTurnScene(turnOf([
+      { role: 'user', content: 'Show the path' },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'p1', type: 'function', function: { name: 'terminal', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'p1', content: 'C:\\new\\table' },
+      { role: 'assistant', content: 'Done.' },
+    ]))!
+    // Text that is not JSON shows exactly as written, after every normalization the row passes through.
+    expect(anchorActivitySceneTransportPreview(scene).activity_rows).toMatchObject([{ tool: { id: 'p1', result_view: { text: 'C:\\new\\table' } } }])
+    const stored = normalizeSceneRows([{ role: 'tool', tool: { id: 's1', name: 'terminal', result: '{"output": "a\\\\nb", "exit_code": 3}' } }])
+    expect(stored[0]?.tool?.result_view).toEqual({ stdout: 'a\nb', exit_code: 3 })
+  })
+
   it('orders each step as reasoning, prose, tools and keeps the one final answer out of the rows', () => {
     const scene = buildTurnScene(turnOf([
       { role: 'user', content: 'Check' },

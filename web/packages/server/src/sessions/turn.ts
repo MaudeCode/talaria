@@ -464,9 +464,12 @@ export class TurnRunner {
               return
             }
             case 'tool_complete': {
-              // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server.
+              // TAL-313: the server decides failure from the sidecar's raw result, which never leaves the server; TAL-315: so
+              // are its display sections, which keep the stderr and exit code the flat preview drops.
               const { raw_result: rawResult, ...complete } = data
-              complete.is_error = toolOutcome(rawResult).is_error
+              const outcome = toolOutcome(rawResult)
+              complete.is_error = outcome.is_error
+              if (rawResult !== undefined) complete.result_view = outcome.result_view
               const tc = liveToolCalls[completedToolIndex(liveToolCalls, str(data.tid), data.name)]
               if (tc) {
                 const startedAt = toolStartedAt.get(tc)
