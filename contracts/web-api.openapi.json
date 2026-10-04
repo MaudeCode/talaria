@@ -3353,7 +3353,8 @@
                                     }
                                   },
                                   "terminal_state": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
                                   },
                                   "expanded_by_default": {
                                     "type": "boolean"
@@ -5320,7 +5321,8 @@
                                     }
                                   },
                                   "terminal_state": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
                                   },
                                   "expanded_by_default": {
                                     "type": "boolean"
@@ -7033,7 +7035,8 @@
                                     }
                                   },
                                   "terminal_state": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
                                   },
                                   "expanded_by_default": {
                                     "type": "boolean"
@@ -9899,7 +9902,8 @@
                                     }
                                   },
                                   "terminal_state": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
                                   },
                                   "expanded_by_default": {
                                     "type": "boolean"
@@ -12614,7 +12618,8 @@
                                     }
                                   },
                                   "terminal_state": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
                                   },
                                   "expanded_by_default": {
                                     "type": "boolean"
@@ -15256,7 +15261,8 @@
                                     }
                                   },
                                   "terminal_state": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
                                   },
                                   "expanded_by_default": {
                                     "type": "boolean"
@@ -17056,7 +17062,8 @@
                                     }
                                   },
                                   "terminal_state": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
                                   },
                                   "expanded_by_default": {
                                     "type": "boolean"
@@ -18843,7 +18850,8 @@
                                     }
                                   },
                                   "terminal_state": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
                                   },
                                   "expanded_by_default": {
                                     "type": "boolean"
@@ -27539,7 +27547,8 @@
                                     }
                                   },
                                   "terminal_state": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
                                   },
                                   "expanded_by_default": {
                                     "type": "boolean"
@@ -29318,7 +29327,8 @@
                                         }
                                       },
                                       "terminal_state": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "description": "The turn's outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no \"Worked\" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both."
                                       },
                                       "expanded_by_default": {
                                         "type": "boolean"

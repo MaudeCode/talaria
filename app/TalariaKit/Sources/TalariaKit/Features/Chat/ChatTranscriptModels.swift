@@ -73,6 +73,73 @@ public enum AssistantTurnOutcome {
     }
 }
 
+/// What one assistant turn's block lays out: its rows in order, whether the server's settled scene folds its work
+/// under "Worked", and whether its last row is still being produced.
+public struct AssistantTurnLayout: Equatable {
+    public let rows: [AssistantActivityRow]
+    public let foldsWork: Bool
+    public let isLive: Bool
+
+    public init(
+        message: ChatMessage,
+        liveRows: [AssistantActivityRow],
+        archivedRows: [AssistantActivityRow],
+        earlierSceneRows: [AssistantActivitySceneRow] = []
+    ) {
+        if message.activityScene?.terminalState == "running",
+           let scene = AssistantActivityTimeline.authoritativeScene(message: message, earlierRows: earlierSceneRows) {
+            // A run with no journal to replay (TAL-374): the server's running scene is the persisted prefix, and the rows
+            // streamed after attach (archived once the stream ends) continue it. A scene tool the stream reports on takes
+            // its live state in place rather than as a second card. Nothing folds until the settled scene replaces both.
+            let continuation = liveRows.isEmpty ? archivedRows : liveRows
+            let liveTools = Dictionary(continuation.flatMap(\.toolCalls).map { ($0.id, $0) }, uniquingKeysWith: { $1 })
+            let sceneToolIDs = Set(scene.rows.flatMap(\.toolCalls).map(\.id))
+            rows = scene.rows.map { row in
+                guard case .tools(let calls) = row.content else { return row }
+                var merged = row
+                merged.content = .tools(calls.map { call in liveTools[call.id].map { Self.merging(call, live: $0) } ?? call })
+                return merged
+            } + continuation.compactMap { row in
+                guard case .tools(let calls) = row.content else { return row }
+                let own = calls.filter { !sceneToolIDs.contains($0.id) }
+                guard !own.isEmpty else { return nil }
+                var kept = row
+                kept.content = .tools(own)
+                return kept
+            }
+            foldsWork = false
+            isLive = !liveRows.isEmpty || archivedRows.isEmpty
+        } else if !liveRows.isEmpty {
+            // Live rows win while the turn streams.
+            rows = liveRows
+            foldsWork = false
+            isLive = true
+        } else if let scene = AssistantActivityTimeline.authoritativeScene(message: message, earlierRows: earlierSceneRows) {
+            // A completed turn renders the server's scene.
+            rows = scene.rows
+            foldsWork = true
+            isLive = false
+        } else {
+            // Before the scene arrives, the just-finished live rows hold its place. Without either (an older server),
+            // the message renders as plain text.
+            rows = archivedRows
+            foldsWork = false
+            isLive = false
+        }
+    }
+
+    /// A persisted call with the state the stream reported for it after attach.
+    private static func merging(_ call: ToolCall, live: ToolCall) -> ToolCall {
+        var merged = call
+        merged.isCompleted = call.isCompleted || live.isCompleted
+        merged.isError = live.isError ?? call.isError
+        merged.duration = live.duration ?? call.duration
+        merged.preview = live.preview ?? call.preview
+        merged.resultView = live.resultView ?? call.resultView
+        return merged
+    }
+}
+
 public struct CompletedAssistantTurn: Equatable {
     public struct Phase: Identifiable, Equatable {
         public let id: String

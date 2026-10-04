@@ -75,13 +75,13 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                 // its work stays open until the scene arrives.
                 if let turn = CompletedAssistantTurn(rows: activityRows) {
                     if turn.hasSteering {
-                        steeredTurn(turn, folds: serverScene != nil)
+                        steeredTurn(turn, folds: layout.foldsWork)
                         outcomeRow
-                    } else if serverScene != nil {
+                    } else if layout.foldsWork {
                         // Renders the outcome between the work and the final answer.
                         completedTurn(turn)
                     } else {
-                        activityTimeline(turn.segments, activeSegmentID: liveActivityRows.isEmpty ? nil : turn.segments.last?.id)
+                        activityTimeline(turn.segments, activeSegmentID: layout.isLive ? turn.segments.last?.id : nil)
                     }
                 } else {
                     outcomeRow
@@ -118,20 +118,16 @@ struct ChatTranscriptMessageBlock: View, Equatable {
         }
     }
 
-    /// The server's scene for a settled turn; live rows win while the turn streams.
-    private var serverScene: AssistantActivityTimeline? {
-        guard liveActivityRows.isEmpty else { return nil }
-        return AssistantActivityTimeline.authoritativeScene(message: transcriptMessage.message, earlierRows: earlierSceneRows)
+    private var layout: AssistantTurnLayout {
+        AssistantTurnLayout(
+            message: transcriptMessage.message,
+            liveRows: liveActivityRows,
+            archivedRows: archivedActivityRows,
+            earlierSceneRows: earlierSceneRows
+        )
     }
 
-    private var activityRows: [AssistantActivityRow] {
-        if !liveActivityRows.isEmpty {
-            return liveActivityRows
-        }
-        // A completed turn renders the server's scene; before it arrives, the just-finished live rows hold its place.
-        // Without either (an older server), the message renders as plain text.
-        return serverScene?.rows ?? archivedActivityRows
-    }
+    private var activityRows: [AssistantActivityRow] { layout.rows }
 
     @ViewBuilder
     private func completedTurn(_ turn: CompletedAssistantTurn) -> some View {
@@ -407,14 +403,14 @@ struct ChatTranscriptMessageBlock: View, Equatable {
                     includesAttachments: includesAttachments ?? (index == firstProseIndex),
                     includesTurnMetrics: includesTurnMetrics ?? (index == lastProseIndex)
                 ),
-                isStreaming: liveActivityRows.isEmpty ? nil : index == lastProseIndex
+                isStreaming: layout.isLive ? index == lastProseIndex : nil
             )
         case .reasoning(let reasoning):
             if showsThinkingAndToolCards {
                 ReasoningBlockView(
                     text: reasoning.text,
                     titles: reasoning.titles,
-                    isActive: isActive ?? (!liveActivityRows.isEmpty && index == activityRows.count - 1)
+                    isActive: isActive ?? (layout.isLive && index == activityRows.count - 1)
                 )
             }
         case .tools(let toolCalls):
@@ -489,7 +485,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
 
     private var ownsActiveStream: Bool {
         transcriptMessage.ownsActiveStream(
-            hasLiveActivity: !liveActivityRows.isEmpty,
+            hasLiveActivity: layout.isLive,
             streamingAssistantMessageID: streamingAssistantMessageID
         )
     }

@@ -107,9 +107,8 @@ export const ActivitySceneSchema = z.looseObject({
   final_answer_excerpt: z.string().optional(), turn_duration: z.number().nullable().optional(),
   /** TAL-186: `final_answer` with its media references rewritten for display (see `_display_content`), and its media. */
   final_answer_display: z.string().optional(), final_answer_media: z.array(DisplayMediaSchema).optional(),
-  /** The turn's outcome (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...). */
-  terminal_state: z.string().optional(),
-  /** Whether the "Worked" disclosure opens by default: an unsuccessful outcome with work to read. */
+  terminal_state: z.string().optional().describe('The turn\'s outcome: a `TurnTerminalState` (`completed`, `no_response`, `error`, `cancelled`, `interrupted`, `tool_limit_reached`, ...), or `running` for the running turn of a run with no journal to replay (TAL-374). A running scene holds every persisted row (no final answer) and renders open, with no "Worked" fold or outcome; the live rows streamed after attach continue it, and the settled scene replaces both.'),
+  /** Whether the "Worked" disclosure opens by default: an unsuccessful outcome with work to read, or a running turn. */
   expanded_by_default: z.boolean().optional(),
   /** Seconds from the turn's last consumed steer to its end, when it has steers. */
   final_phase_duration: z.number().optional(),

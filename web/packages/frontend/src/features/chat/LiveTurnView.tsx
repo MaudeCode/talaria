@@ -12,8 +12,9 @@ import { liveActivity } from './turnActivity'
 import type { ActivityMode } from './blocks/Worklog'
 
 /** The in-flight assistant turn: reasoning, tools and prose projected from the reducer, in event order. */
-export function LiveTurnView({ turn, name, mode, userVisible }: { turn: LiveTurn; name: string; mode: ActivityMode; userVisible: boolean }) {
-  const activity = liveActivity(turn)
+/** `omitToolIds`: tools the running scene this turn continues already shows (TAL-374). */
+export function LiveTurnView({ turn, name, mode, userVisible, omitToolIds }: { turn: LiveTurn; name: string; mode: ActivityMode; userVisible: boolean; omitToolIds?: ReadonlySet<string> | undefined }) {
+  const activity = liveActivity(turn, omitToolIds)
   const streaming = activity.status === 'running'
   const rowRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {

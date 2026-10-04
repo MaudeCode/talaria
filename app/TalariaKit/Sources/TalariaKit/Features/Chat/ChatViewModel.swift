@@ -5715,7 +5715,8 @@ extension ChatViewModel: ChatStreamCoordinatorDelegate {
 
     public func streamCoordinatorServerTerminalState(turnID: String) -> String? {
         if let state = messages.last(where: { $0.turnId == turnID && $0.activityScene != nil })?.activityScene?.terminalState {
-            return state
+            // A running scene (TAL-374) is the turn's persisted work so far: the server states no outcome yet.
+            return state == "running" ? nil : state
         }
         // ponytail: old-server fallback — a turn from a Web before settled-turn scenes states no outcome, so the latest
         // load's reply after the prompt counts as completed. Delete once every supported Web ships scene `terminal_state`.

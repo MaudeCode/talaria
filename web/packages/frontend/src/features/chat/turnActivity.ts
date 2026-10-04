@@ -28,6 +28,8 @@ export interface TurnActivity {
   expandedByDefault?: boolean
   /** Projected from the live stream: no server scene yet, so nothing folds and no answer is split out. */
   live?: boolean
+  /** A running scene the live turn's rows continue (TAL-374): its last row is no longer the newest, so it is not active. */
+  continued?: boolean
   sceneRows?: unknown[]
   history?: { ref: string; index: number; before: number }
 }
@@ -122,14 +124,15 @@ export function persistedActivity(row: VisibleMessage): TurnActivity {
   }
 }
 
-export function liveActivity(turn: LiveTurn): TurnActivity {
+/** `omitToolIds`: tools a running scene already shows (TAL-374); their live state updates that card (`continuedActivity`). */
+export function liveActivity(turn: LiveTurn, omitToolIds?: ReadonlySet<string>): TurnActivity {
   const items: ActivityItem[] = []
   const seen = new Set<string>()
   turn.segments.forEach((segment, i) => {
     if (segment.kind === 'text') appendProse(items, `text:${i}`, segment.text)
     else if (segment.kind === 'reasoning') items.push({ key: `reasoning:${i}`, ...segment, text: stripToolCallXml(segment.text) })
     else if (segment.kind === 'steering') items.push({ key: `steering:${segment.steerId}`, kind: 'steering', text: segment.text, consumed: true })
-    else if (!seen.has(segment.toolId)) {
+    else if (!seen.has(segment.toolId) && !omitToolIds?.has(segment.toolId)) {
       seen.add(segment.toolId)
       const call = turn.tools[segment.toolId]
       if (call) items.push({ key: `tool:${call.id}`, kind: 'tool', call })
@@ -139,4 +142,23 @@ export function liveActivity(turn: LiveTurn): TurnActivity {
   // a finished turn stays as it streamed, labelled with the outcome the server's terminal event reported.
   const status = isTerminal(turn.status) ? (turn.terminalState ?? turn.status) : 'running'
   return { key: turn.turnId ?? turn.streamId, items, finalAnswer: '', status, live: true }
+}
+
+/** The ids of the tools a turn's items show. */
+export function toolIdsOf(activity: TurnActivity): Set<string> {
+  return new Set(activity.items.flatMap((item) => (item.kind === 'tool' ? [item.call.id] : [])))
+}
+
+/**
+ * A running scene the live turn continues (TAL-374): a scene tool the stream reports on takes its live state in place,
+ * and once the live turn shows rows of its own, its tail rather than the scene's is the active one.
+ */
+export function continuedActivity(activity: TurnActivity, turn: LiveTurn): TurnActivity {
+  const items = activity.items.map((item): ActivityItem => {
+    const live = item.kind === 'tool' ? turn.tools[item.call.id] : undefined
+    if (!live || item.kind !== 'tool') return item
+    const call = item.call
+    return { ...item, call: { ...call, done: call.done || live.done, isError: live.isError, preview: live.preview ?? call.preview, duration: live.duration ?? call.duration, costUsd: live.costUsd ?? call.costUsd, resultView: live.resultView ?? call.resultView } }
+  })
+  return { ...activity, items, continued: liveActivity(turn, toolIdsOf(activity)).items.length > 0 }
 }

@@ -342,13 +342,14 @@ export function fullToolResult(messages: unknown[], toolCallId: string): { resul
 /**
  * One completed turn's presentation, built from its rows: ordered reasoning / prose / tool rows (the work that folds
  * under "Worked"), the visible final answer, the outcome, and whether "Worked" opens by default. Every decision a
- * client used to make about a settled turn is made here.
+ * client used to make about a settled turn is made here. A `running` turn (TAL-374) has no answer yet: every row stays
+ * in the work, which renders open with no outcome.
  */
-export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: { clipToolResults?: boolean } = {}): Record<string, unknown> | null {
+export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: { clipToolResults?: boolean; running?: boolean } = {}): Record<string, unknown> | null {
   const assistants = turn.filter(([m]) => m.role === 'assistant')
   const last = assistants.at(-1)?.[0]
   if (!last) return null
-  const finalAnswer = finalAnswerOf(last)
+  const finalAnswer = opts.running ? '' : finalAnswerOf(last)
   const results = toolReplies(turn.map(([m]) => m))
   const rows: SceneRow[] = []
   const seenTools = new Set<string>()
@@ -430,10 +431,10 @@ export function buildTurnScene(turn: [Record<string, unknown>, number][], opts: 
     if (m !== last || !finalAnswer.trim()) { if (text.trim()) push({ row_id: `${ref}:prose`, role: 'prose', text, ...at }) }
     for (const [i, call] of (Array.isArray(m.tool_calls) ? m.tool_calls : []).entries()) pushTool(call, i)
   }
-  const terminalState = terminalStateOf(last, finalAnswer)
+  const terminalState = opts.running ? 'running' : terminalStateOf(last, finalAnswer)
   return {
     version: 'activity_scene_v1', activity_rows: rows, final_answer: finalAnswer, terminal_state: terminalState,
-    expanded_by_default: EXPANDED_OUTCOMES.has(terminalState) && rows.length > 0, turn_duration: anchorSceneMessageTurnDuration(last),
+    expanded_by_default: opts.running === true || (EXPANDED_OUTCOMES.has(terminalState) && rows.length > 0), turn_duration: anchorSceneMessageTurnDuration(last),
     file_changes: turnFileChanges(rows),
     ...(typeof last._final_phase_duration === 'number' ? { final_phase_duration: last._final_phase_duration } : {}),
   }
@@ -524,23 +525,26 @@ function sceneLookup(messages: unknown[], records: Record<string, unknown>) {
 /**
  * Attach every completed turn's scene preview to its last assistant row, over the full `_turn_id`-stamped transcript
  * (before any window, so every window agrees). A stored scene wins and is completed with the turn's outcome fields; a
- * turn without one gets a built scene. The running turn (`activeTurnId`) gets none: the live stream renders it.
+ * turn without one gets a built scene. The running turn (`activeTurnId`) gets none, because the live stream replays and
+ * renders it, unless `runningScene` says its run has no journal to replay (TAL-374): its persisted rows then ship as an
+ * open `running` scene that the live rows continue.
  * Every path that ships messages comes through here, so each assistant row also leaves in its one display shape
  * (`normalizeAssistantDisplay`), after its scene is built from the stored row.
  */
-export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null; clipToolResults?: boolean } = {}): unknown[] {
+export function hydrateAnchorActivityScenes(messages: unknown[], records: Record<string, unknown>, opts: { activeTurnId?: string | null; runningScene?: boolean; clipToolResults?: boolean } = {}): unknown[] {
   if (!messages.length) return messages
   const lookup = sceneLookup(messages, records)
   // Any scene carried inline leaves in the one normalized shape, even off a turn's last row.
   const out = messages.map((m) => (isDict(m) && isDict(m._anchor_activity_scene) ? { ...m, _anchor_activity_scene: anchorActivitySceneTransportPreview(m._anchor_activity_scene, str(m._anchor_activity_scene.activity_scene_ref)) } : m))
   for (const [turnId, turn] of turnsOf(messages)) {
-    if (opts.activeTurnId && turnId === opts.activeTurnId) continue
+    const running = Boolean(opts.activeTurnId) && turnId === opts.activeTurnId
+    if (running && opts.runningScene !== true) continue
     const lastEntry = turn.filter(([m]) => m.role === 'assistant').at(-1)
     if (!lastEntry) continue
     const [message, index] = lastEntry
-    const built = buildTurnScene(turn, { clipToolResults: opts.clipToolResults === true })
-    const record = storedRecordFor(message, index, lookup)
-    const inline = message._anchor_activity_scene
+    const built = buildTurnScene(turn, { clipToolResults: opts.clipToolResults === true, running })
+    const record = running ? undefined : storedRecordFor(message, index, lookup)
+    const inline = running ? undefined : message._anchor_activity_scene
     const next: Record<string, unknown> = { ...message }
     if (record && isDict(record.scene)) {
       next._anchor_activity_scene = withStoredOutcome(anchorActivitySceneTransportPreview(withStoredFinalAnswer(record.scene, built), str(record.message_ref) || assistantAnchorSceneMessageRef(message)), built)

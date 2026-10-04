@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Reopening a chat whose running response could not be replayed now shows all of the work done so far, open and in order, and continues it as new output arrives.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}
