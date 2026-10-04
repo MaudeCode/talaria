@@ -3,34 +3,7 @@ import XCTest
 
 final class SlashCommandTests: XCTestCase {
 
-    // MARK: - Catalog matching
-
-    func testMatchingEmptyQueryReturnsAllCommands() {
-        let results = SlashCommandCatalog.matching("")
-        XCTAssertEqual(results.count, SlashCommandCatalog.allCommands.count)
-    }
-
-    func testMatchingByPrefix() {
-        let results = SlashCommandCatalog.matching("mod")
-        XCTAssertTrue(results.contains { $0.name == "model" })
-    }
-
-    func testMatchingByDescription() {
-        let results = SlashCommandCatalog.matching("clear")
-        XCTAssertTrue(results.contains { $0.name == "clear" })
-    }
-
-    func testMatchingIsCaseInsensitive() {
-        let lower = SlashCommandCatalog.matching("model")
-        let upper = SlashCommandCatalog.matching("MODEL")
-        XCTAssertEqual(lower.count, upper.count)
-        XCTAssertEqual(lower.first?.name, upper.first?.name)
-    }
-
-    func testNoMatchReturnsEmpty() {
-        let results = SlashCommandCatalog.matching("xyznonexistent")
-        XCTAssertTrue(results.isEmpty)
-    }
+    // MARK: - Handlers
 
     func testCommandNamedReturnsCorrectCommand() {
         let command = SlashCommandCatalog.command(named: "help")
@@ -43,11 +16,6 @@ final class SlashCommandTests: XCTestCase {
         XCTAssertEqual(command?.name, "branch")
         XCTAssertEqual(command?.handler, .serverSide(.branch))
         XCTAssertEqual(command?.noEcho, true)
-
-        let alias = SlashCommandCatalog.command(named: "fork")
-        XCTAssertEqual(alias?.handler, .serverSide(.branch))
-        XCTAssertEqual(alias?.noEcho, true)
-        XCTAssertEqual(alias?.argHint, "name")
     }
 
     func testUndoCommandIsMobileSafeAdvancedCommand() {
@@ -70,11 +38,6 @@ final class SlashCommandTests: XCTestCase {
         XCTAssertEqual(command?.handler, .serverSide(.compress))
         XCTAssertEqual(command?.noEcho, true)
         XCTAssertEqual(command?.argHint, "focus topic")
-
-        let alias = SlashCommandCatalog.command(named: "compact")
-        XCTAssertEqual(alias?.handler, .serverSide(.compress))
-        XCTAssertEqual(alias?.noEcho, true)
-        XCTAssertEqual(alias?.argHint, "focus topic")
     }
 
     func testSkillsCommandIsMobileSafeSearchCommand() {
@@ -128,24 +91,6 @@ final class SlashCommandTests: XCTestCase {
         XCTAssertEqual(background?.handler, .serverSide(.background))
         XCTAssertEqual(background?.noEcho, true)
         XCTAssertEqual(background?.argHint, "prompt")
-
-        let alias = SlashCommandCatalog.command(named: "bg")
-        XCTAssertEqual(alias?.handler, .serverSide(.background))
-        XCTAssertEqual(alias?.noEcho, true)
-        XCTAssertEqual(alias?.argHint, "prompt")
-    }
-
-    func testMatchingFindsUnsupportedCommands() {
-        XCTAssertTrue(SlashCommandCatalog.matching("que").contains { $0.name == "queue" })
-        XCTAssertTrue(SlashCommandCatalog.matching("ste").contains { $0.name == "steer" })
-        XCTAssertTrue(SlashCommandCatalog.matching("int").contains { $0.name == "interrupt" })
-        XCTAssertTrue(SlashCommandCatalog.matching("sta").contains { $0.name == "status" })
-        XCTAssertTrue(SlashCommandCatalog.matching("bt").contains { $0.name == "btw" })
-        XCTAssertTrue(SlashCommandCatalog.matching("back").contains { $0.name == "background" })
-        XCTAssertTrue(SlashCommandCatalog.matching("bg").contains { $0.name == "bg" })
-        XCTAssertTrue(SlashCommandCatalog.matching("com").contains { $0.name == "compact" })
-        XCTAssertTrue(SlashCommandCatalog.matching("for").contains { $0.name == "fork" })
-        XCTAssertTrue(SlashCommandCatalog.matching("goa").contains { $0.name == "goal" })
     }
 
     func testCommandNamedIsCaseInsensitive() {
@@ -336,8 +281,8 @@ final class SlashCommandTests: XCTestCase {
                 name: "resume",
                 description: "Resume a previously-named session",
                 argsHint: "name",
-                cliOnly: false,
-                gatewayOnly: false
+                handler: "agent",
+                clients: ["web", "ios"]
             )
         ])
 
@@ -346,12 +291,12 @@ final class SlashCommandTests: XCTestCase {
         XCTAssertEqual(suggestions.first?.argHint, "name")
     }
 
-    func testAgentCommandSuggestionsHideCLIOnlyGatewayOnlyAndDuplicateCommands() {
+    func testAgentCommandSuggestionsHideOtherClientsOldRowsAndDuplicateCommands() {
         let suggestions = AgentSlashCommandSuggestion.matching("s", in: [
-            AgentCommand(name: "status", description: "Agent status"),
-            AgentCommand(name: "shell", description: "CLI only", cliOnly: true),
-            AgentCommand(name: "sethome", description: "Gateway only", gatewayOnly: true),
-            AgentCommand(name: "session", description: nil)
+            AgentCommand(name: "status", description: "Agent status", handler: "agent", clients: ["web", "ios"]),
+            AgentCommand(name: "shell", description: "CLI only", cliOnly: true, handler: "agent", clients: []),
+            AgentCommand(name: "sethome", description: "Older server row"),
+            AgentCommand(name: "session", description: nil, handler: "agent", clients: ["web", "ios"])
         ], excluding: ["status"])
 
         XCTAssertEqual(suggestions.map(\.name), ["session"])
@@ -360,9 +305,9 @@ final class SlashCommandTests: XCTestCase {
 
     func testAgentCommandLookupRecognizesVisibleMetadataCommand() {
         let commands = [
-            AgentCommand(name: "resume", description: "Resume a previously-named session"),
-            AgentCommand(name: "model", description: "Built-in model command"),
-            AgentCommand(name: "browser", description: "CLI only", cliOnly: true)
+            AgentCommand(name: "resume", description: "Resume a previously-named session", handler: "agent", clients: ["web", "ios"]),
+            AgentCommand(name: "model", description: "Built-in model command", handler: "client", clients: ["web", "ios"]),
+            AgentCommand(name: "browser", description: "CLI only", cliOnly: true, handler: "agent", clients: [])
         ]
 
         XCTAssertEqual(AgentSlashCommandSuggestion.command(named: "RESUME", in: commands)?.name, "resume")

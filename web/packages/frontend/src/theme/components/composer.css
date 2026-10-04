@@ -57,8 +57,6 @@
 @media (max-width: 340px){.composer-footer{gap:4px}}
 @media (max-width: 640px){.send-btn.visible{animation:none;opacity:1;transform:none}}
 .ws-chip{user-select:none}
-.cmd-dropdown{display:none;position:absolute;left:0;right:0;bottom:calc(100% + 4px);width:auto;max-width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:10px;box-shadow:0 -8px 24px rgba(0,0,0,.4);z-index:200;max-height:240px;overflow-y:auto}
-.cmd-dropdown.open{display:block}
 .composer-footer{padding:4px 10px 8px}
 :root[data-chat-width="full"] .composer-box{max-width:none}
 .composer-wrap.drag-over .composer-box{border-style:dashed}

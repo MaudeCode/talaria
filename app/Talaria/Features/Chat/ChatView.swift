@@ -1636,7 +1636,7 @@ struct ChatView: View {
         let shouldRestoreFocusAfterSend = composerIsFocused
 
         if submittedDraft.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
-            let parsedCommand = SlashCommandExecutor.parse(submittedDraft)?.command
+            let parsedCommand = SlashCommandExecutor.parse(submittedDraft, catalog: viewModel.agentCommands)?.command
             let result = await SlashCommandExecutor.execute(text: submittedDraft, viewModel: viewModel)
             handleSlashExecutionResult(
                 result,

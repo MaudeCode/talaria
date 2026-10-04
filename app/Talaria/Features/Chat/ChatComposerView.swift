@@ -150,10 +150,10 @@ struct MessageComposerView: View {
         let query = draftMessage.drop(while: { $0.isWhitespace })
         guard query.hasPrefix("/") else { return false }
 
-        let parsed = ParsedSlashQuery(query: draftMessage)
+        let parsed = ParsedSlashQuery(query: draftMessage, catalog: agentCommands)
         if let command = parsed.command,
            command.subArgs == .none,
-           hasWhitespaceAfterSlashCommand(command.name, in: String(query)) {
+           hasWhitespaceAfterSlashCommand(parsed.commandName, in: String(query)) {
             return false
         }
 
@@ -192,7 +192,7 @@ struct MessageComposerView: View {
     }
 
     private var parsedSlashQuery: ParsedSlashQuery {
-        ParsedSlashQuery(query: draftMessage)
+        ParsedSlashQuery(query: draftMessage, catalog: agentCommands)
     }
 
     private var slashAutocompleteLoadKey: String {
@@ -267,7 +267,7 @@ struct MessageComposerView: View {
                                 draftMessage = "/skills \(skill.slashName) "
                             },
                             onSelectSubArg: { subArg in
-                                let parsed = ParsedSlashQuery(query: draftMessage)
+                                let parsed = ParsedSlashQuery(query: draftMessage, catalog: agentCommands)
                                 draftMessage = "/\(parsed.commandName) \(subArg)"
                             },
                             onDismiss: {

@@ -15,7 +15,7 @@ import { cn } from '../../ui/cn'
 import { showToast } from '../toast/toast'
 import { AttachmentTray, type PendingFile } from './Attachments'
 import { CommandPaletteList, useCommandPalette } from './CommandPalette'
-import { parseCommand, type CommandSuggestion } from './commands'
+import { parseCommand, resolveCommand, type CommandSuggestion } from './commands'
 import { ContextRing, ContextRow, type ContextFigures, ModelChip, ReasoningChip, ToolsetsChip, WorkspaceChip } from './chips'
 import { clearDraft, readLocalDraft, useDraftPersistence } from './useDraft'
 import { createRecognition, dictationSupported, classifyDictationError } from '../voice/dictation'
@@ -192,6 +192,7 @@ export function Composer(props: ComposerProps) {
   const value = clarify ? clarify.text : text
   const setValue = clarify ? clarify.setText : setText
   const palette = useCommandPalette(clarify ? '' : text)
+  const catalog = palette.catalog
   useDraftPersistence(sessionId, text)
 
   // T3 Code's resting composer: a hand scroll of an overflowing transcript flattens the card to one row until the next
@@ -364,13 +365,14 @@ export function Composer(props: ComposerProps) {
     if (sending) return
     if (!value && files.length === 0) return
     if (files.some((f) => f.status === 'uploading')) { showToast(m.loading()); return }
-    const cmd = parseCommand(value)
+    const parsed = parseCommand(value)
+    // TAL-314: a typed alias resolves to its server catalog entry; one Web cannot run shows the server's message.
+    const entry = parsed ? resolveCommand(parsed.name, catalog) : undefined
+    if (entry && !entry.clients.includes('web')) { showToast(entry.unsupported_message ?? m.cmd_unsupported(), 3000); return }
+    const cmd = parsed && { ...parsed, name: entry?.name ?? parsed.name }
     if (cmd) {
-      if (['stop', 'new', 'clear', 'terminal', 'title', 'retry', 'undo', 'compress', 'compact', 'usage', 'theme', 'yolo', 'branch', 'voice', 'reasoning', 'model', 'workspace', 'help', 'status', 'personality', 'goal', 'skills', 'use'].includes(cmd.name)) {
-        if (cmd.name === 'theme') { const v = ThemeSchema.safeParse(cmd.args); if (v.success) setTheme(v.data); setText(''); return }
-        const handled = await onLocalCommand(cmd.name, cmd.args)
-        if (handled) { setText(''); return }
-      }
+      if (cmd.name === 'theme') { const v = ThemeSchema.safeParse(cmd.args); if (v.success) setTheme(v.data); setText(''); return }
+      if (await onLocalCommand(cmd.name, cmd.args)) { setText(''); return }
       // TAL-372: `/background` runs the prompt in a hidden session; its record and result show in the background card.
       if (cmd.name === 'background') {
         if (!cmd.args) { showToast(m.bg_usage(), 2000); return }
@@ -441,7 +443,7 @@ export function Composer(props: ComposerProps) {
       setSending(false)
       textarea.current?.focus()
     }
-  }, [text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc, askBtw])
+  }, [text, files, sending, session, onEnsureSession, busy, busyMode, sessionId, trySteer, locked, queueEntry, onQueue, onLocalCommand, bootstrap.profile, qc, askBtw, catalog])
 
   const applySuggestion = (s: CommandSuggestion) => { setText(`/${s.name} `); textarea.current?.focus() }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {

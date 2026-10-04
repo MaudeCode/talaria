@@ -2829,12 +2829,10 @@ public final class ChatViewModel {
             case .new:
                 return await createSessionFromSlashCommand()
             case .help:
-                return .executed(message: Self.slashCommandHelpText)
+                return .executed(message: Self.slashCommandHelpText(catalog: agentCommands))
             }
         case .serverSide(let action):
             return await executeServerSideSlashCommand(action, args: args)
-        case .unsupported:
-            return .unsupported(friendlyMessage: SlashCommandExecutor.unsupportedMessage(for: command.name))
         }
     }
 
@@ -5608,33 +5606,17 @@ public final class ChatViewModel {
         """
     }
 
-    private static let slashCommandHelpText = String(localized: """
-    Available mobile commands:
-
-    `/help` - Show this command list.
-    `/clear` - Clear the local transcript.
-    `/stop` - Stop the current response.
-    `/new` - Open a fresh session.
-    `/model <id>` - Switch this session's model.
-    `/workspace <path>` - Switch this session's workspace.
-    `/reasoning <level>` - Set reasoning display or effort.
-    `/title <text>` - Rename this session.
-    `/personality <name>` - Set or clear this session's personality.
-    `/skills [query]` - Search available skills.
-    `/queue <message>` - Queue a message for the next turn.
-    `/steer <message>` - Steer the active response.
-    `/interrupt <message>` - Stop the active response and send a new message.
-    `/status` - Show session status.
-    `/btw <question>` - Ask a side question without changing this chat.
-    `/background <prompt>` - Run a parallel task and post the result here.
-    `/bg <prompt>` - Alias for `/background`.
-    `/branch [name]` - Fork this conversation.
-    `/fork [name]` - Alias for `/branch`.
-    `/compress [focus]` - Compress this session's context.
-    `/compact [focus]` - Alias for `/compress`.
-    `/undo` - Undo the last exchange.
-    `/retry` - Retry the last turn.
-    """)
+    /// The iOS commands the server catalog lists (TAL-314), in its order, with their aliases.
+    static func slashCommandHelpText(catalog: [AgentCommand]) -> String {
+        let lines = catalog.filter { $0.isCatalogEntry && $0.isClientHandled && $0.runsOnIOS }.flatMap { entry -> [String] in
+            guard let name = entry.name, let command = SlashCommandCatalog.command(named: name) else { return [] }
+            let usage = ["/\(name)", command.argHint].compactMap { $0 }.joined(separator: " ")
+            let aliases = (entry.aliases ?? []).map { "`/\($0)` - " + String(localized: "Alias for \("`/\(name)`")") }
+            return ["`\(usage)` - \(command.description)"] + aliases
+        }
+        guard !lines.isEmpty else { return String(localized: "Check your connection, then try again.") }
+        return ([String(localized: "Available mobile commands:"), ""] + lines).joined(separator: "\n")
+    }
 }
 
 extension ChatViewModel: ChatPendingActionCoordinatorDelegate {

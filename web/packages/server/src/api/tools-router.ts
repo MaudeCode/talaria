@@ -13,6 +13,7 @@ import { SidecarError } from '../sidecar/client.js'
 import { createPrompt, deletePrompt, externalNotesEnabled, loadPrompts, readMemory, writeMemory } from '../tools/memory.js'
 import { notesSources } from '../tools/mcp.js'
 import { buildInsights } from '../tools/insights.js'
+import { commandCatalog } from '../tools/commands.js'
 import { agentHealth, dashboardStatus, readLogTail, systemHealth } from '../tools/health.js'
 import { normalizeChannel } from '../tools/updates.js'
 import { pyBool } from '../settings.js'
@@ -214,12 +215,11 @@ export const toolsRouter = os.router({
   commands: {
     list: os.commands.list.handler(({ context: { ctx } }) => run(async () => {
       const sidecar = ctx.deps.sidecar()
-      if (!sidecar) return { commands: [] }
+      let agent: Parameters<typeof commandCatalog>[0] = []
       try {
-        return { commands: (await sidecar.call('commands.registry', { profile_home: home(ctx) })).commands.filter((c) => !c.gateway_only) }
-      } catch {
-        return { commands: [] }
-      }
+        if (sidecar) agent = (await sidecar.call('commands.registry', { profile_home: home(ctx) })).commands
+      } catch { /* the client commands still list without the Agent registry */ }
+      return { commands: commandCatalog(agent) }
     })),
     exec: os.commands.exec.handler(({ input, context: { ctx } }) => run(async () => {
       const command = str(input.command).trim()
