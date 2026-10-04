@@ -73,6 +73,39 @@ public enum AssistantTurnOutcome {
     }
 }
 
+/// What one assistant turn's block lays out: its rows in order, whether the server's settled scene folds its work
+/// under "Worked", and whether its last row is still being produced.
+public struct AssistantTurnLayout: Equatable {
+    public let rows: [AssistantActivityRow]
+    public let foldsWork: Bool
+    public let isLive: Bool
+
+    public init(
+        message: ChatMessage,
+        liveRows: [AssistantActivityRow],
+        archivedRows: [AssistantActivityRow],
+        earlierSceneRows: [AssistantActivitySceneRow] = []
+    ) {
+        if !liveRows.isEmpty {
+            // Live rows win while the turn streams.
+            rows = liveRows
+            foldsWork = false
+            isLive = true
+        } else if let scene = AssistantActivityTimeline.authoritativeScene(message: message, earlierRows: earlierSceneRows) {
+            // A completed turn renders the server's scene.
+            rows = scene.rows
+            foldsWork = true
+            isLive = false
+        } else {
+            // Before the scene arrives, the just-finished live rows hold its place. Without either (an older server),
+            // the message renders as plain text.
+            rows = archivedRows
+            foldsWork = false
+            isLive = false
+        }
+    }
+}
+
 public struct CompletedAssistantTurn: Equatable {
     public struct Phase: Identifiable, Equatable {
         public let id: String
