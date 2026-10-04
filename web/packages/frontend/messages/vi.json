@@ -216,20 +216,6 @@
 			}
 		}
 	],
-	"session_attention_generic": [
-		{
-			"declarations": [
-				"input n"
-			],
-			"selectors": [
-				"n"
-			],
-			"match": {
-				"n=1": "Chú ý",
-				"n=*": "{n} mục"
-			}
-		}
-	],
 	"session_attention_approval_title": "Đang chờ quyết định cấp quyền",
 	"session_attention_clarify_title": "Đang chờ câu trả lời của bạn",
 	"session_attention_generic_title": "Đang chờ thao tác từ người dùng",

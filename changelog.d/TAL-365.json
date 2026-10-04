@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "In the Web sidebar, a colored bar at the left of a conversation now shows that it is running or waiting for you, so the conversation menu is never covered and the selected conversation is marked only by its highlight.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

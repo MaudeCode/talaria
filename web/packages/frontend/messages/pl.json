@@ -216,20 +216,6 @@
 			}
 		}
 	],
-	"session_attention_generic": [
-		{
-			"declarations": [
-				"input n"
-			],
-			"selectors": [
-				"n"
-			],
-			"match": {
-				"n=1": "Wymaga uwagi",
-				"n=*": "Wymaga uwagi ({n})"
-			}
-		}
-	],
 	"session_attention_approval_title": "Oczekiwanie na decyzję o zezwoleniu",
 	"session_attention_clarify_title": "Oczekiwanie na Twoją odpowiedź",
 	"session_attention_generic_title": "Oczekiwanie na działanie użytkownika",

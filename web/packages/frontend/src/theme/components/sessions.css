@@ -9,24 +9,17 @@
 .session-search input{padding-right:34px}
 .session-search .sidebar-search-icon{left:10px}
 .session-item{padding:8px 8px;margin-bottom:2px;border-radius:var(--session-radius);cursor:pointer;font-size:var(--session-font-size);color:var(--muted);transition:background .15s,color .15s,transform .5s cubic-bezier(.22,.61,.36,1),box-shadow .15s ease;display:flex;align-items:flex-start;gap:8px;min-width:0;position:relative;touch-action:pan-y;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transform:translate3d(var(--session-swipe-offset,0),var(--session-reflow-offset,0),0);line-height:var(--session-line-height)}
-.session-item.streaming,.session-item.needs-attention{padding-right:40px}
 .session-item:focus-within{padding-right:64px}
-.session-item.needs-attention{box-shadow:inset 3px 0 0 var(--warning);background:color-mix(in srgb,var(--warning) 8%,transparent)}
 @media (hover:hover){.session-item:hover{background:var(--session-hover-bg);color:var(--text)}}
 .session-item.loading{background:var(--hover-bg);color:var(--text)}
-.session-text,.session-state-indicator,.session-actions{z-index:1}
+.session-text,.session-actions{z-index:1}
 @media (hover:hover){.session-item:hover{padding-right:64px}}
 .session-item.active{background:var(--session-active-bg);color:var(--session-active-fg);border:var(--session-active-border);border-left:var(--session-active-rail-width) solid var(--session-active-rail-color);font-weight:var(--session-active-weight)}
-.session-item.streaming .session-title{color:var(--accent)}
-.session-item.streaming .session-title-row{color:var(--text)}
 .session-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;overflow:hidden}
 .session-title-row{display:flex;align-items:center;gap:6px;min-width:0}
 .session-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);user-select:none}
 .session-item.active .session-title{color:var(--session-active-title-fg)}
-.session-state-indicator{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:10px;height:10px;color:var(--accent);visibility:hidden}
-.session-state-indicator::before{content:"";display:block;flex-shrink:0}
 .session-time{display:inline-flex;margin-left:auto;color:var(--muted);font-size:10px;white-space:nowrap;flex-shrink:0}
-.session-time.is-hidden{display:none}
 .session-item:hover .session-time,.session-item:focus-within .session-time{display:none}
 .session-actions{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .15s ease}
 .session-item:hover .session-actions,.session-item:focus-within .session-actions{opacity:1;pointer-events:auto}
@@ -46,11 +39,9 @@
 .session-jump-btn:hover{color:var(--text);border-color:var(--border);background:var(--hover-bg);transform:translateY(-1px)}
 .session-jump-btn--start{top:16px}
 @media (max-width:640px){.session-item{min-height:44px;padding:10px 64px 10px 12px;line-height:var(--session-line-height)}}
-@media (max-width:640px){.session-item.streaming{padding-right:64px}}
 @media (max-width:640px){.session-actions{opacity:1;pointer-events:auto}}
 @media (hover:none) and (pointer:coarse){.session-actions{display:none}}
 @media (hover:none) and (pointer:coarse){.session-item{padding-right:6px;line-height:var(--session-line-height)}}
-@media (hover:none) and (pointer:coarse){.session-item.streaming{padding-right:40px}}
 @media (hover:none) and (pointer:coarse){.session-item:focus-within{padding-right:6px}}
 .session-list > div[style]{padding-left:12px}
 .session-list > div[style*="uppercase"]{padding:8px 10px 3px !important;font-size:10px !important}
@@ -108,14 +99,13 @@
 .session-source-tab.active{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.18),0 0 0 1px var(--border-subtle)}
 .session-item{position:relative;border-radius:var(--session-radius);line-height:var(--session-line-height)}
 .session-item.active{background:var(--session-active-bg);border:var(--session-active-border);border-left:var(--session-active-rail-width) solid var(--session-active-rail-color);font-weight:var(--session-active-weight)}
-.session-item.active::before{content:'';position:absolute;left:var(--session-bar-left);top:var(--session-bar-inset-y);bottom:var(--session-bar-inset-y);width:2px;border-radius:var(--session-bar-radius);background:var(--session-bar-color);opacity:var(--session-bar-opacity)}
 .session-item.active .session-title{color:var(--session-active-title-fg)}
 .session-time{opacity:.8}
-.session-item.streaming .session-title{color:var(--text)}
-.session-item.streaming::after,.session-item.needs-attention::after{content:'';position:absolute;right:10px;top:50%;width:7px;height:7px;margin-top:-3.5px;border-radius:50%;background:var(--accent)}
-.session-item.streaming::after{animation:session-pulse 1.4s ease-in-out infinite}
-.session-item.needs-attention::after{background:var(--warning)}
-.session-item:hover::after{display:none}
-@media (prefers-reduced-motion:reduce){.session-item.streaming::after{animation:none}}
+/* The left rail is the row's only status marker (TAL-365): accent while running, warning when attention waits; selection never draws it. */
+.session-item.streaming::before,.session-item.needs-attention::before{content:'';position:absolute;left:var(--session-bar-left);top:var(--session-bar-inset-y);bottom:var(--session-bar-inset-y);width:2px;border-radius:var(--session-bar-radius);background:var(--warning)}
+.session-item.streaming::before{background:var(--accent);animation:session-pulse 1.4s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.session-item.streaming::before{animation:none}}
+/* Narrow screens with a pointer always show the actions; the base padding above would otherwise put the timestamp under them. */
+@media (max-width:640px) and (hover:hover){.session-item{padding-right:64px}}
 .session-item.active .session-time{color:var(--session-active-meta-fg)}
 }
