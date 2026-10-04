@@ -597,7 +597,7 @@ export function withToolCallOutcomes<T>(messages: T[], sessionToolCalls: unknown
       return {
         done: Boolean(reply) || answered || !running, is_error: outcome ? outcome.flagged || outcome.is_error : rec?.is_error === true,
         duration: finiteOrNull(rec?.duration), result: outcome ? outcome.result_text : typeof rec?.snippet === 'string' ? rec.snippet : null,
-        result_view: outcome ? outcome.result_view : typeof rec?.snippet === 'string' ? toolResultView(rec.snippet) : null,
+        result_view: outcome ? outcome.result_view : isDict(rec?.result_view) ? decidedResultView(rec.result_view) : typeof rec?.snippet === 'string' ? toolResultView(rec.snippet) : null,
       }
     }
     const projected = [
