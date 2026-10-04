@@ -797,6 +797,8 @@ describe('Agent redactor parity', () => {
       ['ghp_abcdef\x1bP1;2|x\x1b\\123456\x1b_app\x1b\\7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       ['ghp_abcdef\x1bXsos\x1b\\123456\x1b^pm\x1b\\7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       ['ghp_abcdef\x90dcs\x9c123456\x9fapc\x9c7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['gh\x85p_abcdef1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
+      ['ghp_abcdef\x84123456\x8f7890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       // The piece before the sequence is a whole token by itself.
       ['ghp_abcdefghij\x1b[31m1234567890ABCDEF1234567890abcdef', 'ghp_ab...cdef'],
       ['ghp_abcdef\x1b[1;38;5;196m1234567890ABCDEF1234567890abcdef\x1b[0m done', 'ghp_ab...cdef\x1b[0m done'],
