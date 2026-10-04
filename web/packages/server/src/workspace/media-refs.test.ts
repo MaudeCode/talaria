@@ -67,8 +67,9 @@ describe('projectMediaRefs (TAL-186)', () => {
 
   it('rewrites a remote MEDIA: token to its URL, and leaves remote, data and bare relative images as written', () => {
     const projected = projectMediaRefs('Generated MEDIA:https://cdn.example.test/output/image.png?variant=small and MEDIA:https://cdn.example.test/media/abc123', resolver())
-    expect(projected?.text).toBe('Generated ![image.png](https://cdn.example.test/output/image.png?variant=small) and ![abc123](https://cdn.example.test/media/abc123)')
-    expect(projected?.media.map((m) => m.kind)).toEqual(['image', 'image'])
+    // An extensionless URL could be audio or video as well as an image: it is linked as a file, not shown as an image.
+    expect(projected?.text).toBe('Generated ![image.png](https://cdn.example.test/output/image.png?variant=small) and [abc123](https://cdn.example.test/media/abc123)')
+    expect(projected?.media.map((m) => m.kind)).toEqual(['image', 'file'])
     for (const text of ['![remote](https://cdn.example.test/image.png)', '![data](data:image/png;base64,AAAA)', '![bare](shots/login.png)', '![proto](//cdn.example.test/a.png)']) {
       expect(display(text, resolver('/srv/workspaces/app'))).toBeNull()
     }

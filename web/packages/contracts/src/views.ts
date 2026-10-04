@@ -64,7 +64,8 @@ export type BackgroundLink = z.infer<typeof BackgroundLinkSchema>
  * TAL-186: one local or remote media reference the server recognized in a message's Markdown (a `MEDIA:` token, a bare
  * `file://` URL or a local image destination), in content order. `url` is relative to the app root (`./api/media?path=…&session_id=…`)
  * for a local file the `/api/media` allow-list serves, or the remote `http(s)` URL as written. Clients render `image`
- * items inline from the display text and every other kind as a tile after it.
+ * items inline from the display text and every other kind as a tile after it. A remote URL without a file
+ * extension has no known kind and is a `file`.
  */
 export const DisplayMediaSchema = z.object({ url: z.string(), name: z.string(), mime: z.string(), kind: z.enum(['image', 'audio', 'video', 'pdf', 'file']) })
 export type DisplayMedia = z.infer<typeof DisplayMediaSchema>

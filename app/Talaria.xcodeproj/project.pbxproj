@@ -158,6 +158,7 @@
 		C0DE34000000000000000006 /* TranscriptMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE34000000000000000005 /* TranscriptMediaView.swift */; };
 		C107P0000000000000000001 /* TranscriptMediaContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000101 /* TranscriptMediaContentView.swift */; };
 		C107P0000000000000000002 /* TranscriptMediaThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000102 /* TranscriptMediaThumbnailView.swift */; };
+		C107P0000000000000000003 /* TranscriptMediaResolvedRemoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000103 /* TranscriptMediaResolvedRemoteView.swift */; };
 		C107P0000000000000000004 /* TranscriptMediaAudioExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000104 /* TranscriptMediaAudioExportView.swift */; };
 		C107P0000000000000000005 /* TranscriptMediaFileExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000105 /* TranscriptMediaFileExportView.swift */; };
 		C107P0000000000000000006 /* TranscriptMediaVideoTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000106 /* TranscriptMediaVideoTile.swift */; };
@@ -580,6 +581,7 @@
 		C0DE34000000000000000005 /* TranscriptMediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaView.swift; sourceTree = "<group>"; };
 		C107P0000000000000000101 /* TranscriptMediaContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaContentView.swift; sourceTree = "<group>"; };
 		C107P0000000000000000102 /* TranscriptMediaThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaThumbnailView.swift; sourceTree = "<group>"; };
+		C107P0000000000000000103 /* TranscriptMediaResolvedRemoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaResolvedRemoteView.swift; sourceTree = "<group>"; };
 		C107P0000000000000000104 /* TranscriptMediaAudioExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaAudioExportView.swift; sourceTree = "<group>"; };
 		C107P0000000000000000105 /* TranscriptMediaFileExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaFileExportView.swift; sourceTree = "<group>"; };
 		C107P0000000000000000106 /* TranscriptMediaVideoTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaVideoTile.swift; sourceTree = "<group>"; };
@@ -1190,6 +1192,7 @@
 				C0DE34000000000000000005 /* TranscriptMediaView.swift */,
 				C107P0000000000000000101 /* TranscriptMediaContentView.swift */,
 				C107P0000000000000000102 /* TranscriptMediaThumbnailView.swift */,
+				C107P0000000000000000103 /* TranscriptMediaResolvedRemoteView.swift */,
 				C107P0000000000000000104 /* TranscriptMediaAudioExportView.swift */,
 				C107P0000000000000000105 /* TranscriptMediaFileExportView.swift */,
 				C107P0000000000000000106 /* TranscriptMediaVideoTile.swift */,
@@ -1905,6 +1908,7 @@
 				C0DE34000000000000000006 /* TranscriptMediaView.swift in Sources */,
 				C107P0000000000000000001 /* TranscriptMediaContentView.swift in Sources */,
 				C107P0000000000000000002 /* TranscriptMediaThumbnailView.swift in Sources */,
+				C107P0000000000000000003 /* TranscriptMediaResolvedRemoteView.swift in Sources */,
 				C107P0000000000000000004 /* TranscriptMediaAudioExportView.swift in Sources */,
 				C107P0000000000000000005 /* TranscriptMediaFileExportView.swift in Sources */,
 				C107P0000000000000000006 /* TranscriptMediaVideoTile.swift in Sources */,

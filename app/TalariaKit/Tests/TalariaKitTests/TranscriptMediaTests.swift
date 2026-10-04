@@ -62,6 +62,17 @@ final class TranscriptMediaTests: XCTestCase {
         XCTAssertNil(client.transcriptMediaURL(for: "./"))
     }
 
+    /// A remote URL with no extension has no known kind (the server sends `file`); the App resolves it by its bytes.
+    func testOnlyAnUnclassifiedRemoteItemIsResolvedFromItsBytes() {
+        XCTAssertTrue(TranscriptMediaReference(url: "https://cdn.example.test/media/abc123", name: "abc123", mediaKind: .unsupported).isUnknownRemoteMedia)
+        XCTAssertFalse(TranscriptMediaReference(url: "https://cdn.example.test/report.zip", name: "report.zip", mediaKind: .unsupported).isUnknownRemoteMedia)
+        XCTAssertFalse(TranscriptMediaReference(url: "./api/media?path=%2Ftmp%2Fresults&session_id=s1", name: "results", mediaKind: .unsupported).isUnknownRemoteMedia)
+        XCTAssertFalse(TranscriptMediaReference(url: "https://cdn.example.test/media/abc123", name: "abc123", mediaKind: .image).isUnknownRemoteMedia)
+        let resolved = TranscriptMediaReference(url: "https://cdn.example.test/media/abc123", name: "abc123", mediaKind: .unsupported).resolved(as: .video)
+        XCTAssertEqual(resolved.mediaKind, .video)
+        XCTAssertEqual(resolved.url, "https://cdn.example.test/media/abc123")
+    }
+
     func testMergedSceneProseRowsMergeTheirDisplayText() throws {
         let message = try decoder.decode(ChatMessage.self, from: Data(#"""
         {

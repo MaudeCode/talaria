@@ -118,8 +118,8 @@ function mediaFor(ref: string, resolver: MediaRefResolver): DisplayMedia | null 
     try { ({ pathname, host } = new URL(ref)) } catch { return null }
     const name = safeDecode(basename(pathname)) || host
     const mime = mimeFor(pathname)
-    // An extensionless remote reference is most often an image endpoint.
-    return { url: ref.replace(/[()<> ]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`), name, mime, kind: extname(pathname) ? kindFor(mime) : 'image' }
+    // Nothing tells an extensionless remote reference's kind, so it is a file: a link, never a guessed image.
+    return { url: ref.replace(/[()<> ]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`), name, mime, kind: extname(pathname) ? kindFor(mime) : 'file' }
   }
   if (ref.includes('://')) return null
   const url = resolver.localUrl(ref)

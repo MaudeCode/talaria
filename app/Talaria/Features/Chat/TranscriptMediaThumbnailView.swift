@@ -20,6 +20,15 @@ struct TranscriptMediaThumbnailView: View {
 
     var body: some View {
         switch reference.mediaKind {
+        case .unsupported where reference.isUnknownRemoteMedia && loadMediaData != nil:
+            if let loadMediaData {
+                TranscriptMediaResolvedRemoteView(
+                    reference: reference,
+                    loadMediaData: loadMediaData,
+                    onPreviewMedia: onPreviewMedia
+                )
+            }
+
         case .image where loadMediaImage != nil:
             Button {
                 onPreviewMedia?(reference)

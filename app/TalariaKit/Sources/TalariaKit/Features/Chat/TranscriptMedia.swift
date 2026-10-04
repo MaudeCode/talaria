@@ -40,6 +40,18 @@ public struct TranscriptMediaReference: Codable, Equatable, Identifiable {
         mediaKind == .image
     }
 
+    /// A remote item the server could not classify (a URL with no file extension): the App shows its bytes as the
+    /// image, audio or video they decode to, as it did before the server owned recognition.
+    public var isUnknownRemoteMedia: Bool {
+        guard mediaKind == .unsupported, let url = URL(string: url), let scheme = url.scheme?.lowercased() else { return false }
+        return (scheme == "http" || scheme == "https") && url.pathExtension.isEmpty
+    }
+
+    /// This item as the kind its downloaded bytes decoded to, for its preview.
+    public func resolved(as kind: TranscriptMediaKind) -> TranscriptMediaReference {
+        TranscriptMediaReference(url: url, name: name, mime: mime, mediaKind: kind)
+    }
+
     /// The file name's extension, lowercased; empty when it has none.
     var fileExtension: String {
         URL(fileURLWithPath: name).pathExtension.lowercased()
