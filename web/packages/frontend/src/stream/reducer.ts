@@ -15,7 +15,7 @@
  */
 import type { ChatEvent } from '../contracts/sse'
 import type { ApprovalPending, ClarifyPending, Session } from '../contracts'
-import type { PendingSteer, ToolKind } from '@maudecode/talaria-web-contracts'
+import type { PendingSteer, ToolKind, ToolResultView } from '@maudecode/talaria-web-contracts'
 
 export type TurnStatus = 'starting' | 'connecting' | 'streaming' | 'reconnecting' | 'done' | 'error' | 'cancelled'
 
@@ -31,7 +31,8 @@ export interface LiveToolCall {
   isError: boolean
   duration: number | null
   costUsd: number | null
-  result: unknown
+  /** TAL-315: the server's result sections, from `tool_complete`. */
+  resultView: ToolResultView | null
   startedAt: number
 }
 
@@ -194,7 +195,7 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       const t = live()
       const id = event.data.id
       const existing = t.tools[id]
-      const call: LiveToolCall = existing ?? { id, name: event.data.name ?? 'tool', kind: event.data.kind ?? 'unknown', target: event.data.target ?? '', args: event.data.args ?? {}, preview: event.data.preview ?? null, done: false, isError: false, duration: null, costUsd: null, result: null, startedAt: event.data.timestamp ?? now }
+      const call: LiveToolCall = existing ?? { id, name: event.data.name ?? 'tool', kind: event.data.kind ?? 'unknown', target: event.data.target ?? '', args: event.data.args ?? {}, preview: event.data.preview ?? null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: event.data.timestamp ?? now }
       const tools = { ...t.tools, [id]: existing ? { ...existing, kind: event.data.kind ?? existing.kind, target: event.data.target ?? existing.target, args: event.data.args ?? existing.args, preview: event.data.preview ?? existing.preview } : call }
       const toolOrder = existing ? t.toolOrder : [...t.toolOrder, id]
       const segments = existing ? t.segments : [...t.segments, { kind: 'tool' as const, toolId: id }]
@@ -205,8 +206,8 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       if (event.data.name === 'clarify') return stamped
       const t = live()
       const id = event.data.id
-      const existing = t.tools[id] ?? { id, name: event.data.name ?? 'tool', kind: 'unknown', target: '', args: event.data.args ?? {}, preview: null, done: false, isError: false, duration: null, costUsd: null, result: null, startedAt: now }
-      const call: LiveToolCall = { ...existing, kind: event.data.kind ?? existing.kind, target: event.data.target ?? existing.target, done: true, isError: !!event.data.is_error, preview: event.data.preview ?? existing.preview, duration: event.data.duration ?? null, costUsd: event.data.cost_usd ?? null, result: event.data.result ?? event.data.output ?? existing.result, args: event.data.args ?? existing.args }
+      const existing = t.tools[id] ?? { id, name: event.data.name ?? 'tool', kind: 'unknown', target: '', args: event.data.args ?? {}, preview: null, done: false, isError: false, duration: null, costUsd: null, resultView: null, startedAt: now }
+      const call: LiveToolCall = { ...existing, kind: event.data.kind ?? existing.kind, target: event.data.target ?? existing.target, done: true, isError: !!event.data.is_error, preview: event.data.preview ?? existing.preview, duration: event.data.duration ?? null, costUsd: event.data.cost_usd ?? null, resultView: event.data.result_view ?? existing.resultView, args: event.data.args ?? existing.args }
       const known = id in t.tools
       return { ...t, tools: { ...t.tools, [id]: call }, toolOrder: known ? t.toolOrder : [...t.toolOrder, id], segments: known ? t.segments : [...t.segments, { kind: 'tool', toolId: id }] }
     }

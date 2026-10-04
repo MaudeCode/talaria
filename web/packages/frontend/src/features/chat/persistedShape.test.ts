@@ -72,13 +72,13 @@ describe('assistant turn projection', () => {
       version: 'activity_scene_v1', activity_rows: [
         // Server-normalized: the replayed `a` row already folded into its first position (anchor.test.ts).
         { row_id: 'p', order_index: 0, role: 'prose', text: 'Progress' },
-        { row_id: 'tool:a', order_index: 1, role: 'tool', tool: { id: 'a', name: 'read_file', preview: 'contents', result: 'contents', done: true, is_error: false, duration: null, cost_usd: null } },
+        { row_id: 'tool:a', order_index: 1, role: 'tool', tool: { id: 'a', name: 'read_file', preview: 'contents', result: 'contents', result_view: { text: 'contents' }, done: true, is_error: false, duration: null, cost_usd: null } },
         { row_id: 'tool:b', order_index: 2, role: 'tool', tool: { id: 'b', name: 'read_file', preview: null, done: true, is_error: false, duration: null, cost_usd: null } },
       ], final_answer: 'Answer', terminal_state: 'completed', expanded_by_default: false,
     } }]))
     const activity = persistedActivity(rows[0]!)
     expect(activity.items.map((item) => item.key)).toEqual(['p', 'tool:a', 'tool:b'])
-    expect(activity.items[1]).toMatchObject({ kind: 'tool', call: { done: true, result: 'contents' } })
+    expect(activity.items[1]).toMatchObject({ kind: 'tool', call: { done: true, resultView: { text: 'contents' } } })
     expect(activity.finalAnswer).toBe('Answer')
   })
 })

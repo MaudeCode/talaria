@@ -2,7 +2,7 @@ import type { Message } from '../../contracts'
 import type { LiveTurn } from '../../stream/reducer'
 import { isTerminal } from '../../stream/reducer'
 import type { ToolCardData } from './blocks/ToolCard'
-import { BackgroundLinkSchema, DisplayMediaSchema, ToolKindSchema, type DisplayMedia, type ToolKind } from '@maudecode/talaria-web-contracts'
+import { BackgroundLinkSchema, DisplayMediaSchema, ToolKindSchema, ToolResultViewSchema, type DisplayMedia, type ToolKind, type ToolResultView } from '@maudecode/talaria-web-contracts'
 import { extractInlineThinking, messageText, stripToolCallXml } from './render/text'
 import type { VisibleMessage } from './useTranscript'
 
@@ -41,6 +41,8 @@ function displayBody(display: unknown, media: unknown): DisplayBody {
   const items = DisplayMediaSchema.array().safeParse(media).data
   return { ...(typeof display === 'string' ? { display } : {}), ...(items?.length ? { media: items } : {}) }
 }
+/** TAL-315: the server's result sections, when it sent valid ones. */
+const resultViewOf = (v: unknown): ToolResultView | null => ToolResultViewSchema.safeParse(v).data ?? null
 /** TAL-372: a delegation row's link to the work it started, when the server sent a valid one. */
 const backgroundOf = (v: unknown): Pick<ToolCardData, 'background'> => { const link = BackgroundLinkSchema.safeParse(v).data; return link ? { background: link } : {} }
 
@@ -92,7 +94,7 @@ export function sceneItems(value: unknown): ActivityItem[] {
     if (row.role !== 'tool') return []
     const tool = record(row.tool)
     return [{ key, kind: 'tool', call: {
-      id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), target: text(tool.target), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, result: tool.result ?? null,
+      id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), target: text(tool.target), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view),
       done: tool.done === true, isError: tool.is_error === true, duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
       ...backgroundOf(tool.background),
     } }]

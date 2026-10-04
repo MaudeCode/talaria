@@ -2,7 +2,7 @@ import { useDisclosure } from './Worklog'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../../../ui/cn'
 import { ToolKindIcon } from '../toolKind'
-import type { BackgroundLink, ToolKind } from '@maudecode/talaria-web-contracts'
+import type { BackgroundLink, ToolKind, ToolResultView } from '@maudecode/talaria-web-contracts'
 import { agentsSummary, statusLabel } from '../../background/BackgroundWork'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
@@ -19,7 +19,8 @@ export interface ToolCardData {
   isError: boolean
   duration: number | null
   costUsd: number | null
-  result: unknown
+  /** TAL-315: the server's result sections; `null` from a server without them, which shows `preview`. */
+  resultView: ToolResultView | null
   /** TAL-372: the background work this call started, updated in place as it finishes (server scene field). */
   background?: BackgroundLink
 }
@@ -38,6 +39,12 @@ function pretty(value: unknown): string {
   }
 }
 
+/** The server's result sections in their order, one after another: text, output, stderr, then the labelled error and exit code. */
+function resultText(view: ToolResultView): string {
+  return [view.text, view.stdout, view.stderr, view.error === undefined ? undefined : m.tool_result_error({ error: view.error }), view.exit_code === undefined ? undefined : m.tool_result_exit_code({ code: String(view.exit_code) })]
+    .filter((section) => section !== undefined).join('\n')
+}
+
 /** One tool invocation. Collapsed by default: verb + target; details show arguments and result preview as text. */
 export function ToolCard({ call, timestamp }: { call: ToolCardData; timestamp?: string | undefined }) {
   const locale = useLocale()
@@ -45,7 +52,7 @@ export function ToolCard({ call, timestamp }: { call: ToolCardData; timestamp?: 
   const kind = call.kind
   const label = toolCardLabel(call, locale)
   const args = pretty(call.args)
-  const result = call.result !== null && call.result !== undefined ? pretty(call.result) : call.preview ?? ''
+  const result = call.resultView ? resultText(call.resultView) : call.preview ?? ''
   return (
     <div className={cn('tool-card-row tool-card my-1 rounded-lg border border-border-subtle bg-surface-subtle text-[13px]', call.isError && 'border-error/40', !call.done && 'tool-card-running')} data-tool-id={call.id} data-tool-kind={kind} data-tool-done={call.done ? '1' : '0'} data-tool-error={call.isError ? '1' : undefined}>
       <button type="button" className="tool-card-header flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-text" aria-expanded={open} onClick={toggle}>

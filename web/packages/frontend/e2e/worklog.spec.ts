@@ -66,12 +66,12 @@ test(`live tool batches settle once: ${limited ? 'tool limit' : 'completed'}`, a
     ['server_turn_started', { session_id: sid, stream_id: 'worklog-run', user_message_id: 1 }],
     ['token', { text: 'First pass' }],
     ['tool', { id: 'a', name: 'read_file', args: { path: 'a.txt' } }],
-    ['tool_complete', { id: 'a', name: 'read_file', result: 'A failed', is_error: true }],
+    ['tool_complete', { id: 'a', name: 'read_file', result_view: { text: 'A failed' }, is_error: true }],
     ['token', { text: 'Second pass' }],
     ['tool', { id: 'b', name: 'read_file', args: { path: 'b.txt' } }],
     ['tool', { id: 'c', name: 'read_file', args: { path: 'c.txt' } }],
-    ['tool_complete', { id: 'b', name: 'read_file', result: 'B contents' }],
-    ['tool_complete', { id: 'c', name: 'read_file', result: 'C contents' }],
+    ['tool_complete', { id: 'b', name: 'read_file', result_view: { text: 'B contents' } }],
+    ['tool_complete', { id: 'c', name: 'read_file', result_view: { text: 'C contents' } }],
     ['reasoning', { text: 'Verifying the second batch.', titles: ['Verifying results'] }],
   ]
   let stream: ServerResponse | undefined
@@ -424,7 +424,7 @@ test('streaming and settlement keep a pinned transcript steady', async ({ page }
     send('token', { text: 'Reading both files.' })
     send('tool', { id: 'a', name: 'read_file', args: { path: 'a.toml' } }); await page.waitForTimeout(150)
     send('tool', { id: 'b', name: 'read_file', args: { path: 'b.toml' } }); await page.waitForTimeout(150)
-    send('tool_complete', { id: 'a', name: 'read_file', result: 'port = 8080' }); send('tool_complete', { id: 'b', name: 'read_file', result: 'port = 8080' })
+    send('tool_complete', { id: 'a', name: 'read_file', result_view: { text: 'port = 8080' } }); send('tool_complete', { id: 'b', name: 'read_file', result_view: { text: 'port = 8080' } })
     for (const word of answer.split(/(?<= )/)) { send('token', { text: word }); await page.waitForTimeout(40) }
     await page.waitForTimeout(300)
     await page.evaluate(() => { (window as unknown as { phase: string }).phase = 'settle' })
