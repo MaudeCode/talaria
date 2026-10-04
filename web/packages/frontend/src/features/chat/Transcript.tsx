@@ -9,7 +9,7 @@ import { AssistantMessageRow, BackgroundUpdateRow, MarkerRow, UserMessageRow, ty
 import { LiveTurnView } from './LiveTurnView'
 import { messageKey, type VisibleMessage } from './useTranscript'
 import { WorklogDisclosureProvider, type ActivityMode } from './blocks/Worklog'
-import { groupAssistantTurns } from './turnActivity'
+import { groupAssistantTurns, persistedActivity, toolIdsOf } from './turnActivity'
 import { cn } from '../../ui/cn'
 import { Button } from '../../ui/Button'
 import { onScrollRequest, requestComposerRest } from './sendMotion'
@@ -63,7 +63,8 @@ export function Transcript(props: TranscriptProps) {
     return grouped.filter((row) => row.message.role !== 'assistant' || (row.turnKey !== live.streamId && row.turnKey !== live.turnId))
   }, [grouped, live, showLive])
   // A live turn attached without replay continues the running scene the server shipped for its persisted rows (TAL-374).
-  const continuesTurn = (row: VisibleMessage) => !!live && showLive && live.segments.length > 0 && (row.turnKey === live.streamId || row.turnKey === live.turnId)
+  const continued = useMemo(() => (showLive && live && !live.claimsPersistedRows ? rows.find((row) => row.message.role === 'assistant' && !row.message._marker_kind && (row.turnKey === live.streamId || row.turnKey === live.turnId)) : undefined), [rows, live, showLive])
+  const continuedTools = useMemo(() => (continued ? toolIdsOf(persistedActivity(continued)) : undefined), [continued])
   const lastRowIsUser = rows.length > 0 && rows[rows.length - 1]?.message.role === 'user' && !rows[rows.length - 1]?.message._marker_kind
   const showLiveUser = !!live && !isTerminal(live.status) && live.userText.trim() !== '' && !lastRowIsUser && !rows.some((r) => r.message.role === 'user' && messageKey(r.message) === live.userMessageId)
   // One slot for the user's newest text: the pending first send until the turn starts, then the live user row, so the
@@ -181,7 +182,7 @@ export function Transcript(props: TranscriptProps) {
       ? <MarkerRow key={row.key} row={row} />
       : row.message.role === 'user'
       ? <UserMessageRow key={row.key} row={row} renderMarkdown={renderUserMarkdown} sessionId={sessionId} actions={actions} />
-      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} continued={continuesTurn(row)} />
+      : <AssistantMessageRow sessionId={sessionId} scope={props.disclosureScope} key={row.key} row={row} name={assistantName} mode={mode} actions={actions} tts={tts} isLast={i === lastAssistantIndex && !showLive} continuation={row === continued ? live ?? undefined : undefined} />
   )
 
   return (
@@ -213,7 +214,7 @@ export function Transcript(props: TranscriptProps) {
                 <div className="msg-body whitespace-pre-wrap break-words">{liveUserText}</div>
               </div>
             )}
-            {showLive && live && <LiveTurnView turn={live} name={assistantName} mode={mode} userVisible />}
+            {showLive && live && <LiveTurnView turn={live} name={assistantName} mode={mode} userVisible omitToolIds={continuedTools} />}
             {/* The settled error row carries the message; only the frame's continuation link lives outside the session. */}
             {!showLive && live?.error?.continuationSessionId && <Link to="/session/$sessionId" params={{ sessionId: live.error.continuationSessionId }} className="mt-1 inline-block text-[13px] text-accent-text underline">{m.live_continuation()}</Link>}
           </div>

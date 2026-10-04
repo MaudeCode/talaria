@@ -345,6 +345,25 @@ describe('a running turn with no journal to replay (TAL-374)', () => {
     expect(view.container.querySelectorAll('.tool-worklog-summary')).toHaveLength(1)
   })
 
+  it('updates a running scene\'s tool in place from its live completion instead of adding a second card', () => {
+    // The call persisted before its result: the scene shows the tool still running.
+    const messages = example.messages.map((message) => {
+      const scene = message._anchor_activity_scene
+      if (scene?.terminal_state !== 'running') return message
+      return { ...message, _anchor_activity_scene: { ...scene, activity_rows: scene.activity_rows.map((row) => (row.tool ? { ...row, tool: { ...row.tool, done: false, result: null } } : row)) } }
+    })
+    const run = attached()
+    const view = render(transcript(messages, run.turn))
+    const card = () => view.container.querySelectorAll('[data-tool-id="contract-read"]')
+    expect(card()).toHaveLength(1)
+    run.emit({ event: 'tool_complete', data: { id: 'contract-read', name: 'read_file', kind: 'read', target: 'a.txt', result_view: { text: 'A' } } })
+    run.emit({ event: 'token', data: { text: 'Reading b.txt.' } })
+    view.rerender(transcript(messages, run.turn))
+    expect(blocks(view.container)).toEqual([['Earlier answer.'], ['reasoning', 'Reading a.txt.', 'tool:contract-read', 'Now b.txt.'], ['Reading b.txt.']])
+    expect(card()).toHaveLength(1)
+    expect(card()[0]).toHaveAttribute('data-tool-done', '1')
+  })
+
   it('marks only the newest row active: the persisted tail until live frames arrive, then the live tail', () => {
     const messages: Message[] = [
       { role: 'user', content: 'Go', _turn_id: streamId },
