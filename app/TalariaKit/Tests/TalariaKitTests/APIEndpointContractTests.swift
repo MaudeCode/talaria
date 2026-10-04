@@ -681,6 +681,31 @@ final class SharedContractTests: XCTestCase {
         )
     }
 
+    func testSharedWebSessionRendersEachToolResultFromTheServerView() throws {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try fixture("web-session")) as? [String: Any])
+        // A release checks this App against every retained Web; one from before TAL-315 has no such example.
+        guard let example = object["tool_result_views"] as? [String: Any] else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let session = try decoder.decode(SessionDetail.self, from: JSONSerialization.data(withJSONObject: example["session"] as Any))
+        let messages = try XCTUnwrap(session.messages)
+        // The same sections, in the same order, that Web renders from the same fields.
+        let expected = [
+            "call-make": "built\nok\nwarning: deprecated\nExit code: 2",
+            "call-nested": "line one\nline two",
+            "call-parts": "first\nsecond",
+            "call-date": "Sat Sep 27"
+        ]
+        func results(_ calls: [ToolCall]) -> [String: String] {
+            Dictionary(uniqueKeysWithValues: calls.map { ($0.id, ToolCallDisplayFormatter.content(for: $0).result?.text ?? "") })
+        }
+        let answer = try XCTUnwrap(messages.first { $0.messageId == "view-answer" })
+        let timeline = try XCTUnwrap(AssistantActivityTimeline.authoritativeScene(message: answer))
+        XCTAssertEqual(results(timeline.toolCalls), expected)
+        let groups = ToolCallGroup.groups(messages: messages, messageOffset: nil)
+        XCTAssertEqual(results(groups.first { $0.anchorMessageID == "view-calls" }?.toolCalls ?? []), expected)
+    }
+
     func testSharedWebSessionRendersServerBuiltTurnScenes() async throws {
         let data = try fixture("web-session")
         let session = session { request in

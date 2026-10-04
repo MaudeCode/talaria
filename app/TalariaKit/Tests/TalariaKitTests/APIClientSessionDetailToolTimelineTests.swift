@@ -197,47 +197,44 @@ func testToolCallStatusDisplayShowsFailedCollapsedText() {
     XCTAssertEqual(display.detailText, "Failed")
 }
 
-func testToolCallDisplayFormatterParsesTerminalJSONOutput() {
-    let display = ToolCallDisplayFormatter.resultDisplay(
-        preview: #"{"output":"line one\nline two\n","exit_code":0,"error":null}"#,
-        kind: .shell
-    )
+func testToolCallDisplayFormatterRendersServerResultSectionsInOrder() {
+    func result(_ view: ToolResultView?, kind: ToolDisplayKind? = .web) -> ToolCallResultDisplay? {
+        ToolCallDisplayFormatter.content(
+            for: ToolCall(name: "tool", preview: "flat preview", args: nil, kind: kind, resultView: view)
+        ).result
+    }
 
-    XCTAssertEqual(display?.title, "Result")
-    XCTAssertEqual(display?.text, "line one\nline two")
-    XCTAssertEqual(display?.isMonospaced, true)
+    let terminal = result(ToolResultView(stdout: "a\nb", stderr: "warn", error: "boom", exitCode: 1))
+    XCTAssertEqual(terminal?.title, "Result")
+    XCTAssertEqual(terminal?.text, "a\nb\nwarn\nError: boom\nExit code: 1")
+    XCTAssertEqual(terminal?.isMonospaced, true)
+    XCTAssertEqual(result(ToolResultView(stderr: "only stderr", exitCode: 2))?.text, "only stderr\nExit code: 2")
+    XCTAssertEqual(result(ToolResultView(exitCode: 0))?.text, "Exit code: 0")
+    XCTAssertEqual(result(ToolResultView(error: "denied"))?.text, "Error: denied")
+    let text = result(ToolResultView(text: "line one\nline two"))
+    XCTAssertEqual(text?.text, "line one\nline two")
+    XCTAssertEqual(text?.isMonospaced, false)
+    XCTAssertEqual(result(ToolResultView(text: "Sat Sep 27"), kind: .shell)?.isMonospaced, true)
+    // An empty view shows no result, even when a preview exists.
+    XCTAssertNil(result(ToolResultView()))
 }
 
-func testToolCallDisplayFormatterParsesEscapedTerminalJSONOutput() {
-    let display = ToolCallDisplayFormatter.resultDisplay(
-        preview: #"{\"output\":\"pwd\n\",\"exit_code\":0,\"error\":null}"#,
-        kind: .shell
-    )
-
-    XCTAssertEqual(display?.text, "pwd")
-}
-
-func testToolCallDisplayFormatterToleratesOutOfRangeExitCode() {
-    // An exit code beyond Int range comes straight from tool output and
-    // used to trap while rendering the card (#62).
-    let display = ToolCallDisplayFormatter.resultDisplay(
-        preview: #"{"output":"done\n","exit_code":1e300,"error":null}"#,
-        kind: .shell
-    )
-
-    XCTAssertEqual(display?.text, "done")
-}
-
-func testToolCallDisplayFormatterFallsBackToOriginalPreviewWhenParsingFails() {
-    let preview = #"{"output": "unterminated""#
-
-    let display = ToolCallDisplayFormatter.resultDisplay(
-        preview: preview,
-        kind: .web
-    )
+func testToolCallDisplayFormatterShowsAnOlderServersPreviewAsSent() {
+    let preview = #"{"output":"line one\nline two\n","exit_code":0}"#
+    let display = ToolCallDisplayFormatter.content(
+        for: ToolCall(name: "terminal", preview: preview, args: nil, kind: .web)
+    ).result
 
     XCTAssertEqual(display?.text, preview)
     XCTAssertEqual(display?.isMonospaced, false)
+}
+
+func testToolStreamEventDecodesTheServerResultView() throws {
+    let data = Data(#"{"id":"call-make","name":"terminal","preview":"built","result_view":{"stdout":"built","stderr":"warn","exit_code":2}}"#.utf8)
+    let event = try JSONDecoder().decode(ToolStreamEvent.self, from: data)
+    XCTAssertEqual(event.resultView, ToolResultView(stdout: "built", stderr: "warn", exitCode: 2))
+    let completed = ToolCall(id: "call-make", name: "terminal", preview: nil, args: nil).applyingCompletionPayload(event)
+    XCTAssertEqual(ToolCallDisplayFormatter.content(for: completed).result?.text, "built\nwarn\nExit code: 2")
 }
 
 func testToolCallDisplayFormatterShowsNestedArgumentsReadably() {
@@ -263,31 +260,6 @@ func testToolCallDisplayFormatterShowsNestedArgumentsReadably() {
       - *.swift
       - *.md
     """)
-}
-
-func testToolCallDisplayFormatterFormatsStructuredNonTerminalResults() {
-    let display = ToolCallDisplayFormatter.resultDisplay(
-        preview: #"{"results":[{"title":"Hermes WebUI","url":"https://example.com","snippet":"Agent UI"}]}"#,
-        kind: .web
-    )
-
-    let text = display?.text ?? ""
-    XCTAssertTrue(text.contains("title: Hermes WebUI"))
-    XCTAssertTrue(text.contains("url: https://example.com"))
-    XCTAssertFalse(text.contains(#"{"title""#))
-    XCTAssertFalse(text.contains(#"\"title\""#))
-}
-
-func testToolCallDisplayFormatterPrefersStructuredResultOverTerminalKeysForNonTerminalTools() {
-    let display = ToolCallDisplayFormatter.resultDisplay(
-        preview: #"{"results":[{"title":"Hermes WebUI","url":"https://example.com","snippet":"Agent UI"}],"exit_code":0,"error":null}"#,
-        kind: .web
-    )
-
-    let text = display?.text ?? ""
-    XCTAssertTrue(text.contains("title: Hermes WebUI"))
-    XCTAssertTrue(text.contains("url: https://example.com"))
-    XCTAssertFalse(text.contains("Exit code: 0"))
 }
 
 func testOpenAIToolRowsWithNilMessageIDsUseRawIndexAnchors() {

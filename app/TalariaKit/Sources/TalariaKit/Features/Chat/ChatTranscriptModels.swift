@@ -475,6 +475,7 @@ public struct AssistantActivityTimeline: Equatable {
                     args: toolCall.args ?? resolved.args,
                     kind: toolCall.kind ?? resolved.kind,
                     target: toolCall.target ?? resolved.target,
+                    resultView: resolved.resultView ?? toolCall.resultView,
                     duration: resolved.duration ?? toolCall.duration,
                     isError: resolved.isError ?? toolCall.isError,
                     isCompleted: toolCall.isCompleted || resolved.isCompleted,
@@ -637,6 +638,7 @@ public struct AssistantActivityTimeline: Equatable {
             args: Self.object(object["args"]),
             kind: ToolDisplayKind(serverValue: Self.string(object["kind"])),
             target: Self.string(object["target"]),
+            resultView: ToolResultView(object["result_view"]),
             duration: Self.number(object["duration"]),
             isError: Self.bool(object["is_error"]),
             isCompleted: Self.bool(object["done"]) == true
@@ -683,6 +685,7 @@ public struct AssistantActivityTimeline: Equatable {
             args: args,
             kind: ToolDisplayKind(serverValue: Self.string(object["kind"])),
             target: Self.string(object["target"]),
+            resultView: ToolResultView(object["result_view"]),
             duration: Self.number(object["duration"]),
             isError: isError,
             isCompleted: status == "completed" || Self.bool(object["done"]) == true

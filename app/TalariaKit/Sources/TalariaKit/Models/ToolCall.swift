@@ -14,6 +14,8 @@ public struct ToolCall: Identifiable, Equatable {
     public let startedAt: Double
     /// TAL-372: the background work a delegation call started (server scene field); nil on any other call.
     public var background: BackgroundLink?
+    /// TAL-315: the server's result sections; nil from an older server, which shows `preview` as sent.
+    public var resultView: ToolResultView?
 
     public init(
         id: String = "live-tool-\(UUID().uuidString)",
@@ -22,6 +24,7 @@ public struct ToolCall: Identifiable, Equatable {
         args: [String: JSONValue]?,
         kind: ToolDisplayKind? = nil,
         target: String? = nil,
+        resultView: ToolResultView? = nil,
         duration: Double? = nil,
         isError: Bool? = nil,
         isCompleted: Bool = false,
@@ -33,6 +36,7 @@ public struct ToolCall: Identifiable, Equatable {
         self.args = args
         self.kind = kind
         self.target = target
+        self.resultView = resultView
         self.duration = duration
         self.isError = isError
         self.isCompleted = isCompleted
@@ -45,6 +49,47 @@ public struct ToolCall: Identifiable, Equatable {
             return String(localized: "Tool")
         }
         return trimmedName
+    }
+}
+
+/// TAL-315: a tool result's display sections, decided on the server for every client. Shown in this order: `text`, or
+/// `stdout`, `stderr`, a labelled `error` and a labelled `exitCode` (sent only when worth showing).
+public struct ToolResultView: Decodable, Equatable {
+    public let text: String?
+    public let stdout: String?
+    public let stderr: String?
+    public let error: String?
+    public let exitCode: Int?
+
+    public init(text: String? = nil, stdout: String? = nil, stderr: String? = nil, error: String? = nil, exitCode: Int? = nil) {
+        self.text = text
+        self.stdout = stdout
+        self.stderr = stderr
+        self.error = error
+        self.exitCode = exitCode
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case text, stdout, stderr, error
+        case exitCode = "exit_code"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text = container.decodeLossyStringIfPresent(forKey: .text)
+        stdout = container.decodeLossyStringIfPresent(forKey: .stdout)
+        stderr = container.decodeLossyStringIfPresent(forKey: .stderr)
+        error = container.decodeLossyStringIfPresent(forKey: .error)
+        exitCode = container.decodeLossyIntIfPresent(forKey: .exitCode)
+    }
+
+    /// The view a decoded JSON field holds; nil when the server sent none.
+    init?(_ value: JSONValue?) {
+        guard case .object = value,
+              let data = try? JSONEncoder().encode(value),
+              let view = try? JSONDecoder().decode(ToolResultView.self, from: data)
+        else { return nil }
+        self = view
     }
 }
 
@@ -167,6 +212,7 @@ public struct ToolCallGroup: Identifiable, Equatable {
             args: arguments(from: function?["arguments"] ?? object["args"]),
             kind: ToolDisplayKind(serverValue: object["kind"]?.stringValue),
             target: object["target"]?.stringValue,
+            resultView: ToolResultView(object["result_view"]),
             duration: object["duration"]?.numberValue,
             isError: object["is_error"]?.boolValue,
             isCompleted: object["done"]?.boolValue ?? true

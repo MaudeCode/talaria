@@ -238,6 +238,8 @@ public struct ToolStreamEvent: Decodable, Equatable {
     public let stableID: String?
     public let kind: ToolDisplayKind?
     public let target: String?
+    /// TAL-315: the server's result sections, on a completion.
+    public let resultView: ToolResultView?
 
     enum CodingKeys: String, CodingKey {
         case eventType = "event_type"
@@ -246,6 +248,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
         case args
         case kind
         case target
+        case resultView = "result_view"
         case duration
         case isError = "is_error"
         case stableID = "id"
@@ -260,7 +263,8 @@ public struct ToolStreamEvent: Decodable, Equatable {
         isError: Bool?,
         stableID: String? = nil,
         kind: ToolDisplayKind? = nil,
-        target: String? = nil
+        target: String? = nil,
+        resultView: ToolResultView? = nil
     ) {
         self.eventType = eventType
         self.name = name
@@ -271,6 +275,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
         self.stableID = stableID?.nonEmptyToolStreamID
         self.kind = kind
         self.target = target
+        self.resultView = resultView
     }
 
     public init(from decoder: Decoder) throws {
@@ -283,6 +288,7 @@ public struct ToolStreamEvent: Decodable, Equatable {
         isError = container.decodeLossyBoolIfPresent(forKey: .isError)
         kind = ToolDisplayKind(serverValue: container.decodeLossyStringIfPresent(forKey: .kind))
         target = container.decodeLossyStringIfPresent(forKey: .target)
+        resultView = try? container.decodeIfPresent(ToolResultView.self, forKey: .resultView)
         stableID = container.decodeLossyStringIfPresent(forKey: .stableID)?.nonEmptyToolStreamID
     }
 }
@@ -520,6 +526,7 @@ private extension ToolStreamEvent {
         stableID = nil
         kind = nil
         target = nil
+        resultView = nil
     }
 }
 
