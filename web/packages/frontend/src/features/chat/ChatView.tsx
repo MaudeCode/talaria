@@ -124,7 +124,9 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
       const r = await api.retrySession(sessionId)
       if ('error' in r) { showToast(r.error, 4000, 'error'); return }
       await refresh()
-      await startTurn({ sessionId, message: r.last_user_text, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(r.last_user_attachments.length ? { attachments: r.last_user_attachments } : {}) } })
+      // Old-server fallback: a server without `last_user_prompt` returns only the stored text.
+      const attachments = r.last_user_attachments ?? []
+      await startTurn({ sessionId, message: r.last_user_prompt ?? r.last_user_text, request: { ...turnRequest(session, bootstrap.profile?.name ?? 'default'), ...(attachments.length ? { attachments } : {}) } })
     } catch (e) {
       showToast(e instanceof Error ? e.message : String(e), 4000, 'error')
     }

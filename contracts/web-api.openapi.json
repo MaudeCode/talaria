@@ -10645,6 +10645,7 @@
     "/api/session/retry": {
       "post": {
         "operationId": "session.retry",
+        "description": "`last_user_text` is the stored row's text; `last_user_prompt` and `last_user_attachments` are what to resend as the new turn.",
         "tags": [
           "sessions"
         ],
@@ -10681,6 +10682,9 @@
                           "const": true
                         },
                         "last_user_text": {
+                          "type": "string"
+                        },
+                        "last_user_prompt": {
                           "type": "string"
                         },
                         "last_user_attachments": {
@@ -10722,7 +10726,6 @@
                       "required": [
                         "ok",
                         "last_user_text",
-                        "last_user_attachments",
                         "removed_count"
                       ]
                     },

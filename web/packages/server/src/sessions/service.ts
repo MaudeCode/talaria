@@ -1000,14 +1000,17 @@ export class SessionService {
       const history = s.messages
       const lastUser = findLastUserIndex(history)
       if (lastUser === null) return { error: 'No previous message to retry.' }
-      // The prompt as typed and its files, so a client resends exactly what the user sent (TAL-515).
+      // What a client resends (TAL-515): the prompt as typed and the files that reached the model, which only ever got
+      // attachments with a path. Nothing to resend fails before the exchange is removed.
       const prompt = history[lastUser]!
-      const lastUserText = userPromptText(extractText(prompt.content))
-      const lastUserAttachments = attachmentObjects(Array.isArray(prompt.attachments) ? prompt.attachments : [])
+      const lastUserText = extractText(prompt.content)
+      const lastUserPrompt = userPromptText(lastUserText)
+      const lastUserAttachments = attachmentObjects(Array.isArray(prompt.attachments) ? prompt.attachments : []).filter((a): a is Record<string, unknown> => isDict(a) && Boolean(str(a.path).trim()))
+      if (!lastUserPrompt && !lastUserAttachments.length) return { error: 'The last message has nothing to resend.' }
       const removed = history.length - lastUser
       shrinkTo(s, lastUser)
       this.store.save(s)
-      return { ok: true, last_user_text: lastUserText, last_user_attachments: lastUserAttachments, removed_count: removed }
+      return { ok: true, last_user_text: lastUserText, last_user_prompt: lastUserPrompt, last_user_attachments: lastUserAttachments, removed_count: removed }
     })
   }
 
