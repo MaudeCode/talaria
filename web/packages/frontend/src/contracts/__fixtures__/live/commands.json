@@ -2,26 +2,293 @@
   "body": {
     "commands": [
       {
-        "aliases": [
-          "reset"
-        ],
-        "args_hint": "[name]",
-        "category": "Session",
-        "cli_only": false,
-        "description": "Start a new session (fresh session ID + history)",
-        "gateway_only": false,
-        "name": "new",
-        "subcommands": []
+        "name": "help",
+        "description": "Show available commands",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
+        "name": "new",
+        "description": "Start a new conversation",
         "aliases": [],
-        "args_hint": "",
-        "category": "Session",
-        "cli_only": true,
-        "description": "Clear screen and start a new session",
-        "gateway_only": false,
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ]
+      },
+      {
         "name": "clear",
-        "subcommands": []
+        "description": "Clear this conversation",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ]
+      },
+      {
+        "name": "stop",
+        "description": "Stop the running response",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ]
+      },
+      {
+        "name": "interrupt",
+        "description": "Interrupt and send",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ],
+        "args_hint": "<message>"
+      },
+      {
+        "name": "queue",
+        "description": "Queue a follow-up",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ],
+        "args_hint": "<message>"
+      },
+      {
+        "name": "steer",
+        "description": "Steer the running response",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ],
+        "args_hint": "<message>"
+      },
+      {
+        "name": "model",
+        "description": "Switch the conversation model",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ],
+        "args_hint": "<id>"
+      },
+      {
+        "name": "workspace",
+        "description": "Switch workspace",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ],
+        "args_hint": "<path>"
+      },
+      {
+        "name": "terminal",
+        "description": "Toggle the workspace terminal",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web"
+        ],
+        "unsupported_message": "Terminal is not available in the mobile app."
+      },
+      {
+        "name": "title",
+        "description": "Rename this conversation",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ],
+        "args_hint": "<text>"
+      },
+      {
+        "name": "retry",
+        "description": "Retry the last turn",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ]
+      },
+      {
+        "name": "undo",
+        "description": "Undo the last turn",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ]
+      },
+      {
+        "name": "compress",
+        "description": "Compress the context",
+        "aliases": [
+          "compact"
+        ],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ]
+      },
+      {
+        "name": "usage",
+        "description": "Show token usage",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web"
+        ],
+        "unsupported_message": "Token usage is not available in the mobile app."
+      },
+      {
+        "name": "theme",
+        "description": "Switch theme",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web"
+        ],
+        "args_hint": "<light|dark|system>",
+        "unsupported_message": "Theme switching is not available from mobile slash commands."
+      },
+      {
+        "name": "yolo",
+        "description": "Toggle YOLO mode (skip approvals)",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web"
+        ],
+        "unsupported_message": "YOLO mode is not available in the mobile app."
+      },
+      {
+        "name": "branch",
+        "description": "Branch the conversation",
+        "aliases": [
+          "fork"
+        ],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ]
+      },
+      {
+        "name": "voice",
+        "description": "Toggle voice mode",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web"
+        ],
+        "unsupported_message": "Voice commands are not available in the mobile app."
+      },
+      {
+        "name": "reasoning",
+        "description": "Set reasoning effort",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ],
+        "args_hint": "<level>"
+      },
+      {
+        "name": "personality",
+        "description": "Set the personality",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ],
+        "args_hint": "<name>"
+      },
+      {
+        "name": "goal",
+        "description": "Set or show the goal",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ],
+        "args_hint": "<text>"
+      },
+      {
+        "name": "status",
+        "description": "Show session status",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ]
+      },
+      {
+        "name": "btw",
+        "description": "Side question without affecting the run",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ],
+        "args_hint": "<question>"
+      },
+      {
+        "name": "background",
+        "description": "Run in the background",
+        "aliases": [
+          "bg"
+        ],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ],
+        "args_hint": "<message>"
+      },
+      {
+        "name": "skills",
+        "description": "List skills",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web",
+          "ios"
+        ]
+      },
+      {
+        "name": "use",
+        "description": "Use a skill",
+        "aliases": [],
+        "handler": "client",
+        "clients": [
+          "web"
+        ],
+        "args_hint": "<skill>",
+        "unsupported_message": "Use `/skills [query]` to search skills."
       },
       {
         "aliases": [],
@@ -31,7 +298,10 @@
         "description": "Force a full UI repaint (recovers from terminal drift)",
         "gateway_only": false,
         "name": "redraw",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/redraw runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -41,7 +311,10 @@
         "description": "Show conversation history",
         "gateway_only": false,
         "name": "history",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/history runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -51,17 +324,12 @@
         "description": "Export the current conversation (bare /save shows usage)",
         "gateway_only": false,
         "name": "save",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "",
-        "category": "Session",
-        "cli_only": false,
-        "description": "Retry the last message (resend to agent)",
-        "gateway_only": false,
-        "name": "retry",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [
@@ -73,27 +341,10 @@
         "description": "Compose your next prompt in $EDITOR (markdown), then send it",
         "gateway_only": false,
         "name": "prompt",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "[N]",
-        "category": "Session",
-        "cli_only": false,
-        "description": "Back up N user turns and re-prompt (default 1)",
-        "gateway_only": false,
-        "name": "undo",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "[name]",
-        "category": "Session",
-        "cli_only": false,
-        "description": "Set a title for the current session",
-        "gateway_only": false,
-        "name": "title",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/prompt runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -103,19 +354,10 @@
         "description": "Hand off this session to a messaging platform (Telegram, Discord, etc.)",
         "gateway_only": false,
         "name": "handoff",
-        "subcommands": []
-      },
-      {
-        "aliases": [
-          "fork"
-        ],
-        "args_hint": "[name]",
-        "category": "Session",
-        "cli_only": false,
-        "description": "Branch the current session (explore a different path)",
-        "gateway_only": false,
-        "name": "branch",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/handoff runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -129,19 +371,10 @@
           "new",
           "list",
           "prune"
-        ]
-      },
-      {
-        "aliases": [
-          "compact"
         ],
-        "args_hint": "[here [N] | focus topic | --preview|--dry-run]",
-        "category": "Session",
-        "cli_only": false,
-        "description": "Compress conversation context (add 'here [N]' to keep recent N turns; --preview shows what would happen)",
-        "gateway_only": false,
-        "name": "compress",
-        "subcommands": []
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/worktree runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -151,7 +384,12 @@
         "description": "List or restore filesystem checkpoints (restores keep your hand-edits; --all overrides)",
         "gateway_only": false,
         "name": "rollback",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [
@@ -163,7 +401,10 @@
         "description": "Create or restore state snapshots of Hermes config/state",
         "gateway_only": false,
         "name": "snapshot",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/snapshot runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -173,7 +414,10 @@
         "description": "Export a profile (config, skills, theme) to a shareable archive",
         "gateway_only": false,
         "name": "export",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/export runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -183,37 +427,10 @@
         "description": "Import a shared profile archive as a new profile",
         "gateway_only": false,
         "name": "import",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "",
-        "category": "Session",
-        "cli_only": false,
-        "description": "Kill all running background processes",
-        "gateway_only": false,
-        "name": "stop",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "<prompt>",
-        "category": "Session",
-        "cli_only": false,
-        "description": "Run a prompt in a separate background session",
-        "gateway_only": false,
-        "name": "bg",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "<question>",
-        "category": "Session",
-        "cli_only": false,
-        "description": "Ask a side question about the current conversation without interrupting it",
-        "gateway_only": false,
-        "name": "btw",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/import runs only in the Hermes CLI."
       },
       {
         "aliases": [
@@ -225,7 +442,12 @@
         "description": "Show active agents and running tasks",
         "gateway_only": false,
         "name": "agents",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [
@@ -242,39 +464,10 @@
           "list",
           "delete",
           "edit"
-        ]
-      },
-      {
-        "aliases": [
-          "q"
         ],
-        "args_hint": "<prompt>",
-        "category": "Session",
-        "cli_only": false,
-        "description": "Queue a prompt for the next turn (doesn't interrupt)",
-        "gateway_only": false,
-        "name": "queue",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "<prompt>",
-        "category": "Session",
-        "cli_only": false,
-        "description": "Inject a message after the next tool call without interrupting",
-        "gateway_only": false,
-        "name": "steer",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "[text | draft <text> | show | gate add <cmd> | pause | resume | clear | status | wait <pid> | unwait]",
-        "category": "Session",
-        "cli_only": false,
-        "description": "Set a standing goal Hermes works on across turns until achieved",
-        "gateway_only": false,
-        "name": "goal",
-        "subcommands": []
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/journey runs only in the Hermes CLI."
       },
       {
         "aliases": [
@@ -291,6 +484,11 @@
           "pause",
           "resume",
           "clear"
+        ],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
         ]
       },
       {
@@ -301,7 +499,12 @@
         "description": "Review this conversation now and save lessons to memory/skills",
         "gateway_only": false,
         "name": "refine",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -311,7 +514,12 @@
         "description": "Spawn an independent subagent to review the work just discussed (PR, code, docs)",
         "gateway_only": false,
         "name": "review",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [
@@ -323,7 +531,12 @@
         "description": "Re-run a prompt on a recurring interval in this session",
         "gateway_only": false,
         "name": "loop",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -333,7 +546,12 @@
         "description": "Write a markdown implementation plan to .hermes/plans/ without executing anything",
         "gateway_only": false,
         "name": "plan",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -343,7 +561,12 @@
         "description": "Run one prompt through the default Mixture of Agents preset, then restore your model",
         "gateway_only": false,
         "name": "moa",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -353,17 +576,12 @@
         "description": "Add or manage extra criteria on the active goal",
         "gateway_only": false,
         "name": "subgoal",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "",
-        "category": "Session",
-        "cli_only": false,
-        "description": "Show session, model, token, and context info",
-        "gateway_only": false,
-        "name": "status",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -375,6 +593,11 @@
         "name": "egress",
         "subcommands": [
           "status"
+        ],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
         ]
       },
       {
@@ -389,6 +612,11 @@
         "name": "context",
         "subcommands": [
           "all"
+        ],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
         ]
       },
       {
@@ -399,7 +627,12 @@
         "description": "Show your slash command access (admin / user)",
         "gateway_only": false,
         "name": "whoami",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -409,7 +642,12 @@
         "description": "Show active profile name and home directory",
         "gateway_only": false,
         "name": "profile",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -419,7 +657,12 @@
         "description": "Resume a previously-named session",
         "gateway_only": false,
         "name": "resume",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -429,7 +672,12 @@
         "description": "Browse and resume previous sessions",
         "gateway_only": false,
         "name": "sessions",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -439,17 +687,10 @@
         "description": "Show current configuration",
         "gateway_only": false,
         "name": "config",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "[model] [--provider name] [--global|--session] [--refresh]",
-        "category": "Configuration",
-        "cli_only": false,
-        "description": "Switch model (session-scoped; --global to persist)",
-        "gateway_only": false,
-        "name": "model",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/config runs only in the Hermes CLI."
       },
       {
         "aliases": [
@@ -461,17 +702,12 @@
         "description": "Toggle codex app-server runtime for OpenAI/Codex models",
         "gateway_only": false,
         "name": "codex-runtime",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "[name]",
-        "category": "Configuration",
-        "cli_only": false,
-        "description": "Set a predefined personality",
-        "gateway_only": false,
-        "name": "personality",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [
@@ -483,7 +719,10 @@
         "description": "Toggle the context/model status bar",
         "gateway_only": false,
         "name": "statusbar",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/statusbar runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -497,7 +736,10 @@
           "on",
           "off",
           "status"
-        ]
+        ],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/battery runs only in the Hermes CLI."
       },
       {
         "aliases": [
@@ -513,7 +755,10 @@
           "on",
           "off",
           "status"
-        ]
+        ],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/timestamps runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -527,6 +772,11 @@
           "staged",
           "all",
           "session"
+        ],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
         ]
       },
       {
@@ -537,7 +787,10 @@
         "description": "Cycle tool progress display: off -> new -> all -> verbose",
         "gateway_only": false,
         "name": "verbose",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/verbose runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -551,7 +804,10 @@
           "on",
           "off",
           "status"
-        ]
+        ],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/focus runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -565,17 +821,12 @@
           "on",
           "off",
           "status"
+        ],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
         ]
-      },
-      {
-        "aliases": [],
-        "args_hint": "",
-        "category": "Configuration",
-        "cli_only": false,
-        "description": "Toggle YOLO mode (skip all dangerous command approvals)",
-        "gateway_only": false,
-        "name": "yolo",
-        "subcommands": []
       },
       {
         "aliases": [],
@@ -589,32 +840,11 @@
           "manual",
           "smart",
           "off"
-        ]
-      },
-      {
-        "aliases": [],
-        "args_hint": "[level|show|hide|full|clamp] [--global]",
-        "category": "Configuration",
-        "cli_only": false,
-        "description": "Manage reasoning effort and display",
-        "gateway_only": false,
-        "name": "reasoning",
-        "subcommands": [
-          "none",
-          "minimal",
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max",
-          "ultra",
-          "show",
-          "hide",
-          "on",
-          "off",
-          "full",
-          "clamp",
-          "--global"
+        ],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
         ]
       },
       {
@@ -634,6 +864,11 @@
           "on",
           "off",
           "--global"
+        ],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
         ]
       },
       {
@@ -644,7 +879,10 @@
         "description": "Show or change the display skin/theme",
         "gateway_only": false,
         "name": "skin",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/skin runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -659,22 +897,10 @@
           "emoji",
           "kaomoji",
           "unicode"
-        ]
-      },
-      {
-        "aliases": [],
-        "args_hint": "[on|off|tts|status]",
-        "category": "Configuration",
-        "cli_only": false,
-        "description": "Toggle voice mode",
-        "gateway_only": false,
-        "name": "voice",
-        "subcommands": [
-          "on",
-          "off",
-          "tts",
-          "status"
-        ]
+        ],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/indicator runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -688,7 +914,10 @@
           "on",
           "off",
           "status"
-        ]
+        ],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/wake runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -703,6 +932,11 @@
           "steer",
           "interrupt",
           "status"
+        ],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
         ]
       },
       {
@@ -713,7 +947,10 @@
         "description": "Manage tools: /tools [list|disable|enable] [name...]",
         "gateway_only": false,
         "name": "tools",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/tools runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -723,28 +960,10 @@
         "description": "List available toolsets",
         "gateway_only": false,
         "name": "toolsets",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "",
-        "category": "Tools & Skills",
-        "cli_only": true,
-        "description": "Search, install, inspect, or manage skills",
-        "gateway_only": false,
-        "name": "skills",
-        "subcommands": [
-          "search",
-          "browse",
-          "inspect",
-          "install",
-          "audit",
-          "pending",
-          "approve",
-          "reject",
-          "diff",
-          "approval"
-        ]
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/toolsets runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -759,6 +978,11 @@
           "approve",
           "reject",
           "approval"
+        ],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
         ]
       },
       {
@@ -769,7 +993,12 @@
         "description": "List skill bundles (aliases /<name> for multiple skills)",
         "gateway_only": false,
         "name": "bundles",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -784,7 +1013,10 @@
           "list",
           "scale",
           "off"
-        ]
+        ],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/pet runs only in the Hermes CLI."
       },
       {
         "aliases": [
@@ -796,7 +1028,10 @@
         "description": "Generate a new petdex pet from a description",
         "gateway_only": false,
         "name": "hatch",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/hatch runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -806,7 +1041,12 @@
         "description": "Learn a reusable skill from anything you describe (dirs, URLs, this chat, notes)",
         "gateway_only": false,
         "name": "learn",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -816,7 +1056,12 @@
         "description": "Generate or update AGENTS.md project instructions from a repo scan",
         "gateway_only": false,
         "name": "init",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -835,7 +1080,10 @@
           "resume",
           "run",
           "remove"
-        ]
+        ],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/cron runs only in the Hermes CLI."
       },
       {
         "aliases": [
@@ -852,6 +1100,11 @@
           "dismiss",
           "catalog",
           "clear"
+        ],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
         ]
       },
       {
@@ -864,7 +1117,12 @@
         "description": "Set up an automation from a blueprint template",
         "gateway_only": false,
         "name": "blueprint",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -883,6 +1141,11 @@
           "unpin",
           "restore",
           "list-archived"
+        ],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
         ]
       },
       {
@@ -927,6 +1190,11 @@
           "context",
           "specify",
           "gc"
+        ],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
         ]
       },
       {
@@ -937,7 +1205,10 @@
         "description": "Reload .env variables into the running session",
         "gateway_only": false,
         "name": "reload",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/reload runs only in the Hermes CLI."
       },
       {
         "aliases": [
@@ -949,7 +1220,12 @@
         "description": "Reload MCP servers from config",
         "gateway_only": false,
         "name": "reload-mcp",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [
@@ -961,7 +1237,12 @@
         "description": "Re-scan ~/.hermes/skills/ for newly installed or removed skills",
         "gateway_only": false,
         "name": "reload-skills",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -976,7 +1257,10 @@
           "disconnect",
           "status",
           "use"
-        ]
+        ],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/browser runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -986,17 +1270,10 @@
         "description": "List installed plugins and their status",
         "gateway_only": false,
         "name": "plugins",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "[skills|<filter>]",
-        "category": "Info",
-        "cli_only": false,
-        "description": "Show available commands (/help skills lists skill commands, /help <text> filters)",
-        "gateway_only": false,
-        "name": "help",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/plugins runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -1006,17 +1283,10 @@
         "description": "Open the fuzzy command palette (also Ctrl+P)",
         "gateway_only": false,
         "name": "palette",
-        "subcommands": []
-      },
-      {
-        "aliases": [],
-        "args_hint": "[reset [--force]]",
-        "category": "Info",
-        "cli_only": false,
-        "description": "Show token usage and rate limits; `reset` redeems a banked Codex limit reset",
-        "gateway_only": false,
-        "name": "usage",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/palette runs only in the Hermes CLI."
       },
       {
         "aliases": [
@@ -1028,7 +1298,10 @@
         "description": "View your Nous plan and change it in the browser",
         "gateway_only": false,
         "name": "subscription",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/subscription runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -1038,7 +1311,12 @@
         "description": "Sign in with a Nous account (keeps your connectors)",
         "gateway_only": false,
         "name": "login",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -1048,7 +1326,12 @@
         "description": "Show your Nous balance and manage billing on the portal",
         "gateway_only": false,
         "name": "topup",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -1058,7 +1341,12 @@
         "description": "Show usage insights and analytics",
         "gateway_only": false,
         "name": "insights",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [
@@ -1070,7 +1358,10 @@
         "description": "Show gateway/messaging platform status",
         "gateway_only": false,
         "name": "platforms",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/platforms runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -1080,7 +1371,10 @@
         "description": "Copy the last assistant response to clipboard",
         "gateway_only": false,
         "name": "copy",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/copy runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -1090,7 +1384,10 @@
         "description": "Attach clipboard image from your clipboard",
         "gateway_only": false,
         "name": "paste",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/paste runs only in the Hermes CLI."
       },
       {
         "aliases": [],
@@ -1100,7 +1397,10 @@
         "description": "Attach a local image file for your next prompt",
         "gateway_only": false,
         "name": "image",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/image runs only in the Hermes CLI."
       },
       {
         "aliases": [
@@ -1112,7 +1412,12 @@
         "description": "Show Hermes Agent version",
         "gateway_only": false,
         "name": "version",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [],
@@ -1122,7 +1427,12 @@
         "description": "Upload debug report (system info + logs) and get shareable links",
         "gateway_only": false,
         "name": "debug",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [
+          "web",
+          "ios"
+        ]
       },
       {
         "aliases": [
@@ -1134,7 +1444,10 @@
         "description": "Exit the CLI (use --delete to also remove session history)",
         "gateway_only": false,
         "name": "quit",
-        "subcommands": []
+        "subcommands": [],
+        "handler": "agent",
+        "clients": [],
+        "unsupported_message": "/quit runs only in the Hermes CLI."
       }
     ]
   },

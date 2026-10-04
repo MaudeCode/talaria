@@ -13,19 +13,19 @@ import type { QueuedTurn } from './Composer'
 import { endFirstSend, getFirstSend } from '../chat/firstSend'
 import { returnToComposer } from './composerReturn'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn() }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn(), fetchCommands: vi.fn() }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
 import { Composer } from './Composer'
 
 const noop = (): void => undefined
-function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!)) {
+function renderComposer(session: Session | null, live: LiveTurn | null = null, onQueue: (entry: QueuedTurn) => void = noop, settings?: Settings, onEnsureSession: () => Promise<Session> = () => Promise.resolve(session!), onLocalCommand: (name: string, args: string) => Promise<boolean> = () => Promise.resolve(false)) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const tree = (turn: LiveTurn | null) => (
     <QueryClientProvider client={qc}>
       <BootstrapContext.Provider value={DEFAULT_BOOTSTRAP}>
         <Composer
-          sessionId={session?.session_id ?? null} session={session} live={turn} settings={settings} onEnsureSession={onEnsureSession} onLocalCommand={() => Promise.resolve(false)}
+          sessionId={session?.session_id ?? null} session={session} live={turn} settings={settings} onEnsureSession={onEnsureSession} onLocalCommand={onLocalCommand}
           terminalOpen={false} onToggleTerminal={noop} onModelChange={noop} onWorkspaceChange={noop} onToolsetsChange={noop} onReasoningChange={noop} reasoning={null}
           yolo={false} onToggleYolo={noop} queued={[]} onQueue={onQueue}
         />
@@ -39,6 +39,7 @@ function renderComposer(session: Session | null, live: LiveTurn | null = null, o
 describe('Composer', () => {
   beforeEach(() => {
     vi.mocked(api.fetchBackgroundTasks).mockReset().mockResolvedValue({ session_id: 's1', agent_available: true, tasks: [] })
+    vi.mocked(api.fetchCommands).mockReset().mockResolvedValue({ commands: [] })
     // jsdom has no matchMedia; the composer asks whether it is on a phone-width viewport.
     window.matchMedia = vi.fn(() => ({ matches: false, addEventListener: noop, removeEventListener: noop })) as unknown as typeof window.matchMedia
     globalThis.ResizeObserver = class { observe = noop; unobserve = noop; disconnect = noop }
@@ -70,6 +71,33 @@ describe('Composer', () => {
     expect(api.startChat).not.toHaveBeenCalled()
     expect(screen.getByRole('textbox')).toHaveValue('')
     expect(await screen.findByRole('region', { name: 'Background work' })).toHaveTextContent('summarize repo')
+  })
+
+  // TAL-314: the server catalog resolves a typed alias and says which client runs each command.
+  it('runs a typed alias as its server catalog command and refuses a command Web cannot run', async () => {
+    vi.mocked(api.fetchCommands).mockResolvedValue({ commands: [
+      { name: 'branch', aliases: ['fork'], handler: 'client', clients: ['web', 'ios'] },
+      { name: 'background', aliases: ['bg'], handler: 'client', clients: ['web', 'ios'] },
+      { name: 'history', aliases: [], handler: 'agent', clients: [], unsupported_message: '/history runs only in the Hermes CLI.' },
+    ] })
+    vi.mocked(api.startBackground).mockResolvedValue({ ok: true, task_id: 'bg1', stream_id: 'bgs', session_id: 'hidden' })
+    vi.mocked(api.startChat).mockClear()
+    const onLocalCommand = vi.fn((name: string) => Promise.resolve(name === 'branch'))
+    renderComposer({ ...writable, is_streaming: false }, null, noop, undefined, undefined, onLocalCommand)
+    const box = screen.getByRole('textbox')
+    // The palette shows the server's entry once the catalog arrives.
+    await userEvent.type(box, '/fo')
+    expect(await screen.findByRole('option', { name: /\/branch/ })).toBeInTheDocument()
+    await userEvent.clear(box)
+    await userEvent.type(box, '/fork Copy{Enter}')
+    await waitFor(() => expect(onLocalCommand).toHaveBeenCalledWith('branch', 'Copy'))
+    await userEvent.type(box, '/bg summarize repo{Enter}')
+    await waitFor(() => expect(api.startBackground).toHaveBeenCalledWith('s1', 'summarize repo'))
+    onLocalCommand.mockClear()
+    await userEvent.type(box, '/history{Enter}')
+    expect(box).toHaveValue('/history')
+    expect(onLocalCommand).not.toHaveBeenCalled()
+    expect(api.startChat).not.toHaveBeenCalled()
   })
 
   // TAL-518: `/btw` asks the server's side-question route and shows the answer above the composer, running or idle.

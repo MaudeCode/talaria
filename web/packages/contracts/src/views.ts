@@ -462,9 +462,22 @@ export const MemorySchema = z.looseObject({
 export type Memory = z.infer<typeof MemorySchema>
 export const PromptSchema = z.looseObject({ id: z.string().optional(), name: z.string().optional(), title: z.string().optional(), label: z.string().optional(), text: z.string().optional(), content: z.string().optional(), created_at: z.number().optional() })
 export const PromptsSchema = z.looseObject({ prompts: z.array(PromptSchema) })
-export const CommandRowSchema = z.looseObject({ name: z.string(), description: z.string().optional(), aliases: z.array(z.string()).optional(), args_hint: z.string().optional(), category: z.string().optional(), cli_only: z.boolean().optional(), gateway_only: z.boolean().optional(), subcommands: z.array(Json).optional() })
+/**
+ * One slash command in the server's canonical catalog (TAL-314). `GET /api/commands` lists the client-handled commands
+ * first, then the Agent registry, in display order; each name appears once. `handler` says who runs it, `clients` which
+ * clients can run it, and `unsupported_message` is the English text a client outside `clients` shows when it is typed.
+ * Clients suggest the entries listing them whose name or any alias starts with the typed text (case-insensitive), and
+ * resolve a typed alias to the entry's `name`.
+ */
+export const CommandClientSchema = z.enum(['web', 'ios'])
+export const CommandRowSchema = z.looseObject({
+  name: z.string(), description: z.string().optional(), aliases: z.array(z.string()), args_hint: z.string().optional(), category: z.string().optional(),
+  handler: z.enum(['client', 'agent']), clients: z.array(CommandClientSchema), unsupported_message: z.string().optional(),
+  cli_only: z.boolean().optional(), gateway_only: z.boolean().optional(), subcommands: z.array(Json).optional(),
+})
 export const CommandsSchema = z.looseObject({ commands: z.array(CommandRowSchema) })
 export type Command = z.infer<typeof CommandRowSchema>
+export type CommandClient = z.infer<typeof CommandClientSchema>
 export const LogsSchema = z.looseObject({ file: z.string(), tail: z.number().optional(), lines: z.array(z.string()), truncated: z.boolean().optional(), total_bytes: z.number().optional(), mtime: NullableNumber.optional(), hint: z.string().optional() })
 export type Logs = z.infer<typeof LogsSchema>
 export const InsightsSchema = z.looseObject({

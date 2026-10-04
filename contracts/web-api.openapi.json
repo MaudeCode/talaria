@@ -33236,6 +33236,26 @@
                           "category": {
                             "type": "string"
                           },
+                          "handler": {
+                            "enum": [
+                              "client",
+                              "agent"
+                            ],
+                            "type": "string"
+                          },
+                          "clients": {
+                            "type": "array",
+                            "items": {
+                              "enum": [
+                                "web",
+                                "ios"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "unsupported_message": {
+                            "type": "string"
+                          },
                           "cli_only": {
                             "type": "boolean"
                           },
@@ -33255,7 +33275,10 @@
                           }
                         },
                         "required": [
-                          "name"
+                          "name",
+                          "aliases",
+                          "handler",
+                          "clients"
                         ],
                         "additionalProperties": {}
                       }
