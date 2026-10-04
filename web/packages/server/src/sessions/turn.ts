@@ -116,8 +116,12 @@ export interface StartTurnResponse {
 
 interface ErrorClassification { label: string; type: string; hint: string }
 
-export function classifyProviderError(errStr: string, opts: { silentFailure?: boolean | undefined; condition?: string | undefined } = {}): ErrorClassification {
+const COMPRESSION_EXHAUSTED: ErrorClassification = { label: 'Context compression exhausted', type: 'compression_exhausted', hint: 'The conversation context is too large to compress safely. Start a new conversation or retry with a narrower task.' }
+
+/** `compressionExhausted`: the Agent flagged the turn itself, so its wording does not matter. */
+export function classifyProviderError(errStr: string, opts: { silentFailure?: boolean | undefined; condition?: string | undefined; compressionExhausted?: boolean | undefined } = {}): ErrorClassification {
   const lower = errStr.toLowerCase()
+  if (opts.compressionExhausted) return COMPRESSION_EXHAUSTED
   if (opts.condition === 'credential_missing') return { label: 'Authentication failed', type: 'auth_mismatch', hint: 'The selected model may not be supported by your configured provider or your API key is invalid. Run `hermes model` in your terminal to update credentials, then restart the WebUI.' }
   const cancelled = ['cancelled by user', 'canceled by user', 'user cancelled', 'user canceled', 'task cancelled', 'task canceled', 'cancellederror'].some((k) => lower.includes(k))
   if (cancelled) return { label: 'Task cancelled', type: 'cancelled', hint: '' }
@@ -135,7 +139,7 @@ export function classifyProviderError(errStr: string, opts: { silentFailure?: bo
   if (rateLimit) return { label: 'Rate limit reached', type: 'rate_limit', hint: 'Rate limit reached. The fallback model (if configured) was also exhausted. Try again in a moment.' }
   if (auth) return { label: 'Authentication failed', type: 'auth_mismatch', hint: 'The selected model may not be supported by your configured provider or your API key is invalid. Run `hermes model` in your terminal to update credentials, then restart the WebUI.' }
   if (notFound) return { label: 'Model not found', type: 'model_not_found', hint: 'The selected model was not found by the provider. Check the model ID in Settings or run `hermes model` to verify it exists for your provider.' }
-  if (compressionExhausted) return { label: 'Context compression exhausted', type: 'compression_exhausted', hint: 'The conversation context is too large to compress safely. Start a new conversation or retry with a narrower task.' }
+  if (compressionExhausted) return COMPRESSION_EXHAUSTED
   if (opts.silentFailure) return { label: 'No response from provider', type: 'no_response', hint: 'The provider returned no content and no error. This often means a usage/rate limit was hit silently. Check provider status, switch providers via `hermes model`, or try again in a moment.' }
   return { label: 'Error', type: 'error', hint: '' }
 }
@@ -541,10 +545,11 @@ export class TurnRunner {
       const mergedForCheck = (): Message[] => mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] })
       const assistantAdded = assistantReplyAddedAfterCurrentTurn(resultMessages, previousContext, msgText) || !sessionLacksFinalAssistantAnswer(mergedForCheck())
       const lastErr = result.error ?? capturedTerminalError ?? ''
-      // Python `_turn_transcript_lacks_final_assistant_answer`: a partial result with no final answer is a silent failure even if tokens streamed.
-      const stalePartial = result.result_status === 'partial' && !assistantAdded
-      if (result.status === 'error' || (!assistantAdded && !tokenSent) || stalePartial) {
-        const classification = classifyProviderError(lastErr, { silentFailure: !lastErr })
+      // Python `_agent_result_terminal_failure`: the Agent's failed, partial, or compression-exhausted result ends the turn
+      // even after text streamed; only a partial with no error text and a final answer still completes.
+      const agentFailed = result.failed || result.compression_exhausted || (result.partial && (Boolean(lastErr) || !assistantAdded))
+      if (result.status === 'error' || agentFailed || (!assistantAdded && !tokenSent)) {
+        const classification = classifyProviderError(lastErr, { silentFailure: !lastErr, compressionExhausted: result.compression_exhausted })
         const errStr = lastErr || `${classification.label}.`
         const payload = providerErrorPayload(errStr, classification.type, classification.hint, deps.redactEnabled())
         // Settle the steers first so the persisted turn carries every consumed one; the Agent's pending text is sent next.

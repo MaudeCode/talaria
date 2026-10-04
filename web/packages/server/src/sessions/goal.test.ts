@@ -13,7 +13,7 @@ const json = async (res: Response): Promise<Json> => (await res.json()) as Json
 const GOAL = 'Ship the release notes'
 const state = { goal: GOAL, status: 'active', turns_used: 0, max_turns: 20, last_verdict: null, last_reason: null, paused_reason: null }
 const answer = (params: SidecarParams<'chat.start'>, text: string): SidecarResult<'chat.start'> => ({
-  status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: text }], final_response: text, error: null, result_status: 'completed', tool_limit_reached: false,
+  status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: text }], final_response: text, error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false,
   usage: { prompt_tokens: 10, completion_tokens: 5, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: null }, context: { context_length: 200000 }, model: 'test-model', provider: 'test', compressed: false,
   agent_session_id: 'x', token_sent: true, pending_steer: '', live_tool_calls: [],
 })

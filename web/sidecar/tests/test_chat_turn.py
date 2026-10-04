@@ -468,3 +468,42 @@ def test_a_profile_toolset_change_builds_a_fresh_agent(monkeypatch) -> None:
     chat.start(Ctx(), _params("st-2", "toolsets"))
     assert len(FakeAgent.instances) == 2 and FakeAgent.instances[1].kwargs["enabled_toolsets"] == ["file"]
     chat._AGENT_CACHE.clear()
+
+
+def test_the_agents_failed_and_partial_results_reach_the_server(monkeypatch) -> None:
+    """TAL-506: the pinned Agent reports a failed turn with ``failed``/``partial``/``compression_exhausted`` (never
+    ``status``), after text already streamed and with the turn's messages; the sidecar forwards them and fails the turn."""
+    _patch(monkeypatch)
+    from conftest import assert_matches
+
+    history = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "terminal", "arguments": "{}"}}]}]
+    outcomes = {
+        # `_billing_failure_result`: failed, with the provider's summary as `error`.
+        "billing": {"final_response": "Out of credits.", "messages": history, "completed": False, "failed": True, "error": "HTTP 402: insufficient credits"},
+        # `OverflowVerdict.fail_turn`: failed and partial, compression exhausted, `error` mirrors the site copy.
+        "overflow": {"final_response": "The conversation no longer fits.", "messages": history, "completed": False, "failed": True, "partial": True, "compression_exhausted": True, "error": "The conversation no longer fits."},
+        # `turn_tool_validation._partial_exit`: partial but not failed.
+        "truncated": {"final_response": "Stopped after invalid tool calls.", "messages": history, "completed": False, "partial": True, "error": "Stopped after invalid tool calls."},
+    }
+
+    class FailingAgent(FakeAgent):
+        outcome: dict = {}
+
+        def run_conversation(self, **kwargs):
+            self.kwargs["stream_delta_callback"]("Partial answer")
+            return dict(FailingAgent.outcome)
+
+    monkeypatch.setattr(chat, "_agent_class", lambda: FailingAgent)
+    results = {}
+    for name, outcome in outcomes.items():
+        FailingAgent.outcome = outcome
+        ctx = Ctx()
+        results[name] = chat.start(ctx, _params(f"st-{name}", f"s-{name}"))
+        assert ("token", {"text": "Partial answer"}) in ctx.frames
+        assert_matches("chat.start", results[name])
+    assert {k: (r["status"], r.get("failed"), r.get("partial"), r.get("compression_exhausted"), r["error"]) for k, r in results.items()} == {
+        "billing": ("error", True, False, False, "HTTP 402: insufficient credits"),
+        "overflow": ("error", True, True, True, "The conversation no longer fits."),
+        "truncated": ("completed", False, True, False, "Stopped after invalid tool calls."),
+    }
+    assert all(r["token_sent"] and r["messages"] == history for r in results.values())

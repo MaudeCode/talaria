@@ -36,5 +36,9 @@ describe.skipIf(!python)('replay sidecar', () => {
     expect((event!.data as { pending: { pattern_key: string } }).pending.pattern_key).toBe('talaria_contract_fixture')
     const answered = await fetch(`${s.base}/api/approval/respond`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: sid, choice: 'once', approval_id: 'talaria-contract-approval' }) })
     expect(answered.status).toBe(200)
+    // The replay sidecar's `chat.start` result passes the same contract as the real one, so the turn settles as `done`.
+    const turn = await s.sse(`/api/chat/stream?stream_id=${String(start.stream_id)}&replay=1`, (f) => f.event === 'stream_end' || f.event === 'apperror')
+    expect(turn.map((f) => f.event)).toContain('done')
+    expect(turn.find((f) => f.event === 'apperror')?.data).toBeUndefined()
   })
 })

@@ -369,7 +369,7 @@ describe('claiming a CLI session for WebUI (TAL-256)', () => {
   afterAll(async () => { db.close(); await s.close() })
 
   const finished = (params: Record<string, unknown>, sid: string): SidecarResult<'chat.start'> => ({
-    status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'continued' }], final_response: 'continued', error: null, result_status: 'completed', tool_limit_reached: false,
+    status: 'completed', messages: [{ role: 'user', content: str(params.user_message) }, { role: 'assistant', content: 'continued' }], final_response: 'continued', error: null, failed: false, partial: false, compression_exhausted: false, tool_limit_reached: false,
     usage: { prompt_tokens: 1, completion_tokens: 1, cache_read_tokens: 0, cache_write_tokens: 0, estimated_cost_usd: 0 }, context: { context_length: 1000 }, model: 'm', provider: 'p', compressed: false,
     agent_session_id: sid, token_sent: true, pending_steer: '', live_tool_calls: [],
   })
