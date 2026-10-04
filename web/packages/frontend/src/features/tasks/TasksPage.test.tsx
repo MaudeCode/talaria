@@ -71,6 +71,15 @@ describe('TasksPage', () => {
     vi.mocked(api.fetchModels).mockResolvedValue({ groups: [{ provider: 'OpenAI Codex', provider_id: 'openai-codex', models: [{ id: '@openai-codex:gpt-5.6-sol' }, { id: '@openai-codex:gpt-6-astra' }] }] })
   })
 
+  it('keeps the script path explanation behind the section help button', async () => {
+    const scriptOnly: CronJob = { ...feed, id: 'script0only', name: 'Script only', no_agent: true, prompt: '' }
+    const main = await openJob('Script only', [scriptOnly])
+    expect(main.getAllByText('collect.sh', { selector: 'code' })).not.toHaveLength(0)
+    expect(screen.queryByText(/Resolved under ~\/\.hermes\/scripts\//)).not.toBeInTheDocument()
+    await userEvent.click(main.getByRole('button', { name: 'About Prompt' }))
+    expect(await screen.findByText(/Resolved under ~\/\.hermes\/scripts\//)).toBeVisible()
+  })
+
   it('renders only server-provided context choices for the execution store', async () => {
     const local: CronJob = { ...feed, id: 'local-source', name: 'Local source', profile: 'personal', read_only: false }
     const detail = await openJob('Digest', [full, feed, local])

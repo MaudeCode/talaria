@@ -67,6 +67,8 @@ Follow that checklist's safety rules:
   without clear justification and a rollback story.
 - Update docs when changing setup, onboarding, runtime behavior, architecture,
   testing guidance, or user-facing workflows.
+- Put UI explanations in a `HelpTip`, not visible sub-text; see "Typography and content" in
+  `docs/UIUX-GUIDE.md`.
 - For UI or UX changes, include before/after evidence in the PR description
   (uploaded attachments, never committed files) and test relevant desktop,
   narrow, and mobile states.

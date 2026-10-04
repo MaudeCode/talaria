@@ -6,6 +6,8 @@ import { Tabbar } from './Tabbar'
 import { useShortcuts } from './useShortcuts'
 import { Toaster } from '../features/toast/Toaster'
 import { TooltipProvider } from '../ui/Tooltip'
+import { HelpTip } from '../ui/Field'
+import { m } from '../paraglide/messages.js'
 import { useEffect } from 'react'
 import { registerExtensionSkins, useExtensionManifests } from '../extensions/registry'
 import { reapplyExtensionSkin } from '../app/appearance'
@@ -52,11 +54,14 @@ export function AppShell({ sidebar, children, title, subtitle, hub, showing }: {
 export const MAIN_VIEW = 'main-view flex flex-1 min-h-0 min-w-0 flex-col bg-bg'
 
 /** Hub page frame (skills, memory, spaces, profiles, tasks, insights, logs). */
-export function HubPage({ title, actions, toolbar, children, id }: { title: string; actions?: ReactNode; toolbar?: ReactNode; children: ReactNode; id?: string }) {
+export function HubPage({ title, help, actions, toolbar, children, id }: { title: string; help?: ReactNode; actions?: ReactNode; toolbar?: ReactNode; children: ReactNode; id?: string }) {
   return (
     <div className={MAIN_VIEW + ' hub-page active'} id={id}>
       <header className="main-view-header relative z-10 flex items-center justify-start gap-3 min-h-14 px-8 py-3 border-b border-border shrink-0 bg-bg max-[769px]:px-3.5 max-[769px]:py-2.5 max-[769px]:min-h-12">
-        <h1 className="main-view-title flex-1 min-w-0 text-[20px] font-semibold tracking-(--heading-tracking) text-text leading-[1.3] overflow-hidden text-ellipsis whitespace-nowrap text-left max-[769px]:text-[17px]">{title}</h1>
+        <div className="flex flex-1 min-w-0 items-center">
+          <h1 className="main-view-title min-w-0 text-[20px] font-semibold tracking-(--heading-tracking) text-text leading-[1.3] overflow-hidden text-ellipsis whitespace-nowrap text-left max-[769px]:text-[17px]">{title}</h1>
+          {help && <HelpTip label={m.field_help_about({ label: title })} className="shrink-0">{help}</HelpTip>}
+        </div>
         {actions && <div className="main-view-actions flex items-center gap-1.5 shrink-0 ml-auto">{actions}</div>}
       </header>
       {toolbar && <div className="hub-toolbar flex flex-wrap items-center gap-x-3.5 gap-y-2 px-7 py-2.5 border-b border-border max-[769px]:px-3.5 max-[769px]:py-2">{toolbar}</div>}

@@ -38,8 +38,7 @@ export function WorkspacesPage() {
     reorder.mutate(next.map((w) => w.path))
   }
   return (
-    <HubPage title={m.tab_workspaces()} actions={<PanelHeadButton label={m.workspace_add()} className="primary" onClick={() => setAdding(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}>
-      <p className="mb-3 text-sm text-muted">{m.workspace_desc()}</p>
+    <HubPage title={m.tab_workspaces()} help={m.workspace_desc()} actions={<PanelHeadButton label={m.workspace_add()} className="primary" onClick={() => setAdding(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}>
       {ws.isPending && <LoadingState />}
       {ws.isError && <ErrorState error={ws.error} onRetry={() => { void ws.refetch() }} />}
       {ws.isSuccess && list.length === 0 && <EmptyState>{m.workspace_no_workspaces()}</EmptyState>}

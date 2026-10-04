@@ -25,16 +25,7 @@ export function ProfilesPage() {
   const list = profiles.data?.profiles ?? []
   const active = profiles.data?.active
   return (
-    <HubPage title={m.tab_profiles()} actions={!profiles.data?.single_profile_mode && <PanelHeadButton label={m.profile_create()} className="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}>
-      <div className="mb-4 rounded-lg border border-border bg-surface p-3 text-sm">
-        <div className="font-medium text-text">{m.profile_concept_title()}</div>
-        <div className="mt-1 text-xs text-muted">{m.profile_concept_subtitle()}</div>
-        <ul className="mt-2 list-disc pl-5 text-xs text-muted">
-          <li>{m.profile_concept_desc_profiles()}</li>
-          <li>{m.profile_concept_desc_workspaces()}</li>
-          <li>{m.profile_concept_desc_together()}</li>
-        </ul>
-      </div>
+    <HubPage title={m.tab_profiles()} help={<ProfileConceptHelp />} actions={!profiles.data?.single_profile_mode && <PanelHeadButton label={m.profile_create()} className="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /></PanelHeadButton>}>
       {profiles.isPending && <LoadingState />}
       {profiles.isError && <ErrorState error={profiles.error} onRetry={() => { void profiles.refetch() }} />}
       {profiles.isSuccess && list.length === 0 && <EmptyState>{m.profile_no_configuration()}</EmptyState>}
@@ -94,5 +85,19 @@ function CreateProfileDialog({ existing, onClose, onCreated }: { existing: strin
         <div className="mt-3 flex justify-end gap-2"><Button onClick={onClose}>{m.cancel()}</Button><Button type="submit" variant="primary" disabled={!valid || create.isPending}>{m.create()}</Button></div>
       </form>
     </Dialog>
+  )
+}
+
+function ProfileConceptHelp() {
+  return (
+    <>
+      <div className="font-medium">{m.profile_concept_title()}</div>
+      <div className="mt-1">{m.profile_concept_subtitle()}</div>
+      <ul className="mt-2 list-disc pl-4">
+        <li>{m.profile_concept_desc_profiles()}</li>
+        <li>{m.profile_concept_desc_workspaces()}</li>
+        <li>{m.profile_concept_desc_together()}</li>
+      </ul>
+    </>
   )
 }

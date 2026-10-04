@@ -16,6 +16,7 @@ import { PanelHead, PanelHeadButton } from '../../shell/Sidebar'
 import { closeMobileSidebar, openMobileSidebar, useIsDesktop, useMediaQuery } from '../../shell/useShellState'
 import { useLocale } from '../../i18n/useLocale'
 import { Button } from '../../ui/Button'
+import { HelpTip } from '../../ui/Field'
 import { RightPanel } from '../../shell/RightPanel'
 import { ConfirmDialog } from '../../ui/Dialog'
 import { EmptyState, ErrorState, LoadingState, formatBytes, formatDate } from '../../ui/States'
@@ -329,9 +330,9 @@ function TaskDetail({ job, jobs, state, onAction, onEdit, onDuplicate, onDelete 
           </section>
         </div>
         <section>
-          <h2 className="mb-1 text-xs font-medium text-muted">{m.cron_prompt_label()}</h2>
+          <h2 className="mb-1 text-xs font-medium text-muted">{m.cron_prompt_label()}{isScript && <HelpTip label={m.field_help_about({ label: m.cron_prompt_label() })}>{m.cron_script_path_hint()}</HelpTip>}</h2>
           {isScript
-            ? <><code className="text-[13px]">{job.script || '—'}</code><div className="mt-1 text-[11px] text-muted">{m.cron_script_path_hint()}</div></>
+            ? <code className="text-[13px]">{job.script || '—'}</code>
             : <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-sans text-[13px] text-text">{job.prompt || '—'}</pre>}
         </section>
         {!readOnly && <RunHistory key={id} jobId={id} isScript={isScript} />}

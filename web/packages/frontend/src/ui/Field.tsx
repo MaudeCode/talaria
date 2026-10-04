@@ -18,10 +18,10 @@ export function FieldRow({ label, hint, htmlFor, children, inline }: { label: Re
 }
 
 /** A "?" beside a label: the explanation opens on click or tap instead of sitting under every setting. The 20px icon keeps a 44px touch target. */
-export function HelpTip({ label, children }: { label: string; children: ReactNode }) {
+export function HelpTip({ label, children, className = 'translate-y-[3px] align-top' }: { label: string; children: ReactNode; className?: string }) {
   return (
     <Popover.Root>
-      <Popover.Trigger aria-label={label} className="relative ml-1.5 inline-flex size-5 before:absolute before:-inset-3 before:content-[''] translate-y-[3px] cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 align-top text-muted transition-colors hover:text-text focus-visible:text-text focus-visible:outline-2 focus-visible:outline-accent data-popup-open:text-text">
+      <Popover.Trigger aria-label={label} className={cn("relative ml-1.5 inline-flex size-5 before:absolute before:-inset-3 before:content-[''] cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 text-muted transition-colors hover:text-text focus-visible:text-text focus-visible:outline-2 focus-visible:outline-accent data-popup-open:text-text", className)}>
         <CircleHelp size={14} strokeWidth={1.75} aria-hidden="true" />
       </Popover.Trigger>
       <Popover.Portal>

@@ -14,7 +14,7 @@ const CATALOG = {
 }
 
 vi.mock('../../api/endpoints', () => ({ fetchModels: vi.fn(() => Promise.resolve(CATALOG)) }))
-import { ModelChip } from './chips'
+import { ModelChip, ToolsetsChip } from './chips'
 
 describe('ModelChip', () => {
   it('a plugin provider model keeps the plugin provider when another provider lists the same model', async () => {
@@ -25,5 +25,16 @@ describe('ModelChip', () => {
     const group = await screen.findByRole('group', { name: 'Fake Subscription' })
     await userEvent.click(within(group).getByRole('menuitemradio', { name: 'Claude Sonnet 4.6' }))
     expect(onChange).toHaveBeenCalledWith('@fake-sub:claude-sonnet-4-6', 'fake-sub')
+  })
+})
+
+describe('ToolsetsChip', () => {
+  it('keeps the toolsets explanation behind a help button', async () => {
+    render(<ToolsetsChip value={null} onChange={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button'))
+    await screen.findByRole('textbox', { name: 'Session toolsets' })
+    expect(screen.queryByText(/Comma-separated toolset names/)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'About Session toolsets' }))
+    expect(await screen.findByText(/Comma-separated toolset names/)).toBeVisible()
   })
 })
