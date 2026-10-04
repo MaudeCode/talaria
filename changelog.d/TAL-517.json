@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Switching chats no longer sends a message queued in the previous chat, shows its YOLO setting, or keeps its compression running and later jumps back to it.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

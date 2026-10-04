@@ -5,7 +5,8 @@ import { ChatView } from './ChatView'
 export function ChatPage({ sessionId }: { sessionId: string | null }) {
   return (
     <AppShell sidebar={<SessionListPanel />}>
-      <ChatView sessionId={sessionId} />
+      {/* One ChatView per session: its queue, YOLO state and compression never carry over to the next (TAL-517). */}
+      <ChatView key={sessionId ?? 'new'} sessionId={sessionId} />
     </AppShell>
   )
 }

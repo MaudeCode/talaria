@@ -142,6 +142,12 @@ export function Transcript(props: TranscriptProps) {
     overscan: 8,
     getItemKey: (i) => rows[i]?.key ?? i,
   })
+  // While following, the follow above owns the scroll position. The virtualizer's own compensation for a row measured
+  // above the fold moves the pane up before the list's height catches up, which reads as the reader leaving the end
+  // (a fresh transcript measures many rows at once). Elsewhere (reading up, a deep link) its default keeps rows still.
+  useLayoutEffect(() => {
+    Object.defineProperty(virtualizer, 'shouldAdjustScrollPositionOnItemSizeChange', { configurable: true, get: () => (followsRef.current() ? () => false : undefined) })
+  }, [virtualizer])
 
   // Entry is keyed by the session scope (and a `?msg=` link), never by row keys: sessions can share them, and older rows change the first.
   const entryRef = useRef<{ focus: string | undefined; pagedAt?: number } | null>(null)
