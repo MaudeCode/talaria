@@ -43,6 +43,8 @@ struct MessageComposerView: View {
     let selectedModelTitle: String
     let workspaceRoots: [WorkspaceRoot]
     let selectedWorkspacePath: String?
+    /// The server's label for `selectedWorkspacePath` (TAL-303).
+    let selectedWorkspaceName: String?
     let workspaceSuggestions: [String]
     /// Server base URL for the workspace-registry manager; nil hides the
     /// Manage affordance in the workspace picker.
@@ -978,19 +980,18 @@ struct MessageComposerView: View {
     }
 
     private var workspaceTitle: String {
-        guard let selectedWorkspacePath = displayedWorkspacePath,
-              !selectedWorkspacePath.isEmpty
-        else {
+        let name: String?
+        if let optimisticWorkspacePath {
+            // An unsent pick shows its registry entry's name until the server reports the session's.
+            name = workspaceRoots.first(where: { $0.path == optimisticWorkspacePath })?.name
+        } else {
+            name = selectedWorkspaceName
+        }
+        guard let name, !name.isEmpty else {
             return String(localized: "Workspace")
         }
 
-        if let root = workspaceRoots.first(where: { $0.path == selectedWorkspacePath }),
-           let name = root.name,
-           !name.isEmpty {
-            return name
-        }
-
-        return selectedWorkspacePath.lastPathComponentFallback
+        return name
     }
 
     private var displayedWorkspacePath: String? {

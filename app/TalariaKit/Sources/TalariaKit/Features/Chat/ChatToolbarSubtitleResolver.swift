@@ -1,9 +1,10 @@
 import Foundation
 
 public enum ChatToolbarSubtitleResolver {
-    public static func subtitle(workspacePath: String?, profileTitle: String?) -> String? {
-        if let workspace = nonEmpty(workspacePath) {
-            return workspace.lastPathComponentFallback
+    /// `workspaceName` is the server's label for the session's workspace (TAL-303).
+    public static func subtitle(workspaceName: String?, profileTitle: String?) -> String? {
+        if let workspace = nonEmpty(workspaceName) {
+            return workspace
         }
 
         guard let profile = nonEmpty(profileTitle), profile != "Profile" else {

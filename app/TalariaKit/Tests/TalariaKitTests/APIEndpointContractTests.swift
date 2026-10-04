@@ -432,6 +432,11 @@ final class SharedContractTests: XCTestCase {
         }
         // A run without a journal: the transcript holds its persisted rows and states no cursor.
         XCTAssertNil(try session("session").transcriptSeq)
+        // The server names the workspace (TAL-303); a Web from before that sends no name.
+        if (object["session"] as? [String: Any])?["workspace_name"] != nil {
+            XCTAssertEqual(try session("session").workspaceName, "Talaria")
+            XCTAssertEqual(SessionSummary(from: try session("session")).workspaceName, "Talaria")
+        }
         // A release checks this App against every retained Web; one from before TAL-316 has no such example.
         guard object["journaled_session"] != nil else { return }
         // A journaled run: the transcript ends at the running turn's prompt, and replay resumes after the cursor.

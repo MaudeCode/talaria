@@ -977,6 +977,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             "message_count": UITestFixtureEnvironment.isDense ? 600 : 48,
             "last_message_at": 2_000_000_000,
             "workspace": "/fixture",
+            "workspace_name": "Fixture Workspace",
             "model": "fixture-model",
             "model_provider": "fixture-provider",
             "profile": "fixture-profile",

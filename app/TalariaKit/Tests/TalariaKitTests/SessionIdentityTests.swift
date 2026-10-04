@@ -48,16 +48,17 @@ final class SessionIdentityTests: XCTestCase {
         XCTAssertFalse(SessionRowPresentation.isActiveStreaming(SessionSummary(sessionId: "blank-stream", activeStreamId: "   ")))
     }
 
-    func testSessionRowMetadataLabelUsesVisiblePartsAndWorkspaceBasename() {
+    func testSessionRowMetadataLabelUsesVisiblePartsAndTheServerWorkspaceName() {
         let session = SessionSummary(
             sessionId: "metadata",
-            workspace: "/Users/example/talaria",
+            workspace: "/Users/example/talaria-main",
+            workspaceName: "Talaria",
             messageCount: 2
         )
 
         XCTAssertEqual(
             SessionRowPresentation.metadataLabel(for: session, showsMessageCount: true, showsWorkspace: true),
-            "2 messages • talaria"
+            "2 messages • Talaria"
         )
         XCTAssertEqual(
             SessionRowPresentation.metadataLabel(for: session, showsMessageCount: true, showsWorkspace: false),
@@ -65,7 +66,16 @@ final class SessionIdentityTests: XCTestCase {
         )
         XCTAssertEqual(
             SessionRowPresentation.metadataLabel(for: session, showsMessageCount: false, showsWorkspace: true),
-            "talaria"
+            "Talaria"
+        )
+        // A row from a server that predates `workspace_name` shows no workspace rather than the folder name (TAL-303).
+        XCTAssertEqual(
+            SessionRowPresentation.metadataLabel(
+                for: SessionSummary(sessionId: "older", workspace: "/Users/example/talaria-main", messageCount: 2),
+                showsMessageCount: true,
+                showsWorkspace: true
+            ),
+            "2 messages"
         )
     }
 
