@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import type { SessionRow } from '../../contracts'
+import { SessionsListSchema, type SessionRow } from '../../contracts'
 
 vi.mock('../../api/endpoints', () => ({ fetchSessions: vi.fn(), searchSessions: vi.fn(), fetchProjects: vi.fn(), archiveSession: vi.fn(), createProject: vi.fn() }))
 vi.mock('../../api/sse', () => ({ openSessionListStream: () => ({ close: () => undefined, readyState: () => 1 }) }))
@@ -14,11 +16,11 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, className, ...rest }: { children: ReactNode; className?: string; 'data-sid'?: string }) => <a className={className} data-sid={rest['data-sid']}>{children}</a>,
 }))
 import * as api from '../../api/endpoints'
-import { SessionListPanel } from './SessionListPanel'
+import { groupSessionRows, SessionListPanel } from './SessionListPanel'
 
 const now = Date.now() / 1000
 const row = (session_id: string, title: string, extra: Partial<SessionRow> = {}): SessionRow => ({
-  session_id, title, last_message_at: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, ...extra,
+  session_id, title, last_message_at: now, sort_ts: now, is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, ...extra,
 })
 const alpha = row('alpha', 'Alpha zebra', { project_id: 'p1' })
 const delta = row('delta', 'Delta', { project_id: 'p1' })
@@ -45,5 +47,28 @@ describe('SessionListPanel search (TAL-308)', () => {
     answer({ sessions: [{ ...delta, match_type: 'content', match_preview: 'a zebra here' }, { ...alpha, match_type: 'title' }], sidebar_filtered: true, all_profiles: false, active_profile: 'default' })
     await waitFor(() => { expect(shown()).toEqual(['delta', 'alpha']) })
     expect(screen.getByText('a zebra here')).toBeInTheDocument()
+  })
+})
+
+describe('session list date groups (TAL-306)', () => {
+  const fixture = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { session_list: { sessions: unknown[] } }
+  const rows = SessionsListSchema.shape.sessions.parse(fixture.session_list.sessions)
+
+  it('keeps the server order inside every group', () => {
+    const at = (rows.find((r) => r.session_id === 'tal306-created-only')!.sort_ts + 60) * 1000
+    const groups = groupSessionRows(rows, at)
+    expect(groups.flatMap((g) => g.rows)).toHaveLength(rows.length)
+    for (const group of groups) {
+      const ids = new Set(group.rows.map((r) => r.session_id))
+      expect(group.rows.map((r) => r.session_id), group.id).toEqual(rows.filter((r) => ids.has(r.session_id)).map((r) => r.session_id))
+    }
+    expect(groups.find((g) => g.id === 'today')?.rows.map((r) => r.session_id)).toContain('tal306-created-only')
+  })
+
+  it('buckets by the server sort_ts, not a client-picked timestamp', () => {
+    const at = Date.now()
+    const day = 86_400
+    const recent = { ...rows.find((r) => r.session_id === 'tal306-newest')!, sort_ts: at / 1000 - 60, last_message_at: at / 1000 - 30 * day, updated_at: at / 1000 - 30 * day }
+    expect(groupSessionRows([recent], at).map((g) => g.id)).toEqual(['today'])
   })
 })
