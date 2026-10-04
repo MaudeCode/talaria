@@ -55,8 +55,18 @@ export function sanitizeSessionRow(value: unknown, store: SessionStore, file?: s
   return result
 }
 
+/** TAL-306: the row's `sort_ts`, the time it sorts and date-buckets by on every client. */
 export function sessionSortTimestamp(row: Row): number {
-  return num(row.last_message_at) || num(row.updated_at)
+  return num(row.last_message_at) || num(row.updated_at) || num(row.created_at)
+}
+
+const isActiveRow = (r: Row): boolean => Boolean(r.is_streaming || r.has_pending_user_message || r.pending_user_message)
+
+/** TAL-306: the canonical list order clients keep as-is: pinned, then active, then newest `sort_ts`, then session id. */
+export function compareSessionRows(a: Row, b: Row): number {
+  const [ia, ib] = [str(a.session_id), str(b.session_id)]
+  return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || Number(isActiveRow(b)) - Number(isActiveRow(a))
+    || sessionSortTimestamp(b) - sessionSortTimestamp(a) || (ia < ib ? -1 : ia > ib ? 1 : 0)
 }
 
 export function sidebarMessageCount(row: Row): number {
@@ -133,8 +143,7 @@ function preserveMessagefulDiscoverability(candidates: Row[], visible: Row[]): R
     if (better) rescue.set(root, { ...row, discoverability_warning: 'rescued_messageful_hidden_session' })
   }
   if (!rescue.size) return visible
-  const rescued = [...rescue.values()].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || sessionSortTimestamp(b) - sessionSortTimestamp(a))
-  return [...visible, ...rescued]
+  return [...visible, ...rescue.values()]
 }
 
 function preferFullerSnapshots(rows: Row[]): Row[] {
@@ -204,9 +213,8 @@ export function allSessions(store: SessionStore, opts: AllSessionsOptions = {}):
       Object.assign(r, contextUsage(r))
       if (opts.sidebarMetadataOnly) stripSidebarHeavyMetadata(r)
     }
-    return rows
+    return rows.sort(compareSessionRows)
   }
-  const sortRows = (rows: Row[]) => rows.sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || sessionSortTimestamp(b) - sessionSortTimestamp(a))
   const indexExists = (() => { try { return Boolean(store.readIndexEntries()) } catch { return false } })()
   if (!indexExists) {
     try { store.writeIndex() } catch { /* fall through to the scan */ }
@@ -244,7 +252,7 @@ export function allSessions(store: SessionStore, opts: AllSessionsOptions = {}):
     if (recovered.length) { try { store.writeIndex(recovered) } catch { /* ignore */ } }
     const indexCounts = store.indexMessageCounts(index)
     const refreshed = refreshIndexRowsFromSidecarMetadata(store, [...indexMap.values()], indexCounts, activeStreamIds)
-    let result = sortRows(refreshed.filter((r) => r.session_id))
+    let result = refreshed.filter((r) => r.session_id)
     result = result.filter((r) => !isEmptyUntitledDraft(r))
     return finish(result)
   } catch {
@@ -255,7 +263,7 @@ export function allSessions(store: SessionStore, opts: AllSessionsOptions = {}):
   const rows = out
     .filter((s) => !(s.title === 'Untitled' && s.messages.length === 0 && !s.active_stream_id && !s.hasPendingPrompt && !s.worktree_path))
     .map((s) => s.compact({ includeRuntime: true, activeStreamIds, sidebarMetadataOnly: opts.sidebarMetadataOnly ?? false }))
-  return finish(sortRows(rows))
+  return finish(rows)
 }
 
 function sidecarMtimeAfterIndexTimestamp(store: SessionStore, row: Row): boolean {
@@ -492,7 +500,8 @@ export function isSubagentRow(row: Row): boolean {
  * TAL-312: the streaming and read-only flags every session payload ships. `is_streaming` holds only while the row's
  * `active_stream_id` is a live runtime stream, and a stale id goes out as `null`; `read_only` folds the persisted flag
  * with the view-only subagent rule (a not-claimable foreign row or owner-locked sidecar arrives already marked); the
- * `can_*` flags mirror the branch, pin, archive and duplicate gates. Clients render these as-is.
+ * `can_*` flags mirror the branch, pin, archive and duplicate gates; `sort_ts` is the time the row sorts and
+ * date-buckets by (TAL-306). Clients render these as-is.
  */
 export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: ReadonlySet<string>): T {
   const r: Row = row
@@ -515,6 +524,7 @@ export function withSessionWireFlags<T extends Row>(row: T, activeStreamIds: Rea
   r.can_pin = !subagent
   r.can_archive = !subagent
   r.can_duplicate = !subagent && r.can_duplicate !== false
+  r.sort_ts = sessionSortTimestamp(r)
   return row
 }
 
@@ -703,7 +713,7 @@ export function buildSessionListPayload(store: SessionStore, params: ListParams)
   if (params.requestVisibilityOverrides) {
     webuiSessions = webuiSessions.filter((r) => !hideFromDefaultSidebar(r, { showCron: params.showCronSessions, showWebhook: params.showWebhookSessions, showKanban: params.showKanbanSessions }))
   }
-  const merged = [...webuiSessions, ...dedupedCli].sort((a, b) => (num(b.last_message_at) || num(b.updated_at)) - (num(a.last_message_at) || num(a.updated_at)))
+  const merged = [...webuiSessions, ...dedupedCli].sort((a, b) => sessionSortTimestamp(b) - sessionSortTimestamp(a))
   let scoped: Row[]
   let otherProfileCount = 0
   if (params.allProfiles) scoped = merged
@@ -792,7 +802,7 @@ function cronRunning(sid: string, row: Row, prefixes: [string, string, number][]
   return false
 }
 
-/** Overlay live runtime state and cron liveness, then sort (Python `_session_list_cache_overlay_runtime_rows`). */
+/** Overlay live runtime state and cron liveness, then sort canonically (Python `_session_list_cache_overlay_runtime_rows`). */
 export function overlayRuntimeRows(rows: Row[], overlay: RuntimeOverlay): Row[] {
   const prefixes: [string, string, number][] = [...overlay.runningCronJobs].map(([jid, started]) => [jid, `cron_${jid}_`, started])
   const out: Row[] = []
@@ -814,9 +824,7 @@ export function overlayRuntimeRows(rows: Row[], overlay: RuntimeOverlay): Row[] 
     item.cron_running = cronRunning(sid, item, prefixes)
     out.push(item)
   }
-  const active = (r: Row) => Boolean(r.is_streaming || r.has_pending_user_message || r.pending_user_message)
-  out.sort((a, b) => Number(active(b)) - Number(active(a)) || sessionSortTimestamp(b) - sessionSortTimestamp(a))
-  return out
+  return out.sort(compareSessionRows)
 }
 
 export function sidebarSessionResponseItem(row: Row, redactEnabled: boolean, attention: Row | null, activeStreamIds: ReadonlySet<string>, workspaceName: (row: Row) => string | null): Row {

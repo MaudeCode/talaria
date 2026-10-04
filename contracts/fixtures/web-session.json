@@ -787,7 +787,8 @@
     "workspace_name": "Talaria",
     "transcript_seq": null,
     "source_kind": "webui",
-    "is_messaging_session": false
+    "is_messaging_session": false,
+    "sort_ts": 0
   },
   "stale_stream_session": {
     "session_id": "contract-stale",
@@ -802,7 +803,8 @@
     "messages": [],
     "transcript_seq": null,
     "source_kind": "webui",
-    "is_messaging_session": false
+    "is_messaging_session": false,
+    "sort_ts": 0
   },
   "subagent_session": {
     "session_id": "contract-subagent",
@@ -819,7 +821,8 @@
     "messages": [],
     "transcript_seq": null,
     "source_kind": "subagent",
-    "is_messaging_session": false
+    "is_messaging_session": false,
+    "sort_ts": 0
   },
   "journaled_session": {
     "session_id": "contract-running",
@@ -856,7 +859,8 @@
       }
     ],
     "source_kind": "webui",
-    "is_messaging_session": false
+    "is_messaging_session": false,
+    "sort_ts": 0
   },
   "tool_outcomes_session": {
     "session_id": "contract-tool-outcomes",
@@ -1295,7 +1299,8 @@
       }
     ],
     "source_kind": "webui",
-    "is_messaging_session": false
+    "is_messaging_session": false,
+    "sort_ts": 2031
   },
   "long_body_session": {
     "session_id": "contract-long-body",
@@ -1365,7 +1370,8 @@
       }
     ],
     "source_kind": "webui",
-    "is_messaging_session": false
+    "is_messaging_session": false,
+    "sort_ts": 0
   },
   "background_update_session": {
     "session_id": "contract-background-update",
@@ -1605,7 +1611,8 @@
       }
     ],
     "source_kind": "webui",
-    "is_messaging_session": false
+    "is_messaging_session": false,
+    "sort_ts": 0
   },
   "pending_steers_session": {
     "session_id": "contract-pending-steers",
@@ -1674,7 +1681,8 @@
       }
     ],
     "source_kind": "webui",
-    "is_messaging_session": false
+    "is_messaging_session": false,
+    "sort_ts": 0
   },
   "messaging_session": {
     "session_id": "contract-messaging",
@@ -1685,6 +1693,7 @@
     "is_cli_session": false,
     "source_kind": "messaging",
     "is_messaging_session": true,
+    "sort_ts": 0,
     "active_stream_id": null,
     "is_streaming": false,
     "read_only": true,
@@ -1701,6 +1710,7 @@
       "is_cli_session": false,
       "source_kind": "webui",
       "is_messaging_session": false,
+      "sort_ts": 0,
       "active_stream_id": null,
       "is_streaming": false,
       "read_only": false,
@@ -1725,6 +1735,7 @@
       "is_cli_session": false,
       "source_kind": "webui",
       "is_messaging_session": false,
+      "sort_ts": 0,
       "active_stream_id": null,
       "is_streaming": false,
       "read_only": false,
@@ -3089,5 +3100,251 @@
         }
       ]
     }
+  },
+  "session_list": {
+    "stored": [
+      {
+        "session_id": "tal306-old",
+        "title": "Oldest chat",
+        "created_at": 1788990000,
+        "updated_at": 1789000000,
+        "last_message_at": 1789000000,
+        "pinned": false
+      },
+      {
+        "session_id": "tal306-streaming",
+        "title": "Streaming chat",
+        "created_at": 1789390000,
+        "updated_at": 1789400000,
+        "last_message_at": 1789400000,
+        "pinned": false,
+        "active_stream_id": "tal306-run"
+      },
+      {
+        "session_id": "tal306-tie",
+        "title": "Tie with the created-only chat",
+        "created_at": 1789340000,
+        "updated_at": 1789350000,
+        "last_message_at": 1789350000,
+        "pinned": false
+      },
+      {
+        "session_id": "tal306-pinned-old",
+        "title": "Pinned chat",
+        "created_at": 1789200000,
+        "updated_at": 1789300000,
+        "last_message_at": 1789300000,
+        "pinned": true
+      },
+      {
+        "session_id": "tal306-created-only",
+        "title": "Chat with only a creation time",
+        "created_at": 1789350000
+      },
+      {
+        "session_id": "tal306-newest",
+        "title": "Newest idle chat",
+        "created_at": 1789410000,
+        "updated_at": 1789420000,
+        "last_message_at": 1789420000,
+        "pinned": false
+      },
+      {
+        "session_id": "tal306-updated-only",
+        "title": "Chat with no message time",
+        "created_at": 1789240000,
+        "updated_at": 1789250000,
+        "last_message_at": null,
+        "pinned": false
+      },
+      {
+        "session_id": "tal306-pinned-pending",
+        "title": "Pinned chat with a pending prompt",
+        "created_at": 1789090000,
+        "updated_at": 1789100000,
+        "last_message_at": 1789100000,
+        "pinned": true,
+        "has_pending_user_message": true
+      }
+    ],
+    "live_stream_ids": [
+      "tal306-run"
+    ],
+    "sessions": [
+      {
+        "active_stream_id": null,
+        "attention": null,
+        "can_archive": true,
+        "can_branch": true,
+        "can_duplicate": true,
+        "can_pin": true,
+        "created_at": 1789090000,
+        "cron_running": false,
+        "has_pending_user_message": true,
+        "is_cli_session": false,
+        "is_messaging_session": false,
+        "is_streaming": false,
+        "last_message_at": 1789100000,
+        "pinned": true,
+        "read_only": false,
+        "session_id": "tal306-pinned-pending",
+        "sort_ts": 1789100000,
+        "source_kind": "webui",
+        "title": "Pinned chat with a pending prompt",
+        "updated_at": 1789100000,
+        "workspace_name": null
+      },
+      {
+        "active_stream_id": null,
+        "attention": null,
+        "can_archive": true,
+        "can_branch": true,
+        "can_duplicate": true,
+        "can_pin": true,
+        "created_at": 1789200000,
+        "cron_running": false,
+        "is_cli_session": false,
+        "is_messaging_session": false,
+        "is_streaming": false,
+        "last_message_at": 1789300000,
+        "pinned": true,
+        "read_only": false,
+        "session_id": "tal306-pinned-old",
+        "sort_ts": 1789300000,
+        "source_kind": "webui",
+        "title": "Pinned chat",
+        "updated_at": 1789300000,
+        "workspace_name": null
+      },
+      {
+        "active_stream_id": "tal306-run",
+        "attention": null,
+        "can_archive": true,
+        "can_branch": true,
+        "can_duplicate": true,
+        "can_pin": true,
+        "created_at": 1789390000,
+        "cron_running": false,
+        "is_cli_session": false,
+        "is_messaging_session": false,
+        "is_streaming": true,
+        "last_message_at": 1789400000,
+        "pinned": false,
+        "read_only": false,
+        "session_id": "tal306-streaming",
+        "sort_ts": 1789400000,
+        "source_kind": "webui",
+        "title": "Streaming chat",
+        "updated_at": 1789400000,
+        "workspace_name": null
+      },
+      {
+        "active_stream_id": null,
+        "attention": null,
+        "can_archive": true,
+        "can_branch": true,
+        "can_duplicate": true,
+        "can_pin": true,
+        "created_at": 1789410000,
+        "cron_running": false,
+        "is_cli_session": false,
+        "is_messaging_session": false,
+        "is_streaming": false,
+        "last_message_at": 1789420000,
+        "pinned": false,
+        "read_only": false,
+        "session_id": "tal306-newest",
+        "sort_ts": 1789420000,
+        "source_kind": "webui",
+        "title": "Newest idle chat",
+        "updated_at": 1789420000,
+        "workspace_name": null
+      },
+      {
+        "active_stream_id": null,
+        "attention": null,
+        "can_archive": true,
+        "can_branch": true,
+        "can_duplicate": true,
+        "can_pin": true,
+        "created_at": 1789350000,
+        "cron_running": false,
+        "is_cli_session": false,
+        "is_messaging_session": false,
+        "is_streaming": false,
+        "read_only": false,
+        "session_id": "tal306-created-only",
+        "sort_ts": 1789350000,
+        "source_kind": "webui",
+        "title": "Chat with only a creation time",
+        "workspace_name": null
+      },
+      {
+        "active_stream_id": null,
+        "attention": null,
+        "can_archive": true,
+        "can_branch": true,
+        "can_duplicate": true,
+        "can_pin": true,
+        "created_at": 1789340000,
+        "cron_running": false,
+        "is_cli_session": false,
+        "is_messaging_session": false,
+        "is_streaming": false,
+        "last_message_at": 1789350000,
+        "pinned": false,
+        "read_only": false,
+        "session_id": "tal306-tie",
+        "sort_ts": 1789350000,
+        "source_kind": "webui",
+        "title": "Tie with the created-only chat",
+        "updated_at": 1789350000,
+        "workspace_name": null
+      },
+      {
+        "active_stream_id": null,
+        "attention": null,
+        "can_archive": true,
+        "can_branch": true,
+        "can_duplicate": true,
+        "can_pin": true,
+        "created_at": 1789240000,
+        "cron_running": false,
+        "is_cli_session": false,
+        "is_messaging_session": false,
+        "is_streaming": false,
+        "last_message_at": null,
+        "pinned": false,
+        "read_only": false,
+        "session_id": "tal306-updated-only",
+        "sort_ts": 1789250000,
+        "source_kind": "webui",
+        "title": "Chat with no message time",
+        "updated_at": 1789250000,
+        "workspace_name": null
+      },
+      {
+        "active_stream_id": null,
+        "attention": null,
+        "can_archive": true,
+        "can_branch": true,
+        "can_duplicate": true,
+        "can_pin": true,
+        "created_at": 1788990000,
+        "cron_running": false,
+        "is_cli_session": false,
+        "is_messaging_session": false,
+        "is_streaming": false,
+        "last_message_at": 1789000000,
+        "pinned": false,
+        "read_only": false,
+        "session_id": "tal306-old",
+        "sort_ts": 1789000000,
+        "source_kind": "webui",
+        "title": "Oldest chat",
+        "updated_at": 1789000000,
+        "workspace_name": null
+      }
+    ]
   }
 }

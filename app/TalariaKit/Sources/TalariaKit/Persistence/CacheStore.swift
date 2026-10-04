@@ -306,6 +306,7 @@ private extension SessionSummary {
         createdAt = cachedSession.createdAt
         updatedAt = cachedSession.updatedAt
         lastMessageAt = cachedSession.lastMessageAt
+        sortTs = cachedSession.sortTs
         pinned = cachedSession.pinned
         archived = cachedSession.archived
         projectId = cachedSession.projectId

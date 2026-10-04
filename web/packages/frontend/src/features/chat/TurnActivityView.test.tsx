@@ -204,7 +204,7 @@ describe('turn worklog presentation', () => {
   })
 
   it.each([null, 'u'])('settles tool-limit snapshots once with user identity %s', (userMessageId) => {
-    const session: Session = { session_id: 's', title: 'Limited turn', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, _messages_offset: 40, messages: [
+    const session: Session = { session_id: 's', title: 'Limited turn', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0, _messages_offset: 40, messages: [
       { role: 'user', id: 'u', content: 'Inspect' },
       { role: 'assistant', id: 'a', content: 'Working', tool_calls: [{ id: 'a', name: 'read_file' }], _turn_id: 'run' },
       // The server persists the tool-limit outcome and ships it in the settled turn's scene.
@@ -234,7 +234,7 @@ describe('turn worklog presentation', () => {
   })
 
   it.each(['apperror', 'cancel'] as const)('replaces the live turn with the server\'s settled turn on %s', (event) => {
-    const session: Session = { session_id: 's', title: 'Failed turn', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, messages: [
+    const session: Session = { session_id: 's', title: 'Failed turn', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0, messages: [
       { role: 'user', id: 'u', content: 'Inspect' },
       { role: 'assistant', id: 'e', content: '**Error:** boom', _error: true, _turn_id: 'run', _anchor_activity_scene: {
         version: 'activity_scene_v1', final_answer: '**Error:** boom', terminal_state: 'error', expanded_by_default: true, activity_rows: rows(toolRow('a')) } },

@@ -152,13 +152,13 @@ extension SessionListMutationTests {
             {
               "sessions": [
                 {"session_id":"ordinary","title":"Ordinary","updated_at":50},
-                {"session_id":"cron_1","title":"Scheduled 1","updated_at":10,"source_kind":"cron"},
-                {"session_id":"cron_2","title":"Scheduled 2","updated_at":20,"source_kind":"cron"},
-                {"session_id":"cron_3","title":"Scheduled 3","updated_at":30,"source_kind":"cron"},
-                {"session_id":"cron_4","title":"Scheduled 4","updated_at":40,"source_kind":"cron"},
-                {"session_id":"cron_5","title":"Scheduled 5","updated_at":50,"source_kind":"cron"},
-                {"session_id":"cron_6","title":"Scheduled 6","updated_at":60,"source_kind":"cron"},
                 {"session_id":"cron_7","title":"Scheduled 7","updated_at":70,"source_kind":"cron"},
+                {"session_id":"cron_6","title":"Scheduled 6","updated_at":60,"source_kind":"cron"},
+                {"session_id":"cron_5","title":"Scheduled 5","updated_at":50,"source_kind":"cron"},
+                {"session_id":"cron_4","title":"Scheduled 4","updated_at":40,"source_kind":"cron"},
+                {"session_id":"cron_3","title":"Scheduled 3","updated_at":30,"source_kind":"cron"},
+                {"session_id":"cron_2","title":"Scheduled 2","updated_at":20,"source_kind":"cron"},
+                {"session_id":"cron_1","title":"Scheduled 1","updated_at":10,"source_kind":"cron"},
                 {"session_id":"cron_archived","title":"Archived scheduled","updated_at":80,"archived":true,"source_kind":"cron"}
               ]
             }
@@ -189,8 +189,8 @@ extension SessionListMutationTests {
             apiTestJSONResponse("""
             {
               "sessions": [
-                {"session_id":"cron_1","title":"Scheduled 1","updated_at":10,"source_kind":"cron"},
                 {"session_id":"cron_2","title":"Scheduled 2","updated_at":20,"source_kind":"cron"},
+                {"session_id":"cron_1","title":"Scheduled 1","updated_at":10,"source_kind":"cron"},
                 {"session_id":"hook-1","title":"Hook","updated_at":30,"source_tag":"webhook","source_kind":"webhook"}
               ],
               "scheduled_session_count": 200,
@@ -300,13 +300,13 @@ extension SessionListMutationTests {
               "sessions": [
                 {"session_id":"ordinary","title":"Ordinary","updated_at":50},
                 {"session_id":"cron_1","title":"Scheduled","updated_at":60,"source_kind":"cron"},
-                {"session_id":"webhook_1","title":"Webhook 1","session_source":"webhook","updated_at":10,"source_kind":"webhook"},
-                {"session_id":"webhook_2","title":"Webhook 2","source_tag":"webhook","updated_at":20,"source_kind":"webhook"},
-                {"session_id":"webhook_3","title":"Webhook 3","source_tag":"webhook","updated_at":30,"source_kind":"webhook"},
-                {"session_id":"webhook_4","title":"Webhook 4","source_tag":"webhook","updated_at":40,"source_kind":"webhook"},
-                {"session_id":"webhook_5","title":"Webhook 5","source_tag":"webhook","updated_at":50,"source_kind":"webhook"},
-                {"session_id":"webhook_6","title":"Webhook 6","source_tag":"webhook","updated_at":60,"source_kind":"webhook"},
                 {"session_id":"webhook_7","title":"Webhook 7","source_tag":"webhook","updated_at":70,"source_kind":"webhook"},
+                {"session_id":"webhook_6","title":"Webhook 6","source_tag":"webhook","updated_at":60,"source_kind":"webhook"},
+                {"session_id":"webhook_5","title":"Webhook 5","source_tag":"webhook","updated_at":50,"source_kind":"webhook"},
+                {"session_id":"webhook_4","title":"Webhook 4","source_tag":"webhook","updated_at":40,"source_kind":"webhook"},
+                {"session_id":"webhook_3","title":"Webhook 3","source_tag":"webhook","updated_at":30,"source_kind":"webhook"},
+                {"session_id":"webhook_2","title":"Webhook 2","source_tag":"webhook","updated_at":20,"source_kind":"webhook"},
+                {"session_id":"webhook_1","title":"Webhook 1","session_source":"webhook","updated_at":10,"source_kind":"webhook"},
                 {"session_id":"webhook_archived","title":"Archived webhook","source_tag":"webhook","updated_at":80,"archived":true,"source_kind":"webhook"}
               ]
             }

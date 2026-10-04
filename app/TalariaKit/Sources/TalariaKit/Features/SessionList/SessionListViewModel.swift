@@ -167,23 +167,24 @@ public final class SessionListViewModel {
             guard let selectedProjectID else { return true }
             return session.projectId == selectedProjectID
         }
+        // The server's order is canonical (TAL-306); `inDisplayOrder` re-sorts only an older server's rows.
         guard !query.isEmpty else {
-            return Self.sortedSessions(projectFilteredSessions)
+            return projectFilteredSessions.inDisplayOrder
         }
 
         let titleMatches: (SessionSummary) -> Bool = { $0.title?.lowercased().contains(query) == true }
         guard activeRemoteSearch == RemoteSearchScope(query: query, projectID: selectedProjectID),
               let remoteSearchResults
         else {
-            return Self.sortedSessions(projectFilteredSessions.filter(titleMatches))
+            return projectFilteredSessions.filter(titleMatches).inDisplayOrder
         }
 
         guard remoteSearchIsFiltered else {
             // Old-server fallback: that server ignores the filters, so keep only its hits this list shows.
             let remoteIDs = Set(remoteSearchResults.compactMap(\.sessionId))
-            return Self.sortedSessions(projectFilteredSessions.filter { session in
+            return projectFilteredSessions.filter { session in
                 titleMatches(session) || (session.archived != true && session.sessionId.map(remoteIDs.contains) == true)
-            })
+            }.inDisplayOrder
         }
 
         // The server's set and order (TAL-308), showing the loaded copy of a row so local edits stay current.
@@ -739,7 +740,7 @@ public final class SessionListViewModel {
         if let index = sessions.firstIndex(where: { $0.sessionId == sessionId }) {
             sessions[index] = session
         } else if inserting {
-            sessions.insert(session, at: 0)
+            sessions.insert(session, at: Self.insertionIndex(for: session, in: sessions))
         } else {
             return false
         }
@@ -1276,18 +1277,10 @@ public final class SessionListViewModel {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private static func sortedSessions(_ sessions: [SessionSummary]) -> [SessionSummary] {
-        sessions.sorted { left, right in
-            if (left.pinned == true) != (right.pinned == true) {
-                return left.pinned == true
-            }
-
-            return timestamp(for: left) > timestamp(for: right)
-        }
-    }
-
-    private static func timestamp(for session: SessionSummary) -> Double {
-        session.lastMessageAt ?? session.updatedAt ?? session.createdAt ?? 0
+    /// Where a row the list adds locally goes until the next server list: the top of its
+    /// pin section, since the server lists pinned rows first (TAL-306).
+    private static func insertionIndex(for session: SessionSummary, in sessions: [SessionSummary]) -> Int {
+        session.pinned == true ? 0 : sessions.firstIndex { $0.pinned != true } ?? sessions.endIndex
     }
 
     /// `archivedCount` is applied inside the same transaction as the rows so the
@@ -1318,7 +1311,7 @@ public final class SessionListViewModel {
     /// Keeps a claimed row when the list response being applied was requested
     /// before the claim: a detail's authoritative metadata wins over the row the
     /// response captured, and an inserted row the response predates is put back at
-    /// the top, newest claim first. Only a load that started after the claim
+    /// the top of its pin section, newest claim first. Only a load that started after the claim
     /// already reflects it, so only then do its rows win and the record get dropped.
     private func reconcilingClaimedRows(
         in newSessions: [SessionSummary],
@@ -1335,13 +1328,18 @@ public final class SessionListViewModel {
             .sorted { $0.claim > $1.claim }
             .map(\.session)
 
-        return missingInserts + newSessions.map { session in
+        var reconciled = newSessions.map { session in
             guard let sessionID = session.sessionId,
                   let claimed = claimedRows[sessionID]
             else { return session }
 
             return claimed.session.merging(onto: session)
         }
+        // Oldest claim first, each to the top of its section, so the newest ends up on top.
+        for session in missingInserts.reversed() {
+            reconciled.insert(session, at: Self.insertionIndex(for: session, in: reconciled))
+        }
+        return reconciled
     }
 
     /// Mirrors upstream `_sessionSearchContentPreview`: collapse whitespace and

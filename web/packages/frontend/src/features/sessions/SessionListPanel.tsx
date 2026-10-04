@@ -63,11 +63,12 @@ export function relativeTime(ts: number | null | undefined, now = Date.now()): s
   return date.toLocaleDateString(undefined, options)
 }
 
-function groupLabel(row: SessionRow): 'pinned' | 'today' | 'yesterday' | 'week' | 'older' {
+type GroupId = 'pinned' | 'today' | 'yesterday' | 'week' | 'older'
+
+function groupLabel(row: SessionRow, now: number): GroupId {
   if (row.pinned) return 'pinned'
-  const ts = (row.last_message_at ?? row.updated_at ?? row.created_at ?? 0) * 1000
-  const d = new Date(ts)
-  const today = new Date()
+  const d = new Date(row.sort_ts * 1000)
+  const today = new Date(now)
   today.setHours(0, 0, 0, 0)
   if (d >= today) return 'today'
   const yesterday = new Date(today)
@@ -79,7 +80,7 @@ function groupLabel(row: SessionRow): 'pinned' | 'today' | 'yesterday' | 'week' 
   return 'older'
 }
 
-const GROUP_LABEL: Record<ReturnType<typeof groupLabel>, () => string> = {
+const GROUP_LABEL: Record<GroupId, () => string> = {
   pinned: () => m.session_time_bucket_pinned(),
   today: () => m.session_time_bucket_today(),
   yesterday: () => m.session_time_bucket_yesterday(),
@@ -89,6 +90,18 @@ const GROUP_LABEL: Record<ReturnType<typeof groupLabel>, () => string> = {
 
 /** Spoken status for a row that needs the user; the server names the kind. */
 const attentionLabel = (kind: string | undefined) => kind === 'approval' ? m.session_attention_approval_title() : kind === 'clarify' ? m.session_attention_clarify_title() : m.session_attention_generic_title()
+
+const GROUP_ORDER: GroupId[] = ['pinned', 'today', 'yesterday', 'week', 'older']
+
+/** Files rows under local-date groups by the server's `sort_ts`, keeping the server's order inside each group (TAL-306). */
+export function groupSessionRows(rows: SessionRow[], now = Date.now()): { id: GroupId; rows: SessionRow[] }[] {
+  const byGroup = new Map<GroupId, SessionRow[]>()
+  for (const r of rows) {
+    const g = groupLabel(r, now)
+    byGroup.set(g, [...(byGroup.get(g) ?? []), r])
+  }
+  return GROUP_ORDER.flatMap((id) => { const grouped = byGroup.get(id); return grouped ? [{ id, rows: grouped }] : [] })
+}
 
 export function useProjectsQuery() {
   return useQuery({ queryKey: keys.projects, queryFn: () => api.fetchProjects(), staleTime: 60_000 })
@@ -131,17 +144,7 @@ export function SessionListPanel() {
     return visible.filter((r) => r.title.toLowerCase().includes(q))
   }, [rows, filter, cliCount, source, project, search.data])
   const previews = useMemo(() => new Map((search.data?.sessions ?? []).flatMap((r) => (r.match_preview ? [[r.session_id, r.match_preview] as const] : []))), [search.data])
-  const groups = useMemo(() => {
-    const order: ReturnType<typeof groupLabel>[] = ['pinned', 'today', 'yesterday', 'week', 'older']
-    const byGroup = new Map<string, SessionRow[]>()
-    for (const r of filtered) {
-      const g = groupLabel(r)
-      const arr = byGroup.get(g) ?? []
-      arr.push(r)
-      byGroup.set(g, arr)
-    }
-    return order.filter((g) => byGroup.has(g)).map((g) => ({ id: g, label: GROUP_LABEL[g](), rows: byGroup.get(g) ?? [] }))
-  }, [filtered])
+  const groups = useMemo(() => groupSessionRows(filtered).map((g) => ({ ...g, label: GROUP_LABEL[g.id]() })), [filtered])
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
   const archive = useMutation({
     mutationFn: ({ id, archived }: { id: string; archived: boolean }) => api.archiveSession(id, archived),
@@ -236,7 +239,7 @@ export function SessionListPanel() {
                         <div className="session-title-row">
                           <span className="session-title" title={row.title || m.untitled()}>{row.title || m.untitled()}</span>
                           {proj && <span className="session-project-dot" style={{ background: proj.color ?? 'var(--blue)' }} title={proj.name} />}
-                          <span className="session-time">{relativeTime(row.last_message_at ?? row.updated_at)}</span>
+                          <span className="session-time">{relativeTime(row.sort_ts)}</span>
                         </div>
                         {previews.get(row.session_id) && <div className="session-search-preview truncate text-[11px] text-muted" title={m.session_search_content_matches()}>{previews.get(row.session_id)}</div>}
                       </div>

@@ -257,6 +257,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     public let createdAt: Double?
     public let updatedAt: Double?
     public let lastMessageAt: Double?
+    /// The server's sort and date-bucket time (`sort_ts`, TAL-306); absent on older servers.
+    public let sortTs: Double?
     public let pinned: Bool?
     public let archived: Bool?
     public let projectId: String?
@@ -302,6 +304,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         createdAt: Double? = nil,
         updatedAt: Double? = nil,
         lastMessageAt: Double? = nil,
+        sortTs: Double? = nil,
         pinned: Bool? = nil,
         archived: Bool? = nil,
         projectId: String? = nil,
@@ -342,6 +345,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.lastMessageAt = lastMessageAt
+        self.sortTs = sortTs
         self.pinned = pinned
         self.archived = archived
         self.projectId = projectId
@@ -375,7 +379,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case sessionId, title, workspace, workspaceName, model, modelProvider
         case modelOptionID = "modelOptionId"
-        case messageCount, createdAt, updatedAt, lastMessageAt
+        case messageCount, createdAt, updatedAt, lastMessageAt, sortTs
         case pinned, archived, projectId, profile
         case inputTokens, outputTokens, estimatedCost
         case activeStreamId, isStreaming, isCliSession
@@ -407,6 +411,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         createdAt = container.decodeLossyDoubleIfPresent(forKey: .createdAt)
         updatedAt = container.decodeLossyDoubleIfPresent(forKey: .updatedAt)
         lastMessageAt = container.decodeLossyDoubleIfPresent(forKey: .lastMessageAt)
+        sortTs = container.decodeLossyDoubleIfPresent(forKey: .sortTs)
         pinned = container.decodeLossyBoolIfPresent(forKey: .pinned)
         archived = container.decodeLossyBoolIfPresent(forKey: .archived)
         projectId = container.decodeLossyStringIfPresent(forKey: .projectId)
@@ -472,6 +477,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         createdAt = detail.createdAt
         updatedAt = detail.updatedAt
         lastMessageAt = detail.lastMessageAt
+        sortTs = detail.sortTs
         pinned = detail.pinned
         archived = detail.archived
         projectId = detail.projectId
@@ -521,6 +527,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
             createdAt: createdAt,
             updatedAt: updatedAt,
             lastMessageAt: lastMessageAt,
+            sortTs: sortTs,
             pinned: pinned,
             archived: archived,
             projectId: projectId,
@@ -589,6 +596,7 @@ extension SessionSummary {
             createdAt: createdAt ?? row.createdAt,
             updatedAt: updatedAt ?? row.updatedAt,
             lastMessageAt: lastMessageAt ?? row.lastMessageAt,
+            sortTs: sortTs ?? row.sortTs,
             pinned: pinned ?? row.pinned,
             archived: archived ?? row.archived,
             projectId: projectId ?? row.projectId,
@@ -625,6 +633,12 @@ extension SessionSummary {
     /// is writable, and the server still refuses a mutation it does not allow.
     public var isSessionReadOnly: Bool {
         readOnly == true
+    }
+
+    /// The time the row is labelled and date-bucketed by: the server's `sort_ts`, else
+    /// the same field chain for an older server that does not ship it.
+    public var sortTimestamp: Double? {
+        sortTs ?? lastMessageAt ?? updatedAt ?? createdAt
     }
 
     public var shouldAppearInSessionList: Bool {
@@ -671,6 +685,22 @@ extension SessionSummary {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+public extension Array where Element == SessionSummary {
+    /// The rows in display order. A server that ships `sort_ts` sends its canonical order, which
+    /// the list keeps (TAL-306). An older server's order is not pinned-first, so its rows keep the
+    /// previous pinned-first, newest-first sort; delete this fallback once every supported server
+    /// ships `sort_ts`.
+    var inDisplayOrder: [SessionSummary] {
+        guard !contains(where: { $0.sortTs != nil }) else { return self }
+        return sorted { left, right in
+            if (left.pinned == true) != (right.pinned == true) {
+                return left.pinned == true
+            }
+            return (left.sortTimestamp ?? 0) > (right.sortTimestamp ?? 0)
+        }
     }
 }
 
@@ -744,6 +774,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     let createdAt: Double?
     let updatedAt: Double?
     let lastMessageAt: Double?
+    let sortTs: Double?
     let pinned: Bool?
     let archived: Bool?
     let projectId: String?
@@ -806,6 +837,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case createdAt
         case updatedAt
         case lastMessageAt
+        case sortTs
         case pinned
         case archived
         case projectId
@@ -870,6 +902,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         createdAt = container.decodeLossyDoubleIfPresent(forKey: .createdAt)
         updatedAt = container.decodeLossyDoubleIfPresent(forKey: .updatedAt)
         lastMessageAt = container.decodeLossyDoubleIfPresent(forKey: .lastMessageAt)
+        sortTs = container.decodeLossyDoubleIfPresent(forKey: .sortTs)
         pinned = container.decodeLossyBoolIfPresent(forKey: .pinned)
         archived = container.decodeLossyBoolIfPresent(forKey: .archived)
         projectId = container.decodeLossyStringIfPresent(forKey: .projectId)

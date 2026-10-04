@@ -26,7 +26,7 @@ import { ClarifyCard } from './ClarifyCard'
 import { useClarify } from './useClarify'
 
 const noop = (): void => undefined
-const session: Session = { session_id: 's1', title: 'Evening', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false }
+const session: Session = { session_id: 's1', title: 'Evening', is_streaming: true, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0 }
 const streaming = { status: 'streaming', clarify: null } as unknown as LiveTurn
 const onQueue = vi.fn()
 let qc: QueryClient

@@ -736,7 +736,8 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         }
         var pinned = session(id: "ui-fixture-pinned", title: "Pinned fixture chat with a title long enough to wrap")
         pinned["pinned"] = true
-        sessions.insert(pinned, at: 1)
+        // The server lists pinned rows first, and the list keeps its order (TAL-306).
+        sessions.insert(pinned, at: 0)
         for index in 1...6 {
             var row = session(id: "cron_fixture_\(index)", title: "Scheduled Fixture \(index)")
             row["source_tag"] = "cron"
@@ -1058,6 +1059,7 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
             "title": title,
             "message_count": UITestFixtureEnvironment.isDense ? 600 : 48,
             "last_message_at": 2_000_000_000,
+            "sort_ts": 2_000_000_000,
             "workspace": "/fixture",
             "workspace_name": "Fixture Workspace",
             "model": "fixture-model",
