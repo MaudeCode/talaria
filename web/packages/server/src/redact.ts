@@ -659,7 +659,8 @@ const REGISTRY_LOGIN: CommandFlags = { separate: ['-p'], attached: ['-p'], login
 const MYSQL: CommandFlags = { attached: ['-p'] }
 const COMMAND_FLAGS: Record<string, CommandFlags> = {
   docker: REGISTRY_LOGIN, podman: REGISTRY_LOGIN, buildah: REGISTRY_LOGIN, nerdctl: REGISTRY_LOGIN, skopeo: REGISTRY_LOGIN, oras: REGISTRY_LOGIN, helm: REGISTRY_LOGIN,
-  mysql: MYSQL, mariadb: MYSQL, mysqladmin: MYSQL, mysqldump: MYSQL, mysqlimport: MYSQL, mysqlshow: MYSQL, mysqlcheck: MYSQL,
+  mysql: MYSQL, mysqladmin: MYSQL, mysqldump: MYSQL, mysqlimport: MYSQL, mysqlshow: MYSQL, mysqlcheck: MYSQL, mysqlslap: MYSQL, mysql_upgrade: MYSQL,
+  mariadb: MYSQL, 'mariadb-admin': MYSQL, 'mariadb-dump': MYSQL, 'mariadb-import': MYSQL, 'mariadb-show': MYSQL, 'mariadb-check': MYSQL, 'mariadb-slap': MYSQL, 'mariadb-upgrade': MYSQL,
   sshpass: { separate: ['-p'], attached: ['-p'], values: ['-f', '-d', '-P'], stop: true },
   'redis-cli': { separate: ['-a', '--pass'] },
   smbclient: { separate: ['-U', '--user'], attached: ['-U', '--user='], percent: true },
@@ -686,8 +687,9 @@ function commandFlagMasks(words: readonly string[]): Map<number, number> {
     for (const [flags, state] of states) {
       if (i < state.next) continue
       if (!state.active) {
-        // The subcommand is the first operand past the options; one right after a bare option may be its value.
-        if (word === 'login') state.active = true
+        // The subcommand is the first operand past the options; one right after a bare option may be its value. One the shell
+        // computes (`docker "$ACTION" -p pw`) may be `login`.
+        if (word === 'login' || /[$`]/.test(word)) state.active = true
         else if (!word.startsWith('-') && word !== 'registry' && !(/^-[^=]*$/.test(words[i - 1]!) && !flags.switches?.includes(words[i - 1]!))) states.delete(flags)
         continue
       }
@@ -729,10 +731,11 @@ function commandWords(text: string, from: number, enclosing: string): { spans: [
       const c = text[i]!
       if (c === '\\') i += 2
       else if ((c === "'" || c === '"') && c !== enclosing) {
-        // An inner quote of the other kind (`sh -c "mysql -p'a b'"`) groups for the shell that runs the command.
+        // A quote groups across newlines, and an inner quote of the other kind (`sh -c "mysql -p'a b'"`) groups for the shell
+        // that runs the command.
         let k = i + 1
-        while (k < text.length && text[k] !== c && text[k] !== '\n' && text[k] !== enclosing) k += c === '"' && text[k] === '\\' ? 2 : 1
-        // An unterminated quote runs to the line end (or the enclosing close); its word is still read, so its secret is masked.
+        while (k < text.length && text[k] !== c && text[k] !== enclosing) k += c === '"' && text[k] === '\\' ? 2 : 1
+        // An unterminated quote runs to the text end (or the enclosing close); its word is still read, so its secret is masked.
         if (text[k] !== c) { spans.push([start, Math.min(k, text.length)]); return { spans, end: Math.min(k, text.length) } }
         i = k + 1
       } else i += 1
