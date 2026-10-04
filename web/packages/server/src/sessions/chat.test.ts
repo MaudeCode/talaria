@@ -1895,6 +1895,9 @@ describe('chat turns through the sidecar', () => {
     const frames = await s.sse(`/api/chat/stream?stream_id=${String(side.stream_id)}&replay=1`, (f) => f.event === 'done' || f.event === 'apperror')
     expect(frames.find((f) => f.event === 'done')?.data).toMatchObject({ ephemeral: true, answer: 'side answer' })
     expect(s.deps.sessionStore.get(sid).active_stream_id).toBe(run)
+    // The side question sees the running turn's prompt, which deferred save keeps out of the stored history until settlement.
+    const asked = sidecar.calls.find((c) => c.method === 'chat.start' && str((c.params as Json).user_message).endsWith('side question'))
+    expect(((asked?.params as Json).conversation_history as Json[]).map((m) => [m.role, m.content])).toEqual([['user', 'long task']])
     release()
     await s.sse(`/api/chat/stream?stream_id=${run}&replay=1`, (f) => f.event === 'done')
     await new Promise((r) => setTimeout(r, 50))

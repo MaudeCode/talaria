@@ -238,6 +238,16 @@ export class SessionService {
     return local.some((m) => isContextCompressionMarker(m)) ? local : this.mergedTranscript(s, local, stateRows ?? this.stateDbRows(s))
   }
 
+  /**
+   * TAL-518: the model context a `/btw` clone inherits: the chat's history plus its running turn's prompt, which
+   * deferred save keeps out of `messages` and `context_messages` until settlement.
+   */
+  sideQuestionContext(s: Session): Message[] {
+    const context = structuredClone(this.modelContext(s))
+    const pending = this.pendingTurn(s)
+    return pending ? withPendingUserTurn(context, pending) : context
+  }
+
   /** Python `_lookup_cli_session_metadata`: the sidebar row for a state.db session in the active profile. */
   private lookupCliMeta(sid: string): Row | null {
     try {

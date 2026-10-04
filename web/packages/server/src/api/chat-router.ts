@@ -355,7 +355,7 @@ export const chatRouter = os.router({
     // TAL-518: a side question runs in its own hidden session, so the chat's running turn does not block it.
     const ephemeral = ctx.deps.sessionStore.newSession({ workspace: s.workspace, model: s.model, modelProvider: s.model_provider, profile: s.profile })
     ephemeral.messages = structuredClone(s.messages)
-    ephemeral.context_messages = structuredClone(s.context_messages)
+    ephemeral.context_messages = ctx.deps.sessions.sideQuestionContext(s)
     ephemeral.title = `btw: ${question.slice(0, 60)}`
     ctx.deps.sessionStore.save(ephemeral)
     // TAL-512: a failed or refused btw turn must not leave its copy of the parent conversation behind.
