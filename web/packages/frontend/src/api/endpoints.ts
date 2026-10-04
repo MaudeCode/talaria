@@ -116,6 +116,8 @@ export const startBackground = (session_id: SessionId, prompt: string) => orpc()
 export const fetchBackgroundTasks = (session_id: SessionId, kind?: 'delegation' | 'process' | 'background_command') => orpc().background.tasks({ session_id, ...(kind ? { kind } : {}) })
 export const fetchBackgroundResult = (session_id: SessionId, task_id: string) => orpc().background.result({ session_id, task_id })
 export const dismissBackgroundTask = (session_id: SessionId, task_id: string) => orpc().background.dismiss({ session_id, task_id })
+// TAL-518: `/btw` answers in a hidden copy of the chat; the reply streams on the returned `stream_id`.
+export const askBtw = (session_id: SessionId, question: string) => orpc().btw({ session_id, question })
 export const createShare = (session_id: SessionId) => orpc().share.create({ session_id })
 export const revokeShare = (session_id: SessionId) => orpc().share.revoke({ session_id })
 export const fetchShare = (token: string) => orpc().share.read({ token })

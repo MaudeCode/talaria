@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
+import { openChatStream, type ChatStreamCallbacks } from '../../api/sse'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BootstrapContext } from '../../app/bootstrap'
@@ -12,7 +13,7 @@ import type { QueuedTurn } from './Composer'
 import { endFirstSend, getFirstSend } from '../chat/firstSend'
 import { returnToComposer } from './composerReturn'
 
-vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn() }))
+vi.mock(import('../../api/endpoints'), async (importOriginal) => ({ ...(await importOriginal()), saveDraft: vi.fn(), steerChat: vi.fn(), startChat: vi.fn(), startBackground: vi.fn(), fetchBackgroundTasks: vi.fn(), askBtw: vi.fn() }))
 // jsdom has no EventSource: a followed turn opens a stream handle that does nothing.
 vi.mock(import('../../api/sse'), async (importOriginal) => ({ ...(await importOriginal()), openChatStream: vi.fn(() => ({ close: () => undefined, readyState: () => 0 })) }))
 import { Composer } from './Composer'
@@ -69,6 +70,45 @@ describe('Composer', () => {
     expect(api.startChat).not.toHaveBeenCalled()
     expect(screen.getByRole('textbox')).toHaveValue('')
     expect(await screen.findByRole('region', { name: 'Background work' })).toHaveTextContent('summarize repo')
+  })
+
+  // TAL-518: `/btw` asks the server's side-question route and shows the answer above the composer, running or idle.
+  const askSideQuestion = async (session: Session, live: LiveTurn | null) => {
+    vi.mocked(api.steerChat).mockClear()
+    vi.mocked(api.startChat).mockClear()
+    vi.mocked(api.askBtw).mockReset().mockResolvedValue({ stream_id: 'side', session_id: 'hidden', parent_session_id: 's1' })
+    let side: ChatStreamCallbacks | null = null
+    const closed = vi.fn()
+    vi.mocked(openChatStream).mockImplementation((streamId, _replay, cb) => { if (streamId === 'side') side = cb; return { close: streamId === 'side' ? closed : noop, readyState: () => 1 } })
+    renderComposer(session, live)
+    await userEvent.type(screen.getByRole('textbox'), '/btw how big is it?{Enter}')
+    await waitFor(() => expect(vi.mocked(api.askBtw).mock.calls.length + vi.mocked(api.steerChat).mock.calls.length + vi.mocked(api.startChat).mock.calls.length).toBeGreaterThan(0))
+    expect(api.steerChat).not.toHaveBeenCalled()
+    expect(api.startChat).not.toHaveBeenCalled()
+    expect(api.askBtw).toHaveBeenCalledWith('s1', 'how big is it?')
+    expect(screen.getByRole('textbox')).toHaveValue('')
+    const panel = await screen.findByRole('region', { name: 'Side question — not in history' })
+    expect(panel).toHaveTextContent('how big is it?')
+    await waitFor(() => expect(side).not.toBeNull())
+    act(() => { side!.onEvent({ event: 'token', data: { text: 'Three' } }, 'side:1') })
+    expect(panel).toHaveTextContent('Three')
+    act(() => { side!.onEvent({ event: 'done', data: { ephemeral: true, answer: 'Three nodes.', terminal_state: 'completed' } }, 'side:2') })
+    expect(panel).toHaveTextContent('Three nodes.')
+    expect(closed).toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Side question — not in history' })).toBeNull())
+  }
+
+  it('answers /btw beside a running turn without steering it (TAL-518)', async () => {
+    await askSideQuestion(writable, running())
+    expect(getStreamState().turns.s1!.pendingSteers).toEqual([])
+    expect(getStreamState().turns.s1!.userText).toBe('Inspect')
+  })
+
+  it('answers an idle /btw beside the chat instead of sending it as a message (TAL-518)', async () => {
+    resetStreamStoreForTests()
+    await askSideQuestion({ ...writable, is_streaming: false }, null)
+    expect(getStreamState().turns.s1).toBeUndefined()
   })
 
   it('sends a steer with its id and shows it as sending until the server has it (TAL-425)', async () => {

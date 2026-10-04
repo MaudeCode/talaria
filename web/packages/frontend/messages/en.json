@@ -401,6 +401,7 @@
 	"btw_done": "Side question answered",
 	"btw_no_answer": "No answer received.",
 	"btw_failed": "Side question failed: ",
+	"btw_needs_chat": "Start the chat first, then ask a side question.",
 	"bg_running": "Running in background...",
 	"bg_complete": "Background task complete",
 	"bg_label": "Background result:",

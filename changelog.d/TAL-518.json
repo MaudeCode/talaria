@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "In Talaria Web, /btw now answers a side question in a panel above the composer, even while a response is running, instead of steering the running response or sending the question as a message.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

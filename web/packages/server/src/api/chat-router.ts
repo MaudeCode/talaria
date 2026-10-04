@@ -352,7 +352,7 @@ export const chatRouter = os.router({
     if (ctx.deps.sessions.isReadOnly(s) || s.branchSourceReadonly) throw new HttpError(403, 'Read-only imported sessions cannot be continued from WebUI')
     const question = str(body.question).trim()
     if (!question) throw new HttpError(400, 'question is required')
-    if (s.active_stream_id && ctx.deps.registry.liveIds.has(s.active_stream_id)) throw new HttpError(409, 'session already has an active stream')
+    // TAL-518: a side question runs in its own hidden session, so the chat's running turn does not block it.
     const ephemeral = ctx.deps.sessionStore.newSession({ workspace: s.workspace, model: s.model, modelProvider: s.model_provider, profile: s.profile })
     ephemeral.messages = structuredClone(s.messages)
     ephemeral.context_messages = structuredClone(s.context_messages)
