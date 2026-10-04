@@ -2910,6 +2910,8 @@ public final class ChatViewModel {
         ownSteers.remember(steeringHint.messageID)
         steerRequestsInFlight.insert(steeringHint.messageID)
         defer { steerRequestsInFlight.remove(steeringHint.messageID) }
+        var serverHasSteer = false
+        var unconfirmedSteerID: String?
         do {
             let response = try await client.steerChat(
                 sessionID: sessionID,
@@ -2922,23 +2924,32 @@ public final class ChatViewModel {
                 await attachToServerStartedRun(streamID: streamID, modelContext: nil)
                 return .executed(message: nil)
             }
-            if response.accepted == true {
-                updateSteeringHint(id: steeringHint.messageID, state: .waiting)
-                finalizeSteeringPhase(
-                    assistantMessageID: steeringHint.precedingAssistantMessageID,
-                    endingAt: steeringHint.timestamp
-                )
-                return .executed(message: nil)
-            }
+            serverHasSteer = response.accepted == true
         } catch {
             lastError = error
+            // TAL-441: the request may have reached the server anyway. A steer it already reported is its own; otherwise
+            // the queued copy keeps the steer's ID so a later report drops it instead of sending the message twice.
+            serverHasSteer = closedSteerIDs.contains(steeringHint.messageID) || pendingSteerActions[steeringHint.messageID] != nil
+            unconfirmedSteerID = steeringHint.messageID
         }
 
+        if serverHasSteer {
+            updateSteeringHint(id: steeringHint.messageID, state: .waiting)
+            finalizeSteeringPhase(
+                assistantMessageID: steeringHint.precedingAssistantMessageID,
+                endingAt: steeringHint.timestamp
+            )
+            return .executed(message: nil)
+        }
         removeSteeringHint(id: steeringHint.messageID)
         ownSteers.forget(steeringHint.messageID)
-        _ = enqueueQueuedSlashMessage(message, attachments: attachmentCoordinator.consumePendingAttachments())
-        await cancelActiveStream()
-        return .executed(message: String(localized: "Steer was unavailable, so the message was queued and the current response was stopped."))
+        // TAL-441: the run may still be alive, so the message waits for it rather than stopping it.
+        _ = enqueueQueuedSlashMessage(
+            message,
+            attachments: attachmentCoordinator.consumePendingAttachments(),
+            steerID: unconfirmedSteerID
+        )
+        return .executed(message: String(localized: "Steer was unavailable, so the message was queued for after this response."))
     }
 
     private func interruptResponseFromSlashCommand(_ args: String) async -> SlashCommandExecutionResult {
@@ -3774,6 +3785,7 @@ public final class ChatViewModel {
     @discardableResult
     private func consumeSteeringHint(id: String?, text: String) -> Bool {
         if let id {
+            dropQueuedCopy(ofSteer: id)
             closeSteer(id)
             ownSteers.forget(id)
         }
@@ -3798,6 +3810,7 @@ public final class ChatViewModel {
 
     /// TAL-426: show a pending steer as the server reports it, from any device, once; a closed one never returns.
     private func applyPendingSteer(_ steer: PendingSteer) {
+        dropQueuedCopy(ofSteer: steer.steerId)
         guard !closedSteerIDs.contains(steer.steerId) else { return }
         let state: SteeringHintState = steer.state == .pending ? .waiting : .sending
         let index = messages.firstIndex(where: { $0.messageId == steer.steerId })
@@ -3871,10 +3884,11 @@ public final class ChatViewModel {
 
     private func applyWithdrawnSteer(_ event: SteerWithdrawnEvent) {
         guard let id = event.steerId else { return }
+        let wasQueued = dropQueuedCopy(ofSteer: id)
         closeSteer(id)
         // Never taken: whatever state the row reached, it is not a steer the Agent saw.
         messages.removeAll { $0.messageId == id && $0.isLocalSteeringHint }
-        if ownSteers.forget(id), event.reason == .stopped { returnedComposerTexts.append(event.text) }
+        if ownSteers.forget(id) || wasQueued, event.reason == .stopped { returnedComposerTexts.append(event.text) }
     }
 
     /// The view took the returned text into its composer.
@@ -5209,15 +5223,24 @@ public final class ChatViewModel {
     private func enqueueQueuedSlashMessage(
         _ text: String,
         attachments: [PendingAttachment],
-        atFront: Bool = false
+        atFront: Bool = false,
+        steerID: String? = nil
     ) -> Int {
-        let message = QueuedSlashMessage(text: text, attachments: attachments)
+        let message = QueuedSlashMessage(text: text, attachments: attachments, steerID: steerID)
         if atFront {
             queuedSlashMessages.insert(message, at: 0)
         } else {
             queuedSlashMessages.append(message)
         }
         return queuedSlashMessages.count
+    }
+
+    /// TAL-441: the server reported a steer whose request failed, so it owns the message; the queued copy goes.
+    @discardableResult
+    private func dropQueuedCopy(ofSteer id: String) -> Bool {
+        guard let index = queuedSlashMessages.firstIndex(where: { $0.steerID == id }) else { return false }
+        attachmentCoordinator.restorePendingAttachments(queuedSlashMessages.remove(at: index).attachments)
+        return true
     }
 
     private func drainQueuedSlashMessageIfIdle() {
