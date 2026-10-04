@@ -75,6 +75,15 @@ describe('clarification through the composer (TAL-362)', () => {
     onQueue.mockClear()
   })
 
+  it('keeps the how-to-answer explanation behind the heading help button', async () => {
+    renderChat()
+    await push(single)
+    await waitFor(() => expect(screen.getByRole('dialog')).toHaveTextContent('Which env?'))
+    expect(screen.queryByText('Pick a choice, or type your own answer below.')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'About Clarification needed' }))
+    expect(await screen.findByText('Pick a choice, or type your own answer below.')).toBeVisible()
+  })
+
   it('shows every batch question, collects keyed answers including multi-select, and keeps the chat draft', async () => {
     renderChat()
     const box = screen.getByRole('textbox')

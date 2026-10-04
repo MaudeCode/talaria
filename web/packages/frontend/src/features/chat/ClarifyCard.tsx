@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronUp, HelpCircle } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { IconButton } from '../../ui/Button'
+import { HelpTip } from '../../ui/Field'
 import { cn } from '../../ui/cn'
 import type { Clarify } from './useClarify'
 
@@ -22,6 +23,7 @@ export function ClarifyCard({ clarify }: { clarify: Clarify }) {
         <div className="clarify-header flex items-center gap-2 text-sm font-semibold text-text">
           <HelpCircle size={14} className="text-info" aria-hidden="true" />
           <span id="clarifyHeading">{pending.title ?? m.clarify_heading()}</span>
+          <HelpTip label={m.field_help_about({ label: pending.title ?? m.clarify_heading() })} className="shrink-0">{m.clarify_hint()}</HelpTip>
           {remaining !== null && <span className="clarify-countdown text-xs tabular-nums text-muted" aria-live="polite">{remaining}s</span>}
           {total > 1 && <span className="text-xs text-muted">{m.clarify_progress({ a0: index + 1, a1: total })}</span>}
           <span className="flex-1" />
@@ -36,7 +38,6 @@ export function ClarifyCard({ clarify }: { clarify: Clarify }) {
               ))}
             </div>
           )}
-          <div className="clarify-hint mt-1 text-[11px] text-muted">{m.clarify_hint()}</div>
         </div>
       </div>
     </div>

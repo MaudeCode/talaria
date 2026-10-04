@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "category": "Changed",
+      "summary": "Web pages and controls are less cluttered: explanations for Spaces, Profiles, script tasks, clarification questions, and session toolsets now open from a \"?\" button instead of sitting under every heading.",
+      "highlight": false,
+      "components": [
+        "web"
+      ]
+    }
+  ]
+}

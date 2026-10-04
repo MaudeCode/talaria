@@ -3,6 +3,7 @@ import { ChevronDown, Cpu, Brain, Wrench, FolderOpen } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
 import { workspaceLabel } from '../workspaces/label'
 import { useModelsQuery, useWorkspacesQuery } from '../../app/queries'
+import { HelpTip } from '../../ui/Field'
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
 import { cn } from '../../ui/cn'
 
@@ -83,8 +84,8 @@ export function ToolsetsChip({ value, onChange, row }: { value: string[] | null;
   return (
     <Menu label={m.composer_control_toolsets()} side="top" className="min-w-72" trigger={<Chip icon={<Wrench size={13} aria-hidden="true" />} label={value?.length ? value.join(', ') : m.toolsets_global()} title={m.composer_control_toolsets()} row={row} size="xs" className="composer-toolsets-chip" />}>
       <form className="flex flex-col gap-2 p-2" onSubmit={(e) => { e.preventDefault(); const list = draft.split(',').map((s) => s.trim()).filter(Boolean); onChange(list.length ? list : null) }}>
+        <div className="flex items-center text-xs font-medium text-text">{m.composer_control_toolsets()}<HelpTip label={m.field_help_about({ label: m.composer_control_toolsets() })} className="shrink-0">{m.toolsets_hint()}</HelpTip></div>
         <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={m.session_toolsets_placeholder()} aria-label={m.composer_control_toolsets()} className="h-8 w-full rounded-md border border-border bg-input px-2 font-mono text-xs text-text" onKeyDown={(e) => e.stopPropagation()} />
-        <div className="text-[11px] text-muted">{m.toolsets_hint()}</div>
         <button type="submit" className="self-end rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg">{m.save()}</button>
       </form>
     </Menu>

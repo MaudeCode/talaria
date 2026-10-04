@@ -43,12 +43,11 @@
 .clarify-countdown{margin-left:auto;min-width:42px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;font-weight:700}
 .clarify-question{font-size:14px;color:var(--text);line-height:1.7;white-space:pre-wrap;margin-bottom:12px}
 .clarify-choices{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
-.clarify-hint{margin-top:8px;font-size:11px;line-height:1.45;color:var(--muted)}
 .clarify-card.visible .clarify-question{padding-left:1px}
 .clarify-card.collapsed{max-height:56px;bottom:8px}
 .clarify-card.collapsed .clarify-inner{max-height:48px;overflow:hidden;padding:10px 14px}
 .clarify-card.collapsed .clarify-header{margin-bottom:0}
-.clarify-card.collapsed .clarify-question,.clarify-card.collapsed .clarify-choices,.clarify-card.collapsed .clarify-hint{display:none}
+.clarify-card.collapsed .clarify-question,.clarify-card.collapsed .clarify-choices{display:none}
 .approval-btn{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 @media (max-width: 640px){.approval-card{bottom:8px;overflow:visible}}
 @media (max-width: 640px){.approval-inner{max-height:min(52vh,360px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:12px 12px 14px;border-radius:12px;box-shadow:0 -10px 30px rgba(0,0,0,.24);min-width:min(100%,280px)}}

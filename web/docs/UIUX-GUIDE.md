@@ -158,6 +158,18 @@ An ordinary markdown table is a reading table: row separators only, no cell
 grid, no header fill, no zebra rows. A wide table scrolls inside the reading
 column instead of squeezing columns to an unreadable width.
 
+Explanations live behind help, not under labels. Copy that says what a page,
+section, setting, or control does and when to use it goes in a `HelpTip` (the
+"?" popover in `packages/frontend/src/ui/Field.tsx`) beside the label or heading
+it explains: `FieldRow`'s `hint`, `HubPage`'s `help`, or a `HelpTip` placed
+directly next to a heading. Its accessible name is "About <label>"
+(`m.field_help_about`). Visible sub-text is reserved for live information:
+status, errors, warnings, empty states, counts, versions, and data belonging to
+an item (for example a plugin's own description). A dialog's own message or
+question (its `aria-describedby` text) and onboarding step copy are the content
+of their flow and stay visible; how-to-use notes inside a dialog or card are
+explanations and go in a `HelpTip`.
+
 ## Color, depth, and shape
 
 Use one accent at a time. Semantic colors are for semantic state: success,
@@ -324,7 +336,8 @@ Do:
 - collapse noisy internals by default when settled,
 - make debugging details accessible without making them visually dominant,
 - use existing tokens, variables, and component patterns,
-- protect action-required states such as errors and approvals.
+- protect action-required states such as errors and approvals,
+- put explanatory copy in a `HelpTip` (`FieldRow` `hint`, `HubPage` `help`) beside its label.
 
 Don't:
 
@@ -332,4 +345,5 @@ Don't:
 - add decorative color or motion without a user-facing reason,
 - add a frontend framework, bundler plugin, or build step for ordinary UI work,
 - hide important recovery, error, or approval state,
+- render an explanation of a page, setting, or control as always-visible sub-text,
 - document behavior the code and tests do not show.
