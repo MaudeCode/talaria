@@ -3,14 +3,45 @@
  * `ctl.sh`): the checkout `.env` applies unconditionally unless
  * `HERMES_WEBUI_PRESERVE_ENV` keeps values already in the environment; the
  * Hermes home `.env` is a fallback for keys the environment lacks (provider
- * credentials referenced as `${VAR}` in config.yaml). `HERMES_WEBUI_NO_DOTENV=1`
- * skips both.
+ * credentials referenced as `${VAR}` in config.yaml) and never sets the
+ * operator auth or isolation keys. `HERMES_WEBUI_NO_DOTENV=1` skips both.
  */
 import { join, resolve } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 
 const READONLY = new Set(['UID', 'GID', 'EUID', 'EGID', 'PPID'])
 const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/**
+ * Deployment posture the agent-writable Hermes home `.env` may not set: otherwise a contained user could disable
+ * isolation or swap the auth configuration on the next start (#4589).
+ */
+const PROTECTED_ENV_KEYS: ReadonlySet<string> = new Set([
+  'HERMES_WEBUI_ISOLATED_PROFILE',
+  'HERMES_WEBUI_PASSWORD',
+  'HERMES_WEBUI_PASSKEY',
+  'HERMES_WEBUI_COOKIE_NAME',
+  'HERMES_WEBUI_SECURE',
+  'HERMES_WEBUI_SESSION_TTL',
+  'HERMES_WEBUI_SESSION_SLIDING',
+  'HERMES_WEBUI_TRUSTED_AUTH_HEADER',
+  'HERMES_WEBUI_TRUSTED_GROUPS_HEADER',
+  'HERMES_WEBUI_GROUP_PROFILE_MAP',
+  'HERMES_WEBUI_TRUSTED_AUTH_LOGOUT_URL',
+  'HERMES_WEBUI_TRUSTED_PROXY_CIDRS',
+  'HERMES_WEBUI_OIDC_ISSUER',
+  'HERMES_WEBUI_OIDC_CLIENT_ID',
+  'HERMES_WEBUI_OIDC_CLIENT_SECRET',
+  'HERMES_WEBUI_OIDC_REDIRECT_URI',
+  'HERMES_WEBUI_OIDC_SCOPES',
+  'HERMES_WEBUI_OIDC_ALLOW_CLAIM',
+  'HERMES_WEBUI_OIDC_ALLOW_VALUES',
+  'HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS',
+  'HERMES_WEBUI_OIDC_PROFILE_CLAIM',
+  'HERMES_WEBUI_OIDC_PROFILE_MAP',
+  'HERMES_WEBUI_OIDC_OWNER_CLAIM',
+  'HERMES_WEBUI_OIDC_OWNER_VALUES',
+])
 
 function unescapeDouble(raw: string): string {
   let out = ''
@@ -52,7 +83,7 @@ export interface DotenvOptions {
   env: Record<string, string | undefined>
   /** The checkout `.env` (a git checkout of `web/`); absent for npm installs. */
   repoEnvFile?: string | null
-  /** `$HERMES_HOME/.env`, applied only for keys the environment lacks. */
+  /** `$HERMES_HOME/.env`, applied only for keys the environment lacks and never for `PROTECTED_ENV_KEYS`. */
   hermesEnvFile?: string | null
   log?: (line: string) => void
 }
@@ -70,7 +101,14 @@ export function loadLauncherDotenv(opts: DotenvOptions): string[] {
   const repo = read(opts.repoEnvFile)
   if (repo) for (const [k, v] of Object.entries(repo)) { if (preserve && env[k] !== undefined) continue; env[k] = v; applied.push(k) }
   const hermes = read(opts.hermesEnvFile)
-  if (hermes) for (const [k, v] of Object.entries(hermes)) { if (env[k] !== undefined) continue; env[k] = v; applied.push(k) }
+  if (hermes) {
+    for (const [k, v] of Object.entries(hermes)) {
+      if (PROTECTED_ENV_KEYS.has(k)) { opts.log?.(`[bootstrap] Warning: ignoring protected key ${k} in ${String(opts.hermesEnvFile)}; set it in the deployment environment instead`); continue }
+      if (env[k] !== undefined) continue
+      env[k] = v
+      applied.push(k)
+    }
+  }
   return applied
 }
 

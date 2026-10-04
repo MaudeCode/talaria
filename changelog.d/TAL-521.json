@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Security",
+      "summary": "A profile's .env file can no longer change Talaria Web sign-in settings or turn off profile isolation; those settings are ignored there with a warning.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

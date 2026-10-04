@@ -36,6 +36,28 @@ describe('.env loading', () => {
     const off: Record<string, string | undefined> = { HERMES_WEBUI_NO_DOTENV: '1' }
     expect(loadLauncherDotenv({ env: off, repoEnvFile: join(dir, 'repo.env'), hermesEnvFile: null })).toEqual([])
   })
+  it('ignores operator auth and isolation keys in the Hermes home .env with a warning', () => {
+    const dir = scratch()
+    const protectedKeys = [
+      'HERMES_WEBUI_ISOLATED_PROFILE', 'HERMES_WEBUI_PASSWORD', 'HERMES_WEBUI_PASSKEY', 'HERMES_WEBUI_COOKIE_NAME', 'HERMES_WEBUI_SECURE',
+      'HERMES_WEBUI_SESSION_TTL', 'HERMES_WEBUI_SESSION_SLIDING', 'HERMES_WEBUI_TRUSTED_AUTH_HEADER', 'HERMES_WEBUI_TRUSTED_GROUPS_HEADER',
+      'HERMES_WEBUI_GROUP_PROFILE_MAP', 'HERMES_WEBUI_TRUSTED_AUTH_LOGOUT_URL', 'HERMES_WEBUI_TRUSTED_PROXY_CIDRS', 'HERMES_WEBUI_OIDC_ISSUER',
+      'HERMES_WEBUI_OIDC_CLIENT_ID', 'HERMES_WEBUI_OIDC_CLIENT_SECRET', 'HERMES_WEBUI_OIDC_REDIRECT_URI', 'HERMES_WEBUI_OIDC_SCOPES',
+      'HERMES_WEBUI_OIDC_ALLOW_CLAIM', 'HERMES_WEBUI_OIDC_ALLOW_VALUES', 'HERMES_WEBUI_OIDC_TRUSTED_PRIVATE_HOSTS', 'HERMES_WEBUI_OIDC_PROFILE_CLAIM',
+      'HERMES_WEBUI_OIDC_PROFILE_MAP', 'HERMES_WEBUI_OIDC_OWNER_CLAIM', 'HERMES_WEBUI_OIDC_OWNER_VALUES',
+    ]
+    writeFileSync(join(dir, 'hermes.env'), `${protectedKeys.map((k) => `${k}=from-profile`).join('\n')}\nOPENAI_API_KEY=sk-profile\n`)
+    const env: Record<string, string | undefined> = { HERMES_WEBUI_ISOLATED_PROFILE: '1' }
+    const logs: string[] = []
+    expect(loadLauncherDotenv({ env, repoEnvFile: null, hermesEnvFile: join(dir, 'hermes.env'), log: (line) => logs.push(line) })).toEqual(['OPENAI_API_KEY'])
+    expect(env).toEqual({ HERMES_WEBUI_ISOLATED_PROFILE: '1', OPENAI_API_KEY: 'sk-profile' })
+    for (const key of protectedKeys) expect(logs.some((line) => line.includes(key))).toBe(true)
+    // The checkout .env is deployment config, so it may still set them.
+    writeFileSync(join(dir, 'repo.env'), 'HERMES_WEBUI_PASSWORD=operator\n')
+    const operator: Record<string, string | undefined> = {}
+    loadLauncherDotenv({ env: operator, repoEnvFile: join(dir, 'repo.env'), hermesEnvFile: null })
+    expect(operator.HERMES_WEBUI_PASSWORD).toBe('operator')
+  })
 })
 
 describe('startup environment order', () => {
