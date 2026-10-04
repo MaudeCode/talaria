@@ -1,7 +1,7 @@
 /** Session, project, share, workspace, and file procedures. */
 import { implement } from '@orpc/server'
 import { stateDbHasSession } from '../sessions/state-db.js'
-import { sessionsContract, workspacesContract, type Attachment } from '@maudecode/talaria-web-contracts'
+import { sessionsContract, workspacesContract, type Attachment, type SessionsListQuery } from '@maudecode/talaria-web-contracts'
 import { mkdirSync } from 'node:fs'
 import { closeSync, existsSync, lstatSync, statSync } from 'node:fs'
 import { writeFully } from '../fs/atomic.js'
@@ -67,29 +67,36 @@ function allProfilesEnabled(ctx: RequestContext, value: string | undefined): boo
   return queryFlag(value) && !ctx.deps.isolatedProfileMode()
 }
 
+/** Search inputs that select the sidebar rows rather than every stored session (TAL-308). */
+const SIDEBAR_SEARCH_KEYS = ['project_id', 'sidebar_source', 'include_archived', 'exclude_hidden', 'show_cli_sessions', 'show_claude_code_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions'] as const
+
+/** The `/api/sessions` row selection for a list or sidebar-search query (TAL-308 shares it). */
+function sidebarListParams(ctx: RequestContext, input: SessionsListQuery): Parameters<RequestContext['deps']['sessions']['list']>[0] {
+  const settings = ctx.deps.settings.load()
+  const overrideKeys = ['show_cli_sessions', 'show_claude_code_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions'] as const
+  const sidebarSourceRaw = (input.sidebar_source ?? '').trim().toLowerCase()
+  return {
+    allProfiles: allProfilesEnabled(ctx, input.all_profiles),
+    includeArchived: queryFlag(input.include_archived),
+    excludeHidden: queryFlag(input.exclude_hidden),
+    visibleOnly: true,
+    showCliSessions: queryBool(input.show_cli_sessions, Boolean(settings.show_cli_sessions)),
+    showClaudeCodeSessions: queryBool(input.show_claude_code_sessions, Boolean(settings.show_claude_code_sessions)),
+    showPreviousMessagingSessions: Boolean(settings.show_previous_messaging_sessions),
+    showCronSessions: queryBool(input.show_cron_sessions, Boolean(settings.show_cron_sessions)),
+    showWebhookSessions: queryBool(input.show_webhook_sessions, Boolean(settings.show_webhook_sessions)),
+    showKanbanSessions: queryBool(input.show_kanban_sessions, Boolean(settings.show_kanban_sessions)),
+    requestVisibilityOverrides: overrideKeys.some((k) => input[k] !== undefined),
+    sidebarSource: sidebarSourceRaw === 'webui' || sidebarSourceRaw === 'cli' ? sidebarSourceRaw : null,
+    archivedLimit: queryPositiveInt(input.archived_limit, null, 2000),
+    archivedOffset: queryPositiveInt(input.archived_offset, 0, 200000) ?? 0,
+  }
+}
+
 export const sessionsRouter = os.router({
   sessions: {
     list: os.sessions.list.handler(({ input, context: { ctx } }) => run(() => {
-      const settings = ctx.deps.settings.load()
-      const overrideKeys = ['show_cli_sessions', 'show_claude_code_sessions', 'show_cron_sessions', 'show_webhook_sessions', 'show_kanban_sessions'] as const
-      const overrides = overrideKeys.some((k) => input[k] !== undefined)
-      const sidebarSourceRaw = (input.sidebar_source ?? '').trim().toLowerCase()
-      const { body, etag } = ctx.deps.sessions.list({
-        allProfiles: allProfilesEnabled(ctx, input.all_profiles),
-        includeArchived: queryFlag(input.include_archived),
-        excludeHidden: queryFlag(input.exclude_hidden),
-        visibleOnly: true,
-        showCliSessions: queryBool(input.show_cli_sessions, Boolean(settings.show_cli_sessions)),
-        showClaudeCodeSessions: queryBool(input.show_claude_code_sessions, Boolean(settings.show_claude_code_sessions)),
-        showPreviousMessagingSessions: Boolean(settings.show_previous_messaging_sessions),
-        showCronSessions: queryBool(input.show_cron_sessions, Boolean(settings.show_cron_sessions)),
-        showWebhookSessions: queryBool(input.show_webhook_sessions, Boolean(settings.show_webhook_sessions)),
-        showKanbanSessions: queryBool(input.show_kanban_sessions, Boolean(settings.show_kanban_sessions)),
-        requestVisibilityOverrides: overrides,
-        sidebarSource: sidebarSourceRaw === 'webui' || sidebarSourceRaw === 'cli' ? sidebarSourceRaw : null,
-        archivedLimit: queryPositiveInt(input.archived_limit, null, 2000),
-        archivedOffset: queryPositiveInt(input.archived_offset, 0, 200000) ?? 0,
-      })
+      const { body, etag } = ctx.deps.sessions.list(sidebarListParams(ctx, input))
       ctx.extraResponseHeaders = { etag }
       if (ifNoneMatchMatches(ctx.header('if-none-match') ?? '', etag)) ctx.notModified = true
       return body
@@ -98,7 +105,12 @@ export const sessionsRouter = os.router({
       // Python: `int(depth)` falls back to 5 when malformed.
       const depthRaw = (input.depth ?? '5').trim()
       const depth = /^[+-]?\d+$/.test(depthRaw) ? Math.max(0, Number.parseInt(depthRaw, 10)) : 5
-      return ctx.deps.sessions.search(input.q ?? '', { content: (input.content ?? '1') === '1', depth, allProfiles: allProfilesEnabled(ctx, input.all_profiles) }) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
+      const opts = { content: (input.content ?? '1') === '1', depth, allProfiles: allProfilesEnabled(ctx, input.all_profiles) }
+      // TAL-308: any sidebar filter answers from the sidebar's own rows; without one the store-only search stays.
+      if (SIDEBAR_SEARCH_KEYS.some((k) => input[k] !== undefined)) {
+        return ctx.deps.sessions.sidebarSearch(input.q ?? '', sidebarListParams(ctx, input), { ...opts, projectId: input.project_id?.trim() || null }) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
+      }
+      return ctx.deps.sessions.search(input.q ?? '', opts) as { sessions: Record<string, unknown>[]; all_profiles: boolean; active_profile: string; query?: string; count?: number }
     })),
     cleanupZeroMessage: os.sessions.cleanupZeroMessage.handler(({ context: { ctx } }) => run(() => ctx.deps.sessions.cleanup(true) as { ok: true; cleaned: number })),
   },

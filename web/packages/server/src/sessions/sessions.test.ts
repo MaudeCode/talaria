@@ -513,6 +513,52 @@ describe('session lifecycle over HTTP', () => {
   })
 })
 
+describe('sidebar search filters (TAL-308)', () => {
+  let s: TestServer
+  beforeAll(async () => { s = await bootTestServer() })
+  afterAll(() => s.close())
+
+  it('answers from the sidebar rows: project, source, archived, match types, projection and order', async () => {
+    const project = String(((await json(await post(s, '/api/projects/create', { name: 'Filtered' }))).project as Json).project_id)
+    const seed = async (title: string, fields: Partial<Session>, text: string, ts: number): Promise<string> => {
+      const sid = String((await newSession(s)).session_id)
+      const stored = s.deps.sessionStore.get(sid)
+      Object.assign(stored, { title, ...fields })
+      stored.messages = [{ role: 'user', content: text, timestamp: ts }, { role: 'assistant', content: 'ok', timestamp: ts + 1 }]
+      s.deps.sessionStore.save(stored)
+      return sid
+    }
+    const inProject = await seed('Alpha plan', { project_id: project, model: 'gpt-5-mini' }, 'the zebra crossing', 5000)
+    const elsewhere = await seed('Beta', { project_id: null }, 'another zebra', 6000)
+    const archived = await seed('Gamma', { project_id: project, archived: true }, 'archived zebra', 7000)
+    const cli = await seed('Cli zebra work', { project_id: project, session_source: 'cli', source_tag: 'cli' }, 'cli turn', 4000)
+    const stale = await seed('Delta', { project_id: project, active_stream_id: 'deadstream308', pending_user_message: 'pending', pending_started_at: Date.now() / 1000 }, 'stale zebra', 3000)
+    const search = async (query: string): Promise<Json> => json(await s.get(`/api/sessions/search?${query}`))
+    const ids = (body: Json): string[] => (body.sessions as Json[]).map((r) => String(r.session_id))
+
+    const all = await search(`q=zebra&project_id=${project}&show_cli_sessions=1`)
+    // Only this project's sidebar rows, in the list's own order.
+    const listed = ids(await json(await s.get('/api/sessions?show_cli_sessions=1'))).filter((id) => [inProject, cli, stale].includes(id))
+    expect(ids(all)).toEqual(listed)
+    expect(all.sidebar_filtered).toBe(true)
+    const types = Object.fromEntries((all.sessions as Json[]).map((r) => [String(r.session_id), String(r.match_type)]))
+    expect(types).toEqual({ [inProject]: 'content', [cli]: 'title', [stale]: 'content' })
+    expect((all.sessions as Json[]).find((r) => r.session_id === inProject)?.match_preview).toBe('the zebra crossing')
+    expect((all.sessions as Json[]).find((r) => r.session_id === stale)).toMatchObject({ is_streaming: false, active_stream_id: null })
+    expect(ids(await search(`q=zebra&project_id=${project}&show_cli_sessions=1&sidebar_source=webui`)).sort()).toEqual([inProject, stale].sort())
+    expect(ids(await search(`q=zebra&project_id=${project}&show_cli_sessions=1&sidebar_source=cli`))).toEqual([cli])
+    expect(ids(await search(`q=zebra&project_id=${project}&include_archived=1`))).toContain(archived)
+    expect(ids(await search('q=zebra&project_id=none'))).toEqual([elsewhere])
+    expect(ids(await search('q=zebra&project_id=unknown-project'))).toEqual([])
+    const metadata = await search('q=gpt-5&include_archived=0')
+    expect(metadata.sessions).toEqual([expect.objectContaining({ session_id: inProject, match_type: 'metadata' })])
+    // Without a filter the older store-wide search stays: other projects and archived rows included.
+    const legacy = await search('q=zebra')
+    expect(legacy.sidebar_filtered).toBeUndefined()
+    expect(ids(legacy)).toEqual(expect.arrayContaining([inProject, elsewhere, archived]))
+  })
+})
+
 describe('session store disk freshness', () => {
   let s: TestServer
   beforeAll(async () => { s = await bootTestServer() })

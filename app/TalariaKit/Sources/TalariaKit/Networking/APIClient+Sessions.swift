@@ -28,9 +28,17 @@ extension APIClient {
         )
     }
 
-    public func searchSessions(query: String, content: Bool = true, depth: Int = 5) async throws -> SessionSearchResponse {
+    /// With `visibility`, the server searches the sidebar rows those toggles and
+    /// `projectID` select (TAL-308); without it, every stored session.
+    public func searchSessions(
+        query: String,
+        projectID: String? = nil,
+        visibility: AutomatedSessionVisibility? = nil,
+        content: Bool = true,
+        depth: Int = 5
+    ) async throws -> SessionSearchResponse {
         try await send(
-            endpoint: .sessionsSearch(query: query, content: content, depth: depth),
+            endpoint: .sessionsSearch(query: query, content: content, depth: depth, projectID: projectID, visibility: visibility),
             method: "GET"
         )
     }
