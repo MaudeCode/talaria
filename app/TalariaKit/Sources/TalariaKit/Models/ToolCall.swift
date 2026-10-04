@@ -16,6 +16,8 @@ public struct ToolCall: Identifiable, Equatable {
     public var background: BackgroundLink?
     /// TAL-315: the server's result sections; nil from an older server, which shows `preview` as sent.
     public var resultView: ToolResultView?
+    /// TAL-331: a limited response clipped this call's result (server scene field); `GET /api/session/tool-result` has it whole.
+    public var resultTruncated = false
 
     public init(
         id: String = "live-tool-\(UUID().uuidString)",

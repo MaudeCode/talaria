@@ -285,6 +285,10 @@ export const sessionsRouter = os.router({
       guardVisibility(ctx, input.session_id)
       return ctx.deps.sessions.readAnchorScene(input) as { scene_ref: string; rows: unknown[]; start: number; end: number; total: number; complete: boolean }
     })),
+    toolResult: os.session.toolResult.handler(({ input, context: { ctx } }) => run(() => {
+      guardVisibility(ctx, input.session_id)
+      return ctx.deps.sessions.readToolResult(input)
+    })),
     anchorSceneSave: os.session.anchorSceneSave.handler(({ input, context: { ctx } }) => run(async () => {
       guardVisibility(ctx, input.session_id)
       return ctx.deps.sessions.saveAnchorScene(input) as Promise<{ ok: true; message_index: number; message_ref: string }>

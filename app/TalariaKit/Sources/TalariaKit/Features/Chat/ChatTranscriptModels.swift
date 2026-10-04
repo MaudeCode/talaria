@@ -644,6 +644,7 @@ public struct AssistantActivityTimeline: Equatable {
             isCompleted: Self.bool(object["done"]) == true
         )
         call.background = Self.backgroundLink(object["background"])
+        call.resultTruncated = Self.bool(object["result_truncated"]) == true
         return call
     }
 

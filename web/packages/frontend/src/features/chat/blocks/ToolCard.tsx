@@ -7,6 +7,9 @@ import { agentsSummary, statusLabel } from '../../background/BackgroundWork'
 import { toolText } from '../../../i18n/toolText'
 import { useLocale } from '../../../i18n/useLocale'
 import { m } from '../../../paraglide/messages.js'
+import { useQuery } from '@tanstack/react-query'
+import { fetchToolResult } from '../../../api/endpoints'
+import { Button } from '../../../ui/Button'
 
 export interface ToolCardData {
   id: string
@@ -23,6 +26,8 @@ export interface ToolCardData {
   resultView: ToolResultView | null
   /** TAL-372: the background work this call started, updated in place as it finishes (server scene field). */
   background?: BackgroundLink
+  /** TAL-331: the server clipped or capped this result; the whole result is one request away. */
+  resultTruncated?: boolean
 }
 
 export function toolCardLabel(call: ToolCardData, locale: string): string {
@@ -45,8 +50,21 @@ function resultText(view: ToolResultView): string {
     .filter((section) => section !== undefined).join('\n')
 }
 
+const RESULT_PRE = 'max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 font-mono text-[12px] text-pre-text'
+
+/** A result the server clipped or capped: its sections until the reader asks for the whole view, which the server sends redacted. */
+function ClippedResult({ sessionId, callId, clipped }: { sessionId: string; callId: string; clipped: string }) {
+  const query = useQuery({ queryKey: ['tool-result', sessionId, callId], queryFn: ({ signal }) => fetchToolResult(sessionId, callId, signal), enabled: false, staleTime: Infinity })
+  return (
+    <>
+      <pre className={RESULT_PRE}>{query.data ? resultText(query.data.result_view) : clipped}</pre>
+      {!query.data && <Button variant="ghost" className="mt-1" disabled={query.isFetching} onClick={() => { void query.refetch() }}>{query.isFetching ? m.loading() : query.isError ? m.retry() : m.tool_show_full_output()}</Button>}
+    </>
+  )
+}
+
 /** One tool invocation. Collapsed by default: verb + target; details show arguments and result preview as text. */
-export function ToolCard({ call, timestamp }: { call: ToolCardData; timestamp?: string | undefined }) {
+export function ToolCard({ call, timestamp, sessionId }: { call: ToolCardData; timestamp?: string | undefined; sessionId?: string | undefined }) {
   const locale = useLocale()
   const [open, toggle] = useDisclosure(`tool:${call.id}`, false)
   const kind = call.kind
@@ -75,7 +93,7 @@ export function ToolCard({ call, timestamp }: { call: ToolCardData; timestamp?: 
           {result && (
             <div className="tool-card-result">
               <div className="mb-1 text-[11px] uppercase tracking-wider text-muted">{call.isError ? m.tool_error_label() : m.tool_result_label()}</div>
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-code-bg p-2 font-mono text-[12px] text-pre-text">{result}</pre>
+              {call.resultTruncated && sessionId ? <ClippedResult sessionId={sessionId} callId={call.id} clipped={result} /> : <pre className={RESULT_PRE}>{result}</pre>}
             </div>
           )}
           {call.costUsd !== null && <div className="mt-1 text-[11px] text-muted">${call.costUsd.toFixed(4)}</div>}

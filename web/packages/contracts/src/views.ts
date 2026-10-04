@@ -85,7 +85,9 @@ export const ActivitySceneRowSchema = z.looseObject({
   text: z.string().optional(), titles: z.array(z.string()).optional(),
   /** TAL-186: a prose row's `text` with its media references rewritten for display (see `_display_content`), and its media. */
   display_text: z.string().optional(), media: z.array(DisplayMediaSchema).optional(),
-  tool: z.looseObject({ id: z.string(), name: z.string(), ...ToolDisplayFields, args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), result_view: ToolResultViewSchema.nullable().optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable(), background: BackgroundLinkSchema.optional() }).optional(),
+  tool: z.looseObject({ id: z.string(), name: z.string(), ...ToolDisplayFields, args: Json.optional(), preview: z.string().nullable(), result: Json.optional(), result_view: ToolResultViewSchema.nullable().optional(), done: z.boolean(), is_error: z.boolean(), duration: z.number().nullable(), cost_usd: z.number().nullable(), background: BackgroundLinkSchema.optional(),
+    /** TAL-331: a limited response clipped `result` (originally `result_chars` long); `GET /api/session/tool-result` serves it whole. */
+    result_truncated: z.literal(true).optional(), result_chars: z.number().int().nullable().optional() }).optional(),
   steering: z.looseObject({ steer_id: z.string(), consumed: z.boolean(), submitted_at: z.number().nullable(), consumed_at: z.number().nullable(), phase_duration: z.number().nullable().optional() }).optional(),
 })
 export type ActivitySceneRow = z.infer<typeof ActivitySceneRowSchema>

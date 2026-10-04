@@ -1225,6 +1225,9 @@ struct ChatView: View {
             }
         )
         .environment(\.openURL, OpenURLAction(handler: handleTranscriptLink))
+        .environment(\.chatFullToolResultLoader) { toolCallID in
+            try await viewModel.fullToolResult(toolCallID: toolCallID)
+        }
         .environment(\.pendingSteerControls, PendingSteerControls(
             actions: viewModel.pendingSteerActions,
             inFlight: viewModel.steerActionsInFlight,

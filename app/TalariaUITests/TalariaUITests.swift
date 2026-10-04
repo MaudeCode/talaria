@@ -483,7 +483,24 @@ final class ChatPrimaryStreamUITests: ChatUITestCase {
         XCTAssertEqual(countElements(label: "Fixture opening."), 1)
         XCTAssertEqual(countElements(label: "Fixture progress."), 1)
         XCTAssertEqual(countElements(label: "Fixture finished."), 1)
+
+        // TAL-331: the settled tool row the server clipped opens its whole result on request.
+        tapCenter(of: reloadedTool)
+        let showFullOutput = app.buttons["Show full output"]
+        XCTAssertTrue(showFullOutput.awaitExistence(timeout: 5))
+        attachScreenshot(named: "Clipped tool result")
+        showFullOutput.tap()
+        XCTAssertTrue(app.staticTexts["fixture result, in full"].awaitExistence(timeout: 5))
+        XCTAssertFalse(showFullOutput.exists)
+        attachScreenshot(named: "Full tool result")
         XCTAssertNotNil(waitForComposer(timeout: 5))
+    }
+
+    private func attachScreenshot(named name: String) {
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 }
 

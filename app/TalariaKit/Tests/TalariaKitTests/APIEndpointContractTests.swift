@@ -63,6 +63,12 @@ final class ContractReadinessTests: APIClientTestCase {
                 path: "/api/session/status",
                 query: ["session_id": "session-123"]
             ),
+            .init(
+                name: "tool result",
+                endpoint: .toolResult(sessionID: "session-123", toolCallID: "call-1"),
+                path: "/api/session/tool-result",
+                query: ["session_id": "session-123", "tool_call_id": "call-1"]
+            ),
             .init(name: "new session", endpoint: .newSession, path: "/api/session/new"),
             .init(name: "rename session", endpoint: .renameSession, path: "/api/session/rename"),
             .init(name: "delete session", endpoint: .deleteSession, path: "/api/session/delete"),

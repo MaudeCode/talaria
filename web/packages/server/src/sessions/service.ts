@@ -13,14 +13,14 @@ import type { DraftStore } from './drafts.js'
 import { DraftVersionConflict, normalizeDraftVersion } from './drafts.js'
 import type { SessionEventBus } from './events.js'
 import { allSessions, buildSessionListPayload, CLI_IDENTITY_FIELDS, isClaimableCliSource, isMessagingSessionRecord, withOwnerLocks, withSessionWireFlags, lineageRootId, mergeCliSidebarMetadata, sessionListResponse, sessionSearchMessageText, sessionSearchPreview, type ListParams, type ListResponse, type Row, type RuntimeOverlay } from './list.js'
-import { anchorSceneIntOrNull, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
+import { anchorSceneIntOrNull, fullToolResult, hydrateAnchorActivityScenes, normalizeAnchorSceneMessageRef, readAnchorSceneRows, storeAnchorScene, withTurnIds } from './anchor.js'
 import { isSafeSessionId, lastMessageTimestamp, Session, stripAttachedFilesMarker, titleFrom, type Message } from './session.js'
 import { SessionBusy, SessionNotFound, statSignature, type SessionStore } from './store.js'
 import { attachTodoState } from './todo.js'
 import { stateDbSessionMessages, stateDbSessionRow, stateDbSessionSources } from './state-db.js'
 import { anchorMessageKey, anchorSummary, CompressionJobs, visibleMessagesForAnchor, type CompressionJob } from './compress.js'
 import { SidecarError, type SidecarLike } from '../sidecar/client.js'
-import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput } from './merge.js'
+import { attachmentObjects, isContextCompressionMarker, mergeSessionMessagesAppendOnly, pendingUserRow, sanitizeMessagesForApi, stripWorkspacePrefix, withAttachmentObjects, withBodyExcerpts, withDisplayMedia, withMarkerKinds, withSceneRowMedia, withPendingUserTurn, withToolCallOutcomes, withoutRunningTurnOutput, type ToolResultView } from './merge.js'
 import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
@@ -1414,26 +1414,26 @@ export class SessionService {
     })
   }
 
+  /** The session and the full transcript its detail is built from; a state.db-only session gives its synthesized one. */
+  private fullTranscript(sid: string): { session: Session; transcript: Message[]; stored: boolean } {
+    try {
+      let session = this.store.get(sid)
+      if (session.loadedMetadataOnly) session = this.store.load(sid) ?? session
+      if (!this.visibleToActiveProfile(session.profile)) throw new HttpFailure(404, 'Session not found')
+      return { session, transcript: this.mergedTranscript(session), stored: true }
+    } catch (error) {
+      if (error instanceof HttpFailure) throw error
+      const session = this.foreignSession(sid).synth
+      return { session, transcript: session.messages, stored: false }
+    }
+  }
+
   readAnchorScene(query: Record<string, string | null | undefined>): Record<string, unknown> {
     const sid = str(query.session_id).trim()
     const messageRef = normalizeAnchorSceneMessageRef(query.message_ref)
     const messageIndex = anchorSceneIntOrNull(query.message_index)
     if (!sid || (!messageRef && messageIndex === null)) throw new HttpFailure(400, 'session_id and message_ref or message_index are required')
-    let session: Session
-    let transcript: Message[]
-    let stored = true
-    try {
-      session = this.store.get(sid)
-      if (session.loadedMetadataOnly) session = this.store.load(sid) ?? session
-      if (!this.visibleToActiveProfile(session.profile)) throw new HttpFailure(404, 'Session not found')
-      transcript = this.mergedTranscript(session)
-    } catch (error) {
-      if (error instanceof HttpFailure) throw error
-      // A state.db-only session pages the same synthesized transcript its detail was built from.
-      session = this.foreignSession(sid).synth
-      transcript = session.messages
-      stored = false
-    }
+    const { session, transcript, stored } = this.fullTranscript(sid)
     const result = readAnchorSceneRows(session, { messageRef, messageIndex, before: anchorSceneIntOrNull(query.before), limit: anchorSceneIntOrNull(query.limit) }, withToolCallOutcomes(withTurnIds(transcript), session.tool_calls, session.active_stream_id))
     if (!result) throw new HttpFailure(404, 'Anchor activity scene not found')
     // Paged rows come from the raw transcript, so they take the same credential redaction as the detail's preview.
@@ -1442,6 +1442,16 @@ export class SessionService {
     const rows = withSceneToolDisplay(result.rows, redacted.rows as unknown[], enabled)
     // `/api/media` serves stored sessions only, so a state.db-only session's rows stay as written, as its detail does.
     return { ...redacted, rows: stored ? withSceneRowMedia(rows, this.mediaProjector(session)) : rows }
+  }
+
+  /** TAL-331: one tool call's whole result, which a limited response clipped (`result_truncated`), redacted like the detail. */
+  readToolResult(query: { session_id: string; tool_call_id: string }): { tool_call_id: string; result: string; result_view: ToolResultView } {
+    const sid = query.session_id.trim()
+    const id = query.tool_call_id.trim()
+    if (!sid || !id) throw new HttpFailure(400, 'session_id and tool_call_id are required')
+    const full = fullToolResult(this.fullTranscript(sid).transcript, id)
+    if (full === null) throw new HttpFailure(404, 'Tool result not found')
+    return { tool_call_id: id, ...redactValue(full, this.deps.redactEnabled()) as typeof full }
   }
 
   // ── shares ───────────────────────────────────────────────────────────────

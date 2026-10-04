@@ -2106,6 +2106,7 @@
 	"tool_result_label": "Result",
 	"tool_result_error": "Error: {error}",
 	"tool_result_exit_code": "Exit code: {code}",
+	"tool_show_full_output": "Show full output",
 	"thinking_label": "Thinking",
 	"attachments_label": "Attachments",
 	"branch_from_here": "Branch from here",

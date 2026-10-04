@@ -585,6 +585,12 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
         case "/api/background/dismiss" where UITestFixtureEnvironment.hasBackgroundUpdates:
             Self.backgroundDismissed.withLock { $0 = true }
             return json(["ok": true, "task": Self.backgroundTasks()[1]])
+        case "/api/session/tool-result":
+            return json([
+                "tool_call_id": "ui-fixture-tool",
+                "result": "fixture result, in full",
+                "result_view": ["text": "fixture result, in full"]
+            ])
         case "/api/session/new":
             // The title echoes the requested profile so a UI test can see that a
             // "new chat in <profile>" entry point pinned the session (TAL-77).
@@ -1012,7 +1018,10 @@ final class UITestFixtureURLProtocol: URLProtocol, @unchecked Sendable {
                                 "preview": "fixture result",
                                 "result": "fixture result",
                                 "done": true,
-                                "is_error": false
+                                "is_error": false,
+                                // TAL-331: a limited response clipped this result; `/api/session/tool-result` has it whole.
+                                "result_truncated": true,
+                                "result_chars": 26
                             ]
                         ]
                     ]

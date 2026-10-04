@@ -96,7 +96,7 @@ export function sceneItems(value: unknown): ActivityItem[] {
     return [{ key, kind: 'tool', call: {
       id: text(tool.id), name: text(tool.name), kind: toolKindOf(tool.kind), target: text(tool.target), args: tool.args, preview: typeof tool.preview === 'string' ? tool.preview : null, resultView: resultViewOf(tool.result_view),
       done: tool.done === true, isError: tool.is_error === true, duration: typeof tool.duration === 'number' ? tool.duration : null, costUsd: typeof tool.cost_usd === 'number' ? tool.cost_usd : null,
-      ...backgroundOf(tool.background),
+      ...backgroundOf(tool.background), ...(tool.result_truncated === true ? { resultTruncated: true } : {}),
     } }]
   })
 }
