@@ -337,7 +337,7 @@ describe('a running turn with no journal to replay (TAL-374)', () => {
       if (scene?.terminal_state !== 'running') return message
       return { ...message, _anchor_activity_scene: { ...scene, terminal_state: 'completed', final_answer: 'Both read.', expanded_by_default: false, activity_rows: rows(...scene.activity_rows, proseRow('b:prose', 'Reading b.txt.'), toolRow('b')) } }
     })
-    const session: Session = { session_id: 's', title: 'Running', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, messages: settledMessages }
+    const session: Session = { session_id: 's', title: 'Running', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, sort_ts: 0, messages: settledMessages }
     run.emit({ event: 'done', data: { session } })
     view.rerender(transcript(settledMessages, run.turn))
     expect(view.container.querySelector('.live-turn')).toBeNull()
