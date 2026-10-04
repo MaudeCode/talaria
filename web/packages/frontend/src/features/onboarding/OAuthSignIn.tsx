@@ -11,7 +11,7 @@ const message = (e: unknown): string => (e instanceof Error ? e.message : String
  * TAL-398: one provider's device-code sign-in. The server runs the flow and saves the credential; this shows the code,
  * polls the flow's status at the interval the server names, and cancels a pending flow it leaves behind.
  */
-export function OAuthSignIn({ provider, label, signedIn, onApproved }: { provider: string; label: string; signedIn: boolean; onApproved: () => void }) {
+export function OAuthSignIn({ provider, label, signedIn, onApproved }: { provider: string; label: string; signedIn: boolean; onApproved: (provider: string) => void }) {
   const [flow, setFlow] = useState<Flow | null>(null)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
@@ -54,7 +54,7 @@ export function OAuthSignIn({ provider, label, signedIn, onApproved }: { provide
   }, [pendingId, waitMs])
 
   const approved = flow?.status === 'approved'
-  useEffect(() => { if (approved) onApproved() }, [approved, onApproved])
+  useEffect(() => { if (approved) onApproved(provider) }, [approved, onApproved, provider])
 
   async function start() {
     setBusy(true)

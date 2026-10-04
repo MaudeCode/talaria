@@ -54,6 +54,7 @@ def provider(monkeypatch):
 
     monkeypatch.setattr(oauth, "scoped_home", scoped)
     monkeypatch.setattr(oauth, "_FLOWS", {})
+    monkeypatch.setattr(oauth, "_GENERATIONS", {})
     return p
 
 
@@ -185,6 +186,35 @@ def test_the_old_flow_is_cancelled_before_the_new_code_request(provider, tmp_pat
     provider.answer.set()  # the old code is approved after the replacement began
     time.sleep(0.1)
     assert provider.saved == []
+
+
+def test_overlapping_starts_publish_only_the_newest(provider, tmp_path):
+    release = threading.Event()
+    entered = threading.Event()
+    outcome: dict = {}
+
+    def slow_begin():
+        entered.set()
+        assert release.wait(5)
+        return provider.steps()[0]()
+
+    def older():
+        try:
+            oauth.start(tmp_path, "openai-codex", providers={"openai-codex": (slow_begin, *provider.steps()[1:])})
+        except RpcError as exc:
+            outcome["error"] = exc
+
+    thread = threading.Thread(target=older)
+    thread.start()
+    assert entered.wait(5)
+    newer = start(provider, tmp_path)  # begins after the older request but answers first
+    release.set()
+    thread.join(5)
+    assert outcome["error"].data["condition"] == "oauth_superseded"
+    assert oauth.poll(tmp_path, newer["flow_id"])["status"] == "pending"
+    assert [f.flow_id for f in oauth._FLOWS.values()] == [newer["flow_id"]]
+    provider.answer.set()
+    assert settle(tmp_path, newer["flow_id"])["status"] == "approved"
 
 
 def test_an_unknown_provider_and_a_failed_start_are_errors(provider, tmp_path):

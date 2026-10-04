@@ -287,6 +287,8 @@ PROVIDERS: dict[str, Provider] = {
 
 _FLOWS: dict[str, Flow] = {}
 _FLOWS_LOCK = threading.Lock()
+# The newest start per (home, provider): only it may publish a flow, whatever order the provider requests finish in.
+_GENERATIONS: dict[tuple[str, str], int] = {}
 
 
 def _ending(flow: Flow, exc: BaseException) -> tuple[str, str]:
@@ -325,6 +327,13 @@ def _cancel(flow: Flow) -> None:
             flow.end("cancelled")
 
 
+def _home_key(home: Path) -> str:
+    try:
+        return str(home.resolve())
+    except OSError:
+        return str(home)
+
+
 def _same_home(left: Path, right: Path) -> bool:
     try:
         return left.resolve() == right.resolve()
@@ -350,8 +359,11 @@ def start(home: Path, provider: str, *, providers: dict[str, Provider] | None = 
         raise InvalidParams(f"{provider} has no device-code sign-in")
     begin, wait, save = steps
     _gc(time.time())
+    key = (_home_key(home), provider)
+    with _FLOWS_LOCK:
+        generation = _GENERATIONS[key] = _GENERATIONS.get(key, 0) + 1
     # A new start replaces the pending flow for this home and provider before the code request, so an approval of the
-    # old code that lands while the provider answers can no longer save. A start racing this one is caught below.
+    # old code that lands while the provider answers can no longer save.
     for old in _pending(home, provider):
         _cancel(old)
     try:
@@ -366,8 +378,11 @@ def start(home: Path, provider: str, *, providers: dict[str, Provider] | None = 
         # The browser opens this link: anything but a web address is refused before a flow exists.
         raise RpcError("The provider answered an invalid sign-in link.", condition="oauth_failed")
     flow = Flow(secrets.token_urlsafe(16), provider, home, time.time() + int(display["expires_in"]), max(1, int(display["interval"])))
-    superseded = _pending(home, provider)
     with _FLOWS_LOCK:
+        if _GENERATIONS.get(key) != generation:
+            # A newer start for this home and provider began while this one waited on the provider: it owns the sign-in.
+            raise RpcError("A newer sign-in for this provider replaced this one.", condition="oauth_superseded")
+        superseded = [f for f in _FLOWS.values() if f.provider == provider and f.status == "pending" and _same_home(f.home, home)]
         _FLOWS[flow.flow_id] = flow
     for old in superseded:
         _cancel(old)

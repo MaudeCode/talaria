@@ -100,8 +100,13 @@ export function OnboardingPage() {
   const setNotice = (n: Notice) => setErrorNotice(n)
 
   const selectedProvider = (id: string) => providers.find((p) => p.id === id) ?? null
-  // A sign-in saves the credential server-side; the refreshed status reports it as `signed_in`.
-  const refreshStatus = useCallback(() => { void qc.invalidateQueries({ queryKey: keys.onboarding }) }, [qc])
+  // A sign-in saves the credential server-side: the server's `approved` counts until the refreshed status reports `signed_in`.
+  const [approvedSignIns, setApprovedSignIns] = useState<ReadonlySet<string>>(() => new Set())
+  const signedIn = (p: { id: string; signed_in?: boolean | undefined } | null) => !!p && (!!p.signed_in || approvedSignIns.has(p.id))
+  const onSignedIn = useCallback((id: string) => {
+    setApprovedSignIns((current) => (current.has(id) ? current : new Set(current).add(id)))
+    void qc.invalidateQueries({ queryKey: keys.onboarding })
+  }, [qc])
 
   async function saveProviderSetup(v: FormValues) {
     const current = data?.setup?.current ?? {}
@@ -140,7 +145,7 @@ export function OnboardingPage() {
       if (key === 'setup') {
         if (!v.provider) throw new Error(m.onboarding_error_provider_required())
         const raw = selectedProvider(v.provider)
-        if (raw?.oauth_flow && !raw.signed_in) throw new Error(m.onboarding_error_sign_in_required())
+        if (raw?.oauth_flow && !signedIn(raw)) throw new Error(m.onboarding_error_sign_in_required())
         const extra = raw ? ProviderExtra.safeParse(raw) : null
         const requiresBaseUrl = !!(extra?.success && extra.data.requires_base_url)
         if ((v.provider === 'custom' || requiresBaseUrl) && !v.baseUrl) throw new Error(m.onboarding_error_base_url_required())
@@ -236,7 +241,7 @@ export function OnboardingPage() {
                   <form.Subscribe selector={(st) => st.values.provider}>{(providerId) => {
                     const signIn = selectedProvider(providerId)
                     // A sign-in provider takes no API key or base URL: the server runs its device-code flow.
-                    if (signIn?.oauth_flow) return <OAuthSignIn key={signIn.id} provider={signIn.id} label={signIn.oauth_label || signIn.label || signIn.id} signedIn={!!signIn.signed_in} onApproved={refreshStatus} />
+                    if (signIn?.oauth_flow) return <OAuthSignIn key={signIn.id} provider={signIn.id} label={signIn.oauth_label || signIn.label || signIn.id} signedIn={signedIn(signIn)} onApproved={onSignedIn} />
                     return (
                       <>
                         <form.Field name="apiKey">

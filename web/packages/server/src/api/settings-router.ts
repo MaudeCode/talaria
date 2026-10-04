@@ -203,7 +203,7 @@ async function oauthCall<M extends 'oauth.start' | 'oauth.poll' | 'oauth.cancel'
     return await sidecar.call(method, params)
   } catch (error) {
     if (!(error instanceof SidecarError)) throw error
-    const status = { sidecar_unavailable: 503, oauth_flow_not_found: 404, oauth_unsupported: 409, invalid_params: 400 }[error.condition] ?? (error.code === -32602 ? 400 : 502)
+    const status = { sidecar_unavailable: 503, oauth_flow_not_found: 404, oauth_unsupported: 409, oauth_superseded: 409, invalid_params: 400 }[error.condition] ?? (error.code === -32602 ? 400 : 502)
     throw new HttpError(status, error.message, { condition: error.condition })
   }
 }

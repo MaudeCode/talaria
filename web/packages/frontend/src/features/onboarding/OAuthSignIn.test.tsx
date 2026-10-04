@@ -38,6 +38,7 @@ describe('OAuthSignIn', () => {
     await nextPoll()
     expect(api.onboardingOauthPoll).toHaveBeenLastCalledWith('flow-1')
     expect(onApproved).toHaveBeenCalledTimes(1)
+    expect(onApproved).toHaveBeenCalledWith('openai-codex')
     expect(screen.getByRole('status')).toHaveTextContent('Signed in to ChatGPT.')
     await nextPoll()
     expect(api.onboardingOauthPoll).toHaveBeenCalledTimes(2)
