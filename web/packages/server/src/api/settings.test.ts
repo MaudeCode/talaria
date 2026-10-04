@@ -94,6 +94,7 @@ describe('settings, profiles, models, providers, reasoning, onboarding', () => {
 
   it('POST /api/settings/link-check answers the saved link preferences per clicked URL (TAL-279)', async () => {
     const check = async (url: string) => (await json(await post(s, '/api/settings/link-check', { url }))).opens_directly
+    expect(await json(await post(s, '/api/settings/link-check', { url: 'https://Docs.Example.com:8443/guide' }))).toEqual({ opens_directly: false, host: 'docs.example.com' })
     expect(await check('https://docs.example.com/guide')).toBe(false)
     await post(s, '/api/settings', { trusted_link_hosts: ['Docs.Example.com'] })
     expect(await check('https://DOCS.example.com:8443/guide')).toBe(true)

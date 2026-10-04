@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { LinkCheckContext, Markdown } from './Markdown'
+import { LinkCheckContext, Markdown, type LinkCheck } from './Markdown'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
@@ -9,12 +9,13 @@ const markdown = '[docs](https://Docs.Example.com:8443/guide) and [lookalike](ht
 const openSpy = () => vi.spyOn(window, 'open').mockImplementation(() => null)
 
 describe('external link confirmation (TAL-279)', () => {
-  it('asks in a labelled app dialog naming the host; Cancel and Escape dismiss, Open opens a new tab', async () => {
+  it('asks in a labelled app dialog; Cancel and Escape dismiss, Open opens a new tab', async () => {
     const open = openSpy()
     render(<Markdown text={markdown} />)
     await userEvent.click(await screen.findByRole('button', { name: 'docs' }))
     const dialog = await screen.findByRole('dialog', { name: 'Open external link?' })
-    expect(dialog).toHaveTextContent('docs.example.com')
+    // Without a server answer (shared transcripts) the dialog names no host it would have to derive.
+    expect(dialog).toHaveTextContent('This link opens outside Talaria.')
     expect(dialog).toHaveTextContent('https://docs.example.com:8443/guide')
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
@@ -33,7 +34,7 @@ describe('external link confirmation (TAL-279)', () => {
 
   it('opens a link directly only when the server says so, asking with the clicked URL', async () => {
     const open = openSpy()
-    const check = vi.fn((url: string) => Promise.resolve(new URL(url).hostname === 'docs.example.com'))
+    const check = vi.fn((url: string) => Promise.resolve(url.includes('evil') ? { opens_directly: false, host: 'server-named.test' } : { opens_directly: true, host: 'docs.example.com' }))
     render(<LinkCheckContext value={check}><Markdown text={markdown} /></LinkCheckContext>)
     await userEvent.click(await screen.findByRole('button', { name: 'docs' }))
     await waitFor(() => { expect(open).toHaveBeenCalledWith('https://docs.example.com:8443/guide', '_blank', 'noreferrer') })
@@ -41,7 +42,7 @@ describe('external link confirmation (TAL-279)', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: 'lookalike' }))
-    await screen.findByRole('dialog', { name: 'Open external link?' })
+    expect(await screen.findByRole('dialog', { name: 'Open external link?' })).toHaveTextContent('This link goes to server-named.test.')
     expect(check).toHaveBeenLastCalledWith('https://docs.example.com.evil.test/')
     expect(open).toHaveBeenCalledTimes(1)
   })
@@ -53,7 +54,7 @@ describe('external link confirmation (TAL-279)', () => {
     await screen.findByRole('dialog', { name: 'Open external link?' })
     unmount()
 
-    render(<LinkCheckContext value={() => new Promise<boolean>(() => undefined)}><Markdown text={markdown} /></LinkCheckContext>)
+    render(<LinkCheckContext value={() => new Promise<LinkCheck>(() => undefined)}><Markdown text={markdown} /></LinkCheckContext>)
     await userEvent.click(await screen.findByRole('button', { name: 'docs' }))
     await screen.findByRole('dialog', { name: 'Open external link?' }, { timeout: 2000 })
     expect(open).not.toHaveBeenCalled()

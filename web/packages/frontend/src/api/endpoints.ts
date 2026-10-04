@@ -35,7 +35,7 @@ export const passkeyDelete = (id: string) => orpc().auth.passkeyDelete({ id })
 // Settings, profiles, models
 export const fetchSettings = () => orpc().settings.get()
 export const saveSettings = (patch: Record<string, unknown>) => orpc().settings.save(patch)
-export const checkExternalLink = async (url: string) => (await orpc().settings.linkCheck({ url })).opens_directly
+export const checkExternalLink = (url: string) => orpc().settings.linkCheck({ url })
 export const fetchProfiles = () => orpc().profiles.list()
 export const fetchActiveProfile = () => orpc().profiles.active()
 export const switchProfile = (name: string) => orpc().profiles.switch({ name })

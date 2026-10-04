@@ -29408,7 +29408,7 @@
     "/api/settings/link-check": {
       "post": {
         "operationId": "settings.linkCheck",
-        "summary": "Whether a clicked chat link opens without the confirmation dialog: only absolute HTTP(S) URLs, when `confirm_external_links` is off or the exact hostname is in `trusted_link_hosts`.",
+        "summary": "Whether a clicked chat link opens without the confirmation dialog (only absolute HTTP(S) URLs, when `confirm_external_links` is off or the exact hostname is in `trusted_link_hosts`), and the hostname that dialog names (null when the URL has none).",
         "tags": [
           "settings"
         ],
@@ -29441,10 +29441,21 @@
                   "properties": {
                     "opens_directly": {
                       "type": "boolean"
+                    },
+                    "host": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
-                    "opens_directly"
+                    "opens_directly",
+                    "host"
                   ]
                 }
               }

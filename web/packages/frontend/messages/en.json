@@ -1428,6 +1428,7 @@
 	"cancel": "Cancel",
 	"link_safety_title": "Open external link?",
 	"link_safety_description": "This link goes to {host}.",
+	"link_safety_description_unknown": "This link opens outside Talaria.",
 	"link_safety_open": "Open link",
 	"create_job": "Create job",
 	"save_skill": "Save skill",

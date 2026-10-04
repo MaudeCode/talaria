@@ -1,7 +1,7 @@
 /**
  * External-link confirmation (TAL-279). The settings store keeps `trusted_link_hosts`
  * through `normalizeTrustedLinkHosts`; `POST /api/settings/link-check` answers
- * `externalLinkOpensDirectly` for each chat link click. The list only gates that
+ * `checkExternalLink` for each chat link click. The list only gates that
  * click warning: it never changes URL sanitization or server outbound trust.
  */
 
@@ -45,14 +45,25 @@ export function linkPreferences(settings: Record<string, unknown>): LinkPreferen
   return { confirm: settings.confirm_external_links !== false, trustedHosts: normalizeTrustedLinkHosts(settings.trusted_link_hosts) }
 }
 
-/** Whether a clicked link skips the confirmation: only absolute HTTP(S) URLs, when confirmation is off or the exact hostname is trusted. */
-export function externalLinkOpensDirectly(href: string, prefs: LinkPreferences): boolean {
+export interface ExternalLinkCheck {
+  /** Only absolute HTTP(S) URLs, when confirmation is off or the exact hostname is trusted. */
+  opens_directly: boolean
+  /** The hostname the confirmation dialog names; null when the URL has none. */
+  host: string | null
+}
+
+/** The click decision and the dialog's destination, from one URL parse. */
+export function checkExternalLink(href: string, prefs: LinkPreferences): ExternalLinkCheck {
   let url: URL
   try {
     url = new URL(href)
   } catch {
-    return false
+    return { opens_directly: false, host: null }
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
-  return !prefs.confirm || prefs.trustedHosts.includes(url.hostname)
+  const http = url.protocol === 'http:' || url.protocol === 'https:'
+  return { opens_directly: http && (!prefs.confirm || prefs.trustedHosts.includes(url.hostname)), host: url.hostname || null }
+}
+
+export function externalLinkOpensDirectly(href: string, prefs: LinkPreferences): boolean {
+  return checkExternalLink(href, prefs).opens_directly
 }

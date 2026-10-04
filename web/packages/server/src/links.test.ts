@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { externalLinkOpensDirectly, linkPreferences, normalizeTrustedLinkHost, normalizeTrustedLinkHosts, TRUSTED_LINK_HOSTS_MAX } from './links.js'
+import { checkExternalLink, externalLinkOpensDirectly, linkPreferences, normalizeTrustedLinkHost, normalizeTrustedLinkHosts, TRUSTED_LINK_HOSTS_MAX } from './links.js'
 
 describe('normalizeTrustedLinkHost (TAL-279)', () => {
   it('keeps bare hostnames in browser-normalized form', () => {
@@ -39,6 +39,13 @@ describe('externalLinkOpensDirectly (TAL-279)', () => {
         expect(externalLinkOpensDirectly(href, prefs), href).toBe(false)
       }
     }
+  })
+
+  it('names the destination host the dialog shows, or null when there is none', () => {
+    expect(checkExternalLink('https://Docs.Example.com:8443/x', trusted)).toEqual({ opens_directly: false, host: 'docs.example.com' })
+    expect(checkExternalLink('https://example.com/', trusted)).toEqual({ opens_directly: true, host: 'example.com' })
+    expect(checkExternalLink('mailto:a@example.com', trusted)).toEqual({ opens_directly: false, host: null })
+    expect(checkExternalLink('not a url', trusted)).toEqual({ opens_directly: false, host: null })
   })
 
   it('reads saved settings fail-closed', () => {
