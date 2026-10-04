@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "Answering a clarification question while the keyboard is open no longer freezes the app.",
+      "highlight": false,
+      "components": ["app"]
+    }
+  ]
+}
