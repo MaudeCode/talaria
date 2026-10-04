@@ -104,14 +104,15 @@ public final class SessionListViewModel {
     private var projectsGeneration = 0
     private var activeProfileGeneration = 0
     private var openGeneration = 0
-    /// Counts completed detail loads for opened rows. A row is stamped with the
-    /// value at the moment its detail arrived — not when its open began — so a list
-    /// load that started while the detail was still pending is treated as older.
-    private var detailLoadCount = 0
-    /// Rows refreshed from their detail, with the load they came from, so a
-    /// `/api/sessions` response that was already in flight cannot reinstate the
-    /// stale metadata it captured.
-    private var detailRows: [String: (session: SessionSummary, load: Int)] = [:]
+    /// Counts local claims on list rows: a detail that refreshed an opened row, or a
+    /// row the list inserted itself. A claim is stamped with the value at the moment
+    /// it is made — not when its request began — so a list load that started while
+    /// that request was still pending is treated as older.
+    private var claimCount = 0
+    /// Claimed rows, with the claim that made them, so a `/api/sessions` response
+    /// that was already in flight cannot reinstate the stale metadata it captured
+    /// or drop a row inserted after it was requested (TAL-176).
+    private var claimedRows: [String: (session: SessionSummary, claim: Int, inserted: Bool)] = [:]
 
     private let client: APIClient
     private let sessionMutator: SessionMutator
@@ -316,7 +317,7 @@ public final class SessionListViewModel {
     ) async -> Bool {
         loadGeneration += 1
         let generation = loadGeneration
-        let detailLoadCountAtStart = detailLoadCount
+        let claimCountAtStart = claimCount
 
         isLoading = true
         errorMessage = nil
@@ -342,7 +343,7 @@ public final class SessionListViewModel {
                 visibleSessions,
                 archivedCount: response.archivedCount,
                 animation: animation,
-                detailLoadCountAtStart: detailLoadCountAtStart
+                claimCountAtStart: claimCountAtStart
             )
             automatedSessionCounts = response.automatedSessionCounts
             isViewingCachedData = false
@@ -611,7 +612,7 @@ public final class SessionListViewModel {
             if session.archived != true,
                session.shouldAppearInSessionList,
                !sessions.contains(where: { $0.sessionId == session.sessionId }) {
-                sessions.insert(session, at: 0)
+                claimRow(session, inserting: true)
             }
 
             if let modelContext, session.shouldAppearInSessionList {
@@ -687,20 +688,39 @@ public final class SessionListViewModel {
     /// stale actions until the next load. Only an existing row is
     /// replaced — opening a session never adds one to the list.
     private func refreshRow(with session: SessionSummary, modelContext: ModelContext?) {
-        guard let sessionId = Self.nonEmpty(session.sessionId),
-              let index = sessions.firstIndex(where: { $0.sessionId == sessionId })
+        guard claimRow(session, inserting: false),
+              let modelContext,
+              session.shouldAppearInSessionList
         else { return }
-
-        sessions[index] = session
-        detailLoadCount += 1
-        detailRows[sessionId] = (session, detailLoadCount)
-
-        guard let modelContext, session.shouldAppearInSessionList else { return }
         do {
             try writeCacheIfCurrent { try CacheStore.cacheSession(session, serverURL: server, in: modelContext) }
         } catch {
             cacheErrorMessage = error.localizedDescription
         }
+    }
+
+    /// Puts `session` in the list and claims it against any list load already in
+    /// flight, so that load's response keeps it (see `reconcilingClaimedRows`).
+    /// An existing row is replaced; a missing one is added at the top only when
+    /// `inserting`. Returns false when no row was claimed.
+    @discardableResult
+    private func claimRow(_ session: SessionSummary, inserting: Bool) -> Bool {
+        guard let sessionId = Self.nonEmpty(session.sessionId) else { return false }
+
+        if let index = sessions.firstIndex(where: { $0.sessionId == sessionId }) {
+            sessions[index] = session
+        } else if inserting {
+            sessions.insert(session, at: 0)
+        } else {
+            return false
+        }
+
+        // A detail refresh of a row the list inserted keeps it restorable: a
+        // response older than the insert still predates the row.
+        let inserted = inserting || claimedRows[sessionId]?.inserted == true
+        claimCount += 1
+        claimedRows[sessionId] = (session, claimCount, inserted)
+        return true
     }
 
     public func setPinned(
@@ -836,7 +856,9 @@ public final class SessionListViewModel {
 
             await load(modelContext: modelContext)
             if !sessions.contains(where: { $0.sessionId == duplicatedSession.sessionId }) {
-                sessions.insert(duplicatedSession, at: 0)
+                // The reload may have been coalesced into a load already in flight,
+                // whose response predates the copy.
+                claimRow(duplicatedSession, inserting: true)
 
                 if let modelContext {
                     do {
@@ -1169,11 +1191,7 @@ public final class SessionListViewModel {
             }
 
             if newSession.shouldAppearInSessionList {
-                if let existingIndex = sessions.firstIndex(where: { $0.sessionId == newSession.sessionId }) {
-                    sessions[existingIndex] = newSession
-                } else {
-                    sessions.insert(newSession, at: 0)
-                }
+                claimRow(newSession, inserting: true)
 
                 if let modelContext {
                     do {
@@ -1258,11 +1276,11 @@ public final class SessionListViewModel {
         _ newSessions: [SessionSummary],
         archivedCount newArchivedCount: Int?,
         animation: Animation?,
-        detailLoadCountAtStart: Int = Int.max
+        claimCountAtStart: Int = Int.max
     ) {
-        let reconciledSessions = reconcilingDetailRows(
+        let reconciledSessions = reconcilingClaimedRows(
             in: newSessions,
-            detailLoadCountAtStart: detailLoadCountAtStart
+            claimCountAtStart: claimCountAtStart
         )
 
         guard let animation else {
@@ -1277,28 +1295,32 @@ public final class SessionListViewModel {
         }
     }
 
-    /// Keeps a detail's authoritative row when the list response being applied was
-    /// requested before that detail arrived. Only a load that started after the
-    /// detail already reflects it, so only then do its rows win and the record get
-    /// dropped.
-    private func reconcilingDetailRows(
+    /// Keeps a claimed row when the list response being applied was requested
+    /// before the claim: a detail's authoritative metadata wins over the row the
+    /// response captured, and an inserted row the response predates is put back at
+    /// the top, newest claim first. Only a load that started after the claim
+    /// already reflects it, so only then do its rows win and the record get dropped.
+    private func reconcilingClaimedRows(
         in newSessions: [SessionSummary],
-        detailLoadCountAtStart: Int
+        claimCountAtStart: Int
     ) -> [SessionSummary] {
-        guard !detailRows.isEmpty else { return newSessions }
+        guard !claimedRows.isEmpty else { return newSessions }
 
-        for (sessionID, loaded) in detailRows where loaded.load <= detailLoadCountAtStart {
-            detailRows.removeValue(forKey: sessionID)
-        }
+        claimedRows = claimedRows.filter { $0.value.claim > claimCountAtStart }
+        guard !claimedRows.isEmpty else { return newSessions }
 
-        guard !detailRows.isEmpty else { return newSessions }
+        let listedIDs = Set(newSessions.compactMap(\.sessionId))
+        let missingInserts = claimedRows.values
+            .filter { $0.inserted && !listedIDs.contains($0.session.sessionId ?? "") }
+            .sorted { $0.claim > $1.claim }
+            .map(\.session)
 
-        return newSessions.map { session in
+        return missingInserts + newSessions.map { session in
             guard let sessionID = session.sessionId,
-                  let loaded = detailRows[sessionID]
+                  let claimed = claimedRows[sessionID]
             else { return session }
 
-            return loaded.session.merging(onto: session)
+            return claimed.session.merging(onto: session)
         }
     }
 
