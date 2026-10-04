@@ -46,12 +46,12 @@ export function WorkspacesPage() {
         {list.map((w, i) => (
           <li key={w.path} className={cn('flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2', ws.data?.last === w.path && 'border-accent-bg-strong')}>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 text-sm font-medium text-text"><span className="truncate">{w.name ?? w.path}</span>{ws.data?.last === w.path && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-[10px] uppercase tracking-wider text-accent-text">{m.workspace_current()}</span>}</div>
+              <div className="flex items-center gap-2 text-sm font-medium text-text"><span className="truncate">{w.name}</span>{ws.data?.last === w.path && <span className="rounded-full bg-accent-bg px-2 py-0.5 text-[10px] uppercase tracking-wider text-accent-text">{m.workspace_current()}</span>}</div>
               <div className="truncate font-mono text-[11px] text-muted">{w.path}</div>
             </div>
             <IconButton label={m.workspace_move_up()} onClick={() => move(i, -1)} disabled={i === 0}><ArrowUp size={14} aria-hidden="true" /></IconButton>
             <IconButton label={m.workspace_move_down()} onClick={() => move(i, 1)} disabled={i === list.length - 1}><ArrowDown size={14} aria-hidden="true" /></IconButton>
-            <IconButton label={m.rename()} onClick={() => setRenaming({ path: w.path, name: w.name ?? '' })}><Pencil size={14} aria-hidden="true" /></IconButton>
+            <IconButton label={m.rename()} onClick={() => setRenaming({ path: w.path, name: w.name })}><Pencil size={14} aria-hidden="true" /></IconButton>
             <IconButton label={m.remove()} onClick={() => setRemoving(w.path)}><Trash2 size={14} aria-hidden="true" /></IconButton>
           </li>
         ))}

@@ -26,7 +26,6 @@ import { useMarkViewed } from './useMarkViewed'
 import { TerminalPanel } from '../terminal/TerminalPanel'
 import { ChatSidePanel } from './ChatSidePanel'
 import { setSidePanelOpen, toggleSidePanel, useShellState } from '../../shell/useShellState'
-import { workspaceLabel } from '../workspaces/label'
 import { useRuntimeNotices } from '../notices/useRuntimeNotices'
 import { showToast } from '../toast/toast'
 import { isApiError } from '../../contracts/common'
@@ -228,7 +227,8 @@ export function ChatView({ sessionId }: { sessionId: string | null }) {
   const title = session?.title ?? listedTitle ?? ''
   const workspace = session?.workspace ?? settings.data?.default_workspace
   const workspaces = useWorkspacesQuery()
-  const wsLabel = workspaceLabel(workspaces.data?.workspaces, workspace)
+  // TAL-303: the server names the workspace: the session's own label, else the default workspace's registry entry.
+  const wsLabel = session ? session.workspace_name : workspaces.data?.workspaces.find((w) => w.path === workspace)?.name
   const meta = useMemo(() => [session?.model, session?.message_count !== undefined ? m.session_meta_messages({ n: session.message_count }) : null, session?.updated_at ? formatDate(session.updated_at) : null].filter(Boolean).join(' · '), [session])
 
   // Composer placement. A session is assumed to have content until the transcript says otherwise;

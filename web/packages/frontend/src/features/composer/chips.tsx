@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ChevronDown, Cpu, Brain, Wrench, FolderOpen } from 'lucide-react'
 import { m } from '../../paraglide/messages.js'
-import { workspaceLabel } from '../workspaces/label'
 import { useModelsQuery, useWorkspacesQuery } from '../../app/queries'
 import { HelpTip } from '../../ui/Field'
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from '../../ui/Menu'
@@ -92,14 +91,15 @@ export function ToolsetsChip({ value, onChange, row }: { value: string[] | null;
   )
 }
 
-export function WorkspaceChip({ value, onChange, row }: { value: string | undefined; onChange: (path: string) => void; row?: boolean | undefined }) {
+/** `name` is the session's `workspace_name`; without a session the chip shows the chosen registry entry's name (TAL-303). */
+export function WorkspaceChip({ value, name, onChange, row }: { value: string | undefined; name?: string | null | undefined; onChange: (path: string) => void; row?: boolean | undefined }) {
   const ws = useWorkspacesQuery()
   const list = ws.data?.workspaces ?? []
-  const label = workspaceLabel(list, value) || '—'
+  const label = (name !== undefined ? name : list.find((w) => w.path === value)?.name) || '—'
   return (
     <Menu label={m.composer_control_workspace()} side="top" className="min-w-64" trigger={<Chip id={row ? undefined : "composerWorkspaceChip"} icon={<FolderOpen size={13} aria-hidden="true" />} label={label} title={m.composer_control_workspace()} row={row} size="xs" className="composer-workspace-chip" disabled={list.length === 0} />}>
       <MenuRadioGroup value={value ?? ''} onValueChange={(v: string) => onChange(v)}>
-        {list.map((w) => <MenuRadioItem key={w.path} value={w.path} className={RADIO_CLASS}><span className="flex min-w-0 flex-col"><span className="truncate">{w.name ?? w.path}</span><span className="truncate font-mono text-[10px] text-muted">{w.path}</span></span></MenuRadioItem>)}
+        {list.map((w) => <MenuRadioItem key={w.path} value={w.path} className={RADIO_CLASS}><span className="flex min-w-0 flex-col"><span className="truncate">{w.name}</span><span className="truncate font-mono text-[10px] text-muted">{w.path}</span></span></MenuRadioItem>)}
       </MenuRadioGroup>
     </Menu>
   )
