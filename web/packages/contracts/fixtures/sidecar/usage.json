@@ -1,0 +1,13 @@
+{
+  "usage.account": [
+    {
+      "params": {
+        "profile_home": "<home>",
+        "provider": "zai"
+      },
+      "result": {
+        "snapshot": null
+      }
+    }
+  ]
+}

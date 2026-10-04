@@ -1,0 +1,16 @@
+{
+  "provider": "anthropic",
+  "fetched_at": "2026-09-28T07:30:00Z",
+  "title": "Claude limits",
+  "plan": "max",
+  "windows": [
+    {
+      "label": "Current session",
+      "used_percent": 12,
+      "reset_at": "2026-09-28T12:00:00Z"
+    }
+  ],
+  "details": [],
+  "unavailable_reason": null,
+  "available": true
+}
