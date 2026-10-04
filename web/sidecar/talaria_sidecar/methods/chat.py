@@ -1113,14 +1113,22 @@ def register(registry) -> None:
 
     @registry.method("chat.evict_agent", requires_agent=False)
     def evict_(ctx: CallContext, params: dict) -> dict:
+        """Drop a session's cached agent. Only delete/clear (``clear_session``) end its approval grants, parked
+        approvals and kernels; a model switch, truncate or compress leaves a running turn's agent in place."""
         session_id = str(params.get("session_id") or "").strip()
+        end_session = params.get("clear_session") is True
         with _AGENT_CACHE_LOCK:
+            with _RUNS_LOCK:
+                run = _RUNS.get(_RUNS_BY_SESSION.get(session_id) or "")
+            if not end_session and run is not None and not run.finished.is_set():
+                return {"evicted": False}
             evicted = _AGENT_CACHE.pop(session_id, None) is not None
-        try:
-            from tools.approval import clear_session
-            clear_session(session_id)
-        except Exception:  # noqa: BLE001
-            pass
+        if end_session:
+            try:
+                from tools.approval import clear_session
+                clear_session(session_id)
+            except Exception:  # noqa: BLE001
+                pass
         return {"evicted": evicted}
 
     @registry.method("chat.commit_memory", requires_agent=False)

@@ -86,7 +86,8 @@ export interface SessionServiceDeps {
     journalDegraded: (streamId: string) => boolean
     /** TAL-424: the live stream's pending steers, as clients show them. */
     pendingSteers?: (streamId: string) => PendingSteer[]
-    evictAgent: (sid: string) => void
+    /** Drop the session's cached agent; `endSession` (delete/clear) also ends its approval grants and parked approvals. */
+    evictAgent: (sid: string, endSession?: boolean) => void
     closeTerminal: (sid: string) => void
     /** Python `delete_cli_session`: remove the session's rows from the profile's state.db; resolves false on failure. */
     deleteCliSession: (profile: string | null, sid: string) => Promise<boolean>
@@ -999,7 +1000,7 @@ export class SessionService {
       this.store.save(s)
       if (hadMessages) { try { rmSync(`${this.store.pathFor(sid)}.bak`, { force: true }) } catch { /* ignore */ } }
     })
-    this.deps.runtime.evictAgent(sid)
+    this.deps.runtime.evictAgent(sid, true)
     return { ok: true, session: this.wireRow(s) }
   }
 
@@ -1142,7 +1143,7 @@ export class SessionService {
       if (error instanceof SessionBusy) throw new HttpFailure(503, 'Session busy, try again')
       throw error
     }
-    this.deps.runtime.evictAgent(sid)
+    this.deps.runtime.evictAgent(sid, true)
     try { rmSync(this.deps.attachmentDir(sid), { recursive: true, force: true }) } catch { /* ignore */ }
     // Python `delete_run_journal` (#3802): a deleted session leaves no replayable run journal behind.
     try { this.deps.journal?.deleteSession(sid) } catch { /* ignore */ }
