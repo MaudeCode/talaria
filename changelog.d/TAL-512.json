@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "A /btw side question that fails now shows an error instead of repeating the chat's previous answer, and no longer leaves a copy of the conversation behind.",
+      "highlight": false,
+      "components": ["web"]
+    }
+  ]
+}

@@ -514,19 +514,6 @@ export class TurnRunner {
         put('cancel', this.cancelFrame(sessionId))
         return
       }
-      if (opts.ephemeral) {
-        let answer = ''
-        for (let i = result.messages.length - 1; i >= 0; i -= 1) {
-          const m = result.messages[i]!
-          if (m.role === 'assistant') { answer = str(m.content); break }
-        }
-        opts.onDone?.(answer)
-        // Python `_ephemeral_session_payload`: only role and content leave the server for a btw turn.
-        put('done', { session: { session_id: sessionId, messages: (result.messages).map((m) => ({ role: m.role, content: m.content })) }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer, terminal_state: answer.trim() ? 'completed' : 'no_response' })
-        try { rmSync(deps.store.pathFor(sessionId), { force: true }) } catch { /* ignore */ }
-        deps.store.sessions.delete(sessionId)
-        return
-      }
       // Writeback only while this stream still owns the session (Python `_stream_writeback_is_current`).
       let current: Session
       try { current = deps.store.get(sessionId) } catch { current = s }
@@ -543,12 +530,13 @@ export class TurnRunner {
       // Python's second chance: a turn that emitted no new row still counts when the merged transcript it produced
       // ends on a final answer (the current user row or trailing tool activity makes it "lacking").
       const mergedForCheck = (): Message[] => mergeDisplayMessagesAfterAgentResult(previousMessages, previousContext, resultMessages, msgText, { source: opts.source ?? 'webui', activeTurnToken, now: deps.now(), turnId: streamId, attachments: opts.attachments ?? [] })
-      const assistantAdded = assistantReplyAddedAfterCurrentTurn(resultMessages, previousContext, msgText) || !sessionLacksFinalAssistantAnswer(mergedForCheck())
+      // TAL-512: a btw answer must be a reply this turn added: everything before it is the parent's replayed history.
+      const assistantAdded = assistantReplyAddedAfterCurrentTurn(resultMessages, previousContext, msgText) || (!opts.ephemeral && !sessionLacksFinalAssistantAnswer(mergedForCheck()))
       const lastErr = result.error ?? capturedTerminalError ?? ''
       // Python `_agent_result_terminal_failure`: the Agent's failed, partial, or compression-exhausted result ends the turn
       // even after text streamed; only a partial with no error text and a final answer still completes.
       const agentFailed = result.failed || result.compression_exhausted || (result.partial && (Boolean(lastErr) || !assistantAdded))
-      if (result.status === 'error' || agentFailed || (!assistantAdded && !tokenSent)) {
+      if (result.status === 'error' || agentFailed || (!assistantAdded && (!tokenSent || opts.ephemeral))) {
         const classification = classifyProviderError(lastErr, { silentFailure: !lastErr, compressionExhausted: result.compression_exhausted })
         const errStr = lastErr || `${classification.label}.`
         const payload = providerErrorPayload(errStr, classification.type, classification.hint, deps.redactEnabled())
@@ -558,12 +546,27 @@ export class TurnRunner {
         const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, str(result.pending_steer), 'followup')
         followUp = leftovers
         this.persistError(s, streamId, classification.label, payload, activeTurnToken)
-        payload.session = redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled())
+        // TAL-512: a btw error carries no session: its journaled frame must not keep a copy of the parent conversation.
+        if (!opts.ephemeral) payload.session = redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled())
         payload.session_id = s.session_id
         payload.old_session_id = sessionId
         for (const [event, data] of steerEvents) put(event, data)
         put('apperror', payload)
         failed = true
+        return
+      }
+      // TAL-512: a btw turn passes the failure check above first, so its last assistant row is this turn's reply.
+      if (opts.ephemeral) {
+        let answer = ''
+        for (let i = result.messages.length - 1; i >= 0; i -= 1) {
+          const m = result.messages[i]!
+          if (m.role === 'assistant') { answer = str(m.content); break }
+        }
+        opts.onDone?.(answer)
+        // Python `_ephemeral_session_payload`: only role and content leave the server for a btw turn.
+        put('done', { session: { session_id: sessionId, messages: (result.messages).map((m) => ({ role: m.role, content: m.content })) }, usage: { input_tokens: 0, output_tokens: 0 }, ephemeral: true, answer, terminal_state: answer.trim() ? 'completed' : 'no_response' })
+        try { rmSync(deps.store.pathFor(sessionId), { force: true }) } catch { /* ignore */ }
+        deps.store.sessions.delete(sessionId)
         return
       }
       // ── settle the transcript ──
@@ -716,7 +719,7 @@ export class TurnRunner {
         if (current.active_stream_id === streamId) {
           for (const [event, data] of this.takeSteerEventsBefore(streamId, 'apperror')) put(event, data)
           this.persistError(current, streamId, classification.label, payload, activeTurnToken)
-          payload.session = redactSessionData(this.terminalSessionPayload(current), deps.redactEnabled())
+          if (!opts.ephemeral) payload.session = redactSessionData(this.terminalSessionPayload(current), deps.redactEnabled())
         }
       } catch (persistError) {
         deps.log(`[webui] WARNING: failed to persist turn error for ${sessionId}: ${(persistError as Error).message}`)

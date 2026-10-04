@@ -358,8 +358,13 @@ export const chatRouter = os.router({
     ephemeral.context_messages = structuredClone(s.context_messages)
     ephemeral.title = `btw: ${question.slice(0, 60)}`
     ctx.deps.sessionStore.save(ephemeral)
-    const started = ctx.deps.turns.start(ephemeral, { msg: question, attachments: [], workspace: s.workspace, model: s.model, modelProvider: s.model_provider, source: 'webui', ephemeral: true })
-    if (started._status !== undefined && started._status >= 400) throw new HttpError(started._status, started.error ?? 'btw start failed')
+    // TAL-512: a failed or refused btw turn must not leave its copy of the parent conversation behind.
+    const cleanup = (): void => { try { ctx.deps.sessionStore.deleteFiles(ephemeral.session_id, { tombstone: false }) } catch { /* best effort */ } }
+    const started = ctx.deps.turns.start(ephemeral, { msg: question, attachments: [], workspace: s.workspace, model: s.model, modelProvider: s.model_provider, source: 'webui', ephemeral: true, onFailed: cleanup })
+    if (started._status !== undefined && started._status >= 400) {
+      cleanup()
+      throw new HttpError(started._status, started.error ?? 'btw start failed')
+    }
     return { stream_id: str(started.stream_id), session_id: ephemeral.session_id, parent_session_id: sid }
   })),
 })
