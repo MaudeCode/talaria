@@ -96,11 +96,13 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
   const { items, finalAnswer, status } = activity
   const locale = useLocale()
   const running = status === 'running'
+  // Only the newest row of a running turn is active; live rows that continue a running scene take that over.
+  const activeTail = running && !activity.continued
   const outcome = terminalOutcomeLabel(status)
   const render = (item: ActivityItem, last: boolean): ReactNode => {
     switch (item.kind) {
-      case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} streaming={running && last} /><MediaTiles media={item.media} /></div>
-      case 'reasoning': return <ReasoningBlock key={item.key} text={item.text} titles={item.titles} live={running && last} />
+      case 'text': return <div key={item.key} className="msg-body"><Markdown text={item.display ?? item.text} streaming={activeTail && last} /><MediaTiles media={item.media} /></div>
+      case 'reasoning': return <ReasoningBlock key={item.key} text={item.text} titles={item.titles} live={activeTail && last} />
       case 'steering': return <SteerMessage key={item.key} text={item.text} />
       case 'tool': return <ToolCard key={item.key} call={item.call} sessionId={sessionId} />
     }
@@ -116,7 +118,7 @@ function ActivityBody({ activity, mode, earlier, sessionId }: { activity: TurnAc
       while (i < list.length && list[i]?.kind !== 'text' && list[i]?.kind !== 'steering') i++
       const run = list.slice(start, i)
       const contents = run.map((entry, j) => render(entry, tail && start + j === list.length - 1))
-      const active = running && tail && i === list.length
+      const active = activeTail && tail && i === list.length
       const current = run.at(-1)
       const activeLabel = active && current?.kind === 'tool'
         ? toolCardLabel(current.call, locale)

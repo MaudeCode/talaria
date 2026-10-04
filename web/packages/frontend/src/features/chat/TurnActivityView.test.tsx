@@ -1,5 +1,7 @@
 import sceneCases from './__fixtures__/activity-scene-boundaries.json'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Transcript } from './Transcript'
 import { AssistantMessageRow } from './MessageRow'
@@ -7,9 +9,10 @@ import { TurnActivityView } from './TurnActivityView'
 import { WorklogDisclosureProvider } from './blocks/Worklog'
 import { groupAssistantTurns, liveActivity, persistedActivity, type TurnActivity } from './turnActivity'
 import { projectMessages } from './useTranscript'
-import { initialStreamState, streamReducer } from '../../stream/reducer'
+import { initialStreamState, streamReducer, type LiveTurn } from '../../stream/reducer'
 import type { Message, Session } from '../../contracts'
 import type { ChatEvent } from '../../contracts/sse'
+import { MessageSchema } from '../../contracts/session'
 
 afterEach(() => { cleanup(); localStorage.clear() })
 
@@ -288,5 +291,71 @@ describe('turn worklog presentation', () => {
     const view = render(<View activity={persistedActivity(row)} />)
     expect(view.container.querySelector('.activity')).toBeNull()
     expect(screen.getByText('Answer')).toBeVisible()
+  })
+})
+
+describe('a running turn with no journal to replay (TAL-374)', () => {
+  const example = { messages: MessageSchema.array().parse((JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../../../../contracts/fixtures/web-session.json'), 'utf8')) as { running_scene_session: { messages: unknown } }).running_scene_session.messages) }
+  const streamId = 'contract-run-r'
+  /** A live turn attached without replay: it streams only what follows the rows the server persisted. */
+  function attached() {
+    let state = streamReducer(initialStreamState, { type: 'attach', sessionId: 's', streamId, now: 0, replay: false })
+    let seq = 0
+    return {
+      emit(event: ChatEvent) { state = streamReducer(state, { type: 'event', sessionId: 's', streamId, event, lastEventId: `${streamId}:${String(++seq)}`, now: seq }) },
+      get turn() { return state.turns.s! },
+    }
+  }
+  const transcript = (messages: Message[], live: LiveTurn | null) => <Transcript rows={projectMessages(messages)} live={live} assistantName="Assistant" mode="compact_worklog" renderUserMarkdown={false} autoFollow={false} sessionId="s" actions={{}} tts={false} truncated={false} loadedFrom={0} onLoadOlder={() => undefined} loadingOlder={false} emptyState={null} showJumpButtons={false} virtualizeLongTranscripts={false} />
+  /** Each assistant turn's blocks in document order: reasoning, tool cards and prose. */
+  const blocks = (container: HTMLElement) => [...container.querySelectorAll('.assistant-turn')].map((turn) => [...turn.querySelectorAll('.thinking-card, [data-tool-id], .msg-body')].map((el) => (el.matches('.thinking-card') ? 'reasoning' : el.matches('[data-tool-id]') ? `tool:${el.getAttribute('data-tool-id') ?? ''}` : (el.textContent ?? '').trim())))
+  const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo')
+  beforeEach(() => { Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() }) })
+  afterEach(() => {
+    if (originalScroll) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScroll)
+    else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo')
+  })
+
+  it('shows every persisted row open with no Worked disclosure or outcome, continues it with live rows, and settles to the completed scene once', () => {
+    const run = attached()
+    const view = render(transcript(example.messages, run.turn))
+    const [, running] = view.container.querySelectorAll('.assistant-turn')
+    expect(blocks(view.container).slice(0, 2)).toEqual([['Earlier answer.'], ['reasoning', 'Reading a.txt.', 'tool:contract-read', 'Now b.txt.']])
+    expect(running!.querySelector('.tool-worklog-summary')).toBeNull()
+    expect(running!.querySelector('[role="status"]')).toBeNull()
+    expect(running!.querySelector('[data-final-answer]')).toBeNull()
+
+    // Live frames append after the persisted rows; neither replaces the other.
+    run.emit({ event: 'token', data: { text: 'Reading b.txt.' } })
+    run.emit(tool('b'))
+    view.rerender(transcript(example.messages, run.turn))
+    expect(blocks(view.container)).toEqual([['Earlier answer.'], ['reasoning', 'Reading a.txt.', 'tool:contract-read', 'Now b.txt.'], ['Reading b.txt.', 'tool:b']])
+
+    // The settled scene replaces both, once.
+    const settledMessages = example.messages.map((message) => {
+      const scene = message._anchor_activity_scene
+      if (scene?.terminal_state !== 'running') return message
+      return { ...message, _anchor_activity_scene: { ...scene, terminal_state: 'completed', final_answer: 'Both read.', expanded_by_default: false, activity_rows: rows(...scene.activity_rows, proseRow('b:prose', 'Reading b.txt.'), toolRow('b')) } }
+    })
+    const session: Session = { session_id: 's', title: 'Running', is_streaming: false, read_only: false, can_branch: true, can_pin: true, can_archive: true, can_duplicate: true, source_kind: 'webui', is_messaging_session: false, messages: settledMessages }
+    run.emit({ event: 'done', data: { session } })
+    view.rerender(transcript(settledMessages, run.turn))
+    expect(view.container.querySelector('.live-turn')).toBeNull()
+    expect(blocks(view.container)).toEqual([['Earlier answer.'], ['reasoning', 'Reading a.txt.', 'tool:contract-read', 'Now b.txt.', 'Reading b.txt.', 'tool:b', 'Both read.']])
+    expect(view.container.querySelectorAll('.tool-worklog-summary')).toHaveLength(1)
+  })
+
+  it('marks only the newest row active: the persisted tail until live frames arrive, then the live tail', () => {
+    const messages: Message[] = [
+      { role: 'user', content: 'Go', _turn_id: streamId },
+      { role: 'assistant', id: 'r1', content: 'Looking.', _turn_id: streamId, _anchor_activity_scene: { version: 'activity_scene_v1', terminal_state: 'running', final_answer: '', expanded_by_default: true, activity_rows: rows(proseRow('r1:prose', 'Looking.'), { row_id: 'r1:reasoning', role: 'reasoning', text: 'Still planning', titles: [] }) } },
+    ]
+    const run = attached()
+    const view = render(transcript(messages, run.turn))
+    const active = () => [...view.container.querySelectorAll('[data-reasoning-active]')].map((el) => (el.closest('.live-turn') ? 'live' : 'persisted'))
+    expect(active()).toEqual(['persisted'])
+    run.emit({ event: 'reasoning', data: { text: 'Comparing' } })
+    view.rerender(transcript(messages, run.turn))
+    expect(active()).toEqual(['live'])
   })
 })

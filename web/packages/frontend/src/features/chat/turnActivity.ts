@@ -28,6 +28,8 @@ export interface TurnActivity {
   expandedByDefault?: boolean
   /** Projected from the live stream: no server scene yet, so nothing folds and no answer is split out. */
   live?: boolean
+  /** A running scene the live turn's rows continue (TAL-374): its last row is no longer the newest, so it is not active. */
+  continued?: boolean
   sceneRows?: unknown[]
   history?: { ref: string; index: number; before: number }
 }

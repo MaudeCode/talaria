@@ -147,8 +147,9 @@ export const MarkerRow = memo(function MarkerRow({ row }: { row: VisibleMessage 
   )
 })
 
-export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, isLast, sessionId, scope }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; isLast: boolean; sessionId?: string | undefined; scope?: string | undefined }) {
-  const activity = persistedActivity(row)
+/** `continued`: the live turn's rows follow this running scene (TAL-374). */
+export const AssistantMessageRow = memo(function AssistantMessageRow({ row, name, mode, actions, tts, isLast, sessionId, scope, continued = false }: { row: VisibleMessage; name: string; mode: ActivityMode; actions: RowActions; tts: boolean; isLast: boolean; sessionId?: string | undefined; scope?: string | undefined; continued?: boolean }) {
+  const activity = { ...persistedActivity(row), continued }
   const content = activity.finalAnswer || activity.items.flatMap((item) => item.kind === 'text' ? [item.text] : []).join('\n\n')
   const run = row.message as { _turnDuration?: number | null; _usedModel?: string | null }
   const meta = [typeof run._turnDuration === 'number' && run._turnDuration >= 0.5 ? `${run._turnDuration < 10 ? run._turnDuration.toFixed(1) : Math.round(run._turnDuration)}s` : null, run._usedModel || null].filter(Boolean).join(' · ')
