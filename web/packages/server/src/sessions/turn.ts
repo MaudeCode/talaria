@@ -486,6 +486,13 @@ export class TurnRunner {
               put('approval', { ...(pending ?? data), pending_count })
               return
             }
+            // TAL-514: the Agent stopped waiting on an approval (answer, timeout, or interrupt); withdraw its copy.
+            case 'approval_resolved': {
+              if (!str(data.approval_id)) return
+              deps.pending.resolveApproval(sessionId, str(data.approval_id))
+              put(...this.approvalHeadFrame(sessionId))
+              return
+            }
             case 'clarify': {
               deps.pending.submitClarify(sessionId, { ...data, session_id: sessionId, kind: 'clarify' })
               const head = deps.pending.clarifyHeadFrame(sessionId)
@@ -1492,6 +1499,7 @@ export class TurnRunner {
     try { s = this.deps.store.get(sessionId, { metadataOnly: true }) } catch { s = null }
     const profileHome = this.deps.profileHome(s?.profile ?? null)
     let resolved = false
+    let withdrawn = false
     if (entry) {
       if (!sidecar) return relayFailure('not running')
       try {
@@ -1501,7 +1509,12 @@ export class TurnRunner {
         this.deps.log(`[webui] approval relay failed for ${sessionId}: ${(error as Error).message}`)
         return relayFailure(str((error as Error).message))
       }
-      if (resolved && entry) this.deps.pending.resolveApproval(sessionId, str(entry.approval_id))
+      if (resolved) this.deps.pending.resolveApproval(sessionId, str(entry.approval_id))
+      else {
+        // TAL-514: a rejected answer can mean the Agent already stopped waiting on this card; drop what it no longer holds.
+        await this.reconcileApprovals(sessionId, sidecar)
+        withdrawn = !this.deps.pending.hasApprovalId(sessionId, str(entry.approval_id))
+      }
     }
     let yoloEnabled: boolean | undefined
     if (enableYolo) {
@@ -1516,8 +1529,27 @@ export class TurnRunner {
       yoloEnabled = true
       this.deps.pending.clearApprovals(sessionId)
     }
+    if (withdrawn) return { ok: true, choice, stale_cleared: true, pending_count: this.deps.pending.approvalPending(sessionId).pending_count, ...(enableYolo ? { yolo_enabled: yoloEnabled } : {}) }
     if (!found && !this.deps.pending.hasPendingApproval(sessionId)) return { ok: true, choice, stale_cleared: true, ...(enableYolo ? { yolo_enabled: yoloEnabled } : {}) }
     return { ok: resolved || !approvalId, choice, ...(enableYolo && (resolved || !approvalId) ? { yolo_enabled: yoloEnabled } : {}) }
+  }
+
+  /** The live chat frame after approvals were withdrawn: the new queue head, or `approval_cleared` once none is left. */
+  private approvalHeadFrame(sessionId: string): [string, Record<string, unknown>] {
+    const { pending, pending_count } = this.deps.pending.approvalPending(sessionId)
+    return pending ? ['approval', { ...pending, pending_count }] : ['approval_cleared', { session_id: sessionId, pending_count: 0 }]
+  }
+
+  /** Drop mirrored approvals the Agent no longer holds; a failed read keeps them (the card stays answerable). */
+  private async reconcileApprovals(sessionId: string, sidecar: SidecarLike): Promise<void> {
+    let live: Record<string, unknown>[]
+    try {
+      live = (await sidecar.call('approval.pending', { session_id: sessionId })).pending
+    } catch (error) {
+      this.deps.log(`[webui] approval reconcile failed for ${sessionId}: ${(error as Error).message}`)
+      return
+    }
+    if (this.deps.pending.retainApprovals(sessionId, new Set(live.map((p) => str(p.request_id)))).length) this.emitToSession(sessionId, ...this.approvalHeadFrame(sessionId))
   }
 
   private withYoloLock<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {

@@ -70,6 +70,14 @@ describe('stream reducer: ordering and projection', () => {
     expect(s.turns[SID]!.clarify).toBeNull()
     expect(s.turns[SID]!.doneSession?.title).toBe('T')
   })
+  it('drops the approval card when the server withdraws the last approval (TAL-514)', () => {
+    let s = started()
+    s = ev(s, 'approval', { approval_id: 'a1', command: 'rm -rf x', pending_count: 1 })
+    const status = s.turns[SID]!.status
+    s = ev(s, 'approval_cleared', { session_id: SID, pending_count: 0 })
+    expect(s.turns[SID]!.approval).toBeNull()
+    expect(s.turns[SID]!.status).toBe(status)
+  })
   it('projects metering, context status, steer consumption and compression', () => {
     let s = started()
     s = ev(s, 'metering', { tps: 21.5, usage: { output_tokens: 10 } })

@@ -214,6 +214,8 @@ function reduceTurn(turn: LiveTurn, action: Extract<StreamAction, { type: 'event
       if (terminal) return stamped
       return { ...live(), approval: event.data }
     }
+    case 'approval_cleared':
+      return stamped.approval ? { ...stamped, approval: null } : stamped
     case 'clarify': {
       if (terminal) return stamped
       return { ...live(), clarify: event.data as ClarifyPending }
