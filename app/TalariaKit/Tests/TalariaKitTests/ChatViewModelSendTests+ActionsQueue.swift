@@ -1751,3 +1751,43 @@ extension ChatViewModelSendTests {
         XCTAssertTrue(viewModel.earlierSceneRows(for: regeneratedMessage).isEmpty)
     }
 }
+
+/// TAL-331: a limited response clips a long tool result and flags its scene row; the app fetches the whole result on request.
+extension ChatViewModelSendTests {
+    @MainActor
+    func testClippedSceneToolRowFetchesItsFullResult() async throws {
+        let full = String(repeating: "x", count: 6000)
+        var requests: [URLComponents] = []
+        let viewModel = try makeViewModel { request in
+            let components = try XCTUnwrap(URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false))
+            requests.append(components)
+            XCTAssertEqual(components.path, "/api/session/tool-result")
+            let id = components.queryItems?.first { $0.name == "tool_call_id" }?.value
+            return id == "big"
+                ? apiTestJSONResponse(#"{"tool_call_id":"big","result":"\#(full)"}"#, for: request)
+                : apiTestJSONResponse(#"{"error":"Tool result not found"}"#, statusCode: 404, for: request)
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let message = try decoder.decode(ChatMessage.self, from: Data(#"""
+        {"role":"assistant","content":"Done.","message_id":"assistant-1","_turn_id":"run-1","_anchor_activity_scene":{"version":"activity_scene_v1","final_answer":"Done.","activity_rows":[
+          {"row_id":"tool:big","order_index":0,"role":"tool","tool":{"id":"big","name":"read_file","preview":null,"result":"clipped","done":true,"is_error":false,"duration":null,"cost_usd":null,"result_truncated":true,"result_chars":6000}},
+          {"row_id":"tool:small","order_index":1,"role":"tool","tool":{"id":"small","name":"read_file","preview":null,"result":"short","done":true,"is_error":false,"duration":null,"cost_usd":null}}
+        ]}}
+        """#.utf8))
+        let timeline = AssistantActivityTimeline.persisted(message: message, reasoningGroups: [], toolCallGroups: [])
+        XCTAssertEqual(timeline.toolCalls.map(\.id), ["big", "small"])
+        XCTAssertEqual(timeline.toolCalls.map(\.resultTruncated), [true, false])
+
+        let result = try await viewModel.fullToolResult(toolCallID: "big")
+        XCTAssertEqual(result, full)
+        XCTAssertEqual(requests.first?.queryItems?.first { $0.name == "session_id" }?.value, "session-abc")
+
+        do {
+            _ = try await viewModel.fullToolResult(toolCallID: "missing")
+            XCTFail("An unknown call id must fail, not show an empty result.")
+        } catch APIError.http(let statusCode, _) {
+            XCTAssertEqual(statusCode, 404)
+        }
+    }
+}

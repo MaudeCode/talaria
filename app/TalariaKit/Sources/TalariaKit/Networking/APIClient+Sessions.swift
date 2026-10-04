@@ -74,6 +74,11 @@ extension APIClient {
         )
     }
 
+    /// TAL-331: one tool call's whole, redacted result, for a scene row the server clipped (`result_truncated`).
+    public func toolResult(sessionID: String, toolCallID: String) async throws -> ToolResultResponse {
+        try await send(endpoint: .toolResult(sessionID: sessionID, toolCallID: toolCallID), method: "GET")
+    }
+
     public func createSession(workspace: String?, model: String?, modelProvider: String?, profile: String?) async throws -> SessionResponse {
         try await send(
             endpoint: .newSession,

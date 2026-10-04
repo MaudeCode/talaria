@@ -460,6 +460,11 @@ public struct AnchorScenePageResponse: Decodable, Equatable {
     }
 }
 
+/// `GET /api/session/tool-result`: one tool call's whole result.
+public struct ToolResultResponse: Decodable, Equatable {
+    public let result: String
+}
+
 extension AssistantActivityScene {
     /// `finalAnswer` as the server rewrote it for display, with its media (TAL-186).
     public var finalAnswerDisplay: TranscriptDisplayBody? {

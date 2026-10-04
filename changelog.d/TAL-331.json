@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Added",
+      "summary": "Long tool results that are shortened in a conversation now offer Show full output to load the complete result.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

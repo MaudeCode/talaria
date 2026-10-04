@@ -6,8 +6,13 @@ struct ToolCallCardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
+    @Environment(\.chatFullToolResultLoader) private var loadFullToolResult
     @AppStorage(ChatTranscriptDisplaySettings.toolCardsStartExpandedKey) private var startsExpanded = false
     @State private var userToggledExpansion: Bool?
+    /// TAL-331: the whole result of a call the server clipped, once the reader asked for it.
+    @State private var fullResult: String?
+    @State private var isLoadingFullResult = false
+    @State private var fullResultFailed = false
 
     private var isExpanded: Bool {
         ChatTranscriptDisplaySettings.isCardExpanded(
@@ -43,7 +48,11 @@ struct ToolCallCardView: View {
     }
 
     private func expandedContent(statusDisplay: ToolCallStatusDisplay) -> some View {
-        let displayContent = ToolCallDisplayFormatter.content(for: toolCall)
+        var shownCall = toolCall
+        if let fullResult {
+            shownCall.preview = fullResult
+        }
+        let displayContent = ToolCallDisplayFormatter.content(for: shownCall)
 
         return VStack(alignment: .leading, spacing: 7) {
             if !displayContent.argumentRows.isEmpty {
@@ -52,6 +61,10 @@ struct ToolCallCardView: View {
 
             if let result = displayContent.result {
                 resultSection(result)
+            }
+
+            if toolCall.resultTruncated, fullResult == nil, loadFullToolResult != nil {
+                fullResultButton
             }
 
             if shouldShowStatusDetail(displayContent: displayContent) {
@@ -173,6 +186,33 @@ struct ToolCallCardView: View {
         }
     }
 
+    private var fullResultButton: some View {
+        Button {
+            Task { await showFullResult() }
+        } label: {
+            Text(isLoadingFullResult ? String(localized: "Loading…") : fullResultFailed ? String(localized: "Retry") : String(localized: "Show full output"))
+                .font(AppFont.caption(weight: .semibold))
+                .frame(minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .disabled(isLoadingFullResult)
+    }
+
+    private func showFullResult() async {
+        guard let loadFullToolResult, !isLoadingFullResult else { return }
+        isLoadingFullResult = true
+        defer { isLoadingFullResult = false }
+        do {
+            let result = try await loadFullToolResult(toolCall.id)
+            chatDisclosureToggled()
+            fullResultFailed = false
+            fullResult = result
+        } catch {
+            fullResultFailed = true
+        }
+    }
+
     private func resultSection(_ result: ToolCallResultDisplay) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(result.title)
@@ -219,5 +259,17 @@ struct ToolCallCardView: View {
             .font(AppFont.mono(style: .caption))
             .foregroundStyle(.primary)
             .textSelection(.enabled)
+    }
+}
+
+/// TAL-331: fetches the whole result of a tool call the server clipped; the chat screen supplies it for its session.
+struct ChatFullToolResultLoaderKey: EnvironmentKey {
+    static let defaultValue: (@MainActor (String) async throws -> String)? = nil
+}
+
+extension EnvironmentValues {
+    var chatFullToolResultLoader: (@MainActor (String) async throws -> String)? {
+        get { self[ChatFullToolResultLoaderKey.self] }
+        set { self[ChatFullToolResultLoaderKey.self] = newValue }
     }
 }

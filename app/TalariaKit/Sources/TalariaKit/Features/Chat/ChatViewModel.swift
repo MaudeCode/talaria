@@ -172,6 +172,13 @@ public final class ChatViewModel {
         }
     }
 
+    /// TAL-331: the whole result of a scene tool row the server clipped (`ToolCall.resultTruncated`).
+    public func fullToolResult(toolCallID: String) async throws -> String {
+        // A clipped row only comes from a loaded session; without one there is no result to fetch.
+        guard let sessionID else { throw APIError.http(statusCode: 404, body: nil) }
+        return try await client.toolResult(sessionID: sessionID, toolCallID: toolCallID).result
+    }
+
     private func recomputeDisplayedTranscriptMessages() {
 #if DEBUG
         displayedTranscriptRecomputeCount += 1
