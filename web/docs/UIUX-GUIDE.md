@@ -165,8 +165,10 @@ it explains: `FieldRow`'s `hint`, `HubPage`'s `help`, or a `HelpTip` placed
 directly next to a heading. Its accessible name is "About <label>"
 (`m.field_help_about`). Visible sub-text is reserved for live information:
 status, errors, warnings, empty states, counts, versions, and data belonging to
-an item (for example a plugin's own description). Dialog descriptions and
-onboarding step copy are the content of their flow and stay visible.
+an item (for example a plugin's own description). A dialog's own message or
+question (its `aria-describedby` text) and onboarding step copy are the content
+of their flow and stay visible; how-to-use notes inside a dialog or card are
+explanations and go in a `HelpTip`.
 
 ## Color, depth, and shape
 
