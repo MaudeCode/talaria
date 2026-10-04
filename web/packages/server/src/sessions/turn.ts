@@ -546,7 +546,8 @@ export class TurnRunner {
         const { events: steerEvents, leftovers } = this.finalizeSteers(streamId, str(result.pending_steer), 'followup')
         followUp = leftovers
         this.persistError(s, streamId, classification.label, payload, activeTurnToken)
-        payload.session = redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled())
+        // TAL-512: a btw error carries no session: its journaled frame must not keep a copy of the parent conversation.
+        if (!opts.ephemeral) payload.session = redactSessionData(this.terminalSessionPayload(s), deps.redactEnabled())
         payload.session_id = s.session_id
         payload.old_session_id = sessionId
         for (const [event, data] of steerEvents) put(event, data)
@@ -718,7 +719,7 @@ export class TurnRunner {
         if (current.active_stream_id === streamId) {
           for (const [event, data] of this.takeSteerEventsBefore(streamId, 'apperror')) put(event, data)
           this.persistError(current, streamId, classification.label, payload, activeTurnToken)
-          payload.session = redactSessionData(this.terminalSessionPayload(current), deps.redactEnabled())
+          if (!opts.ephemeral) payload.session = redactSessionData(this.terminalSessionPayload(current), deps.redactEnabled())
         }
       } catch (persistError) {
         deps.log(`[webui] WARNING: failed to persist turn error for ${sessionId}: ${(persistError as Error).message}`)

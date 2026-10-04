@@ -1824,6 +1824,10 @@ describe('chat turns through the sidecar', () => {
     expect(str((frames.find((f) => f.event === 'apperror')?.data as Json | undefined)?.message)).toContain('401 invalid api key')
     await new Promise((r) => setTimeout(r, 50))
     expect(leftovers()).toEqual([])
+    // The run journal keeps the error for a late subscriber, but no copy of the parent conversation.
+    const journaled = JSON.stringify(s.deps.journal.readRunEvents(String(failed.session_id), String(failed.stream_id)))
+    expect(journaled).toContain('apperror')
+    expect(journaled).not.toContain('first answer')
     // Text streamed but the result added no reply: the replayed history is still the parent's, not this answer.
     sidecar.respond('chat.start', (params, emit) => {
       emit({ event: 'token', data: { text: 'half an' } })
