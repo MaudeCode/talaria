@@ -2,10 +2,11 @@ import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import type { SidecarResult } from '@maudecode/talaria-web-contracts'
 import { FakeSidecar } from '../sidecar/fake.js'
 import { bootTestServer, type TestServer } from '../test/harness.js'
 import { CompletionDrain, formatWakeupPrompt } from './completions.js'
-import { nextSessionItem } from './streams.js'
+import { nextSessionItem, StreamRegistry, type SessionChannels } from './streams.js'
 import { HygieneTicker, rotateWebuiLog, webuiLogPaths } from '../tools/hygiene.js'
 import { configFingerprint, McpHealthProber, probeServer } from '../tools/mcp-health.js'
 import { agentHealth, remoteGatewayBaseUrl, runtimeStatusIsFresh } from '../tools/health.js'
@@ -171,6 +172,105 @@ describe('async delegation delivery claims (TAL-459)', () => {
     const drain = drainWith(() => ({ stream_id: 'run' }))
     expect(await drain.processOne({ process_id: 'proc_plain', session_id: 'proc_plain', type: 'completion', command: 'make', exit_code: 0, output: 'ok', origin_ui_session_id: sid, consumed: false })).toBe(true)
     expect(state.calls).toEqual([])
+  })
+
+  /** A drain over its own registry, so a test can hold a synthetic turn open, with every notification counted. */
+  const turnDrain = (startTurn: (prompt: string) => { _status?: number; stream_id?: string }): { drain: CompletionDrain; registry: StreamRegistry; notified: string[] } => {
+    const registry = new StreamRegistry()
+    const notified: string[] = []
+    const channels = { emit: (_sid: string, name: string, payload: Json) => { if (name === 'bg_task_complete') notified.push(str(payload.task_id)); return 1 } } as unknown as SessionChannels
+    // Each emit is past the coalescing window, so every notification surfaces at once and can be counted.
+    let clock = 0
+    const drain = new CompletionDrain({
+      sidecar: () => sidecar, profileHome: () => s.state, activeProfile: () => 'default', store: s.deps.sessionStore, channels, registry,
+      startTurn: (_session, prompt) => startTurn(prompt), now: () => (clock += 5), log: () => undefined,
+    })
+    return { drain, registry, notified }
+  }
+  const holdTurn = (registry: StreamRegistry, sid: string): void => { registry.registerActiveRun({ stream_id: 'held', session_id: sid, started_at: 0, phase: 'running', workspace: '', model: null, provider: null, ephemeral: false }) }
+
+  it('batches delegations and a process completion that land mid-turn into one continuation turn (TAL-228)', async () => {
+    const sid = await newSid()
+    const state = ledger()
+    const consumed: string[] = []
+    sidecar.respond('process.mark_consumed', (params) => { consumed.push(str(params.process_id)); return { ok: true } })
+    const requeued: Json[] = []
+    sidecar.respond('process.requeue', (params) => { requeued.push(...(params.events as Json[])); return { requeued: params.events.length } })
+    const events = [
+      delegation(sid, 'deleg_a'), delegation(sid, 'deleg_b'),
+      { process_id: 'proc_x', session_id: 'proc_x', type: 'completion', command: 'make', exit_code: 0, output: 'built', origin_ui_session_id: sid, consumed: false },
+      { process_id: 'proc_done', session_id: 'proc_done', type: 'completion', command: 'ls', exit_code: 0, output: 'seen', origin_ui_session_id: sid, consumed: true },
+      delegation('no-such-session', 'deleg_lost'),
+    ] as SidecarResult<'process.drain'>['events']
+    let drains = 0
+    sidecar.respond('process.drain', () => { drains += 1; return { events: drains === 1 ? events : [] } })
+    const statuses: number[] = [409, 500, 200]
+    const attempts: string[] = []
+    const { drain, registry, notified } = turnDrain((prompt) => { attempts.push(prompt); const status = statuses.shift()!; return status === 200 ? { stream_id: 'wake' } : { _status: status } })
+    holdTurn(registry, sid)
+    try {
+      expect(await drain.drainOnce()).toBe(4)
+      // Nothing is claimed or started while the turn runs; the unroutable delegation goes back to the Agent's queue.
+      expect(drain.deferredCount(sid)).toBe(3)
+      expect(attempts).toEqual([])
+      expect(state.calls).toEqual([])
+      expect(requeued.map((e) => e.process_id)).toEqual(['deleg_lost'])
+      expect(notified).toEqual(['deleg_a', 'deleg_b', 'proc_x'])
+      // A teardown while the turn is still registered delivers nothing.
+      expect(await drain.drainDeferred(sid)).toBe(0)
+      registry.activeRuns.delete('held')
+      // A busy session (409) defers every claim without spending a delivery attempt.
+      expect(await drain.drainDeferred(sid)).toBe(0)
+      expect(state.calls).toEqual(['claim deleg_a', 'claim deleg_b', 'defer deleg_a', 'defer deleg_b'])
+      expect(drain.deferredCount(sid)).toBe(3)
+      // A transient failure releases the claims and keeps every entry for redelivery.
+      state.calls.length = 0
+      expect(await drain.drainDeferred(sid)).toBe(0)
+      expect(state.calls).toEqual(['claim deleg_a', 'claim deleg_b', 'release deleg_a', 'release deleg_b'])
+      expect(drain.deferredCount(sid)).toBe(3)
+      expect(consumed).toEqual([])
+      state.calls.length = 0
+      expect(await drain.drainDeferred(sid)).toBe(1)
+      expect(attempts).toHaveLength(3)
+      // Every attempt, and the one turn that started, carries exactly the three unconsumed results.
+      for (const prompt of attempts) {
+        expect(prompt).toContain('delegation deleg_a finished')
+        expect(prompt).toContain('delegation deleg_b finished')
+        expect(prompt).toContain('Background process proc_x completed')
+        expect(prompt).not.toContain('proc_done')
+        expect(prompt).not.toContain('deleg_lost')
+      }
+      expect(state.calls).toEqual(['claim deleg_a', 'claim deleg_b', 'complete deleg_a', 'complete deleg_b'])
+      expect([...state.delivered].sort()).toEqual(['deleg_a', 'deleg_b'])
+      expect(consumed.sort()).toEqual(['deleg_a', 'deleg_b', 'proc_x'])
+      expect(drain.deferredCount(sid)).toBe(0)
+      expect(await drain.drainDeferred(sid)).toBe(0)
+      expect(notified).toEqual(['deleg_a', 'deleg_b', 'proc_x'])
+    } finally {
+      drain.stop()
+    }
+  })
+
+  it('keeps a delegation that overflows the wakeup batch claimable for the next teardown (TAL-228)', async () => {
+    const sid = await newSid()
+    const state = ledger()
+    // Two results too large to share one wakeup turn.
+    sidecar.respond('process.format_notification', (params) => ({ text: `[IMPORTANT: delegation ${str((params.event as Json).delegation_id)} finished]\n${'x'.repeat(15_000)}` }))
+    const attempts: string[] = []
+    const { drain, registry } = turnDrain((prompt) => { attempts.push(prompt); return { stream_id: 'wake' } })
+    holdTurn(registry, sid)
+    try {
+      expect(await drain.processOne(delegation(sid, 'deleg_big1'))).toBe(true)
+      expect(await drain.processOne(delegation(sid, 'deleg_big2'))).toBe(true)
+      registry.activeRuns.delete('held')
+      expect(await drain.drainDeferred(sid)).toBe(1)
+      expect(drain.deferredCount(sid)).toBe(1)
+      expect(await drain.drainDeferred(sid)).toBe(1)
+      expect(attempts.map((p) => /deleg_big\d/.exec(p)?.[0])).toEqual(['deleg_big1', 'deleg_big2'])
+      expect(state.calls).toEqual(['claim deleg_big1', 'complete deleg_big1', 'claim deleg_big2', 'complete deleg_big2'])
+    } finally {
+      drain.stop()
+    }
   })
 })
 
