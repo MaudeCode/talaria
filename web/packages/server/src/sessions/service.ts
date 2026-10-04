@@ -25,7 +25,7 @@ import { withBackgroundUpdates } from './background-updates.js'
 import { withBackgroundLinks, type Receipt } from './background-tasks.js'
 import { messagesForLimitedPayload, messageWindowForDisplay, MAX_MSG_LIMIT, parseMsgLimit, toolCallsForMessageWindow } from './window.js'
 import { redactText } from '../redact.js'
-import type { WorkspaceRegistry } from '../workspace/workspaces.js'
+import { workspaceDisplayName, type WorkspaceEntry, type WorkspaceRegistry } from '../workspace/workspaces.js'
 import { buildShareSnapshot, type ShareStore } from './shares.js'
 import type { ProjectStore } from '../projects.js'
 import { loadGatewaySessionIdentityMap } from './list.js'
@@ -342,7 +342,24 @@ export class SessionService {
 
   /** `compact()` with the wire streaming/read-only flags (TAL-312), for replies that return the session row. */
   wireRow(s: Session): Record<string, unknown> {
-    return withSessionWireFlags({ ...s.compact({ contextLengthFor: this.deps.contextLengthFor }), read_only: this.isReadOnly(s), assistant_name: this.assistantName(s) }, this.deps.runtime.activeStreamIds)
+    return withSessionWireFlags({ ...s.compact({ contextLengthFor: this.deps.contextLengthFor }), read_only: this.isReadOnly(s), assistant_name: this.assistantName(s), workspace_name: this.workspaceNames()(s) }, this.deps.runtime.activeStreamIds)
+  }
+
+  /**
+   * TAL-303: the label for a session's workspace, from its own profile's registry (a profileless row is the root's).
+   * One resolver serves one response, so each profile's registry is read once however many rows it names.
+   */
+  workspaceNames(): (row: { profile?: unknown; workspace?: unknown }) => string | null {
+    const registries = new Map<string, WorkspaceEntry[]>()
+    return (row) => {
+      const profile = str(row.profile) || 'default'
+      let entries = registries.get(profile)
+      if (!entries) {
+        try { entries = this.deps.workspaces.entries(profile) } catch { entries = [] }
+        registries.set(profile, entries)
+      }
+      return workspaceDisplayName(str(row.workspace), entries)
+    }
   }
 
   /** The agent's display name for a session's profile (`assistant_name`). */
@@ -442,6 +459,7 @@ export class SessionService {
     raw._load_revision = revisionBefore !== null && revisionBefore === revisionAfter ? hashRevision(revisionBefore) : `unstable-${randomUUID().replace(/-/g, '')}`
     raw.read_only = this.isReadOnly(s)
     raw.assistant_name = this.assistantName(s)
+    raw.workspace_name = this.workspaceNames()(s)
     withSessionWireFlags(raw, activeStreamIds)
     raw.pending_steers = raw.active_stream_id ? (this.deps.runtime.pendingSteers?.(str(raw.active_stream_id)) ?? []) : []
     return redactSessionData(raw, this.deps.redactEnabled())
@@ -496,7 +514,7 @@ export class SessionService {
       pinned: synth.pinned, archived: synth.archived, project_id: synth.project_id ?? null, profile: synth.profile,
       is_cli_session: synth.is_cli_session, source_tag: synth.source_tag, raw_source: synth.raw_source, session_source: synth.session_source,
       source_label: synth.source_label, read_only: synth.read_only, can_duplicate: false, messages: msgs, tool_calls: [], transcript_seq: null,
-      assistant_name: this.assistantName(synth),
+      assistant_name: this.assistantName(synth), workspace_name: this.workspaceNames()(synth),
     }
     attachTodoState(sess, msgs)
     const merged = withSessionWireFlags(meta ? mergeCliSidebarMetadata(sess, meta) : sess, this.deps.runtime.activeStreamIds)
@@ -563,7 +581,7 @@ export class SessionService {
     const gatewayIdentity = loadGatewaySessionIdentityMap(join(this.deps.profileHome(activeProfile), 'sessions', 'sessions.json'))
     const truncatedSources = cliRead?.truncated
     const payload = buildSessionListPayload(this.store, { ...params, ...(cliRows ? { cliRows } : {}), ...(truncatedSources ? { truncatedSources } : {}), gatewayIdentity, stateDbSources: this.stateDbSources, activeProfile, isolatedProfileMode: this.deps.isolatedProfileMode(), profilesMatch: this.deps.profilesMatch })
-    return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now())
+    return sessionListResponse(payload, this.deps.runtime, this.deps.redactEnabled(), this.deps.now(), this.workspaceNames())
   }
 
   search(q: string, opts: { content: boolean; depth: number; allProfiles: boolean }): Record<string, unknown> {
@@ -572,8 +590,10 @@ export class SessionService {
     if (!opts.allProfiles) sessions = sessions.filter((r) => this.deps.profilesMatch(str(r.profile) || null, activeProfile))
     sessions = withOwnerLocks(sessions, this.stateDbSources)
     const redact = this.deps.redactEnabled()
+    const workspaceName = this.workspaceNames()
     const redactRow = (item: Row) => {
       withSessionWireFlags(item, this.deps.runtime.activeStreamIds)
+      item.workspace_name = workspaceName(item)
       if (typeof item.title === 'string') item.title = redactText(item.title, redact)
       for (const f of ['display_title', '_state_db_title', 'parent_title']) if (typeof item[f] === 'string') item[f] = redactText(item[f], redact)
       return item

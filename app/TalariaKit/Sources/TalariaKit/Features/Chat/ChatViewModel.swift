@@ -197,6 +197,10 @@ public final class ChatViewModel {
         if let readOnly = session?.readOnly { isSessionReadOnly = readOnly }
         if let canBranch = session?.canBranch { self.canBranch = canBranch }
         if let assistantName = session?.assistantName { self.assistantName = assistantName }
+        // A detail relabels the workspace it reports, so a registry rename shows on the next load (TAL-303).
+        if let workspace = session?.workspace, workspace == serverWorkspacePath {
+            serverWorkspaceName = session?.workspaceName
+        }
     }
     private func clearCompressionAnchorMetadata() {
         compressionAnchorMetadata = nil
@@ -298,6 +302,9 @@ public final class ChatViewModel {
 
     private let sessionID: String?
     private var currentWorkspace: String?
+    /// The workspace the server last reported for this session, with its label (TAL-303).
+    private var serverWorkspacePath: String?
+    private var serverWorkspaceName: String?
     private var currentModel: String?
     private var currentModelProvider: String?
     private var currentProfile: String?
@@ -428,6 +435,8 @@ public final class ChatViewModel {
         self.responseCache = responseCache
         sessionID = session.sessionId
         currentWorkspace = session.workspace
+        serverWorkspacePath = session.workspace
+        serverWorkspaceName = session.workspaceName
         currentModel = session.model
         currentModelProvider = session.modelProvider
         currentProfile = session.profile
@@ -547,6 +556,23 @@ public final class ChatViewModel {
 
     public var selectedWorkspacePath: String? {
         currentWorkspace
+    }
+
+    /// The server's label for the selected workspace: the session's own, else the picked root's (TAL-303).
+    public var selectedWorkspaceName: String? {
+        guard let currentWorkspace else { return nil }
+        if currentWorkspace == serverWorkspacePath {
+            return serverWorkspaceName
+        }
+        return workspaceRoots.first(where: { $0.path == currentWorkspace })?.name
+    }
+
+    /// Adopts the workspace a server session payload reports, with its label (TAL-303).
+    private func applyServerWorkspace(_ path: String?, name: String?) {
+        guard let path else { return }
+        currentWorkspace = path
+        serverWorkspacePath = path
+        serverWorkspaceName = name
     }
 
     public var selectedProfileTitle: String {
@@ -838,7 +864,7 @@ public final class ChatViewModel {
 
             currentModel = response.session?.model ?? option.id
             currentModelProvider = response.session?.modelProvider ?? option.providerID
-            currentWorkspace = response.session?.workspace ?? currentWorkspace
+            applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
             pendingExplicitModelPick = true
             // Still inside the isUpdatingComposerConfiguration window, so the
             // effort menu stays disabled until the new model's gating lands —
@@ -1000,7 +1026,8 @@ public final class ChatViewModel {
                 modelProvider: currentModelProvider
             )
 
-            currentWorkspace = response.session?.workspace ?? workspace
+            currentWorkspace = workspace
+            applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
             currentModel = response.session?.model ?? currentModel
             currentModelProvider = response.session?.modelProvider ?? currentModelProvider
             return true
@@ -1660,7 +1687,7 @@ public final class ChatViewModel {
             if let title = session.title {
                 displayTitle = Self.displayTitle(from: title)
             }
-            currentWorkspace = session.workspace ?? currentWorkspace
+            applyServerWorkspace(session.workspace, name: session.workspaceName)
             currentModel = session.model ?? currentModel
             currentModelProvider = session.modelProvider ?? currentModelProvider
             currentProfile = session.profile ?? currentProfile
@@ -3124,7 +3151,7 @@ public final class ChatViewModel {
 
             currentModel = response.session?.model ?? match?.id ?? requestedModel
             currentModelProvider = response.session?.modelProvider ?? match?.providerID ?? currentModelProvider
-            currentWorkspace = response.session?.workspace ?? currentWorkspace
+            applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
             pendingExplicitModelPick = true
             await refreshReasoningEffortGating()
             return .executed(message: nil)
@@ -3165,7 +3192,8 @@ public final class ChatViewModel {
                 modelProvider: currentModelProvider
             )
 
-            currentWorkspace = response.session?.workspace ?? workspace
+            currentWorkspace = workspace
+            applyServerWorkspace(response.session?.workspace, name: response.session?.workspaceName)
             currentModel = response.session?.model ?? currentModel
             currentModelProvider = response.session?.modelProvider ?? currentModelProvider
             workspaceSuggestions = workspaceRoots.compactMap(\.path)
@@ -3480,7 +3508,7 @@ public final class ChatViewModel {
             if let title = session.title {
                 displayTitle = Self.displayTitle(from: title)
             }
-            currentWorkspace = session.workspace ?? currentWorkspace
+            applyServerWorkspace(session.workspace, name: session.workspaceName)
             currentModel = session.model ?? currentModel
             currentModelProvider = session.modelProvider ?? currentModelProvider
             currentProfile = session.profile ?? currentProfile
@@ -4865,7 +4893,7 @@ public final class ChatViewModel {
             applyLiveActivitySessionTitle(title)
         }
 
-        currentWorkspace = completedSession.workspace ?? currentWorkspace
+        applyServerWorkspace(completedSession.workspace, name: completedSession.workspaceName)
         currentModel = completedSession.model ?? currentModel
         currentModelProvider = completedSession.modelProvider ?? currentModelProvider
         currentProfile = completedSession.profile ?? currentProfile

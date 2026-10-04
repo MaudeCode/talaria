@@ -13,6 +13,8 @@ public final class CachedSession {
     var sessionID: String
     var title: String?
     var workspace: String?
+    /// The server's label for `workspace` (TAL-303). Optional so the unversioned store opens without a migration.
+    var workspaceName: String?
     var model: String?
     var modelProvider: String?
     var messageCount: Int?
@@ -67,6 +69,7 @@ public final class CachedSession {
     func apply(_ session: SessionSummary, cachedAt: Date = Date()) {
         title = session.title
         workspace = session.workspace
+        workspaceName = session.workspaceName
         model = session.model
         modelProvider = session.modelProvider
         messageCount = session.messageCount

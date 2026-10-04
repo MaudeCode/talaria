@@ -800,6 +800,7 @@ export class TurnRunner {
   private terminalSessionPayload(s: Session): Record<string, unknown> {
     const payload = withSessionWireFlags(s.compact({ contextLengthFor: this.deps.service().deps.contextLengthFor }), this.registry.liveIds)
     payload.assistant_name = this.deps.service().assistantName(s)
+    payload.workspace_name = this.deps.service().workspaceNames()(s)
     const scened = withBodyExcerpts(this.deps.service().backgroundLinked(s, hydrateAnchorActivityScenes(withToolCallOutcomes(withBackgroundUpdates(withMarkerKinds(withTurnIds(withAttachmentObjects(s.messages))), s), s.tool_calls, s.active_stream_id), s.anchor_activity_scenes, { activeTurnId: s.active_stream_id, clipToolResults: true })), s.active_stream_id)
     const [window, offset] = messageWindowForDisplay(scened, TERMINAL_SSE_VISIBLE_MESSAGE_LIMIT, null)
     const limited = messagesForLimitedPayload(window)

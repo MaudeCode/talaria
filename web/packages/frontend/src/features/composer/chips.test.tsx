@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -13,8 +13,11 @@ const CATALOG = {
   ],
 }
 
-vi.mock('../../api/endpoints', () => ({ fetchModels: vi.fn(() => Promise.resolve(CATALOG)) }))
-import { ModelChip, ToolsetsChip } from './chips'
+// The server's registry: every entry named, the default one `Home` (TAL-303).
+const WORKSPACES = { workspaces: [{ path: '/src/talaria-main', name: 'Talaria' }, { path: '/src/scratch', name: 'scratch' }], last: '/src/talaria-main' }
+
+vi.mock('../../api/endpoints', () => ({ fetchModels: vi.fn(() => Promise.resolve(CATALOG)), fetchWorkspaces: vi.fn(() => Promise.resolve(WORKSPACES)) }))
+import { ModelChip, ToolsetsChip, WorkspaceChip } from './chips'
 
 describe('ModelChip', () => {
   it('a plugin provider model keeps the plugin provider when another provider lists the same model', async () => {
@@ -36,5 +39,28 @@ describe('ToolsetsChip', () => {
     expect(screen.queryByText(/Comma-separated toolset names/)).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'About Session toolsets' }))
     expect(await screen.findByText(/Comma-separated toolset names/)).toBeVisible()
+  })
+})
+
+describe('WorkspaceChip (TAL-303)', () => {
+  const chip = async (props: { value: string; name?: string | null }) => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><WorkspaceChip {...props} onChange={vi.fn()} /></QueryClientProvider>)
+    // The chip enables once the registry has loaded.
+    await waitFor(() => { expect(screen.getByRole('button')).toBeEnabled() })
+    return screen.getByRole('button')
+  }
+
+  it('shows the session\'s server-resolved name, never one taken from the path', async () => {
+    expect(await chip({ value: '/src/elsewhere/repo', name: 'Repo' })).toHaveTextContent('Repo')
+    cleanup()
+    // An older server sends no name: the chip shows nothing rather than the folder.
+    expect(await chip({ value: '/src/elsewhere/repo', name: null })).toHaveTextContent('—')
+  })
+
+  it('shows the chosen registry entry\'s name before a session exists', async () => {
+    expect(await chip({ value: '/src/talaria-main' })).toHaveTextContent('Talaria')
+    cleanup()
+    expect(await chip({ value: '/src/unlisted' })).toHaveTextContent('—')
   })
 })

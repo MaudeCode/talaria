@@ -2,20 +2,20 @@ import XCTest
 @testable import TalariaKit
 
 final class ChatToolbarHeaderTests: XCTestCase {
-    func testSubtitleUsesWorkspaceBasenameBeforeProfile() {
+    func testSubtitleUsesTheServerWorkspaceNameBeforeProfile() {
         XCTAssertEqual(
             ChatToolbarSubtitleResolver.subtitle(
-                workspacePath: "/Users/example/talaria",
+                workspaceName: "Talaria",
                 profileTitle: "Default"
             ),
-            "talaria"
+            "Talaria"
         )
     }
 
     func testSubtitleFallsBackToStableProfileTitle() {
         XCTAssertEqual(
             ChatToolbarSubtitleResolver.subtitle(
-                workspacePath: nil,
+                workspaceName: nil,
                 profileTitle: "Work"
             ),
             "Work"
@@ -23,7 +23,7 @@ final class ChatToolbarHeaderTests: XCTestCase {
     }
 
     func testSubtitleOmitsGenericOrBlankContext() {
-        XCTAssertNil(ChatToolbarSubtitleResolver.subtitle(workspacePath: nil, profileTitle: "Profile"))
-        XCTAssertNil(ChatToolbarSubtitleResolver.subtitle(workspacePath: "   ", profileTitle: "   "))
+        XCTAssertNil(ChatToolbarSubtitleResolver.subtitle(workspaceName: nil, profileTitle: "Profile"))
+        XCTAssertNil(ChatToolbarSubtitleResolver.subtitle(workspaceName: "   ", profileTitle: "   "))
     }
 }

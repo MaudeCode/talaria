@@ -187,6 +187,12 @@ export const SourceKindSchema = z.enum(['webui', 'cli', 'messaging', 'cron', 'we
   .describe('The session\'s source family. `is_cli_session` is true only for `cli` and `claude_code`.')
 const IsMessagingSessionSchema = z.boolean().describe('`source_kind` is `messaging`: a gateway chat (Telegram, Signal, WhatsApp, …) the server imports before Web continues it.')
 
+/**
+ * The label every client shows for the session's workspace: its registered name in the session profile's registry, else
+ * the folder name (TAL-303). Null without a workspace; absent from an older server, where clients show no label.
+ */
+const WorkspaceNameSchema = NullableString.optional()
+
 /** Full session record from `GET /api/session` and mutations returning `session`. */
 export const SessionSchema = z.looseObject({
   session_id: SessionIdSchema, title: z.string(), workspace: z.string().optional(), created_workspace: z.string().nullable().optional(), model: NullableString.optional(), model_provider: NullableString.optional(),
@@ -209,6 +215,7 @@ export const SessionSchema = z.looseObject({
   transcript_seq: z.object({ stream_id: z.string(), seq: z.number().int().nonnegative() }).nullable().optional(),
   /** The agent's display name: a named profile's own name, else the `bot_name` setting (TAL-458). */
   assistant_name: z.string().optional(),
+  workspace_name: WorkspaceNameSchema,
 })
 export type Session = z.infer<typeof SessionSchema>
 export const SessionEnvelopeSchema = z.looseObject({ session: SessionSchema })
@@ -220,6 +227,7 @@ export const SessionRowSchema = z.looseObject({
   is_cli_session: z.boolean().optional(), source_kind: SourceKindSchema, is_messaging_session: IsMessagingSessionSchema, cron_running: z.boolean().optional(), read_only: ReadOnlySchema, can_branch: CanBranchSchema, can_pin: CanPinSchema, can_archive: CanArchiveSchema, can_duplicate: CanDuplicateSchema, attention: z.looseObject({ kind: z.string().optional(), count: z.number().optional() }).nullable().optional(),
   source_tag: NullableString.optional(), source_label: NullableString.optional(), session_source: NullableString.optional(), raw_source: NullableString.optional(), parent_session_id: NullableString.optional(),
   active_stream_id: ActiveStreamIdSchema, share_token: NullableString.optional(), worktree_branch: NullableString.optional(), match_type: z.string().optional(), match_preview: NullableString.optional(),
+  workspace_name: WorkspaceNameSchema,
   ...ContextUsageFields,
 })
 export type SessionRow = z.infer<typeof SessionRowSchema>
@@ -438,7 +446,8 @@ export const MaxTokensSchema = z.looseObject({ max_tokens: NullableNumber, max_t
 
 // ── workspaces, files, git ───────────────────────────────────────────────
 
-export const WorkspaceEntrySchema = z.looseObject({ name: z.string().optional(), path: z.string() })
+/** A registry entry; `name` is never empty (the folder name when none is registered, `Home` for `default`), so pickers show it as-is (TAL-303). */
+export const WorkspaceEntrySchema = z.looseObject({ name: z.string().min(1), path: z.string() })
 export type Workspace = z.infer<typeof WorkspaceEntrySchema>
 export const WorkspacesSchema = z.looseObject({ workspaces: z.array(WorkspaceEntrySchema), last: NullableString.optional(), terminal_remote_backend: z.boolean().optional() })
 export type Workspaces = z.infer<typeof WorkspacesSchema>

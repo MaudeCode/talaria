@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "category": "Fixed",
+      "summary": "The session list, chat header, and composer show the same workspace name, using the name you gave the workspace.",
+      "highlight": false,
+      "components": ["app", "web"]
+    }
+  ]
+}

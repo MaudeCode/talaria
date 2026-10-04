@@ -111,9 +111,11 @@ struct ComposerWorkspacePickerSheet: View {
                     .padding(.top, 2)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(name?.isEmpty == false ? name ?? path.lastPathComponentFallback : path.lastPathComponentFallback)
-                        .font(.body)
-                        .foregroundStyle(.primary)
+                    if let name, !name.isEmpty {
+                        Text(name)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                    }
 
                     Text(path)
                         .font(.caption)

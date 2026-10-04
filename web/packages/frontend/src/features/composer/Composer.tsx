@@ -640,7 +640,7 @@ export function Composer(props: ComposerProps) {
       {/* T3 Code's context strip: where the message runs (workspace, toolsets, profile), tucked under the card. */}
       {!collapsed && (!hide('hide_composer_workspace') || !hide('hide_composer_toolsets') || !hide('hide_composer_profile')) && (
         <div className="composer-strip" role="group" aria-label={m.composer_config_title()}>
-          {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} onChange={onWorkspaceChange} />}
+          {!hide('hide_composer_workspace') && <WorkspaceChip value={session?.workspace ?? pendingChoices?.workspace ?? settings?.default_workspace} name={session ? session.workspace_name ?? null : undefined} onChange={onWorkspaceChange} />}
           {!hide('hide_composer_toolsets') && <ToolsetsChip value={session?.enabled_toolsets ?? pendingChoices?.enabled_toolsets ?? null} onChange={onToolsetsChange} />}
           {!hide('hide_composer_profile') && <ProfileMenu />}
         </div>

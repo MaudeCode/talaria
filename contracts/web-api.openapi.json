@@ -1553,6 +1553,16 @@
                               }
                             ]
                           },
+                          "workspace_name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "context_used_tokens": {
                             "anyOf": [
                               {
@@ -1843,6 +1853,16 @@
                             "type": "string"
                           },
                           "match_preview": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "workspace_name": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -2306,6 +2326,16 @@
                             "type": "string"
                           },
                           "match_preview": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "workspace_name": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -3940,6 +3970,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -5671,6 +5711,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -7148,6 +7198,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -7487,6 +7547,16 @@
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -7844,6 +7914,16 @@
                             }
                           ]
                         },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "context_used_tokens": {
                           "anyOf": [
                             {
@@ -8190,6 +8270,16 @@
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -9718,6 +9808,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -10091,6 +10191,16 @@
                             }
                           ]
                         },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "context_used_tokens": {
                           "anyOf": [
                             {
@@ -10427,6 +10537,16 @@
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -12157,6 +12277,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -12626,6 +12756,16 @@
                             }
                           ]
                         },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "context_used_tokens": {
                           "anyOf": [
                             {
@@ -12963,6 +13103,16 @@
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -14523,6 +14673,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -16087,6 +16247,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -17638,6 +17808,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -18919,6 +19099,16 @@
                             }
                           ]
                         },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "context_used_tokens": {
                           "anyOf": [
                             {
@@ -19255,6 +19445,16 @@
                           "type": "string"
                         },
                         "match_preview": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workspace_name": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -19642,13 +19842,15 @@
                         "type": "object",
                         "properties": {
                           "name": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "path": {
                             "type": "string"
                           }
                         },
                         "required": [
+                          "name",
                           "path"
                         ],
                         "additionalProperties": {}
@@ -19770,13 +19972,15 @@
                         "type": "object",
                         "properties": {
                           "name": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "path": {
                             "type": "string"
                           }
                         },
                         "required": [
+                          "name",
                           "path"
                         ],
                         "additionalProperties": {}
@@ -19835,13 +20039,15 @@
                         "type": "object",
                         "properties": {
                           "name": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "path": {
                             "type": "string"
                           }
                         },
                         "required": [
+                          "name",
                           "path"
                         ],
                         "additionalProperties": {}
@@ -19904,13 +20110,15 @@
                         "type": "object",
                         "properties": {
                           "name": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "path": {
                             "type": "string"
                           }
                         },
                         "required": [
+                          "name",
                           "path"
                         ],
                         "additionalProperties": {}
@@ -19964,13 +20172,15 @@
                         "type": "object",
                         "properties": {
                           "name": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "path": {
                             "type": "string"
                           }
                         },
                         "required": [
+                          "name",
                           "path"
                         ],
                         "additionalProperties": {}
@@ -25890,6 +26100,16 @@
                         },
                         "assistant_name": {
                           "type": "string"
+                        },
+                        "workspace_name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -27433,6 +27653,16 @@
                             },
                             "assistant_name": {
                               "type": "string"
+                            },
+                            "workspace_name": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           },
                           "required": [
@@ -31681,13 +31911,15 @@
                             "type": "object",
                             "properties": {
                               "name": {
-                                "type": "string"
+                                "type": "string",
+                                "minLength": 1
                               },
                               "path": {
                                 "type": "string"
                               }
                             },
                             "required": [
+                              "name",
                               "path"
                             ],
                             "additionalProperties": {}
@@ -32092,13 +32324,15 @@
                             "type": "object",
                             "properties": {
                               "name": {
-                                "type": "string"
+                                "type": "string",
+                                "minLength": 1
                               },
                               "path": {
                                 "type": "string"
                               }
                             },
                             "required": [
+                              "name",
                               "path"
                             ],
                             "additionalProperties": {}

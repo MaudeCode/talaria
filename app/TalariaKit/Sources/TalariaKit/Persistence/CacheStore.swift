@@ -297,6 +297,7 @@ private extension SessionSummary {
         sessionId = cachedSession.sessionID
         title = cachedSession.title
         workspace = cachedSession.workspace
+        workspaceName = cachedSession.workspaceName
         model = cachedSession.model
         modelProvider = cachedSession.modelProvider
         messageCount = cachedSession.messageCount

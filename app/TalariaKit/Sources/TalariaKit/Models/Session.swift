@@ -244,6 +244,8 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     public let sessionId: String?
     public let title: String?
     public let workspace: String?
+    /// The server's label for `workspace` (TAL-303); nil from an older server, which shows none.
+    public let workspaceName: String?
     public let model: String?
     public let modelProvider: String?
     public let messageCount: Int?
@@ -287,6 +289,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         sessionId: String? = nil,
         title: String? = nil,
         workspace: String? = nil,
+        workspaceName: String? = nil,
         model: String? = nil,
         modelProvider: String? = nil,
         messageCount: Int? = nil,
@@ -325,6 +328,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         self.sessionId = sessionId
         self.title = title
         self.workspace = workspace
+        self.workspaceName = workspaceName
         self.model = model
         self.modelProvider = modelProvider
         self.messageCount = messageCount
@@ -362,7 +366,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case sessionId, title, workspace, model, modelProvider
+        case sessionId, title, workspace, workspaceName, model, modelProvider
         case messageCount, createdAt, updatedAt, lastMessageAt
         case pinned, archived, projectId, profile
         case inputTokens, outputTokens, estimatedCost
@@ -387,6 +391,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId)
         title = container.decodeLossyStringIfPresent(forKey: .title)
         workspace = container.decodeLossyStringIfPresent(forKey: .workspace)
+        workspaceName = container.decodeLossyStringIfPresent(forKey: .workspaceName)
         model = container.decodeLossyStringIfPresent(forKey: .model)
         modelProvider = container.decodeLossyStringIfPresent(forKey: .modelProvider)
         messageCount = container.decodeLossyIntIfPresent(forKey: .messageCount)
@@ -450,6 +455,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
         sessionId = detail.sessionId
         title = detail.title
         workspace = detail.workspace
+        workspaceName = detail.workspaceName
         model = detail.model
         modelProvider = detail.modelProvider
         messageCount = detail.messageCount ?? detail.messages?.count
@@ -497,6 +503,7 @@ public struct SessionSummary: Decodable, Equatable, Hashable, Identifiable {
             sessionId: sessionId,
             title: title,
             workspace: workspace,
+            workspaceName: workspaceName,
             model: model,
             modelProvider: modelProvider,
             messageCount: messageCount,
@@ -562,6 +569,8 @@ extension SessionSummary {
             sessionId: sessionId ?? row.sessionId,
             title: title ?? row.title,
             workspace: workspace ?? row.workspace,
+            // The name labels its own path, so it moves with the workspace it came with.
+            workspaceName: workspace != nil ? workspaceName : row.workspaceName,
             model: model ?? row.model,
             modelProvider: modelProvider ?? row.modelProvider,
             messageCount: messageCount ?? row.messageCount,
@@ -713,6 +722,8 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
     public let sessionId: String?
     public let title: String?
     public let workspace: String?
+    /// The server's label for `workspace` (TAL-303); nil from an older server, which shows none.
+    public let workspaceName: String?
     public let model: String?
     public let modelProvider: String?
     public let messageCount: Int?
@@ -773,6 +784,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         case sessionId
         case title
         case workspace
+        case workspaceName
         case model
         case modelProvider
         case messageCount
@@ -835,6 +847,7 @@ public struct SessionDetail: Decodable, Equatable, Identifiable {
         sessionId = container.decodeLossyStringIfPresent(forKey: .sessionId)
         title = container.decodeLossyStringIfPresent(forKey: .title)
         workspace = container.decodeLossyStringIfPresent(forKey: .workspace)
+        workspaceName = container.decodeLossyStringIfPresent(forKey: .workspaceName)
         model = container.decodeLossyStringIfPresent(forKey: .model)
         modelProvider = container.decodeLossyStringIfPresent(forKey: .modelProvider)
         messageCount = container.decodeLossyIntIfPresent(forKey: .messageCount)
