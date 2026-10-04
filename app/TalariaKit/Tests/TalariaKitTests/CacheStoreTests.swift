@@ -513,6 +513,36 @@ final class CacheStoreTests: XCTestCase {
         XCTAssertEqual(restored.map(\.backgroundSilent), [false, true])
     }
 
+    /// TAL-186: a cache-first open renders the server's display text and media, as the live detail does.
+    func testCachedMessagesRoundTripTheServerDisplayBodies() throws {
+        let context = try makeContext()
+        let serverURL = URL(string: "https://example.test")!
+        let cachedAt = Date(timeIntervalSince1970: 1_770_000_000)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let media = #"[{"url":"./api/media?path=%2Ftmp%2Fa.png&session_id=abc123","name":"a.png","mime":"image/png","kind":"image"}]"#
+        let message = try decoder.decode(ChatMessage.self, from: Data("""
+        {
+          "role": "assistant", "content": "MEDIA:/tmp/a.png", "message_id": "assistant-1",
+          "_display_content": "![a.png](./api/media?path=%2Ftmp%2Fa.png&session_id=abc123)", "_media": \(media),
+          "_anchor_activity_scene": {
+            "version": "activity_scene_v1", "final_answer": "MEDIA:/tmp/a.png",
+            "final_answer_display": "![a.png](./api/media?path=%2Ftmp%2Fa.png&session_id=abc123)", "final_answer_media": \(media),
+            "activity_rows": [{"row_id":"p","order_index":0,"role":"prose","text":"MEDIA:/tmp/a.png","display_text":"![a.png](x)","media":\(media)}]
+          }
+        }
+        """.utf8))
+
+        try CacheStore.cacheMessages([message], serverURL: serverURL, sessionID: "abc123", in: context, cachedAt: cachedAt)
+        let restored = try XCTUnwrap(CacheStore.cachedMessages(serverURL: serverURL, sessionID: "abc123", in: context, now: cachedAt.addingTimeInterval(60)).first)
+
+        XCTAssertNotNil(message.displayBody)
+        XCTAssertEqual(restored.displayBody, message.displayBody)
+        XCTAssertEqual(restored.activityScene?.finalAnswerDisplay, message.activityScene?.finalAnswerDisplay)
+        XCTAssertNotNil(restored.activityScene?.finalAnswerDisplay)
+        XCTAssertEqual(restored.activityScene?.activityRows?.first?.display?.text, "![a.png](x)")
+    }
+
     func testCachedMessagesRoundTripOrderedAssistantActivityScene() throws {
         let context = try makeContext()
         let serverURL = URL(string: "https://example.test")!

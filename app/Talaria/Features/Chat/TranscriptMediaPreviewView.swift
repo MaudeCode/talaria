@@ -22,7 +22,6 @@ struct TranscriptMediaPreviewView: View {
 
     init(
         server: URL,
-        sessionID: String?,
         item: TranscriptMediaPreviewItem,
         onAPIError: @escaping (Error) -> Void
     ) {
@@ -31,7 +30,6 @@ struct TranscriptMediaPreviewView: View {
         _viewModel = State(
             initialValue: TranscriptMediaPreviewViewModel(
                 server: server,
-                sessionID: sessionID,
                 reference: item.reference
             )
         )
@@ -55,8 +53,6 @@ struct TranscriptMediaPreviewView: View {
                     }
                 } else if let data = viewModel.previewData, let image = UIImage(data: data) {
                     imageContent(image)
-                } else if let audioData = viewModel.audioData {
-                    audioContent(audioData)
                 } else if let videoURL = viewModel.videoFileURL {
                     videoContent(videoURL)
                 } else {
@@ -167,20 +163,6 @@ struct TranscriptMediaPreviewView: View {
         .background(Color(.systemBackground))
     }
 
-    private func audioContent(_ data: Data) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            mediaHeader
-
-            InlineAudioPlayerView(title: item.reference.displayName) {
-                data
-            }
-            .frame(maxWidth: 360)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(.systemBackground))
-    }
-
     private func videoContent(_ url: URL) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             mediaHeader
@@ -205,7 +187,7 @@ struct TranscriptMediaPreviewView: View {
         } description: {
             VStack(spacing: 8) {
                 Text(message)
-                Text(item.reference.rawReference)
+                Text(item.reference.displayName)
                     .font(.footnote)
                     .fontDesign(.monospaced)
                     .foregroundStyle(.secondary)
@@ -229,7 +211,7 @@ struct TranscriptMediaPreviewView: View {
 
     private var mediaHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(item.reference.rawReference)
+            Text(item.reference.displayName)
                 .font(.caption)
                 .fontDesign(.monospaced)
                 .foregroundStyle(.secondary)

@@ -41,6 +41,7 @@
 		C32200000000000000000001 /* UpdateNotificationsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C32200000000000000000002 /* UpdateNotificationsSheet.swift */; };
 		C0391000000000000000000E /* ChatViewModelSendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0390000000000000000000E /* ChatViewModelSendTests.swift */; };
 		C1TAL49E0000000000000002 /* ChatMessageLinkInteractionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1TAL49E0000000000000001 /* ChatMessageLinkInteractionTests.swift */; };
+		C1TAL1860000000000000002 /* TranscriptMediaRenderingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1TAL1860000000000000001 /* TranscriptMediaRenderingTests.swift */; };
 		C15210000000000000000002 /* OnboardingWelcomePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000002 /* OnboardingWelcomePage.swift */; };
 		C15210000000000000000003 /* OnboardingFeaturesPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000003 /* OnboardingFeaturesPage.swift */; };
 		C15210000000000000000004 /* OnboardingAgentPromptPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C15200000000000000000004 /* OnboardingAgentPromptPage.swift */; };
@@ -157,7 +158,6 @@
 		C0DE34000000000000000006 /* TranscriptMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE34000000000000000005 /* TranscriptMediaView.swift */; };
 		C107P0000000000000000001 /* TranscriptMediaContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000101 /* TranscriptMediaContentView.swift */; };
 		C107P0000000000000000002 /* TranscriptMediaThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000102 /* TranscriptMediaThumbnailView.swift */; };
-		C107P0000000000000000003 /* TranscriptMediaResolvedRemoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000103 /* TranscriptMediaResolvedRemoteView.swift */; };
 		C107P0000000000000000004 /* TranscriptMediaAudioExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000104 /* TranscriptMediaAudioExportView.swift */; };
 		C107P0000000000000000005 /* TranscriptMediaFileExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000105 /* TranscriptMediaFileExportView.swift */; };
 		C107P0000000000000000006 /* TranscriptMediaVideoTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = C107P0000000000000000106 /* TranscriptMediaVideoTile.swift */; };
@@ -477,6 +477,7 @@
 		C32200000000000000000002 /* UpdateNotificationsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateNotificationsSheet.swift; sourceTree = "<group>"; };
 		C0390000000000000000000E /* ChatViewModelSendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModelSendTests.swift; sourceTree = "<group>"; };
 		C1TAL49E0000000000000001 /* ChatMessageLinkInteractionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageLinkInteractionTests.swift; sourceTree = "<group>"; };
+		C1TAL1860000000000000001 /* TranscriptMediaRenderingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaRenderingTests.swift; sourceTree = "<group>"; };
 		C15200000000000000000002 /* OnboardingWelcomePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWelcomePage.swift; sourceTree = "<group>"; };
 		C15200000000000000000003 /* OnboardingFeaturesPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFeaturesPage.swift; sourceTree = "<group>"; };
 		C15200000000000000000004 /* OnboardingAgentPromptPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingAgentPromptPage.swift; sourceTree = "<group>"; };
@@ -579,7 +580,6 @@
 		C0DE34000000000000000005 /* TranscriptMediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaView.swift; sourceTree = "<group>"; };
 		C107P0000000000000000101 /* TranscriptMediaContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaContentView.swift; sourceTree = "<group>"; };
 		C107P0000000000000000102 /* TranscriptMediaThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaThumbnailView.swift; sourceTree = "<group>"; };
-		C107P0000000000000000103 /* TranscriptMediaResolvedRemoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaResolvedRemoteView.swift; sourceTree = "<group>"; };
 		C107P0000000000000000104 /* TranscriptMediaAudioExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaAudioExportView.swift; sourceTree = "<group>"; };
 		C107P0000000000000000105 /* TranscriptMediaFileExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaFileExportView.swift; sourceTree = "<group>"; };
 		C107P0000000000000000106 /* TranscriptMediaVideoTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptMediaVideoTile.swift; sourceTree = "<group>"; };
@@ -943,6 +943,7 @@
 					C0410000000000000000015B /* ComposerTextViewMarkedTextTests.swift */,
 					C0390000000000000000000E /* ChatViewModelSendTests.swift */,
 					C1TAL49E0000000000000001 /* ChatMessageLinkInteractionTests.swift */,
+					C1TAL1860000000000000001 /* TranscriptMediaRenderingTests.swift */,
 				C03900000000000000000016 /* TranscriptDisplayModelTests.swift */,
 				C13000000000000000000002 /* ChatVerticalScrollAxisGuardTests.swift */,
 				C46200000000000000000002 /* SidebarEdgePanGestureTests.swift */,
@@ -1189,7 +1190,6 @@
 				C0DE34000000000000000005 /* TranscriptMediaView.swift */,
 				C107P0000000000000000101 /* TranscriptMediaContentView.swift */,
 				C107P0000000000000000102 /* TranscriptMediaThumbnailView.swift */,
-				C107P0000000000000000103 /* TranscriptMediaResolvedRemoteView.swift */,
 				C107P0000000000000000104 /* TranscriptMediaAudioExportView.swift */,
 				C107P0000000000000000105 /* TranscriptMediaFileExportView.swift */,
 				C107P0000000000000000106 /* TranscriptMediaVideoTile.swift */,
@@ -1905,7 +1905,6 @@
 				C0DE34000000000000000006 /* TranscriptMediaView.swift in Sources */,
 				C107P0000000000000000001 /* TranscriptMediaContentView.swift in Sources */,
 				C107P0000000000000000002 /* TranscriptMediaThumbnailView.swift in Sources */,
-				C107P0000000000000000003 /* TranscriptMediaResolvedRemoteView.swift in Sources */,
 				C107P0000000000000000004 /* TranscriptMediaAudioExportView.swift in Sources */,
 				C107P0000000000000000005 /* TranscriptMediaFileExportView.swift in Sources */,
 				C107P0000000000000000006 /* TranscriptMediaVideoTile.swift in Sources */,
@@ -1986,6 +1985,7 @@
 					C0410000000000000000015A /* ComposerTextViewMarkedTextTests.swift in Sources */,
 					C0391000000000000000000E /* ChatViewModelSendTests.swift in Sources */,
 					C1TAL49E0000000000000002 /* ChatMessageLinkInteractionTests.swift in Sources */,
+					C1TAL1860000000000000002 /* TranscriptMediaRenderingTests.swift in Sources */,
 				C03910000000000000000016 /* TranscriptDisplayModelTests.swift in Sources */,
 				C13000000000000000000001 /* ChatVerticalScrollAxisGuardTests.swift in Sources */,
 				C46200000000000000000001 /* SidebarEdgePanGestureTests.swift in Sources */,

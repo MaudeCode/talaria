@@ -20,17 +20,6 @@ struct TranscriptMediaThumbnailView: View {
 
     var body: some View {
         switch reference.mediaKind {
-        case .image where reference.isExtensionlessRemoteMediaCandidate && loadMediaData != nil:
-            if let loadMediaData {
-                TranscriptMediaResolvedRemoteView(
-                    reference: reference,
-                    loadMediaData: loadMediaData,
-                    onPreviewMedia: onPreviewMedia
-                )
-            } else {
-                TranscriptMediaUnavailableChip(reference: reference)
-            }
-
         case .image where loadMediaImage != nil:
             Button {
                 onPreviewMedia?(reference)
@@ -38,7 +27,7 @@ struct TranscriptMediaThumbnailView: View {
                 thumbnailContent
             }
             .buttonStyle(.chatTactile(.thumbnail))
-            .accessibilityLabel(imageButtonAccessibilityLabel)
+            .accessibilityLabel(String(localized: "Open media image \(reference.accessibilityName)"))
             .task(id: imageCacheKey) {
                 guard let loadMediaImage else { return }
                 image = nil
@@ -95,14 +84,6 @@ struct TranscriptMediaThumbnailView: View {
         DecodedImageCacheKey(namespace: cacheNamespace, resourceID: reference.id)
     }
 
-    private var imageButtonAccessibilityLabel: String {
-        if image == nil, didAttemptLoad, reference.isExtensionlessRemoteMediaCandidate {
-            return String(localized: "Open media video \(reference.displayName)")
-        }
-
-        return String(localized: "Open media image \(reference.accessibilityName)")
-    }
-
     @ViewBuilder
     private var thumbnailContent: some View {
         if let image {
@@ -117,11 +98,7 @@ struct TranscriptMediaThumbnailView: View {
                         .stroke(Color(.separator).opacity(0.35), lineWidth: 0.5)
                 )
         } else if didAttemptLoad {
-            if reference.isExtensionlessRemoteMediaCandidate {
-                TranscriptMediaVideoTile(reference: reference)
-            } else {
-                TranscriptMediaUnavailableChip(reference: reference)
-            }
+            TranscriptMediaUnavailableChip(reference: reference)
         } else {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color(.systemFill))

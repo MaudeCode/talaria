@@ -131,12 +131,26 @@ struct ChatMarkdownParagraph: View {
     let configuration: BlockConfiguration
     let tracksLinks: Bool
 
+    @Environment(\.transcriptMediaParagraphImages) private var media
+
     var body: some View {
+        if let media, case let nested = media.nestedImages(in: configuration.content.renderMarkdown()), !nested.isEmpty {
+            // TAL-186: server images inside emphasis, which MarkdownUI does not load inline, follow the text.
+            VStack(alignment: .leading, spacing: 8) {
+                text
+                ForEach(nested) { media.thumbnail($0) }
+            }
+            .markdownMargin(top: 0, bottom: 16)
+        } else {
+            text.markdownMargin(top: 0, bottom: 16)
+        }
+    }
+
+    private var text: some View {
         ChatMarkdownLinkTrackedText(content: configuration.content, tracksLinks: tracksLinks) {
             configuration.label
         }
         .fixedSize(horizontal: false, vertical: true)
         .relativeLineSpacing(.em(0.25))
-        .markdownMargin(top: 0, bottom: 16)
     }
 }
